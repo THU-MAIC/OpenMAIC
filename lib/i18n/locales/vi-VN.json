@@ -1692,13 +1692,12 @@
       "desc": "Chọn nhà cung cấp gói token và nhập khóa — hệ thống sẽ tự cấu hình mọi loại nội dung tương thích (model ngôn ngữ / ảnh / video / giọng nói / tìm web).",
       "selectPlan": "Chọn nhà cung cấp",
       "apiKey": "Khóa API",
-      "enable": "Bật",
       "updateKey": "Cập nhật khóa",
       "modelsCount": "{{n}} model",
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài.",
       "statusConnected": "Đã kết nối",
-      "keyStorage": "Khóa được lưu trong cài đặt cục bộ của trình duyệt và chỉ dùng cho các yêu cầu tới dịch vụ này.",
+      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các bước khóa học chưa có mô hình sẽ dùng mô hình của gói này.",
       "saveKey": "Lưu và bật",
       "cancelKeyUpdate": "Hủy cập nhật",
       "manageAccount": "Quản lý tài khoản",
@@ -1711,9 +1710,14 @@
       "planNoteEntitlement": "Năng lực và phí của gói do nhà cung cấp quyết định.",
       "planUnavailable": "Mô hình chưa công bố",
       "planNoteEditable": "Đây là cấu hình mặc định; mô hình của từng nút có thể thay đổi trong «Cấu hình mô hình khóa học».",
-      "statusDisabled": "Đã kết nối (đang tắt)",
-      "enableThisPlan": "Bật gói này",
-      "enableThisPlanHint": "Khi tắt, gói này sẽ không còn xuất hiện trong Cấu hình mô hình khóa học."
+      "capImage": "Tạo ảnh",
+      "capLlm": "Tạo văn bản",
+      "capTts": "Tổng hợp giọng nói",
+      "capVideo": "Tạo video",
+      "capWebSearch": "Tìm kiếm web",
+      "saved": "Đã lưu cài đặt kết nối",
+      "stageInteractive": "Tương tác",
+      "stageSlide": "Trang slide"
     },
     "skills": {
       "nav": "Skill",
@@ -1746,7 +1750,7 @@
     "courseModels": {
       "mainModel": "Mô hình chính",
       "mainModelHint": "Các giai đoạn theo mô hình chính dùng chung mô hình này; nhấn vào một thẻ để tùy chỉnh riêng giai đoạn đó",
-      "mainModelTooltip": "Mọi giai đoạn đặt theo mô hình chính đều dùng mô hình này. Nhấn vào thẻ pipeline để ghim một mô hình riêng cho giai đoạn đó (route cấp người dùng, dưới MODEL_ROUTES của vận hành viên). Các giai đoạn con chi tiết hơn nằm trong trình kiểm tra của thẻ.",
+      "mainModelTooltip": "Mọi bước theo mô hình chính đều dùng mô hình này. Nhấp vào một thẻ trong quy trình để chọn mô hình riêng cho bước đó; các bước con chi tiết hơn nằm trong trình kiểm tra của thẻ. Các bước do cấu hình máy chủ thiết lập chỉ hiển thị, không thể thay đổi.",
       "noProviderHint": "Chưa cấu hình mô hình ngôn ngữ — hãy thiết lập trong Dịch vụ mô hình",
       "followParent": "Theo cấp trên",
       "restoreFollow": "Khôi phục theo mô hình chính",
@@ -1756,9 +1760,12 @@
       "optionInvalid": "Không khả dụng",
       "subStagesTitle": "Giai đoạn con",
       "subStages": {
-        "title": "Tạo tiêu đề"
+        "title": "Tạo tiêu đề",
+        "interactive": "Kịch bản tương tác",
+        "pbl": "Kịch bản PBL",
+        "quiz": "Trắc nghiệm",
+        "slide": "Trang chiếu"
       },
-      "servicesAndModels": "Dịch vụ & mô hình",
       "searchService": "Dịch vụ tìm kiếm",
       "parseService": "Dịch vụ phân tích",
       "asrTranscribe": "Chuyển giọng nói thành văn bản",
@@ -1775,255 +1782,185 @@
           "tts": "Tổng hợp lời dẫn thành giọng giáo viên/học viên (theo từng cảnh, tuần tự).",
           "media": "Điền các chỗ giữ chỗ ảnh/video trong nội dung đã tạo, song song với vòng lặp theo cảnh.",
           "interaction": "Thời gian chạy lớp học sau khi tạo: chat đa tác nhân, thời gian chạy PBL và chấm trắc nghiệm."
-        }
-      },
-      "mediaEnableNeedsSetup": "Hãy cấu hình API key trong «Dịch vụ mô hình» hoặc bật Token Plan trước."
-    },
-    "modelSettings": {
-      "nav": "Mô hình",
-      "title": "Mô hình",
-      "description": "Mỗi bước tạo khóa học dùng mô hình nào. Nhấp vào một mô hình để đổi; các bước không có thiết lập riêng sẽ theo bước cha.",
-      "loading": "Đang tải thiết lập mô hình…",
-      "loadFailed": "Không tải được thiết lập mô hình: {{message}}",
-      "retry": "Thử lại",
-      "tabs": {
-        "map": "Sơ đồ mô hình",
-        "providers": "Nhà cung cấp"
-      },
-      "legend": {
-        "label": "Chú giải",
-        "follows": "Theo bước cha",
-        "own": "Thiết lập riêng",
-        "locked": "Do máy chủ đặt"
-      },
-      "actions": {
-        "save": "Lưu",
-        "cancel": "Hủy"
-      },
-      "unavailable": {
-        "title": "Mô hình do máy chủ quản lý",
-        "body": "Máy chủ này không lưu thiết lập mô hình theo không gian làm việc, nên dùng các mô hình do quản trị viên cấu hình.",
-        "openLegacy": "Mở dịch vụ mô hình"
-      },
-      "map": {
-        "label": "Sơ đồ mô hình của khóa học. Kéo hoặc dùng phím mũi tên để di chuyển; dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
-        "outside": "Ngoài quy trình",
-        "standalone": "Độc lập",
-        "perPage": "Theo từng trang",
-        "zoom": "Thu phóng",
-        "zoomIn": "Phóng to (+)",
-        "zoomOut": "Thu nhỏ (-)",
-        "fit": "Vừa khung nhìn (0)",
-        "reset": "Đặt lại 100%",
-        "hint": "Kéo để di chuyển · ⌘/Ctrl + cuộn để thu phóng · nhấp đúp vào chỗ trống để vừa khung"
-      },
-      "stations": {
-        "research": "Tìm hiểu trên web",
-        "media": "Hình ảnh / video",
-        "lines": {
-          "rewrite": "Truy vấn",
-          "search": "Tìm kiếm",
-          "image": "Ảnh",
-          "video": "Video"
-        }
-      },
-      "card": {
-        "edit": "{{name}}: {{value}}. Thay đổi",
-        "toggle": "Bật hoặc tắt {{name}}",
-        "providerDefault": "Mô hình mặc định",
-        "off": "Tắt",
-        "unassigned": "Chưa đặt",
-        "invalid": "Thiết lập không hợp lệ",
-        "locked": "Do máy chủ đặt",
-        "lockedHint": "Được đặt bởi cấu hình máy chủ. Không thể thay đổi tại đây.",
-        "followers": "Số bước theo nó: {{count}}",
-        "childrenFollow": "Loại trang · tất cả theo",
-        "childrenOwn": "Loại trang · {{count}} riêng"
-      },
-      "source": {
-        "inherited": "Theo {{name}}",
-        "deployment": "Máy chủ",
-        "default": "Mặc định của máy chủ"
-      },
-      "picker": {
-        "follow": "Theo {{name}}",
-        "providers": "Nhà cung cấp",
-        "providerDefault": "Mô hình mặc định",
-        "modelId": "ID mô hình",
-        "use": "Dùng",
-        "off": "Tắt",
-        "offHint": "Bước này không chạy",
-        "noProviders": "Chưa có nhà cung cấp nào cung cấp tính năng này.",
-        "fallback": "Dự phòng",
-        "noFallback": "Không",
-        "manageProviders": "Quản lý nhà cung cấp",
-        "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
-        "clear": "Xóa thiết lập riêng",
-        "clearHint": "Dùng thiết lập của máy chủ, nếu có",
-        "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa."
-      },
-      "setup": {
-        "prompt": "Chưa có mô hình mặc định. Kết nối một dịch vụ và các mô hình được đề xuất sẽ điền vào mọi bước chưa đặt.",
-        "open": "Kết nối dịch vụ",
-        "orProvider": "Hoặc thêm nhà cung cấp",
-        "askAdmin": "Chưa cấu hình mô hình ngôn ngữ nào. Hãy nhờ quản trị viên máy chủ thiết lập.",
-        "title": "Kết nối dịch vụ",
-        "body": "Chọn một dịch vụ và dán khóa API của nó. Các mô hình được đề xuất sẽ điền vào mọi bước chưa được đặt.",
-        "connect": "Kết nối",
-        "connecting": "Đang kết nối…",
-        "done": "Đã kết nối {{name}}",
-        "partial": "Đã thêm {{name}} nhưng chưa gán được mô hình của nó: {{message}}",
-        "noModel": "Đã thêm {{name}} nhưng nó không liệt kê mô hình ngôn ngữ nào. Hãy thêm ID mô hình trong mục Nhà cung cấp.",
-        "retry": "Gán mô hình",
-        "dismiss": "Bỏ qua",
-        "changedMeanwhile": "thiết lập đã thay đổi trong lúc đó",
-        "openProviders": "Mở nhà cung cấp",
-        "answerLost": "phản hồi của máy chủ bị mất",
-        "unconfirmedAdd": "Không rõ {{name}} đã được thêm hay chưa: phản hồi của máy chủ bị mất và không đọc lại được thiết lập.",
-        "notAdded": "{{name}} chưa được thêm. Hãy kết nối lại.",
-        "checkAgain": "Kiểm tra lại",
-        "llmMissing": "Đã kết nối {{name}} nhưng mô hình mặc định vẫn chưa được đặt. Hãy chọn trên thẻ của nó."
-      },
-      "providers": {
-        "title": "Nhà cung cấp",
-        "hint": "Nguồn của các mô hình. Khóa được lưu trên máy chủ và không bao giờ hiển thị lại.",
-        "empty": "Chưa có nhà cung cấp",
-        "add": "Thêm nhà cung cấp",
-        "addTitle": "Nhà cung cấp mới",
-        "edit": "Sửa {{name}}",
-        "remove": "Xóa {{name}}",
-        "removeTitle": "Xóa {{name}}?",
-        "removeBody": "Các bước đang dùng nó sẽ quay lại theo bước cha.",
-        "removeConfirm": "Xóa",
-        "server": "Máy chủ",
-        "serverHint": "Do máy chủ cấu hình; chỉ đọc",
-        "preset": "Dịch vụ",
-        "pickPreset": "Chọn dịch vụ",
-        "apiKey": "Khóa API",
-        "apiKeyPlaceholder": "Dán khóa API",
-        "showKey": "Hiện khóa",
-        "hideKey": "Ẩn khóa",
-        "keepKey": "Giữ",
-        "replaceKey": "Thay",
-        "removeKey": "Xóa",
-        "keySet": "Khóa {{mask}}",
-        "keySetNoMask": "Đã đặt khóa",
-        "noKey": "Chưa có khóa",
-        "keyUnreadable": "Không đọc được khóa; hãy nhập lại",
-        "keyWillBeRemoved": "Khóa sẽ bị xóa khi bạn lưu.",
-        "baseUrl": "URL cơ sở",
-        "baseUrlOptional": "Endpoint tùy chỉnh (không bắt buộc)",
-        "models": "Mô hình",
-        "modelsHint": "ID mô hình, phân tách bằng dấu phẩy",
-        "needsBaseUrl": "Nhập URL cơ sở.",
-        "needsModels": "Nhập ít nhất một ID mô hình.",
-        "groups": {
-          "bundle": "Gói có nhiều dịch vụ",
-          "chat": "Mô hình ngôn ngữ",
-          "tts": "Tổng hợp giọng nói",
-          "asr": "Nhận dạng giọng nói",
-          "image": "Hình ảnh",
-          "video": "Video",
-          "webSearch": "Tìm kiếm web",
-          "document": "Tài liệu"
         },
-        "endpointChatOnly": "Khi dùng endpoint riêng, nhà cung cấp chỉ cung cấp mô hình ngôn ngữ.",
-        "changedMeanwhile": "Nhà cung cấp này đã được thay đổi ở nơi khác trong lúc đó. Chỉnh sửa của bạn được giữ trên thiết lập mới: hãy kiểm tra rồi lưu lại."
-      },
-      "capabilities": {
-        "chat": "Ngôn ngữ",
+        "agents": "Hồ sơ tác nhân",
+        "docParse": "Phân tích tài liệu",
+        "interaction": "Tương tác lớp học",
+        "media": "Tạo phương tiện",
+        "outline": "Lập dàn ý",
+        "sceneActions": "Hành động cảnh",
+        "sceneContent": "Nội dung cảnh",
         "tts": "Tổng hợp giọng nói",
-        "asr": "Nhận dạng giọng nói",
-        "image": "Hình ảnh",
-        "video": "Video",
-        "webSearch": "Tìm kiếm web",
-        "document": "Tài liệu"
+        "webResearch": "Nghiên cứu web"
       },
-      "slots": {
-        "llm": {
-          "name": "Mô hình mặc định",
-          "desc": "Mô hình ngôn ngữ mà mọi bước không có thiết lập riêng sử dụng."
-        },
-        "courseResearch": {
-          "name": "Truy vấn tìm kiếm",
-          "desc": "Chuyển chủ đề khóa học thành truy vấn tìm kiếm web."
-        },
-        "courseOutline": {
-          "name": "Dàn ý",
-          "desc": "Lên kế hoạch các trang của khóa học."
-        },
-        "courseAgents": {
-          "name": "Vai trò",
-          "desc": "Tạo giáo viên và bạn học trong lớp."
-        },
-        "courseContent": {
-          "name": "Nội dung trang",
-          "desc": "Viết từng trang. Các loại trang không có thiết lập riêng sẽ theo nó."
-        },
-        "courseContentSlide": {
-          "name": "Trang chiếu",
-          "desc": "Viết các trang chiếu."
-        },
-        "courseContentQuiz": {
-          "name": "Bài kiểm tra",
-          "desc": "Viết các trang kiểm tra."
-        },
-        "courseContentInteractive": {
-          "name": "Trang tương tác",
-          "desc": "Viết các trang tương tác."
-        },
-        "courseContentPbl": {
-          "name": "Dự án",
-          "desc": "Viết các trang học tập theo dự án."
-        },
-        "courseActions": {
-          "name": "Hoạt động giảng dạy",
-          "desc": "Lên kịch bản giáo viên nói và làm gì trên mỗi trang."
-        },
-        "classroom": {
-          "name": "Lớp học",
-          "desc": "Thảo luận, chấm bài kiểm tra và dự án trong khi học."
-        },
-        "agent": {
-          "name": "Tác tử",
-          "desc": "Cùng bạn tạo và chỉnh sửa khóa học. Cần mô hình hỗ trợ gọi công cụ."
-        },
-        "tts": {
-          "name": "Lồng tiếng",
-          "desc": "Đọc to bài giảng."
-        },
-        "asr": {
-          "name": "Nhập bằng giọng nói",
-          "desc": "Chuyển câu hỏi nói trong lớp thành văn bản."
-        },
-        "image": {
-          "name": "Hình ảnh",
-          "desc": "Tạo hình ảnh cho các trang."
-        },
-        "video": {
-          "name": "Video",
-          "desc": "Tạo đoạn video cho các trang."
-        },
-        "webSearch": {
-          "name": "Tìm kiếm web",
-          "desc": "Tìm kiếm trên web khi tạo khóa học."
-        },
-        "document": {
-          "name": "Phân tích tài liệu",
-          "desc": "Đọc các tài liệu đã tải lên."
-        }
-      }
+      "mediaEnableNeedsSetup": "Hãy cấu hình API key trong «Dịch vụ mô hình» hoặc bật Token Plan trước.",
+      "followMainline": "Theo mô hình chính",
+      "loop": "vòng lặp",
+      "mainlineUnset": "Chưa chỉ định",
+      "nav": "Cấu hình mô hình khóa học",
+      "parallel": "song song",
+      "stopped": "Đã tắt",
+      "visionSupported": "Hỗ trợ thị giác"
     },
-    "voiceSettings": {
-      "nav": "Giọng nói",
-      "title": "Giọng nói",
-      "description": "Tùy chọn thuyết minh và nhập giọng nói của bạn. Dịch vụ được dùng được đặt trong Mô hình.",
-      "narrationProvider": "Thuyết minh dùng {{provider}}",
-      "narrationOff": "Thuyết minh đang tắt: chưa đặt mô hình giọng nói trong Mô hình.",
-      "recognitionProvider": "Nhập giọng nói dùng {{provider}}",
-      "recognitionOff": "Nhập giọng nói đang tắt: chưa đặt mô hình nhận dạng giọng nói trong Mô hình.",
-      "openModels": "Mở Mô hình"
+    "addNewModel": "Model mới",
+    "addNewModelDescription": "Thêm một cấu hình model mới",
+    "addProviderButton": "Thêm",
+    "addProviderDescription": "Thêm nhà cung cấp model riêng để mở rộng danh sách model AI",
+    "addProviderDialog": "Thêm nhà cung cấp model",
+    "apiHost": "Địa chỉ gốc",
+    "apiModeAnthropic": "Giao thức Claude",
+    "apiModeGoogle": "Giao thức Gemini",
+    "apiModeOpenAI": "Giao thức OpenAI",
+    "apiSecret": "Khóa API",
+    "asrApiKey": "Khóa API",
+    "asrBaseUrl": "Địa chỉ gốc",
+    "asrNoTranscription": "Không nhận được nội dung nào. Hãy nói to hơn hoặc lâu hơn.",
+    "asrNotSupported": "Trình duyệt không hỗ trợ API nhận dạng giọng nói",
+    "asrProcessing": "Đang xử lý…",
+    "asrResultPlaceholder": "Kết quả nhận dạng sẽ hiện sau khi ghi âm",
+    "asrTestFailed": "Nhận dạng giọng nói không thành công",
+    "asrTestSuccess": "Nhận dạng giọng nói thành công",
+    "availableModels": "Model khả dụng",
+    "azureDeploymentHint": "Nhập địa chỉ endpoint Azure OpenAI ở trên, rồi thêm từng tên deployment của Azure như một model.",
+    "cancelEdit": "Hủy",
+    "capabilities": {
+      "streaming": "Truyền liên tục",
+      "tools": "Công cụ",
+      "vision": "Đọc ảnh"
+    },
+    "claudeSearchModel": "Mô hình tìm kiếm",
+    "claudeSearchModelHint": "Mô hình Claude dùng để tìm kiếm trên web và tóm tắt kết quả.",
+    "comfyuiAddWorkflowPrefix": "Hãy thêm một tệp",
+    "comfyuiAddWorkflowSuffix": "để bắt đầu.",
+    "comfyuiFolderHintMiddle": "của bạn. Tên tệp sẽ thành tên hiển thị — ví dụ",
+    "comfyuiFolderHintPrefix": "Đặt các tệp JSON luồng công việc vào thư mục",
+    "comfyuiLoadError": "Không nạp được luồng công việc: {error}",
+    "comfyuiNoWorkflowsFoundPrefix": "Không tìm thấy tệp JSON luồng công việc nào trong",
+    "comfyuiRefresh": "Tải lại",
+    "comfyuiWorkflows": "Luồng công việc",
+    "confirmReset": "Xác nhận đặt lại",
+    "connectionFailed": "Kết nối không thành công",
+    "connectionSuccess": "Kết nối thành công",
+    "defaultBaseUrl": "Địa chỉ gốc mặc định",
+    "defaultModel": "Model mặc định",
+    "deleteModel": "Xóa",
+    "deleteProvider": "Xóa nhà cung cấp",
+    "deleteProviderConfirm": "Bạn có chắc muốn xóa nhà cung cấp này?",
+    "documentParsingSettings": "Bóc tách tài liệu",
+    "doubaoAccessKey": "Khóa truy cập",
+    "doubaoAppId": "Mã ứng dụng",
+    "editModel": "Sửa model",
+    "editModelDescription": "Sửa cấu hình và khả năng của model",
+    "enableASR": "Bật nhận dạng giọng nói",
+    "enableImageGeneration": "Bật tạo ảnh bằng AI",
+    "enableTTS": "Bật chuyển văn bản thành giọng nói",
+    "enableVideoGeneration": "Bật tạo video bằng AI",
+    "enterApiKey": "Nhập khóa API",
+    "featureFormulas": "Nhận dạng công thức",
+    "featureImages": "Trích ảnh",
+    "featureLayoutAnalysis": "Phân tích bố cục",
+    "featureMetadata": "Thông tin mô tả",
+    "featureTables": "Trích bảng",
+    "featureText": "Trích văn bản",
+    "fetchModels": "Lấy danh sách model",
+    "fetchModelsAuthError": "Khóa API không đúng hoặc đã hết hạn",
+    "fetchModelsFailed": "Không lấy được danh sách model",
+    "fetchModelsNoEndpoint": "Nhà cung cấp này không có endpoint danh sách model — hãy thêm model thủ công",
+    "fetchModelsResult": "Đã lấy {total} model, thêm được {added}",
+    "imageConnectivityFailed": "Kết nối dịch vụ tạo ảnh không thành công",
+    "imageConnectivitySuccess": "Kết nối dịch vụ tạo ảnh thành công",
+    "imageSettings": "Tạo ảnh",
+    "microphoneAccessFailed": "Không truy cập được micrô",
+    "mineruCloudApiKeyPlaceholder": "Nhập khóa API MinerU Cloud",
+    "mineruSelfHostFormatsNote": "Việc bóc tách PDF và ảnh cần bản mineru[pipeline] hoặc mineru[core] trên máy chủ MinerU của bạn. Bản mineru-api gọn nhẹ có thể chỉ xử lý được tài liệu Office.",
+    "modelId": "Mã model",
+    "modelIdPlaceholder": "ví dụ: gpt-4o",
+    "modelSelectedViaVoice": "Model được xác định theo giọng đã chọn",
+    "modelServices": {
+      "configured": "Đã cấu hình",
+      "configuredHint": "Đã cấu hình, sẵn sàng cho việc tạo khóa học",
+      "desc": {
+        "asr": "Cấu hình dịch vụ nhận dạng giọng nói và mô hình mặc định",
+        "image": "Cấu hình dịch vụ tạo ảnh (khóa API, quy trình làm việc và danh mục mô hình)",
+        "pdf": "Cấu hình thông tin xác thực của dịch vụ phân tích tài liệu (dịch vụ tích hợp không cần cấu hình)",
+        "providers": "Cấu hình thông tin xác thực, điểm cuối và danh mục mô hình của dịch vụ mô hình ngôn ngữ",
+        "tts": "Cấu hình dịch vụ tổng hợp giọng nói, giọng đọc và mô hình",
+        "video": "Cấu hình thông tin xác thực và danh mục mô hình của dịch vụ tạo video",
+        "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất"
+      },
+      "nav": "Dịch vụ mô hình",
+      "notConfigured": "Chưa cấu hình",
+      "notConfiguredHint": "Chưa cấu hình — hãy nhập thông tin xác thực để bật",
+      "pending": "Chờ cấu hình",
+      "ready": "Sẵn sàng"
+    },
+    "models": "Các model",
+    "more": "Thao tác khác",
+    "optionalOverride": "Không bắt buộc — để trống sẽ dùng cấu hình của máy chủ",
+    "pdfApiKey": "Khóa API",
+    "pdfBaseUrl": "Địa chỉ gốc",
+    "pdfFeatures": "Khả năng hỗ trợ",
+    "providerApiMode": "Giao thức API",
+    "providerLinks": {
+      "domestic": "Trung Quốc",
+      "getApiKey": "Lấy khóa API",
+      "international": "Quốc tế"
+    },
+    "providerName": "Tên",
+    "providerNamePlaceholder": "ví dụ: Proxy OpenAI của tôi",
+    "providers": "Model ngôn ngữ",
+    "requestUrl": "Địa chỉ yêu cầu",
+    "reset": "Đặt lại",
+    "resetConfirmDescription": "Việc này sẽ bỏ mọi model tùy chỉnh và đưa về danh sách model mặc định. Khóa API và địa chỉ gốc vẫn được giữ.",
+    "resetToDefault": "Đặt lại mặc định",
+    "saveModel": "Lưu",
+    "searxngServerOnlyNotice": "SearXNG phải được cấu hình trên máy chủ. Hãy đặt biến môi trường SEARXNG_BASE_URL (hoặc mục web-search trong server-providers.yml). Địa chỉ do phía người dùng gửi lên sẽ không được nhận.",
+    "serverConfigured": "Máy chủ",
+    "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây. Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
+    "startRecording": "Bắt đầu ghi âm",
+    "stopRecording": "Dừng ghi âm",
+    "supportedFormats": "Định dạng được hỗ trợ",
+    "testASR": "Kiểm tra nhận dạng",
+    "testConnection": "Kiểm tra kết nối",
+    "testModel": "Kiểm tra model",
+    "testing": "Đang kiểm tra…",
+    "ttsApiKey": "Khóa API",
+    "ttsBaseUrl": "Địa chỉ gốc",
+    "videoConnectivityFailed": "Kết nối dịch vụ tạo video không thành công",
+    "videoConnectivitySuccess": "Kết nối dịch vụ tạo video thành công",
+    "videoSettings": "Tạo video",
+    "webSearchApiKey": "Khóa API tìm kiếm",
+    "webSearchApiKeyHint": "Lấy khóa API từ nhà cung cấp tìm kiếm bạn đã chọn",
+    "webSearchApiKeyOptional": "Khóa API không bắt buộc. Không có khóa thì hệ thống sẽ đọc trang công khai để thay thế.",
+    "webSearchBaseUrl": "Địa chỉ gốc",
+    "webSearchSettings": "Tìm trên web",
+    "serverConfig": {
+      "loading": "Đang tải cài đặt mô hình…",
+      "loadFailed": "Không tải được cài đặt mô hình: {{message}}",
+      "retry": "Thử lại",
+      "unavailableTitle": "Mô hình do máy chủ quản lý",
+      "unavailableBody": "Máy chủ này không lưu cài đặt mô hình theo không gian làm việc nên dùng các mô hình do quản trị viên cấu hình.",
+      "conflict": "Cài đặt đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
+      "lockedNow": "Mục này giờ do máy chủ thiết lập nên không được thay đổi.",
+      "unconfirmed": "Mất phản hồi từ máy chủ nên cài đặt đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
+      "serverOnly": "Chỉ cấu hình máy chủ (openmaic.yml) mới thiết lập được dịch vụ này. Hãy liên hệ quản trị viên máy chủ.",
+      "serverOnlyPolicy": "Máy chủ này không cho phép không gian làm việc thêm dịch vụ riêng. Hãy liên hệ quản trị viên máy chủ.",
+      "endpointServerOnly": "Dịch vụ này dùng endpoint riêng của nó; chỉ cấu hình máy chủ mới đổi được sang endpoint khác.",
+      "endpointChatOnly": "Khi dùng endpoint riêng, dịch vụ này chỉ dùng cho mô hình ngôn ngữ.",
+      "keyStored": "Đã lưu khóa trên máy chủ ({{mask}}).",
+      "keyStoredPlaceholder": "Khóa đã lưu {{mask}} — nhập khóa mới để thay thế",
+      "keyUnreadable": "Không còn đọc được khóa đã lưu. Hãy nhập lại.",
+      "removeKey": "Xóa khóa",
+      "showKey": "Hiện khóa",
+      "hideKey": "Ẩn khóa",
+      "inUse": "Đang dùng",
+      "setByServer": "Do máy chủ thiết lập",
+      "lockedHint": "Do cấu hình máy chủ thiết lập; không thể thay đổi ở đây.",
+      "defaultModel": "Mô hình mặc định",
+      "modelFromCatalogue": "Tên, khả năng và cửa sổ ngữ cảnh của mô hình lấy từ danh mục tích hợp.",
+      "modelWhenInUse": "Được dùng khi dịch vụ này được chọn trong cấu hình mô hình khóa học.",
+      "planServer": "Do máy chủ cấu hình",
+      "providerIdHint": "Lưu với tên \"{{id}}\""
     }
   },
   "workspace": {

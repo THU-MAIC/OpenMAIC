@@ -3,14 +3,23 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, Settings, Sparkles, Volume2, Workflow } from 'lucide-react';
+import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
-import { ModelSettingsPanel } from './models';
-import { VoiceSettings } from './voice-settings';
+import { TokenPlanSettings } from './token-plan-settings';
+import { CourseModelConfigPanel } from './course-model-config';
+import {
+  ModelServicesPanel,
+  SERVICE_TABS,
+  SERVICE_TAB_DESCRIPTIONS,
+  type ServiceTab,
+} from './model-services';
+import { ServerSettingsGate } from './server-settings';
 import type { SettingsSection } from '@/lib/types/settings';
+
+export { SERVICE_TAB_LABELS, type ServiceTab } from './model-services';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -18,26 +27,37 @@ interface SettingsDialogProps {
   initialSection?: SettingsSection;
 }
 
-const SECTIONS: { id: SettingsSection; icon: typeof Settings; label: string }[] = [
-  { id: 'models', icon: Workflow, label: 'settings.modelSettings.nav' },
-  { id: 'voice', icon: Volume2, label: 'settings.voiceSettings.nav' },
+const NAV: { id: SettingsSection; icon: typeof Settings; label: string }[] = [
+  { id: 'token-plan', icon: CreditCard, label: 'settings.tokenPlan.nav' },
+  { id: 'model-services', icon: Boxes, label: 'settings.modelServices.nav' },
+  { id: 'course-models', icon: GraduationCap, label: 'settings.courseModels.nav' },
   { id: 'skills', icon: Sparkles, label: 'settings.skills.nav' },
   { id: 'general', icon: Settings, label: 'settings.systemSettings' },
 ];
 
 /**
- * The settings dialog. "Models" holds the workspace's model settings, which
- * live on the server; the other sections are the user's own preferences.
+ * The settings dialog. Token Plan, Model Services and Course Model show the
+ * workspace's model configuration: it lives on the server, and every change
+ * is written there as it is made. Skills and General are the user's own.
  */
 export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsDialogProps) {
   const { t } = useI18n();
-  const [activeSection, setActiveSection] = useState<SettingsSection>('models');
+
+  // Navigation
+  const [activeSection, setActiveSection] = useState<SettingsSection>('token-plan');
+  // 「模型服务」分区内的服务 tab（沿用旧一级分区值）
+  const [serviceTab, setServiceTab] = useState<ServiceTab>('providers');
 
   // Navigate to initialSection when dialog opens
   useEffect(() => {
     if (open && initialSection) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync section from the opener
-      setActiveSection(initialSection);
+      if (SERVICE_TABS.includes(initialSection as ServiceTab)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync service tab from legacy section value
+        setServiceTab(initialSection as ServiceTab);
+        setActiveSection('model-services');
+      } else {
+        setActiveSection(initialSection);
+      }
     }
   }, [open, initialSection]);
 
@@ -87,26 +107,20 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     };
   }, [isResizing]);
 
+  // Get header content based on section
   const getHeaderContent = () => {
     switch (activeSection) {
-      case 'models':
+      case 'model-services':
         return (
           <div>
-            <h2 className="text-lg font-semibold">{t('settings.modelSettings.title')}</h2>
-            <p className="text-xs text-muted-foreground max-sm:hidden">
-              {t('settings.modelSettings.description')}
+            <h2 className="text-lg font-semibold">{t('settings.modelServices.nav')}</h2>
+            <p className="text-xs text-muted-foreground">
+              {t(SERVICE_TAB_DESCRIPTIONS[serviceTab])}
             </p>
           </div>
         );
-      case 'voice':
-        return (
-          <div>
-            <h2 className="text-lg font-semibold">{t('settings.voiceSettings.title')}</h2>
-            <p className="text-xs text-muted-foreground max-sm:hidden">
-              {t('settings.voiceSettings.description')}
-            </p>
-          </div>
-        );
+      case 'course-models':
+        return <h2 className="text-lg font-semibold">{t('settings.courseModels.nav')}</h2>;
       case 'general':
         return <h2 className="text-lg font-semibold">{t('settings.systemSettings')}</h2>;
       case 'skills':
@@ -116,10 +130,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <h2 className="text-lg font-semibold">{t('settings.skills.title')}</h2>
           </>
         );
+      case 'token-plan':
+        return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
       default:
         return null;
     }
   };
+
+  const fillsHeight = activeSection === 'model-services' || activeSection === 'course-models';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -136,7 +154,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             className="flex flex-shrink-0 gap-1 overflow-x-auto border-b bg-muted/30 p-2 sm:block sm:w-[var(--settings-nav-width)] sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:p-3"
             style={{ '--settings-nav-width': `${sidebarWidth}px` } as React.CSSProperties}
           >
-            {SECTIONS.map(({ id, icon: Icon, label }) => (
+            {NAV.map(({ id, icon: Icon, label }) => (
               <button
                 key={id}
                 onClick={() => setActiveSection(id)}
@@ -177,20 +195,43 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div
               className={cn(
                 'p-3 sm:p-5',
-                activeSection === 'models'
-                  ? 'flex min-h-0 flex-1 flex-col pt-3'
-                  : 'flex-1 overflow-y-auto',
+                fillsHeight ? 'flex min-h-0 flex-1 flex-col pt-3' : 'flex-1 overflow-y-auto',
               )}
             >
-              {activeSection === 'models' && <ModelSettingsPanel />}
-
-              {activeSection === 'voice' && (
-                <VoiceSettings onOpenModels={() => setActiveSection('models')} />
-              )}
-
               {activeSection === 'general' && <GeneralSettings />}
 
               {activeSection === 'skills' && <SkillSettings />}
+
+              {activeSection === 'token-plan' && (
+                <ServerSettingsGate>
+                  {(view, apply) => <TokenPlanSettings view={view} apply={apply} />}
+                </ServerSettingsGate>
+              )}
+
+              {activeSection === 'course-models' && (
+                <ServerSettingsGate>
+                  {(view, apply) => (
+                    <CourseModelConfigPanel
+                      view={view}
+                      apply={apply}
+                      onOpenServices={() => setActiveSection('model-services')}
+                    />
+                  )}
+                </ServerSettingsGate>
+              )}
+
+              {activeSection === 'model-services' && (
+                <ServerSettingsGate>
+                  {(view, apply) => (
+                    <ModelServicesPanel
+                      view={view}
+                      apply={apply}
+                      tab={serviceTab}
+                      onTabChange={setServiceTab}
+                    />
+                  )}
+                </ServerSettingsGate>
+              )}
             </div>
 
             {/* Footer: every change is saved as it is made; only close here. */}

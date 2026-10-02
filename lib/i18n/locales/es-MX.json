@@ -1692,13 +1692,12 @@
       "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web).",
       "selectPlan": "Seleccionar proveedor",
       "apiKey": "Clave API",
-      "enable": "Habilitar",
       "updateKey": "Actualizar clave",
       "modelsCount": "{{n}} modelos",
       "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar.",
       "statusConnected": "Conectado",
-      "keyStorage": "La clave se guarda en la configuración local del navegador y solo se usa para las solicitudes a este servicio.",
+      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, las etapas del curso sin modelo usan los modelos de este plan.",
       "saveKey": "Guardar y activar",
       "cancelKeyUpdate": "Cancelar actualización",
       "manageAccount": "Gestionar cuenta",
@@ -1711,9 +1710,14 @@
       "planNoteEntitlement": "Las capacidades y precios del plan los define el proveedor.",
       "planUnavailable": "Modelo no revelado",
       "planNoteEditable": "Esta es la configuración predeterminada; el modelo de cada nodo se puede cambiar en la configuración de modelos del curso.",
-      "statusDisabled": "Conectado (apagado)",
-      "enableThisPlan": "Habilitar este plan",
-      "enableThisPlanHint": "Desactivado, este plan ya no aparece en la configuración de modelos del curso."
+      "capImage": "Generación de imágenes",
+      "capLlm": "Generación de texto",
+      "capTts": "Síntesis de voz",
+      "capVideo": "Generación de video",
+      "capWebSearch": "Búsqueda web",
+      "saved": "Ajustes de conexión guardados",
+      "stageInteractive": "Interactivo",
+      "stageSlide": "Diapositivas"
     },
     "skills": {
       "nav": "Skills",
@@ -1746,7 +1750,7 @@
     "courseModels": {
       "mainModel": "Modelo principal",
       "mainModelHint": "Las etapas que siguen el modelo principal comparten este modelo; haz clic en una tarjeta para personalizar una etapa",
-      "mainModelTooltip": "Todas las etapas que siguen el modelo principal usan este modelo. Haz clic en una tarjeta del pipeline para fijar un modelo específico para esa etapa (una ruta de etapa a nivel de usuario, por debajo del MODEL_ROUTES del operador). Las subetapas más finas se configuran en el inspector de la tarjeta.",
+      "mainModelTooltip": "Todas las etapas que siguen al modelo principal lo usan. Haz clic en una tarjeta del flujo para elegir un modelo propio para esa etapa; las subetapas más detalladas están en el inspector de la tarjeta. Las etapas que define la configuración del servidor se muestran, pero no se pueden cambiar.",
       "noProviderHint": "Aún no hay un modelo de lenguaje configurado: configúralo en Servicios de modelos",
       "followParent": "Seguir al superior",
       "restoreFollow": "Restaurar seguimiento del principal",
@@ -1756,9 +1760,12 @@
       "optionInvalid": "No disponible",
       "subStagesTitle": "Subetapas",
       "subStages": {
-        "title": "Generación de título"
+        "title": "Generación de título",
+        "interactive": "Guion interactivo",
+        "pbl": "Escenario PBL",
+        "quiz": "Cuestionario",
+        "slide": "Diapositivas"
       },
-      "servicesAndModels": "Servicio y modelo",
       "searchService": "Servicio de búsqueda",
       "parseService": "Servicio de análisis",
       "asrTranscribe": "Transcripción de voz",
@@ -1775,255 +1782,185 @@
           "tts": "Sintetiza la narración en voces de docente/estudiante (por escena, en serie).",
           "media": "Resuelve los marcadores de imagen/video en el contenido generado, en paralelo con el bucle por escena.",
           "interaction": "El tiempo de ejecución del aula tras la generación: chat multiagente, ejecución de PBL y calificación de cuestionarios."
-        }
+        },
+        "agents": "Perfiles de agentes",
+        "docParse": "Análisis de documentos",
+        "interaction": "Interacción en clase",
+        "media": "Generación de medios",
+        "outline": "Planeación del esquema",
+        "sceneActions": "Acciones de la escena",
+        "sceneContent": "Contenido de la escena",
+        "tts": "Síntesis de voz",
+        "webResearch": "Investigación en la web"
       },
-      "mediaEnableNeedsSetup": "Configura primero una clave de API en Servicios de modelos o activa un Token Plan."
+      "mediaEnableNeedsSetup": "Configura primero una clave de API en Servicios de modelos o activa un Token Plan.",
+      "followMainline": "Seguir el principal",
+      "loop": "bucle",
+      "mainlineUnset": "Sin especificar",
+      "nav": "Configuración de modelos del curso",
+      "parallel": "en paralelo",
+      "stopped": "Desactivado",
+      "visionSupported": "Admite visión"
     },
-    "modelSettings": {
-      "nav": "Modelos",
-      "title": "Modelos",
-      "description": "Qué modelo usa cada paso de la generación de cursos. Haz clic en un modelo para cambiarlo; los pasos sin ajuste propio siguen al superior.",
+    "addNewModel": "Nuevo modelo",
+    "addNewModelDescription": "Agrega una nueva configuración de modelo",
+    "addProviderButton": "Agregar",
+    "addProviderDescription": "Agrega proveedores de modelos personalizados para ampliar los modelos de IA disponibles",
+    "addProviderDialog": "Agregar proveedor de modelos",
+    "apiHost": "URL base",
+    "apiModeAnthropic": "Protocolo Claude",
+    "apiModeGoogle": "Protocolo Gemini",
+    "apiModeOpenAI": "Protocolo OpenAI",
+    "apiSecret": "Clave API",
+    "asrApiKey": "Clave API",
+    "asrBaseUrl": "URL base",
+    "asrNoTranscription": "No se generó ninguna transcripción. Intenta hablar más fuerte o por más tiempo.",
+    "asrNotSupported": "El navegador no admite la API de reconocimiento de voz",
+    "asrProcessing": "Procesando...",
+    "asrResultPlaceholder": "El resultado del reconocimiento se mostrará después de grabar",
+    "asrTestFailed": "Falló el reconocimiento de voz",
+    "asrTestSuccess": "Reconocimiento de voz exitoso",
+    "availableModels": "Modelos disponibles",
+    "azureDeploymentHint": "Ingresa arriba tu endpoint de Azure OpenAI y luego agrega cada nombre de deployment de Azure como un modelo.",
+    "cancelEdit": "Cancelar",
+    "capabilities": {
+      "streaming": "Streaming",
+      "tools": "Herramientas",
+      "vision": "Visión"
+    },
+    "claudeSearchModel": "Modelo de búsqueda",
+    "claudeSearchModelHint": "El modelo de Claude que realiza las búsquedas web y resume los resultados.",
+    "comfyuiAddWorkflowPrefix": "Agrega un archivo",
+    "comfyuiAddWorkflowSuffix": "para comenzar.",
+    "comfyuiFolderHintMiddle": ". El nombre del archivo se convierte en el nombre visible, p. ej.",
+    "comfyuiFolderHintPrefix": "Coloca los archivos JSON de flujos de trabajo en tu carpeta",
+    "comfyuiLoadError": "No se pudieron cargar los flujos de trabajo: {error}",
+    "comfyuiNoWorkflowsFoundPrefix": "No se encontraron archivos JSON de flujos de trabajo en",
+    "comfyuiRefresh": "Actualizar",
+    "comfyuiWorkflows": "Flujos de trabajo",
+    "confirmReset": "Confirmar restablecimiento",
+    "connectionFailed": "Error de conexión",
+    "connectionSuccess": "Conexión exitosa",
+    "defaultBaseUrl": "URL base predeterminada",
+    "defaultModel": "Modelo predeterminado",
+    "deleteModel": "Eliminar",
+    "deleteProvider": "Eliminar proveedor",
+    "deleteProviderConfirm": "¿Seguro que deseas eliminar este proveedor?",
+    "documentParsingSettings": "Análisis de documentos",
+    "doubaoAccessKey": "Clave de acceso",
+    "doubaoAppId": "App ID",
+    "editModel": "Editar modelo",
+    "editModelDescription": "Edita la configuración y las capacidades del modelo",
+    "enableASR": "Habilitar reconocimiento de voz",
+    "enableImageGeneration": "Habilitar generación de imágenes con IA",
+    "enableTTS": "Habilitar texto a voz",
+    "enableVideoGeneration": "Habilitar generación de videos con IA",
+    "enterApiKey": "Ingresa la clave API",
+    "featureFormulas": "Reconocimiento de fórmulas",
+    "featureImages": "Extracción de imágenes",
+    "featureLayoutAnalysis": "Análisis de diseño de página",
+    "featureMetadata": "Metadatos",
+    "featureTables": "Extracción de tablas",
+    "featureText": "Extracción de texto",
+    "fetchModels": "Obtener modelos",
+    "fetchModelsAuthError": "La clave API no es válida o expiró",
+    "fetchModelsFailed": "No se pudieron obtener los modelos",
+    "fetchModelsNoEndpoint": "Este proveedor no tiene endpoint de lista de modelos — agrega los modelos manualmente",
+    "fetchModelsResult": "Se obtuvieron {total} modelos, se agregaron {added}",
+    "imageConnectivityFailed": "Falló la conexión con el servicio de imágenes",
+    "imageConnectivitySuccess": "Servicio de imágenes conectado correctamente",
+    "imageSettings": "Generación de imágenes",
+    "microphoneAccessFailed": "No se pudo acceder al micrófono",
+    "mineruCloudApiKeyPlaceholder": "Ingresa la clave API de MinerU Cloud",
+    "mineruSelfHostFormatsNote": "El análisis de PDF e imágenes requiere los extras mineru[pipeline] o mineru[core] en tu servidor MinerU. Las instalaciones ligeras de mineru-api pueden manejar solo documentos de Office.",
+    "modelId": "ID del modelo",
+    "modelIdPlaceholder": "p. ej., gpt-4o",
+    "modelSelectedViaVoice": "El modelo se determina según la voz seleccionada",
+    "modelServices": {
+      "configured": "Configurado",
+      "configuredHint": "Configurado y disponible para la generación de cursos",
+      "desc": {
+        "asr": "Configura servicios de reconocimiento de voz y el modelo predeterminado",
+        "image": "Configura servicios de generación de imágenes (claves de API, flujos de trabajo y catálogos de modelos)",
+        "pdf": "Configura credenciales del servicio de análisis de documentos (los servicios integrados no requieren configuración)",
+        "providers": "Configura credenciales, endpoints y catálogos de modelos de los servicios de modelos de lenguaje",
+        "tts": "Configura servicios de síntesis de voz, voces y modelos",
+        "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",
+        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación"
+      },
+      "nav": "Servicios de modelos",
+      "notConfigured": "Sin configurar",
+      "notConfiguredHint": "Aún sin configurar; escribe las credenciales para habilitarlo",
+      "pending": "Pendiente",
+      "ready": "Listo"
+    },
+    "models": "Modelos",
+    "more": "Más acciones",
+    "optionalOverride": "Opcional — déjalo vacío para usar la configuración del servidor",
+    "pdfApiKey": "Clave API",
+    "pdfBaseUrl": "URL base",
+    "pdfFeatures": "Funciones compatibles",
+    "providerApiMode": "Modo de API",
+    "providerLinks": {
+      "domestic": "China continental",
+      "getApiKey": "Obtener clave de API",
+      "international": "Internacional"
+    },
+    "providerName": "Nombre",
+    "providerNamePlaceholder": "p. ej., Mi proxy de OpenAI",
+    "providers": "LLM",
+    "requestUrl": "URL de solicitud",
+    "reset": "Restablecer",
+    "resetConfirmDescription": "Esto eliminará todos los modelos personalizados y restaurará la lista de modelos predeterminada. La clave API y la URL base se conservarán.",
+    "resetToDefault": "Restablecer valores predeterminados",
+    "saveModel": "Guardar",
+    "searxngServerOnlyNotice": "SearXNG debe configurarse en el servidor. Define la variable de entorno SEARXNG_BASE_URL (o la sección web-search en server-providers.yml). No se aceptan URLs de instancia proporcionadas por el cliente.",
+    "serverConfigured": "Servidor",
+    "serverConfiguredNotice": "Este proveedor lo administra el servidor y no puede editarse aquí. Para usar tus propias credenciales, agrega un proveedor aparte.",
+    "startRecording": "Iniciar grabación",
+    "stopRecording": "Detener grabación",
+    "supportedFormats": "Formatos compatibles",
+    "testASR": "Probar ASR",
+    "testConnection": "Probar conexión",
+    "testModel": "Probar modelo",
+    "testing": "Probando...",
+    "ttsApiKey": "Clave API",
+    "ttsBaseUrl": "URL base",
+    "videoConnectivityFailed": "Falló la conexión con el servicio de videos",
+    "videoConnectivitySuccess": "Servicio de videos conectado correctamente",
+    "videoSettings": "Generación de videos",
+    "webSearchApiKey": "Clave API de búsqueda",
+    "webSearchApiKeyHint": "Obtén una clave API del proveedor de búsqueda seleccionado",
+    "webSearchApiKeyOptional": "La clave API es opcional. Sin ella, se usará el scraping de páginas públicas como alternativa.",
+    "webSearchBaseUrl": "URL base",
+    "webSearchSettings": "Búsqueda web",
+    "serverConfig": {
       "loading": "Cargando la configuración de modelos…",
       "loadFailed": "No se pudo cargar la configuración de modelos: {{message}}",
       "retry": "Reintentar",
-      "tabs": {
-        "map": "Mapa de modelos",
-        "providers": "Proveedores"
-      },
-      "legend": {
-        "label": "Leyenda",
-        "follows": "Sigue al superior",
-        "own": "Ajuste propio",
-        "locked": "Definido por el servidor"
-      },
-      "actions": {
-        "save": "Guardar",
-        "cancel": "Cancelar"
-      },
-      "unavailable": {
-        "title": "El servidor administra los modelos",
-        "body": "Este servidor no guarda la configuración de modelos por espacio de trabajo, así que usa los modelos que configuró su administrador.",
-        "openLegacy": "Abrir servicios de modelos"
-      },
-      "map": {
-        "label": "Mapa de modelos del curso. Arrastra o usa las flechas para desplazarte; usa los botones de zoom para acercar o alejar.",
-        "outside": "Fuera del flujo",
-        "standalone": "Independiente",
-        "perPage": "Página por página",
-        "zoom": "Zoom",
-        "zoomIn": "Acercar (+)",
-        "zoomOut": "Alejar (-)",
-        "fit": "Ajustar a la vista (0)",
-        "reset": "Restablecer a 100 %",
-        "hint": "Arrastra para desplazarte · ⌘/Ctrl + rueda para hacer zoom · doble clic en un espacio vacío para ajustar"
-      },
-      "stations": {
-        "research": "Investigación web",
-        "media": "Imágenes / video",
-        "lines": {
-          "rewrite": "Consulta",
-          "search": "Búsqueda",
-          "image": "Imagen",
-          "video": "Video"
-        }
-      },
-      "card": {
-        "edit": "{{name}}: {{value}}. Cambiar",
-        "toggle": "Activar o desactivar {{name}}",
-        "providerDefault": "Modelo predeterminado",
-        "off": "Desactivado",
-        "unassigned": "Sin definir",
-        "invalid": "Ajuste no válido",
-        "locked": "Definido por el servidor",
-        "lockedHint": "Lo define la configuración del servidor. No se puede cambiar aquí.",
-        "followers": "Pasos que lo siguen: {{count}}",
-        "childrenFollow": "Tipos de página · todos siguen",
-        "childrenOwn": "Tipos de página · {{count}} propios"
-      },
-      "source": {
-        "inherited": "Sigue a {{name}}",
-        "deployment": "Servidor",
-        "default": "Predeterminado del servidor"
-      },
-      "picker": {
-        "follow": "Seguir a {{name}}",
-        "providers": "Proveedores",
-        "providerDefault": "Modelo predeterminado",
-        "modelId": "ID del modelo",
-        "use": "Usar",
-        "off": "Desactivado",
-        "offHint": "Este paso no se ejecuta",
-        "noProviders": "Aún ningún proveedor ofrece esto.",
-        "fallback": "Respaldo",
-        "noFallback": "Ninguno",
-        "manageProviders": "Administrar proveedores",
-        "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
-        "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
-        "clear": "Quitar ajuste propio",
-        "clearHint": "Usar el ajuste del servidor, si tiene uno",
-        "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó."
-      },
-      "setup": {
-        "prompt": "Aún no hay modelo predeterminado. Conecta un servicio y sus modelos recomendados llenarán todos los pasos sin definir.",
-        "open": "Conectar un servicio",
-        "orProvider": "O agrega un proveedor",
-        "askAdmin": "No hay ningún modelo de lenguaje configurado. Pide al administrador del servidor que configure uno.",
-        "title": "Conectar un servicio",
-        "body": "Elige un servicio y pega su clave de API. Sus modelos recomendados llenarán todos los pasos que aún no estén definidos.",
-        "connect": "Conectar",
-        "connecting": "Conectando…",
-        "done": "{{name}} está conectado",
-        "partial": "Se agregó {{name}}, pero no se asignaron sus modelos: {{message}}",
-        "noModel": "Se agregó {{name}}, pero no incluye ningún modelo de lenguaje. Agrega sus ID de modelo en Proveedores.",
-        "retry": "Asignar modelos",
-        "dismiss": "Descartar",
-        "changedMeanwhile": "la configuración cambió mientras tanto",
-        "openProviders": "Abrir proveedores",
-        "answerLost": "se perdió la respuesta del servidor",
-        "unconfirmedAdd": "No se sabe si se agregó {{name}}: se perdió la respuesta del servidor y no se pudo volver a leer la configuración.",
-        "notAdded": "{{name}} no se agregó. Conéctalo de nuevo.",
-        "checkAgain": "Comprobar de nuevo",
-        "llmMissing": "{{name}} está conectado, pero el modelo predeterminado aún no está definido. Elige uno en su tarjeta."
-      },
-      "providers": {
-        "title": "Proveedores",
-        "hint": "De dónde vienen los modelos. Las claves se guardan en el servidor y no se vuelven a mostrar.",
-        "empty": "Aún no hay proveedores",
-        "add": "Agregar proveedor",
-        "addTitle": "Nuevo proveedor",
-        "edit": "Editar {{name}}",
-        "remove": "Quitar {{name}}",
-        "removeTitle": "¿Quitar {{name}}?",
-        "removeBody": "Los pasos que lo usan volverán a seguir al paso superior.",
-        "removeConfirm": "Quitar",
-        "server": "Servidor",
-        "serverHint": "Configurado por el servidor; solo lectura",
-        "preset": "Servicio",
-        "pickPreset": "Elige un servicio",
-        "apiKey": "Clave de API",
-        "apiKeyPlaceholder": "Pega la clave de API",
-        "showKey": "Mostrar clave",
-        "hideKey": "Ocultar clave",
-        "keepKey": "Conservar",
-        "replaceKey": "Reemplazar",
-        "removeKey": "Quitar",
-        "keySet": "Clave {{mask}}",
-        "keySetNoMask": "Clave definida",
-        "noKey": "Sin clave",
-        "keyUnreadable": "No se puede leer la clave; ingrésala de nuevo",
-        "keyWillBeRemoved": "La clave se quitará al guardar.",
-        "baseUrl": "URL base",
-        "baseUrlOptional": "Endpoint personalizado (opcional)",
-        "models": "Modelos",
-        "modelsHint": "ID de modelos, separados por comas",
-        "needsBaseUrl": "Ingresa la URL base.",
-        "needsModels": "Ingresa al menos un ID de modelo.",
-        "groups": {
-          "bundle": "Planes con varios servicios",
-          "chat": "Modelos de lenguaje",
-          "tts": "Síntesis de voz",
-          "asr": "Reconocimiento de voz",
-          "image": "Imágenes",
-          "video": "Video",
-          "webSearch": "Búsqueda web",
-          "document": "Documentos"
-        },
-        "endpointChatOnly": "Con su propio endpoint, un proveedor solo ofrece modelos de lenguaje.",
-        "changedMeanwhile": "Este proveedor se cambió en otro lugar mientras tanto. Tus cambios se conservan sobre su nueva configuración: revísalos y vuelve a guardar."
-      },
-      "capabilities": {
-        "chat": "Lenguaje",
-        "tts": "Síntesis de voz",
-        "asr": "Reconocimiento de voz",
-        "image": "Imágenes",
-        "video": "Video",
-        "webSearch": "Búsqueda web",
-        "document": "Documentos"
-      },
-      "slots": {
-        "llm": {
-          "name": "Modelo predeterminado",
-          "desc": "El modelo de lenguaje que usa cada paso sin ajuste propio."
-        },
-        "courseResearch": {
-          "name": "Consultas de búsqueda",
-          "desc": "Convierte el tema del curso en consultas de búsqueda web."
-        },
-        "courseOutline": {
-          "name": "Esquema",
-          "desc": "Planifica las páginas del curso."
-        },
-        "courseAgents": {
-          "name": "Roles",
-          "desc": "Crea a los docentes y compañeros del aula."
-        },
-        "courseContent": {
-          "name": "Contenido de páginas",
-          "desc": "Escribe cada página. Los tipos de página sin ajuste propio lo siguen."
-        },
-        "courseContentSlide": {
-          "name": "Diapositivas",
-          "desc": "Escribe páginas de diapositivas."
-        },
-        "courseContentQuiz": {
-          "name": "Cuestionarios",
-          "desc": "Escribe páginas de cuestionarios."
-        },
-        "courseContentInteractive": {
-          "name": "Páginas interactivas",
-          "desc": "Escribe páginas interactivas."
-        },
-        "courseContentPbl": {
-          "name": "Proyectos",
-          "desc": "Escribe páginas de aprendizaje basado en proyectos."
-        },
-        "courseActions": {
-          "name": "Acciones de clase",
-          "desc": "Define lo que dicen y hacen los docentes en cada página."
-        },
-        "classroom": {
-          "name": "Aula",
-          "desc": "Debate, calificación de cuestionarios y proyectos durante el aprendizaje."
-        },
-        "agent": {
-          "name": "Agente",
-          "desc": "Crea y edita cursos contigo. Requiere un modelo compatible con llamadas a herramientas."
-        },
-        "tts": {
-          "name": "Narración",
-          "desc": "Lee las clases en voz alta."
-        },
-        "asr": {
-          "name": "Entrada de voz",
-          "desc": "Convierte en texto las preguntas habladas en el aula."
-        },
-        "image": {
-          "name": "Imágenes",
-          "desc": "Genera imágenes para las páginas."
-        },
-        "video": {
-          "name": "Video",
-          "desc": "Genera videoclips para las páginas."
-        },
-        "webSearch": {
-          "name": "Búsqueda web",
-          "desc": "Busca en la web mientras se genera un curso."
-        },
-        "document": {
-          "name": "Análisis de documentos",
-          "desc": "Lee los documentos subidos."
-        }
-      }
-    },
-    "voiceSettings": {
-      "nav": "Voz",
-      "title": "Voz",
-      "description": "Tus preferencias de narración y entrada de voz. Los servicios que se usan se definen en Modelos.",
-      "narrationProvider": "La narración usa {{provider}}",
-      "narrationOff": "La narración está desactivada: no hay un modelo de voz definido en Modelos.",
-      "recognitionProvider": "La entrada de voz usa {{provider}}",
-      "recognitionOff": "La entrada de voz está desactivada: no hay un modelo de reconocimiento de voz definido en Modelos.",
-      "openModels": "Abrir Modelos"
+      "unavailableTitle": "El servidor administra los modelos",
+      "unavailableBody": "Este servidor no guarda configuración de modelos por espacio de trabajo, así que usa los modelos que configuró su administrador.",
+      "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
+      "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
+      "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó.",
+      "serverOnly": "Solo la configuración del servidor (openmaic.yml) puede configurar este servicio. Consulta al administrador del servidor.",
+      "serverOnlyPolicy": "Este servidor no permite que los espacios de trabajo agreguen sus propios servicios. Consulta al administrador del servidor.",
+      "endpointServerOnly": "Este servicio se usa en su propio endpoint; solo la configuración del servidor puede indicar otro.",
+      "endpointChatOnly": "Con su propio endpoint, este servicio se usa solo para modelos de lenguaje.",
+      "keyStored": "Hay una clave guardada en el servidor ({{mask}}).",
+      "keyStoredPlaceholder": "Clave guardada {{mask}}: escribe una nueva para reemplazarla",
+      "keyUnreadable": "La clave guardada ya no se puede leer. Ingrésala de nuevo.",
+      "removeKey": "Quitar clave",
+      "showKey": "Mostrar clave",
+      "hideKey": "Ocultar clave",
+      "inUse": "En uso",
+      "setByServer": "Definido por el servidor",
+      "lockedHint": "Definido por la configuración del servidor; no se puede cambiar aquí.",
+      "defaultModel": "Modelo predeterminado",
+      "modelFromCatalogue": "El nombre, las capacidades y la ventana de contexto del modelo provienen del catálogo integrado.",
+      "modelWhenInUse": "Se usa cuando este servicio se selecciona en la configuración de modelos del curso.",
+      "planServer": "Configurado por el servidor",
+      "providerIdHint": "Se guarda como \"{{id}}\""
     }
   },
   "workspace": {

@@ -17,6 +17,13 @@ export interface TTSPreviewOptions {
   voice: string;
   speed: number;
   providerOptions?: unknown;
+  /**
+   * A saved provider to preview instead of the `tts` slot's (the settings'
+   * test of a service), with an optional model: the server uses its stored
+   * configuration.
+   */
+  previewProvider?: string;
+  previewModel?: string;
 }
 
 /**
@@ -101,6 +108,10 @@ export function useTTSPreview() {
           ttsSpeed: options.speed,
         };
         if (options.providerOptions) body.ttsProviderOptions = options.providerOptions;
+        if (options.previewProvider) {
+          body.previewProvider = options.previewProvider;
+          if (options.previewModel) body.previewModel = options.previewModel;
+        }
 
         const res = await fetch('/api/generate/tts', {
           method: 'POST',

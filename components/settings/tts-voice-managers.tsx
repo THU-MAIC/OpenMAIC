@@ -1,36 +1,24 @@
 'use client';
 
+/**
+ * The voices a user makes for voice-design and voice-clone providers (VoxCPM,
+ * Qwen): kept per user, shown in the text-to-speech panel when the workspace
+ * uses that provider.
+ */
 import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getValidASRLanguage, useSettingsStore } from '@/lib/store/settings';
-import { useTTSSelection } from '@/lib/audio/use-tts-selection';
+import { useSettingsStore } from '@/lib/store/settings';
 import { slotVoxCPMBackend } from '@/lib/audio/tts-selection';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
-import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
-import {
-  ASR_PROVIDERS,
-  TTS_PROVIDERS,
-  DEFAULT_TTS_VOICES,
-  isQwenCloneVoice,
-} from '@/lib/audio/constants';
-import type { ASRProviderId } from '@/lib/audio/types';
+import { DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import {
   Volume2,
   Loader2,
-  CheckCircle2,
-  XCircle,
   Plus,
   Trash2,
   Upload,
@@ -41,7 +29,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import {
   getVoxCPMProviderOptions,
@@ -59,238 +46,7 @@ import {
   voxCPMBackendSupportsReferenceAudio,
 } from '@/lib/audio/voxcpm';
 
-const log = createLogger('VoiceSettings');
-
-/** Language names for the speech input picker, in the UI language (codes as a fallback). */
-function languageName(code: string, locale: string): string {
-  if (code === 'auto') return code;
-  try {
-    return new Intl.DisplayNames([locale], { type: 'language' }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-}
-
-/**
- * The "Voice" settings section: the user's own voice preferences. Which
- * speech services run is the workspace's model settings (the tts and asr
- * slots, in Models); this section shows them and keeps what is per user: the
- * narration speed, a test of the narration voice, the voices the user made
- * for voice-design providers, and the language speech input listens for.
- */
-export function VoiceSettings({ onOpenModels }: { onOpenModels?: () => void }) {
-  const { t, locale } = useI18n();
-  const selection = useTTSSelection();
-  const capabilities = useModelCapabilities();
-  const { asr } = capabilities;
-  const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
-  const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
-  const asrLanguage = useSettingsStore((state) => state.asrLanguage);
-  const setASRLanguage = useSettingsStore((state) => state.setASRLanguage);
-
-  const providerId = selection?.providerId;
-  const ttsProvider = providerId
-    ? TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]
-    : undefined;
-  const voice = selection?.voice ?? 'default';
-  const cloneSpeedDisabled = providerId === 'qwen-tts' && isQwenCloneVoice(voice);
-
-  const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testMessage, setTestMessage] = useState('');
-  const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
-
-  // Keep the sample text in sync with locale changes.
-  useEffect(() => {
-    setTestText(t('settings.ttsTestTextDefault'));
-  }, [t]);
-
-  // Reset the test when the workspace switches providers.
-  useEffect(() => {
-    stopPreview();
-    setTestStatus('idle');
-    setTestMessage('');
-  }, [providerId, stopPreview]);
-
-  const handleTestTTS = async () => {
-    if (!providerId || !testText.trim()) return;
-    setTestStatus('testing');
-    setTestMessage('');
-    try {
-      const providerOptions =
-        providerId === VOXCPM_TTS_PROVIDER_ID
-          ? await getVoxCPMProviderOptions(voice, {
-              role: 'teacher',
-              locale,
-              backend: slotVoxCPMBackend(capabilities.tts),
-            })
-          : undefined;
-      await startPreview({
-        text: testText,
-        providerId,
-        voice,
-        speed: ttsSpeed,
-        providerOptions,
-      });
-      setTestStatus('success');
-      setTestMessage(t('settings.ttsTestSuccess'));
-    } catch (error) {
-      log.error('TTS test failed:', error);
-      setTestStatus('error');
-      setTestMessage(
-        error instanceof Error && error.message
-          ? `${t('settings.ttsTestFailed')}: ${error.message}`
-          : t('settings.ttsTestFailed'),
-      );
-    }
-  };
-
-  const asrProviderId = asr?.registryId as ASRProviderId | undefined;
-  const asrLanguages = asrProviderId
-    ? (ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.supportedLanguages ?? [])
-    : [];
-  const effectiveAsrLanguage = asrProviderId
-    ? getValidASRLanguage(asrProviderId, asrLanguage)
-    : asrLanguage;
-
-  const serviceLine = (text: string) => (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm">
-      <span className="min-w-0">{text}</span>
-      {onOpenModels && (
-        <Button variant="outline" size="sm" onClick={onOpenModels}>
-          {t('settings.voiceSettings.openModels')}
-        </Button>
-      )}
-    </div>
-  );
-
-  return (
-    <div
-      className={cn('space-y-8', providerId === VOXCPM_TTS_PROVIDER_ID ? 'max-w-5xl' : 'max-w-3xl')}
-    >
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold">{t('settings.ttsSettings')}</h3>
-        {serviceLine(
-          providerId
-            ? t('settings.voiceSettings.narrationProvider', {
-                provider: resolveTTSProviderName(providerId, t),
-              })
-            : t('settings.voiceSettings.narrationOff'),
-        )}
-
-        {/* Browser-native TTS can't produce managed audio files, so the Pro-mode
-            timeline's per-line audio (preview / regenerate / bulk voiceover) is
-            unavailable on it. */}
-        {providerId === 'browser-native-tts' && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-            {t('settings.ttsBrowserNativeTimelineNotice')}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm">{t('settings.ttsSpeed')}</Label>
-            <span className="text-xs text-muted-foreground">
-              {cloneSpeedDisabled ? '1×' : `${ttsSpeed.toFixed(2)}×`}
-            </span>
-          </div>
-          <input
-            aria-label={t('settings.ttsSpeed')}
-            type="range"
-            min={ttsProvider?.speedRange?.min ?? 0.5}
-            max={ttsProvider?.speedRange?.max ?? 2}
-            step={0.05}
-            value={cloneSpeedDisabled ? 1 : ttsSpeed}
-            disabled={cloneSpeedDisabled}
-            onChange={(event) => setTTSSpeed(Number(event.target.value))}
-            className="w-full disabled:cursor-not-allowed disabled:opacity-50"
-          />
-          {cloneSpeedDisabled && (
-            <p className="text-xs text-muted-foreground">{t('settings.qwenCloneSpeedHint')}</p>
-          )}
-        </div>
-
-        {providerId && (
-          <div className="space-y-2">
-            <Label className="text-sm">{t('settings.testTTS')}</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder={t('settings.ttsTestTextPlaceholder')}
-                value={testText}
-                onChange={(e) => setTestText(e.target.value)}
-                className="flex-1"
-              />
-              <Button
-                onClick={handleTestTTS}
-                disabled={testingTTS || !testText.trim()}
-                size="default"
-                className="gap-2 w-32"
-              >
-                {testingTTS ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Volume2 className="h-4 w-4" />
-                )}
-                {t('settings.testTTS')}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {testMessage && (
-          <div
-            className={cn(
-              'rounded-lg p-3 text-sm overflow-hidden',
-              testStatus === 'success' &&
-                'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
-              testStatus === 'error' &&
-                'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
-            )}
-          >
-            <div className="flex items-start gap-2 min-w-0">
-              {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />}
-              {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
-              <p className="flex-1 min-w-0 break-all">{testMessage}</p>
-            </div>
-          </div>
-        )}
-
-        {providerId === VOXCPM_TTS_PROVIDER_ID && <VoxCPMVoiceManager />}
-        {providerId === 'qwen-tts' && <QwenVoiceCloneManager />}
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold">{t('settings.asrSettings')}</h3>
-        {serviceLine(
-          asrProviderId
-            ? t('settings.voiceSettings.recognitionProvider', {
-                provider: resolveASRProviderName(asrProviderId, t),
-              })
-            : t('settings.voiceSettings.recognitionOff'),
-        )}
-        {asrLanguages.length > 0 && (
-          <div className="space-y-2">
-            <Label className="text-sm">{t('settings.asrLanguage')}</Label>
-            <Select value={effectiveAsrLanguage} onValueChange={setASRLanguage}>
-              <SelectTrigger className="w-64">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {asrLanguages.map((code) => (
-                  <SelectItem key={code} value={code}>
-                    {languageName(code, locale)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function VoxCPMVoiceManager() {
+export function VoxCPMVoiceManager() {
   const { t, locale } = useI18n();
   const { profiles, addPromptVoice, addCloneVoice, deleteVoice } = useVoxCPMVoiceProfiles();
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
@@ -740,7 +496,7 @@ function VoxCPMVoiceManager() {
   );
 }
 
-function QwenVoiceCloneManager() {
+export function QwenVoiceCloneManager() {
   const { t } = useI18n();
   const { profiles, addCloneVoice, deleteVoice } = useQwenVoiceProfiles();
   const ttsVoiceProviderId = useSettingsStore((state) => state.ttsVoiceProviderId);
