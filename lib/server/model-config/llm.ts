@@ -90,7 +90,7 @@ export async function languageModelFor(
   if (isProviderKeyRequired(registryId) && !apiKey) {
     throw new ModelConfigurationError(
       'MISSING_API_KEY',
-      `API key required for provider: ${registryId} (configure a key for ${target.presetId})`,
+      `API key required for provider: ${registryId} (the configured provider "${target.providerId}" has no key)`,
     );
   }
   const { model, modelInfo } = getModel({
