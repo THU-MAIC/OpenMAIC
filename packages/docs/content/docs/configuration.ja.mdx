@@ -289,7 +289,7 @@ slots:
   webSearch: tavily
 ```
 
-その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。変換された `DEFAULT_MODEL` と異なり、ここに書いた `llm` はロックされます。ワークスペースに選ばせたい場合は `slots` に書かないでください。また変換結果と異なり、`agent` は `llm` に従うようになります。Pro エージェントを無効のままにするには `agent: null` と書いてください。
+その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。`<PREFIX>_BASE_URL` はプロバイダーの `baseUrl` になり（`OPENAI_BASE_URL` → `openai` の `baseUrl`。URL を直接書くか、変数を設定したままなら `${OPENAI_BASE_URL}` と書きます）、`<PREFIX>_MODELS` はその `models` リストになります。変換された `DEFAULT_MODEL` と異なり、ここに書いた `llm` はロックされます。ワークスペースに選ばせたい場合は `slots` に書かないでください。また変換結果と異なり、`agent` は `llm` に従うようになります。Pro エージェントを無効のままにするには `agent: null` と書いてください。
 
 **server-providers.yml。** 移行前：
 
@@ -354,6 +354,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`、`maic-agent` | なし：これらのステージは削除されました。削除してください |
 
 複数のステージが 1 つのスロットを共有する場合は、それらが使うべき 1 つのモデルをスロットに指定します。ルートの `thinking` はスロットの `thinking` に、`maic-agent-driver` ルートの `api` と `contextWindow` は `agent` スロットに移します。移行前：
 
@@ -383,6 +384,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+`openmaic.yml` が存在すると、プロバイダー変数だけでは何も設定されません。変数だけで設定していた TTS、画像、ドキュメント、Web 検索のプロバイダー（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` など）は使われなくなり、どの機能にもデフォルトのプロバイダーは割り当てられません。使用するプロバイダーをすべて `providers` に宣言し、上の環境変数の例と同様に `slots` で `tts`、`image`、`document`、`webSearch`（および `asr`、`video`）を割り当ててください。割り当てられていないスロットは、ワークスペースがモデル設定で割り当てない限り未設定のままです。
 
 その後 `MODEL_ROUTES`、`DEFAULT_MODEL`、`MODEL_FALLBACK` を削除します。
 

@@ -289,7 +289,7 @@ slots:
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. Unlike the translated `DEFAULT_MODEL`, the `llm` written here is locked; leave it out of `slots` to let workspaces choose. And unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. Unlike the translated `DEFAULT_MODEL`, the `llm` written here is locked; leave it out of `slots` to let workspaces choose. And unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
 
 **server-providers.yml.** Before:
 
@@ -354,6 +354,7 @@ Per-stage routes do not map one to one onto slots, so they are not translated. R
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`, `maic-agent` | None: these stages were removed. Drop them |
 
 Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
 
@@ -383,6 +384,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+Once `openmaic.yml` exists, the provider variables configure nothing on their own: a TTS, image, document or web search provider that had only its variables (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …) is no longer used, and no capability gets a default provider. Declare each provider you use under `providers` and assign `tts`, `image`, `document`, `webSearch` (and `asr`, `video`) in `slots`, as in the environment-variable example above; a slot left unassigned stays unconfigured unless a workspace assigns it in the model settings.
 
 Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
 

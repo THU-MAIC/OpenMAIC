@@ -12,6 +12,21 @@
 > Include `Authorization: Bearer <access-code>` header on all requests below.
 > See [live-demo.md](live-demo.md) for details.
 
+> **Self-hosted with `ACCESS_CODE`**: a self-hosted server gated by
+> `ACCESS_CODE` does not accept `Authorization: Bearer`; it answers `401` to
+> every API request without its `openmaic_access` cookie (except
+> `/api/health`). Verify the code once, then reuse the same cookie jar on every
+> request below (it also carries the owner cookie, see the next section):
+>
+> ```bash
+> curl -c cookies.txt -b cookies.txt -X POST {url}/api/access-code/verify \
+>   -H 'Content-Type: application/json' -d '{"code":"<ACCESS_CODE>"}'
+> ```
+>
+> The cookie lasts 7 days. It is `Secure` in production, so over plain HTTP
+> (other than localhost) the server needs `COOKIE_SECURE=0`, or the client
+> never sends it back.
+
 ## Request Contract
 
 `POST {url}/api/generate-classroom` accepts exactly two fields:

@@ -289,7 +289,7 @@ slots:
   webSearch: tavily
 ```
 
-Затем удалите `DEFAULT_MODEL` и `MODEL_FALLBACK`. Переменные провайдеров можно оставить как источник ссылок `${VAR}`. В отличие от преобразованного `DEFAULT_MODEL`, записанный здесь `llm` заблокирован; чтобы рабочие пространства могли выбирать сами, не указывайте его в `slots`. И в отличие от преобразования, `agent` теперь следует за `llm`: чтобы агент Pro оставался выключенным, запишите `agent: null`.
+Затем удалите `DEFAULT_MODEL` и `MODEL_FALLBACK`. Переменные провайдеров можно оставить как источник ссылок `${VAR}`. `<PREFIX>_BASE_URL` становится `baseUrl` провайдера (`OPENAI_BASE_URL` → `baseUrl` у `openai`; укажите URL или `${OPENAI_BASE_URL}`, пока переменная задана), а `<PREFIX>_MODELS` — его списком `models`. В отличие от преобразованного `DEFAULT_MODEL`, записанный здесь `llm` заблокирован; чтобы рабочие пространства могли выбирать сами, не указывайте его в `slots`. И в отличие от преобразования, `agent` теперь следует за `llm`: чтобы агент Pro оставался выключенным, запишите `agent: null`.
 
 **server-providers.yml.** До:
 
@@ -354,6 +354,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`, `maic-agent` | Нет: эти этапы удалены. Уберите их |
 
 Если несколько этапов делят один слот, назначьте ему одну модель, которую они должны использовать. `thinking` маршрута переходит в `thinking` слота, а `api` и `contextWindow` маршрута `maic-agent-driver` — в слот `agent`. До:
 
@@ -383,6 +384,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+Как только появляется `openmaic.yml`, переменные провайдеров сами по себе ничего не настраивают: провайдер TTS, изображений, документов или веб-поиска, заданный только переменными (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …), больше не используется, и ни одна возможность не получает провайдера по умолчанию. Объявите каждый используемый провайдер в `providers` и назначьте `tts`, `image`, `document`, `webSearch` (а также `asr`, `video`) в `slots`, как в примере с переменными окружения выше; неназначенный слот остаётся ненастроенным, если рабочее пространство не назначит его в настройках моделей.
 
 Затем удалите `MODEL_ROUTES`, `DEFAULT_MODEL` и `MODEL_FALLBACK`.
 

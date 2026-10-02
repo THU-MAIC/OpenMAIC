@@ -73,6 +73,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 
 プロセスマネージャー（systemd、pm2、コンテナなど）で常時稼働させ、停止時に再起動されるようにしてください。TLS 終端は nginx や Caddy などを前段に置いてください。授業と生成された授業メディアは PostgreSQL（または S3）に保存されるため、データディレクトリと同じ `OPENMAIC_SECRET_KEY` もあわせて共有すれば、複数のインスタンスで 1 つのデータベースを共有できます（下記参照）。
 
+`pnpm start` は `next start` を実行し、`output: standalone` 設定では動作しないという警告を表示します。この警告は無視して構いません。`next start` は `.next` からビルド全体を配信します。Docker イメージは代わりに standalone サーバー（`node server.js`）を実行しますが、このサーバーは作業ディレクトリを自身のフォルダーに切り替えます。そのため仮想マシンでは、起動したディレクトリから `data/` と `openmaic.yml` を読み込む `pnpm start` を使い続けてください。
+
 ## 必須の設定
 
 | 設定 | Docker Compose | Docker イメージまたは `pnpm start` |
@@ -84,6 +86,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | モデル | `openmaic.yml` または **設定 → モデル** | 同左 |
 
 **ID モード**は授業の所有者を決めます。未設定の場合、ブラウザごとに別々の匿名オーナーとなり、別のブラウザでは空のライブラリが表示されます。個人利用では `OWNER_SINGLE_USER=true`、1 つのチームで 1 つのライブラリを共有する場合は `ACCESS_CODE` とあわせて `PERSISTENCE_SHARED_OWNER_ID` を設定し、実際のアカウントが必要な場合はオーナー認証メソッドを登録してください。詳しくは README の [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) と `.env.example` を参照してください。
+
+匿名モードでは、オーナー cookie は本番環境で `Secure` 属性付きになり、`ACCESS_CODE` の cookie も同様です。ブラウザが `Secure` cookie を保存するのは HTTPS か `http://localhost` の場合だけです（Safari は localhost でも保存しません）。そのため、プレーンな HTTP で提供するデプロイでは `COOKIE_SECURE=0`（値は正確に `0`）を設定する必要があります。設定しないと、リクエストごとに新しいオーナーになって書き込みが `403` で失敗し、アクセスコードも繰り返し求められます。TLS がない場合 cookie は平文で送られるため、信頼できるネットワークでのみ行ってください。
 
 **`OPENMAIC_SECRET_KEY`** はモデル設定に保存されたプロバイダーキーを暗号化します。未設定の場合、各インスタンスが `data/instance-secret.key` に独自のシークレットを作成するため、データベースを共有するインスタンス同士で保存済みキーを読み取れません。データベースのバックアップと一緒に保管してください。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key) を参照してください。
 
@@ -126,9 +130,14 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 | デプロイ | 手順 |
 | --- | --- |
 | `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。モデル設定を `openmaic.yml` または **設定 → モデル** に移し（`openmaic.yml` がない間はプロバイダーの環境変数も引き続き使えます）、`MODEL_ROUTES` をスロットとして書き直してください。`openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動を拒否します。ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 `.env.local` で `PERSISTENCE_SHARED_OWNER_ID` を設定している場合は、`OWNER_SINGLE_USER=false` も設定してください（Compose はシングルユーザーモードで起動するようになりました）。以前のサーバー側デプロイで匿名オーナーが持っていた授業は、シングルユーザーに自動では統合されません。それらを作成した各ブラウザから `POST /api/identity/claim` で引き継いでください（ブラウザを開いてインポートされるのは、そのブラウザがローカルに保存していたデータだけです）。 |
-| `pnpm start` と自前の PostgreSQL | `DATABASE_URL` と ID モードを設定し、複数インスタンスでデータベースを共有する場合は `OPENMAIC_SECRET_KEY` も設定します。あとは上と同じです。 |
+| `pnpm start` と自前の PostgreSQL | サーバーを停止し、新しいリリースを取得して `pnpm install` と `pnpm build` を実行し、同じ作業ディレクトリで `pnpm start` で再起動します。こうすると `data/` が引き継がれます。`DATABASE_URL` と ID モードを設定し、複数インスタンスでデータベースを共有する場合は `OPENMAIC_SECRET_KEY` も設定します。複数インスタンスには共有のデータディレクトリも 1 つ必要です（[必須の設定](#必須の設定)を参照）。モデル設定、`MODEL_ROUTES`、ブラウザの授業は上の行と同じです。 |
 | Vercel | 1.1.x にとどまるか、同じデータベースを使う常駐ホストに移行します（下記）。 |
 | Skill / API | 更新された `openmaic` skill に従い、同じオーナーとして資料をアップロード、送信、ポーリングします。 |
+
+1.2.0 を初めて起動する前に：
+
+- **データディレクトリを残してください。** 1.2.0 は作業ディレクトリに同じ `data/` がある状態で（または同じ `OPENMAIC_CLASSROOMS_DIR` で）起動します。Compose では同じ `openmaic-data` ボリュームを使います。1.1.x が `data/classrooms` にファイルとして保存した授業は、起動後にバックグラウンドで一度だけデータベースへインポートされます。このディレクトリなしで起動したサーバーにはインポートするものがありません。
+- **ID モードを先に設定してください。** インポートされた授業は、その起動時に設定されているオーナーのものになります。シングルユーザー（`OWNER_SINGLE_USER=true`）またはチーム共有オーナー（`PERSISTENCE_SHARED_OWNER_ID`）が設定されていればそのオーナー、そうでなければ（匿名モード）専用オーナー `system:legacy-classrooms` です。後者の場合、授業は以前のリンクから読み取り専用で開け、どのライブラリにも表示されません。各授業のインポートは一度だけなので、匿名モードでインポートされた授業は、後から ID モードを設定しても `system:legacy-classrooms` のままです。
 
 ブラウザのデータ（授業、モデル設定、カスタムエージェント）は、各ブラウザがアップグレード後のアプリを初めて開いたときに一度だけインポートされます。モデル設定の移行は[設定](./configuration.mdx#旧設定からの移行)を、破壊的変更の一覧は [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md) を参照してください。
 

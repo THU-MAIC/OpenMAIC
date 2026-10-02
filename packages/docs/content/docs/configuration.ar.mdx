@@ -289,7 +289,7 @@ slots:
   webSearch: tavily
 ```
 
-احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. وعلى خلاف `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا مقفل؛ اتركه خارج `slots` لتدع مساحات العمل تختار. وعلى خلاف التحويل أيضًا، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل Pro موقوفًا.
+احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. وعلى خلاف `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا مقفل؛ اتركه خارج `slots` لتدع مساحات العمل تختار. وعلى خلاف التحويل أيضًا، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل Pro موقوفًا.
 
 **server-providers.yml.** قبل:
 
@@ -354,6 +354,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat` و`maic-agent` | لا شيء: أُزيلت هذه المراحل. احذفها |
 
 عندما تتشارك عدة مراحل خانة واحدة، أعطِ الخانة النموذج الواحد الذي يجب أن تستخدمه. ينتقل `thinking` الخاص بالمسار إلى `thinking` الخانة، وينتقل `api` و`contextWindow` من مسار `maic-agent-driver` إلى خانة `agent`. قبل:
 
@@ -383,6 +384,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل أي قدرة على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانة غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
 
 ثم احذف `MODEL_ROUTES` و`DEFAULT_MODEL` و`MODEL_FALLBACK`.
 

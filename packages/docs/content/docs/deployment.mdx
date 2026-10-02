@@ -73,6 +73,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # li
 
 Run it under a process manager (systemd, pm2, a container) that keeps it running and restarts it, and put nginx or Caddy in front for TLS termination. Courses and generated course media are stored in PostgreSQL (or S3), so several instances can share one database, as long as they also share the data directory and `OPENMAIC_SECRET_KEY` (see below).
 
+`pnpm start` runs `next start`, which warns that it does not work with the `output: standalone` setting. The warning is harmless: `next start` serves the complete build from `.next`. The Docker image runs the standalone server instead (`node server.js`), but that server changes its working directory to its own folder, so on a VM keep `pnpm start`, which reads `data/` and `openmaic.yml` from the directory it starts in.
+
 ## Required configuration
 
 | Setting | Docker Compose | Docker image or `pnpm start` |
@@ -84,6 +86,8 @@ Run it under a process manager (systemd, pm2, a container) that keeps it running
 | Models | `openmaic.yml` or **Settings → Models** | the same |
 
 **Identity mode** decides who owns a course. Without one, every browser is its own anonymous owner and a second browser sees an empty library. Set `OWNER_SINGLE_USER=true` for a personal installation, `PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE` for one team sharing one library, or register owner auth methods for real accounts; see [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) in the README and `.env.example`.
+
+In anonymous mode the owner cookie carries `Secure` in production, and so does the `ACCESS_CODE` cookie. Browsers keep a `Secure` cookie only over HTTPS or on `http://localhost` (Safari not even there), so a deployment served over plain HTTP must set `COOKIE_SECURE=0` (exactly `0`): otherwise every request becomes a new owner, writes fail with `403`, and the access code is asked for again. Without TLS the cookies travel in the clear, so do this only on a trusted network.
 
 **`OPENMAIC_SECRET_KEY`** encrypts the provider keys saved in the model settings. Without it, each instance creates its own secret in `data/instance-secret.key`, so instances sharing a database cannot read each other's saved keys. Keep it with the database backups; see [Secrets and OPENMAIC_SECRET_KEY](./configuration.mdx#secrets-and-openmaic_secret_key).
 
@@ -126,9 +130,14 @@ Earlier releases could keep courses in the browser (IndexedDB). That mode is gon
 | Deployment | Do |
 | --- | --- |
 | `docker compose` | Pull the new release and run `docker compose up --build`. Move model settings to `openmaic.yml` or **Settings → Models** (provider variables keep working while there is no `openmaic.yml`), and rewrite `MODEL_ROUTES` as slots: a server that sets it without `openmaic.yml` refuses to start. Open the app once in each browser that has local courses, so they are imported. If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set `OWNER_SINGLE_USER=false`: Compose now starts in single-user mode. Courses an earlier server-backed deployment kept for anonymous owners are not merged into the single user automatically; claim them with `POST /api/identity/claim` from each browser that created them (opening a browser imports only what it kept locally). |
-| `pnpm start` with your own PostgreSQL | Set `DATABASE_URL`, an identity mode, and `OPENMAIC_SECRET_KEY` when several instances share the database; then as above. |
+| `pnpm start` with your own PostgreSQL | Stop the server, pull the new release, run `pnpm install` and `pnpm build`, and start it again with `pnpm start` in the same working directory, so it keeps `data/`. Set `DATABASE_URL`, an identity mode, and `OPENMAIC_SECRET_KEY` when several instances share the database; several instances also need one shared data directory (see [Required configuration](#required-configuration)). Model settings, `MODEL_ROUTES` and browser courses as in the row above. |
 | Vercel | Stay on 1.1.x, or move to a long-running host with the same database (below). |
 | Skill / API | Follow the updated `openmaic` skill: upload materials, submit, and poll as the same owner. |
+
+Before the first start of 1.2.0:
+
+- **Keep the data directory.** Start 1.2.0 with the same `data/` in its working directory (or the same `OPENMAIC_CLASSROOMS_DIR`), or the same `openmaic-data` volume with Compose. Classrooms that 1.1.x saved as files under `data/classrooms` are imported into the database once, in the background after startup; a server started without that directory has nothing to import.
+- **Set the identity mode first.** The import gives those classrooms to the owner configured at that start: the single user (`OWNER_SINGLE_USER=true`) or the shared team owner (`PERSISTENCE_SHARED_OWNER_ID`), and otherwise (anonymous mode) the dedicated owner `system:legacy-classrooms`, under which they open read-only from their old links and appear in no library. Each classroom is imported only once, so classrooms imported in anonymous mode stay with `system:legacy-classrooms` even if you set an identity mode later.
 
 Browser data (courses, model settings, custom agents) is imported once per browser, the first time that browser opens the upgraded app. See [Configuration](./configuration.mdx#migrating-from-the-legacy-configuration) for moving model settings and the [changelog](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md) for the full list of breaking changes.
 

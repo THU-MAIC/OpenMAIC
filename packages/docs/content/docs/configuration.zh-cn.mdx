@@ -289,7 +289,7 @@ slots:
   webSearch: tavily
 ```
 
-之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。与转换得到的 `DEFAULT_MODEL` 不同，这里写出的 `llm` 是锁定的；如果希望工作区自行选择，就不要把它写进 `slots`。另外，与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
+之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 不同，这里写出的 `llm` 是锁定的；如果希望工作区自行选择，就不要把它写进 `slots`。另外，与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
 
 **server-providers.yml。** 迁移前：
 
@@ -354,6 +354,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`、`maic-agent` | 无：这些阶段已移除，直接删掉 |
 
 多个阶段共用一个槽位时，为该槽位指定它们应当共同使用的那个模型。路由里的 `thinking` 移到槽位的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 槽位。迁移前：
 
@@ -383,6 +384,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的槽位保持未配置，除非某个工作区在模型设置中为它指定。
 
 然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 

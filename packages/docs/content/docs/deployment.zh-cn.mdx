@@ -73,6 +73,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 
 请用进程管理器（systemd、pm2 或容器）保持服务运行并在退出后自动重启，前面套 nginx 或 Caddy 做 TLS 终止。课程和生成的课程媒体保存在 PostgreSQL（或 S3）中，因此多个实例可以共用同一个数据库，前提是它们同时共用数据目录和相同的 `OPENMAIC_SECRET_KEY`（见下文）。
 
+`pnpm start` 运行的是 `next start`，它会警告说自己不适用于 `output: standalone` 配置。这个警告可以忽略：`next start` 会从 `.next` 提供完整的构建产物。Docker 镜像运行的是 standalone 服务器（`node server.js`），但该服务器会把工作目录切换到它自己所在的目录，所以在虚拟机上请继续使用 `pnpm start`，它会从启动目录读取 `data/` 和 `openmaic.yml`。
+
 ## 必需配置
 
 | 配置 | Docker Compose | Docker 镜像或 `pnpm start` |
@@ -84,6 +86,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | 模型 | `openmaic.yml` 或 **设置 → 模型** | 同左 |
 
 **身份模式**决定课程归谁所有。不设置时，每个浏览器都是独立的匿名所有者，换一个浏览器看到的是空课程库。个人安装请设置 `OWNER_SINGLE_USER=true`；一个团队共用一个课程库时，设置 `PERSISTENCE_SHARED_OWNER_ID` 并配合 `ACCESS_CODE`；需要真实账号时，注册所有者认证方法。详见 README 的 [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) 和 `.env.example`。
+
+匿名模式下，所有者 cookie 在生产环境中带有 `Secure` 标记，`ACCESS_CODE` 的 cookie 也是如此。浏览器只在 HTTPS 或 `http://localhost` 上保存 `Secure` cookie（Safari 连 localhost 也不保存），因此通过纯 HTTP 提供服务的部署必须设置 `COOKIE_SECURE=0`（必须正好是 `0`）：否则每个请求都会成为新的所有者，写入以 `403` 失败，访问码也会被反复要求输入。没有 TLS 时 cookie 以明文传输，只应在可信网络中这样做。
 
 **`OPENMAIC_SECRET_KEY`** 用于加密在模型设置中保存的服务商 key。不设置时，每个实例会在 `data/instance-secret.key` 中生成自己的密钥，共用数据库的实例之间就无法读取彼此保存的 key。请把它和数据库备份放在一起，见[密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
 
@@ -126,9 +130,14 @@ PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 | 部署方式 | 操作 |
 | --- | --- |
 | `docker compose` | 拉取新版本，运行 `docker compose up --build`。把模型设置迁到 `openmaic.yml` 或 **设置 → 模型**（没有 `openmaic.yml` 时，服务商环境变量仍然有效），并把 `MODEL_ROUTES` 改写为槽位：设置了它却没有 `openmaic.yml` 的服务会拒绝启动。在每个存有本地课程的浏览器中打开一次应用，完成导入。 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，还要设置 `OWNER_SINGLE_USER=false`：Compose 现在默认以单用户模式启动。此前的服务端部署中属于匿名所有者的课程不会自动合并给单用户，需要在创建它们的每个浏览器中用 `POST /api/identity/claim` 认领（打开浏览器只会导入它在本地保存的数据）。 |
-| `pnpm start` + 自己的 PostgreSQL | 设置 `DATABASE_URL`、身份模式；多个实例共用数据库时设置 `OPENMAIC_SECRET_KEY`。其余同上。 |
+| `pnpm start` + 自己的 PostgreSQL | 停止服务，拉取新版本，运行 `pnpm install` 和 `pnpm build`，然后在同一个工作目录里用 `pnpm start` 重新启动，这样会保留 `data/`。设置 `DATABASE_URL`、身份模式；多个实例共用数据库时设置 `OPENMAIC_SECRET_KEY`，并且多个实例还需要共用同一个数据目录（见[必需配置](#必需配置)）。模型设置、`MODEL_ROUTES` 和浏览器中的课程同上一行。 |
 | Vercel | 留在 1.1.x，或迁移到使用同一数据库的常驻主机（见下文）。 |
 | Skill / API | 按更新后的 `openmaic` skill 操作：以同一所有者上传资料、提交并轮询。 |
+
+首次启动 1.2.0 之前：
+
+- **保留数据目录。** 启动 1.2.0 时，工作目录里要有原来的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 时沿用同一个 `openmaic-data` 卷。1.1.x 以文件形式保存在 `data/classrooms` 下的课堂，会在启动后于后台导入数据库一次；没有这个目录的服务器没有可导入的内容。
+- **先设置身份模式。** 导入时，这些课堂归属于那次启动时配置的所有者：设置了单用户（`OWNER_SINGLE_USER=true`）或团队共享所有者（`PERSISTENCE_SHARED_OWNER_ID`）时归它们所有；否则（匿名模式）归专用所有者 `system:legacy-classrooms`，此时它们只能通过原链接以只读方式打开，也不会出现在任何课程库中。每个课堂只导入一次，所以在匿名模式下导入的课堂，之后即使再设置身份模式，也仍然属于 `system:legacy-classrooms`。
 
 浏览器中的数据（课程、模型设置、自定义智能体）会在每个浏览器首次打开升级后的应用时导入一次。迁移模型设置见[配置](./configuration.mdx#从旧配置迁移)，完整的破坏性变更列表见 [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md)。
 
