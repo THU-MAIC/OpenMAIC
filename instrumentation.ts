@@ -44,6 +44,12 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
+  // Warn-only: the instance secret that seals keys saved in the model settings
+  // (lib/server/instance-secret-check.ts), checked against the keys already
+  // stored with one query in the background. It never stops the server.
+  const { warnAboutInstanceSecret } = await import('@/lib/server/instance-secret-check');
+  void warnAboutInstanceSecret();
+
   // The one-time import of classrooms earlier versions stored as files
   // (lib/server/legacy-classroom-import.ts). It reads the disk and the
   // database, so it runs in the background, retrying with backoff until it

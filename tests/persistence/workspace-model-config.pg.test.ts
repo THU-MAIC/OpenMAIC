@@ -9,7 +9,8 @@ import {
   saveWorkspaceModelConfig,
   WorkspaceConfigConflictError,
 } from '@/lib/persistence/workspace-model-config';
-import { resetInstanceKeyForTests } from '@/lib/server/secret-box';
+import { storedSecretKids } from '@/lib/server/instance-secret-check';
+import { instanceKey, resetInstanceKeyForTests } from '@/lib/server/secret-box';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
 
@@ -135,5 +136,23 @@ describe.skipIf(!contractUrl)('workspace model configuration on PostgreSQL', () 
       holder.release();
     }
     await expectOneWinner(results, 2);
+  });
+
+  it('counts the stored keys by the instance secret that sealed them', async () => {
+    const keyed = (id: string) => ({ providers: { [id]: { preset: 'deepseek', apiKey: 'sk' } } });
+    const first = instanceKey().kid;
+    await saveWorkspaceModelConfig(queryable(), 'user:alice', keyed('a'), null);
+    await saveWorkspaceModelConfig(queryable(), 'user:bob', keyed('b'), null);
+    await saveWorkspaceModelConfig(queryable(), 'user:carol', { slots: { llm: null } }, null);
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-contract-secret-rotated');
+    resetInstanceKeyForTests();
+    try {
+      const second = instanceKey().kid;
+      await saveWorkspaceModelConfig(queryable(), 'user:dave', keyed('d'), null);
+      expect(await storedSecretKids(queryable())).toEqual({ [first]: 2, [second]: 1 });
+    } finally {
+      vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-contract-secret');
+      resetInstanceKeyForTests();
+    }
   });
 });

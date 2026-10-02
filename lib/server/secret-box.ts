@@ -113,6 +113,64 @@ function readOrCreateSecretFile(dataDir: string): string {
   return secret;
 }
 
+export interface InstanceSecretState {
+  /** `OPENMAIC_SECRET_KEY` is set. */
+  configured: boolean;
+  /** The secret file used when it is not. */
+  file: string;
+  fileExists: boolean;
+  /** Whether the secret file could be created (the data directory, or the nearest existing parent, is writable). */
+  dataDirWritable: boolean;
+  /** The current secret's key id; undefined when no secret exists yet or the file is damaged. */
+  kid?: string;
+}
+
+function writable(dir: string): boolean {
+  let current = path.resolve(dir);
+  for (;;) {
+    if (fs.existsSync(current)) {
+      try {
+        fs.accessSync(current, fs.constants.W_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
+/**
+ * Where the instance secret comes from, read without creating anything: what
+ * the startup check compares with the keys already stored.
+ */
+export function inspectInstanceSecret(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  dataDir: string = path.join(process.cwd(), 'data'),
+): InstanceSecretState {
+  const configured = env.OPENMAIC_SECRET_KEY?.trim();
+  const file = path.join(dataDir, INSTANCE_SECRET_FILE);
+  const fileExists = fs.existsSync(file);
+  let kid: string | undefined;
+  if (configured) kid = deriveKey(configured).kid;
+  else if (fileExists) {
+    try {
+      kid = deriveKey(checkedSecret(fs.readFileSync(file, 'utf8'), file)).kid;
+    } catch {
+      // A damaged file is reported when the secret is first used.
+    }
+  }
+  return {
+    configured: !!configured,
+    file,
+    fileExists,
+    dataDirWritable: writable(dataDir),
+    ...(kid ? { kid } : {}),
+  };
+}
+
 let cached: { source: string; key: InstanceKey } | undefined;
 
 /**
