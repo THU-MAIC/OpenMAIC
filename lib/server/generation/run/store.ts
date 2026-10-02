@@ -972,6 +972,12 @@ export async function commitGenerationRunIn(
     await insertEvents(tx, lease.runId, commit.events);
     row = { ...row, seq: Number(row.seq) + commit.events.length };
   }
+  if (
+    (commit.patch?.state === 'completed' || commit.patch?.state === 'ended') &&
+    commit.patch.state !== before.state
+  ) {
+    await releaseRunMaterialsIn(tx, lease.runId);
+  }
   if (commit.patch?.state !== undefined && commit.patch.state !== before.state) {
     await notifyOwner(tx, before.owner_id);
   } else if (commit.patch?.scenesCompleted !== undefined || commit.patch?.stageId !== undefined) {
@@ -1102,6 +1108,36 @@ export async function endGenerationRunsOfDeletedCourseIn(
   }
 }
 
+/**
+ * Release the materials a run was started with when its input asks for it
+ * (`releaseMaterials`: the composer uploaded them for this run only), once the
+ * run is over: marked deleted, as the material delete path marks them, so
+ * they stop resolving and counting against the owner's quota; their bytes go
+ * with the owner's next reclaim sweep (`reclaimStaleOwnerMaterialUploads`).
+ * Only materials the run's owner owns; the course assets copied from their
+ * images are the course's and stay. Idempotent.
+ */
+export async function releaseRunMaterialsIn(tx: Queryable, runId: string): Promise<number> {
+  const provisioned = await tx.query<{ present: string | null }>(
+    "SELECT to_regclass('owner_material')::text AS present",
+  );
+  if (!provisioned.rows[0]?.present) return 0;
+  const released = await tx.query<{ id: string }>(
+    `UPDATE owner_material m
+        SET deleted_at = $2
+       FROM generation_runs r
+      WHERE r.id = $1
+        AND r.input->>'releaseMaterials' = 'true'
+        AND m.id IN (SELECT jsonb_array_elements_text(r.input->'materialIds'))
+        AND m.owner_id = r.owner_id
+        AND m.status = 'ready'
+        AND m.deleted_at IS NULL
+      RETURNING m.id`,
+    [runId, Date.now()],
+  );
+  return released.rows.length;
+}
+
 /** End a run (its course is gone or was never made), fencing whoever held it. */
 async function endRunIn(
   tx: Queryable,
@@ -1123,6 +1159,7 @@ async function endRunIn(
   ]);
   // What the run kept alive and no course names is released now.
   await setRunPendingAssetDeadlineIn(tx, 'r.id = $1', [runId], 'now()');
+  await releaseRunMaterialsIn(tx, runId);
   await notifyOwner(tx, ownerId);
   return seq;
 }

@@ -168,6 +168,9 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     }
   }
 
+  const releaseMaterials = optionalBoolean(body.releaseMaterials, 'releaseMaterials');
+  if (!releaseMaterials.ok) return releaseMaterials;
+
   const outlineReview = body.outlineReview ?? 'wait';
   if (outlineReview !== 'wait' && outlineReview !== 'auto') {
     return { ok: false, message: 'outlineReview must be "wait" or "auto"' };
@@ -209,6 +212,7 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
       ...(learnerProfile ? { learnerProfile } : {}),
       outlineReview,
       ...(voice ? { voice } : {}),
+      ...(releaseMaterials.value && materialIds.length > 0 ? { releaseMaterials: true } : {}),
     },
   };
 }

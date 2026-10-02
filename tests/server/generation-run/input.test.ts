@@ -60,6 +60,19 @@ describe('run input', () => {
     });
   });
 
+  it('keeps releaseMaterials only for a run with materials', () => {
+    expect(
+      parseRunInput({
+        requirement: 'x',
+        materialIds: ['mat_00000000000000000000000000'],
+        releaseMaterials: true,
+      }),
+    ).toMatchObject({ ok: true, value: { releaseMaterials: true } });
+    const none = parseRunInput({ requirement: 'x', releaseMaterials: true });
+    expect(none.ok && 'releaseMaterials' in none.value).toBe(false);
+    expect(parseRunInput({ requirement: 'x', releaseMaterials: 'yes' }).ok).toBe(false);
+  });
+
   it('reads an empty preset selection as the default presets (resolved by the run)', () => {
     expect(
       parseRunInput({ requirement: 'x', agents: { mode: 'preset', agentIds: [] } }),

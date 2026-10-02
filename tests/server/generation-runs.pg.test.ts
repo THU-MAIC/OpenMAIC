@@ -615,6 +615,62 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     });
   });
 
+  it('releases the materials uploaded for a run when it completes or ends, not while it waits', async () => {
+    const { ensureOwnerMaterialSchema, registerOwnerMaterial, finalizeOwnerMaterial } =
+      await import('@/lib/persistence/owner-materials');
+    await ensureOwnerMaterialSchema(pool);
+    const material = async (owner: string) => {
+      const id = `mat_${crypto.randomUUID().replace(/-/g, '').slice(0, 26)}`;
+      await registerOwnerMaterial(
+        pool,
+        { id, ownerId: owner, kind: 'source', mime: 'application/pdf', bytes: 10, ossKey: '' },
+        { maxCount: 100, maxTotalBytes: 1_000_000 },
+      );
+      await finalizeOwnerMaterial(pool, id, 10, 'sha');
+      return id;
+    };
+    const deletedAt = async (id: string) =>
+      (
+        await pool.query<{ deleted_at: string | null }>(
+          'SELECT deleted_at FROM owner_material WHERE id = $1',
+          [id],
+        )
+      ).rows[0]?.deleted_at ?? null;
+    const { services } = fakeServices({ research: async () => null });
+
+    // Completed: its own uploads go; another owner's material it named stays.
+    const mine = [await material(OWNER), await material(OWNER)];
+    const theirs = await material(OTHER);
+    const unrelated = await material(OWNER);
+    const completed = await start(
+      runInput({
+        outlineReview: 'auto',
+        materialIds: [...mine, theirs],
+        releaseMaterials: true,
+      }),
+    );
+    expect(await drive(completed.id, services)).toBe('completed');
+    for (const id of mine) expect(await deletedAt(id)).not.toBeNull();
+    expect(await deletedAt(theirs)).toBeNull();
+    expect(await deletedAt(unrelated)).toBeNull();
+
+    // Waiting for its outline (Retry and confirmation need them): kept; discarded: released.
+    const waitingMaterial = await material(OWNER);
+    const waiting = await start(
+      runInput({ materialIds: [waitingMaterial], releaseMaterials: true }),
+    );
+    expect(await drive(waiting.id, services)).toBe('waiting');
+    expect(await deletedAt(waitingMaterial)).toBeNull();
+    await discardGenerationRun(waiting.id, OWNER);
+    expect(await deletedAt(waitingMaterial)).not.toBeNull();
+
+    // A caller that reuses its material ids does not ask for it: kept.
+    const reused = await material(OWNER);
+    const headless = await start(runInput({ outlineReview: 'auto', materialIds: [reused] }));
+    expect(await drive(headless.id, services)).toBe('completed');
+    expect(await deletedAt(reused)).toBeNull();
+  });
+
   it('commands are idempotent by commandId and refused in the wrong state', async () => {
     const { services } = fakeServices();
     const run = await start();
