@@ -154,6 +154,33 @@ describe('provider-config', () => {
     });
   });
 
+  describe('startup log', () => {
+    async function loadedLine(): Promise<string | undefined> {
+      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        const { getServerProviderConfig } = await import('@/lib/server/provider-config');
+        getServerProviderConfig();
+        return consoleLog.mock.calls
+          .map(([line]) => String(line))
+          .find((line) => line.includes('[ServerProviderConfig] Loaded'));
+      } finally {
+        consoleLog.mockRestore();
+      }
+    }
+
+    it('names environment variables alone when there is no server-providers.yml', async () => {
+      vi.stubEnv('OPENAI_API_KEY', 'sk-server');
+      expect(await loadedLine()).toContain('Loaded (environment variables): 1 LLM');
+    });
+
+    it('names the file too when server-providers.yml has content', async () => {
+      yamlOverride = 'providers:\n  openai:\n    apiKey: sk-yaml\n';
+      expect(await loadedLine()).toContain(
+        'Loaded (server-providers.yml and environment variables): 1 LLM',
+      );
+    });
+  });
+
   describe('getParallelSceneConcurrency', () => {
     beforeEach(() => {
       delete process.env.PARALLEL_SCENE_CONCURRENCY;
