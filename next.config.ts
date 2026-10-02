@@ -76,6 +76,16 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Provider logos are drawn wherever services are listed, and each tab
+        // switch mounts a fresh set of them. With Next's default `max-age=0`
+        // every one is revalidated first and stays blank until the server
+        // answers. They are not content-hashed, so cache for a day, not forever.
+        source: '/logos/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' },
+        ],
+      },
     ];
   },
 };
