@@ -53,6 +53,17 @@ export function setDeploymentConfigForTests(config?: DeploymentLayer): void {
   else delete globalState[STATE_KEY];
 }
 
+/**
+ * Whether a request may still name its own provider the deprecated way
+ * (`x-model`, `x-api-key`, `x-base-url`, the media routes' provider headers and
+ * body fields). Not under `policy.allowWorkspaceProviders: false`: users then
+ * choose only among the providers openmaic.yml declares, so a request's own
+ * model, key or endpoint is ignored and only the configuration decides.
+ */
+export function requestProvidersAllowed(): boolean {
+  return deploymentConfig().layer?.config.policy?.allowWorkspaceProviders !== false;
+}
+
 type WorkspaceLayerLoader = (ownerId: string) => Promise<ModelConfigLayer | null>;
 let loadWorkspace: WorkspaceLayerLoader | undefined;
 

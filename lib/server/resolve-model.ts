@@ -75,20 +75,30 @@ export interface ModelRequest {
 
 let deprecationLogged = false;
 
+/** Why a request's own model is refused under `policy.allowWorkspaceProviders: false`. */
+export const REQUEST_PROVIDERS_REFUSED =
+  'This server uses only the providers its configuration declares; a request cannot name its own model, key or endpoint.';
+
 /**
  * Resolve a language model: through the stage's slot when there is a stage,
  * else (verify-model) the model the request names. Fails loudly when nothing
  * resolves; there is no vendor default.
  */
 export async function resolveModel(params: ModelRequest): Promise<ResolvedModel> {
+  const { requestProvidersAllowed } = await import('@/lib/server/model-config/runtime');
+  // Under `policy.allowWorkspaceProviders: false` users choose only among the
+  // providers openmaic.yml declares: the model, key and endpoint a request
+  // names are ignored, and only the configuration decides.
+  const allowed = requestProvidersAllowed();
   if (params.stage) {
     const { resolveStageModel } = await import('@/lib/server/model-config/llm');
     return resolveStageModel({
       stage: params.stage,
       workspaceId: params.workspaceId ?? null,
-      legacyRequest: () => resolveRequestedModel(params),
+      ...(allowed ? { legacyRequest: () => resolveRequestedModel(params) } : {}),
     });
   }
+  if (!allowed) throw new Error(REQUEST_PROVIDERS_REFUSED);
   const requested = await resolveRequestedModel(params);
   if (!requested) throw new Error('No model could be resolved: the request names none.');
   return requested;
@@ -98,7 +108,8 @@ export async function resolveModel(params: ModelRequest): Promise<ResolvedModel>
  * The model a request names with its own fields (x-model, x-api-key,
  * x-base-url, x-provider-type, x-model-routes, or the equivalent body
  * fields), or undefined when it names none. Deprecated: the configuration
- * decides, and this answers only for a slot it leaves unassigned.
+ * decides, and this answers only for a slot it leaves unassigned, and never
+ * under `policy.allowWorkspaceProviders: false` (see resolveModel).
  */
 export async function resolveRequestedModel(
   params: ModelRequest,

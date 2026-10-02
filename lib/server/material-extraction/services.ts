@@ -17,6 +17,7 @@ import {
   WorkspaceEndpointError,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
+import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
 
 const log = createLogger('ExtractionServices');
 
@@ -109,14 +110,15 @@ interface RequestedExtraction {
 /**
  * The deprecated request fields that still apply: all of them while the
  * document slot is unassigned (or a legacy default); once it is configured or
- * turned off, only the choice of a self-contained extractor or of the slot's
- * own service, and never request credentials or endpoints.
+ * turned off, or always under `policy.allowWorkspaceProviders: false`, only
+ * the choice of a self-contained extractor or of the slot's own service, and
+ * never request credentials or endpoints.
  */
 export function slotGovernedRequest<T extends RequestedExtraction>(
   services: ExtractionServices,
   request: T,
 ): RequestedExtraction {
-  if (!documentSlotGoverns(services)) return request;
+  if (!documentSlotGoverns(services) && requestProvidersAllowed()) return request;
   const providerId = request.providerId;
   const keep =
     providerId &&

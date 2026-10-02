@@ -183,3 +183,78 @@ describe('slotTTSModel', () => {
     expect(slotTTSModel('qwen-tts', 'qwen3-tts-flash', 'Cherry')).toBe('qwen3-tts-flash');
   });
 });
+
+describe('policy.allowWorkspaceProviders: false and providers a request names', () => {
+  const policy = (allowWorkspaceProviders?: boolean, config: Config = {}) =>
+    runtime.setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          ...config,
+          ...(allowWorkspaceProviders === undefined ? {} : { policy: { allowWorkspaceProviders } }),
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+  const requested = {
+    providerId: 'seedream',
+    apiKey: 'caller-key',
+    baseUrl: 'https://images.example',
+    managed: false,
+    userEndpoint: true,
+    origin: 'request' as const,
+  };
+
+  it('ignores the provider a request names, so an unassigned slot stays unassigned', async () => {
+    policy(false);
+    const legacyRequest = vi.fn(async () => requested);
+    const error = await resolveMediaSlot('image', { workspaceId: null, legacyRequest }).catch(
+      (e: unknown) => e,
+    );
+    expect(legacyRequest).not.toHaveBeenCalled();
+    expect(mediaResolutionResponse(error, 'Image generation')?.status).toBe(400);
+  });
+
+  it("uses the deployment's assignment, never the request's provider", async () => {
+    policy(false, {
+      providers: { sd: { preset: 'seedream', apiKey: 'operator-key' } },
+      slots: { image: 'sd' },
+    });
+    const legacyRequest = vi.fn(async () => requested);
+    expect(await resolveMediaSlot('image', { workspaceId: null, legacyRequest })).toMatchObject({
+      apiKey: 'operator-key',
+      managed: true,
+    });
+    expect(legacyRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([true, undefined])(
+    'still honours the provider a request names when the policy is %s',
+    async (allow) => {
+      policy(allow);
+      expect(
+        await resolveMediaSlot('image', {
+          workspaceId: null,
+          legacyRequest: async () => requested,
+        }),
+      ).toBe(requested);
+    },
+  );
+
+  it('keeps only a self-contained extractor from the request fields', async () => {
+    policy(false);
+    const services = await resolveExtractionServices();
+    expect(services.documentStatus).toBe('unassigned');
+    expect(
+      slotGovernedRequest(services, {
+        providerId: 'mineru-cloud',
+        apiKey: 'caller-key',
+        baseUrl: 'https://mineru.example',
+      }),
+    ).toEqual({});
+    expect(slotGovernedRequest(services, { providerId: 'unpdf', apiKey: 'k' })).toEqual({
+      providerId: 'unpdf',
+    });
+  });
+});

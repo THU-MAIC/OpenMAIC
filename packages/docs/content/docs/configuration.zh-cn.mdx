@@ -202,7 +202,7 @@ policy:
   allowWorkspaceProviders: false
 ```
 
-`allowWorkspaceProviders`（默认 `true`）决定工作区能否添加自己的服务商。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为文件没有写死的槽位选择模型。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
+`allowWorkspaceProviders`（默认 `true`）决定工作区能否添加自己的服务商。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为文件没有写死的槽位选择模型；请求自带的模型、密钥或端点（已弃用的 `x-model`、`x-api-key`、`x-base-url` 请求头以及媒体接口的服务商字段）也会被忽略，服务商测试按钮的请求头形式会被拒绝。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
 
 ### 密钥与 OPENMAIC_SECRET_KEY
 

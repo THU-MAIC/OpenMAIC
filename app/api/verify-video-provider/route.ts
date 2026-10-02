@@ -34,6 +34,8 @@ import {
   savedProviderRef,
   savedProviderResponse,
 } from '@/lib/server/model-config/saved-provider';
+import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('VerifyVideoProvider');
 
@@ -65,6 +67,13 @@ export async function POST(request: NextRequest) {
       );
       if (!result.success) return apiError('UPSTREAM_ERROR', 500, result.message);
       return apiSuccess({ message: result.message });
+    }
+
+    // The old header form tests a provider the request names: not under
+    // `policy.allowWorkspaceProviders: false`, which leaves only the
+    // configuration's providers (tested by id above).
+    if (!requestProvidersAllowed()) {
+      return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);
     }
 
     const providerId = (request.headers.get('x-video-provider')?.trim() ||

@@ -202,7 +202,7 @@ policy:
   allowWorkspaceProviders: false
 ```
 
-`allowWorkspaceProviders`（預設 `true`）決定工作區能否新增自己的供應商。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為檔案沒有寫死的插槽選擇模型。由部署方負擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
+`allowWorkspaceProviders`（預設 `true`）決定工作區能否新增自己的供應商。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為檔案沒有寫死的插槽選擇模型；請求自帶的模型、金鑰或端點（已棄用的 `x-model`、`x-api-key`、`x-base-url` 請求標頭以及媒體介面的供應商欄位）也會被忽略，供應商測試按鈕的請求標頭形式會被拒絕。由部署方負擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
 
 ### 金鑰與 OPENMAIC_SECRET_KEY
 
