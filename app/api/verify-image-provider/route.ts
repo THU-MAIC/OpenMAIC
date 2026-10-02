@@ -32,11 +32,6 @@ import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
 
 const log = createLogger('VerifyImageProvider');
 
-// Connectivity probes are lightweight and each underlying request is bounded by
-// its own AbortSignal, but the route had no ceiling at all — cap it so a stalled
-// upstream can't tie up the function indefinitely.
-export const maxDuration = 30;
-
 export async function POST(request: NextRequest) {
   try {
     const providerId = (request.headers.get('x-image-provider')?.trim() ||

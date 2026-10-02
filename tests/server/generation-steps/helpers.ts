@@ -33,14 +33,3 @@ export function jsonRequest(
     body: JSON.stringify(body),
   }) as unknown as NextRequest;
 }
-
-/** Drop the values a generation mints afresh on every run (ids, timestamps). */
-export function withoutMintedValues(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(withoutMintedValues);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => !['id', 'createdAt', 'updatedAt'].includes(key))
-      .map(([key, entry]) => [key, withoutMintedValues(entry)]),
-  );
-}

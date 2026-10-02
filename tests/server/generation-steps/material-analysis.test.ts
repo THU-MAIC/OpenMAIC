@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NextRequest } from 'next/server';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import {
@@ -96,31 +95,5 @@ describe('material analysis step', () => {
     expect(plain.message).toContain(mime);
     expect(redacted.reason).toBe('unsupported-type');
     expect(redacted.message).not.toContain(mime);
-  });
-
-  it('answers the route exactly as the step does', async () => {
-    const text = 'Fractions are parts of a whole.';
-    const formData = new FormData();
-    formData.append('file', new File([text], 'notes.txt', { type: 'text/plain' }));
-    const { POST } = await import('@/app/api/extract-document/route');
-    const response = await POST(
-      new Request('http://localhost/api/extract-document', {
-        method: 'POST',
-        body: formData,
-      }) as unknown as NextRequest,
-    );
-    expect(response.status).toBe(200);
-
-    const { resolveExtractionServices } = await import('@/lib/server/material-extraction/services');
-    const stepped = await analyzeMaterial(
-      {
-        source: source(text, 'text/plain'),
-        services: await resolveExtractionServices(undefined, { forward: false }),
-        request: {},
-        redactCallerInput: false,
-      },
-      { log: testLogger() },
-    );
-    expect(await response.json()).toEqual({ success: true, data: stepped });
   });
 });

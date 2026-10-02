@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createLogger } from '@/lib/logger';
+import type { UserRequirements } from '@/lib/types/generation';
+
 const streamLLMMock = vi.hoisted(() => vi.fn());
-const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const resolveModelMock = vi.hoisted(() => vi.fn());
 const VOCATIONAL_FLAG = 'OPENMAIC_ENABLE_VOCATIONAL';
 let originalVocationalFlag: string | undefined;
 
@@ -9,48 +12,39 @@ vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: resolveModelFromRequestMock,
-}));
-
-async function readStreamBody(response: Response) {
-  const reader = response.body?.getReader();
-  expect(reader).toBeDefined();
-  const decoder = new TextDecoder();
-  let text = '';
-
-  while (reader) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    text += decoder.decode(value, { stream: true });
+/**
+ * Generate the outlines as a run does, with the stubbed model, and return what
+ * the step reported followed by its result (`done`) or its failure (`error`).
+ */
+async function outlineEvents(requirements: Record<string, unknown>) {
+  const { generateOutlines } = await import('@/lib/server/generation/steps/outline');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- assertions read event fields freely
+  const events: any[] = [];
+  try {
+    const result = await generateOutlines(
+      {
+        requirements: requirements as unknown as UserRequirements,
+        pdfText: '',
+        pdfImages: [],
+        imageMapping: {},
+        researchContext: '',
+        model: await resolveModelMock(),
+      },
+      {
+        log: createLogger('Outline'),
+        workspaceId: null,
+        resolveVisionImages: async (images) => [...images],
+        emit: (event) => events.push(event),
+      },
+    );
+    events.push({ type: 'done', ...result });
+  } catch (error) {
+    events.push({ type: 'error', error: error instanceof Error ? error.message : String(error) });
   }
-
-  return text;
+  return events;
 }
 
-function parseSseEvents(text: string) {
-  return text
-    .split('\n')
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => JSON.parse(line.slice(6)));
-}
-
-function mockRequest(requirements: Record<string, unknown>) {
-  return {
-    json: async () => ({
-      requirements,
-      pdfText: '',
-      pdfImages: [],
-      imageMapping: {},
-      researchContext: '',
-    }),
-    headers: {
-      get: () => null,
-    },
-  };
-}
-
-describe('task-engine outline route', () => {
+describe('task-engine outline step', () => {
   beforeEach(() => {
     originalVocationalFlag = process.env[VOCATIONAL_FLAG];
     delete process.env[VOCATIONAL_FLAG];
@@ -67,10 +61,10 @@ describe('task-engine outline route', () => {
   test('uses the task-engine prompt and preserves allowed mixed task-engine scene types', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
     process.env[VOCATIONAL_FLAG] = 'true';
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -187,20 +181,16 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: 'NEV-A12 新能源车动力电池包更换前安全确认',
-        interactiveMode: true,
-        taskEngineMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: 'NEV-A12 新能源车动力电池包更换前安全确认',
+      interactiveMode: true,
+      taskEngineMode: true,
+    });
 
     const promptParams = streamLLMMock.mock.calls[0][0] as { system: string; prompt: string };
     expect(promptParams.system).toContain('Task Engine');
     expect(promptParams.system).toContain('procedural-skill');
 
-    const events = parseSseEvents(await readStreamBody(response));
     const done = events.find((event) => event.type === 'done');
     expect(done).toBeDefined();
     expect(done.taskEngineMode).toBe(true);
@@ -272,9 +262,9 @@ describe('task-engine outline route', () => {
   test('silently falls back to the existing interactive prompt when the server flag is off', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -308,20 +298,16 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: 'Teach motion with interaction',
-        interactiveMode: true,
-        taskEngineMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: 'Teach motion with interaction',
+      interactiveMode: true,
+      taskEngineMode: true,
+    });
 
     const promptParams = streamLLMMock.mock.calls[0][0] as { system: string; prompt: string };
     expect(promptParams.system).toContain('Interactive Mode Outline Generator');
     expect(promptParams.system).not.toContain('Task Engine Outline Generator');
 
-    const events = parseSseEvents(await readStreamBody(response));
     const done = events.find((event) => event.type === 'done');
     expect(done).toBeDefined();
     expect(done.taskEngineMode).toBe(false);
@@ -330,9 +316,9 @@ describe('task-engine outline route', () => {
   test('sanitizes procedural-skill outlines when taskEngineMode is disabled', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -372,15 +358,11 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: 'Teach a process interactively',
-        interactiveMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: 'Teach a process interactively',
+      interactiveMode: true,
+    });
 
-    const events = parseSseEvents(await readStreamBody(response));
     const done = events.find((event) => event.type === 'done');
     expect(done).toBeDefined();
     expect(done.outlines[0]).toMatchObject({
@@ -400,9 +382,9 @@ describe('task-engine outline route', () => {
   test('preserves model-authored scenario PBL subtype through streamed outlines', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -442,14 +424,10 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
+    });
 
-    const events = parseSseEvents(await readStreamBody(response));
     const outline = events.find((event) => event.type === 'outline');
     const done = events.find((event) => event.type === 'done');
 
@@ -463,9 +441,9 @@ describe('task-engine outline route', () => {
   test('ensures streamed outline ids are unique', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -505,14 +483,10 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: 'Teach a topic',
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: 'Teach a topic',
+    });
 
-    const events = parseSseEvents(await readStreamBody(response));
     const done = events.find((event) => event.type === 'done');
     expect(done).toBeDefined();
     const ids = done.outlines.map((outline: { id: string }) => outline.id);
@@ -524,10 +498,10 @@ describe('task-engine outline route', () => {
   test('falls back to a slide for invalid task-engine outlines without regex promotion', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
     process.env[VOCATIONAL_FLAG] = 'true';
 
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'glm.chat', modelId: 'glm-5.1' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'glm:glm-5.1',
@@ -559,16 +533,12 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        requirement: 'Explain the Pythagorean theorem',
-        interactiveMode: true,
-        taskEngineMode: true,
-      }) as unknown as Parameters<typeof POST>[0],
-    );
+    const events = await outlineEvents({
+      requirement: 'Explain the Pythagorean theorem',
+      interactiveMode: true,
+      taskEngineMode: true,
+    });
 
-    const events = parseSseEvents(await readStreamBody(response));
     const done = events.find((event) => event.type === 'done');
     expect(done).toBeDefined();
     expect(done.outlines[0]).toMatchObject({

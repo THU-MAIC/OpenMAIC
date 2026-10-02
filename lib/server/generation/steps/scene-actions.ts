@@ -1,10 +1,9 @@
 /**
  * Scene actions: generate the playback actions (speech, spotlights, ...) for
- * one scene from its outline and content, with the course context the
- * browser holds (the scene's place among all outlines and the speeches of the
- * scenes before it), and assemble the complete scene. Moved from
- * POST /api/generate/scene-actions, which keeps validating the request and
- * resolving the model.
+ * one scene from its outline and content, with the course context (the
+ * scene's place among all outlines and the speeches of the scenes before it),
+ * and assemble the complete scene. The logic of 1.1.x's
+ * POST /api/generate/scene-actions.
  */
 import { callLLM } from '@/lib/ai/llm';
 import {

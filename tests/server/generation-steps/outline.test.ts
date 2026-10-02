@@ -8,18 +8,14 @@ import {
   type OutlineInput,
 } from '@/lib/server/generation/steps/outline';
 
-import { fakeModel, jsonRequest, testLogger } from './helpers';
+import { fakeModel, testLogger } from './helpers';
 
 const mocks = vi.hoisted(() => ({
   streamLLM: vi.fn(),
-  resolveModelFromRequest: vi.fn(),
   capabilities: vi.fn(),
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: mocks.resolveModelFromRequest,
-}));
 vi.mock('@/lib/server/generation-capabilities', () => ({
   resolveServerGenerationCapabilities: mocks.capabilities,
 }));
@@ -71,20 +67,10 @@ function stepContext(events: OutlineEvent[], signal?: AbortSignal) {
   };
 }
 
-async function sseEvents(response: Response) {
-  const text = await response.text();
-  return text
-    .split('\n')
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => JSON.parse(line.slice(6)));
-}
-
 describe('outline step', () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.streamLLM.mockReset();
-    mocks.resolveModelFromRequest.mockReset();
-    mocks.resolveModelFromRequest.mockResolvedValue(model);
     mocks.capabilities.mockReset();
     mocks.capabilities.mockResolvedValue({
       webSearch: false,
@@ -167,30 +153,5 @@ describe('outline step', () => {
     );
     const optedOut = (mocks.streamLLM.mock.calls[0]![0] as { system: string }).system;
     expect(optedOut).not.toEqual(offered);
-  });
-
-  it('streams the route exactly the events and result the step produces', async () => {
-    streams('', OUTLINE_TEXT);
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      jsonRequest('http://localhost/api/generate/scene-outlines-stream', body),
-    );
-    expect(response.headers.get('Content-Type')).toBe('text/event-stream');
-    const routed = await sseEvents(response);
-
-    streams('', OUTLINE_TEXT);
-    const events: OutlineEvent[] = [];
-    const result = await generateOutlines({ ...body, model }, stepContext(events));
-    expect(routed).toEqual([...events, JSON.parse(JSON.stringify({ type: 'done', ...result }))]);
-  });
-
-  it('streams the step failure as the route error event', async () => {
-    streams('');
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      jsonRequest('http://localhost/api/generate/scene-outlines-stream', body),
-    );
-    const routed = await sseEvents(response);
-    expect(routed.at(-1)).toEqual({ type: 'error', error: 'LLM returned empty response' });
   });
 });

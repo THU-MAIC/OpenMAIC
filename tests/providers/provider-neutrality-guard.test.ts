@@ -72,10 +72,8 @@ const PROVIDER_NEUTRAL_FILES = [
   'app/api/generate/video/route.ts',
   'app/api/verify-image-provider/route.ts',
   'app/api/verify-video-provider/route.ts',
-  'app/api/web-search/route.ts',
-  'app/api/extract-document/route.ts',
   'app/api/parse-pdf/route.ts',
-  // The generation steps those routes call (lib/server/generation/steps)
+  // The generation steps (lib/server/generation/steps)
   'lib/server/generation/steps/narration.ts',
   'lib/server/generation/steps/image.ts',
   'lib/server/generation/steps/video.ts',
@@ -235,21 +233,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['voxcpm', 11],
       ['browser-native-tts', 2],
       ['browser-native', 2],
-    ],
-  ),
-  ...groupedDebt(
-    'app/api/web-search/route.ts',
-    'Temporary: web-search credentials and request options have not moved behind adapters.',
-    [
-      ['baidu', 7],
-      ['claude', 5],
-      ['tavily', 2],
-      ['searxng', 4],
-      ['bocha', 2],
-      ['brave', 2],
-      ['minimax', 2],
-      ['doubao', 2],
-      ['exa', 2],
     ],
   ),
   ...groupedDebt(

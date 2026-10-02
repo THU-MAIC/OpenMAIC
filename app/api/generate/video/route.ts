@@ -2,7 +2,7 @@
  * Video Generation API
  *
  * Generates a video from a text prompt using the specified provider.
- * Uses async task pattern (submit → poll) so maxDuration is set to 5 minutes.
+ * Uses the async task pattern (submit → poll).
  *
  * POST /api/generate/video
  *
@@ -37,8 +37,6 @@ import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { generateVideoStep, type VideoRefusal } from '@/lib/server/generation/steps/video';
 
 const log = createLogger('VideoGeneration API');
-
-export const maxDuration = 300;
 
 /** The route never resumes a provider task, so the connection never changes under one. */
 const REFUSAL_RESPONSES: Record<

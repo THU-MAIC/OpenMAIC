@@ -1793,13 +1793,13 @@ OpenMAIC/
 │   ├── api/                    #   Generation, media, persistence, and agent APIs
 │   │   ├── agent/              #     Durable session, event, material, and skill control plane
 │   │   ├── stages/             #     Owner-scoped course reads, writes, manifests, and scene fetches
-│   │   ├── generate/           #     Scene generation pipeline (outlines, content, images, TTS …)
+│   │   ├── generate/           #     Images, video, TTS and voice registration
 │   │   ├── generate-classroom/ #     Async classroom job submission + polling
 │   │   ├── chat/               #     Multi-agent discussion (SSE streaming)
 │   │   ├── pbl/                #     Project-Based Learning endpoints
 │   │   ├── persistence/        #     Embedded persistence service (Runtime/Document Store HTTP contracts)
 │   │   ├── export-video/       #     MP4 video export (backs onto render-service)
-│   │   └── ...                 #     quiz-grade, parse-pdf, web-search, transcription, etc.
+│   │   └── ...                 #     generation-runs, materials, quiz-grade, parse-pdf, transcription, etc.
 │   ├── classroom/[id]/         #   Classroom playback page
 │   └── page.tsx                #   Home page (generation input)
 │

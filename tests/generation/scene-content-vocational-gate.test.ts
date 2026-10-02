@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import type { SceneOutline } from '@/lib/types/generation';
+import { createLogger } from '@/lib/logger';
+import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 
 const callLLMMock = vi.hoisted(() => vi.fn());
-const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const resolveModelMock = vi.hoisted(() => vi.fn());
 const VOCATIONAL_FLAG = 'OPENMAIC_ENABLE_VOCATIONAL';
 let originalVocationalFlag: string | undefined;
 
@@ -11,17 +12,13 @@ vi.mock('@/lib/ai/llm', () => ({
   callLLM: callLLMMock,
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: resolveModelFromRequestMock,
-}));
-
-describe('scene-content vocational gate', () => {
+describe('scene content step vocational gate', () => {
   beforeEach(() => {
     originalVocationalFlag = process.env[VOCATIONAL_FLAG];
     delete process.env[VOCATIONAL_FLAG];
     callLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockReset();
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'test.chat', modelId: 'test-model' },
       modelInfo: { outputWindow: 4096, capabilities: {} },
       modelString: 'test:test-model',
@@ -44,13 +41,8 @@ describe('scene-content vocational gate', () => {
       text: htmlForWidget('diagram'),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest(createProceduralSkillOutline(), { taskEngineMode: true }),
-    );
-    const body = await response.json();
+    const body = await generate(createProceduralSkillOutline(), { taskEngineMode: true });
 
-    expect(body.success).toBe(true);
     expect(body.effectiveOutline.widgetType).toBe('diagram');
     expect(body.effectiveOutline.widgetOutline.task).toBeUndefined();
     expect(body.content.widgetType).toBe('diagram');
@@ -65,11 +57,8 @@ describe('scene-content vocational gate', () => {
       text: htmlForWidget('diagram'),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(mockRequest(createProceduralSkillOutline()));
-    const body = await response.json();
+    const body = await generate(createProceduralSkillOutline());
 
-    expect(body.success).toBe(true);
     expect(body.effectiveOutline.widgetType).toBe('diagram');
     expect(body.content.widgetType).toBe('diagram');
   });
@@ -81,13 +70,8 @@ describe('scene-content vocational gate', () => {
       text: htmlForWidget('procedural-skill'),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest(createProceduralSkillOutline(), { taskEngineMode: true }),
-    );
-    const body = await response.json();
+    const body = await generate(createProceduralSkillOutline(), { taskEngineMode: true });
 
-    expect(body.success).toBe(true);
     expect(body.effectiveOutline.widgetType).toBe('procedural-skill');
     expect(body.content.widgetType).toBe('procedural-skill');
     expect(body.content.widgetConfig.type).toBe('procedural-skill');
@@ -95,16 +79,21 @@ describe('scene-content vocational gate', () => {
   });
 });
 
-function mockRequest(outline: SceneOutline, requirements?: { taskEngineMode?: boolean }) {
-  return {
-    json: async () => ({
+/** Generate one scene's content as a run does, with the stubbed model. */
+async function generate(outline: SceneOutline, requirements?: Partial<UserRequirements>) {
+  const { generateSceneContent } = await import('@/lib/server/generation/steps/scene-content');
+  const result = await generateSceneContent(
+    {
       outline,
-      allOutlines: [outline],
-      stageId: 'stage-1',
-      stageInfo: { name: 'Test Stage' },
-      requirements,
-    }),
-  } as unknown as Parameters<typeof import('@/app/api/generate/scene-content/route').POST>[0];
+      requirements: requirements as UserRequirements | undefined,
+      targetLanguage: '',
+      model: await resolveModelMock(),
+    },
+    { log: createLogger('Scene Content'), resolveVisionImages: async (images) => [...images] },
+  );
+  // The assertions read the generated content as the JSON it is.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return result as { content: any; effectiveOutline: any };
 }
 
 function createProceduralSkillOutline(): SceneOutline {

@@ -1,24 +1,23 @@
 /**
- * The time a run gives each provider-calling step: the budget its browser
- * API route had (`maxDuration`), so a hung provider fails the step the way a
- * route timeout failed the browser's request, as a retryable failure.
+ * The time a run gives each provider-calling step: the budget the step's 1.1.x
+ * API route declared, so a hung provider fails the step the way a route
+ * timeout failed the browser's request, as a retryable failure.
  */
 
 /** Per call, in milliseconds. */
 export const STEP_DEADLINES_MS = {
-  /** POST /api/extract-document declares no budget; the platform's default applies. */
+  /** Material analysis (1.1.x declared no budget; the platform's default applied). */
   materialAnalysis: 300_000,
-  /** POST /api/web-search declares no budget; the platform's default applies. */
+  /** Research (1.1.x declared no budget; the platform's default applied). */
   research: 300_000,
-  /** POST /api/generate/scene-outlines-stream (its own stream retries included). */
+  /** The outline, its own stream retries included. */
   outline: 300_000,
-  /** POST /api/generate/agent-profiles */
   agentProfiles: 120_000,
-  /** POST /api/generate/scene-content, per attempt. */
+  /** Per attempt. */
   sceneContent: 300_000,
-  /** POST /api/generate/scene-actions, per attempt. */
+  /** Per attempt. */
   sceneActions: 60_000,
-  /** POST /api/generate/tts, per clip attempt. */
+  /** Per clip attempt (POST /api/generate/tts). */
   narrationClip: 30_000,
 } as const;
 

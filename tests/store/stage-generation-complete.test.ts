@@ -268,44 +268,6 @@ describe('generationComplete', () => {
     });
   });
 
-  describe('markGenerationCompleteIfDone', () => {
-    it('marks complete when every outline has a scene and none failed', () => {
-      useStageStore.setState({
-        stage: makeStage(),
-        scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
-        outlines: [makeOutline(1), makeOutline(2)],
-        failedOutlines: [],
-        generationComplete: false,
-      });
-      useStageStore.getState().markGenerationCompleteIfDone();
-      expect(useStageStore.getState().generationComplete).toBe(true);
-    });
-
-    it('does not mark complete while an outline is still unmaterialized', () => {
-      useStageStore.setState({
-        stage: makeStage(),
-        scenes: [makeSlideScene('a', 1)],
-        outlines: [makeOutline(1), makeOutline(2)],
-        failedOutlines: [],
-        generationComplete: false,
-      });
-      useStageStore.getState().markGenerationCompleteIfDone();
-      expect(useStageStore.getState().generationComplete).toBe(false);
-    });
-
-    it('does not mark complete while an outline is still failed', () => {
-      useStageStore.setState({
-        stage: makeStage(),
-        scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
-        outlines: [makeOutline(1), makeOutline(2)],
-        failedOutlines: [makeOutline(2)],
-        generationComplete: false,
-      });
-      useStageStore.getState().markGenerationCompleteIfDone();
-      expect(useStageStore.getState().generationComplete).toBe(false);
-    });
-  });
-
   // The core regression: a completed deck must not resurrect a deleted slide.
   // On reload the orphaned outline (no matching scene) must NOT become a
   // generating placeholder, and the flag must round-trip.

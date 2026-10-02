@@ -133,9 +133,8 @@ export async function storeGeneratedAsset(
         });
       };
   // `stageId` rides in the entry's metadata rather than in a dedicated column:
-  // the browser chain's `putAsset(bytes, meta, { stageId })` never sends its
-  // stage to the server at all (it retires a device-local "the store had no
-  // room" note), so there is no server-side field to mirror. The durable
+  // the browser's `putAsset(bytes, meta)` never sends a stage to the server, so
+  // there is no server-side field to mirror. The durable
   // stage→asset fact is the reference table the document write maintains; this
   // is provenance on the entry itself, for a server-side writer that has no
   // other place to put it.

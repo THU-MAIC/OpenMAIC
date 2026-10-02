@@ -1,12 +1,11 @@
 /**
- * The run engine: executes a claimed run's steps in the browser's classic
- * order with the context the browser threads through them, committing each
+ * The run engine: executes a claimed run's steps in the classic order with the
+ * context 1.1.x's browser generation threaded through them, committing each
  * step's checkpoint, the run's next state and its events in one transaction
  * fenced by the lease generation.
  *
- * What it replicates, step by step (`app/generation-preview/page.tsx` for the
- * outline and the first scene, `lib/hooks/use-scene-generator.ts` for the
- * rest, which the classroom resumes):
+ * What it replicates, step by step (1.1.x's generation preview for the outline
+ * and the first scene, and its classroom for the rest):
  *
  * - research runs when the webSearch slot resolves, and the outline's
  *   requirements carry that decision as `webSearch`;

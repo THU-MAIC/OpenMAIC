@@ -16,8 +16,6 @@ const VOICES_POLICY: ProviderFetchPolicy = { allowLocalNetworks: undefined, reje
 const AUTH_FAILED_MESSAGE = 'Authentication failed, please check the API Key';
 const FETCH_FAILED_MESSAGE = 'Failed to fetch voices from Azure';
 
-export const maxDuration = 30;
-
 /**
  * Azure TTS Voice List API
  * Fetches available voices from Azure Speech Services

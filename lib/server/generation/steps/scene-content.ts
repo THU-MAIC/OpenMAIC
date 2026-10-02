@@ -2,8 +2,8 @@
  * Scene content: generate one scene's content (a slide, quiz, interactive
  * widget or PBL project) from its outline, with the outline's assigned
  * material images attached when the model sees images. Actions are the scene
- * actions step. Moved from POST /api/generate/scene-content, which keeps
- * validating the request and resolving the model for the scene type's stage.
+ * actions step. The logic of 1.1.x's POST /api/generate/scene-content; the
+ * caller resolves the model for the scene type's stage.
  */
 import { callLLM } from '@/lib/ai/llm';
 import {
@@ -22,10 +22,14 @@ import type {
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
-import type { VisionPromptImage } from '@/lib/persistence/resolve-vision-images';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
 
-import { StepRefusal, type OwnerStepContext, type StepLanguageModel } from './context';
+import {
+  StepRefusal,
+  type OwnerStepContext,
+  type StepLanguageModel,
+  type VisionPromptImage,
+} from './context';
 
 /**
  * Aggregate budget for the WHOLE resolve-with-refill phase, reused from the

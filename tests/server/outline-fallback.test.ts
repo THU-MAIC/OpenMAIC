@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
 import { APICallError } from 'ai';
+
+import { createLogger } from '@/lib/logger';
 
 const streamLLMMock = vi.fn();
 
@@ -16,20 +17,30 @@ const fallbackMocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/server/llm-fallback', () => fallbackMocks);
 
-const resolveModelMocks = vi.hoisted(() => ({
-  resolveModelFromRequest: vi.fn(),
-}));
+import { generateOutlines } from '@/lib/server/generation/steps/outline';
 
-vi.mock('@/lib/server/resolve-model', () => resolveModelMocks);
-
-import { POST } from '@/app/api/generate/scene-outlines-stream/route';
-
-function makeRequest(): NextRequest {
-  return new NextRequest('http://localhost/api/generate/scene-outlines-stream', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ requirements: { requirement: 'Teach photosynthesis' } }),
-  });
+/**
+ * Generate the outlines with `model` as a run does, and return what the step
+ * reported followed by its failure (`error`), if it failed.
+ */
+async function outlineEvents(
+  model: ReturnType<typeof resolvedModel>,
+): Promise<Array<Record<string, unknown>>> {
+  const events: Array<Record<string, unknown>> = [];
+  try {
+    await generateOutlines(
+      { requirements: { requirement: 'Teach photosynthesis' }, model: model as never },
+      {
+        log: createLogger('Outline'),
+        workspaceId: null,
+        resolveVisionImages: async (images) => [...images],
+        emit: (event) => events.push(event),
+      },
+    );
+  } catch (error) {
+    events.push({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+  }
+  return events;
 }
 
 /** Wraps fullStream parts in the shape streamLLM(...).fullStream provides. */
@@ -54,13 +65,6 @@ function streamError(statusCode: number, message: string): APICallError {
   });
 }
 
-function parseSse(text: string): Array<Record<string, unknown>> {
-  return text
-    .split('\n\n')
-    .filter((line) => line.startsWith('data: '))
-    .map((line) => JSON.parse(line.slice('data: '.length)) as Record<string, unknown>);
-}
-
 const OUTLINE_TEXT = '{"languageDirective":"English","outlines":[{"title":"Intro"}]}';
 
 function resolvedModel(serverManaged: boolean) {
@@ -73,14 +77,12 @@ function resolvedModel(serverManaged: boolean) {
   };
 }
 
-describe('scene-outlines-stream route fallback wiring', () => {
+describe('outline step fallback wiring', () => {
   beforeEach(() => {
     streamLLMMock.mockReset();
     fallbackMocks.resolveFallbackModel.mockReset();
     fallbackMocks.shouldFallbackFor.mockReset();
     fallbackMocks.logFallbackFired.mockReset();
-    resolveModelMocks.resolveModelFromRequest.mockReset();
-    resolveModelMocks.resolveModelFromRequest.mockResolvedValue(resolvedModel(true));
     fallbackMocks.resolveFallbackModel.mockResolvedValue({
       model: 'fallback-model',
       modelString: 'qwen:deepseek-v4-pro',
@@ -100,8 +102,7 @@ describe('scene-outlines-stream route fallback wiring', () => {
     );
     fallbackMocks.shouldFallbackFor.mockReturnValue(false);
 
-    const res = await POST(makeRequest());
-    const events = parseSse(await res.text());
+    const events = await outlineEvents(resolvedModel(true));
 
     expect(events.some((e) => e.type === 'error' && e.error === 'unauthorized')).toBe(true);
     expect(streamLLMMock).toHaveBeenCalledTimes(3);
@@ -130,8 +131,7 @@ describe('scene-outlines-stream route fallback wiring', () => {
       );
     fallbackMocks.shouldFallbackFor.mockReturnValue(true);
 
-    const res = await POST(makeRequest());
-    const events = parseSse(await res.text());
+    const events = await outlineEvents(resolvedModel(true));
 
     expect(streamLLMMock).toHaveBeenCalledTimes(4);
     // The last round carries the fallback model.
@@ -144,16 +144,14 @@ describe('scene-outlines-stream route fallback wiring', () => {
   });
 
   it('does not fall back when the primary is not server-managed', async () => {
-    // A client-supplied x-model must never reach the operator's fallback key,
+    // A model the operator does not manage must never reach the fallback key,
     // even when every same-model retry fails retryably.
-    resolveModelMocks.resolveModelFromRequest.mockResolvedValue(resolvedModel(false));
     streamLLMMock.mockImplementation(() =>
       fullStreamOf([{ type: 'finish', finishReason: 'stop' }]),
     );
     fallbackMocks.shouldFallbackFor.mockReturnValue(true);
 
-    const res = await POST(makeRequest());
-    const events = parseSse(await res.text());
+    const events = await outlineEvents(resolvedModel(false));
 
     // Initial attempt + MAX_STREAM_RETRIES same-model retries, no fallback round.
     expect(streamLLMMock).toHaveBeenCalledTimes(3);
@@ -168,8 +166,7 @@ describe('scene-outlines-stream route fallback wiring', () => {
     );
     fallbackMocks.shouldFallbackFor.mockReturnValue(true);
 
-    const res = await POST(makeRequest());
-    const events = parseSse(await res.text());
+    const events = await outlineEvents(resolvedModel(true));
 
     expect(streamLLMMock).toHaveBeenCalledTimes(1);
     expect(fallbackMocks.resolveFallbackModel).not.toHaveBeenCalled();

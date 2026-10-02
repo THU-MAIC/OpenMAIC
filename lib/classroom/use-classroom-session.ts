@@ -25,7 +25,6 @@ type ClassroomSurfaceVariant = 'page' | 'pane';
 interface ClassroomSessionOptions {
   readonly classroomId: string;
   readonly variant: ClassroomSurfaceVariant;
-  readonly stopGeneration: () => void;
 }
 
 interface ClassroomSession {
@@ -40,7 +39,6 @@ interface ClassroomSession {
 export function useClassroomSession({
   classroomId,
   variant,
-  stopGeneration,
 }: ClassroomSessionOptions): ClassroomSession {
   const mayGenerate = useMayGenerateForStage(classroomId);
 
@@ -93,9 +91,7 @@ export function useClassroomSession({
     clearNarrationAllocations(classroomId);
     useWhiteboardHistoryStore.getState().clearHistory();
     useCanvasStore.getState().resetCanvasState();
-
-    return () => stopGeneration();
-  }, [classroomId, stopGeneration]);
+  }, [classroomId]);
 
   return { mayGenerate, refreshOwnership };
 }

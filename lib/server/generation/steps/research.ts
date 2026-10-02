@@ -1,9 +1,8 @@
 /**
  * Research: search the web for a course requirement, the query first
  * rewritten from the requirement and an excerpt of the material when a
- * rewrite model is available. Moved from POST /api/web-search, which keeps
- * resolving the webSearch slot (with the request's deprecated provider
- * fields) and the rewrite model, and mapping their failures to responses.
+ * rewrite model is available. The logic of 1.1.x's POST /api/web-search; the
+ * caller resolves the webSearch slot and the rewrite model.
  */
 import type { AICallFn } from '@openmaic/generation';
 

@@ -288,8 +288,8 @@ export function restorePendingStageChanges(
   markPendingChanges(stageId, ...changes, ...fullAggregateRemark);
 }
 
-/** The empty store shape shared by every reset path (epoch bump included). */
-function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
+/** The empty store shape shared by every reset path. */
+function clearedStageState() {
   return {
     stage: null,
     scenes: [],
@@ -298,9 +298,7 @@ function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
     chatSnapshot: { sessions: [], restoreMarker: null },
     outlines: [],
     generationComplete: false,
-    generationEpoch: state.generationEpoch + 1,
     generationStatus: 'idle' as const,
-    currentGeneratingOrder: -1,
     failedOutlines: [],
     generatingOutlines: [],
   };
@@ -329,7 +327,7 @@ export function clearStoreForDeletedStage(stageId: string): void {
   // read-side isStageDeleted re-checks before its store writes, not by token
   // invalidation.
   resetPendingChanges();
-  useStageStore.setState((state) => clearedStageState(state));
+  useStageStore.setState(clearedStageState());
   log.info('Evicted deleted stage from the store:', stageId);
 }
 
@@ -380,11 +378,11 @@ interface StageState {
   // Transient generation state (not persisted)
   generatingOutlines: SceneOutline[];
 
-  // Persisted outlines for resume-on-refresh
+  // Persisted outlines (pending ones show as placeholders)
   outlines: SceneOutline[];
 
-  // Persisted (with outlines): true once generation finished for this stage.
-  // Gates resume-on-mount so an edited finished deck is not regenerated.
+  // Persisted (with outlines): true once generation finished for this stage,
+  // so an edited finished deck shows no pending outlines.
   generationComplete: boolean;
 
   /**
@@ -414,9 +412,7 @@ interface StageState {
   courseGenerating: boolean;
 
   // Transient generation tracking (not persisted)
-  generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
-  currentGeneratingOrder: number;
   failedOutlines: SceneOutline[];
 
   // Workbench canvas-freshness projections (Mono #1960 Part 2 port).
@@ -441,23 +437,14 @@ interface StageState {
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
   setStageAgents: (configs: GeneratedAgentConfig[]) => void;
-  setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
-  /** Mark generation complete iff every outline has a scene and none failed. */
-  markGenerationCompleteIfDone: () => void;
   /**
    * Apply the stage-meta sidecar's per-viewer facts. `readOnly` follows the
    * reference's classroom rule: a visitor who is not the owner gets a
    * read-only classroom.
    */
   setViewerAccess: (access: { isOwner: boolean }) => void;
-  setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
-  setCurrentGeneratingOrder: (order: number) => void;
-  bumpGenerationEpoch: () => void;
-  addFailedOutline: (outline: SceneOutline) => void;
-  clearFailedOutlines: () => void;
-  retryFailedOutline: (outlineId: string) => void;
 
   // Getters
   getCurrentScene: () => Scene | null;
@@ -571,9 +558,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   courseGenerating: false,
   isOwner: true,
   readOnly: false,
-  generationEpoch: 0,
   generationStatus: 'idle' as const,
-  currentGeneratingOrder: -1,
   failedOutlines: [],
   serverManifestByStage: {},
   stageSyncRequest: 0,
@@ -637,15 +622,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       });
     }
     resetPendingChanges(stage.id);
-    set((s) => ({
+    set({
       stage,
       scenes: [],
       currentSceneId: null,
       chats: [],
       chatSnapshot: { sessions: [], restoreMarker: null },
       generationComplete: false,
-      generationEpoch: s.generationEpoch + 1,
-    }));
+    });
     markPendingChanges(stage.id, { kind: 'structure' }, { kind: 'stage' });
   },
 
@@ -735,7 +719,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   deleteScene: (sceneId) => {
     // A deck that is complete right now (every outline has a scene) stays
     // complete after a deletion. Capture that BEFORE removing the scene so the
-    // completion (end) page and resume-suppression survive even for decks whose
+    // completion (end) page survives even for decks whose
     // generationComplete flag was never recorded — e.g. generated before the
     // flag existed, or edited without a reload so loadFromStorage's self-heal
     // never ran. Without this, the deletion breaks the scenes===outlines count
@@ -857,8 +841,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     }
   },
 
-  setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
-
   setOutlines: (outlines) => {
     set({ outlines });
     markPendingChanges(get().stage?.id, { kind: 'outline' });
@@ -870,34 +852,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     void get().saveToStorage();
   },
 
-  markGenerationCompleteIfDone: () => {
-    const { outlines, scenes, failedOutlines, generationComplete } = get();
-    if (generationComplete) return;
-    if (isDeckComplete({ outlines, scenes, failedOutlines })) get().setGenerationComplete(true);
-  },
-
   setViewerAccess: ({ isOwner }) => {
     set({ isOwner, readOnly: !isOwner });
-  },
-
-  setGenerationStatus: (generationStatus) => set({ generationStatus }),
-
-  setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
-
-  bumpGenerationEpoch: () => set((s) => ({ generationEpoch: s.generationEpoch + 1 })),
-
-  addFailedOutline: (outline) => {
-    const existed = get().failedOutlines.some((o) => o.id === outline.id);
-    if (existed) return;
-    set({ failedOutlines: [...get().failedOutlines, outline] });
-  },
-
-  clearFailedOutlines: () => set({ failedOutlines: [] }),
-
-  retryFailedOutline: (outlineId) => {
-    set({
-      failedOutlines: get().failedOutlines.filter((o) => o.id !== outlineId),
-    });
   },
 
   // Getters
@@ -1088,7 +1044,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
             if (get().stage?.id === stageId) {
               resetPendingChanges();
-              set((s) => clearedStageState(s));
+              set(clearedStageState());
             }
           }
         }
@@ -1128,13 +1084,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // Self-heal decks generated before generationComplete was tracked: if
         // every outline already has a matching scene and none failed,
         // generation must have finished, so treat the deck as complete and
-        // persist the flag. This prevents a pre-existing finished deck from
-        // regenerating a slide the user deletes before the flag was ever
-        // recorded.
+        // persist the flag. This keeps a slide the user deletes from a
+        // pre-existing finished deck from showing as a pending outline.
         //
-        // Matching is by `order`, consistent with the rest of the resume
-        // pipeline. For a never-edited deck order is a faithful key; the only
-        // way it diverges is Pro-mode insert/reorder, which is blocked while
+        // Matching is by `order`, as everywhere outlines meet scenes. For a
+        // never-edited deck order is a faithful key; the only way it diverges
+        // is Pro-mode insert/reorder, which is blocked while
         // outlines are still pending (see stage-mode edit gating), so an
         // interrupted deck cannot be edited into a false "all materialized".
         const inMemoryState = get();
@@ -1161,7 +1116,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // Compute generatingOutlines from persisted outlines minus completed
           // scenes. Once generation is complete the deck is frozen for editing,
           // so an orphaned outline (e.g. from a deleted slide) must NOT surface
-          // as a pending placeholder or drive resume regeneration.
+          // as a pending placeholder.
           generatingOutlines: generationComplete
             ? []
             : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
@@ -1201,7 +1156,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   clearStore: () => {
     claimStageSceneLoadToken();
     resetPendingChanges();
-    set((s) => clearedStageState(s));
+    set(clearedStageState());
     log.info('Store cleared');
   },
 }));

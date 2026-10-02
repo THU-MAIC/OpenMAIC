@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
-import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import { seedServerAsset, seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
 const POSTER_BASE64 =

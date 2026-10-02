@@ -10,10 +10,9 @@ export type AppStage = Stage;
 /**
  * Who produces the scenes of this course.
  *
- * `'client'` (the default, and what an absent field means) is the historical
- * app: the browser drives `useSceneGenerator` against the user's own model
- * config, so an interrupted deck must be resumed by whichever tab opens it.
- * `'server-job'` is the agent runtime (`lib/server/agent-runtime/`): a
+ * `'client'` (the default, and what an absent field means) is a course the
+ * browser produced: 1.1.x generated it in the browser, and the editor and the
+ * importers write it. `'server-job'` is a generation run or the agent runtime (`lib/server/agent-runtime/`): a
  * long-lived agent job owns the course and the browser is an observer that
  * must never produce a scene, however incomplete the deck looks.
  *

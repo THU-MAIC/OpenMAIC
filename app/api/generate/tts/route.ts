@@ -41,8 +41,6 @@ import {
 
 const log = createLogger('TTS API');
 
-export const maxDuration = 30;
-
 /** Every narration refusal is the request's to fix. */
 const REFUSAL_CODES: Record<NarrationRefusal, ApiErrorCode> = {
   'voice-missing': 'MISSING_REQUIRED_FIELD',

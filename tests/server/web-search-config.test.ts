@@ -128,7 +128,7 @@ describe('server web search config', () => {
       providerId: 'exa',
       apiKey: 'exa-client-key',
     });
-    // /api/web-search always preferred the operator's backend.
+    // The 1.1.x /api/web-search route preferred the operator's backend.
     expect(
       await resolveWebSearchConnection(null, requested, { preferServerProvider: true }),
     ).toMatchObject({ providerId: 'tavily', apiKey: 'server-tavily' });

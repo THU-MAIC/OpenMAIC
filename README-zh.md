@@ -918,7 +918,7 @@ OpenMAIC/
 │   │   ├── pbl/                #     项目制学习端点
 │   │   ├── persistence/        #     内嵌持久化服务（Runtime/Document Store HTTP 契约）
 │   │   ├── export-video/       #     MP4 视频导出（对接 render-service）
-│   │   └── ...                 #     quiz-grade, parse-pdf, web-search, transcription 等
+│   │   └── ...                 #     generation-runs, materials, quiz-grade, parse-pdf, transcription 等
 │   ├── classroom/[id]/         #   课堂回放页面
 │   └── page.tsx                #   首页（生成输入）
 │

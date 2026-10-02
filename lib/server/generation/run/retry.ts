@@ -1,10 +1,10 @@
 /**
- * The browser's per-request retries, applied to a step called in process.
+ * 1.1.x's per-request browser retries, applied to a step called in process.
  *
- * The browser retries a scene request (`fetchSceneContent`, `fetchSceneActions`,
- * `generateAndStoreTTS`) with `withGenerationRetry`, classifying a failure by
- * the HTTP status its API route answered. A run calls the step directly, so
- * the failure is classified by the status that route would have answered: a
+ * 1.1.x's browser retried a scene request (content, actions, narration) with
+ * `withGenerationRetry`, classifying a failure by the HTTP status its API route
+ * answered. A run calls the step directly, so the failure is classified by the
+ * status that route would have answered: a
  * provider's own HTTP status, else 500 (retried); a step's refusal is the
  * route's 500 for content and actions (retried) and its 400 for narration
  * (not retried).
@@ -14,9 +14,9 @@ import { isAbortError, withGenerationRetry, type GenerationRetryEvent } from '@o
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
 
-/** The browser's retries for the first scene (FOREGROUND_SCENE_RETRY_OPTIONS). */
+/** 1.1.x's browser retries for the first scene. */
 export const FIRST_SCENE_MAX_RETRIES = 2;
-/** The browser's retries for every later scene (the withGenerationRetry default). */
+/** 1.1.x's browser retries for every later scene (the withGenerationRetry default). */
 export const SCENE_MAX_RETRIES = 5;
 
 /** A failure carrying the status the step's route would have answered, for classification. */

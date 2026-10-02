@@ -110,7 +110,6 @@ describe('server-backed classroom ZIP import', () => {
       expect(mocks.put).toHaveBeenCalledWith(
         expect.any(Blob),
         expect.objectContaining({ contentType: 'audio/mp3', durationSeconds: 2 }),
-        { stageId: 'new-course' },
       );
     },
   );

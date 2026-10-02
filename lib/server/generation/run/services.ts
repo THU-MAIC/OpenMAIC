@@ -16,7 +16,6 @@ import {
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
-import type { VisionPromptImage } from '@/lib/persistence/resolve-vision-images';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
 import {
@@ -44,7 +43,11 @@ import {
   type AgentProfilesInput,
   type GeneratedAgentProfile,
 } from '@/lib/server/generation/steps/agent-profiles';
-import type { StepContext, VisionImageResolver } from '@/lib/server/generation/steps/context';
+import type {
+  StepContext,
+  VisionImageResolver,
+  VisionPromptImage,
+} from '@/lib/server/generation/steps/context';
 import { analyzeMaterial } from '@/lib/server/generation/steps/material-analysis';
 import { synthesizeNarration } from '@/lib/server/generation/steps/narration';
 import {
@@ -108,7 +111,7 @@ export interface RunMediaBytes {
 }
 
 /** One image of the owner's materials, as the document bundle numbers it, with its bytes. */
-export type RunMaterialImage = Omit<PdfImage, 'src' | 'storageId' | 'assetId'> & RunMediaBytes;
+export type RunMaterialImage = Omit<PdfImage, 'src' | 'assetId'> & RunMediaBytes;
 
 export interface AnalyzedMaterials {
   /** The bundle's text: the outline's source text. */
@@ -595,7 +598,7 @@ export const defaultRunStepServices: RunStepServices = {
   },
 
   async generateImage(_ownerId, input, ctx) {
-    // What the browser's media pass sends POST /api/generate/image.
+    // What a media Retry sends POST /api/generate/image.
     const result = await generateImageStep(
       {
         options: {
@@ -626,7 +629,7 @@ export const defaultRunStepServices: RunStepServices = {
   },
 
   async generateVideo(_ownerId, input, ctx) {
-    // What the browser's media pass sends POST /api/generate/video.
+    // What a media Retry sends POST /api/generate/video.
     const result = await generateVideoStep(
       {
         options: {

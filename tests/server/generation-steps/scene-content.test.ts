@@ -7,22 +7,15 @@ import {
 } from '@/lib/server/generation/steps/scene-content';
 import type { PdfImage, SceneOutline } from '@/lib/types/generation';
 
-import { fakeModel, jsonRequest, testLogger } from './helpers';
+import { fakeModel, testLogger } from './helpers';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
-  resolveModelFromRequest: vi.fn(),
   generateSceneContent: vi.fn(),
-  resolveVisionImagesForPrompt: vi.fn(),
+  resolveVisionImagesStub: vi.fn(),
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: mocks.resolveModelFromRequest,
-}));
-vi.mock('@/lib/persistence/resolve-vision-images', () => ({
-  resolveVisionImagesForPrompt: mocks.resolveVisionImagesForPrompt,
-}));
 vi.mock('@openmaic/generation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@openmaic/generation')>()),
   generateSceneContent: mocks.generateSceneContent,
@@ -64,12 +57,10 @@ const content = { elements: [], remark: 'generated' };
 describe('scene content step', () => {
   beforeEach(() => {
     vi.resetModules();
-    mocks.resolveModelFromRequest.mockReset();
-    mocks.resolveModelFromRequest.mockResolvedValue(visionModel);
     mocks.generateSceneContent.mockReset();
     mocks.generateSceneContent.mockResolvedValue(content);
-    mocks.resolveVisionImagesForPrompt.mockReset();
-    mocks.resolveVisionImagesForPrompt.mockImplementation(
+    mocks.resolveVisionImagesStub.mockReset();
+    mocks.resolveVisionImagesStub.mockImplementation(
       async (images: { id: string; src: string }[]) =>
         images
           .filter((img) => img.src !== 'asset-2')
@@ -89,7 +80,7 @@ describe('scene content step', () => {
   }
 
   it("attaches the outline's images as resolved, dropping one that does not resolve", async () => {
-    const resolveVisionImages = vi.fn(mocks.resolveVisionImagesForPrompt);
+    const resolveVisionImages = vi.fn(mocks.resolveVisionImagesStub);
     const result = await generateSceneContent(input(), { log: testLogger(), resolveVisionImages });
 
     expect(result).toEqual({ content, effectiveOutline: expect.objectContaining({ id: 'o1' }) });
@@ -109,41 +100,12 @@ describe('scene content step', () => {
     mocks.generateSceneContent.mockResolvedValue(null);
     const failure = await generateSceneContent(input(), {
       log: testLogger(),
-      resolveVisionImages: mocks.resolveVisionImagesForPrompt,
+      resolveVisionImages: mocks.resolveVisionImagesStub,
     }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(StepRefusal);
     expect(failure).toMatchObject({
       reason: 'generation-failed',
       message: 'Failed to generate content: Leaves',
-    });
-  });
-
-  it('answers the route exactly as the step does', async () => {
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(jsonRequest('http://localhost/api/generate/scene-content', body));
-    expect(response.status).toBe(200);
-    const routedCall = mocks.generateSceneContent.mock.calls[0];
-    const routed = await response.json();
-
-    mocks.generateSceneContent.mockClear();
-    const stepped = await generateSceneContent(input(), {
-      log: testLogger(),
-      resolveVisionImages: (images) => mocks.resolveVisionImagesForPrompt(images),
-    });
-    expect(routed).toEqual({ success: true, ...JSON.parse(JSON.stringify(stepped)) });
-    expect(mocks.generateSceneContent.mock.calls[0]!.slice(0, 1)).toEqual(routedCall!.slice(0, 1));
-    expect(mocks.generateSceneContent.mock.calls[0]![2]).toEqual(routedCall![2]);
-  });
-
-  it('answers a refusal with the 500 the route always answered', async () => {
-    mocks.generateSceneContent.mockResolvedValue(null);
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(jsonRequest('http://localhost/api/generate/scene-content', body));
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({
-      success: false,
-      errorCode: 'GENERATION_FAILED',
-      error: 'Failed to generate content: Leaves',
     });
   });
 });

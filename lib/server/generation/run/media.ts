@@ -1,10 +1,9 @@
 /**
  * The media lane of a run: the images and videos the confirmed outline asks
- * for, generated as the browser's media pass generates them
- * (`lib/media/media-orchestrator.ts`):
+ * for, generated as 1.1.x's browser media pass generated them:
  *
- * - it starts once the course exists (the browser starts it when the
- *   classroom takes over from the generation preview, after the first scene)
+ * - it starts once the course exists (1.1.x's browser started it when the
+ *   classroom took over from the generation preview, after the first scene)
  *   and runs alongside the scenes, one item at a time, in outline order;
  * - only the kinds whose slot resolves are generated (a turned-off or
  *   unassigned slot leaves its placeholders, which render as disabled);
@@ -55,8 +54,8 @@ import type {
 const log = createLogger('GenerationRunMedia');
 
 /**
- * The budget of one image or video: the browser route's (`maxDuration` of
- * POST /api/generate/image and /api/generate/video). A resumed video wait
+ * The budget of one image or video: the 300 s the image and video routes
+ * declared on platforms that enforce one. A resumed video wait
  * gets a fresh one, as the provider's poll budget does.
  */
 export const MEDIA_DEADLINE_MS = 300_000;

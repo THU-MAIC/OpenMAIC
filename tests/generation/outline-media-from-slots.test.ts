@@ -1,8 +1,10 @@
 /**
- * The outline route plans image and video only when the workspace's slots
- * offer them: the client no longer tells it, and a header can only opt out.
+ * The outline step plans image and video only when the workspace's slots
+ * offer them: a caller can only opt out.
  */
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+
+import { createLogger } from '@/lib/logger';
 
 const mocks = vi.hoisted(() => ({
   streamLLM: vi.fn(),
@@ -12,7 +14,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({ resolveModelFromRequest: mocks.resolveModel }));
 vi.mock('@/lib/server/generation-capabilities', () => ({
   resolveServerGenerationCapabilities: mocks.capabilities,
 }));
@@ -27,26 +28,28 @@ vi.mock('@openmaic/generation', async (importOriginal) => {
   };
 });
 
-function request(headers: Record<string, string> = {}) {
-  return {
-    json: async () => ({
+async function planned(
+  optOut: { allowImageGeneration?: boolean; allowVideoGeneration?: boolean } = {},
+) {
+  vi.resetModules();
+  const { generateOutlines } = await import('@/lib/server/generation/steps/outline');
+  // Only the planned media is asserted on, so how the stubbed stream ends does not matter.
+  await generateOutlines(
+    {
       requirements: { requirement: 'Teach photosynthesis.' },
       pdfText: '',
       pdfImages: [],
       imageMapping: {},
       researchContext: '',
-    }),
-    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
-  } as unknown as Parameters<
-    typeof import('@/app/api/generate/scene-outlines-stream/route').POST
-  >[0];
-}
-
-async function planned(headers?: Record<string, string>) {
-  vi.resetModules();
-  const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-  const response = await POST(request(headers));
-  await response.text();
+      model: await mocks.resolveModel(),
+      ...optOut,
+    },
+    {
+      log: createLogger('Outline'),
+      workspaceId: null,
+      resolveVisionImages: async (images) => [...images],
+    },
+  ).catch(() => undefined);
   const [, context] = mocks.buildOutlinePrompt.mock.calls.at(-1) as [
     unknown,
     { imageGenerationEnabled?: boolean; videoGenerationEnabled?: boolean },
@@ -73,21 +76,22 @@ beforeEach(() => {
 });
 
 describe('outline media planning', () => {
-  test('follows the image and video slots with no header at all', async () => {
+  test('follows the image and video slots when the caller says nothing', async () => {
     mocks.capabilities.mockResolvedValue({ imageGeneration: true, videoGeneration: false });
     expect(await planned()).toEqual({ image: true, video: false });
   });
 
   test('never turns on what the slots do not offer', async () => {
     mocks.capabilities.mockResolvedValue({ imageGeneration: false, videoGeneration: false });
-    expect(
-      await planned({ 'x-image-generation-enabled': 'true', 'x-video-generation-enabled': 'true' }),
-    ).toEqual({ image: false, video: false });
+    expect(await planned({ allowImageGeneration: true, allowVideoGeneration: true })).toEqual({
+      image: false,
+      video: false,
+    });
   });
 
-  test('lets an API client opt out explicitly', async () => {
+  test('lets a caller opt out explicitly', async () => {
     mocks.capabilities.mockResolvedValue({ imageGeneration: true, videoGeneration: true });
-    expect(await planned({ 'x-image-generation-enabled': 'false' })).toEqual({
+    expect(await planned({ allowImageGeneration: false })).toEqual({
       image: false,
       video: true,
     });

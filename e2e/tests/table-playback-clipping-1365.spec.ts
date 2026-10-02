@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
-import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
 const STAGE_PREFIX = 'e2e-table-clipping-1365';

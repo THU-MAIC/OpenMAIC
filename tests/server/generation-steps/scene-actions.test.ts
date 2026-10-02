@@ -3,18 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateSceneActions } from '@/lib/server/generation/steps/scene-actions';
 import type { SceneOutline } from '@/lib/types/generation';
 
-import { fakeModel, jsonRequest, testLogger, withoutMintedValues } from './helpers';
+import { fakeModel, testLogger } from './helpers';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
-  resolveModelFromRequest: vi.fn(),
   generateSceneActions: vi.fn(),
 }));
 
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: mocks.resolveModelFromRequest,
-}));
 vi.mock('@openmaic/generation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@openmaic/generation')>()),
   generateSceneActions: mocks.generateSceneActions,
@@ -44,8 +40,6 @@ const body = {
 describe('scene actions step', () => {
   beforeEach(() => {
     vi.resetModules();
-    mocks.resolveModelFromRequest.mockReset();
-    mocks.resolveModelFromRequest.mockResolvedValue(model);
     mocks.generateSceneActions.mockReset();
     mocks.generateSceneActions.mockResolvedValue([
       { id: 'a1', type: 'speech', text: 'Now the second part.' },
@@ -70,17 +64,5 @@ describe('scene actions step', () => {
     });
     expect(result.scene).toMatchObject({ stageId: 'stage-1', type: 'slide', title: 'Second' });
     expect(result.previousSpeeches).toEqual(['Now the second part.', 'Let us look closer.']);
-  });
-
-  it('answers the route exactly as the step does', async () => {
-    const { POST } = await import('@/app/api/generate/scene-actions/route');
-    const response = await POST(jsonRequest('http://localhost/api/generate/scene-actions', body));
-    expect(response.status).toBe(200);
-    const routed = await response.json();
-
-    const stepped = await generateSceneActions({ ...body, model }, { log: testLogger() });
-    expect(withoutMintedValues(routed)).toEqual(
-      withoutMintedValues({ success: true, ...JSON.parse(JSON.stringify(stepped)) }),
-    );
   });
 });

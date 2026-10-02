@@ -23,7 +23,7 @@
  *
  * A refusal for want of room keeps the bytes where the app's own retry looks
  * for them, when such a path exists: a placeholder's bytes go to the device
- * cache's `mediaFiles` (the media pass adopts them instead of calling a
+ * cache's `mediaFiles` (its Retry adopts them instead of calling a
  * provider), narration to the device cache's `audioFiles` (narration adoption
  * uploads it on the next open). A reference with no such path stays pending in
  * the ledger and the importer retries it on a later load; its bytes are still
@@ -149,7 +149,7 @@ function blobOf(value: unknown): Blob | undefined {
   return value instanceof Blob && value.size > 0 ? value : undefined;
 }
 
-/** Where the media pass looks for bytes a full store refused (placeholder-keyed). */
+/** Where a media Retry looks for bytes a full store refused (placeholder-keyed). */
 function retainMediaRow(stageId: string, ref: string, row: MediaFileRecord) {
   return async (): Promise<void> => {
     const id = mediaFileKey(stageId, ref);
@@ -225,7 +225,7 @@ async function planUploads(document: AppDocument, context: MediaFillContext): Pr
         ...(mediaType ? { mediaType } : {}),
         request: { prompt: row.prompt ?? '', params: row.params ?? '{}' },
         // Only a generation placeholder has a retry path that reads these
-        // bytes back: the media pass adopts the cached row for it.
+        // bytes back: its Retry adopts the cached row.
         ...(isGeneratedMediaPlaceholder(ref) ? { retain: retainMediaRow(stageId, ref, row) } : {}),
       });
       continue;
@@ -295,7 +295,6 @@ async function commitUpload(
   if (upload.family === 'speech') {
     return commitToPool<boolean>({
       put: context.putAsset,
-      stageId,
       slot: upload.ref,
       bytes: upload.bytes,
       mimeType: upload.mimeType,
@@ -323,7 +322,6 @@ async function commitUpload(
   }
   return commitToPool({
     put: context.putAsset,
-    stageId,
     slot: upload.ref,
     bytes: upload.bytes,
     mimeType: upload.mimeType,
@@ -345,8 +343,7 @@ async function commitUpload(
 /**
  * A reference the server refused for good (too large, an unsupported type, an
  * admission refusal): the element is put into the app's ordinary failed-media
- * state -- the same device-cache record the generation pass writes when it
- * fails -- so the course shows the usual failed/regenerate affordance instead
+ * state -- the same device-cache record a failed media Retry writes -- so the course shows the usual failed/regenerate affordance instead
  * of silently naming bytes nothing can serve. The legacy bytes stay where they
  * are. Speech and slide audio have no such state; the ledger records them.
  */
@@ -369,7 +366,7 @@ async function recordRefusal(
     prompt: upload.request?.prompt ?? '',
     params: upload.request?.params ?? '{}',
     error: `The server refused these bytes when this course moved from browser storage (${failure.reason})`,
-    // With a generation request, Retry regenerates (the media pass's usual
+    // With a generation request, Retry regenerates (an ordinary generation
     // failure). Without one -- media the user inserted or imported -- there
     // is nothing to retry, so the element shows as failed without the control.
     // A refusal with no code (a proxy's 413 page) must not cost generated

@@ -38,13 +38,6 @@ import { generateImageStep, type ImageRefusal } from '@/lib/server/generation/st
 
 const log = createLogger('ImageGeneration API');
 
-// The ComfyUI adapter polls up to GENERATION_TIMEOUT_MS (5 min) and real
-// workflows can take 3–5 min. 60s would let platforms that enforce maxDuration
-// (e.g. Vercel) kill the request ~4 min before the adapter finishes. 300s is
-// the practical ceiling on most managed platforms and matches the poll budget.
-// (Self-hosted Node servers ignore this value entirely.)
-export const maxDuration = 300;
-
 const REFUSAL_RESPONSES: Record<ImageRefusal, [ApiErrorCode, number]> = {
   'missing-api-key': ['MISSING_API_KEY', 401],
   'missing-model': ['MISSING_MODEL', 400],

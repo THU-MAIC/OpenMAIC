@@ -1,8 +1,8 @@
 /**
  * Outline: plan a course's scenes from the requirements, the material and
- * the research, streaming each scene outline as the model writes it. Moved
- * from POST /api/generate/scene-outlines-stream, which keeps resolving the
- * model and turning the step's events into its server-sent event stream.
+ * the research, streaming each scene outline as the model writes it. The
+ * logic of 1.1.x's POST /api/generate/scene-outlines-stream; a run streams
+ * the step's events to the browser.
  *
  * Interactive mode and the server-enabled task engine mode keep their own
  * prompt templates; standard generation is byte-identical to the generation
@@ -352,7 +352,7 @@ export class OutlineGenerationError extends Error {
  * Build the outline prompts: resolve the vision images, read whether the
  * slots offer media, and pick the template for the mode.
  */
-export async function prepareOutline(
+async function prepareOutline(
   input: OutlineInput,
   ctx: OwnerStepContext & WorkspaceStepContext,
 ): Promise<PreparedOutline> {
@@ -522,7 +522,7 @@ export async function prepareOutline(
  * return the outlines, or throw OutlineGenerationError when every attempt
  * failed (StepAbortedError when the caller went away).
  */
-export async function streamOutlines(
+async function streamOutlines(
   prepared: PreparedOutline,
   ctx: StepContext<OutlineEvent>,
 ): Promise<OutlineResult> {

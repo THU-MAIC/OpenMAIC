@@ -6,14 +6,11 @@ import {
   type AgentProfilesInput,
 } from '@/lib/server/generation/steps/agent-profiles';
 
-import { fakeModel, jsonRequest, testLogger, withoutMintedValues } from './helpers';
+import { fakeModel, testLogger } from './helpers';
 
-const mocks = vi.hoisted(() => ({ callLLM: vi.fn(), resolveModelFromRequest: vi.fn() }));
+const mocks = vi.hoisted(() => ({ callLLM: vi.fn() }));
 
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: mocks.resolveModelFromRequest,
-}));
 
 const model = fakeModel();
 
@@ -48,8 +45,6 @@ describe('agent profiles step', () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.callLLM.mockReset();
-    mocks.resolveModelFromRequest.mockReset();
-    mocks.resolveModelFromRequest.mockResolvedValue(model);
   });
 
   it('binds the teacher to the narrator voice and the others to advertised voices', async () => {
@@ -90,35 +85,5 @@ describe('agent profiles step', () => {
     );
     expect(failure).toBeInstanceOf(StepRefusal);
     expect((failure as StepRefusal).reason).toBe(reason);
-  });
-
-  it('answers the route exactly as the step does', async () => {
-    answer(classroom);
-    const { POST } = await import('@/app/api/generate/agent-profiles/route');
-    const response = await POST(
-      jsonRequest('http://localhost/api/generate/agent-profiles', request),
-    );
-    expect(response.status).toBe(200);
-    const routed = (await response.json()) as { agents: unknown };
-
-    const stepped = await generateAgentProfiles({ ...request, model }, { log: testLogger() });
-    expect(withoutMintedValues(routed)).toEqual({
-      success: true,
-      agents: withoutMintedValues(stepped),
-    });
-  });
-
-  it('maps each refusal to the status and code the route always answered', async () => {
-    mocks.callLLM.mockResolvedValue({ text: 'not json' });
-    const { POST } = await import('@/app/api/generate/agent-profiles/route');
-    const response = await POST(
-      jsonRequest('http://localhost/api/generate/agent-profiles', request),
-    );
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({
-      success: false,
-      errorCode: 'PARSE_FAILED',
-      error: 'Failed to parse agent profiles from LLM response',
-    });
   });
 });

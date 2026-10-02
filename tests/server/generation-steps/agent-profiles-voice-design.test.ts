@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NextRequest } from 'next/server';
 import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { createLogger } from '@/lib/logger';
 
 const callLLM = vi.fn();
 
@@ -8,27 +8,24 @@ vi.mock('@/lib/ai/llm', () => ({
   callLLM: (...args: unknown[]) => callLLM(...args),
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: async () => ({
-    model: {},
-    modelString: 'test-model',
-    thinkingConfig: undefined,
-  }),
-}));
+import {
+  generateAgentProfiles,
+  type AgentProfilesInput,
+} from '@/lib/server/generation/steps/agent-profiles';
 
-import { POST } from '@/app/api/generate/agent-profiles/route';
-
-function makeRequest(extra: Record<string, unknown> = {}): NextRequest {
-  return new NextRequest('http://localhost/api/generate/agent-profiles', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
+/** Generate the agent profiles as a run does. */
+async function profiles(extra: Partial<AgentProfilesInput> = {}) {
+  const agents = await generateAgentProfiles(
+    {
       stageInfo: { name: 'Intro to Algebra' },
       languageDirective: 'Respond in English.',
       availableAvatars: ['/a.png', '/b.png'],
+      model: { model: {}, modelString: 'test-model', thinkingConfig: undefined } as never,
       ...extra,
-    }),
-  });
+    },
+    { log: createLogger('Agent Profiles') },
+  );
+  return { agents };
 }
 
 function llmAgents(extra: Record<string, unknown>) {
@@ -55,7 +52,7 @@ function llmAgents(extra: Record<string, unknown>) {
   });
 }
 
-describe('agent-profiles route — voiceDesign', () => {
+describe('agent profiles step — voiceDesign', () => {
   beforeEach(() => callLLM.mockReset());
 
   it('attaches a normalized voiceDesign when the LLM emits one', async () => {
@@ -65,10 +62,8 @@ describe('agent-profiles route — voiceDesign', () => {
       }),
     });
 
-    const res = await POST(makeRequest());
-    const body = await res.json();
+    const body = await profiles();
 
-    expect(body.success).toBe(true);
     expect(body.agents[0].voiceDesign).toEqual({
       identity: 'older male teacher',
       texture: 'warm low',
@@ -79,10 +74,8 @@ describe('agent-profiles route — voiceDesign', () => {
   it('omits voiceDesign when the LLM does not emit one', async () => {
     callLLM.mockResolvedValue({ text: llmAgents({}) });
 
-    const res = await POST(makeRequest());
-    const body = await res.json();
+    const body = await profiles();
 
-    expect(body.success).toBe(true);
     expect(body.agents[0]).not.toHaveProperty('voiceDesign');
   });
 
@@ -90,19 +83,16 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::qwen3-tts-vc-test::clone-1' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [
+        {
+          providerId: 'qwen-tts',
+          modelId: 'qwen3-tts-vc-test',
+          voiceId: 'clone-1',
+          voiceName: 'Clone',
+        },
+      ],
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       modelId: 'qwen3-tts-vc-test',
@@ -114,14 +104,10 @@ describe('agent-profiles route — voiceDesign', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     callLLM.mockResolvedValue({ text: llmAgents({ voice: 123 }) });
 
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+    });
 
-    expect(body.success).toBe(true);
     expect(body.agents[0]).not.toHaveProperty('voiceConfig');
     expect(warn).toHaveBeenCalledWith(
       '[AgentProfiles] Dropped voice token not present in the advertised list:',
@@ -134,25 +120,22 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::qwen3-tts-vc-second::clone-1' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-first',
-            voiceId: 'clone-1',
-            voiceName: 'First clone',
-          },
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-second',
-            voiceId: 'clone-1',
-            voiceName: 'Second clone',
-          },
-        ],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [
+        {
+          providerId: 'qwen-tts',
+          modelId: 'qwen3-tts-vc-first',
+          voiceId: 'clone-1',
+          voiceName: 'First clone',
+        },
+        {
+          providerId: 'qwen-tts',
+          modelId: 'qwen3-tts-vc-second',
+          voiceId: 'clone-1',
+          voiceName: 'Second clone',
+        },
+      ],
+    });
 
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
@@ -163,19 +146,16 @@ describe('agent-profiles route — voiceDesign', () => {
 
   it('accepts a two-part clone token and derives its advertised model', async () => {
     callLLM.mockResolvedValue({ text: llmAgents({ voice: 'qwen-tts::clone-1' }) });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [
+        {
+          providerId: 'qwen-tts',
+          modelId: 'qwen3-tts-vc-test',
+          voiceId: 'clone-1',
+          voiceName: 'Clone',
+        },
+      ],
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       modelId: 'qwen3-tts-vc-test',
@@ -185,12 +165,9 @@ describe('agent-profiles route — voiceDesign', () => {
 
   it('accepts a two-part catalog voice token without persisting a model', async () => {
     callLLM.mockResolvedValue({ text: llmAgents({ voice: 'qwen-tts::Cherry' }) });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       voiceId: 'Cherry',
@@ -201,12 +178,9 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::qwen3-tts-vc-stale::Cherry' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       voiceId: 'Cherry',
@@ -219,25 +193,21 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::Cherry' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-        narratorVoice: {
+    const body = await profiles({
+      availableVoices: [
+        {
           providerId: 'qwen-tts',
           modelId: 'qwen3-tts-vc-test',
           voiceId: 'clone-1',
+          voiceName: 'Clone',
         },
-      }),
-    );
-    const body = await res.json();
-    expect(body.success).toBe(true);
+      ],
+      narratorVoice: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'clone-1',
+      },
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       modelId: 'qwen3-tts-vc-test',
@@ -249,17 +219,14 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::Cherry' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-        narratorVoice: {
-          providerId: 'qwen-tts',
-          modelId: 'qwen3-tts-vc-test',
-          voiceId: 'clone-ghost',
-        },
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+      narratorVoice: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'clone-ghost',
+      },
+    });
     // The clone is account-scoped and self-contained; the model follows the voice.
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
@@ -292,25 +259,22 @@ describe('agent-profiles route — voiceDesign', () => {
         ],
       }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          { providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' },
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-        narratorVoice: {
+    const body = await profiles({
+      availableVoices: [
+        { providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' },
+        {
           providerId: 'qwen-tts',
           modelId: 'qwen3-tts-vc-test',
           voiceId: 'clone-1',
+          voiceName: 'Clone',
         },
-      }),
-    );
-    const body = await res.json();
+      ],
+      narratorVoice: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'clone-1',
+      },
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       modelId: 'qwen3-tts-vc-test',
@@ -323,19 +287,16 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::qwen3-tts-vc-test::clone-1' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-      }),
-    );
-    const body = await res.json();
+    const body = await profiles({
+      availableVoices: [
+        {
+          providerId: 'qwen-tts',
+          modelId: 'qwen3-tts-vc-test',
+          voiceId: 'clone-1',
+          voiceName: 'Clone',
+        },
+      ],
+    });
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
       modelId: 'qwen3-tts-vc-test',
@@ -348,14 +309,10 @@ describe('agent-profiles route — voiceDesign', () => {
     callLLM.mockResolvedValue({
       text: llmAgents({ voice: 'qwen-tts::Cherry' }),
     });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-        narratorVoice: { providerId: 'openai-tts', voiceId: 'not-advertised' },
-      }),
-    );
-    const body = await res.json();
-    expect(body.success).toBe(true);
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+      narratorVoice: { providerId: 'openai-tts', voiceId: 'not-advertised' },
+    });
     // The unusable narrator voice is dropped; the LLM's choice stands.
     expect(body.agents[0].voiceConfig).toEqual({ providerId: 'qwen-tts', voiceId: 'Cherry' });
     warn.mockRestore();
@@ -366,18 +323,14 @@ describe('agent-profiles route — voiceDesign', () => {
     // example must still come from the advertised list so an LLM echoing it
     // into a student's voice field produces a resolvable token.
     callLLM.mockResolvedValue({ text: llmAgents({}) });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
-        narratorVoice: {
-          providerId: 'qwen-tts',
-          modelId: 'qwen3-tts-vc-test',
-          voiceId: 'clone-ghost',
-        },
-      }),
-    );
-    const body = await res.json();
-    expect(body.success).toBe(true);
+    const body = await profiles({
+      availableVoices: [{ providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' }],
+      narratorVoice: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'clone-ghost',
+      },
+    });
     // The teacher is still pinned to the (self-contained) ghost clone…
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
@@ -392,26 +345,22 @@ describe('agent-profiles route — voiceDesign', () => {
 
   it('prompts for a voice on every non-teacher agent and never reuses the teacher voice', async () => {
     callLLM.mockResolvedValue({ text: llmAgents({}) });
-    const res = await POST(
-      makeRequest({
-        availableVoices: [
-          { providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' },
-          {
-            providerId: 'qwen-tts',
-            modelId: 'qwen3-tts-vc-test',
-            voiceId: 'clone-1',
-            voiceName: 'Clone',
-          },
-        ],
-        narratorVoice: {
+    await profiles({
+      availableVoices: [
+        { providerId: 'qwen-tts', voiceId: 'Cherry', voiceName: 'Cherry' },
+        {
           providerId: 'qwen-tts',
           modelId: 'qwen3-tts-vc-test',
           voiceId: 'clone-1',
+          voiceName: 'Clone',
         },
-      }),
-    );
-    const body = await res.json();
-    expect(body.success).toBe(true);
+      ],
+      narratorVoice: {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-vc-test',
+        voiceId: 'clone-1',
+      },
+    });
     const prompt = callLLM.mock.calls[0][0].prompt as string;
     // The softened phrasing still requires a voice field on every non-teacher
     // agent (the old "ONLY to the other agents" over-generalized into omissions).

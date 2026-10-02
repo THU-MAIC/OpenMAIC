@@ -11,7 +11,6 @@
  *   refused, kept so a Retry re-attempts the upload instead of paying a
  *   provider again, and per-element failure records so a refused or failed
  *   generation is not retried on every reload;
- * - `imageFiles`: PDF page images staged between upload and generation;
  * - `snapshots`: the editor's undo/redo history;
  * - `voiceProfiles`: TTS voice profiles registered from this browser (a
  *   provider setting, like the rest of the settings kept in localStorage);
@@ -49,16 +48,6 @@ export interface AudioFileRecord {
   voice?: string; // Voice used
   createdAt: number;
   ossKey?: string; // Full CDN URL for this audio blob
-}
-
-/** Staged image bytes (PDF page images between upload and generation). */
-export interface ImageFileRecord {
-  id: string; // Primary key
-  blob: Blob | ArrayBuffer; // Image binary data
-  filename: string; // Original filename
-  mimeType: string; // image/png, image/jpeg, etc.
-  size: number; // File size (bytes)
-  createdAt: number;
 }
 
 /**
@@ -134,7 +123,6 @@ const VOICE_PROFILES_CARRIED_OVER = 'legacy-voice-profiles-carried-over';
 class DeviceDatabase extends Dexie {
   audioFiles!: EntityTable<AudioFileRecord, 'id'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
-  imageFiles!: EntityTable<ImageFileRecord, 'id'>;
   snapshots!: EntityTable<Snapshot, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
@@ -151,6 +139,10 @@ class DeviceDatabase extends Dexie {
       autoVoiceCache: 'voiceId, updatedAt',
       meta: 'key',
     });
+    // Version 2 drops `imageFiles`, where document images were staged between
+    // upload and a generation the browser ran. Runs read uploaded materials on
+    // the server; the upgrade deletes the table with whatever it still held.
+    this.version(2).stores({ imageFiles: null });
     // Runs before the first query of every open (sticky), so no reader sees
     // the table before the carry-over. Queries inside must go through the VIP
     // handle Dexie passes in; the regular one waits for this very handler.

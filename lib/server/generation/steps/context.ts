@@ -2,16 +2,15 @@
  * The shared shape of the course generation steps (RFC #1754 §E).
  *
  * Each step is the classic step logic the generation API routes used to hold,
- * as a plain `(input, ctx) => output` function: the routes, the server-side
- * runs and the Pro agent's tools call the same code, and only who orchestrates
- * the steps differs. A step knows nothing about HTTP. Request parsing, owner
+ * as a plain `(input, ctx) => output` function: the server-side runs, the
+ * remaining routes (images, video, narration) and the Pro agent's tools call
+ * the same code, and only who orchestrates the steps differs. A step knows nothing about HTTP. Request parsing, owner
  * resolution, access gates, status codes and response shapes stay with the
  * caller, which also resolves what a request names (the model, the
  * connection of a media slot, the web-search configuration) and hands the
  * result in, so the deprecated request fields never reach a step.
  */
 import type { createLogger } from '@/lib/logger';
-import type { VisionPromptImage } from '@/lib/persistence/resolve-vision-images';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
 
 export type StepLogger = ReturnType<typeof createLogger>;
@@ -28,10 +27,18 @@ export interface StepContext<Event = never> {
   emit?: (event: Event) => void;
 }
 
+/** One image in a vision prompt slice, as `generateSceneContent` builds it. */
+export interface VisionPromptImage {
+  id: string;
+  src: string;
+  width?: number;
+  height?: number;
+}
+
 /**
  * Resolves vision images whose `src` may be an allocated asset id to data
  * URLs, as the owner the step works for may read them; an image that does not
- * resolve is dropped (see resolveVisionImagesForPrompt).
+ * resolve is dropped.
  */
 export type VisionImageResolver = (
   images: readonly VisionPromptImage[],

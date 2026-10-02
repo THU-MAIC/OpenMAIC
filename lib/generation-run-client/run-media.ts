@@ -113,7 +113,7 @@ export function applyRunMedia(
   });
   // What the run placed, by placeholder: a browser save of a scene this tab
   // still holds with the placeholder writes the asset instead (the same
-  // record the browser's own media pass keeps).
+  // record a browser media Retry keeps).
   for (const [elementId, state] of entries) {
     if (state.status === 'done' && state.assetId) {
       recordMediaAllocation({

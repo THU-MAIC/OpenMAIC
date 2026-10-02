@@ -1,26 +1,19 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createLogger } from '@/lib/logger';
 import type { ImageMapping, PdfImage } from '@/lib/types/generation';
 
 const streamLLMMock = vi.hoisted(() => vi.fn());
-const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const resolveModelMock = vi.hoisted(() => vi.fn());
 const resolveVisionImagesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: streamLLMMock,
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: resolveModelFromRequestMock,
-}));
-
-vi.mock('@/lib/persistence/resolve-vision-images', () => ({
-  resolveVisionImagesForPrompt: resolveVisionImagesMock,
-}));
-
 /**
  * The standard (non-task-engine) outline branch must rebuild its placeholder
- * text from the SAME RESOLVED set the route attaches (RFC #1153 part 2, N3):
+ * text from the SAME RESOLVED set the step attaches (RFC #1153 part 2, N3):
  * the task-engine/interactive branch already builds its text from
  * `resolvedVisionImages`, but the standard `buildOutlinePrompt` branch
  * rebuilds its own `[see attached]` placeholders from the unresolved slice —
@@ -28,12 +21,12 @@ vi.mock('@/lib/persistence/resolve-vision-images', () => ({
  * standard prompt. This test pins the fixed branch: a dropped image drops its
  * text mention AND its attachment.
  */
-describe('scene-outlines-stream route — standard branch prompt parity on a dropped image (N3)', () => {
+describe('outline step — standard branch prompt parity on a dropped image (N3)', () => {
   beforeEach(() => {
     streamLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
     resolveVisionImagesMock.mockReset();
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'test.chat', modelId: 'test-model' },
       modelInfo: { outputWindow: 4096, capabilities: { vision: true } },
       modelString: 'test:test-model',
@@ -70,17 +63,13 @@ describe('scene-outlines-stream route — standard branch prompt parity on a dro
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
-    const response = await POST(
-      mockRequest({
-        pdfImages: [
-          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
-        ],
-        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
-      }),
-    );
-    await readStreamBody(response);
+    await generate({
+      pdfImages: [
+        { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+        { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+      ],
+      imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+    });
 
     // The standard branch ran with a vision-enabled model, so the LLM call is
     // multimodal and its text half is the standard prompt's user text.
@@ -105,35 +94,29 @@ describe('scene-outlines-stream route — standard branch prompt parity on a dro
   });
 });
 
-function readStreamBody(response: Response): Promise<string> {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  let text = '';
-  const pump = (): Promise<void> =>
-    reader!.read().then(({ done, value }) => {
-      if (done) return;
-      if (value) text += decoder.decode(value, { stream: true });
-      return pump();
-    });
-  return pump().then(() => text);
-}
-
-function mockRequest(body: {
+/**
+ * Generate the outlines as a run does, with the stubbed model and vision
+ * resolver. Only the request the model received is asserted on, so how the
+ * stubbed stream ends does not matter.
+ */
+async function generate(body: {
   pdfImages: Array<Pick<PdfImage, 'id' | 'src' | 'pageNumber' | 'width' | 'height'>>;
   imageMapping: ImageMapping;
 }) {
-  return {
-    json: async () => ({
+  const { generateOutlines } = await import('@/lib/server/generation/steps/outline');
+  return generateOutlines(
+    {
       requirements: { requirement: 'Teach a safety checklist course.' },
       pdfText: 'Inspect the device before calibration.',
-      pdfImages: body.pdfImages,
+      pdfImages: body.pdfImages as PdfImage[],
       imageMapping: body.imageMapping,
       researchContext: '',
-    }),
-    headers: {
-      get: () => null,
+      model: await resolveModelMock(),
     },
-  } as unknown as Parameters<
-    typeof import('@/app/api/generate/scene-outlines-stream/route').POST
-  >[0];
+    {
+      log: createLogger('Outline'),
+      workspaceId: null,
+      resolveVisionImages: (images) => resolveVisionImagesMock(images, {}),
+    },
+  ).catch(() => undefined);
 }

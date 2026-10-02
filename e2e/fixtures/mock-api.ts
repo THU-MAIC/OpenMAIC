@@ -1,7 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { mockOutlines } from './test-data/scene-outlines';
 import { seedServerDocument, uniqueStageId } from './server-seed';
-import { createMockSceneActionsResponse } from './test-data/scene-actions';
+import { createMockScene } from './test-data/generated-scene';
 import {
   createModelSettingsView,
   DEFAULT_MODEL_SETTINGS,
@@ -361,7 +361,7 @@ export class MockGenerationRun {
 
   /** The course as the run writes it: produced by the run, growing scene by scene. */
   private async storeCourse(sceneCount: number) {
-    const { scene } = createMockSceneActionsResponse(this.stageId);
+    const scene = createMockScene(this.stageId);
     const scenes = Array.from({ length: sceneCount }, (_, index) => ({
       ...scene,
       id: `scene-${index}`,

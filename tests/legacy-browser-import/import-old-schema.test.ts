@@ -200,7 +200,7 @@ describe('server courses from an earlier opt-in server build', () => {
     expect(audioId).toMatch(/^ast_server/);
     expect(await bytes(server.assets.get(audioId)?.blob)).toBe('refused-narration');
     // The refused element keeps its placeholder, and its record keeps the
-    // media pass from generating it again.
+    // refusal.
     expect(await db.mediaFiles.get('server-course:gen_img_7')).toMatchObject({
       errorCode: 'CONTENT_SENSITIVE',
     });

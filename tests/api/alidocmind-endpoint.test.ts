@@ -3,7 +3,7 @@
  *
  * The DocMind SDK builds its own HTTPS agent and cannot be pinned, so the
  * routes refuse any other endpoint before an SDK call. Drives the real
- * verify-pdf-provider, parse-pdf and extract-document routes; stubbed are
+ * verify-pdf-provider and parse-pdf routes; stubbed are
  * `@/lib/server/provider-config` (partially: managed or not) and the DocMind
  * client module (so no SDK request is made and the endpoint it would receive
  * is observable).
@@ -11,7 +11,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-import { POST as extractDocumentPOST } from '@/app/api/extract-document/route';
 import { POST as parsePdfPOST } from '@/app/api/parse-pdf/route';
 import { POST as verifyPdfProviderPOST } from '@/app/api/verify-pdf-provider/route';
 import { resolveSafeClientAliDocMindEndpoint } from '@/lib/server/alidocmind-endpoint';
@@ -169,25 +168,6 @@ describe('AliDocMind endpoint allowlist in the routes', () => {
         multipartRequest('/api/parse-pdf', 'doc.pdf', {
           providerId: 'alidocmind',
           baseUrl: 'internal.example.test',
-        }),
-      ),
-    );
-
-    expect(res).toEqual({ status: 403, json: NOT_ALLOWED });
-    expect(mocks.parseWithAliDocMindClient).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['document', 'doc.pdf'],
-    ['media', 'talk.mp3'],
-  ])('extract-document refuses a custom AliDocMind endpoint (%s)', async (_kind, fileName) => {
-    const res = await read(
-      await extractDocumentPOST(
-        multipartRequest('/api/extract-document', fileName, {
-          providerId: 'alidocmind',
-          accessKeyId: 'ak',
-          accessKeySecret: 'sk',
-          baseUrl: 'http://127.0.0.1:8080',
         }),
       ),
     );

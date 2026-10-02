@@ -1,16 +1,10 @@
 /**
- * Server-side resolution of a client-allocated asset id for extraction.
+ * Server-side resolution of an allocated asset id to its bytes, for an owner
+ * already resolved (a generation run reading the images of its materials).
  *
- * Compatibility read fallback for callers that already hold an allocated
- * server asset id. New app flows do not allocate registry assets, but retained
- * documents and SDK clients may still name an existing entry.
- *
- * The resolution answers in five states so the route can map each to an honest
- * HTTP status: not configured (no `DATABASE_URL`), unauthenticated (owner
- * resolution refused the request), missing (no entry under
- * this id that this owner may read), too large (the recorded byte length
- * exceeds the caller-supplied cap, rejected before any bytes are read), or
- * resolved.
+ * The resolution answers missing (no entry under this id that this owner may
+ * read), too large (the recorded byte length exceeds the caller-supplied cap,
+ * rejected before any bytes are read), or resolved.
  *
  * "May read" is the persistence route's own rule (`./owner-assets.ts`): the
  * owner's own entries, legacy shared entries, and other owners' committed
@@ -18,69 +12,30 @@
  */
 import { AssetNotFoundError, toAssetId } from '@openmaic/storage';
 
-import { resolveRequestOwner } from '@/lib/server/identity/resolve';
-import type { OwnerAuthRequest } from '@/lib/server/identity/types';
-
 import { assetPrincipalForOwner, createOwnerAssetStore } from './owner-assets';
 import { getServerPersistenceProvider } from './server-provider';
 
-export type ServerAssetResolution = (
+type OwnedAssetResolution =
   | { status: 'resolved'; buffer: Buffer; mimeType: string }
-  | { status: 'unconfigured' }
-  | { status: 'unauthenticated' }
   | { status: 'missing' }
-  | { status: 'too_large' }
-) & {
-  /**
-   * The owner resolution's `Set-Cookie` values (a minted anonymous owner, or
-   * the renewal of a presented one). The route attaches them to its response
-   * with `attachOwnerCookies`, whatever the status.
-   */
-  setCookies?: readonly string[];
-};
+  | { status: 'too_large' };
 
 /**
- * Resolve an allocated asset id to its bytes for extraction.
+ * Resolve an allocated asset id to its bytes as `ownerId` may read them.
  *
  * When `maxByteLength` is supplied, the store's identity read (`identify` —
  * the same call HEAD uses, carrying the recorded byte length without reading
  * the bytes) is consulted first: an asset whose recorded length exceeds the
  * cap answers `too_large` WITHOUT ever materializing the bytes, so a
  * multi-hundred-MB asset cannot be pulled into server memory just to be
- * rejected. The caller keeps its post-resolve length check as a defensive
- * backstop against a store whose recorded length disagrees with the bytes.
+ * rejected.
  */
-export async function resolveServerAsset(
-  assetId: string,
-  request: OwnerAuthRequest,
-  maxByteLength?: number,
-): Promise<ServerAssetResolution> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) return { status: 'unconfigured' };
-
-  // The same memoized owner resolution the rest of the request uses. Its
-  // cookies ride every answer below, for the route to send back.
-  const outcome = await resolveRequestOwner(request);
-  if (!outcome.ok) return { status: 'unauthenticated' };
-  const cookies = outcome.setCookies?.length ? { setCookies: outcome.setCookies } : {};
-  return {
-    ...(await resolveOwnedAsset(
-      assetId,
-      outcome.principal.ownerId,
-      connectionString,
-      maxByteLength,
-    )),
-    ...cookies,
-  };
-}
-
-/** {@link resolveServerAsset} for an owner already resolved (background work). */
 export async function resolveOwnedAsset(
   assetId: string,
   ownerId: string,
   connectionString: string,
   maxByteLength: number | undefined,
-): Promise<ServerAssetResolution> {
+): Promise<OwnedAssetResolution> {
   const assetPrincipal = assetPrincipalForOwner(ownerId);
 
   try {

@@ -1,9 +1,8 @@
 /**
  * Material analysis: extract the text of one course material (a document, or
  * an audio/video file) for the generation pipeline, through the extractor the
- * document slot or the caller names. Moved from POST /api/extract-document,
- * which keeps reading the bytes (an upload or an allocated asset id) and the
- * request's deprecated provider fields, and maps refusals to its responses.
+ * document slot or the caller names. The logic of 1.1.x's
+ * POST /api/extract-document; a run reads the bytes of an uploaded material.
  *
  * Server-side material extraction for the Pro agent's sessions
  * (`lib/server/material-extraction/extract.ts`) shares the slot services and
@@ -48,7 +47,7 @@ import { StepRefusal, type StepContext } from './context';
  * parsed from a multipart upload or resolved from the server asset store by
  * asset id. Both forms then run the same extractor selection below.
  */
-export interface MaterialSource {
+interface MaterialSource {
   fileName: string;
   fileSize: number;
   /** Normalized canonical MIME type (see `normalizeDocumentMimeType`). */
@@ -57,7 +56,7 @@ export interface MaterialSource {
 }
 
 /** Provider fields a request may still name (deprecated; the document slot decides). */
-export interface MaterialExtractorRequest {
+interface MaterialExtractorRequest {
   providerId?: string;
   apiKey?: string;
   baseUrl?: string;
@@ -66,7 +65,7 @@ export interface MaterialExtractorRequest {
 }
 
 /** Why material analysis declined; the message says what to do about it. */
-export type MaterialAnalysisRefusal =
+type MaterialAnalysisRefusal =
   /** The named extractor cannot read this media type. */
   | 'provider-cannot-extract'
   /** The named document extractor does not exist. */

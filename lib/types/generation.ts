@@ -15,17 +15,14 @@ import type { MediaGenerationRequest } from '@/lib/media/types';
  */
 export interface PdfImage {
   id: string; // e.g., "img_1", "img_2"
-  src: string; // base64 data URL (empty when stored in IndexedDB)
+  src: string; // base64 data URL (empty when the bytes are a pool asset)
   pageNumber: number; // Page number in PDF
   description?: string; // Optional description for AI context
-  storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
   /**
-   * Pool asset id of the image bytes. Present on server-backed deployments
-   * (RFC #1153 part 2 B): the extracted images are pool assets, so generation
-   * is fed by id and no IndexedDB bytes are materialized. Browser-backed
-   * images carry `storageId` instead — never both.
+   * Pool asset id of the image bytes (RFC #1153 part 2 B): the extracted
+   * images are pool assets, so generation is fed by id.
    */
-  assetId?: string; // Allocated asset-pool id (server-backed transport)
+  assetId?: string; // Allocated asset-pool id
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
   originalId?: string; // ID assigned by the extractor before bundle-level normalization
@@ -58,23 +55,19 @@ export interface SelectedCourseMaterial {
   contentDigest?: string;
 }
 
-export interface SessionDocumentSource {
+/** One source document of a generation's material bundle. */
+export interface DocumentSource {
   id: string;
   name: string;
   size: number;
   lastModified?: number;
   mimeType?: string;
   order: number;
-  storageKey: string;
-  /**
-   * Allocated asset-pool id for this source. New sessions write it; legacy
-   * sessions carry only `storageKey` and keep working (back-compat).
-   */
+  /** Allocated asset-pool id for this source. */
   assetId?: string;
   /**
    * SHA-256 of the source bytes, computed at upload time. Together with the
-   * extractor identity it keys the extraction derivation cache (part 1);
-   * legacy sessions predating the digest carry only `storageKey`.
+   * extractor identity it keys the extraction derivation cache (part 1).
    */
   contentDigest?: string;
 }

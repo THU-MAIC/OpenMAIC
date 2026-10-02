@@ -2,9 +2,8 @@
  * Agent profiles: generate the classroom's agents (one teacher, plus
  * assistants and students) for a course from its name and scene outlines,
  * binding each to an advertised voice. The teacher speaks with the user's
- * narrator voice whenever that voice is usable. Moved from
- * POST /api/generate/agent-profiles, which keeps validating the request and
- * resolving the model.
+ * narrator voice whenever that voice is usable. The logic of 1.1.x's
+ * POST /api/generate/agent-profiles.
  */
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
@@ -38,7 +37,7 @@ export interface AgentProfilesInput {
 }
 
 /** The model's answer could not be read, or did not make a valid classroom. */
-export type AgentProfilesRefusal = 'unparseable' | 'too-few-agents' | 'teacher-count';
+type AgentProfilesRefusal = 'unparseable' | 'too-few-agents' | 'teacher-count';
 
 type AdvertisedVoice = NonNullable<AgentProfilesInput['availableVoices']>[number];
 

@@ -1,7 +1,7 @@
 /**
- * The error code of a failed step, as the classic generation routes answered
- * the same failure (`llmApiError`, the routes' refusal mappings), so a client
- * shows the same sentence for it as it did when it called the routes itself.
+ * The error code of a failed step, as the 1.1.x generation routes answered the
+ * same failure, so a client shows the same sentence for it as it did when it
+ * called those routes itself.
  */
 import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';

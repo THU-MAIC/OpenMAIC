@@ -181,9 +181,8 @@ slots:
   document: mineru
 ```
 
-`/api/extract-document` and `/api/parse-pdf` take only the file; with the
-`document` slot unassigned the server picks a built-in extractor for the file
-type. (The request fields `providerId`, `apiKey` and `baseUrl` are still
+`/api/parse-pdf` takes only the file; with the `document` slot unassigned the
+server picks a built-in extractor for the file type. (The request fields `providerId`, `apiKey` and `baseUrl` are still
 accepted from API clients while the slot is unassigned, and are deprecated.)
 
 ## 添加新的提供商

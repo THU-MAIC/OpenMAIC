@@ -128,7 +128,7 @@ export interface RunMediaItem {
 }
 
 /**
- * The media the outline asks for, in the order the browser's media pass takes
+ * The media the outline asks for, in the order 1.1.x's browser media pass took
  * it (outline order, then each outline's own order). A placeholder requested
  * twice is generated once, as the browser keys its media tasks by it.
  */
