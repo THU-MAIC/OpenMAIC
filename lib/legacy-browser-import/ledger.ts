@@ -91,6 +91,12 @@ export interface ImportLedger {
   failedRuns: number;
   /** Earliest time (epoch ms) the next run may start. */
   nextRunAt?: number;
+  /**
+   * The last run was refused as unauthorized (an expired credential, or an
+   * ACCESS_CODE gate the page had not passed yet). Accepting the access code
+   * retries such a run at once instead of waiting out the backoff.
+   */
+  pausedUnauthorized?: true;
   /** Set once nothing is pending: later loads skip the importer entirely. */
   completedAt?: number;
   courses: Record<string, CourseEntry>;

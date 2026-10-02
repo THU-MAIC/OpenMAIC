@@ -94,7 +94,7 @@ pre-runtime quiz keys until the ledger records the import as complete
 | Server persistence unreachable, learner key unavailable | Nothing is done; the next load tries again.                                                                                           |
 | Network error (including the asset client's `0 HTTP_REQUEST_FAILED`, a dropped request or a timed-out existence probe), 5xx, 408/429, 409, a 2xx/3xx answer the client could not use | The item stays pending; a later load retries it. Backoff between runs: 30 s, doubling, capped at 6 h.                                  |
 | 503 `OWNER_BUSY`                                         | The run pauses; the next run is allowed after `Retry-After` (2 s when not visible to the client).                                      |
-| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff. This holds for a failure from any call of a course.            |
+| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff, or at once when the access code is accepted (`resumeLegacyBrowserImportAfterAccess`). This holds for a failure from any call of a course. |
 | 403 `OWNER_RETIRED`                                      | The run stops and items stay pending; the claim carried the binding, so the account continues them.                                  |
 | 503 `PERSISTENCE_UNAVAILABLE` (the fence could not read the binding) | Transient, like any 5xx.                                                                                                              |
 | 409 `LEGACY_IMPORT_NOT_BOUND`                            | The owner this request resolved to does not hold the browser (the cookie changed): the run stops, items stay pending, and a later load asks for the binding again. |
@@ -272,7 +272,9 @@ When the maintainers decide enough releases have passed:
    table of `tests/server/identity/legacy-import-binding-route.test.ts`, and
    `LEGACY_AGENT_REGISTRY_KEY` with its retention in
    `lib/device-storage/clear-local-cache.ts`.
-2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
+2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`, and the
+   one in `components/access-code-guard.tsx` that resumes the import once the
+   access code is accepted.
 3. Remove the server side:
    - `app/api/identity/legacy-import-binding/` and
      `tests/server/identity/legacy-import-binding-route.test.ts`;

@@ -12,7 +12,11 @@ import {
   clearLocalStorageKeepingImportState,
 } from '@/lib/device-storage/clear-local-cache';
 import { db } from '@/lib/device-storage/database';
-import { OTHER_OWNER_RECHECK_MS, runLegacyBrowserImport } from '@/lib/legacy-browser-import';
+import {
+  OTHER_OWNER_RECHECK_MS,
+  resumeLegacyBrowserImportAfterAccess,
+  runLegacyBrowserImport,
+} from '@/lib/legacy-browser-import';
 import { freshStageId } from '@/lib/legacy-browser-import/ids';
 import { ensureLedger, LEDGER_KEY, loadLedger } from '@/lib/legacy-browser-import/ledger';
 import { loadCursorValue } from '@/lib/playback/cursor';
@@ -520,6 +524,62 @@ describe('failures', () => {
     );
     expect(second.status).toBe('complete');
     expect([...server.stageOwners.keys()].sort()).toEqual([DOCS_COURSE, TABLES_COURSE]);
+  });
+
+  it('retries a run the access gate refused as soon as the code is accepted', async () => {
+    await seedLatestBrowser(storage);
+    // Before the code is entered, the gate answers every request 401.
+    server.failWith = (operation) =>
+      operation === 'bind'
+        ? Object.assign(new Error('Access code required'), { status: 401 })
+        : undefined;
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('stopped');
+    expect(loadLedger(storage)).toMatchObject({
+      nextRunAt: NOW + 30_000,
+      pausedUnauthorized: true,
+    });
+    // A plain later run still waits out the backoff.
+    server.failWith = () => undefined;
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('deferred');
+
+    // The code is accepted: the import runs now, inside the backoff.
+    const resumed = await resumeLegacyBrowserImportAfterAccess(server.options(storage));
+    expect(resumed.status).toBe('complete');
+    expect(resumed.ledger?.pausedUnauthorized).toBeUndefined();
+    expect([...server.stageOwners.keys()].sort()).toEqual([DOCS_COURSE, TABLES_COURSE]);
+  });
+
+  it('keeps any other backoff when the access code is accepted', async () => {
+    await seedLatestBrowser(storage);
+    server.failWith = (operation) =>
+      operation === 'saveDocument'
+        ? Object.assign(new Error('busy'), { status: 503, code: 'OWNER_BUSY', retryAfterMs: 5_000 })
+        : undefined;
+    expect((await runLegacyBrowserImport(server.options(storage))).status).toBe('stopped');
+    expect(loadLedger(storage)?.pausedUnauthorized).toBeUndefined();
+
+    server.failWith = () => undefined;
+    const resumed = await resumeLegacyBrowserImportAfterAccess(server.options(storage));
+    expect(resumed.status).toBe('deferred');
+  });
+
+  it('queues a resume behind the run in progress instead of running beside it', async () => {
+    await seedLatestBrowser(storage);
+    const saves: string[] = [];
+    server.failWith = (operation, subject) => {
+      if (operation === 'saveDocument') saves.push(String(subject));
+      return undefined;
+    };
+
+    // Without Web Locks (as here) two overlapping runs would both import.
+    const [first, second] = await Promise.all([
+      resumeLegacyBrowserImportAfterAccess(server.options(storage)),
+      resumeLegacyBrowserImportAfterAccess(server.options(storage)),
+    ]);
+
+    expect(first.status).toBe('complete');
+    expect(second.status).toBe('already-complete');
+    expect(saves.sort()).toEqual([DOCS_COURSE, TABLES_COURSE].sort());
   });
 
   it('records a validation refusal on that course and continues with the rest', async () => {

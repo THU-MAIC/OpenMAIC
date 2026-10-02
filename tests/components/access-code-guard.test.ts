@@ -13,12 +13,17 @@ vi.mock('@/components/access-code-modal', () => ({
 vi.mock('@/components/model-settings-init', () => ({ importLegacyModelSettings: vi.fn() }));
 vi.mock('@/lib/model-settings/client', () => ({ modelSettingsClient: { load: vi.fn() } }));
 vi.mock('@/lib/orchestration/registry/store', () => ({ reloadAgentRegistry: vi.fn() }));
+const legacyImport = vi.hoisted(() => ({ resume: vi.fn(async () => ({ status: 'complete' })) }));
+vi.mock('@/lib/legacy-browser-import', () => ({
+  resumeLegacyBrowserImportAfterAccess: legacyImport.resume,
+}));
 
 import { AccessCodeGuard } from '@/components/access-code-guard';
 
 let host: HTMLDivElement;
 beforeEach(() => {
   modal.onSuccess = null;
+  legacyImport.resume.mockClear();
   host = document.createElement('div');
   document.body.appendChild(host);
 });
@@ -60,6 +65,8 @@ it('mounts the page again once the access code is accepted, so its requests are 
 
   await act(async () => modal.onSuccess!());
   expect(mounts.count).toBe(2);
+  // The one-time import of this browser's earlier courses is resumed too.
+  await vi.waitFor(() => expect(legacyImport.resume).toHaveBeenCalledTimes(1));
   await act(async () => root.unmount());
 });
 
@@ -69,5 +76,6 @@ it('mounts the page once when no access code is required', async () => {
   await act(async () => render());
   expect(mounts.count).toBe(1);
   expect(modal.onSuccess).toBeNull();
+  expect(legacyImport.resume).not.toHaveBeenCalled();
   await act(async () => root.unmount());
 });

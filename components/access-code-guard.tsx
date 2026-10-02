@@ -60,6 +60,15 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
             void importLegacyModelSettings();
             // The same for the custom agents (and their one-time import).
             void reloadAgentRegistry();
+            // And for the courses this browser stored before 1.2.0: the
+            // import's first run was refused before the gate passed.
+            void import('@/lib/legacy-browser-import')
+              .then(({ resumeLegacyBrowserImportAfterAccess }) =>
+                resumeLegacyBrowserImportAfterAccess(),
+              )
+              .catch((error: unknown) =>
+                console.warn('[legacy-browser-import] Could not load:', error),
+              );
           }}
         />
       )}
