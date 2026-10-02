@@ -60,11 +60,22 @@ describe('run input', () => {
     });
   });
 
+  it('reads an empty preset selection as the default presets (resolved by the run)', () => {
+    expect(
+      parseRunInput({ requirement: 'x', agents: { mode: 'preset', agentIds: [] } }),
+    ).toMatchObject({ ok: true, value: { agents: { mode: 'preset', agentIds: [] } } });
+    expect(parseRunInput({ requirement: 'x', agents: { mode: 'auto' } })).toMatchObject({
+      ok: true,
+      value: { agents: { mode: 'auto' } },
+    });
+  });
+
   it.each([
     [{}, /requirement/],
     [{ requirement: '  ' }, /requirement/],
     [{ requirement: 'x', materialIds: ['nope'] }, /materialIds/],
-    [{ requirement: 'x', agents: { mode: 'preset', agentIds: [] } }, /agentIds/],
+    [{ requirement: 'x', agents: { mode: 'preset', agentIds: [''] } }, /agentIds/],
+    [{ requirement: 'x', agents: { mode: 'preset' } }, /agentIds/],
     [{ requirement: 'x', agents: { mode: 'random' } }, /agents must be/],
     [{ requirement: 'x', outlineReview: 'skip' }, /outlineReview/],
     [{ requirement: 'x', interactive: 'yes' }, /interactive/],

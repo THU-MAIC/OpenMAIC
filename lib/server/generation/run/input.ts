@@ -136,7 +136,7 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
         agents = { mode: 'auto', presetAgentIds: ids.value };
       }
     } else if (value?.mode === 'preset') {
-      const ids = agentIdList(value.agentIds, 'agents.agentIds', 1);
+      const ids = agentIdList(value.agentIds, 'agents.agentIds', 0);
       if (!ids.ok) return ids;
       agents = { mode: 'preset', agentIds: ids.value };
     } else {

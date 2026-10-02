@@ -870,7 +870,10 @@ export async function executeGenerationRun(
         result = await presets(selected.length > 0 ? selected : DEFAULT_PRESET_AGENT_IDS);
       }
     } else {
-      result = await presets(input.agents.agentIds);
+      // No agents selected: the default presets, as the learner's selection
+      // starts out.
+      const selected = input.agents.agentIds;
+      result = await presets(selected.length > 0 ? selected : DEFAULT_PRESET_AGENT_IDS);
     }
     const now = Date.now();
     const stage: Stage = {

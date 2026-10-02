@@ -553,6 +553,16 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(document!.stage.agentIds).toEqual(['default-2']);
     expect(document!.stage).not.toHaveProperty('generatedAgentConfigs');
 
+    // No preset selected: the default presets teach the course.
+    const defaults = await start(
+      runInput({ agents: { mode: 'preset', agentIds: [] }, outlineReview: 'auto' }),
+    );
+    const before = calls.sceneContent.length;
+    expect(await drive(defaults.id, services)).toBe('completed');
+    expect(
+      (calls.sceneContent[before]!.agents as Array<{ id: string }>).map((agent) => agent.id),
+    ).toEqual(['default-1', 'default-2', 'default-3']);
+
     // An edited outline is a new revision, and the run generates exactly it.
     const edited = await start();
     expect(await drive(edited.id, services)).toBe('waiting');

@@ -60,7 +60,10 @@ export type GenerationRunAgents =
    * preset agents (as the browser falls back to its selection).
    */
   | { mode: 'auto'; presetAgentIds?: string[] }
-  /** These agents, by id: built-in ones or the owner's custom ones. */
+  /**
+   * These agents, by id: built-in ones or the owner's custom ones; none is the
+   * default presets (what the learner's selection starts out as).
+   */
   | { mode: 'preset'; agentIds: string[] };
 
 /**
