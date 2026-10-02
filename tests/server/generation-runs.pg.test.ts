@@ -626,7 +626,8 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(stored).toMatchObject({
       state: 'paused',
       step: 'scene:1:actions',
-      error: { step: 'scene:1:actions', message: 'provider exploded' },
+      // No provider status: the routes answered INTERNAL_ERROR.
+      error: { step: 'scene:1:actions', message: 'provider exploded', errorCode: 'INTERNAL_ERROR' },
       leaseWorkerId: null,
       progress: { scenesCompleted: 1 },
     });
@@ -1098,7 +1099,13 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(stored).toMatchObject({
       state: 'paused',
       step: 'scene:1:content',
-      error: { step: 'scene:1:content', message: 'content refused' },
+      // The provider's refusal, as the content route answered it.
+      error: {
+        step: 'scene:1:content',
+        message: 'content refused',
+        errorCode: 'UPSTREAM_ERROR',
+        statusCode: 400,
+      },
       progress: { scenesCompleted: 2 },
     });
     let document = await documentStore(OWNER).loadDocument(stored.stageId!);

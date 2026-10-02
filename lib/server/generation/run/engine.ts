@@ -116,6 +116,7 @@ import {
   type RouteRetryOptions,
 } from './retry';
 import { STEP_DEADLINES_MS, withDeadline } from './deadline';
+import { runFailureCode, type RunFailureCode } from './failure-code';
 import type { RunMaterialImage, RunStepServices } from './services';
 import {
   commitGenerationRun,
@@ -284,6 +285,13 @@ class StepFailedError extends Error {
     super(cause instanceof Error ? cause.message || 'The step failed' : String(cause));
     this.name = 'StepFailedError';
   }
+}
+
+/** The code a failed step is reported with (see `runFailureCode`). */
+function failureCodeOf(error: unknown): RunFailureCode {
+  return error instanceof InvalidSceneError
+    ? { errorCode: 'GENERATION_FAILED' }
+    : runFailureCode(error);
 }
 
 /** A generated scene the course cannot hold (it fails the document's own scene validation). */
@@ -510,7 +518,7 @@ export async function executeGenerationRun(
   };
   // In parallel mode the browser marks a scene whose content failed and goes
   // on with the others, pausing once they are done; these are those scenes.
-  const skippedScenes = new Map<number, string>();
+  const skippedScenes = new Map<number, { message: string } & RunFailureCode>();
   const skippedStepIds = () =>
     [...skippedScenes.keys()].flatMap((index) =>
       SCENE_STEP_KINDS.map((kind) => sceneStepId(index, kind)),
@@ -607,9 +615,15 @@ export async function executeGenerationRun(
                 ? result.failed.message || 'The step failed'
                 : String(result.failed);
             log.warn(`run ${run.id}: ${stepId} failed; continuing with the other scenes`);
-            skippedScenes.set(step.sceneIndex, message);
+            const code = failureCodeOf(result.failed);
+            skippedScenes.set(step.sceneIndex, { message, ...code });
             await commit({
-              events: [{ type: 'step_failed', data: { step: stepId, message, continuing: true } }],
+              events: [
+                {
+                  type: 'step_failed',
+                  data: { step: stepId, message, ...code, continuing: true },
+                },
+              ],
             });
             return null;
           }
@@ -1555,7 +1569,7 @@ export async function executeGenerationRun(
     };
   };
 
-  const pause = async (stepId: string, message: string) => {
+  const pause = async (stepId: string, message: string, code: RunFailureCode) => {
     // Content generated ahead stops before the run pauses, and so does the
     // media pass (a paused run is claimed again for the media it has left).
     prewarmAbort.abort();
@@ -1564,11 +1578,11 @@ export async function executeGenerationRun(
       patch: {
         state: 'paused',
         step: stepId,
-        error: { step: stepId, message },
+        error: { step: stepId, message, ...code },
         releaseLease: true,
       },
       events: [
-        { type: 'step_failed', data: { step: stepId, message } },
+        { type: 'step_failed', data: { step: stepId, message, ...code } },
         { type: 'state', data: { state: 'paused', step: stepId } },
       ],
     });
@@ -1686,11 +1700,12 @@ export async function executeGenerationRun(
       // The media pass runs alongside the scenes once the course exists.
       if (run.state === 'generating' && courseExists()) await ensureMediaLane();
       if (advance.kind === 'complete') {
-        const [failedIndex, message] =
+        const [failedIndex, failure] =
           [...skippedScenes.entries()].sort(([a], [b]) => a - b)[0] ?? [];
         if (failedIndex !== undefined) {
           // Every other scene is in: pause at the first one that failed.
-          await pause(sceneStepId(failedIndex, 'content'), message!);
+          const { message, ...code } = failure!;
+          await pause(sceneStepId(failedIndex, 'content'), message, code);
           return 'paused';
         }
         // Every media item has an answer before the course is complete.
@@ -1759,7 +1774,7 @@ export async function executeGenerationRun(
     if (error instanceof StepFailedError) {
       log.warn(`run ${run.id}: step ${error.stepId} failed; pausing`, error.cause);
       try {
-        await pause(error.stepId, error.message);
+        await pause(error.stepId, error.message, failureCodeOf(error.cause));
       } catch (pauseError) {
         if (isGenerationRunLeaseLostError(pauseError)) return 'interrupted';
         throw pauseError;

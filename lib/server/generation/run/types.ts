@@ -127,6 +127,14 @@ export interface GenerationRunFailure {
   /** The step that failed; null when the run stopped before it chose one. */
   step: string | null;
   message: string;
+  /**
+   * The error code the classic route answered the same failure with
+   * (`RATE_LIMITED`, `UPSTREAM_ERROR`, `GENERATION_FAILED`, `MISSING_API_KEY`,
+   * `INTERNAL_ERROR`, ...), so a client can say it the way it always did.
+   */
+  errorCode?: string;
+  /** The provider's HTTP status, for a provider's refusal. */
+  statusCode?: number;
   /** Where `retry` resumes a run that stopped without a step. */
   resumeState?: ExecutableRunState;
 }

@@ -23,6 +23,7 @@ import type { SceneOutline } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { RunApiError } from '@/lib/generation-run-client/api';
+import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
 import {
   createAutoContinue,
@@ -307,11 +308,12 @@ function GenerationPreviewContent() {
     );
   }
 
+  const failureSentence = (text: FailureText) => ('key' in text ? t(text.key) : text.text);
   const isReviewingOutlines = phase === 'review';
   const isOutlineReady = phase === 'outline-ready';
   const error =
     commandError ??
-    (view.state === 'paused' ? view.error?.message || t('generation.sceneGenerateFailed') : null);
+    (view.state === 'paused' && view.error ? failureSentence(runFailureText(view.error)) : null);
   const paused = view.state === 'paused';
   const statusMessage = view.outlineRetrying
     ? t('generation.outlineRetrying')

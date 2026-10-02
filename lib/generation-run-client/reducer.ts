@@ -102,7 +102,12 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
         if (index !== null) next.skippedScenes = { ...next.skippedScenes, [index]: message };
         return next;
       }
-      next.error = { step, message };
+      next.error = {
+        step,
+        message,
+        ...(typeof data.errorCode === 'string' ? { errorCode: data.errorCode } : {}),
+        ...(typeof data.statusCode === 'number' ? { statusCode: data.statusCode } : {}),
+      };
       next.failedSeq = event.seq;
       return next;
     }

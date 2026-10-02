@@ -762,6 +762,7 @@ export async function claimNextGenerationRun(
         const failure: GenerationRunFailure = {
           step: previous.step,
           message: 'The step was interrupted too many times',
+          errorCode: 'INTERNAL_ERROR',
           ...(previous.step ? {} : { resumeState: previous.state as ExecutableRunState }),
         };
         await applyPatch(
