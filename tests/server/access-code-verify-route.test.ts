@@ -213,6 +213,27 @@ describe('POST /api/access-code/verify — cookie', () => {
     const [, , options] = mocks.cookieSet.mock.calls[0];
     expect(options.maxAge).toBe(ACCESS_TOKEN_MAX_AGE_SECONDS);
   });
+
+  it('marks the cookie Secure in production unless COOKIE_SECURE=0', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      for (const [cookieSecure, secure] of [
+        [undefined, true],
+        ['0', false],
+        ['false', true],
+      ] as const) {
+        if (cookieSecure === undefined) vi.stubEnv('COOKIE_SECURE', undefined);
+        else vi.stubEnv('COOKIE_SECURE', cookieSecure);
+        mocks.cookieSet.mockReset();
+        const POST = await loadPost();
+        expect((await POST(verifyRequest(ACCESS_CODE))).status).toBe(200);
+        const [, , options] = mocks.cookieSet.mock.calls[0];
+        expect(options.secure).toBe(secure);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 describe('POST /api/access-code/verify — short-code warning', () => {

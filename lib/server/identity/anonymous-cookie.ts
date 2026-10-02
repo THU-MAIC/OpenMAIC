@@ -1,3 +1,5 @@
+import { cookiesAreSecure } from '@/lib/server/cookie-secure';
+
 import type {
   OwnerAuthMethod,
   OwnerAuthMethodResult,
@@ -61,14 +63,11 @@ function readCookie(headers: Headers, name: string): string | undefined {
 }
 
 /**
- * Whether the anonymous owner cookie carries `Secure`. Production sets it by
- * default; plain-HTTP deployments opt out with the exact value COOKIE_SECURE=0
- * (Safari refuses to store `Secure` cookies served over plain http://localhost,
- * which makes every request mint a fresh owner and owner-scoped writes fail).
+ * Whether the anonymous owner cookie carries `Secure` (see `cookiesAreSecure`).
  * Shared by the route and Server Action paths so both entry points agree.
  */
 export function anonymousCookieSecure(): boolean {
-  return process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== '0';
+  return cookiesAreSecure();
 }
 
 function anonymousCookieHeader(id: string): string {

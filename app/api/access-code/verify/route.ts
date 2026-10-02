@@ -6,6 +6,7 @@ import { createAccessToken } from '@/lib/server/access-token';
 import { accessCodeAttemptLimiter } from '@/lib/server/attempt-limiter';
 import { clientIdentity, isTrustedProxyIdentity } from '@/lib/server/client-identity';
 import { warnIfAccessCodeIsShort } from '@/lib/server/access-code-warning';
+import { cookiesAreSecure } from '@/lib/server/cookie-secure';
 
 /**
  * Pull the candidate code out of an already-parsed JSON body. Anything that is
@@ -73,7 +74,9 @@ export async function POST(request: Request) {
     sameSite: 'lax',
     path: '/',
     maxAge: ACCESS_TOKEN_MAX_AGE_SECONDS,
-    secure: process.env.NODE_ENV === 'production',
+    // The same rule as the owner cookie: without the COOKIE_SECURE=0 opt-out
+    // a plain-HTTP deployment's browser drops it and the gate never opens.
+    secure: cookiesAreSecure(),
   });
 
   return apiSuccess({ valid: true });
