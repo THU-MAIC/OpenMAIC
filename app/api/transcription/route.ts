@@ -8,12 +8,16 @@ import {
   resolveASRModel,
 } from '@/lib/server/provider-config';
 import {
-  mediaResolutionResponse,
   RequestedProviderRefusedError,
   resolveMediaSlot,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
+import {
+  savedMediaConnection,
+  savedProviderRef,
+  savedProviderResponse,
+} from '@/lib/server/model-config/saved-provider';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -43,15 +47,23 @@ export async function POST(req: NextRequest) {
 
     // The asr slot decides; the provider, key and base URL a request names
     // (deprecated) count only when it is unassigned.
+    // A settings test names a saved provider instead (`previewProvider`, with
+    // an optional `previewModel`): the server's configuration of it.
     let connection: MediaConnection;
     try {
-      connection = await resolveMediaSlot('asr', {
-        workspaceId: await requestWorkspaceId(req),
-        legacyRequest: async () =>
-          providerId ? requestedASRProvider(providerId, modelId, apiKey, baseUrl) : undefined,
-      });
+      const preview = savedProviderRef(
+        formData.get('previewProvider') ?? undefined,
+        formData.get('previewModel') ?? undefined,
+      );
+      connection = preview
+        ? await savedMediaConnection(req, 'asr', preview)
+        : await resolveMediaSlot('asr', {
+            workspaceId: await requestWorkspaceId(req),
+            legacyRequest: async () =>
+              providerId ? requestedASRProvider(providerId, modelId, apiKey, baseUrl) : undefined,
+          });
     } catch (error) {
-      const refused = mediaResolutionResponse(error, 'Speech recognition');
+      const refused = savedProviderResponse(error, 'Speech recognition');
       if (refused) return refused;
       throw error;
     }

@@ -11,14 +11,21 @@
  * second walk rather than a third layer in the first one, so that a default
  * never outranks a workspace choice made higher up the tree.
  */
-import { slotForStage, type SlotId } from '@/lib/config/model-slots';
+import { slotForStage, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { createLogger } from '@/lib/logger';
 import type { LlmStage } from '@/lib/server/model-routes';
 import type { OwnerAuthRequest } from '@/lib/server/identity/types';
 
 import { loadDeploymentLayer, type DeploymentLayer } from './deployment-layer';
 import { parseModelRef, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
-import { resolveSlot, type ModelConfigLayer, type SlotResolution } from './resolve-slot';
+import {
+  resolveModelReference,
+  resolveSlot,
+  SlotResolutionError,
+  type ModelConfigLayer,
+  type ResolvedModelTarget,
+  type SlotResolution,
+} from './resolve-slot';
 
 const log = createLogger('ModelConfig');
 
@@ -226,4 +233,36 @@ export class SlotUnassignedError extends Error {
     );
     this.name = 'SlotUnassignedError';
   }
+}
+
+/**
+ * A provider the workspace has configured (the deployment's, or its own as
+ * the policy lets it count), resolved by reference for a capability: what the
+ * settings' test buttons check, so that the browser names a saved provider
+ * and never sends its key. With `workspaceOnly`, only the workspace's own
+ * providers (what the settings may edit, such as fetching a model list).
+ * Throws SlotResolutionError when there is no such provider.
+ */
+export async function savedProviderTarget(
+  ref: string,
+  capability: SlotCapability,
+  workspaceId: string | null,
+  { workspaceOnly = false }: { workspaceOnly?: boolean } = {},
+): Promise<ResolvedModelTarget> {
+  const { layer: deployment } = deploymentConfig();
+  const stored = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
+  const workspace = workspaceUnderPolicy(stored, deployment);
+  const layers = workspaceOnly
+    ? [workspace].filter((entry): entry is ModelConfigLayer => !!entry)
+    : [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry);
+  const target = resolveModelReference(ref, capability, layers);
+  // A deployment's provider of the same id outranks the workspace's.
+  if (
+    workspaceOnly &&
+    deployment?.config.providers &&
+    Object.hasOwn(deployment.config.providers, target.providerId)
+  ) {
+    throw new SlotResolutionError("reference: the provider is the deployment's");
+  }
+  return target;
 }

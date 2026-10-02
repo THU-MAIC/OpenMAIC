@@ -3,6 +3,11 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchModels, ModelFetchError } from '@/lib/server/model-fetch';
+import {
+  savedChatEndpoint,
+  savedProviderRef,
+  savedProviderResponse,
+} from '@/lib/server/model-config/saved-provider';
 
 const log = createLogger('ProbeModels');
 
@@ -22,11 +27,26 @@ export async function POST(req: NextRequest) {
     return apiError('INVALID_REQUEST', 400, 'Invalid JSON body');
   }
   try {
-    const { baseUrl, apiKey, modelsUrl } = body as {
+    let { baseUrl, apiKey, modelsUrl } = body as {
       baseUrl?: string;
       apiKey?: string;
       modelsUrl?: string;
     };
+    // The settings name one of the workspace's own providers (`provider`):
+    // its stored endpoint and key are used, and nothing else from the request.
+    const saved = (body as { provider?: unknown }).provider;
+    if (saved !== undefined) {
+      try {
+        const ref = savedProviderRef(saved);
+        if (!ref) return apiError('MISSING_REQUIRED_FIELD', 400, 'provider is required');
+        ({ baseUrl, apiKey } = await savedChatEndpoint(req, ref));
+        modelsUrl = undefined;
+      } catch (error) {
+        const refused = savedProviderResponse(error, 'language model');
+        if (refused) return refused;
+        throw error;
+      }
+    }
 
     if (!baseUrl) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'baseUrl is required');

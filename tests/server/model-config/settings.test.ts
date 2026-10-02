@@ -47,10 +47,15 @@ describe('modelSettingsView', () => {
       { id: 'mine', preset: 'openai', source: 'workspace', key: { set: true, mask: '…9876' } },
     ]);
     // Each provider lists the models it serves per capability, for the pickers.
-    expect(view.providers[0].capabilities.chat?.models).toContainEqual({
-      id: 'deepseek-v4-pro',
-      name: 'DeepSeek V4 Pro',
-    });
+    expect(view.providers[0].capabilities.chat?.models).toContainEqual(
+      expect.objectContaining({ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }),
+    );
+    // With what the registry knows of each model, and the entry that serves it.
+    expect(view.providers[0].capabilities.chat?.registryId).toBe('deepseek');
+    expect(
+      view.providers[0].capabilities.chat?.models.find((model) => model.id === 'deepseek-v4-pro')
+        ?.capabilities,
+    ).toMatchObject({ tools: true });
     const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
     expect(slot('llm')).toMatchObject({ locked: true, effective: { source: 'deployment' } });
     expect(slot('video')).toMatchObject({ locked: true, effective: { status: 'disabled' } });

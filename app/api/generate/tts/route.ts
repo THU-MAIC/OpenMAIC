@@ -34,12 +34,16 @@ import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwe
 import { DEFAULT_TTS_VOICES, isQwenCloneVoice } from '@/lib/audio/constants';
 import {
   adapterOptions,
-  mediaResolutionResponse,
   RequestedProviderRefusedError,
   resolveMediaSlot,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
+import {
+  savedMediaConnection,
+  savedProviderRef,
+  savedProviderResponse,
+} from '@/lib/server/model-config/saved-provider';
 
 const log = createLogger('TTS API');
 
@@ -78,17 +82,22 @@ export async function POST(req: NextRequest) {
 
     // The tts slot decides; the provider, key and base URL a request names
     // (deprecated) count only when it is unassigned.
+    // A settings preview names a saved provider instead (`previewProvider`,
+    // with an optional `previewModel`): the server's configuration of it.
     let connection: MediaConnection;
     try {
-      connection = await resolveMediaSlot('tts', {
-        workspaceId: await requestWorkspaceId(req),
-        legacyRequest: async () =>
-          requestedProviderId
-            ? requestedTTSProvider(requestedProviderId, ttsApiKey, ttsBaseUrl)
-            : undefined,
-      });
+      const preview = savedProviderRef(body.previewProvider, body.previewModel);
+      connection = preview
+        ? await savedMediaConnection(req, 'tts', preview)
+        : await resolveMediaSlot('tts', {
+            workspaceId: await requestWorkspaceId(req),
+            legacyRequest: async () =>
+              requestedProviderId
+                ? requestedTTSProvider(requestedProviderId, ttsApiKey, ttsBaseUrl)
+                : undefined,
+          });
     } catch (error) {
-      const refused = mediaResolutionResponse(error, 'Text to speech');
+      const refused = savedProviderResponse(error, 'Text to speech');
       if (refused) return refused;
       throw error;
     }

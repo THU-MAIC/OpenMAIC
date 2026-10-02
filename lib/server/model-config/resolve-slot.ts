@@ -134,6 +134,20 @@ function findProvider(providerId: string, layers: readonly ModelConfigLayer[]) {
   return undefined;
 }
 
+/**
+ * What a model reference (`providerId:modelId`, or the provider alone)
+ * resolves to for a capability over the layers, outside any slot: the target
+ * the settings test when they check a provider. Throws SlotResolutionError
+ * when the provider is not declared or does not offer the capability.
+ */
+export function resolveModelReference(
+  ref: string,
+  capability: SlotCapability,
+  layers: readonly ModelConfigLayer[],
+): ResolvedModelTarget {
+  return resolveTarget(ref, capability, inPrecedence(layers), 'reference');
+}
+
 function resolveTarget(
   ref: string,
   capability: SlotCapability,

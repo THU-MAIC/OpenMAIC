@@ -30,6 +30,8 @@ import {
 import { presetIdFor, tokenPlanPresetId } from '@/lib/config/preset-ids';
 import { STAGE_SLOTS, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import type { LlmStage } from '@/lib/server/model-routes';
+import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
+import type { ThinkingCapability } from '@/lib/types/provider';
 
 export interface PresetCapabilityTarget {
   /** Entry of that capability's built-in registry that serves the calls. */
@@ -180,6 +182,47 @@ export function registryDefaultBaseUrl(
 export interface CatalogueModel {
   id: string;
   name: string;
+  /** What the registry says the model can do (chat models), for the settings to show. */
+  capabilities?: {
+    streaming?: boolean;
+    tools?: boolean;
+    vision?: boolean;
+    thinking?: ThinkingCapability;
+  };
+  contextWindow?: number;
+  outputWindow?: number;
+}
+
+type RegistryModel = {
+  id: string;
+  name?: string;
+  capabilities?: CatalogueModel['capabilities'];
+  contextWindow?: number;
+  outputWindow?: number;
+};
+
+/**
+ * A model as the catalogue lists it: its name and what the registry knows of
+ * it. A chat model the registry does not list (a token plan's, or one a
+ * provider pins) still gets the thinking controls the metadata knows for it.
+ */
+export function catalogueModel(
+  capability: SlotCapability,
+  registryId: string,
+  id: string,
+  known?: RegistryModel,
+): CatalogueModel {
+  const thinking =
+    known?.capabilities?.thinking ??
+    (capability === 'chat' ? getCatalogThinkingCapability(registryId, id) : undefined);
+  const capabilities = { ...known?.capabilities, ...(thinking ? { thinking } : {}) };
+  return {
+    id,
+    name: known?.name ?? id,
+    ...(Object.keys(capabilities).length ? { capabilities } : {}),
+    ...(known?.contextWindow ? { contextWindow: known.contextWindow } : {}),
+    ...(known?.outputWindow ? { outputWindow: known.outputWindow } : {}),
+  };
 }
 
 /**
@@ -190,10 +233,25 @@ export interface CatalogueModel {
 export function presetModels(preset: ProviderPreset, capability: SlotCapability): CatalogueModel[] {
   const target = preset.capabilities[capability];
   if (!target) return [];
-  const entry = REGISTRIES[capability][target.registryId] as
-    | { models?: readonly { id: string; name?: string }[] }
-    | undefined;
-  const known = entry?.models ?? [];
+  const known = registryModels(capability, target.registryId);
   const ids = target.models ?? known.map((model) => model.id);
-  return ids.map((id) => ({ id, name: known.find((model) => model.id === id)?.name ?? id }));
+  return ids.map((id) =>
+    catalogueModel(
+      capability,
+      target.registryId,
+      id,
+      known.find((model) => model.id === id),
+    ),
+  );
+}
+
+/** The models a capability's registry entry lists. */
+export function registryModels(
+  capability: SlotCapability,
+  registryId: string,
+): readonly RegistryModel[] {
+  const entry = REGISTRIES[capability][registryId] as
+    | { models?: readonly RegistryModel[] }
+    | undefined;
+  return entry?.models ?? [];
 }

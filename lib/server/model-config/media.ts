@@ -165,6 +165,17 @@ async function fromTarget(
   };
 }
 
+/**
+ * The connection for a provider target outside slot resolution (a saved
+ * provider the settings test), under the same rules as a slot's.
+ */
+export function mediaConnectionFor(
+  slot: MediaSlot,
+  target: ResolvedModelTarget,
+): Promise<MediaConnection> {
+  return fromTarget(slot, target, 'configuration');
+}
+
 export interface MediaSlotOptions {
   workspaceId: string | null;
   /**

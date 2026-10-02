@@ -17,7 +17,12 @@ import {
   ALIDOCMIND_ENDPOINT_NOT_ALLOWED_MESSAGE,
   resolveSafeClientAliDocMindEndpoint,
 } from '@/lib/server/alidocmind-endpoint';
-import { MINERU_CLOUD_DEFAULT_BASE } from '@/lib/pdf/constants';
+import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import {
+  savedMediaConnection,
+  savedProviderRef,
+  savedProviderResponse,
+} from '@/lib/server/model-config/saved-provider';
 
 const log = createLogger('Verify PDF Provider');
 
@@ -38,10 +43,90 @@ function probePolicy(managed: boolean): ProviderFetchPolicy {
 const AUTH_FAILED_MESSAGE = 'Authentication failed, please check the API Key';
 const CONNECTION_FAILED_MESSAGE = 'Cannot connect to server, please check the Base URL';
 
+/** MinerU Cloud: an authenticated call to the batch endpoint tells whether the token works. */
+async function probeMinerUCloud(cloudBase: string, apiKey: string, managed: boolean) {
+  const response = await providerFetch(
+    `${cloudBase.replace(/\/+$/, '')}/extract-results/batch/test-connection`,
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(10000),
+    },
+    probePolicy(managed),
+  );
+  // Only the status matters; release the connection without reading the body.
+  await response.body?.cancel().catch(() => undefined);
+  // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
+  if (response.status === 401 || response.status === 403) {
+    log.warn(`MinerU Cloud probe rejected credentials [status=${response.status}]`);
+    return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
+  }
+  return apiSuccess({ message: 'Connection successful' });
+}
+
+/** A self-hosted service: any HTTP answer from its base URL means it is up. */
+async function probeSelfHosted(baseUrl: string, apiKey: string | undefined, managed: boolean) {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  const response = await providerFetch(
+    baseUrl,
+    { headers, signal: AbortSignal.timeout(10000) },
+    probePolicy(managed),
+  );
+  await response.body?.cancel().catch(() => undefined);
+  // MinerU's FastAPI root returns 404 (no root route), but the server is reachable.
+  return apiSuccess({ message: 'Connection successful' });
+}
+
+/**
+ * A saved document provider (the settings name it by id): the server's
+ * configuration supplies the key, key pair and endpoint.
+ */
+async function verifySavedProvider(req: NextRequest, ref: string): Promise<Response> {
+  let connection;
+  try {
+    connection = await savedMediaConnection(req, 'document', ref);
+  } catch (error) {
+    const refused = savedProviderResponse(error, 'document');
+    if (refused) return refused;
+    throw error;
+  }
+  const { providerId, apiKey, baseUrl, credentials, managed } = connection;
+  if (providerId === 'alidocmind') {
+    if (!credentials?.accessKeyId || !credentials.accessKeySecret) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'AliDocMind has no key pair configured');
+    }
+    const { verifyAliDocMindCredentials } = await import('@/lib/pdf/alidocmind-client');
+    const result = await verifyAliDocMindCredentials({
+      accessKeyId: credentials.accessKeyId,
+      accessKeySecret: credentials.accessKeySecret,
+      endpoint: baseUrl,
+    });
+    if (!result.ok) {
+      return apiError('INVALID_CREDENTIALS', 400, `Authentication failed: ${result.error}`);
+    }
+    return apiSuccess({ message: 'Connection successful' });
+  }
+  if (providerId === 'mineru-cloud') {
+    if (!apiKey) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
+    }
+    return probeMinerUCloud(baseUrl || MINERU_CLOUD_DEFAULT_BASE, apiKey, managed);
+  }
+  const endpoint = baseUrl || PDF_PROVIDERS[providerId as keyof typeof PDF_PROVIDERS]?.baseUrl;
+  if (!endpoint) return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
+  return probeSelfHosted(endpoint, apiKey, managed);
+}
+
 export async function POST(req: NextRequest) {
   let providerId: string | undefined;
   try {
     const body = await req.json();
+    if (body?.provider !== undefined) {
+      const ref = savedProviderRef(body.provider);
+      if (!ref) return apiError('MISSING_REQUIRED_FIELD', 400, 'Provider ID is required');
+      providerId = ref;
+      return await verifySavedProvider(req, ref);
+    }
     providerId = body.providerId;
     const { apiKey, baseUrl, accessKeyId, accessKeySecret } = body;
 
@@ -124,28 +209,7 @@ export async function POST(req: NextRequest) {
       ).replace(/\/+$/, '');
 
       // Probe the batch endpoint with an empty body to verify auth
-      const response = await providerFetch(
-        `${cloudBase}/extract-results/batch/test-connection`,
-        {
-          headers: {
-            Authorization: `Bearer ${resolvedApiKey}`,
-            Accept: 'application/json',
-          },
-          signal: AbortSignal.timeout(10000),
-        },
-        probePolicy(managed),
-      );
-      // Only the status matters; release the connection without reading the body.
-      await response.body?.cancel().catch(() => undefined);
-
-      // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
-      // Only network errors, redirects, or 401/403 indicate a problem.
-      if (response.status === 401 || response.status === 403) {
-        log.warn(`MinerU Cloud probe rejected credentials [status=${response.status}]`);
-        return apiError('INTERNAL_ERROR', 500, AUTH_FAILED_MESSAGE);
-      }
-
-      return apiSuccess({ message: 'Connection successful' });
+      return await probeMinerUCloud(cloudBase, resolvedApiKey, managed);
     }
 
     // Self-hosted providers: verify by connecting to the base URL
@@ -163,22 +227,7 @@ export async function POST(req: NextRequest) {
     }
 
     const resolvedApiKey = resolvePDFApiKey(providerId, managed ? undefined : apiKey);
-
-    const headers: Record<string, string> = {};
-    if (resolvedApiKey) {
-      headers['Authorization'] = `Bearer ${resolvedApiKey}`;
-    }
-
-    const response = await providerFetch(
-      resolvedBaseUrl,
-      { headers, signal: AbortSignal.timeout(10000) },
-      probePolicy(managed),
-    );
-    await response.body?.cancel().catch(() => undefined);
-
-    // MinerU's FastAPI root returns 404 (no root route), but the server is reachable.
-    // Any HTTP response (including 404) means the server is up.
-    return apiSuccess({ message: 'Connection successful' });
+    return await probeSelfHosted(resolvedBaseUrl, resolvedApiKey, managed);
   } catch (error) {
     log.error(`PDF provider verification failed [provider=${providerId ?? 'unknown'}]:`, error);
 

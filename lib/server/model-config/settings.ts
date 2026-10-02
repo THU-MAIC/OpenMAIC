@@ -21,6 +21,7 @@ import {
 } from '@/lib/config/model-slots';
 import {
   PROVIDER_PRESETS,
+  catalogueModel,
   getProviderPreset,
   presetModels,
   registryDefaultBaseUrl,
@@ -60,7 +61,16 @@ export interface ProviderView {
   key?: { set: boolean; mask?: string; unreadable?: boolean };
 }
 
-export type CapabilityModels = Partial<Record<SlotCapability, { models: CatalogueModel[] }>>;
+export type CapabilityModels = Partial<
+  Record<
+    SlotCapability,
+    {
+      models: CatalogueModel[];
+      /** The capability registry's entry that serves it (for names, icons and voices). */
+      registryId?: string;
+    }
+  >
+>;
 
 /** A preset a workspace can add a provider from, as the settings list it. */
 export interface PresetView {
@@ -207,9 +217,13 @@ function capabilityModels(
     // A provider's own model list narrows (or names) the chat models it serves.
     const models =
       capability === 'chat' && pinned?.length
-        ? pinned.map((id) => ({ id, name: offered.find((model) => model.id === id)?.name ?? id }))
+        ? pinned.map(
+            (id) =>
+              offered.find((model) => model.id === id) ??
+              catalogueModel(capability, registryId!, id),
+          )
         : offered;
-    result[capability] = { models };
+    result[capability] = { models, ...(registryId ? { registryId } : {}) };
   }
   return result;
 }
