@@ -11,6 +11,7 @@
  * This is pure: it takes the layers as input and builds no SDK clients.
  * Nothing calls it yet.
  */
+import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
@@ -182,13 +183,21 @@ function resolveTarget(
       `${at}: the provider (preset "${preset.id}") does not offer ${capability}`,
     );
   }
+  // A service whose official endpoint is per region (Azure Speech) names its
+  // region with an endpoint of its own: one on the official host is the
+  // vendor's, not a custom one, and is used in its normalised form. Anything
+  // else stays custom (which only the deployment may configure for media).
+  const official =
+    provider.baseUrl !== undefined
+      ? officialRegionalEndpoint(capability, target.registryId, provider.baseUrl)
+      : undefined;
   return {
     providerId,
     providerSource: found.source,
     presetId: preset.id,
     registryId: target.registryId,
-    baseUrl: provider.baseUrl ?? target.baseUrl,
-    ...(provider.baseUrl !== undefined ? { customBaseUrl: true as const } : {}),
+    baseUrl: official ?? provider.baseUrl ?? target.baseUrl,
+    ...(provider.baseUrl !== undefined && !official ? { customBaseUrl: true as const } : {}),
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),

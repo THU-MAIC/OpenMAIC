@@ -21,11 +21,12 @@ import { isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, CUSTOM_ASR_DEFAULT_LANGUAGES } from '@/lib/audio/constants';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 import {
-  buildModelSettingsProposal,
   normalizeLegacyModelSettings,
+  planModelSettingsImport,
   saveModelSettingsProposal,
   type LegacyModelSettingsState,
 } from '@/lib/legacy-browser-import/model-settings';
+import { keepUnimported } from '@/lib/legacy-browser-import/model-settings-unimported';
 
 /** Persisted-blob version for zustand's `persist` `migrate` ladder. */
 const SETTINGS_PERSIST_VERSION = 5;
@@ -184,9 +185,14 @@ function pickPersisted(state: unknown): Partial<PersistedSettings> {
   return picked as Partial<PersistedSettings>;
 }
 
-/** Stage the model settings of an earlier build for import; whether they are durably kept. */
+/**
+ * Stage the model settings of an earlier build for import, and keep the ones
+ * no workspace provider can express (with their keys) in the browser; whether
+ * both are durably kept.
+ */
 function stageLegacyModelSettings(legacy: LegacyModelSettingsState): boolean {
-  return saveModelSettingsProposal(buildModelSettingsProposal(legacy));
+  const { proposal, unimportable } = planModelSettingsImport(legacy);
+  return saveModelSettingsProposal(proposal) && keepUnimported(unimportable);
 }
 
 /**

@@ -1924,7 +1924,8 @@
       "openaiCompatible": "Compatible OpenAI",
       "notNarration": "Ce service n'est pas la narration de l'espace de travail.",
       "useForNarration": "Utiliser pour la narration",
-      "fetchNotSaved": "Les modèles ont été trouvés mais n'ont pas pu être enregistrés. Réessayez."
+      "fetchNotSaved": "Les modèles ont été trouvés mais n'ont pas pu être enregistrés. Réessayez.",
+      "regionalEndpointHint": "Azure Speech n'accepte que le point de terminaison officiel de la région de votre ressource : {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "Aucun modèle de langage pour l'instant. Configurez un service dans Services de modèles ou connectez une offre dans Token Plan ; ses modèles remplissent les parties non définies.",
         "open": "Ouvrir les services de modèles",
         "askAdmin": "Aucun modèle de langage n'est configuré. Demandez à l'administrateur du serveur d'en configurer un."
+      }
+    },
+    "unimported": {
+      "toast": "Certains réglages de modèles de ce navigateur n'ont pas pu être transférés sur le serveur. Ils sont listés dans Paramètres → Services de modèles.",
+      "title": "Certains réglages de ce navigateur n'ont pas pu être transférés sur le serveur",
+      "description": "Ils sont conservés uniquement dans ce navigateur, avec leurs clés. Reconfigurez-les ici (ou dans la configuration du serveur), puis supprimez-les.",
+      "modelChoice": "Modèle choisi pour {{slot}} : {{assignment}}",
+      "copyKey": "Copier la clé",
+      "copyKeyPair": "Copier la paire de clés",
+      "keyCopied": "Copié",
+      "copyFailed": "Impossible de copier",
+      "dismiss": "Supprimer",
+      "dismissTitle": "Supprimer ces réglages ?",
+      "dismissDescription": "Leurs clés sont effacées de ce navigateur. Cette action est irréversible.",
+      "reason": {
+        "refused": "Le serveur ne l'a pas accepté : {{detail}}",
+        "reserved": "Le serveur configure déjà un service sous ce nom.",
+        "customService": "Un service vocal personnalisé ne peut être configuré que sur le serveur (openmaic.yml).",
+        "keyPair": "Un service utilisant une paire de clés ne peut être configuré que sur le serveur (openmaic.yml).",
+        "unsupported": "Ce type de fournisseur personnalisé ne peut pas être transféré : ajoutez-le à nouveau comme point de terminaison compatible OpenAI.",
+        "unconfirmed": "Le serveur n'a pas confirmé l'importation."
       }
     }
   },

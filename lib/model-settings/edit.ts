@@ -283,9 +283,12 @@ export function providerFields(
         chat.models.length === 0 ||
         ownEndpoint ||
         !!existing?.models?.length),
-    // With its own endpoint a workspace provider serves chat only.
+    // With its own endpoint a workspace provider serves chat only (a
+    // regional service's official endpoint is its own, not a custom one).
     chatOnlyEndpoint:
-      ownEndpoint && Object.keys(preset.capabilities).some((capability) => capability !== 'chat'),
+      ownEndpoint &&
+      !preset.regionalEndpoint &&
+      Object.keys(preset.capabilities).some((capability) => capability !== 'chat'),
   };
 }
 

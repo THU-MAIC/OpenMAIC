@@ -1924,7 +1924,8 @@
       "openaiCompatible": "OpenAI 兼容",
       "notNarration": "此服务不是当前工作区的旁白语音。",
       "useForNarration": "用作旁白语音",
-      "fetchNotSaved": "已找到模型，但未能保存，请重试。"
+      "fetchNotSaved": "已找到模型，但未能保存，请重试。",
+      "regionalEndpointHint": "Azure 语音服务只接受你的资源所在区域的官方地址：{{template}}。"
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "还没有可用的语言模型。在「模型服务」中配置服务，或在「Token Plan」中接入套餐，其模型会填入尚未设置的环节。",
         "open": "打开模型服务",
         "askAdmin": "尚未配置语言模型，请联系服务器管理员。"
+      }
+    },
+    "unimported": {
+      "toast": "此浏览器中的部分模型设置未能迁移到服务器，已列在「设置 → 模型服务」中。",
+      "title": "此浏览器中的部分设置未能迁移到服务器",
+      "description": "它们连同密钥只保留在此浏览器中。请在这里（或服务器配置中）重新设置，然后丢弃。",
+      "modelChoice": "{{slot}} 的模型选择：{{assignment}}",
+      "copyKey": "复制密钥",
+      "copyKeyPair": "复制密钥对",
+      "keyCopied": "已复制",
+      "copyFailed": "复制失败",
+      "dismiss": "丢弃",
+      "dismissTitle": "丢弃这些设置？",
+      "dismissDescription": "它们的密钥将从此浏览器中删除，且无法恢复。",
+      "reason": {
+        "refused": "服务器未接受：{{detail}}",
+        "reserved": "服务器已用同一名称配置了服务。",
+        "customService": "自定义语音服务只能在服务器上配置（openmaic.yml）。",
+        "keyPair": "使用密钥对的服务只能在服务器上配置（openmaic.yml）。",
+        "unsupported": "此类自定义服务商无法迁移：请作为 OpenAI 兼容端点重新添加。",
+        "unconfirmed": "服务器未确认已导入。"
       }
     }
   },

@@ -1909,7 +1909,8 @@
       "openaiCompatible": "OpenAI 相容",
       "notNarration": "此服務不是目前工作區的旁白語音。",
       "useForNarration": "用作旁白語音",
-      "fetchNotSaved": "已找到模型，但未能儲存，請重試。"
+      "fetchNotSaved": "已找到模型，但未能儲存，請重試。",
+      "regionalEndpointHint": "Azure 語音服務只接受你的資源所在區域的官方位址：{{template}}。"
     },
     "modelSettings": {
       "card": {
@@ -2055,6 +2056,27 @@
         "prompt": "還沒有可用的語言模型。在「模型服務」中設定服務，或在「Token Plan」中連接方案，其模型會填入尚未設定的環節。",
         "open": "開啟模型服務",
         "askAdmin": "尚未設定語言模型，請聯絡伺服器管理員。"
+      }
+    },
+    "unimported": {
+      "toast": "此瀏覽器中的部分模型設定未能遷移到伺服器，已列在「設定 → 模型服務」中。",
+      "title": "此瀏覽器中的部分設定未能遷移到伺服器",
+      "description": "它們連同金鑰只保留在此瀏覽器中。請在這裡（或伺服器設定中）重新設定，然後捨棄。",
+      "modelChoice": "{{slot}} 的模型選擇：{{assignment}}",
+      "copyKey": "複製金鑰",
+      "copyKeyPair": "複製金鑰對",
+      "keyCopied": "已複製",
+      "copyFailed": "複製失敗",
+      "dismiss": "捨棄",
+      "dismissTitle": "捨棄這些設定？",
+      "dismissDescription": "它們的金鑰將從此瀏覽器中刪除，且無法復原。",
+      "reason": {
+        "refused": "伺服器未接受：{{detail}}",
+        "reserved": "伺服器已用同一名稱設定了服務。",
+        "customService": "自訂語音服務只能在伺服器上設定（openmaic.yml）。",
+        "keyPair": "使用金鑰對的服務只能在伺服器上設定（openmaic.yml）。",
+        "unsupported": "此類自訂服務商無法遷移：請作為 OpenAI 相容端點重新新增。",
+        "unconfirmed": "伺服器未確認已匯入。"
       }
     }
   },

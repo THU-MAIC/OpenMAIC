@@ -14,6 +14,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getValidASRLanguage, useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { regionalEndpointTemplate } from '@/lib/config/official-endpoints';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { Mic, MicOff, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ import { modelChange, modelRef } from '@/lib/model-settings/edit';
 import {
   ApiKeyField,
   EndpointServerOnlyHint,
+  RegionalEndpointField,
   ServerConfiguredNotice,
   ServerOnlyNotice,
   reportApply,
@@ -56,6 +58,7 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
 
   const providerId = entry.registryId as ASRProviderId;
   const asrProvider = ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS];
+  const regionalEndpoint = regionalEndpointTemplate('asr', providerId);
   const isBrowser = providerId === 'browser-native';
   const editable = (entry.state === 'workspace' || entry.state === 'available') && !isBrowser;
   const use = rootUse(view, 'asr', entry.id);
@@ -194,12 +197,24 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
           </div>
           <div className="space-y-2">
             <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
-            {asrProvider?.defaultBaseUrl && (
-              <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {asrProvider.defaultBaseUrl}
-              </p>
+            {regionalEndpoint ? (
+              // Azure Speech takes its official endpoint for the key's region.
+              <RegionalEndpointField
+                name={`asr-endpoint-${entry.id}`}
+                provider={entry.provider}
+                template={regionalEndpoint}
+                onSave={(baseUrl) => saveServiceProvider(view, apply, entry, { baseUrl }, t)}
+              />
+            ) : (
+              <>
+                {asrProvider?.defaultBaseUrl && (
+                  <p className="text-xs text-muted-foreground break-all">
+                    {t('settings.requestUrl')}: {asrProvider.defaultBaseUrl}
+                  </p>
+                )}
+                <EndpointServerOnlyHint />
+              </>
             )}
-            <EndpointServerOnlyHint />
           </div>
         </div>
       )}

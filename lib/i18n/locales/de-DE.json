@@ -1924,7 +1924,8 @@
       "openaiCompatible": "OpenAI-kompatibel",
       "notNarration": "Dieser Dienst ist nicht die Sprachausgabe des Arbeitsbereichs.",
       "useForNarration": "Für die Sprachausgabe verwenden",
-      "fetchNotSaved": "Die Modelle wurden gefunden, konnten aber nicht gespeichert werden. Versuchen Sie es erneut."
+      "fetchNotSaved": "Die Modelle wurden gefunden, konnten aber nicht gespeichert werden. Versuchen Sie es erneut.",
+      "regionalEndpointHint": "Azure Speech akzeptiert nur den offiziellen Endpunkt der Region Ihrer Ressource: {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "Noch kein Sprachmodell. Richten Sie in den Modelldiensten einen Dienst ein oder verbinden Sie im Token Plan einen Plan; seine Modelle übernehmen die Teile ohne Einstellung.",
         "open": "Modelldienste öffnen",
         "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitten Sie die Serveradministration, eines einzurichten."
+      }
+    },
+    "unimported": {
+      "toast": "Einige Modelleinstellungen dieses Browsers konnten nicht auf den Server übertragen werden. Sie sind unter Einstellungen → Modelldienste aufgeführt.",
+      "title": "Einige Einstellungen dieses Browsers konnten nicht auf den Server übertragen werden",
+      "description": "Sie bleiben samt Schlüsseln nur in diesem Browser gespeichert. Richten Sie sie hier (oder in der Serverkonfiguration) neu ein und verwerfen Sie sie dann.",
+      "modelChoice": "Modellauswahl für {{slot}}: {{assignment}}",
+      "copyKey": "Schlüssel kopieren",
+      "copyKeyPair": "Schlüsselpaar kopieren",
+      "keyCopied": "Kopiert",
+      "copyFailed": "Kopieren fehlgeschlagen",
+      "dismiss": "Verwerfen",
+      "dismissTitle": "Diese Einstellungen verwerfen?",
+      "dismissDescription": "Ihre Schlüssel werden aus diesem Browser gelöscht. Dies kann nicht rückgängig gemacht werden.",
+      "reason": {
+        "refused": "Der Server hat sie nicht angenommen: {{detail}}",
+        "reserved": "Der Server konfiguriert bereits einen Dienst unter diesem Namen.",
+        "customService": "Ein eigener Sprachdienst kann nur auf dem Server (openmaic.yml) konfiguriert werden.",
+        "keyPair": "Ein Dienst mit Schlüsselpaar kann nur auf dem Server (openmaic.yml) konfiguriert werden.",
+        "unsupported": "Diese Art von eigenem Anbieter kann nicht übertragen werden: Fügen Sie ihn als OpenAI-kompatiblen Endpunkt erneut hinzu.",
+        "unconfirmed": "Der Server hat den Import nicht bestätigt."
       }
     }
   },

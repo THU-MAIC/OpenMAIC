@@ -1924,7 +1924,8 @@
       "openaiCompatible": "OpenAI-compatible",
       "notNarration": "This service is not the workspace's narration.",
       "useForNarration": "Use for narration",
-      "fetchNotSaved": "The models were found but could not be saved. Try again."
+      "fetchNotSaved": "The models were found but could not be saved. Try again.",
+      "regionalEndpointHint": "Azure Speech takes only its official endpoint for your resource's region: {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "No language model yet. Set up a service in Model Services or connect a plan in Token Plan; its models fill the parts that are not set.",
         "open": "Open Model Services",
         "askAdmin": "No language model is configured. Ask the server's administrator to set one up."
+      }
+    },
+    "unimported": {
+      "toast": "Some model settings from this browser could not be moved to the server. They are listed in Settings → Model Services.",
+      "title": "Some settings from this browser could not be moved to the server",
+      "description": "They are kept in this browser only, with their keys. Set them up again here (or in the server's configuration), then discard them.",
+      "modelChoice": "Model choice for {{slot}}: {{assignment}}",
+      "copyKey": "Copy key",
+      "copyKeyPair": "Copy key pair",
+      "keyCopied": "Copied",
+      "copyFailed": "Could not copy",
+      "dismiss": "Discard",
+      "dismissTitle": "Discard these settings?",
+      "dismissDescription": "Their keys are deleted from this browser. This cannot be undone.",
+      "reason": {
+        "refused": "The server did not accept it: {{detail}}",
+        "reserved": "The server already configures a service under this name.",
+        "customService": "A custom speech service can only be configured on the server (openmaic.yml).",
+        "keyPair": "A service that uses a key pair can only be configured on the server (openmaic.yml).",
+        "unsupported": "This kind of custom provider cannot be moved: add it again as an OpenAI-compatible endpoint.",
+        "unconfirmed": "The server did not confirm that it was imported."
       }
     }
   },

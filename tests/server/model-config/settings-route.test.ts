@@ -335,7 +335,7 @@ describe('/api/model-config', () => {
     let answer = await (await importOnce()).json();
     expect(answer.imported).toEqual(['mine']);
     expect(answer.skipped).toEqual([
-      { item: 'llm', reason: 'The workspace already sets this slot' },
+      { item: 'llm', code: 'EXISTS', reason: 'The workspace already sets this slot' },
     ]);
     expect(answer.view.revision).toBe(2);
 

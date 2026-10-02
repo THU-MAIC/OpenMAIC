@@ -258,8 +258,9 @@ export function importerLegacyWrites(files: readonly SourceFile[]): string[] {
       String.raw`\bnew\s+LegacyBrowserDatabase\b`,
       String.raw`\bDexie\s*\.\s*delete\b`,
       String.raw`\bdeleteDatabase\b`,
-      // The model settings import removes only its own key once the server has it.
-      String.raw`\.removeItem\s*\((?!\s*MODEL_SETTINGS_IMPORT_KEY\s*\))`,
+      // The model settings import removes only its own keys: the proposal once
+      // the server has answered it, and what it kept once the user discards it.
+      String.raw`\.removeItem\s*\((?!\s*(?:MODEL_SETTINGS_IMPORT_KEY|MODEL_SETTINGS_UNIMPORTED_KEY)\s*\))`,
       String.raw`\blocalStorage\s*\.\s*clear\s*\(`,
       String.raw`\bstorage\s*\.\s*clear\s*\(`,
       String.raw`\bclearLegacyQuizStateSnapshot\b`,

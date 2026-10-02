@@ -56,6 +56,7 @@ import { ProviderList } from './provider-list';
 import { removeServiceProvider, rootUse } from './server-settings';
 import { REGISTRY_INFO, entryIcon, entryName, isEntryConfigured } from './service-display';
 import { TTSSettings } from './tts-settings';
+import { UnimportedSettingsNotice } from './unimported-settings-notice';
 import { VideoSettings } from './video-settings';
 import { WebSearchSettings } from './web-search-settings';
 
@@ -227,6 +228,8 @@ export function ModelServicesPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Settings of an earlier build that could not be moved to the server. */}
+      <UnimportedSettingsNotice view={view} />
       {/* 七个服务的胶囊 tab（收拢后的一级列） */}
       <div className="flex gap-1 overflow-x-auto pb-3" role="tablist">
         {SERVICE_TABS.map((id) => {

@@ -1924,7 +1924,8 @@
       "openaiCompatible": "Compatible con OpenAI",
       "notNarration": "Este servicio no es la narración del espacio de trabajo.",
       "useForNarration": "Usar para la narración",
-      "fetchNotSaved": "Se encontraron los modelos, pero no se pudieron guardar. Inténtalo de nuevo."
+      "fetchNotSaved": "Se encontraron los modelos, pero no se pudieron guardar. Inténtalo de nuevo.",
+      "regionalEndpointHint": "Azure Speech solo acepta el endpoint oficial de la región de tu recurso: {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "Aún no hay modelo de lenguaje. Configura un servicio en Servicios de modelos o conecta un plan en Token Plan; sus modelos ocupan las partes sin configurar.",
         "open": "Abrir Servicios de modelos",
         "askAdmin": "No hay un modelo de lenguaje configurado. Pide al administrador del servidor que configure uno."
+      }
+    },
+    "unimported": {
+      "toast": "Algunos ajustes de modelos de este navegador no se pudieron mover al servidor. Aparecen en Configuración → Servicios de modelos.",
+      "title": "Algunos ajustes de este navegador no se pudieron mover al servidor",
+      "description": "Se conservan solo en este navegador, con sus claves. Vuelve a configurarlos aquí (o en la configuración del servidor) y luego descártalos.",
+      "modelChoice": "Modelo elegido para {{slot}}: {{assignment}}",
+      "copyKey": "Copiar clave",
+      "copyKeyPair": "Copiar par de claves",
+      "keyCopied": "Copiado",
+      "copyFailed": "No se pudo copiar",
+      "dismiss": "Descartar",
+      "dismissTitle": "¿Descartar estos ajustes?",
+      "dismissDescription": "Sus claves se eliminan de este navegador. No se puede deshacer.",
+      "reason": {
+        "refused": "El servidor no lo aceptó: {{detail}}",
+        "reserved": "El servidor ya configura un servicio con este nombre.",
+        "customService": "Un servicio de voz personalizado solo se puede configurar en el servidor (openmaic.yml).",
+        "keyPair": "Un servicio que usa un par de claves solo se puede configurar en el servidor (openmaic.yml).",
+        "unsupported": "Este tipo de proveedor personalizado no se puede mover: agrégalo de nuevo como endpoint compatible con OpenAI.",
+        "unconfirmed": "El servidor no confirmó que se importara."
       }
     }
   },

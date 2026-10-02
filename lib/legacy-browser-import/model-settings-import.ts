@@ -13,8 +13,11 @@
  * `LEGACY_IMPORT_NOT_BOUND`) for any owner that does not hold the binding.
  *
  * Its completion is tracked on its own: the proposal's key is removed once the
- * server has taken it (or refused it for good), independently of the course
- * import's ledger state.
+ * server has answered it (or refused it for good), independently of the course
+ * import's ledger state. Only what the server confirmed it holds leaves the
+ * browser: every item it skipped is kept, with its key, in
+ * `./model-settings-unimported.ts` (never sent again), and Settings → Model
+ * Services tells the user once.
  *
  * Nothing it logs quotes the proposal or an error message that could.
  */
@@ -29,14 +32,25 @@ import {
   type ModelSettingsProposal,
   type StorageLike,
 } from './model-settings';
+import { getProviderPreset } from '@/lib/config/provider-presets';
+import type { SlotCapability } from '@/lib/config/model-slots';
 import type { ModelSettingsView } from '@/lib/model-settings/client';
+
+import {
+  keepUnimported,
+  type UnimportedModelSetting,
+  type UnimportedReason,
+} from './model-settings-unimported';
 
 import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from './protocol';
 
 export type ModelSettingsImportOutcome =
   /** Nothing was waiting. */
   | 'none'
-  /** The server took the proposal; it is gone from the browser. */
+  /**
+   * The server answered the proposal; it is gone from the browser. What the
+   * server skipped is kept in the browser (see ./model-settings-unimported.ts).
+   */
   | 'imported'
   /** Unreadable, or refused for good (400); it is gone from the browser. */
   | 'dropped'
@@ -81,11 +95,92 @@ async function bind(fetchImpl: Fetch, browserId: string): Promise<boolean> {
   }
 }
 
+interface ImportAnswer {
+  imported?: unknown;
+  skipped?: Array<{ item?: unknown; code?: unknown; reason?: unknown }>;
+  view?: ModelSettingsView;
+}
+
+/**
+ * Skips that leave nothing behind: the workspace already holds the item (an
+ * existing setting wins, and a repeated import finds its own items there), or
+ * the deployment locks the slot.
+ */
+const SETTLED_SKIPS: Record<'provider' | 'slot', ReadonlySet<string>> = {
+  provider: new Set(['EXISTS']),
+  slot: new Set(['EXISTS', 'SLOT_LOCKED']),
+};
+
+/**
+ * The items of a proposal the answer does not show as held by the workspace,
+ * as they were proposed (keys included). An answer that cannot be read
+ * confirms nothing.
+ */
+export function unimportedItems(
+  proposal: ModelSettingsProposal,
+  answer: ImportAnswer | undefined,
+): UnimportedModelSetting[] {
+  const imported = new Set(
+    Array.isArray(answer?.imported)
+      ? answer.imported.filter((item): item is string => typeof item === 'string')
+      : [],
+  );
+  const skipped = new Map<string, { code: string; reason?: string }>();
+  for (const entry of Array.isArray(answer?.skipped) ? answer.skipped : []) {
+    if (!entry || typeof entry.item !== 'string') continue;
+    skipped.set(entry.item, {
+      code: typeof entry.code === 'string' ? entry.code : '',
+      ...(typeof entry.reason === 'string' ? { reason: entry.reason } : {}),
+    });
+  }
+  const known = (Array.isArray(answer?.view?.providers) ? answer.view.providers : [])
+    .filter((provider) => provider.source === 'workspace')
+    .map((provider) => provider.id);
+  const reasonFor = (skip: { code: string } | undefined): UnimportedReason =>
+    !skip ? 'unconfirmed' : skip.code === 'PROVIDER_RESERVED' ? 'reserved' : 'refused';
+
+  const items: UnimportedModelSetting[] = [];
+  for (const [id, provider] of Object.entries(proposal.providers ?? {})) {
+    if (imported.has(id)) continue;
+    const skip = skipped.get(id);
+    if (skip && SETTLED_SKIPS.provider.has(skip.code)) continue;
+    const preset =
+      provider && typeof provider === 'object' ? getProviderPreset(provider.preset) : undefined;
+    items.push({
+      id,
+      kind: 'provider',
+      ...(preset ? { capability: Object.keys(preset.capabilities)[0] as SlotCapability } : {}),
+      name: preset?.name ?? id,
+      ...(provider?.preset ? { preset: provider.preset } : {}),
+      reason: reasonFor(skip),
+      ...(skip?.reason ? { detail: skip.reason } : {}),
+      knownProviders: known,
+      settings: { ...provider },
+    });
+  }
+  for (const [slot, assignment] of Object.entries(proposal.slots ?? {})) {
+    if (imported.has(slot)) continue;
+    const skip = skipped.get(slot);
+    if (skip && SETTLED_SKIPS.slot.has(skip.code)) continue;
+    items.push({
+      id: slot,
+      kind: 'slot',
+      name: slot,
+      reason: reasonFor(skip),
+      ...(skip?.reason ? { detail: skip.reason } : {}),
+      settings: { preset: '', assignment },
+    });
+  }
+  return items;
+}
+
 /**
  * Post a waiting proposal to the owner this browser is bound to. On a 2xx
- * answer the proposal (and with it every key) is removed from the browser; an
- * unreadable proposal or a 400 drops it, since sending it again cannot
- * succeed; anything else keeps it for a later load.
+ * answer the proposal is removed from the browser, and with it every key the
+ * server now holds; what it did not take is kept in the browser first
+ * (`./model-settings-unimported.ts`), never to be sent again. An unreadable
+ * proposal or a 400 drops it, since sending it again cannot succeed; anything
+ * else keeps it for a later load.
  */
 export async function runModelSettingsImport(
   options: {
@@ -139,25 +234,30 @@ export async function runModelSettingsImport(
   }
 
   if (response.ok) {
-    storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
+    let answer: ImportAnswer | undefined;
     let view: ModelSettingsView | undefined;
     try {
-      const body = (await response.json()) as {
-        skipped?: Array<{ item?: unknown }>;
-        view?: ModelSettingsView;
-      };
-      if (body.view && typeof body.view === 'object' && Array.isArray(body.view.slots)) {
+      const body = (await response.json()) as ImportAnswer;
+      if (body && typeof body === 'object') answer = body;
+      if (body?.view && typeof body.view === 'object' && Array.isArray(body.view.slots)) {
         view = body.view;
       }
-      // Item ids only: a reason may repeat what was submitted.
-      const skipped = (body.skipped ?? [])
-        .map(({ item }) => (typeof item === 'string' ? item : ''))
-        .filter(Boolean);
-      if (skipped.length) {
-        console.warn(`${LOG_PREFIX} Model settings not imported: ${skipped.join(', ')}`);
-      }
     } catch {
-      // The answer's details are informational only.
+      // Unreadable: nothing is confirmed, so everything is kept below.
+    }
+    const unimported = unimportedItems(proposal, answer);
+    // The keys the server did not take leave the proposal only once they are
+    // kept elsewhere; otherwise the proposal stays and a later load answers
+    // it again (the server finds what it took already there).
+    if (!keepUnimported(unimported, storage)) return 'kept';
+    storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
+    if (unimported.length) {
+      // Item ids only: a reason may repeat what was submitted.
+      console.warn(
+        `${LOG_PREFIX} Model settings not imported (kept in this browser): ${unimported
+          .map((item) => item.id)
+          .join(', ')}`,
+      );
     }
     if (view) await options.onImported?.(view);
     return 'imported';

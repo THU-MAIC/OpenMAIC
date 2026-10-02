@@ -1924,7 +1924,8 @@
       "openaiCompatible": "Tương thích OpenAI",
       "notNarration": "Dịch vụ này không phải giọng thuyết minh của không gian làm việc.",
       "useForNarration": "Dùng cho thuyết minh",
-      "fetchNotSaved": "Đã tìm thấy mô hình nhưng không lưu được. Hãy thử lại."
+      "fetchNotSaved": "Đã tìm thấy mô hình nhưng không lưu được. Hãy thử lại.",
+      "regionalEndpointHint": "Azure Speech chỉ chấp nhận endpoint chính thức của khu vực chứa tài nguyên của bạn: {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "Chưa có mô hình ngôn ngữ. Thiết lập dịch vụ trong Dịch vụ mô hình hoặc kết nối gói trong Token Plan; các mô hình của nó sẽ điền vào những phần chưa thiết lập.",
         "open": "Mở Dịch vụ mô hình",
         "askAdmin": "Chưa cấu hình mô hình ngôn ngữ. Hãy nhờ quản trị viên máy chủ thiết lập."
+      }
+    },
+    "unimported": {
+      "toast": "Một số cài đặt mô hình trong trình duyệt này không thể chuyển lên máy chủ. Chúng được liệt kê trong Cài đặt → Dịch vụ mô hình.",
+      "title": "Một số cài đặt trong trình duyệt này không thể chuyển lên máy chủ",
+      "description": "Chúng chỉ được giữ trong trình duyệt này, cùng với khóa. Hãy thiết lập lại tại đây (hoặc trong cấu hình máy chủ), rồi loại bỏ chúng.",
+      "modelChoice": "Mô hình đã chọn cho {{slot}}: {{assignment}}",
+      "copyKey": "Sao chép khóa",
+      "copyKeyPair": "Sao chép cặp khóa",
+      "keyCopied": "Đã sao chép",
+      "copyFailed": "Không thể sao chép",
+      "dismiss": "Loại bỏ",
+      "dismissTitle": "Loại bỏ các cài đặt này?",
+      "dismissDescription": "Khóa của chúng sẽ bị xóa khỏi trình duyệt này. Không thể hoàn tác.",
+      "reason": {
+        "refused": "Máy chủ không chấp nhận: {{detail}}",
+        "reserved": "Máy chủ đã cấu hình một dịch vụ với tên này.",
+        "customService": "Dịch vụ giọng nói tùy chỉnh chỉ có thể được cấu hình trên máy chủ (openmaic.yml).",
+        "keyPair": "Dịch vụ dùng cặp khóa chỉ có thể được cấu hình trên máy chủ (openmaic.yml).",
+        "unsupported": "Không thể chuyển loại nhà cung cấp tùy chỉnh này: hãy thêm lại dưới dạng endpoint tương thích OpenAI.",
+        "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
     }
   },

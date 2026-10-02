@@ -1924,7 +1924,8 @@
       "openaiCompatible": "OpenAI 호환",
       "notNarration": "이 서비스는 워크스페이스의 내레이션이 아닙니다.",
       "useForNarration": "내레이션에 사용",
-      "fetchNotSaved": "모델을 찾았지만 저장하지 못했습니다. 다시 시도하세요."
+      "fetchNotSaved": "모델을 찾았지만 저장하지 못했습니다. 다시 시도하세요.",
+      "regionalEndpointHint": "Azure Speech는 리소스 지역의 공식 엔드포인트만 허용합니다: {{template}}."
     },
     "modelSettings": {
       "card": {
@@ -2070,6 +2071,27 @@
         "prompt": "아직 언어 모델이 없습니다. 모델 서비스에서 서비스를 설정하거나 Token Plan에서 플랜을 연결하면 설정되지 않은 부분에 해당 모델이 지정됩니다.",
         "open": "모델 서비스 열기",
         "askAdmin": "언어 모델이 구성되지 않았습니다. 서버 관리자에게 설정을 요청하세요."
+      }
+    },
+    "unimported": {
+      "toast": "이 브라우저의 일부 모델 설정을 서버로 옮기지 못했습니다. 설정 → 모델 서비스에서 확인하세요.",
+      "title": "이 브라우저의 일부 설정을 서버로 옮기지 못했습니다",
+      "description": "이 설정과 키는 이 브라우저에만 보관됩니다. 여기(또는 서버 설정)에서 다시 설정한 뒤 삭제하세요.",
+      "modelChoice": "{{slot}} 모델 선택: {{assignment}}",
+      "copyKey": "키 복사",
+      "copyKeyPair": "키 쌍 복사",
+      "keyCopied": "복사됨",
+      "copyFailed": "복사하지 못했습니다",
+      "dismiss": "삭제",
+      "dismissTitle": "이 설정을 삭제할까요?",
+      "dismissDescription": "키가 이 브라우저에서 삭제되며 되돌릴 수 없습니다.",
+      "reason": {
+        "refused": "서버가 받아들이지 않았습니다: {{detail}}",
+        "reserved": "서버에 같은 이름의 서비스가 이미 설정되어 있습니다.",
+        "customService": "사용자 지정 음성 서비스는 서버(openmaic.yml)에서만 설정할 수 있습니다.",
+        "keyPair": "키 쌍을 사용하는 서비스는 서버(openmaic.yml)에서만 설정할 수 있습니다.",
+        "unsupported": "이 유형의 사용자 지정 공급자는 옮길 수 없습니다. OpenAI 호환 엔드포인트로 다시 추가하세요.",
+        "unconfirmed": "서버가 가져오기를 확인하지 않았습니다."
       }
     }
   },

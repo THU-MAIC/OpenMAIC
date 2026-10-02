@@ -7,6 +7,7 @@ import { BrowserKVStore } from '@openmaic/storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MODEL_SETTINGS_IMPORT_KEY } from '@/lib/legacy-browser-import/model-settings';
+import { MODEL_SETTINGS_UNIMPORTED_KEY } from '@/lib/legacy-browser-import/model-settings-unimported';
 
 const backing = new Map<string, string>();
 /** Keys whose writes fail (a full storage). */
@@ -221,6 +222,48 @@ describe('settings store v4 → v5', () => {
     expect(JSON.parse(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)!)).toEqual({
       providers: { brave: { preset: 'brave' } },
       slots: { webSearch: 'brave' },
+    });
+  });
+  it('keeps what cannot be proposed in the browser, with its keys, before dropping it', async () => {
+    const store = await hydrate(
+      {
+        ttsProviderId: 'custom-tts-1',
+        ttsProvidersConfig: {
+          'custom-tts-1': {
+            apiKey: 'sk-custom-tts',
+            baseUrl: '',
+            customName: 'My voice',
+            customDefaultBaseUrl: 'https://tts.example.com',
+          },
+        },
+      },
+      4,
+    );
+    expect(store.getState()).not.toHaveProperty('ttsProvidersConfig');
+    expect(store.getState().legacyModelSettings).toBeUndefined();
+    expect(localStorageStub.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
+    const kept = JSON.parse(localStorageStub.getItem(MODEL_SETTINGS_UNIMPORTED_KEY)!);
+    expect(kept.items).toEqual([
+      expect.objectContaining({
+        id: 'tts:custom-tts-1',
+        reason: 'custom-service',
+        settings: expect.objectContaining({ apiKey: 'sk-custom-tts' }),
+      }),
+    ]);
+  });
+
+  it('keeps the old fields when what cannot be proposed cannot be kept', async () => {
+    failing.add(MODEL_SETTINGS_UNIMPORTED_KEY);
+    const store = await hydrate(
+      {
+        ttsProvidersConfig: {
+          'custom-tts-1': { apiKey: 'sk-custom-tts', baseUrl: 'https://tts.example.com' },
+        },
+      },
+      4,
+    );
+    expect(store.getState().legacyModelSettings).toMatchObject({
+      ttsProvidersConfig: { 'custom-tts-1': { apiKey: 'sk-custom-tts' } },
     });
   });
 });

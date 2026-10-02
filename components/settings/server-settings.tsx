@@ -231,6 +231,60 @@ export function ApiKeyField({
   );
 }
 
+/**
+ * The official regional endpoint of a service that has one per region (Azure
+ * Speech): the only endpoint a workspace provider of it takes. Leaving the
+ * field (or pressing Enter) saves it.
+ */
+export function RegionalEndpointField({
+  provider,
+  template,
+  name,
+  disabled,
+  onSave,
+}: {
+  provider?: ProviderView;
+  /** The endpoint with `<region>` for the region. */
+  template: string;
+  name: string;
+  disabled?: boolean;
+  onSave: (baseUrl: string | null) => Promise<unknown> | unknown;
+}) {
+  const { t } = useI18n();
+  const saved = provider?.baseUrl ?? '';
+  const [value, setValue] = useState(saved);
+  const commit = async () => {
+    const trimmed = value.trim();
+    if (trimmed === saved) return;
+    // A refused endpoint stays in the field to fix.
+    if (!(await onSave(trimmed || null))) return;
+    setValue(trimmed);
+  };
+  return (
+    <div className="space-y-1.5">
+      <Input
+        name={name}
+        aria-label={name}
+        autoCapitalize="none"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder={template}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void commit();
+        }}
+        disabled={disabled}
+        className="h-8 font-mono text-sm"
+      />
+      <p className="text-xs text-muted-foreground">
+        {t(`${SC}.regionalEndpointHint`, { template })}
+      </p>
+    </div>
+  );
+}
+
 /** What a service panel may change about its provider. */
 export interface ProviderFields {
   apiKey?: string;

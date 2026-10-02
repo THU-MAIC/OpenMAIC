@@ -21,11 +21,13 @@ import { VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { defaultVoiceFor, slotVoxCPMBackend, ttsSelection } from '@/lib/audio/tts-selection';
 import { modelCapabilities } from '@/lib/model-settings/capabilities';
 import { assignService } from '@/lib/model-settings/services';
+import { regionalEndpointTemplate } from '@/lib/config/official-endpoints';
 import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers';
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
   EndpointServerOnlyHint,
+  RegionalEndpointField,
   ServerConfiguredNotice,
   ServerOnlyNotice,
   reportApply,
@@ -180,6 +182,8 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   useEffect(() => stopPreview, [stopPreview]);
 
   const save = (apiKey: string) => saveServiceProvider(view, apply, entry, { apiKey }, t);
+  // Azure Speech takes its official endpoint for the region the key belongs to.
+  const regionalEndpoint = regionalEndpointTemplate('tts', providerId);
 
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
@@ -253,13 +257,24 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
             )}
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
-              {ttsProvider?.defaultBaseUrl && (
-                <p className="text-xs text-muted-foreground break-all">
-                  {t('settings.requestUrl')}: {ttsProvider.defaultBaseUrl}
-                  {ttsEndpointPath(providerId)}
-                </p>
+              {regionalEndpoint ? (
+                <RegionalEndpointField
+                  name={`tts-endpoint-${entry.id}`}
+                  provider={entry.provider}
+                  template={regionalEndpoint}
+                  onSave={(baseUrl) => saveServiceProvider(view, apply, entry, { baseUrl }, t)}
+                />
+              ) : (
+                <>
+                  {ttsProvider?.defaultBaseUrl && (
+                    <p className="text-xs text-muted-foreground break-all">
+                      {t('settings.requestUrl')}: {ttsProvider.defaultBaseUrl}
+                      {ttsEndpointPath(providerId)}
+                    </p>
+                  )}
+                  <EndpointServerOnlyHint />
+                </>
               )}
-              <EndpointServerOnlyHint />
             </div>
           </div>
           {isDoubao && entry.provider?.key?.set && (
