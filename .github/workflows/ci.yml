@@ -11,7 +11,6 @@ on:
         main,
         integration/kv-asset-server-backend,
         integration/agent-workbench,
-        integration/provider-config,
         integration/material-library,
       ]
   pull_request:
@@ -21,7 +20,6 @@ on:
         runtime-server-backend,
         integration/kv-asset-server-backend,
         integration/agent-workbench,
-        integration/provider-config,
         integration/material-library,
       ]
 
