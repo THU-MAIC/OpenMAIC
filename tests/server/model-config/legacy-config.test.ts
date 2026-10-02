@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { parseModelConfig } from '@/lib/server/model-config/openmaic-yml';
 import { resolveSlot } from '@/lib/server/model-config/resolve-slot';
+import { lookupFromLayers } from '@/lib/server/model-config/runtime';
 import type { ServerConfig } from '@/lib/server/provider-config';
 
 function server(overrides: Partial<ServerConfig> = {}): ServerConfig {
@@ -155,6 +156,58 @@ describe('translateLegacyConfig: media defaults', () => {
       }),
     );
     expect(config.slots).toEqual({ video: 'kling' });
+  });
+});
+
+describe('translateLegacyConfig: media defaults after an upgrade', () => {
+  // Before the server-side settings, the browser switched image, video and
+  // narration on at its first sync with the server whenever the server had a
+  // provider for them, and the classroom chat and the agent searched the web
+  // whenever a search provider was configured. The translated defaults keep
+  // those capabilities on, and switchable by each workspace.
+  const legacy = server({
+    tts: { 'minimax-tts': { apiKey: 'sk' } },
+    image: { seedream: { apiKey: 'sk' } },
+    video: { seedance: { apiKey: 'sk' } },
+    webSearch: { tavily: { apiKey: 'tv' } },
+  });
+  const { config } = translateLegacyConfig(legacy);
+  const deployment = { source: 'deployment' as const, config: { providers: config.providers } };
+  const defaults = { source: 'default' as const, config: { slots: config.slots } };
+  const slots = ['tts', 'image', 'video', 'webSearch'] as const;
+
+  it('starts on with the configured provider, locking nothing', () => {
+    for (const slot of slots) {
+      const lookup = lookupFromLayers(slot, { deployment, workspace: null, defaults });
+      expect(lookup.configured.status).toBe('unassigned');
+      expect(lookup.defaults()).toMatchObject({ status: 'assigned', locked: false });
+    }
+  });
+
+  it('is switched off by a workspace', () => {
+    const workspace = {
+      source: 'workspace' as const,
+      config: { slots: { tts: null, image: null, video: null, webSearch: null } },
+    };
+    for (const slot of slots) {
+      const lookup = lookupFromLayers(slot, { deployment, workspace, defaults });
+      expect(lookup.configured.status).toBe('disabled');
+    }
+  });
+
+  it('leaves an explicit openmaic.yml assignment as written, and locked', () => {
+    const file = {
+      source: 'deployment' as const,
+      config: {
+        providers: { sd: { preset: 'seedream', apiKey: 'sk' } },
+        slots: { image: 'sd', video: null },
+      },
+    };
+    const workspace = { source: 'workspace' as const, config: { slots: { image: null } } };
+    const image = lookupFromLayers('image', { deployment: file, workspace, defaults: null });
+    expect(image.configured).toMatchObject({ status: 'assigned', locked: true });
+    const video = lookupFromLayers('video', { deployment: file, workspace: null, defaults: null });
+    expect(video.configured).toMatchObject({ status: 'disabled', locked: true });
   });
 });
 
