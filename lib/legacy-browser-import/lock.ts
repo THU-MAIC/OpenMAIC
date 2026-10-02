@@ -6,15 +6,18 @@
 
 /**
  * Run `work` holding the Web Lock `name`, or answer `'busy-elsewhere'` when
- * another tab holds it. Without a lock manager (`null` or `undefined`) `work`
- * runs unlocked: tabs are then not serialized.
+ * another tab holds it. With `wait`, wait for the other tab to release it
+ * instead. Without a lock manager (`null` or `undefined`) `work` runs
+ * unlocked: tabs are then not serialized.
  */
 export async function withImportLock<T>(
   name: string,
   locks: LockManager | null | undefined,
   work: () => Promise<T>,
+  { wait = false }: { wait?: boolean } = {},
 ): Promise<T | 'busy-elsewhere'> {
   if (!locks) return work();
+  if (wait) return locks.request(name, () => work());
   return locks.request(name, { ifAvailable: true }, async (lock) =>
     lock ? work() : ('busy-elsewhere' as const),
   );

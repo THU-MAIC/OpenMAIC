@@ -582,6 +582,105 @@ describe('failures', () => {
     expect(saves.sort()).toEqual([DOCS_COURSE, TABLES_COURSE].sort());
   });
 
+  describe('a resume while another tab holds the import lock', () => {
+    /** A Web Locks stand-in shared by both "tabs": exclusive, FIFO, honours ifAvailable. */
+    function sharedLocks(): LockManager {
+      let held = false;
+      const waiting: (() => void)[] = [];
+      const request = async (
+        _name: string,
+        optionsOrCallback: LockOptions | LockGrantedCallback<unknown>,
+        maybeCallback?: LockGrantedCallback<unknown>,
+      ) => {
+        const options = typeof optionsOrCallback === 'function' ? {} : optionsOrCallback;
+        const callback = (
+          typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback
+        )!;
+        if (held) {
+          if (options.ifAvailable) return callback(null);
+          await new Promise<void>((resolve) => waiting.push(resolve));
+        }
+        held = true;
+        try {
+          return await callback({ name: _name, mode: 'exclusive' } as Lock);
+        } finally {
+          held = false;
+          waiting.shift()?.();
+        }
+      };
+      return { request, query: async () => ({}) } as unknown as LockManager;
+    }
+
+    /** Tab A: its bind waits for `release` and then sees what `failWith` says. */
+    function slowTab(locks: LockManager) {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const run = runLegacyBrowserImport(
+        server.options(storage, {
+          locks,
+          connect: (browserId: string) => {
+            const clients = server.clients(browserId);
+            return {
+              ...clients,
+              bind: async () => {
+                await gate;
+                return clients.bind();
+              },
+            };
+          },
+        }),
+      );
+      return { run, release };
+    }
+
+    it('waits for that run and retries when the gate refused it', async () => {
+      await seedLatestBrowser(storage);
+      const locks = sharedLocks();
+      // Tab A asked before the code was accepted; only its bind is refused.
+      let binds = 0;
+      server.failWith = (operation) =>
+        operation === 'bind' && binds++ === 0
+          ? Object.assign(new Error('Access code required'), { status: 401 })
+          : undefined;
+      const tabA = slowTab(locks);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      // Tab B accepted the code meanwhile.
+      const tabB = resumeLegacyBrowserImportAfterAccess(server.options(storage, { locks }));
+      // Tab A holds the lock until tab B reached it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      tabA.release();
+
+      expect((await tabA.run).status).toBe('stopped');
+      const resumed = await tabB;
+      expect(resumed.status).toBe('complete');
+      expect([...server.stageOwners.keys()].sort()).toEqual([DOCS_COURSE, TABLES_COURSE]);
+    });
+
+    it('keeps the backoff that run recorded for any other reason', async () => {
+      await seedLatestBrowser(storage);
+      const locks = sharedLocks();
+      server.failWith = (operation) =>
+        operation === 'saveDocument'
+          ? Object.assign(new Error('busy'), {
+              status: 503,
+              code: 'OWNER_BUSY',
+              retryAfterMs: 5_000,
+            })
+          : undefined;
+      const tabA = slowTab(locks);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const tabB = resumeLegacyBrowserImportAfterAccess(server.options(storage, { locks }));
+      // Tab A holds the lock until tab B reached it.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      tabA.release();
+
+      expect((await tabA.run).status).toBe('stopped');
+      expect((await tabB).status).toBe('deferred');
+    });
+  });
+
   it('records a validation refusal on that course and continues with the rest', async () => {
     await seedLatestBrowser(storage);
     server.failWith = (operation, subject) =>

@@ -422,8 +422,25 @@ export async function runLegacyBrowserImport(
           ? navigator.locks
           : undefined
         : options.locks;
-    const outcome = await withImportLock(IMPORT_LOCK_NAME, locks, () =>
-      runLocked(storage, options),
+    // A resume after the access code was accepted waits for another tab's
+    // run instead of being dropped: that run may be the one the gate refuses.
+    // Once it holds the lock it decides again on what that run left.
+    const accessGranted = options.accessGranted === true;
+    const outcome = await withImportLock(
+      IMPORT_LOCK_NAME,
+      locks,
+      async (): Promise<LegacyImportOutcome> => {
+        if (accessGranted) {
+          const current = loadLedger(storage);
+          if (current?.completedAt) return { status: 'already-complete', ledger: current };
+          const paused = current?.pausedUnauthorized === true;
+          if (!paused && stillWaiting(current?.nextRunAt, now(), MAX_BACKOFF_MS)) {
+            return { status: 'deferred', ledger: current };
+          }
+        }
+        return runLocked(storage, options);
+      },
+      { wait: accessGranted },
     );
     return outcome === 'busy-elsewhere' ? { status: 'busy-elsewhere' } : outcome;
   } catch (error) {
@@ -454,7 +471,8 @@ function runSerialized(options: LegacyImportOptions): Promise<LegacyImportOutcom
  * Called once the access code is accepted. On an ACCESS_CODE-gated
  * deployment the page's first run is answered 401 before the visitor enters
  * the code, which pauses it with a backoff; this runs it again now, so the
- * library fills on the first visit. It queues behind a run in progress and
+ * library fills on the first visit. It queues behind this page's run in
+ * progress, waits for another tab's (rather than giving up on the lock), and
  * skips no other backoff, so it can neither run twice nor alongside one.
  */
 export function resumeLegacyBrowserImportAfterAccess(
