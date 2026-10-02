@@ -38,6 +38,7 @@ import {
   SlotDisabledError,
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
+import { LLM_STAGES, type LlmStage } from '@/lib/server/model-routes';
 import { resolveModel } from '@/lib/server/resolve-model';
 
 export const CLASSROOM_JOB_POLL_INTERVAL_MS = 5000;
@@ -78,41 +79,63 @@ export function parseClassroomJobBody(raw: unknown): ParsedClassroomJobBody {
 }
 
 /**
- * The stages every run needs a model for: the outline, the scene content
- * (each scene type resolves through a child of it) and the actions. Agent
- * profiles are not here: a run falls back to the built-in agents.
+ * The scene content stages, one per scene type, as the content step resolves
+ * them (`course.content.<type>`, which inherits `course.content`, then `llm`).
  */
-const REQUIRED_STAGES = ['scene-outlines-stream', 'scene-content', 'scene-actions'] as const;
+const CONTENT_STAGES = LLM_STAGES.filter((stage) => stage.startsWith('scene-content:'));
+
+type ModelRefusal = { code: ApiErrorCode; message: string };
+
+/** Why `stage` resolves to no usable model for the workspace, or null when it resolves. */
+async function stageRefusal(
+  stage: LlmStage,
+  workspaceId: string | null,
+): Promise<ModelRefusal | null> {
+  try {
+    await resolveModel({ stage, workspaceId });
+    return null;
+  } catch (error) {
+    if (
+      error instanceof SlotUnassignedError ||
+      error instanceof SlotDisabledError ||
+      error instanceof SlotRequirementError
+    ) {
+      return { code: 'MISSING_MODEL', message: error.message };
+    }
+    if (error instanceof ModelConfigurationError) {
+      return { code: error.code, message: error.message };
+    }
+    throw error;
+  }
+}
 
 /**
- * Refuse a submission no run could complete: a stage it needs resolves to no
- * model for the owner (none configured, its slot turned off, or a model that
- * cannot do the job), or to one the configuration cannot build (no key for a
- * provider that needs one, an endpoint or option it may not set). Checked
- * without calling any provider. Null when every required stage resolves.
+ * Refuse a submission no run could complete: the outline or the actions
+ * stage, or every scene content type, resolves to no model for the owner
+ * (none configured, the slot turned off, or a model that cannot do the job)
+ * or to one the configuration cannot build (no key for a provider that needs
+ * one, an endpoint or option it may not set). Checked without calling any
+ * provider. Agent profiles are not required: a run falls back to the built-in
+ * agents. When only some content types resolve the submission is accepted; a
+ * scene of a type that does not resolve fails at its content step (the
+ * outline does not avoid such types) and the run pauses there. Null when the
+ * run can generate.
  */
-export async function requiredModelRefusal(
-  ownerId: string,
-): Promise<{ code: ApiErrorCode; message: string } | null> {
+export async function requiredModelRefusal(ownerId: string): Promise<ModelRefusal | null> {
   const workspaceId = await backgroundWorkspaceId(ownerId);
-  for (const stage of REQUIRED_STAGES) {
-    try {
-      await resolveModel({ stage, workspaceId });
-    } catch (error) {
-      if (
-        error instanceof SlotUnassignedError ||
-        error instanceof SlotDisabledError ||
-        error instanceof SlotRequirementError
-      ) {
-        return { code: 'MISSING_MODEL', message: error.message };
-      }
-      if (error instanceof ModelConfigurationError) {
-        return { code: error.code, message: error.message };
-      }
-      throw error;
+  const outline = await stageRefusal('scene-outlines-stream', workspaceId);
+  if (outline) return outline;
+  let firstContentRefusal: ModelRefusal | null = null;
+  for (const stage of CONTENT_STAGES) {
+    const refusal = await stageRefusal(stage, workspaceId);
+    if (!refusal) {
+      firstContentRefusal = null;
+      break;
     }
+    firstContentRefusal ??= refusal;
   }
-  return null;
+  if (firstContentRefusal) return firstContentRefusal;
+  return stageRefusal('scene-actions', workspaceId);
 }
 
 export type ClassroomJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';

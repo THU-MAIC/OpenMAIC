@@ -61,17 +61,75 @@ describe('requiredModelRefusal', () => {
     });
   });
 
-  it.each([['course.outline'], ['course.content'], ['course.actions']])(
-    'refuses %s turned off while llm is assigned',
-    async (slot) => {
-      expect(
-        await check({ providers: MAIN, slots: { llm: 'main:gpt-4o-mini', [slot]: null } }),
-      ).toEqual({
-        code: 'MISSING_MODEL',
-        message: `The ${slot} capability is turned off in the model configuration`,
-      });
-    },
-  );
+  it.each([
+    // A parent turned off turns off every scene type under it; the first is named.
+    ['course.outline', 'course.outline'],
+    ['course.content', 'course.content.slide'],
+    ['course.actions', 'course.actions'],
+  ])('refuses %s turned off while llm is assigned', async (slot, named) => {
+    expect(
+      await check({ providers: MAIN, slots: { llm: 'main:gpt-4o-mini', [slot]: null } }),
+    ).toEqual({
+      code: 'MISSING_MODEL',
+      message: `The ${named} capability is turned off in the model configuration`,
+    });
+  });
+
+  it('accepts content assigned per scene type only, with the parent and llm unassigned', async () => {
+    const model = 'main:gpt-4o-mini';
+    expect(
+      await check({
+        providers: MAIN,
+        slots: {
+          'course.outline': model,
+          'course.actions': model,
+          'course.content.slide': model,
+          'course.content.quiz': model,
+          'course.content.interactive': model,
+          'course.content.pbl': model,
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts a valid parent with one broken scene type (that type fails at its scene)', async () => {
+    expect(
+      await check({
+        providers: { ...MAIN, keyless: { preset: 'openai' } },
+        slots: { llm: 'main:gpt-4o-mini', 'course.content.quiz': 'keyless:gpt-4o-mini' },
+      }),
+    ).toBeNull();
+  });
+
+  it('refuses when no scene type resolves, with the first type in order', async () => {
+    const model = 'main:gpt-4o-mini';
+    expect(
+      await check({
+        providers: MAIN,
+        slots: { 'course.outline': model, 'course.actions': model },
+      }),
+    ).toEqual({
+      code: 'MISSING_MODEL',
+      message: expect.stringContaining('No model is configured for course.content.slide'),
+    });
+  });
+
+  it("refuses with a scene type's configuration error when no type resolves", async () => {
+    const model = 'main:gpt-4o-mini';
+    expect(
+      await check({
+        providers: { ...MAIN, keyless: { preset: 'openai' } },
+        slots: {
+          'course.outline': model,
+          'course.actions': model,
+          'course.content': 'keyless:gpt-4o-mini',
+        },
+      }),
+    ).toEqual({
+      code: 'MISSING_API_KEY',
+      message: expect.stringContaining('API key required for provider: openai'),
+    });
+  });
 
   it('refuses a provider that needs a key and has none, before building a model', async () => {
     expect(

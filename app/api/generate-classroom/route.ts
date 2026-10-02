@@ -4,9 +4,9 @@
  *     job is a generation run (`lib/server/generate-classroom-job.ts`) of the
  *     request owner, with the outline confirmed automatically. 202 with the
  *     job; 400 for a body it cannot generate from, or when a model the run
- *     needs (outline, scene content, actions) is not configured or cannot be
- *     built; 429 `ACTIVE_RUN_LIMIT` when the owner already has the configured
- *     number of runs in progress.
+ *     needs (outline, actions, content for some scene type) is not
+ *     configured or cannot be built; 429 `ACTIVE_RUN_LIMIT` when the owner
+ *     already has the configured number of runs in progress.
  */
 import { type NextRequest } from 'next/server';
 import { apiSuccess } from '@/lib/server/api-response';

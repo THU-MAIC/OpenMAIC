@@ -99,7 +99,7 @@ Treat the `POST` response as job submission only. Expect fields such as:
 
 The submission is refused before any job exists when:
 
-- a model the job needs (the outline, the scene content or the actions) is not configured or its slot is turned off (`400 MISSING_MODEL`), its provider has no API key (`400 MISSING_API_KEY`), its endpoint is refused (`400 INVALID_URL`), or it sets an option only the deployment may set (`400 MODEL_CONFIG_INVALID`): tell the user to fix the server's model configuration;
+- a model the job needs (the outline, the actions, or scene content for at least one scene type) is not configured or its slot is turned off (`400 MISSING_MODEL`), its provider has no API key (`400 MISSING_API_KEY`), its endpoint is refused (`400 INVALID_URL`), or it sets an option only the deployment may set (`400 MODEL_CONFIG_INVALID`): tell the user to fix the server's model configuration;
 - the owner already has as many generations in progress as the server allows (`429 ACTIVE_RUN_LIMIT`; 2 by default, `OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER`): wait for a running job to finish, then submit again. A failed job whose run is paused (see below) does not count; retrying it does, so its Retry answers the same `429` while the owner is at the limit.
 
 The request is checked in this order: the body (`400`/`413`), the models, the materials, then the limit.

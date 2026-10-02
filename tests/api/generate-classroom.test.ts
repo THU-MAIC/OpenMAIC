@@ -207,7 +207,8 @@ describe('POST /api/generate-classroom', () => {
     // The models every run needs are checked for the run's owner, through their slots.
     expect(mocks.resolveModel.mock.calls.map(([request]) => request)).toEqual([
       { stage: 'scene-outlines-stream', workspaceId: 'owner-1' },
-      { stage: 'scene-content', workspaceId: 'owner-1' },
+      // One scene type is enough: the first that resolves ends the content check.
+      { stage: 'scene-content:slide', workspaceId: 'owner-1' },
       { stage: 'scene-actions', workspaceId: 'owner-1' },
     ]);
   });

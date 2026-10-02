@@ -24,7 +24,12 @@ import {
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
-import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
+import {
+  backgroundWorkspaceId,
+  setDeploymentConfigForTests,
+} from '@/lib/server/model-config/runtime';
+import { resolveModel } from '@/lib/server/resolve-model';
+import type { LlmStage } from '@/lib/server/model-routes';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
@@ -483,6 +488,59 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
     ]);
     expect(steps.rows).toEqual([]);
     expect((await poll(OWNER_COOKIE, job.jobId)).body.result.warning).toBe(warning);
+  });
+
+  it('accepts a broken scene type beside working ones, and pauses only at that type', async () => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            main: { preset: 'openai', apiKey: 'test-key' },
+            keyless: { preset: 'openai' },
+          },
+          slots: { llm: 'main:gpt-4o-mini', 'course.content.quiz': 'keyless:gpt-4o-mini' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    vi.stubEnv('OPENAI_API_KEY', '');
+    const mixed: SceneOutline[] = [
+      { ...OUTLINES[0]! },
+      { id: 'oq', type: 'quiz', title: 'Check', description: 'Quiz', keyPoints: ['q'], order: 2 },
+      { ...OUTLINES[1]!, order: 3 },
+    ];
+    const base = fakeServices();
+    const { services } = fakeServices({
+      outline: async () => ({
+        outlines: mixed,
+        languageDirective: 'Use English.',
+        courseTitle: 'Plants',
+        taskEngineMode: false,
+      }),
+      // Each scene's content model, resolved as the content step resolves it.
+      sceneContent: async (owner, input, ctx) => {
+        await resolveModel({
+          stage: `scene-content:${input.outline.type}` as LlmStage,
+          workspaceId: await backgroundWorkspaceId(owner),
+        });
+        return base.services.sceneContent(owner, input, ctx);
+      },
+    });
+
+    const submitted = await submit(OWNER_COOKIE, { requirement: 'Mixed' });
+    expect(submitted.status).toBe(202);
+    const job = await submitted.json();
+    expect(await drive(job.runId, services)).toBe('paused');
+    vi.unstubAllEnvs();
+
+    const paused = (await poll(OWNER_COOKIE, job.jobId)).body;
+    expect(paused).toMatchObject({ runState: 'paused', retryable: true, totalScenes: 3 });
+    expect(paused.error).toMatch(/^scene:1:content: API key required for provider: openai/);
+    // Scenes generate in order: the slide before the quiz is in the course,
+    // and the run stopped at the quiz.
+    expect(paused.scenesGenerated).toBe(1);
   });
 
   it('refuses a submission whose model provider has no key, at the route', async () => {
