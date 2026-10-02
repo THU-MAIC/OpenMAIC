@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "La synthèse vocale native du navigateur ne prend pas en charge les fonctions audio de la piste de l’éditeur (écoute, régénération et sonorisation groupée). Choisissez un fournisseur de synthèse vocale géré pour produire et gérer l’audio réplique par réplique.",
     "courseModels": {
-      "mainModel": "Modèle principal",
-      "mainModelHint": "Les étapes qui suivent le modèle principal partagent ce modèle ; cliquez sur une carte pour personnaliser une étape",
-      "mainModelTooltip": "Toutes les étapes qui suivent le modèle principal l'utilisent. Cliquez sur une carte du pipeline pour choisir un modèle propre à cette étape ; les sous-étapes plus fines se trouvent dans l'inspecteur de la carte. Les étapes définies par la configuration du serveur sont affichées mais non modifiables.",
-      "noProviderHint": "Aucun modèle de langue configuré — configurez-en un dans Services de modèles",
-      "followParent": "Suivre le parent",
-      "restoreFollow": "Restaurer le suivi du principal",
-      "modelSource": "Source du modèle",
-      "pickModel": "Choisir un modèle",
-      "pickProvider": "Choisir un service",
-      "optionInvalid": "Indisponible",
-      "subStagesTitle": "Sous-étapes",
-      "subStages": {
-        "title": "Génération du titre",
-        "interactive": "Script interactif",
-        "pbl": "Scénario PBL",
-        "quiz": "Quiz",
-        "slide": "Diapositives"
-      },
-      "searchService": "Service de recherche",
-      "parseService": "Service d'analyse",
-      "asrTranscribe": "Transcription vocale",
-      "aiIllustration": "Illustrations IA",
-      "aiVideo": "Vidéo IA",
-      "stations": {
-        "desc": {
-          "doc-parse": "Les supports du cours téléversés (documents, diapositives, audio/vidéo) sont analysés en texte ; l'audio et la vidéo sont transcrits automatiquement.",
-          "web-research": "Recherche sur le web du matériel complémentaire selon la demande du cours ; les requêtes sont reformulées par un petit LLM.",
-          "outline": "Comprend la demande et les supports pour produire le titre du cours et les plans par scène (revus par un humain).",
-          "agents": "Génère les profils des agents enseignant et élève (personnalité, avatar, voix).",
-          "scene-content": "Génère le contenu diapositives, quiz, interactions et PBL par scène — l'étape LLM la plus lourde du pipeline.",
-          "scene-actions": "Complète la narration et les actions pédagogiques de chaque scène pour alimenter la synthèse vocale et le déroulé en classe.",
-          "tts": "Synthétise la narration en voix d'enseignant/élève (par scène, en série).",
-          "media": "Résout les emplacements image/vidéo du contenu généré, en parallèle de la boucle par scène.",
-          "interaction": "Le runtime de la classe après génération : chat multi-agent, runtime PBL et notation des quiz."
-        },
-        "agents": "Profils d'agents",
-        "docParse": "Analyse des documents",
-        "interaction": "Interaction en classe",
-        "media": "Génération de médias",
-        "outline": "Planification du plan",
-        "sceneActions": "Actions de la scène",
-        "sceneContent": "Contenu de la scène",
-        "tts": "Synthèse vocale",
-        "webResearch": "Recherche web"
-      },
-      "mediaEnableNeedsSetup": "Configurez d'abord une clé API dans Services de modèles ou activez un Token Plan.",
-      "followMainline": "Suivre le principal",
-      "loop": "boucle",
-      "mainlineUnset": "Non spécifié",
-      "nav": "Configuration des modèles de cours",
-      "parallel": "parallèle",
-      "stopped": "Désactivé",
-      "visionSupported": "Vision prise en charge"
+      "nav": "Configuration des modèles de cours"
     },
     "addNewModel": "Nouveau modèle",
     "addNewModelDescription": "Ajouter une nouvelle configuration de modèle",
@@ -1954,13 +1902,156 @@
       "showKey": "Afficher la clé",
       "hideKey": "Masquer la clé",
       "inUse": "Utilisé",
-      "setByServer": "Défini par le serveur",
-      "lockedHint": "Défini par la configuration du serveur ; non modifiable ici.",
-      "defaultModel": "Modèle par défaut",
       "modelFromCatalogue": "Le nom, les capacités et la fenêtre de contexte du modèle proviennent du catalogue intégré.",
       "modelWhenInUse": "Utilisé une fois ce service sélectionné dans la configuration des modèles du cours.",
       "planServer": "Configuré par le serveur",
-      "providerIdHint": "Enregistré sous « {{id}} »"
+      "providerIdHint": "Enregistré sous « {{id}} »",
+      "openaiCompatible": "Compatible OpenAI"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}} : {{value}}. Modifier",
+        "toggle": "Activer ou désactiver {{name}}",
+        "providerDefault": "Modèle par défaut",
+        "off": "Désactivé",
+        "unassigned": "Non défini",
+        "invalid": "Réglage invalide",
+        "locked": "Défini par le serveur",
+        "lockedHint": "Défini par la configuration du serveur. Impossible de le modifier ici.",
+        "followers": "Étapes qui le suivent : {{count}}",
+        "childrenFollow": "Types de page · tous suivent",
+        "childrenOwn": "Types de page · {{count}} propres"
+      },
+      "legend": {
+        "label": "Légende",
+        "follows": "Suit le parent",
+        "own": "Réglage propre",
+        "locked": "Défini par le serveur"
+      },
+      "map": {
+        "label": "Carte des modèles du cours. Faites glisser ou utilisez les flèches pour vous déplacer, et les boutons de zoom pour zoomer.",
+        "outside": "Hors du pipeline",
+        "standalone": "Autonome",
+        "perPage": "Page par page",
+        "zoom": "Zoom",
+        "zoomIn": "Zoom avant (+)",
+        "zoomOut": "Zoom arrière (-)",
+        "fit": "Ajuster à la vue (0)",
+        "reset": "Revenir à 100 %",
+        "hint": "Glisser pour se déplacer · ⌘/Ctrl + molette pour zoomer · double-clic sur le vide pour ajuster"
+      },
+      "picker": {
+        "follow": "Suivre {{name}}",
+        "providers": "Fournisseurs",
+        "providerDefault": "Modèle par défaut",
+        "modelId": "ID du modèle",
+        "use": "Utiliser",
+        "off": "Désactivé",
+        "offHint": "Cette étape ne s’exécute pas",
+        "noProviders": "Aucun service ne le propose encore. Configurez-en un dans Services de modèles.",
+        "fallback": "Secours",
+        "noFallback": "Aucun",
+        "manageProviders": "Gérer dans les services de modèles",
+        "conflict": "Les réglages ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
+        "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié.",
+        "clear": "Retirer le réglage propre",
+        "clearHint": "Utiliser le réglage du serveur, s’il en a un",
+        "unconfirmed": "La réponse du serveur a été perdue ; les réglages ont été rechargés. Vérifiez si la modification a été prise en compte."
+      },
+      "slots": {
+        "llm": {
+          "name": "Modèle par défaut",
+          "desc": "Le modèle de langage utilisé par chaque étape sans réglage propre."
+        },
+        "courseResearch": {
+          "name": "Requêtes de recherche",
+          "desc": "Transforme le sujet du cours en requêtes de recherche web."
+        },
+        "courseOutline": {
+          "name": "Plan",
+          "desc": "Planifie les pages du cours."
+        },
+        "courseAgents": {
+          "name": "Rôles",
+          "desc": "Crée les enseignants et les camarades de la classe."
+        },
+        "courseContent": {
+          "name": "Contenu des pages",
+          "desc": "Rédige chaque page. Les types de page sans réglage propre le suivent."
+        },
+        "courseContentSlide": {
+          "name": "Diapositives",
+          "desc": "Rédige les pages de diapositives."
+        },
+        "courseContentQuiz": {
+          "name": "Quiz",
+          "desc": "Rédige les pages de quiz."
+        },
+        "courseContentInteractive": {
+          "name": "Pages interactives",
+          "desc": "Rédige les pages interactives."
+        },
+        "courseContentPbl": {
+          "name": "Projets",
+          "desc": "Rédige les pages d’apprentissage par projet."
+        },
+        "courseActions": {
+          "name": "Actions de cours",
+          "desc": "Scénarise ce que les enseignants disent et font sur chaque page."
+        },
+        "classroom": {
+          "name": "Classe",
+          "desc": "Discussion, correction des quiz et projets pendant l’apprentissage."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Crée et modifie des cours avec vous. Nécessite un modèle prenant en charge l’appel d’outils."
+        },
+        "tts": {
+          "name": "Narration",
+          "desc": "Lit les cours à voix haute."
+        },
+        "asr": {
+          "name": "Saisie vocale",
+          "desc": "Transcrit en texte les questions posées à l’oral en classe."
+        },
+        "image": {
+          "name": "Images",
+          "desc": "Génère des images pour les pages."
+        },
+        "video": {
+          "name": "Vidéo",
+          "desc": "Génère des clips vidéo pour les pages."
+        },
+        "webSearch": {
+          "name": "Recherche web",
+          "desc": "Effectue des recherches sur le web pendant la génération d’un cours."
+        },
+        "document": {
+          "name": "Analyse de documents",
+          "desc": "Lit les documents importés."
+        }
+      },
+      "source": {
+        "inherited": "Suit {{name}}",
+        "deployment": "Serveur",
+        "default": "Défaut du serveur"
+      },
+      "stations": {
+        "research": "Recherche web",
+        "media": "Images / vidéo",
+        "lines": {
+          "rewrite": "Requête",
+          "search": "Recherche",
+          "image": "Image",
+          "video": "Vidéo"
+        }
+      },
+      "empty": {
+        "prompt": "Aucun modèle de langage pour l'instant. Configurez un service dans Services de modèles ou connectez une offre dans Token Plan ; ses modèles remplissent les parties non définies.",
+        "open": "Ouvrir les services de modèles",
+        "askAdmin": "Aucun modèle de langage n'est configuré. Demandez à l'administrateur du serveur d'en configurer un."
+      }
     }
   },
   "workspace": {

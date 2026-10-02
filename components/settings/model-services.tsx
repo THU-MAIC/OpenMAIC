@@ -222,25 +222,31 @@ const PLAN_BY_PRESET = new Map(
 );
 
 /**
- * A service's name: a plan's own name, the provider's id for a custom
- * endpoint, else the built-in service's name (with the provider's id when
- * there are several of one service).
+ * A service's name: a plan's own name; a built-in service's name for its
+ * entry (a provider named after it included); else the provider's preset and
+ * id ("OpenAI-compatible · gateway"), so two accounts of one service stay apart.
  */
 export function entryName(entry: ServiceEntry, capability: SlotCapability, t: T): string {
-  const plan = entry.provider ? PLAN_BY_PRESET.get(entry.provider.preset) : undefined;
+  const provider = entry.provider;
+  const plan = provider ? PLAN_BY_PRESET.get(provider.preset) : undefined;
   if (plan) return plan.id === 'volcengine-ark' ? 'Seed' : plan.name;
-  if (entry.provider?.preset === 'openai-compatible' || entry.provider?.baseUrl) {
-    return entry.provider.id;
+  if (!provider || entry.serviceId) {
+    return REGISTRY_INFO[capability].name(entry.serviceId ?? entry.registryId, t);
   }
-  const name = REGISTRY_INFO[capability].name(entry.registryId, t);
-  return entry.provider && entry.provider.id !== entry.provider.preset
-    ? `${name} · ${entry.provider.id}`
-    : name;
+  const presetName =
+    provider.preset === 'openai-compatible'
+      ? t('settings.serverConfig.openaiCompatible')
+      : REGISTRY_INFO[capability].name(entry.registryId, t);
+  return `${presetName} · ${provider.id}`;
 }
 
+/** A service's logo: its plan's or built-in service's; none (a generic box) for a custom endpoint. */
 export function entryIcon(entry: ServiceEntry, capability: SlotCapability): string | undefined {
   const plan = entry.provider ? PLAN_BY_PRESET.get(entry.provider.preset) : undefined;
-  return plan?.icon ?? REGISTRY_INFO[capability].icon(entry.registryId);
+  if (plan) return plan.icon;
+  if (entry.serviceId) return REGISTRY_INFO[capability].icon(entry.serviceId);
+  if (entry.provider?.preset === 'openai-compatible') return undefined;
+  return REGISTRY_INFO[capability].icon(entry.registryId);
 }
 
 export function isEntryConfigured(entry: ServiceEntry, capability: SlotCapability): boolean {
@@ -262,9 +268,9 @@ export function ModelServicesPanel({
   const capability = TAB_CAPABILITY[tab];
   const entries = useMemo(() => {
     const list = serviceEntries(view, capability, REGISTRY_INFO[capability].ids);
-    // Kimi 推广位：置顶未配置服务的首位（已有的服务在前，其余保持原顺序）。
+    // Kimi 推广位：置顶于内置服务之首（其他账号/自定义服务在前，其余保持原顺序）。
     const rank = (entry: ServiceEntry) =>
-      entry.provider ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;
+      entry.provider && !entry.serviceId ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;
     return capability === 'chat' ? [...list].sort((a, b) => rank(a) - rank(b)) : list;
   }, [view, capability]);
   const [selected, setSelected] = useState<Partial<Record<ServiceTab, string>>>({});
@@ -290,7 +296,7 @@ export function ModelServicesPanel({
                 alt={name}
                 className={cn(
                   'size-5 object-contain',
-                  MONO_LOGO_PROVIDERS.has(entry.registryId) && 'dark:invert',
+                  MONO_LOGO_PROVIDERS.has(entry.serviceId ?? entry.registryId) && 'dark:invert',
                 )}
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
@@ -389,7 +395,7 @@ export function ModelServicesPanel({
               id: item.id,
               name: entryName(item, capability, t),
               icon: entryIcon(item, capability),
-              registryId: item.registryId,
+              registryId: item.serviceId ?? item.registryId,
               configured: isEntryConfigured(item, capability),
             }))}
             selectedProviderId={entry?.id ?? ''}

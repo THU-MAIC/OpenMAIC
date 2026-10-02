@@ -37,14 +37,15 @@ const log = createLogger('TTSSettings');
  * Doubao's key is an app id and an access key, stored as one key
  * (`appId:accessKey`): two fields, saved together once both are filled.
  */
-function DoubaoKeyFields({ onSave }: { onSave: (key: string) => void | Promise<unknown> }) {
+function DoubaoKeyFields({ onSave }: { onSave: (key: string) => Promise<unknown> }) {
   const { t } = useI18n();
   const [appId, setAppId] = useState('');
   const [accessKey, setAccessKey] = useState('');
   const [show, setShow] = useState(false);
   const commit = async () => {
     if (!appId.trim() || !accessKey.trim()) return;
-    await onSave(`${appId.trim()}:${accessKey.trim()}`);
+    // Cleared only once the server took the key.
+    if (!(await onSave(`${appId.trim()}:${accessKey.trim()}`))) return;
     setAppId('');
     setAccessKey('');
   };

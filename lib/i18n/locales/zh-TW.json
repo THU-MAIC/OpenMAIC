@@ -1733,59 +1733,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到受管 TTS 供應商即可逐句生成和管理音訊。",
     "courseModels": {
-      "mainModel": "主線語言模型",
-      "mainModelHint": "跟隨主線的環節共用此模型，點擊卡片可單獨指定",
-      "mainModelTooltip": "所有設為跟隨主線的環節都使用此模型。點擊流程卡片可為該環節單獨選擇模型；更細的子環節在卡片的檢查器中設定。由伺服器設定決定的環節只顯示、不可修改。",
-      "noProviderHint": "尚無可用的語言模型，請先在「模型服務」中配置",
-      "followParent": "跟隨上級",
-      "restoreFollow": "恢復跟隨主線",
-      "modelSource": "模型來源",
-      "pickModel": "選擇模型",
-      "pickProvider": "選擇服務",
-      "optionInvalid": "已失效",
-      "subStagesTitle": "細分環節",
-      "subStages": {
-        "title": "標題生成",
-        "interactive": "互動腳本",
-        "pbl": "PBL 劇本",
-        "quiz": "測驗題",
-        "slide": "幻燈頁"
-      },
-      "searchService": "搜尋服務",
-      "parseService": "解析服務",
-      "asrTranscribe": "語音轉寫",
-      "aiIllustration": "AI 配圖",
-      "aiVideo": "AI 影片",
-      "stations": {
-        "desc": {
-          "doc-parse": "上傳的課程資料（文件／幻燈／音視頻）解析為文字；音視頻自動轉寫。",
-          "web-research": "按課程需求聯網檢索補充資料；搜尋詞由輕量 LLM 改寫。",
-          "outline": "理解需求與資料，產出課程標題與分場景大綱（可人工審閱）。",
-          "agents": "生成課堂中的師生智能體檔案（人設、頭像、聲音）。",
-          "scene-content": "逐場景生成幻燈／測驗／互動／PBL 內容，是管線中最重的 LLM 環節。",
-          "scene-actions": "為場景內容補全講解詞與教學動作，供語音合成與課堂演繹。",
-          "tts": "把講稿合成為師生語音（逐場景、串行）。",
-          "media": "兌現內容中的圖片／視頻佔位符，與逐場景流程並行執行。",
-          "interaction": "課程生成後的課堂運行期：多智能體對話、PBL 運行時與測驗批改。"
-        },
-        "agents": "角色生成",
-        "docParse": "文檔解析",
-        "interaction": "課堂互動",
-        "media": "媒體生成",
-        "outline": "大綱規劃",
-        "sceneActions": "講稿動作",
-        "sceneContent": "場景內容",
-        "tts": "語音合成",
-        "webResearch": "聯網調研"
-      },
-      "mediaEnableNeedsSetup": "請先在「模型服務」設定 API Key，或啟用 Token Plan 後再開啟",
-      "followMainline": "跟隨主線",
-      "loop": "循環",
-      "mainlineUnset": "未指定",
-      "nav": "課程模型配置",
-      "parallel": "並行",
-      "stopped": "已停用",
-      "visionSupported": "支援視覺輸入"
+      "nav": "課程模型配置"
     },
     "addNewModel": "新增模型",
     "addNewModelDescription": "新增新的模型設定",
@@ -1939,13 +1887,156 @@
       "showKey": "顯示金鑰",
       "hideKey": "隱藏金鑰",
       "inUse": "使用中",
-      "setByServer": "由伺服器設定",
-      "lockedHint": "由伺服器設定決定，此處不可修改。",
-      "defaultModel": "預設模型",
       "modelFromCatalogue": "模型名稱、能力與上下文視窗來自內建目錄。",
       "modelWhenInUse": "在「課程模型設定」中選用此服務後生效。",
       "planServer": "由伺服器設定",
-      "providerIdHint": "儲存為「{{id}}」"
+      "providerIdHint": "儲存為「{{id}}」",
+      "openaiCompatible": "OpenAI 相容"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}：{{value}}，點選以更換",
+        "toggle": "開啟或關閉{{name}}",
+        "providerDefault": "預設模型",
+        "off": "已關閉",
+        "unassigned": "未設定",
+        "invalid": "設定無效",
+        "locked": "由伺服器設定",
+        "lockedHint": "由伺服器設定，無法在此變更。",
+        "followers": "跟隨它的環節：{{count}}",
+        "childrenFollow": "頁型 · 全部跟隨",
+        "childrenOwn": "頁型 · {{count}} 個單獨設定"
+      },
+      "legend": {
+        "label": "圖例",
+        "follows": "跟隨上層",
+        "own": "單獨設定",
+        "locked": "由伺服器設定"
+      },
+      "map": {
+        "label": "課程模型圖。拖曳或使用方向鍵平移，使用縮放按鈕縮放。",
+        "outside": "流程之外",
+        "standalone": "獨立功能",
+        "perPage": "逐頁生成",
+        "zoom": "縮放",
+        "zoomIn": "放大（+）",
+        "zoomOut": "縮小（-）",
+        "fit": "符合視窗（0）",
+        "reset": "重設為 100%",
+        "hint": "拖曳平移 · ⌘/Ctrl + 滾輪縮放 · 在空白處按兩下以符合視窗"
+      },
+      "picker": {
+        "follow": "跟隨{{name}}",
+        "providers": "Provider",
+        "providerDefault": "預設模型",
+        "modelId": "模型 ID",
+        "use": "使用",
+        "off": "關閉",
+        "offHint": "此環節不執行",
+        "noProviders": "還沒有服務提供此能力，請在「模型服務」中設定。",
+        "fallback": "備用",
+        "noFallback": "無",
+        "manageProviders": "在模型服務中管理",
+        "conflict": "設定已在別處變更並已重新載入，請檢查後再試一次。",
+        "lockedNow": "伺服器現在設定了此項，因此未變更。",
+        "clear": "清除單獨設定",
+        "clearHint": "改用伺服器的設定（如有）",
+        "unconfirmed": "伺服器的回應遺失，設定已重新載入。請檢查變更是否已生效。"
+      },
+      "slots": {
+        "llm": {
+          "name": "預設模型",
+          "desc": "未單獨設定的環節都使用這個語言模型。"
+        },
+        "courseResearch": {
+          "name": "搜尋詞改寫",
+          "desc": "將課程主題改寫為搜尋詞。"
+        },
+        "courseOutline": {
+          "name": "大綱",
+          "desc": "規劃課程的各個頁面。"
+        },
+        "courseAgents": {
+          "name": "角色",
+          "desc": "產生課堂中的老師與同學。"
+        },
+        "courseContent": {
+          "name": "課件內容",
+          "desc": "撰寫每一頁。未單獨設定的頁型會跟隨這裡。"
+        },
+        "courseContentSlide": {
+          "name": "投影片",
+          "desc": "撰寫投影片頁。"
+        },
+        "courseContentQuiz": {
+          "name": "測驗",
+          "desc": "撰寫測驗頁。"
+        },
+        "courseContentInteractive": {
+          "name": "互動頁",
+          "desc": "撰寫互動頁。"
+        },
+        "courseContentPbl": {
+          "name": "專題",
+          "desc": "撰寫專題式學習頁。"
+        },
+        "courseActions": {
+          "name": "講解動作",
+          "desc": "安排老師在每一頁說什麼、做什麼。"
+        },
+        "classroom": {
+          "name": "課堂互動",
+          "desc": "學習過程中的討論、測驗批改與專題。"
+        },
+        "agent": {
+          "name": "智慧體",
+          "desc": "與你一起建立和編輯課程。需要支援工具呼叫的模型。"
+        },
+        "tts": {
+          "name": "配音",
+          "desc": "朗讀講解內容。"
+        },
+        "asr": {
+          "name": "語音輸入",
+          "desc": "在課堂中以語音提問時，將語音轉為文字。"
+        },
+        "image": {
+          "name": "配圖",
+          "desc": "為頁面產生圖片。"
+        },
+        "video": {
+          "name": "影片",
+          "desc": "為頁面產生影片片段。"
+        },
+        "webSearch": {
+          "name": "網路搜尋",
+          "desc": "產生課程時搜尋網路。"
+        },
+        "document": {
+          "name": "文件解析",
+          "desc": "讀取上傳的文件。"
+        }
+      },
+      "source": {
+        "inherited": "跟隨{{name}}",
+        "deployment": "伺服器",
+        "default": "伺服器預設"
+      },
+      "stations": {
+        "research": "網路研究",
+        "media": "配圖 / 影片",
+        "lines": {
+          "rewrite": "改寫",
+          "search": "搜尋",
+          "image": "圖像",
+          "video": "影片"
+        }
+      },
+      "empty": {
+        "prompt": "還沒有可用的語言模型。在「模型服務」中設定服務，或在「Token Plan」中連接方案，其模型會填入尚未設定的環節。",
+        "open": "開啟模型服務",
+        "askAdmin": "尚未設定語言模型，請聯絡伺服器管理員。"
+      }
     }
   },
   "workspace": {

@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "Browserintegrierte TTS unterstützt die Audiofunktionen der Editor-Zeitleiste nicht (Vorschau, erneute Generierung und Sammelvertonung). Wechsle zu einem verwalteten TTS-Anbieter, um Audio für einzelne Zeilen zu generieren und zu verwalten.",
     "courseModels": {
-      "mainModel": "Hauptmodell",
-      "mainModelHint": "Etappen, die dem Hauptmodell folgen, nutzen dieses Modell; klicke auf eine Karte, um eine Etappe einzeln festzulegen",
-      "mainModelTooltip": "Alle Schritte, die dem Hauptmodell folgen, verwenden es. Klicken Sie auf eine Karte der Pipeline, um für diesen Schritt ein eigenes Modell zu wählen; feinere Teilschritte finden Sie im Inspektor der Karte. Vom Server festgelegte Schritte werden angezeigt, können aber nicht geändert werden.",
-      "noProviderHint": "Noch kein Sprachmodell konfiguriert — in „Modell-Dienste“ einrichten",
-      "followParent": "Übergeordneter Etappe folgen",
-      "restoreFollow": "Wieder dem Hauptmodell folgen",
-      "modelSource": "Modellquelle",
-      "pickModel": "Modell wählen",
-      "pickProvider": "Dienst wählen",
-      "optionInvalid": "Nicht verfügbar",
-      "subStagesTitle": "Unteretappen",
-      "subStages": {
-        "title": "Titelgenerierung",
-        "interactive": "Interaktives Skript",
-        "pbl": "PBL-Szenario",
-        "quiz": "Quiz",
-        "slide": "Folien"
-      },
-      "searchService": "Suchdienst",
-      "parseService": "Parsing-Dienst",
-      "asrTranscribe": "Sprachtranskription",
-      "aiIllustration": "KI-Illustrationen",
-      "aiVideo": "KI-Video",
-      "stations": {
-        "desc": {
-          "doc-parse": "Hochgeladene Kursmaterialien (Dokumente, Folien, Audio/Video) werden zu Text geparst; Audio und Video werden automatisch transkribiert.",
-          "web-research": "Sucht im Web nach ergänzendem Material gemäß der Kursanforderung; Suchanfragen werden von einem kleinen LLM umformuliert.",
-          "outline": "Versteht Anforderung und Material und erzeugt Kurstitel sowie Gliederungen je Szene (menschlich prüfbar).",
-          "agents": "Erzeugt die Profile der Lehrenden- und Lernenden-Agenten (Persönlichkeit, Avatar, Stimme).",
-          "scene-content": "Erzeugt Folien-, Quiz-, Interaktions- und PBL-Inhalte je Szene — die aufwendigste LLM-Stufe der Pipeline.",
-          "scene-actions": "Vervollständigt Erzähltext und Unterrichtsaktionen je Szene und versorgt Sprachsynthese und Kursablauf.",
-          "tts": "Synthetisiert Erzähltext in Lehr-/Lernstimmen (je Szene, seriell).",
-          "media": "Löst die Bild-/Videoplatzhalter im generierten Inhalt parallel zur Szenen-Schleife auf.",
-          "interaction": "Die Kursklassenlaufzeit nach der Generierung: Multi-Agenten-Chat, PBL-Laufzeit und Quiz-Bewertung."
-        },
-        "agents": "Agentenprofile",
-        "docParse": "Dokumentanalyse",
-        "interaction": "Kursinteraktion",
-        "media": "Medienerzeugung",
-        "outline": "Gliederungsplanung",
-        "sceneActions": "Szenenaktionen",
-        "sceneContent": "Szeneninhalt",
-        "tts": "Text-zu-Sprache",
-        "webResearch": "Web-Recherche"
-      },
-      "mediaEnableNeedsSetup": "Konfiguriere zuerst einen API-Key in „Modell-Dienste“ oder aktiviere einen Token-Plan.",
-      "followMainline": "Hauptmodell folgen",
-      "loop": "Schleife",
-      "mainlineUnset": "Nicht festgelegt",
-      "nav": "Kursmodell-Konfiguration",
-      "parallel": "parallel",
-      "stopped": "Deaktiviert",
-      "visionSupported": "Bildverständnis verfügbar"
+      "nav": "Kursmodell-Konfiguration"
     },
     "addNewModel": "Neues Modell",
     "addNewModelDescription": "Eine neue Modellkonfiguration hinzufügen",
@@ -1954,13 +1902,156 @@
       "showKey": "Schlüssel anzeigen",
       "hideKey": "Schlüssel ausblenden",
       "inUse": "In Verwendung",
-      "setByServer": "Vom Server festgelegt",
-      "lockedHint": "Von der Serverkonfiguration festgelegt; hier nicht änderbar.",
-      "defaultModel": "Standardmodell",
       "modelFromCatalogue": "Name, Fähigkeiten und Kontextfenster des Modells stammen aus dem integrierten Katalog.",
       "modelWhenInUse": "Wird verwendet, sobald dieser Dienst in der Kursmodell-Konfiguration ausgewählt ist.",
       "planServer": "Vom Server konfiguriert",
-      "providerIdHint": "Gespeichert als „{{id}}“"
+      "providerIdHint": "Gespeichert als „{{id}}“",
+      "openaiCompatible": "OpenAI-kompatibel"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}: {{value}}. Ändern",
+        "toggle": "{{name}} ein- oder ausschalten",
+        "providerDefault": "Standardmodell",
+        "off": "Aus",
+        "unassigned": "Nicht festgelegt",
+        "invalid": "Ungültige Einstellung",
+        "locked": "Vom Server festgelegt",
+        "lockedHint": "Durch die Serverkonfiguration festgelegt. Kann hier nicht geändert werden.",
+        "followers": "Schritte, die ihm folgen: {{count}}",
+        "childrenFollow": "Seitentypen · alle folgen",
+        "childrenOwn": "Seitentypen · {{count}} eigene"
+      },
+      "legend": {
+        "label": "Legende",
+        "follows": "Folgt übergeordnetem",
+        "own": "Eigene Einstellung",
+        "locked": "Vom Server festgelegt"
+      },
+      "map": {
+        "label": "Kursmodellkarte. Ziehen oder Pfeiltasten zum Verschieben, Zoomschaltflächen zum Zoomen.",
+        "outside": "Außerhalb der Pipeline",
+        "standalone": "Eigenständig",
+        "perPage": "Seite für Seite",
+        "zoom": "Zoom",
+        "zoomIn": "Vergrößern (+)",
+        "zoomOut": "Verkleinern (-)",
+        "fit": "An Ansicht anpassen (0)",
+        "reset": "Auf 100 % zurücksetzen",
+        "hint": "Ziehen zum Verschieben · ⌘/Strg + Scrollen zum Zoomen · Doppelklick auf freie Fläche zum Anpassen"
+      },
+      "picker": {
+        "follow": "{{name}} folgen",
+        "providers": "Anbieter",
+        "providerDefault": "Standardmodell",
+        "modelId": "Modell-ID",
+        "use": "Verwenden",
+        "off": "Aus",
+        "offHint": "Dieser Schritt läuft nicht",
+        "noProviders": "Noch bietet kein Dienst dies an. Richten Sie einen in den Modelldiensten ein.",
+        "fallback": "Ersatz",
+        "noFallback": "Keiner",
+        "manageProviders": "In den Modelldiensten verwalten",
+        "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfe sie und versuche es erneut.",
+        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert.",
+        "clear": "Eigene Einstellung entfernen",
+        "clearHint": "Die Einstellung des Servers verwenden, falls vorhanden",
+        "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfe, ob die Änderung übernommen wurde."
+      },
+      "slots": {
+        "llm": {
+          "name": "Standardmodell",
+          "desc": "Das Sprachmodell, das jeder Schritt ohne eigene Einstellung verwendet."
+        },
+        "courseResearch": {
+          "name": "Suchanfragen",
+          "desc": "Formt das Kursthema in Websuchanfragen um."
+        },
+        "courseOutline": {
+          "name": "Gliederung",
+          "desc": "Plant die Seiten des Kurses."
+        },
+        "courseAgents": {
+          "name": "Rollen",
+          "desc": "Erstellt die Lehrkräfte und Mitlernenden des Klassenzimmers."
+        },
+        "courseContent": {
+          "name": "Seiteninhalt",
+          "desc": "Schreibt jede Seite. Seitentypen ohne eigene Einstellung folgen ihm."
+        },
+        "courseContentSlide": {
+          "name": "Folien",
+          "desc": "Schreibt Folienseiten."
+        },
+        "courseContentQuiz": {
+          "name": "Quizze",
+          "desc": "Schreibt Quizseiten."
+        },
+        "courseContentInteractive": {
+          "name": "Interaktive Seiten",
+          "desc": "Schreibt interaktive Seiten."
+        },
+        "courseContentPbl": {
+          "name": "Projekte",
+          "desc": "Schreibt Seiten für projektbasiertes Lernen."
+        },
+        "courseActions": {
+          "name": "Vortragsaktionen",
+          "desc": "Legt fest, was die Lehrkräfte auf jeder Seite sagen und tun."
+        },
+        "classroom": {
+          "name": "Klassenzimmer",
+          "desc": "Diskussion, Quizbewertung und Projekte beim Lernen."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Erstellt und bearbeitet Kurse mit dir. Benötigt ein Modell mit Tool-Aufrufen."
+        },
+        "tts": {
+          "name": "Sprecher",
+          "desc": "Liest die Vorträge vor."
+        },
+        "asr": {
+          "name": "Spracheingabe",
+          "desc": "Wandelt gesprochene Fragen im Klassenzimmer in Text um."
+        },
+        "image": {
+          "name": "Bilder",
+          "desc": "Erzeugt Bilder für Seiten."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Erzeugt Videoclips für Seiten."
+        },
+        "webSearch": {
+          "name": "Websuche",
+          "desc": "Durchsucht das Web bei der Kurserstellung."
+        },
+        "document": {
+          "name": "Dokumentanalyse",
+          "desc": "Liest hochgeladene Dokumente."
+        }
+      },
+      "source": {
+        "inherited": "Folgt {{name}}",
+        "deployment": "Server",
+        "default": "Serverstandard"
+      },
+      "stations": {
+        "research": "Webrecherche",
+        "media": "Bilder / Video",
+        "lines": {
+          "rewrite": "Anfrage",
+          "search": "Suche",
+          "image": "Bild",
+          "video": "Video"
+        }
+      },
+      "empty": {
+        "prompt": "Noch kein Sprachmodell. Richten Sie in den Modelldiensten einen Dienst ein oder verbinden Sie im Token Plan einen Plan; seine Modelle übernehmen die Teile ohne Einstellung.",
+        "open": "Modelldienste öffnen",
+        "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitten Sie die Serveradministration, eines einzurichten."
+      }
     }
   },
   "workspace": {

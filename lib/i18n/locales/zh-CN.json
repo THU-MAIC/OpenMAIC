@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
     "courseModels": {
-      "mainModel": "主线语言模型",
-      "mainModelHint": "跟随主线的环节共用此模型，点击卡片可单独指定",
-      "mainModelTooltip": "所有设为跟随主线的环节都使用该模型。点击流程卡片可为该环节单独选择模型；更细的子环节在卡片的检查器中设置。由服务器配置设定的环节只展示、不可修改。",
-      "noProviderHint": "尚无可用的语言模型，请先在「模型服务」中配置",
-      "followParent": "跟随上级",
-      "restoreFollow": "恢复跟随主线",
-      "modelSource": "模型来源",
-      "pickModel": "选择模型",
-      "pickProvider": "选择服务",
-      "optionInvalid": "已失效",
-      "subStagesTitle": "细分环节",
-      "subStages": {
-        "title": "标题生成",
-        "interactive": "互动脚本",
-        "pbl": "PBL 剧本",
-        "quiz": "测验题",
-        "slide": "幻灯页"
-      },
-      "searchService": "搜索服务",
-      "parseService": "解析服务",
-      "asrTranscribe": "语音转写",
-      "aiIllustration": "AI 配图",
-      "aiVideo": "AI 视频",
-      "stations": {
-        "desc": {
-          "doc-parse": "上传的课程资料（文档/幻灯/音视频）解析为文本；音视频自动转写。",
-          "web-research": "按课程要求联网检索补充资料；搜索词由轻量 LLM 改写。",
-          "outline": "理解需求与资料，产出课程标题与分场景大纲（可人工审阅）。",
-          "agents": "生成课堂中的师生智能体档案（人设、头像、声音）。",
-          "scene-content": "逐场景生成幻灯/测验/互动/PBL 内容，是管线中最重的 LLM 环节。",
-          "scene-actions": "为场景内容补全讲解词与教学动作，供语音合成与课堂演绎。",
-          "tts": "把讲稿合成为师生语音（逐场景、串行）。",
-          "media": "兑现内容中的图片/视频占位符，与逐场景流程并行执行。",
-          "interaction": "课程生成后的课堂运行期：多智能体对话、PBL 运行时与测验批改。"
-        },
-        "agents": "角色生成",
-        "docParse": "文档解析",
-        "interaction": "课堂互动",
-        "media": "媒体生成",
-        "outline": "大纲规划",
-        "sceneActions": "讲稿动作",
-        "sceneContent": "场景内容",
-        "tts": "语音合成",
-        "webResearch": "联网调研"
-      },
-      "mediaEnableNeedsSetup": "请先在「模型服务」配置 API Key，或启用 Token Plan 后再开启",
-      "followMainline": "跟随主线",
-      "loop": "循环",
-      "mainlineUnset": "未指定",
-      "nav": "课程模型配置",
-      "parallel": "并行",
-      "stopped": "已停用",
-      "visionSupported": "支持视觉输入"
+      "nav": "课程模型配置"
     },
     "addNewModel": "新建模型",
     "addNewModelDescription": "添加新的模型配置",
@@ -1954,13 +1902,156 @@
       "showKey": "显示密钥",
       "hideKey": "隐藏密钥",
       "inUse": "使用中",
-      "setByServer": "由服务器设定",
-      "lockedHint": "由服务器配置设定，此处不可修改。",
-      "defaultModel": "默认模型",
       "modelFromCatalogue": "模型名称、能力与上下文窗口来自内置目录。",
       "modelWhenInUse": "在「课程模型配置」中选用此服务后生效。",
       "planServer": "由服务器配置",
-      "providerIdHint": "保存为「{{id}}」"
+      "providerIdHint": "保存为「{{id}}」",
+      "openaiCompatible": "OpenAI 兼容"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}：{{value}}，点击更换",
+        "toggle": "开启或关闭{{name}}",
+        "providerDefault": "默认模型",
+        "off": "已关闭",
+        "unassigned": "未配置",
+        "invalid": "配置无效",
+        "locked": "由服务端设置",
+        "lockedHint": "由服务端配置设置，无法在此更改。",
+        "followers": "跟随它的环节：{{count}}",
+        "childrenFollow": "页型 · 全部跟随",
+        "childrenOwn": "页型 · {{count}} 个单独设置"
+      },
+      "legend": {
+        "label": "图例",
+        "follows": "跟随上级",
+        "own": "单独设置",
+        "locked": "由服务端设置"
+      },
+      "map": {
+        "label": "课程模型图。拖动或使用方向键平移，使用缩放按钮缩放。",
+        "outside": "流水线之外",
+        "standalone": "独立功能",
+        "perPage": "逐页生成",
+        "zoom": "缩放",
+        "zoomIn": "放大（+）",
+        "zoomOut": "缩小（-）",
+        "fit": "适应窗口（0）",
+        "reset": "重置为 100%",
+        "hint": "拖动平移 · ⌘/Ctrl + 滚轮缩放 · 双击空白处适应窗口"
+      },
+      "picker": {
+        "follow": "跟随{{name}}",
+        "providers": "Provider",
+        "providerDefault": "默认模型",
+        "modelId": "模型 ID",
+        "use": "使用",
+        "off": "关闭",
+        "offHint": "此环节不运行",
+        "noProviders": "还没有服务提供此能力，请在「模型服务」中配置。",
+        "fallback": "备用",
+        "noFallback": "无",
+        "manageProviders": "在模型服务中管理",
+        "conflict": "设置已在别处更改并已重新加载，请检查后重试。",
+        "lockedNow": "服务端现在设置了此项，因此未作更改。",
+        "clear": "清除单独设置",
+        "clearHint": "改用服务端的设置（如有）",
+        "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。"
+      },
+      "slots": {
+        "llm": {
+          "name": "默认模型",
+          "desc": "未单独设置的环节都使用这个语言模型。"
+        },
+        "courseResearch": {
+          "name": "搜索词改写",
+          "desc": "把课程主题改写成搜索词。"
+        },
+        "courseOutline": {
+          "name": "大纲",
+          "desc": "规划课程的各个页面。"
+        },
+        "courseAgents": {
+          "name": "角色",
+          "desc": "生成课堂中的老师和同学。"
+        },
+        "courseContent": {
+          "name": "课件内容",
+          "desc": "编写每一页。未单独设置的页型跟随这里。"
+        },
+        "courseContentSlide": {
+          "name": "幻灯片",
+          "desc": "编写幻灯片页。"
+        },
+        "courseContentQuiz": {
+          "name": "测验",
+          "desc": "编写测验页。"
+        },
+        "courseContentInteractive": {
+          "name": "交互页",
+          "desc": "编写交互页。"
+        },
+        "courseContentPbl": {
+          "name": "项目",
+          "desc": "编写项目式学习页。"
+        },
+        "courseActions": {
+          "name": "讲解动作",
+          "desc": "编排老师在每一页上说什么、做什么。"
+        },
+        "classroom": {
+          "name": "课堂互动",
+          "desc": "学习过程中的讨论、测验批改和项目。"
+        },
+        "agent": {
+          "name": "智能体",
+          "desc": "与你一起创建和编辑课程。需要支持工具调用的模型。"
+        },
+        "tts": {
+          "name": "配音",
+          "desc": "朗读讲解内容。"
+        },
+        "asr": {
+          "name": "语音输入",
+          "desc": "课堂里用语音提问时，把语音转成文字。"
+        },
+        "image": {
+          "name": "配图",
+          "desc": "为页面生成图片。"
+        },
+        "video": {
+          "name": "视频",
+          "desc": "为页面生成视频片段。"
+        },
+        "webSearch": {
+          "name": "联网搜索",
+          "desc": "生成课程时搜索网络。"
+        },
+        "document": {
+          "name": "文档解析",
+          "desc": "读取上传的文档。"
+        }
+      },
+      "source": {
+        "inherited": "跟随{{name}}",
+        "deployment": "服务端",
+        "default": "服务端默认"
+      },
+      "stations": {
+        "research": "联网调研",
+        "media": "配图 / 视频",
+        "lines": {
+          "rewrite": "改写",
+          "search": "搜索",
+          "image": "图像",
+          "video": "视频"
+        }
+      },
+      "empty": {
+        "prompt": "还没有可用的语言模型。在「模型服务」中配置服务，或在「Token Plan」中接入套餐，其模型会填入尚未设置的环节。",
+        "open": "打开模型服务",
+        "askAdmin": "尚未配置语言模型，请联系服务器管理员。"
+      }
     }
   },
   "workspace": {

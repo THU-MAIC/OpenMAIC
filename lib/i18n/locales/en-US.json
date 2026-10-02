@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio.",
     "courseModels": {
-      "mainModel": "Main model",
-      "mainModelHint": "Stages that follow the mainline share this model; click a card to override a stage",
-      "mainModelTooltip": "Every stage set to follow the main model uses it. Click a pipeline card to pick a model for that stage on its own; finer-grained sub-stages live in the card's inspector. Stages the server's configuration sets are shown but cannot be changed.",
-      "noProviderHint": "No language model configured yet — set one up in Model Services",
-      "followParent": "Follow parent",
-      "restoreFollow": "Restore follow mainline",
-      "modelSource": "Model source",
-      "pickModel": "Pick a model",
-      "pickProvider": "Pick a service",
-      "optionInvalid": "Unavailable",
-      "subStagesTitle": "Sub-stages",
-      "subStages": {
-        "title": "Title generation",
-        "interactive": "Interactive script",
-        "pbl": "PBL scenario",
-        "quiz": "Quiz",
-        "slide": "Slides"
-      },
-      "searchService": "Search service",
-      "parseService": "Parsing service",
-      "asrTranscribe": "Speech transcription",
-      "aiIllustration": "AI illustrations",
-      "aiVideo": "AI video",
-      "stations": {
-        "desc": {
-          "doc-parse": "Uploaded course materials (docs, slides, audio/video) are parsed into text; audio and video are transcribed automatically.",
-          "web-research": "Searches the web for supplementary material based on the course request; search queries are rewritten by a lightweight LLM.",
-          "outline": "Understands the request and materials to produce the course title and per-scene outlines (human-reviewable).",
-          "agents": "Generates the profiles of teacher and student agents (personas, avatars, voices).",
-          "scene-content": "Generates slide, quiz, interactive and PBL content per scene — the heaviest LLM stage of the pipeline.",
-          "scene-actions": "Completes narration and teaching actions for each scene, feeding speech synthesis and classroom play.",
-          "tts": "Synthesizes narration into teacher/student voices (per scene, serial).",
-          "media": "Fulfills the image/video placeholders in the generated content, in parallel with the per-scene loop.",
-          "interaction": "The classroom runtime after generation: multi-agent chat, the PBL runtime and quiz grading."
-        },
-        "agents": "Agent profiles",
-        "docParse": "Document parsing",
-        "interaction": "Classroom interaction",
-        "media": "Media generation",
-        "outline": "Outline planning",
-        "sceneActions": "Scene actions",
-        "sceneContent": "Scene content",
-        "tts": "Text-to-speech",
-        "webResearch": "Web research"
-      },
-      "mediaEnableNeedsSetup": "Configure an API key in Model Services or enable a Token Plan first, then turn this on.",
-      "followMainline": "Follow mainline",
-      "loop": "loop",
-      "mainlineUnset": "Not specified",
-      "nav": "Course Model Config",
-      "parallel": "parallel",
-      "stopped": "Disabled",
-      "visionSupported": "Vision supported"
+      "nav": "Course Model Config"
     },
     "addNewModel": "New Model",
     "addNewModelDescription": "Add a new model configuration",
@@ -1954,13 +1902,156 @@
       "showKey": "Show key",
       "hideKey": "Hide key",
       "inUse": "In use",
-      "setByServer": "Set by the server",
-      "lockedHint": "Set by the server's configuration; it cannot be changed here.",
-      "defaultModel": "Default model",
       "modelFromCatalogue": "The model's name, capabilities and context window come from the built-in catalogue.",
       "modelWhenInUse": "Used once this service is selected in Course Model Config.",
       "planServer": "Configured by the server",
-      "providerIdHint": "Saved as \"{{id}}\""
+      "providerIdHint": "Saved as \"{{id}}\"",
+      "openaiCompatible": "OpenAI-compatible"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}: {{value}}. Change",
+        "toggle": "Turn {{name}} on or off",
+        "providerDefault": "Default model",
+        "off": "Off",
+        "unassigned": "Not set",
+        "invalid": "Invalid setting",
+        "locked": "Set by the server",
+        "lockedHint": "Set by the server's configuration. It cannot be changed here.",
+        "followers": "Parts following it: {{count}}",
+        "childrenFollow": "Page types · all follow",
+        "childrenOwn": "Page types · {{count}} own"
+      },
+      "legend": {
+        "label": "Legend",
+        "follows": "Follows parent",
+        "own": "Own setting",
+        "locked": "Set by the server"
+      },
+      "map": {
+        "label": "Course model map. Drag or use the arrow keys to pan; use the zoom controls to zoom.",
+        "outside": "Outside the pipeline",
+        "standalone": "Standalone",
+        "perPage": "Page by page",
+        "zoom": "Zoom",
+        "zoomIn": "Zoom in (+)",
+        "zoomOut": "Zoom out (-)",
+        "fit": "Fit to view (0)",
+        "reset": "Reset to 100%",
+        "hint": "Drag to pan · ⌘/Ctrl + scroll to zoom · double-click empty space to fit"
+      },
+      "picker": {
+        "follow": "Follow {{name}}",
+        "providers": "Providers",
+        "providerDefault": "Default model",
+        "modelId": "Model ID",
+        "use": "Use",
+        "off": "Off",
+        "offHint": "This part does not run",
+        "noProviders": "No service offers this yet. Set one up in Model Services.",
+        "fallback": "Fallback",
+        "noFallback": "None",
+        "manageProviders": "Manage in Model Services",
+        "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
+        "lockedNow": "The server now sets this, so it was not changed.",
+        "clear": "Clear own setting",
+        "clearHint": "Use the server's setting, if it has one",
+        "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect."
+      },
+      "slots": {
+        "llm": {
+          "name": "Default model",
+          "desc": "The language model every part uses unless it has its own."
+        },
+        "courseResearch": {
+          "name": "Search queries",
+          "desc": "Turns the course topic into web search queries."
+        },
+        "courseOutline": {
+          "name": "Outline",
+          "desc": "Plans the course's pages."
+        },
+        "courseAgents": {
+          "name": "Roles",
+          "desc": "Creates the teachers and classmates of the classroom."
+        },
+        "courseContent": {
+          "name": "Page content",
+          "desc": "Writes each page. Page types without their own setting follow it."
+        },
+        "courseContentSlide": {
+          "name": "Slides",
+          "desc": "Writes slide pages."
+        },
+        "courseContentQuiz": {
+          "name": "Quizzes",
+          "desc": "Writes quiz pages."
+        },
+        "courseContentInteractive": {
+          "name": "Interactive pages",
+          "desc": "Writes interactive pages."
+        },
+        "courseContentPbl": {
+          "name": "Projects",
+          "desc": "Writes project-based learning pages."
+        },
+        "courseActions": {
+          "name": "Lecture actions",
+          "desc": "Scripts what the teachers say and do on each page."
+        },
+        "classroom": {
+          "name": "Classroom",
+          "desc": "Discussion, quiz grading and projects while learning."
+        },
+        "agent": {
+          "name": "Agent",
+          "desc": "Builds and edits courses with you. Needs a model that supports tool calling."
+        },
+        "tts": {
+          "name": "Narration",
+          "desc": "Reads the lectures aloud."
+        },
+        "asr": {
+          "name": "Voice input",
+          "desc": "Turns spoken questions in the classroom into text."
+        },
+        "image": {
+          "name": "Images",
+          "desc": "Generates images for pages."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Generates video clips for pages."
+        },
+        "webSearch": {
+          "name": "Web search",
+          "desc": "Searches the web while generating a course."
+        },
+        "document": {
+          "name": "Document parsing",
+          "desc": "Reads uploaded documents."
+        }
+      },
+      "source": {
+        "inherited": "Follows {{name}}",
+        "deployment": "Server",
+        "default": "Server default"
+      },
+      "stations": {
+        "research": "Web research",
+        "media": "Images / video",
+        "lines": {
+          "rewrite": "Query",
+          "search": "Search",
+          "image": "Image",
+          "video": "Video"
+        }
+      },
+      "empty": {
+        "prompt": "No language model yet. Set up a service in Model Services or connect a plan in Token Plan; its models fill the parts that are not set.",
+        "open": "Open Model Services",
+        "askAdmin": "No language model is configured. Ask the server's administrator to set one up."
+      }
     }
   },
   "workspace": {

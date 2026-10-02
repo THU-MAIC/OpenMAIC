@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
     "courseModels": {
-      "mainModel": "메인 모델",
-      "mainModelHint": "메인을 따르는 단계는 이 모델을 공유합니다. 카드를 클릭하면 단계별로 지정할 수 있어요",
-      "mainModelTooltip": "메인 모델을 따르도록 설정된 모든 단계가 이 모델을 사용합니다. 파이프라인 카드를 클릭하면 해당 단계에만 모델을 지정할 수 있으며, 더 세분화된 하위 단계는 카드의 인스펙터에서 설정합니다. 서버 설정으로 정해진 단계는 표시만 되고 변경할 수 없습니다.",
-      "noProviderHint": "아직 언어 모델이 구성되지 않았습니다. \"모델 서비스\"에서 설정하세요",
-      "followParent": "상위 따르기",
-      "restoreFollow": "메인 따르기로 복원",
-      "modelSource": "모델 출처",
-      "pickModel": "모델 선택",
-      "pickProvider": "서비스 선택",
-      "optionInvalid": "사용 불가",
-      "subStagesTitle": "하위 단계",
-      "subStages": {
-        "title": "제목 생성",
-        "interactive": "인터랙티브 스크립트",
-        "pbl": "PBL 시나리오",
-        "quiz": "퀴즈",
-        "slide": "슬라이드"
-      },
-      "searchService": "검색 서비스",
-      "parseService": "파싱 서비스",
-      "asrTranscribe": "음성 전사",
-      "aiIllustration": "AI 일러스트",
-      "aiVideo": "AI 영상",
-      "stations": {
-        "desc": {
-          "doc-parse": "업로드된 코스 자료(문서·슬라이드·오디오/비디오)를 텍스트로 파싱하고, 오디오와 비디오는 자동으로 전사합니다.",
-          "web-research": "코스 요구사항에 맞춰 웹에서 보충 자료를 검색합니다. 검색어는 경량 LLM이 다시 작성합니다.",
-          "outline": "요구사항과 자료를 이해해 코스 제목과 장면별 개요를 생성합니다(사람이 검토 가능).",
-          "agents": "교사·학생 에이전트 프로필(성격·아바타·목소리)을 생성합니다.",
-          "scene-content": "장면별로 슬라이드·퀴즈·인터랙션·PBL 콘텐츠를 생성합니다. 파이프라인에서 가장 무거운 LLM 단계입니다.",
-          "scene-actions": "장면별 내레이션과 교수 액션을 채워 음성 합성과 수업 재생에 공급합니다.",
-          "tts": "내레이션을 교사·학생 목소리로 합성합니다(장면별, 순차 실행).",
-          "media": "생성된 콘텐츠 내 이미지·비디오 자리표시자를 장면 루프와 병렬로 채웁니다.",
-          "interaction": "생성 이후 수업 런타임: 멀티 에이전트 채팅, PBL 런타임, 퀴즈 채점."
-        },
-        "agents": "에이전트 프로필",
-        "docParse": "문서 파싱",
-        "interaction": "수업 상호작용",
-        "media": "미디어 생성",
-        "outline": "개요 설계",
-        "sceneActions": "장면 액션",
-        "sceneContent": "장면 콘텐츠",
-        "tts": "음성 합성",
-        "webResearch": "웹 리서치"
-      },
-      "mediaEnableNeedsSetup": "'모델 서비스'에서 API 키를 구성하거나 Token Plan을 활성화한 뒤 켜세요.",
-      "followMainline": "메인 따르기",
-      "loop": "루프",
-      "mainlineUnset": "지정되지 않음",
-      "nav": "코스 모델 설정",
-      "parallel": "병렬",
-      "stopped": "비활성화됨",
-      "visionSupported": "이미지 입력 지원"
+      "nav": "코스 모델 설정"
     },
     "addNewModel": "새 모델",
     "addNewModelDescription": "새 모델 설정을 추가합니다",
@@ -1954,13 +1902,156 @@
       "showKey": "키 표시",
       "hideKey": "키 숨기기",
       "inUse": "사용 중",
-      "setByServer": "서버에서 설정",
-      "lockedHint": "서버 설정으로 정해져 있어 여기서는 변경할 수 없습니다.",
-      "defaultModel": "기본 모델",
       "modelFromCatalogue": "모델 이름, 기능, 컨텍스트 창은 내장 카탈로그에서 가져옵니다.",
       "modelWhenInUse": "코스 모델 설정에서 이 서비스를 선택하면 사용됩니다.",
       "planServer": "서버에서 구성됨",
-      "providerIdHint": "\"{{id}}\"(으)로 저장"
+      "providerIdHint": "\"{{id}}\"(으)로 저장",
+      "openaiCompatible": "OpenAI 호환"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}: {{value}}. 변경",
+        "toggle": "{{name}} 켜기 또는 끄기",
+        "providerDefault": "기본 모델",
+        "off": "꺼짐",
+        "unassigned": "설정 안 됨",
+        "invalid": "잘못된 설정",
+        "locked": "서버에서 설정",
+        "lockedHint": "서버 설정으로 정해져 있어 여기서 변경할 수 없습니다.",
+        "followers": "이를 따르는 단계: {{count}}",
+        "childrenFollow": "페이지 유형 · 모두 따름",
+        "childrenOwn": "페이지 유형 · 개별 설정 {{count}}개"
+      },
+      "legend": {
+        "label": "범례",
+        "follows": "상위를 따름",
+        "own": "개별 설정",
+        "locked": "서버에서 설정"
+      },
+      "map": {
+        "label": "코스 모델 맵. 드래그하거나 화살표 키로 이동하고 확대/축소 버튼으로 크기를 조절합니다.",
+        "outside": "파이프라인 외부",
+        "standalone": "독립 기능",
+        "perPage": "페이지별 생성",
+        "zoom": "확대/축소",
+        "zoomIn": "확대 (+)",
+        "zoomOut": "축소 (-)",
+        "fit": "화면에 맞추기 (0)",
+        "reset": "100%로 재설정",
+        "hint": "드래그하여 이동 · ⌘/Ctrl + 스크롤로 확대/축소 · 빈 곳을 더블클릭하면 화면에 맞춤"
+      },
+      "picker": {
+        "follow": "{{name}} 따르기",
+        "providers": "제공자",
+        "providerDefault": "기본 모델",
+        "modelId": "모델 ID",
+        "use": "사용",
+        "off": "끄기",
+        "offHint": "이 단계는 실행되지 않습니다",
+        "noProviders": "아직 이 기능을 제공하는 서비스가 없습니다. 모델 서비스에서 설정하세요.",
+        "fallback": "대체 모델",
+        "noFallback": "없음",
+        "manageProviders": "모델 서비스에서 관리",
+        "conflict": "설정이 다른 곳에서 변경되어 다시 불러왔습니다. 확인 후 다시 시도하세요.",
+        "lockedNow": "이제 서버가 이 항목을 설정하므로 변경되지 않았습니다.",
+        "clear": "개별 설정 해제",
+        "clearHint": "서버 설정이 있으면 그것을 사용합니다",
+        "unconfirmed": "서버 응답이 유실되어 설정을 다시 불러왔습니다. 변경 사항이 적용되었는지 확인하세요."
+      },
+      "slots": {
+        "llm": {
+          "name": "기본 모델",
+          "desc": "따로 설정하지 않은 모든 단계가 이 언어 모델을 사용합니다."
+        },
+        "courseResearch": {
+          "name": "검색 쿼리",
+          "desc": "코스 주제를 웹 검색 쿼리로 바꿉니다."
+        },
+        "courseOutline": {
+          "name": "개요",
+          "desc": "코스의 페이지를 계획합니다."
+        },
+        "courseAgents": {
+          "name": "역할",
+          "desc": "교실의 교사와 학급 친구를 만듭니다."
+        },
+        "courseContent": {
+          "name": "페이지 내용",
+          "desc": "각 페이지를 작성합니다. 따로 설정하지 않은 페이지 유형은 이를 따릅니다."
+        },
+        "courseContentSlide": {
+          "name": "슬라이드",
+          "desc": "슬라이드 페이지를 작성합니다."
+        },
+        "courseContentQuiz": {
+          "name": "퀴즈",
+          "desc": "퀴즈 페이지를 작성합니다."
+        },
+        "courseContentInteractive": {
+          "name": "인터랙티브",
+          "desc": "인터랙티브 페이지를 작성합니다."
+        },
+        "courseContentPbl": {
+          "name": "프로젝트",
+          "desc": "프로젝트 기반 학습 페이지를 작성합니다."
+        },
+        "courseActions": {
+          "name": "강의 동작",
+          "desc": "각 페이지에서 교사가 말하고 행동할 내용을 구성합니다."
+        },
+        "classroom": {
+          "name": "교실",
+          "desc": "학습 중의 토론, 퀴즈 채점, 프로젝트."
+        },
+        "agent": {
+          "name": "에이전트",
+          "desc": "함께 코스를 만들고 편집합니다. 도구 호출을 지원하는 모델이 필요합니다."
+        },
+        "tts": {
+          "name": "내레이션",
+          "desc": "강의를 소리 내어 읽습니다."
+        },
+        "asr": {
+          "name": "음성 입력",
+          "desc": "교실에서 음성으로 질문하면 텍스트로 바꿉니다."
+        },
+        "image": {
+          "name": "이미지",
+          "desc": "페이지용 이미지를 생성합니다."
+        },
+        "video": {
+          "name": "동영상",
+          "desc": "페이지용 동영상 클립을 생성합니다."
+        },
+        "webSearch": {
+          "name": "웹 검색",
+          "desc": "코스를 생성하는 동안 웹을 검색합니다."
+        },
+        "document": {
+          "name": "문서 분석",
+          "desc": "업로드한 문서를 읽습니다."
+        }
+      },
+      "source": {
+        "inherited": "{{name}} 따름",
+        "deployment": "서버",
+        "default": "서버 기본값"
+      },
+      "stations": {
+        "research": "웹 조사",
+        "media": "이미지 / 동영상",
+        "lines": {
+          "rewrite": "쿼리",
+          "search": "검색",
+          "image": "이미지",
+          "video": "동영상"
+        }
+      },
+      "empty": {
+        "prompt": "아직 언어 모델이 없습니다. 모델 서비스에서 서비스를 설정하거나 Token Plan에서 플랜을 연결하면 설정되지 않은 부분에 해당 모델이 지정됩니다.",
+        "open": "모델 서비스 열기",
+        "askAdmin": "언어 모델이 구성되지 않았습니다. 서버 관리자에게 설정을 요청하세요."
+      }
     }
   },
   "workspace": {

@@ -61,27 +61,23 @@ vi.mock('@/components/ui/select', async () => {
   };
 });
 
-import { CourseModelConfigPanel } from '@/components/settings/course-model-config';
+import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { ModelServicesPanel } from '@/components/settings/model-services';
+import { ModelMap } from '@/components/settings/models/model-map';
+import { llmPickerGroups } from '@/components/settings/use-llm-picker-groups';
 import { ProviderConfigPanel } from '@/components/settings/provider-config-panel';
 import { TokenPlanSettings } from '@/components/settings/token-plan-settings';
 import {
   createModelSettingsClient,
+  modelSettingsClient,
   type ApplyResult,
   type ModelSettingsChange,
   type ModelSettingsView,
   type PresetView,
-  type SlotView,
 } from '@/lib/model-settings/client';
 import { serviceEntries } from '@/lib/model-settings/services';
 
-import {
-  chatPreset,
-  makeView,
-  withLlm,
-  withSlots,
-  workspaceProvider,
-} from '../model-settings/fixtures';
+import { chatPreset, makeView, workspaceProvider } from '../model-settings/fixtures';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -176,18 +172,6 @@ function pickInPopover(text: string) {
   click(option);
 }
 
-const imagePreset: PresetView = {
-  id: 'seedream',
-  name: 'Seedream',
-  kind: 'single',
-  capabilities: {
-    image: { registryId: 'seedream', models: [{ id: 'seed-1', name: 'Seed 1' }] },
-  },
-  requiresBaseUrl: false,
-  customEndpoint: false,
-  recommended: {},
-};
-
 describe('Model Services → provider changes', () => {
   it("saves a service's key as a workspace provider and fills the empty default model", async () => {
     const view = makeView();
@@ -209,6 +193,27 @@ describe('Model Services → provider changes', () => {
       // The new provider fills the root slots of what it serves that have nothing set.
       { kind: 'slots', set: { llm: 'acme:acme-large', tts: 'acme:acme-voice', webSearch: 'acme' } },
     ]);
+  });
+
+  it('keeps a typed key in the field when the server refuses it, and clears it once saved', async () => {
+    const view = makeView();
+    const answers: ApplyResult[] = [
+      { ok: false, reason: 'invalid', message: 'bad key' },
+      { ok: true, view: { ...view, providers: [workspaceProvider('acme')] } },
+      { ok: true, view: { ...view, providers: [workspaceProvider('acme')] } },
+    ];
+    const apply = vi.fn(async () => answers.shift()!);
+    const entry = serviceEntries(view, 'chat', ['acme'])[0];
+    mount(createElement(ProviderConfigPanel, { view, apply, entry }));
+
+    const key = byLabel('llm-api-key-acme') as HTMLInputElement;
+    type(key, 'sk-typed-0001');
+    blur(key);
+    await flush();
+    expect(key.value).toBe('sk-typed-0001');
+    blur(key);
+    await flush();
+    expect(key.value).toBe('');
   });
 
   it('keeps a stored key write-only: replace sends the new one, remove sends an empty one', async () => {
@@ -298,100 +303,6 @@ describe('Model Services → provider changes', () => {
   });
 });
 
-/** A view with the acme provider set up: llm on its large model, an image provider, image off. */
-function courseView(patch: Record<string, Partial<SlotView>> = {}): ModelSettingsView {
-  const base = withLlm(
-    makeView({
-      presets: [chatPreset, imagePreset],
-      providers: [
-        workspaceProvider('acme'),
-        { ...workspaceProvider('seedream', imagePreset), key: { set: true, mask: '…1111' } },
-      ],
-    }),
-  );
-  return withSlots(base, {
-    image: {
-      assignment: null,
-      effective: { status: 'disabled', resolvedAt: 'image', source: 'workspace' },
-    },
-    ...patch,
-  });
-}
-
-describe('Course Model → slots', () => {
-  it('sets a stage model on its slot, and following the main model clears it', async () => {
-    const view = courseView();
-    const { apply, changes } = recordingApply(() => view);
-    mount(createElement(CourseModelConfigPanel, { view, apply }));
-
-    click(byText('settings.courseModels.stations.outline'));
-    // The inspector's picker: open it and pick the small model.
-    const trigger = [...document.body.querySelectorAll<HTMLElement>('aside button')].find((b) =>
-      b.textContent?.includes('settings.courseModels.followMainline'),
-    )!;
-    click(trigger);
-    pickInPopover('Acme Small');
-    await flush();
-    expect(changes.at(-1)).toEqual({ kind: 'slots', set: { 'course.outline': 'acme:acme-small' } });
-  });
-
-  it('turns a media slot off as null and back on to what it held', async () => {
-    const on = courseView({
-      image: {
-        assignment: 'seedream:seed-1',
-        effective: {
-          status: 'assigned',
-          resolvedAt: 'image',
-          source: 'workspace',
-          requirements: [],
-          providerId: 'seedream',
-          providerSource: 'workspace',
-          presetId: 'seedream',
-          registryId: 'seedream',
-          modelId: 'seed-1',
-        },
-      },
-    });
-    const off = courseView();
-    const { apply, changes } = recordingApply((change) =>
-      change.kind === 'slots' && change.set?.image === null ? off : on,
-    );
-    const { render } = mount(createElement(CourseModelConfigPanel, { view: on, apply }));
-    click(byText('settings.courseModels.stations.media'));
-    click(byLabel('settings.enableImageGeneration'));
-    await flush();
-    expect(changes.at(-1)).toEqual({ kind: 'slots', set: { image: null } });
-
-    render(createElement(CourseModelConfigPanel, { view: off, apply }));
-    click(byLabel('settings.enableImageGeneration'));
-    await flush();
-    expect(changes.at(-1)).toEqual({ kind: 'slots', set: { image: 'seedream:seed-1' } });
-  });
-
-  it('turns on a media slot it never held with its first service', async () => {
-    const view = courseView();
-    const { apply, changes } = recordingApply(() => view);
-    mount(createElement(CourseModelConfigPanel, { view, apply }));
-    click(byText('settings.courseModels.stations.media'));
-    click(byLabel('settings.enableImageGeneration'));
-    await flush();
-    expect(changes.at(-1)).toEqual({ kind: 'slots', set: { image: 'seedream:seed-1' } });
-  });
-
-  it("disables what the server's configuration sets", () => {
-    const view = withSlots(courseView(), {
-      llm: { locked: true },
-      image: { locked: true },
-    });
-    const { apply } = recordingApply(() => view);
-    mount(createElement(CourseModelConfigPanel, { view, apply }));
-    expect((byLabel('settings.courseModels.mainModel') as HTMLButtonElement).disabled).toBe(true);
-    click(byText('settings.courseModels.stations.media'));
-    expect(byLabel('settings.enableImageGeneration').hasAttribute('disabled')).toBe(true);
-    expect(document.body.textContent).toContain('settings.serverConfig.setByServer');
-  });
-});
-
 describe('Token Plan → provider and recommended slots', () => {
   it('connecting adds the plan provider and fills the empty slots it recommends', async () => {
     const plan: PresetView = {
@@ -440,5 +351,111 @@ describe('Token Plan → provider and recommended slots', () => {
     click(byText('settings.tokenPlan.disconnect', '[role="alertdialog"] button'));
     await flush();
     expect(changes).toEqual([{ kind: 'remove-provider', id: 'tokendance' }]);
+  });
+});
+
+/** The server's providers as a deployment declares them: an OpenAI-compatible gateway and DeepSeek. */
+function deploymentView(): ModelSettingsView {
+  return makeView({
+    presets: [],
+    policy: { allowWorkspaceProviders: false },
+    providers: [
+      {
+        id: 'gateway',
+        preset: 'openai-compatible',
+        source: 'deployment',
+        models: ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731'],
+        capabilities: {
+          chat: {
+            registryId: 'openai',
+            models: ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731'].map((id) => ({
+              id,
+              name: id,
+            })),
+          },
+        },
+      },
+      {
+        id: 'deepseek',
+        preset: 'deepseek',
+        source: 'deployment',
+        capabilities: {
+          chat: {
+            registryId: 'deepseek',
+            models: [{ id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' }],
+          },
+        },
+      },
+    ],
+  });
+}
+
+describe("the server's providers wherever chat models are offered", () => {
+  it('offers their models in the shared picker groups', () => {
+    const groups = llmPickerGroups(deploymentView());
+    expect(groups.map((group) => [group.id, group.models.map((model) => model.id)])).toEqual([
+      ['gateway', ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731']],
+      ['deepseek', ['deepseek-v4-pro']],
+    ]);
+  });
+
+  it('offers them on the map instead of saying no model is available', () => {
+    const view = deploymentView();
+    const { apply, changes } = recordingApply(() => view);
+    mount(
+      createElement(ModelMap, {
+        view,
+        apply,
+        t: (key: string, options?: Record<string, unknown>) =>
+          options ? [key, ...Object.values(options)].join('|') : key,
+        onManageProviders: () => {},
+        offMemory: new Map(),
+      }),
+    );
+    expect(document.body.textContent).not.toContain('settings.modelSettings.empty.prompt');
+    click(document.body.querySelector<HTMLElement>('[data-slot-id="llm"]')!);
+    pickInPopover('gpt-5.4-mini');
+    return flush().then(() => {
+      expect(changes.at(-1)).toEqual({ kind: 'slots', set: { llm: 'gateway:gpt-5.4-mini' } });
+    });
+  });
+
+  it('offers them in the home toolbar', () => {
+    modelSettingsClient.adopt(deploymentView());
+    try {
+      mount(
+        createElement(GenerationToolbar, {
+          courseMaterials: [],
+          onCourseMaterialsAdd: () => {},
+          onCourseMaterialRemove: () => {},
+          onPdfError: () => {},
+          onSettingsOpen: () => {},
+        }),
+      );
+      expect(document.body.querySelector('[aria-label="toolbar.pickModel"]')).not.toBeNull();
+      expect(document.body.textContent).not.toContain('toolbar.configureProvider');
+    } finally {
+      modelSettingsClient.adopt(null);
+    }
+  });
+
+  it('names a custom endpoint by its preset and id, and merges one named after a service', () => {
+    const view = deploymentView();
+    const { apply } = recordingApply(() => view);
+    mount(
+      createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+    );
+    const rows = [...document.body.querySelectorAll<HTMLElement>('button[aria-pressed]')];
+    const gateway = rows.find((row) =>
+      row.textContent?.includes('settings.serverConfig.openaiCompatible · gateway'),
+    );
+    expect(gateway).toBeDefined();
+    // A generic logo, not OpenAI's.
+    expect(gateway!.querySelector('img')).toBeNull();
+    // The server's `deepseek` is the DeepSeek entry, configured, listed once.
+    const deepseek = rows.filter((row) => row.textContent?.includes('DeepSeek'));
+    expect(deepseek).toHaveLength(1);
+    expect(deepseek[0].textContent).toContain('settings.modelServices.configured');
+    expect(deepseek[0].textContent).not.toContain('·');
   });
 });

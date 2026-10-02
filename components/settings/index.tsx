@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { GeneralSettings } from './general-settings';
 import { SkillSettings } from './skill-settings';
 import { TokenPlanSettings } from './token-plan-settings';
-import { CourseModelConfigPanel } from './course-model-config';
+import { CourseModelMap } from './models';
 import {
   ModelServicesPanel,
   SERVICE_TABS,
@@ -211,10 +211,13 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               {activeSection === 'course-models' && (
                 <ServerSettingsGate>
                   {(view, apply) => (
-                    <CourseModelConfigPanel
+                    <CourseModelMap
                       view={view}
                       apply={apply}
-                      onOpenServices={() => setActiveSection('model-services')}
+                      onManageProviders={() => {
+                        setServiceTab('providers');
+                        setActiveSection('model-services');
+                      }}
                     />
                   )}
                 </ServerSettingsGate>

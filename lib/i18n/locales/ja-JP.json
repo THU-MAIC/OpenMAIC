@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。",
     "courseModels": {
-      "mainModel": "メインモデル",
-      "mainModelHint": "メインに追従する段階はこのモデルを共有します。カードをクリックすると段階ごとに変更できます",
-      "mainModelTooltip": "メインモデルに従う工程はすべてこのモデルを使います。パイプラインのカードをクリックすると、その工程だけのモデルを選べます。より細かいサブ工程はカードのインスペクターで設定します。サーバーの設定で決まっている工程は表示のみで変更できません。",
-      "noProviderHint": "言語モデルが未設定です。「モデルサービス」で設定してください",
-      "followParent": "親に追従",
-      "restoreFollow": "メイン追従に戻す",
-      "modelSource": "モデルソース",
-      "pickModel": "モデルを選択",
-      "pickProvider": "サービスを選択",
-      "optionInvalid": "利用不可",
-      "subStagesTitle": "サブ段階",
-      "subStages": {
-        "title": "タイトル生成",
-        "interactive": "インタラクティブ台本",
-        "pbl": "PBL シナリオ",
-        "quiz": "クイズ",
-        "slide": "スライド"
-      },
-      "searchService": "検索サービス",
-      "parseService": "解析サービス",
-      "asrTranscribe": "音声書き起こし",
-      "aiIllustration": "AIイラスト",
-      "aiVideo": "AI動画",
-      "stations": {
-        "desc": {
-          "doc-parse": "アップロードされたコース素材（ドキュメント／スライド／音声・動画）をテキストに解析し、音声・動画は自動で文字起こしします。",
-          "web-research": "コース要件に応じてウェブから補足資料を検索します。検索クエリは軽量な LLM によって書き換えられます。",
-          "outline": "要件と資料を理解し、コースタイトルとシーンごとのアウトラインを生成します（人による確認可）。",
-          "agents": "教師・生徒エージェントのプロファイル（人格・アバター・声）を生成します。",
-          "scene-content": "シーンごとにスライド／クイズ／インタラクション／PBL のコンテンツを生成する、パイプラインで最も重い LLM ステージです。",
-          "scene-actions": "シーンごとにナレーションと授業アクションを補完し、音声合成と授業再生に渡します。",
-          "tts": "ナレーションを教師／生徒の音声に合成します（シーンごとに直列で実行）。",
-          "media": "生成コンテンツ内の画像・動画プレースホルダーを、シーンループと並行して埋めます。",
-          "interaction": "生成後の授業ランタイム：マルチエージェント対話、PBL 実行、クイズ採点。"
-        },
-        "agents": "エージェントプロファイル",
-        "docParse": "ドキュメント解析",
-        "interaction": "授業インタラクション",
-        "media": "メディア生成",
-        "outline": "アウトライン設計",
-        "sceneActions": "シーンアクション",
-        "sceneContent": "シーンコンテンツ",
-        "tts": "音声合成",
-        "webResearch": "ウェブ調査"
-      },
-      "mediaEnableNeedsSetup": "先に「モデルサービス」で API キーを設定するか、Token Plan を有効にしてからオンにしてください。",
-      "followMainline": "メインに追従",
-      "loop": "ループ",
-      "mainlineUnset": "未指定",
-      "nav": "コースモデル設定",
-      "parallel": "並列",
-      "stopped": "無効",
-      "visionSupported": "画像入力対応"
+      "nav": "コースモデル設定"
     },
     "addNewModel": "新しいモデル",
     "addNewModelDescription": "新しいモデル設定を追加",
@@ -1954,13 +1902,156 @@
       "showKey": "キーを表示",
       "hideKey": "キーを隠す",
       "inUse": "使用中",
-      "setByServer": "サーバーが設定",
-      "lockedHint": "サーバーの設定で決まっているため、ここでは変更できません。",
-      "defaultModel": "デフォルトモデル",
       "modelFromCatalogue": "モデルの名前・機能・コンテキストウィンドウは内蔵カタログから取得します。",
       "modelWhenInUse": "コースモデル設定でこのサービスを選ぶと使われます。",
       "planServer": "サーバーで設定済み",
-      "providerIdHint": "「{{id}}」として保存"
+      "providerIdHint": "「{{id}}」として保存",
+      "openaiCompatible": "OpenAI 互換"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}：{{value}}。変更する",
+        "toggle": "{{name}}のオン／オフ",
+        "providerDefault": "既定のモデル",
+        "off": "オフ",
+        "unassigned": "未設定",
+        "invalid": "無効な設定",
+        "locked": "サーバーで設定",
+        "lockedHint": "サーバーの設定で決まっています。ここでは変更できません。",
+        "followers": "これに従う工程：{{count}}",
+        "childrenFollow": "ページ種別 · すべて従う",
+        "childrenOwn": "ページ種別 · 個別設定 {{count}} 件"
+      },
+      "legend": {
+        "label": "凡例",
+        "follows": "上位に従う",
+        "own": "個別設定",
+        "locked": "サーバーで設定"
+      },
+      "map": {
+        "label": "コースモデルマップ。ドラッグまたは矢印キーで移動、ズームボタンで拡大縮小できます。",
+        "outside": "パイプライン外",
+        "standalone": "独立機能",
+        "perPage": "ページごとに生成",
+        "zoom": "ズーム",
+        "zoomIn": "拡大（+）",
+        "zoomOut": "縮小（-）",
+        "fit": "全体を表示（0）",
+        "reset": "100% に戻す",
+        "hint": "ドラッグで移動 · ⌘/Ctrl + スクロールでズーム · 空白をダブルクリックで全体表示"
+      },
+      "picker": {
+        "follow": "{{name}}に従う",
+        "providers": "プロバイダー",
+        "providerDefault": "既定のモデル",
+        "modelId": "モデル ID",
+        "use": "使用",
+        "off": "オフ",
+        "offHint": "この工程は実行されません",
+        "noProviders": "この機能を提供するサービスがまだありません。モデルサービスで設定してください。",
+        "fallback": "フォールバック",
+        "noFallback": "なし",
+        "manageProviders": "モデルサービスで管理",
+        "conflict": "設定が別の場所で変更されたため再読み込みしました。確認してもう一度お試しください。",
+        "lockedNow": "サーバーがこの項目を設定したため、変更されませんでした。",
+        "clear": "個別設定を解除",
+        "clearHint": "サーバーの設定があればそれを使います",
+        "unconfirmed": "サーバーの応答が失われたため、設定を再読み込みしました。変更が反映されたか確認してください。"
+      },
+      "slots": {
+        "llm": {
+          "name": "既定のモデル",
+          "desc": "個別に設定していない工程はすべてこの言語モデルを使います。"
+        },
+        "courseResearch": {
+          "name": "検索クエリ",
+          "desc": "コースのテーマを Web 検索クエリに書き換えます。"
+        },
+        "courseOutline": {
+          "name": "アウトライン",
+          "desc": "コースのページ構成を計画します。"
+        },
+        "courseAgents": {
+          "name": "ロール",
+          "desc": "教室の先生とクラスメートを作成します。"
+        },
+        "courseContent": {
+          "name": "ページ内容",
+          "desc": "各ページを作成します。個別に設定していないページ種別はこれに従います。"
+        },
+        "courseContentSlide": {
+          "name": "スライド",
+          "desc": "スライドページを作成します。"
+        },
+        "courseContentQuiz": {
+          "name": "クイズ",
+          "desc": "クイズページを作成します。"
+        },
+        "courseContentInteractive": {
+          "name": "インタラクティブ",
+          "desc": "インタラクティブページを作成します。"
+        },
+        "courseContentPbl": {
+          "name": "プロジェクト",
+          "desc": "プロジェクト型学習ページを作成します。"
+        },
+        "courseActions": {
+          "name": "講義アクション",
+          "desc": "各ページで先生が話す内容と動作を組み立てます。"
+        },
+        "classroom": {
+          "name": "教室",
+          "desc": "学習中のディスカッション、クイズ採点、プロジェクト。"
+        },
+        "agent": {
+          "name": "エージェント",
+          "desc": "一緒にコースを作成・編集します。ツール呼び出しに対応したモデルが必要です。"
+        },
+        "tts": {
+          "name": "ナレーション",
+          "desc": "講義を読み上げます。"
+        },
+        "asr": {
+          "name": "音声入力",
+          "desc": "教室で声で質問したとき、音声を文字に変換します。"
+        },
+        "image": {
+          "name": "画像",
+          "desc": "ページ用の画像を生成します。"
+        },
+        "video": {
+          "name": "動画",
+          "desc": "ページ用の動画クリップを生成します。"
+        },
+        "webSearch": {
+          "name": "Web 検索",
+          "desc": "コース生成中に Web を検索します。"
+        },
+        "document": {
+          "name": "ドキュメント解析",
+          "desc": "アップロードされたドキュメントを読み取ります。"
+        }
+      },
+      "source": {
+        "inherited": "{{name}}に従う",
+        "deployment": "サーバー",
+        "default": "サーバー既定"
+      },
+      "stations": {
+        "research": "Web 調査",
+        "media": "画像 / 動画",
+        "lines": {
+          "rewrite": "クエリ",
+          "search": "検索",
+          "image": "画像",
+          "video": "動画"
+        }
+      },
+      "empty": {
+        "prompt": "まだ言語モデルがありません。モデルサービスでサービスを設定するか、Token Plan でプランを接続すると、未設定の部分にそのモデルが割り当てられます。",
+        "open": "モデルサービスを開く",
+        "askAdmin": "言語モデルが設定されていません。サーバー管理者に設定を依頼してください。"
+      }
     }
   },
   "workspace": {

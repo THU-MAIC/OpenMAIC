@@ -149,7 +149,8 @@ export function ApiKeyField({
   children,
 }: {
   provider?: ProviderView;
-  onSave: (key: string) => void | Promise<unknown>;
+  /** Saves the key; resolves truthy when it was saved (the field keeps it otherwise). */
+  onSave: (key: string) => Promise<unknown> | unknown;
   onRemove?: () => void | Promise<unknown>;
   disabled?: boolean;
   placeholder?: string;
@@ -168,8 +169,8 @@ export function ApiKeyField({
   const commit = async () => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    await onSave(trimmed);
-    setValue('');
+    // Only a key the server took leaves the field; a refused one stays to fix.
+    if (await onSave(trimmed)) setValue('');
   };
 
   return (

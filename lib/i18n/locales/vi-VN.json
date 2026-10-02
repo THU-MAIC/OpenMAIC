@@ -1748,59 +1748,7 @@
     },
     "ttsBrowserNativeTimelineNotice": "Giọng đọc của trình duyệt không hỗ trợ các chức năng âm thanh trên dòng thời gian của trình sửa (nghe thử, tạo lại, lồng tiếng hàng loạt). Hãy chuyển sang một nhà cung cấp giọng đọc có quản lý để tạo và quản lý âm thanh theo từng dòng.",
     "courseModels": {
-      "mainModel": "Mô hình chính",
-      "mainModelHint": "Các giai đoạn theo mô hình chính dùng chung mô hình này; nhấn vào một thẻ để tùy chỉnh riêng giai đoạn đó",
-      "mainModelTooltip": "Mọi bước theo mô hình chính đều dùng mô hình này. Nhấp vào một thẻ trong quy trình để chọn mô hình riêng cho bước đó; các bước con chi tiết hơn nằm trong trình kiểm tra của thẻ. Các bước do cấu hình máy chủ thiết lập chỉ hiển thị, không thể thay đổi.",
-      "noProviderHint": "Chưa cấu hình mô hình ngôn ngữ — hãy thiết lập trong Dịch vụ mô hình",
-      "followParent": "Theo cấp trên",
-      "restoreFollow": "Khôi phục theo mô hình chính",
-      "modelSource": "Nguồn mô hình",
-      "pickModel": "Chọn mô hình",
-      "pickProvider": "Chọn dịch vụ",
-      "optionInvalid": "Không khả dụng",
-      "subStagesTitle": "Giai đoạn con",
-      "subStages": {
-        "title": "Tạo tiêu đề",
-        "interactive": "Kịch bản tương tác",
-        "pbl": "Kịch bản PBL",
-        "quiz": "Trắc nghiệm",
-        "slide": "Trang chiếu"
-      },
-      "searchService": "Dịch vụ tìm kiếm",
-      "parseService": "Dịch vụ phân tích",
-      "asrTranscribe": "Chuyển giọng nói thành văn bản",
-      "aiIllustration": "Minh họa bằng AI",
-      "aiVideo": "Video AI",
-      "stations": {
-        "desc": {
-          "doc-parse": "Các tài liệu khóa học đã tải lên (tài liệu, slide, âm thanh/video) được phân tích thành văn bản; âm thanh và video được tự động chuyển thành chữ.",
-          "web-research": "Tìm kiếm trên web các tài liệu bổ sung theo yêu cầu khóa học; truy vấn tìm kiếm được viết lại bởi một LLM nhẹ.",
-          "outline": "Hiểu yêu cầu và tài liệu để tạo tiêu đề khóa học và dàn ý theo từng cảnh (con người có thể xem lại).",
-          "agents": "Tạo hồ sơ tác nhân giáo viên và học viên (tính cách, ảnh đại diện, giọng nói).",
-          "scene-content": "Tạo nội dung slide, trắc nghiệm, tương tác và PBL cho từng cảnh — giai đoạn LLM nặng nhất của quy trình.",
-          "scene-actions": "Hoàn thiện lời dẫn và hành động giảng dạy cho từng cảnh, cấp cho tổng hợp giọng nói và trình chiếu lớp học.",
-          "tts": "Tổng hợp lời dẫn thành giọng giáo viên/học viên (theo từng cảnh, tuần tự).",
-          "media": "Điền các chỗ giữ chỗ ảnh/video trong nội dung đã tạo, song song với vòng lặp theo cảnh.",
-          "interaction": "Thời gian chạy lớp học sau khi tạo: chat đa tác nhân, thời gian chạy PBL và chấm trắc nghiệm."
-        },
-        "agents": "Hồ sơ tác nhân",
-        "docParse": "Phân tích tài liệu",
-        "interaction": "Tương tác lớp học",
-        "media": "Tạo phương tiện",
-        "outline": "Lập dàn ý",
-        "sceneActions": "Hành động cảnh",
-        "sceneContent": "Nội dung cảnh",
-        "tts": "Tổng hợp giọng nói",
-        "webResearch": "Nghiên cứu web"
-      },
-      "mediaEnableNeedsSetup": "Hãy cấu hình API key trong «Dịch vụ mô hình» hoặc bật Token Plan trước.",
-      "followMainline": "Theo mô hình chính",
-      "loop": "vòng lặp",
-      "mainlineUnset": "Chưa chỉ định",
-      "nav": "Cấu hình mô hình khóa học",
-      "parallel": "song song",
-      "stopped": "Đã tắt",
-      "visionSupported": "Hỗ trợ thị giác"
+      "nav": "Cấu hình mô hình khóa học"
     },
     "addNewModel": "Model mới",
     "addNewModelDescription": "Thêm một cấu hình model mới",
@@ -1954,13 +1902,156 @@
       "showKey": "Hiện khóa",
       "hideKey": "Ẩn khóa",
       "inUse": "Đang dùng",
-      "setByServer": "Do máy chủ thiết lập",
-      "lockedHint": "Do cấu hình máy chủ thiết lập; không thể thay đổi ở đây.",
-      "defaultModel": "Mô hình mặc định",
       "modelFromCatalogue": "Tên, khả năng và cửa sổ ngữ cảnh của mô hình lấy từ danh mục tích hợp.",
       "modelWhenInUse": "Được dùng khi dịch vụ này được chọn trong cấu hình mô hình khóa học.",
       "planServer": "Do máy chủ cấu hình",
-      "providerIdHint": "Lưu với tên \"{{id}}\""
+      "providerIdHint": "Lưu với tên \"{{id}}\"",
+      "openaiCompatible": "Tương thích OpenAI"
+    },
+    "modelSettings": {
+      "card": {
+        "edit": "{{name}}: {{value}}. Thay đổi",
+        "toggle": "Bật hoặc tắt {{name}}",
+        "providerDefault": "Mô hình mặc định",
+        "off": "Tắt",
+        "unassigned": "Chưa đặt",
+        "invalid": "Thiết lập không hợp lệ",
+        "locked": "Do máy chủ đặt",
+        "lockedHint": "Được đặt bởi cấu hình máy chủ. Không thể thay đổi tại đây.",
+        "followers": "Số bước theo nó: {{count}}",
+        "childrenFollow": "Loại trang · tất cả theo",
+        "childrenOwn": "Loại trang · {{count}} riêng"
+      },
+      "legend": {
+        "label": "Chú giải",
+        "follows": "Theo bước cha",
+        "own": "Thiết lập riêng",
+        "locked": "Do máy chủ đặt"
+      },
+      "map": {
+        "label": "Sơ đồ mô hình của khóa học. Kéo hoặc dùng phím mũi tên để di chuyển; dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
+        "outside": "Ngoài quy trình",
+        "standalone": "Độc lập",
+        "perPage": "Theo từng trang",
+        "zoom": "Thu phóng",
+        "zoomIn": "Phóng to (+)",
+        "zoomOut": "Thu nhỏ (-)",
+        "fit": "Vừa khung nhìn (0)",
+        "reset": "Đặt lại 100%",
+        "hint": "Kéo để di chuyển · ⌘/Ctrl + cuộn để thu phóng · nhấp đúp vào chỗ trống để vừa khung"
+      },
+      "picker": {
+        "follow": "Theo {{name}}",
+        "providers": "Nhà cung cấp",
+        "providerDefault": "Mô hình mặc định",
+        "modelId": "ID mô hình",
+        "use": "Dùng",
+        "off": "Tắt",
+        "offHint": "Bước này không chạy",
+        "noProviders": "Chưa có dịch vụ nào cung cấp tính năng này. Hãy thiết lập trong Dịch vụ mô hình.",
+        "fallback": "Dự phòng",
+        "noFallback": "Không",
+        "manageProviders": "Quản lý trong Dịch vụ mô hình",
+        "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
+        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
+        "clear": "Xóa thiết lập riêng",
+        "clearHint": "Dùng thiết lập của máy chủ, nếu có",
+        "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa."
+      },
+      "slots": {
+        "llm": {
+          "name": "Mô hình mặc định",
+          "desc": "Mô hình ngôn ngữ mà mọi bước không có thiết lập riêng sử dụng."
+        },
+        "courseResearch": {
+          "name": "Truy vấn tìm kiếm",
+          "desc": "Chuyển chủ đề khóa học thành truy vấn tìm kiếm web."
+        },
+        "courseOutline": {
+          "name": "Dàn ý",
+          "desc": "Lên kế hoạch các trang của khóa học."
+        },
+        "courseAgents": {
+          "name": "Vai trò",
+          "desc": "Tạo giáo viên và bạn học trong lớp."
+        },
+        "courseContent": {
+          "name": "Nội dung trang",
+          "desc": "Viết từng trang. Các loại trang không có thiết lập riêng sẽ theo nó."
+        },
+        "courseContentSlide": {
+          "name": "Trang chiếu",
+          "desc": "Viết các trang chiếu."
+        },
+        "courseContentQuiz": {
+          "name": "Bài kiểm tra",
+          "desc": "Viết các trang kiểm tra."
+        },
+        "courseContentInteractive": {
+          "name": "Trang tương tác",
+          "desc": "Viết các trang tương tác."
+        },
+        "courseContentPbl": {
+          "name": "Dự án",
+          "desc": "Viết các trang học tập theo dự án."
+        },
+        "courseActions": {
+          "name": "Hoạt động giảng dạy",
+          "desc": "Lên kịch bản giáo viên nói và làm gì trên mỗi trang."
+        },
+        "classroom": {
+          "name": "Lớp học",
+          "desc": "Thảo luận, chấm bài kiểm tra và dự án trong khi học."
+        },
+        "agent": {
+          "name": "Tác tử",
+          "desc": "Cùng bạn tạo và chỉnh sửa khóa học. Cần mô hình hỗ trợ gọi công cụ."
+        },
+        "tts": {
+          "name": "Lồng tiếng",
+          "desc": "Đọc to bài giảng."
+        },
+        "asr": {
+          "name": "Nhập bằng giọng nói",
+          "desc": "Chuyển câu hỏi nói trong lớp thành văn bản."
+        },
+        "image": {
+          "name": "Hình ảnh",
+          "desc": "Tạo hình ảnh cho các trang."
+        },
+        "video": {
+          "name": "Video",
+          "desc": "Tạo đoạn video cho các trang."
+        },
+        "webSearch": {
+          "name": "Tìm kiếm web",
+          "desc": "Tìm kiếm trên web khi tạo khóa học."
+        },
+        "document": {
+          "name": "Phân tích tài liệu",
+          "desc": "Đọc các tài liệu đã tải lên."
+        }
+      },
+      "source": {
+        "inherited": "Theo {{name}}",
+        "deployment": "Máy chủ",
+        "default": "Mặc định của máy chủ"
+      },
+      "stations": {
+        "research": "Tìm hiểu trên web",
+        "media": "Hình ảnh / video",
+        "lines": {
+          "rewrite": "Truy vấn",
+          "search": "Tìm kiếm",
+          "image": "Ảnh",
+          "video": "Video"
+        }
+      },
+      "empty": {
+        "prompt": "Chưa có mô hình ngôn ngữ. Thiết lập dịch vụ trong Dịch vụ mô hình hoặc kết nối gói trong Token Plan; các mô hình của nó sẽ điền vào những phần chưa thiết lập.",
+        "open": "Mở Dịch vụ mô hình",
+        "askAdmin": "Chưa cấu hình mô hình ngôn ngữ. Hãy nhờ quản trị viên máy chủ thiết lập."
+      }
     }
   },
   "workspace": {

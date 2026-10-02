@@ -9,9 +9,21 @@ import type { SlotCapability, SlotId } from '@/lib/config/model-slots';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
-import { findSlot, type ModelSettingsChange, type ModelSettingsView } from './client';
+import {
+  findSlot,
+  type ApplyResult,
+  type ModelSettingsChange,
+  type ModelSettingsView,
+} from './client';
 import type { PresetView, ProviderView, SlotView } from './client';
-import { assignmentRefs, isFillable, modelRef, newProviderId } from './edit';
+import {
+  assignmentRefs,
+  isFillable,
+  modelRef,
+  newProviderId,
+  providersFor,
+  type OffMemory,
+} from './edit';
 
 /** The root slot of each capability: the model a capability uses unless a stage has its own. */
 export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
@@ -35,8 +47,13 @@ export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
 export interface ServiceEntry {
   /** The provider's id, or the id a provider of this service gets when it is added. */
   id: string;
-  /** The capability registry's entry that serves it (names, icons, voices). */
+  /** The capability registry's entry that serves it (voices, models, endpoints). */
   registryId: string;
+  /**
+   * The built-in service this entry is shown as, when the provider is named
+   * after one (its name and icon); absent for other providers.
+   */
+  serviceId?: string;
   state: 'deployment' | 'workspace' | 'available' | 'server-only';
   provider?: ProviderView;
   /** The preset a workspace provider of this service is made from, when the view lists it. */
@@ -49,40 +66,67 @@ export function providerRegistryId(provider: ProviderView, capability: SlotCapab
 }
 
 /**
- * The services a capability's panel lists: the providers that serve it (the
- * server's first), then each registry entry no provider of its preset covers
- * yet, in registry order.
+ * The services a capability's panel lists. A provider named after a built-in
+ * service (`openai`, `deepseek`) is that service's entry, in the registry's
+ * order; other providers (a custom endpoint, a second account) come first,
+ * the server's before the workspace's. A built-in service no provider of its
+ * preset covers is listed for the workspace to add, or as the server's to set up.
  */
 export function serviceEntries(
   view: ModelSettingsView,
   capability: SlotCapability,
   registryIds: readonly string[],
 ): ServiceEntry[] {
-  const entries: ServiceEntry[] = view.providers
-    .filter((provider) => provider.capabilities[capability])
-    .map((provider) => ({
-      id: provider.id,
-      registryId: providerRegistryId(provider, capability),
-      state: provider.source,
-      provider,
-      preset: view.presets.find((preset) => preset.id === provider.preset),
-    }));
+  const serving = view.providers.filter((provider) => provider.capabilities[capability]);
+  const presetOf = (provider: ProviderView) =>
+    view.presets.find((preset) => preset.id === provider.preset);
+  const placed = new Set<string>();
+  const services: ServiceEntry[] = [];
   const taken = new Set(view.providers.map((provider) => provider.id));
   for (const registryId of registryIds) {
     const presetId = presetIdFor(capability, registryId);
+    const named = serving.find(
+      (provider) =>
+        !placed.has(provider.id) && (provider.id === presetId || provider.id === registryId),
+    );
+    if (named) {
+      placed.add(named.id);
+      const preset = presetOf(named);
+      services.push({
+        id: named.id,
+        registryId: providerRegistryId(named, capability),
+        serviceId: registryId,
+        state: named.source,
+        provider: named,
+        ...(preset ? { preset } : {}),
+      });
+      continue;
+    }
     if (view.providers.some((provider) => provider.preset === presetId || provider.id === presetId))
       continue;
     const preset = view.presets.find(
       (entry) => entry.id === presetId && entry.capabilities[capability],
     );
-    entries.push({
+    services.push({
       id: taken.has(presetId) ? newProviderId(view, presetId) : presetId,
       registryId,
       state: preset ? 'available' : 'server-only',
       ...(preset ? { preset } : {}),
     });
   }
-  return entries;
+  const others: ServiceEntry[] = serving
+    .filter((provider) => !placed.has(provider.id))
+    .map((provider) => {
+      const preset = presetOf(provider);
+      return {
+        id: provider.id,
+        registryId: providerRegistryId(provider, capability),
+        state: provider.source,
+        provider,
+        ...(preset ? { preset } : {}),
+      };
+    });
+  return [...others, ...services];
 }
 
 /**
@@ -168,4 +212,63 @@ export function thinkingChange(
 export function planProvider(view: ModelSettingsView, presetId: string): ProviderView | undefined {
   const providers = view.providers.filter((provider) => provider.preset === presetId);
   return providers.find((provider) => provider.source === 'deployment') ?? providers[0];
+}
+
+/** Whether a media slot's switch shows on: speech input runs in the browser until it is set to null. */
+export function switchChecked(slot: SlotView): boolean {
+  return slot.capability === 'asr'
+    ? slot.effective.status !== 'disabled'
+    : slot.effective.status === 'assigned';
+}
+
+/**
+ * The change a media switch makes. Off sets the slot to null. On restores
+ * what it held before it was switched off here; when that is not known, a
+ * speech input slot set to null goes back to the browser's recognition, and
+ * any other slot takes the first provider that serves it (its first model).
+ * Undefined when nothing can serve it: the caller asks the user to pick.
+ */
+export function switchChange(
+  view: ModelSettingsView,
+  slot: SlotView,
+  on: boolean,
+  memory: OffMemory,
+): ModelSettingsChange | undefined {
+  if (!on) return { kind: 'slots', set: { [slot.slot]: null } };
+  if (memory.has(slot.slot)) {
+    const previous = memory.get(slot.slot);
+    return previous === undefined || previous === null
+      ? { kind: 'slots', clear: [slot.slot] }
+      : { kind: 'slots', set: { [slot.slot]: previous } };
+  }
+  if (slot.capability === 'asr') return { kind: 'slots', clear: [slot.slot] };
+  const provider = providersFor(view, slot.capability)[0];
+  if (!provider) return undefined;
+  const first = provider.capabilities[slot.capability]?.models[0]?.id;
+  if (slot.capability === 'chat' && !first) return undefined;
+  return { kind: 'slots', set: { [slot.slot]: modelRef(provider.id, first) } };
+}
+
+/**
+ * Flip a media switch: apply its change against the view, and only once the
+ * server confirmed it, remember what an off switch replaced (or forget what an
+ * on switch restored). A refused or lost change leaves the memory as it was.
+ * `needs-service` when nothing can serve the slot.
+ */
+export async function flipSwitch(
+  apply: (change: ModelSettingsChange, basis?: ModelSettingsView) => Promise<ApplyResult>,
+  view: ModelSettingsView,
+  slot: SlotView,
+  on: boolean,
+  memory: OffMemory,
+): Promise<ApplyResult | 'needs-service'> {
+  const change = switchChange(view, slot, on, memory);
+  if (!change) return 'needs-service';
+  const previous = slot.assignment;
+  const result = await apply(change, view);
+  if (result.ok) {
+    if (on) memory.delete(slot.slot);
+    else memory.set(slot.slot, previous);
+  }
+  return result;
 }

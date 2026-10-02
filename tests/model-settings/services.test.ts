@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assignmentsForNewProvider,
   entryConfigured,
+  flipSwitch,
   serviceEntries,
   thinkingChange,
 } from '@/lib/model-settings/services';
@@ -93,5 +94,40 @@ describe('thinkingChange', () => {
 
   it('has nothing to change on a slot without a model of its own', () => {
     expect(thinkingChange(slot(undefined), { enabled: true })).toBeUndefined();
+  });
+});
+
+describe('flipSwitch', () => {
+  const tts = (view: ReturnType<typeof makeView>) =>
+    view.slots.find((slot) => slot.slot === 'tts')!;
+
+  it('remembers what it turned off only once the server took it', async () => {
+    const view = withSlots(makeView({ providers: [workspaceProvider('acme')] }), {
+      tts: { assignment: 'acme:acme-voice' },
+    });
+    const memory = new Map();
+    const refused = await flipSwitch(
+      async () => ({ ok: false, reason: 'conflict', message: 'stale' }),
+      view,
+      tts(view),
+      false,
+      memory,
+    );
+    expect(refused).toMatchObject({ ok: false });
+    expect(memory.has('tts')).toBe(false);
+    await flipSwitch(async () => ({ ok: true, view }), view, tts(view), false, memory);
+    expect(memory.get('tts')).toBe('acme:acme-voice');
+  });
+
+  it('says when nothing can serve a slot it has nothing to restore for', async () => {
+    const view = makeView();
+    const result = await flipSwitch(
+      async () => ({ ok: true, view }),
+      view,
+      view.slots.find((slot) => slot.slot === 'image')!,
+      true,
+      new Map(),
+    );
+    expect(result).toBe('needs-service');
   });
 });
