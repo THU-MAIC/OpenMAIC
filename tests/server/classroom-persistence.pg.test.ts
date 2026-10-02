@@ -90,6 +90,39 @@ describe.skipIf(!contractUrl)('create-only course writes on PostgreSQL', () => {
     expect(meta.rows).toEqual([]);
   });
 
+  it("mirrors a saved outline's generation-complete flag onto the ownership row", async () => {
+    const generationComplete = async (stageId: string) =>
+      (
+        await pool.query('SELECT generation_complete FROM stage_meta WHERE stage_id = $1', [
+          stageId,
+        ])
+      ).rows[0]?.generation_complete;
+    const outline = (complete: boolean) => ({
+      outlines: [],
+      generationComplete: complete,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const owned = store(OWNER);
+
+    // A whole-document save (what the browser importer sends) of a finished course.
+    const finished = shell('stage-imported-complete', 'Imported').stage;
+    await owned.saveDocument({ stage: finished, scenes: [], outline: outline(true) });
+    expect(await generationComplete('stage-imported-complete')).toBe(true);
+
+    // An outline that is not complete leaves the flag unset; a later save that
+    // completes it sets it.
+    const unfinished = shell('stage-imported-pending', 'Pending').stage;
+    await owned.saveDocument({ stage: unfinished, scenes: [], outline: outline(false) });
+    expect(await generationComplete('stage-imported-pending')).toBe(false);
+    await owned.saveDocument({ stage: unfinished, scenes: [], outline: outline(true) });
+    expect(await generationComplete('stage-imported-pending')).toBe(true);
+
+    // The server-side classroom import gets the same through `createDocument`.
+    await saveCompletedClassroom(OWNER, shell('stage-server-import', 'Server import'));
+    expect(await generationComplete('stage-server-import')).toBe(true);
+  });
+
   it('rolls back the course, its ownership and the extra rows when inTransaction throws', async () => {
     await pool.query('CREATE TABLE IF NOT EXISTS extra_rows (stage_id TEXT)');
     await expect(

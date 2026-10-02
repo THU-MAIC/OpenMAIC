@@ -28,7 +28,12 @@ import type {
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { fenceOwnerWrite } from './owner-merges';
-import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
+import {
+  claimStageMeta,
+  markStageGenerationComplete,
+  StageAccessError,
+  tombstoneStageMeta,
+} from './stage-meta';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 
 export interface PoolClientLike {
@@ -129,6 +134,20 @@ interface PendingOperation {
    * completes (every write but deletion and library organization).
    */
   content?: boolean;
+  /**
+   * A whole-document write whose outline says generation is complete: the
+   * ownership row's mirror of that flag is set in the same transaction.
+   */
+  completesGeneration?: boolean;
+}
+
+/** Whether a document's outline records its generation as complete. */
+function outlineCompletesGeneration(outline: unknown): boolean {
+  return (
+    typeof outline === 'object' &&
+    outline !== null &&
+    (outline as { generationComplete?: unknown }).generationComplete === true
+  );
 }
 
 /** What a scene write may add to its transaction. */
@@ -243,8 +262,14 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   }
 
   saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
-    return this.tagged({ stageId: doc.stage.id, mode: 'create', content: true }, () =>
-      this.inner.saveDocument(doc),
+    return this.tagged(
+      {
+        stageId: doc.stage.id,
+        mode: 'create',
+        content: true,
+        completesGeneration: outlineCompletesGeneration(doc.outline),
+      },
+      () => this.inner.saveDocument(doc),
     );
   }
 
@@ -255,7 +280,13 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
    */
   createDocument(doc: MaicDocument<TScene, TStage>, options: CreateDocumentOptions = {}) {
     return this.tagged(
-      { stageId: doc.stage.id, mode: 'create', exclusive: options, content: true },
+      {
+        stageId: doc.stage.id,
+        mode: 'create',
+        exclusive: options,
+        content: true,
+        completesGeneration: outlineCompletesGeneration(doc.outline),
+      },
       () => this.inner.saveDocument(doc),
     );
   }
@@ -537,6 +568,9 @@ export function createOwnerBoundDocumentStore<
           // a refusal or a throw rolls the course and the ownership row back
           // together with anything the hooks wrote.
           const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          if (operation.completesGeneration) {
+            await markStageGenerationComplete(queryable, operation.stageId!);
+          }
           if (created) await runCreateHooks(createHooks, queryable, actor, operation.stageId!);
           if (operation.exclusive) {
             // An exclusive create found no row above and holds the create lock,

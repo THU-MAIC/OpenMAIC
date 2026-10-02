@@ -14,7 +14,6 @@ import { randomBytes } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { markStageGenerationComplete } from '@/lib/persistence/stage-meta';
 import { getBackgroundDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -64,14 +63,6 @@ export async function saveCompletedClassroom(
     updatedAt: now,
   };
   const store = await getBackgroundDocumentStore(ownerId);
-  await store.createDocument(
-    { stage, scenes, outline },
-    {
-      inTransaction: async (queryable) => {
-        await markStageGenerationComplete(queryable, stage.id);
-        await options.inTransaction?.(queryable);
-      },
-    },
-  );
+  await store.createDocument({ stage, scenes, outline }, { inTransaction: options.inTransaction });
   return { stage, scenes };
 }
