@@ -459,22 +459,24 @@ describe('the notice', () => {
   });
 
   it('drops what was set up again, and nothing else', () => {
+    const keyless = (id: string, extra: Partial<UnimportedModelSetting> = {}) =>
+      item(id, { settings: { preset: extra.preset ?? 'azure-tts' }, ...extra });
     const items = [
-      item('azure-tts', { knownProviders: ['openai'] }),
-      item('kept', { preset: 'qwen-tts', knownProviders: [] }),
-      item('tts', { kind: 'slot', preset: undefined }),
-      item('tts:custom-tts-1', { preset: undefined, reason: 'custom-service' }),
+      keyless('azure-tts', { knownProviders: ['openai'] }),
+      keyless('kept', { preset: 'qwen-tts', knownProviders: [] }),
+      item('tts', { kind: 'slot', preset: undefined, settings: { preset: '', assignment: 'x' } }),
+      keyless('tts:custom-tts-1', { preset: undefined, reason: 'custom-service' }),
     ];
     // Nothing new yet: the workspace's providers were known when they were kept.
     expect(settledUnimported(items, view([{ id: 'openai', preset: 'openai' }]))).toEqual([]);
-    // A new Azure provider holding the kept key, and the slot set: those two leave.
+    // A new Azure provider and the slot set: those two leave.
     expect(
       settledUnimported(
         items,
         view(
           [
             { id: 'openai', preset: 'openai' },
-            { id: 'azure-tts-2', preset: 'azure-tts', key: { set: true, mask: '…6789' } },
+            { id: 'azure-tts-2', preset: 'azure-tts', key: { set: false } },
           ],
           ['tts'],
         ),
@@ -482,47 +484,27 @@ describe('the notice', () => {
     ).toEqual(['provider:azure-tts', 'slot:tts']);
   });
 
-  it('keeps a key until the workspace provider that replaces it holds it', () => {
+  it('never drops a kept key by itself: only the user discards it', () => {
     // Kept because its endpoint was refused; the user then adds an Azure
-    // provider with the regional endpoint.
+    // provider with the regional endpoint, with no key, another key, or one
+    // that looks like the kept key. None of these confirms the key.
     const kept = [item('azure-tts', { knownProviders: [] })];
-    const withKey = (key: ViewKey) =>
-      settledUnimported(kept, view([{ id: 'azure-tts-2', preset: 'azure-tts', key }]));
-    // No key yet, another key, or a key the instance cannot open: the kept key stays.
-    expect(withKey({ set: false })).toEqual([]);
-    expect(withKey({ set: true, mask: '…0000' })).toEqual([]);
-    expect(withKey({ set: true, unreadable: true })).toEqual([]);
-    // The same key (as far as the mask shows): set up again.
-    expect(withKey({ set: true, mask: '…6789' })).toEqual(['provider:azure-tts']);
-
-    // A key too short to show in a mask, or a key pair, is never confirmed this way.
-    const short = item('short', { settings: { preset: 'azure-tts', apiKey: 'k-6789' } });
+    for (const key of [
+      { set: false },
+      { set: true, mask: '…0000' },
+      { set: true, unreadable: true },
+      { set: true, mask: '…6789' },
+    ] satisfies ViewKey[]) {
+      expect(
+        settledUnimported(kept, view([{ id: 'azure-tts-2', preset: 'azure-tts', key }])),
+      ).toEqual([]);
+    }
     const pair = item('document:alidocmind', {
       preset: 'alidocmind',
       reason: 'key-pair',
       settings: { preset: 'alidocmind', accessKeyId: 'id', accessKeySecret: 'secret' },
     });
-    expect(
-      settledUnimported(
-        [short, pair],
-        view([
-          { id: 'azure-tts-2', preset: 'azure-tts', key: { set: true, mask: '…' } },
-          { id: 'docmind', preset: 'alidocmind', key: { set: true, mask: '…cret' } },
-        ]),
-      ),
-    ).toEqual([]);
-
-    // A kept provider without a key leaves once one of its preset is added.
-    const keyless = item('local', {
-      preset: 'comfyui-image',
-      settings: { preset: 'comfyui-image' },
-    });
-    expect(
-      settledUnimported(
-        [keyless],
-        view([{ id: 'comfy', preset: 'comfyui-image', key: { set: false } }]),
-      ),
-    ).toEqual(['provider:local']);
+    expect(settledUnimported([pair], view([{ id: 'docmind', preset: 'alidocmind' }]))).toEqual([]);
   });
 
   it('is discarded by the user, and survives clearing the cache until then', () => {

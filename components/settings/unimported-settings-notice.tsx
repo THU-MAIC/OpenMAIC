@@ -4,10 +4,9 @@
  * Settings of an earlier build that could not be moved to the server and are
  * kept in this browser instead (`lib/legacy-browser-import/model-settings-unimported.ts`):
  * listed with the reason, so the user can set them up again, until the user
- * discards them. One the view shows set up again leaves the list by itself: a
- * slot the workspace now sets, or a new workspace provider of its preset that
- * holds its key (see {@link settledUnimported}). A kept key is never dropped
- * on a guess: until then it can be copied, and only the user discards it.
+ * discards them. One without a key leaves the list by itself once the view
+ * shows it set up again (see {@link settledUnimported}). A kept key is never
+ * dropped on a guess: it can be copied until the user discards it.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Copy } from 'lucide-react';
@@ -24,7 +23,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { maskKey, UNINFORMATIVE_KEY_MASK } from '@/lib/config/key-mask';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -59,13 +57,11 @@ const REASON_KEY: Record<UnimportedReason, string> = {
 /**
  * The kept items the view shows were set up again, by {@link unimportedKey}.
  *
- * A slot is set up again once the workspace sets it. A provider is, once a
- * workspace provider of its preset that was not there when it was kept
- * (`knownProviders`) exists, and, when the kept item holds a key, that
- * provider holds the same key as far as the server says: its key is set,
- * readable, and its mask (the last four characters) is the kept key's. A key
- * too short to show in a mask, or a key pair (which a workspace provider
- * cannot hold), is never confirmed this way: the user discards it.
+ * A slot is set up again once the workspace sets it. A provider without a key
+ * is, once a workspace provider of its preset that was not there when it was
+ * kept (`knownProviders`) exists. A provider that holds a key (or a key pair)
+ * never leaves by itself: nothing in the view confirms the workspace holds
+ * that key, so only the user discards it.
  */
 export function settledUnimported(
   items: readonly UnimportedModelSetting[],
@@ -78,17 +74,13 @@ export function settledUnimported(
       }
       if (!item.preset) return false;
       const { apiKey, accessKeyId, accessKeySecret } = item.settings;
-      if (accessKeyId || accessKeySecret) return false;
-      const mask = apiKey ? maskKey(apiKey) : undefined;
-      if (mask === UNINFORMATIVE_KEY_MASK) return false;
+      if (apiKey || accessKeyId || accessKeySecret) return false;
       const known = new Set(item.knownProviders ?? []);
       return view.providers.some(
         (provider) =>
           provider.source === 'workspace' &&
           provider.preset === item.preset &&
-          !known.has(provider.id) &&
-          (mask === undefined ||
-            (provider.key?.set === true && !provider.key.unreadable && provider.key.mask === mask)),
+          !known.has(provider.id),
       );
     })
     .map(unimportedKey);

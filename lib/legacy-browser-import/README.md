@@ -244,13 +244,12 @@ After the import the user is told once, in a toast
 (`components/model-settings-init.tsx`); Settings → Model Services lists the
 kept items with their reason and a button to copy the key
 (`components/settings/unimported-settings-notice.tsx`) until the user discards
-them. An item leaves the list by itself once it is set up again: the slot
-set in the workspace, or a new workspace provider of its preset that, when the
-kept item holds a key, holds the same key as far as the view shows (its key
-set, readable, and masked as the kept key's last four characters). A kept key
-the view cannot confirm (a new provider without a key or with another one, a
-key too short to show in a mask, a key pair) stays, with its copy button,
-until the user discards it. Clearing the local cache keeps them.
+them. An item without a key leaves the list by itself once it is set up
+again: the slot set in the workspace, or a new workspace provider of its
+preset. An item that holds a key (or a key pair) never leaves by itself, since
+nothing the browser sees confirms the workspace holds that key: it stays, with
+its copy button, until the user discards it. Clearing the local cache keeps
+them.
 
 A base URL a workspace may not set (any service but chat) makes the server
 skip that provider, with the reason in the server's answer. Provider ids are

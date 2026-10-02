@@ -31,7 +31,6 @@ import {
   type CatalogueModel,
   type ProviderPreset,
 } from '@/lib/config/provider-presets';
-import { maskKey } from '@/lib/config/key-mask';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import {
   presetOfficialRegionalEndpoint,
@@ -213,6 +212,11 @@ function viewEndpoint(url: string): string {
 
 /** A provider id as model references name it (openmaic.yml's grammar). */
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+/** A key's last four characters, as far as that says nothing useful. */
+function maskKey(key: string): string {
+  return key.length >= 12 ? `…${key.slice(-4)}` : '…';
+}
 
 /**
  * What a provider can be assigned to, with its models: a workspace provider
