@@ -15,10 +15,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveStageChromeMode, type StageChromeModeContext } from '@/lib/edit/stage-mode';
-import {
-  useWorkbenchPanelState,
-  type WorkbenchPanelState,
-} from '@/lib/workbench/panel-context';
+import { useWorkbenchPanelState, type WorkbenchPanelState } from '@/lib/workbench/panel-context';
 
 const probe = vi.hoisted(() => ({ states: [] as WorkbenchPanelState[] }));
 const setPlaybackOn = vi.fn();

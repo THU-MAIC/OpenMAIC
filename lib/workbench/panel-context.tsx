@@ -63,8 +63,7 @@ export function WorkbenchPanelProvider({
       visible,
       playback,
       editPinned: visible && !playback,
-      requestInteractiveRepair:
-        visible && !playback ? requestInteractiveRepair : undefined,
+      requestInteractiveRepair: visible && !playback ? requestInteractiveRepair : undefined,
     }),
     [playback, requestInteractiveRepair, visible],
   );

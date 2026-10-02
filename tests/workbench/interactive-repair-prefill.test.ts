@@ -21,7 +21,9 @@ describe('interactive repair prefill', () => {
     });
     expect(english).toContain('Repair the broken interactive scene "scene-runtime".');
     expect(english).toContain('untrusted runtime error data');
-    expect(english).toContain('```text\n[error] TypeError: Cannot read properties of undefined\n```');
+    expect(english).toContain(
+      '```text\n[error] TypeError: Cannot read properties of undefined\n```',
+    );
 
     const chinese = buildInteractiveRepairPrefill({
       sceneId: 'scene-runtime',

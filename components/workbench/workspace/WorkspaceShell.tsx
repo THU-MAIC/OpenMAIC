@@ -70,6 +70,10 @@ import {
   type WorkbenchComposerPrefill,
 } from '@/lib/workbench/interactive-repair-prefill';
 import {
+  consumeInteractiveRepairHandoff,
+  INTERACTIVE_REPAIR_HANDOFF_EVENT,
+} from '@/lib/workbench/interactive-repair-handoff';
+import {
   clampRailWidth,
   parseRailWidth,
   RAIL_WIDTH_DEFAULT,
@@ -373,8 +377,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const chatMounted = panes.sessionId !== null || draftCourseId !== null;
   const repairConversationAvailable =
-    draftCourseId !== null ||
-    (panes.sessionId !== null && attachedSessionId === panes.sessionId);
+    draftCourseId !== null || (panes.sessionId !== null && attachedSessionId === panes.sessionId);
 
   const requestInteractiveRepair = useCallback(
     (sceneId: string, runtimeError: string) => {
@@ -390,6 +393,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     },
     [collapse, t],
   );
+
+  useEffect(() => {
+    const consumeHandoff = () => {
+      const handoff = consumeInteractiveRepairHandoff(panes.courseId);
+      if (!handoff) return;
+      requestInteractiveRepair(handoff.sceneId, handoff.error);
+    };
+
+    // Standalone classrooms leave the one-shot payload behind before routing
+    // here; hosted learning can deliver the same handoff while this shell stays
+    // mounted, so support both the initial read and the same-tab event.
+    consumeHandoff();
+    window.addEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
+    return () => window.removeEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
+  }, [panes.courseId, requestInteractiveRepair]);
 
   const acknowledgeComposerPrefill = useCallback((id: number) => {
     setComposerPrefill((current) => (current?.id === id ? null : current));

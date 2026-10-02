@@ -292,10 +292,7 @@ export function WorkbenchChat({
     const activeCourseId = navigation?.activeCourseId;
     if (activeCourseId) {
       const course = navigation.lookupCourse(activeCourseId);
-      const ref = makeCourseRef(
-        activeCourseId,
-        course?.name ?? t('workspace.untitledCourse'),
-      );
+      const ref = makeCourseRef(activeCourseId, course?.name ?? t('workspace.untitledCourse'));
       if (ref) useCourseRefsStore.getState().add(ref);
     }
 
