@@ -181,18 +181,20 @@ What the proposal holds:
 | Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
 | A keyless search service (Brave) selected with research switched on | a provider of its preset (no key) and `slots.webSearch`; a self-hosted one (SearXNG) needs an endpoint only the deployment may set and is not proposed |
 | The model picked for Claude web search | `slots.webSearch` = `claude:<model>` |
-| Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over. The other switches (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled`, `webSearchEnabled`) are not carried over: availability follows the slots, and a lasting `null` would override the deployment's defaults |
+| Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over |
+| Narration, images or video turned off (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled` stored as false) while a usable provider for it was there | `slots.tts` / `slots.image` / `slots.video` = `null` (off): without the slot the deployment's defaults would turn it back on. These defaulted to off and earlier builds switched them on by themselves once a provider was usable (a server provider on the first load, a key the user entered), so `false` with a usable provider (server-configured and not switched off by the operator, or with the user's key; the browser's own speech synthesis does not count) is the user's choice, and `false` without one is the default, which is not carried over. A server that gained the provider after the browser's first load (earlier builds did not switch the capability on then) cannot be told apart and is read as off: visible in the settings and free, where reading it as on could start paid generation the user refused. A slot the deployment locks is skipped as always |
 
 Not carried over:
 
 - per-stage routes (`llmStageRoutes`), which do not map one to one onto
   slots: set per-stage models in Settings → Course Model Config (or `slots` in
   `openmaic.yml`);
-- the per-browser switches for image, video, narration and research
-  (`imageGenerationEnabled`, `videoGenerationEnabled`, `ttsEnabled`,
-  `webSearchEnabled`): each capability now runs whenever its slot resolves,
-  and turning one off is setting its slot off (only speech input's off switch
-  carries over, see above);
+- research switched off (`webSearchEnabled` stored as false): switching it off only
+  stopped course research, while chat and the agent kept searching through
+  the same provider, which the `webSearch` slot now serves; and an image,
+  video or narration switch that was off only by default (see above). Each
+  capability now runs whenever its slot resolves, and turning one off is
+  setting its slot off;
 - Baidu search sub-sources (`baiduSubSources`): the server's defaults apply;
 - thinking settings (`thinkingConfigs`, per-route `thinking`): set `thinking`
   on a slot assignment instead;

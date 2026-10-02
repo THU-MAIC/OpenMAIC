@@ -76,6 +76,8 @@ interface LegacyServiceProvider {
   baseUrl?: string;
   enabled?: boolean;
   isServerConfigured?: boolean;
+  /** The operator switched it off (server-providers.yml / env). */
+  serverDisabled?: boolean;
   modelId?: string;
   accessKeyId?: string;
   accessKeySecret?: string;
@@ -417,17 +419,30 @@ export function planModelSettingsImport(
     if (id) slots.llm = `${id}:${modelId}`;
   }
 
-  // Only speech input carries an explicit off over: with its slot unassigned
-  // the browser's own recognition would take over, which the user turned off.
-  // The other switches were per-browser toggles that availability following
-  // the slots replaces on purpose; a lasting workspace `null` made of them
-  // would override the deployment's defaults from then on.
+  // A capability the user switched off stays off (its slot is proposed as
+  // `null`): with the slot unassigned the deployment's defaults (or, for
+  // speech input, the browser's own recognition) would turn it back on.
+  //
+  // Speech input defaulted to on, so off was always the user's choice.
+  // Narration, images and video defaulted to off, and earlier builds turned
+  // them on by themselves whenever a provider for them became usable (a server
+  // provider on the first load, a key the user entered) and off when none
+  // was. So `false` is the user's choice exactly when a usable provider was
+  // there: without one it is only the default. The one case this cannot tell
+  // apart is a server that gained the provider after this browser's first load
+  // (earlier builds did not turn the capability on then); it is read as off,
+  // which shows in the settings and costs nothing, rather than as on, which
+  // would start paid generation the user may have refused.
+  //
+  // Web search is not carried over as off: switching it off only stopped
+  // course research, while chat and the agent kept searching through the same
+  // provider, which the slot now serves.
 
   const services: Array<{
     capability: ServiceCapability;
     selected?: string;
     on: boolean;
-    /** The user turned the capability off: the slot is proposed as off (null). Speech input only. */
+    /** The user turned the capability off: the slot is proposed as off (null). */
     explicitlyOff: boolean;
     model?: string;
   }> = [
@@ -435,7 +450,7 @@ export function planModelSettingsImport(
       capability: 'tts',
       selected: state.ttsProviderId,
       on: state.ttsEnabled === true,
-      explicitlyOff: false,
+      explicitlyOff: state.ttsEnabled === false && hadUsableService(state, 'tts'),
       model: state.ttsProvidersConfig?.[text(state.ttsProviderId)]?.modelId,
     },
     {
@@ -450,14 +465,14 @@ export function planModelSettingsImport(
       capability: 'image',
       selected: state.imageProviderId,
       on: state.imageGenerationEnabled === true,
-      explicitlyOff: false,
+      explicitlyOff: state.imageGenerationEnabled === false && hadUsableService(state, 'image'),
       model: state.imageModelId,
     },
     {
       capability: 'video',
       selected: state.videoProviderId,
       on: state.videoGenerationEnabled === true,
-      explicitlyOff: false,
+      explicitlyOff: state.videoGenerationEnabled === false && hadUsableService(state, 'video'),
       model: state.videoModelId,
     },
     {
@@ -586,6 +601,28 @@ export function planModelSettingsImport(
 function registryName(registry: Record<string, unknown>, registryId: string): string {
   const entry = registry[registryId] as { name?: unknown } | undefined;
   return typeof entry?.name === 'string' && entry.name ? entry.name : registryId;
+}
+
+/**
+ * Whether the browser state had a usable provider for a capability, as
+ * earlier builds judged it when they switched the capability on by
+ * themselves: server-configured (and not switched off by the operator), or
+ * with the user's key (an endpoint, for a keyless one). The browser's own
+ * speech synthesis does not count: it never switched narration on.
+ */
+function hadUsableService(state: LegacyModelSettingsState, capability: ServiceCapability): boolean {
+  const registry = SERVICE_REGISTRIES[capability];
+  return Object.entries(serviceMap(state, capability) ?? {}).some(([registryId, config]) => {
+    if (!config || config.enabled === false || config.serverDisabled) return false;
+    if (BROWSER_SERVICES[capability] === registryId) return false;
+    if (config.isServerConfigured) return true;
+    const entry = Object.hasOwn(registry, registryId) ? registry[registryId] : undefined;
+    if (entry?.requiresApiKey !== false && text(config.apiKey)) return true;
+    return (
+      entry?.requiresApiKey === false &&
+      !!(text(config.baseUrl) || text(config.customDefaultBaseUrl))
+    );
+  });
 }
 
 function serviceMap(

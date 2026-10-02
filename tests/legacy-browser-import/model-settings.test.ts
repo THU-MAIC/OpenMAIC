@@ -293,7 +293,9 @@ describe('buildModelSettingsProposal', () => {
       slots: {
         tts: 'openai-tts:gpt-4o-mini-tts',
         asr: 'qwen-asr',
-        // Image generation was switched off: the provider comes, the slot does not.
+        // Image generation was switched off with a usable provider: the
+        // provider comes, and the slot stays off.
+        image: null,
         video: 'kling:kling-v2',
         webSearch: 'minimax-search',
         document: 'mineru-cloud',
@@ -377,6 +379,53 @@ describe('buildModelSettingsProposal', () => {
     expect(buildModelSettingsProposal({ asrEnabled: false })).toEqual({ slots: { asr: null } });
     expect(buildModelSettingsProposal({})).toBeUndefined();
     expect(buildModelSettingsProposal({ asrEnabled: true })).toBeUndefined();
+  });
+
+  it('carries narration, images and video over as off when the user turned them off', () => {
+    // A usable provider was there, so earlier builds had switched these on:
+    // `false` is the user's choice.
+    expect(
+      buildModelSettingsProposal({
+        ttsEnabled: false,
+        ttsProvidersConfig: {
+          'minimax-tts': { apiKey: '', baseUrl: '', isServerConfigured: true },
+        },
+        imageGenerationEnabled: false,
+        imageProviderId: 'seedream',
+        imageProvidersConfig: { seedream: { apiKey: 'sk-img', baseUrl: '' } },
+        videoGenerationEnabled: false,
+        videoProvidersConfig: { kling: { apiKey: '', baseUrl: '', isServerConfigured: true } },
+      })?.slots,
+    ).toEqual({ tts: null, image: null, video: null });
+  });
+
+  it('reads `false` without a usable provider as the default, not a choice', () => {
+    expect(
+      buildModelSettingsProposal({
+        // The browser's own speech synthesis never switched narration on.
+        ttsEnabled: false,
+        ttsProviderId: 'browser-native-tts',
+        ttsProvidersConfig: { 'browser-native-tts': { apiKey: '', baseUrl: '' } },
+        // Switched off by the operator, or by the user per provider: not usable.
+        imageGenerationEnabled: false,
+        imageProvidersConfig: {
+          seedream: { apiKey: '', baseUrl: '', isServerConfigured: true, serverDisabled: true },
+        },
+        videoGenerationEnabled: false,
+        videoProvidersConfig: { kling: { apiKey: 'sk-video', baseUrl: '', enabled: false } },
+      })?.slots,
+    ).toBeUndefined();
+  });
+
+  it('never carries web search over as off', () => {
+    // Off only stopped course research; chat and the agent kept searching.
+    expect(
+      buildModelSettingsProposal({
+        webSearchEnabled: false,
+        webSearchProviderId: 'tavily',
+        webSearchProvidersConfig: { tavily: { apiKey: 'tvly-key', baseUrl: '' } },
+      }),
+    ).toEqual({ providers: { tavily: { preset: 'tavily', apiKey: 'tvly-key' } } });
   });
 
   it('carries no other off switch over: availability follows the slots', () => {

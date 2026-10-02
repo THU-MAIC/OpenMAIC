@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 import {
   applyModelSettingsChange,
+  importModelSettings,
   modelSettingsView,
   ModelSettingsError,
 } from '@/lib/server/model-config/settings';
@@ -579,5 +580,19 @@ describe('applyModelSettingsChange', () => {
       { kind: 'remove-provider', id: 'mine' },
     );
     expect(next).toEqual({ slots: { image: null } });
+  });
+});
+
+describe('importModelSettings', () => {
+  it('imports a capability turned off, except where the deployment locks the slot', async () => {
+    deployment({ slots: { video: 'operator-video' } });
+    const result = await importModelSettings(null, {
+      slots: { tts: null, image: null, video: null },
+    });
+    expect(result.imported).toEqual(['tts', 'image']);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({ item: 'video', code: 'SLOT_LOCKED' }),
+    ]);
+    expect(result.config.slots).toEqual({ tts: null, image: null });
   });
 });
