@@ -40,14 +40,14 @@ export interface ResolvedModel extends ModelWithInfo {
   thinkingConfig?: ThinkingConfig;
   /**
    * Whether the primary model was chosen by the SERVER rather than the client:
-   * an operator MODEL_ROUTES/DEFAULT_MODEL resolution (env route) or a
-   * server-configured provider (managed key). User-level routes (the
-   * 「课程模型配置」 per-stage selection) are USER choices — even though they
-   * route the stage, they are not server-managed. Only server-managed
-   * primaries may arm the retryable-failure fallback in callLLM: a
-   * client-supplied model with a garbage key must never be allowed to burn the
-   * operator's fallback key. Callers pass this through to callLLM's
-   * `fallbackOptions.serverManaged`.
+   * an operator MODEL_ROUTES route (env route) or a server-configured provider
+   * (managed key). A bare DEFAULT_MODEL pick does NOT count — the code arms on
+   * `envRoute || managed` only. User-level routes (the 「课程模型配置」
+   * per-stage selection) are USER choices — even though they route the stage,
+   * they are not server-managed. Only server-managed primaries may arm the
+   * retryable-failure fallback in callLLM: a client-supplied model with a
+   * garbage key must never be allowed to burn the operator's fallback key.
+   * Callers pass this through to callLLM's `fallbackOptions.serverManaged`.
    */
   serverManaged: boolean;
 }

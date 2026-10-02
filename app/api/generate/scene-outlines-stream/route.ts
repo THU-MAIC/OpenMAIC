@@ -14,7 +14,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { streamLLM } from '@/lib/ai/llm';
+import { streamLLM, type StreamTextParams } from '@/lib/ai/llm';
 import {
   resolveFallbackModel,
   shouldFallbackFor,
@@ -493,7 +493,8 @@ export async function POST(req: NextRequest) {
 
         // Retryable-failure fallback: after the same-model retries are
         // exhausted, retry once on the stage's configured fallback model.
-        let streamParams = visionImages?.length
+        // Explicitly typed so the fallback round can add `maxRetries: 0`.
+        let streamParams: StreamTextParams = visionImages?.length
           ? {
               model: languageModel,
               system: prompts.system,
@@ -536,7 +537,10 @@ export async function POST(req: NextRequest) {
             return false;
           }
           if (!fallback) return false;
-          streamParams = { ...streamParams, model: fallback.model };
+          // The fallback round is the LAST attempt: run it with no SDK-internal
+          // retries on top, matching callLLM's fallback round (a 503 on both
+          // models must not cost 3+3 upstream calls).
+          streamParams = { ...streamParams, model: fallback.model, maxRetries: 0 };
           fellBack = true;
           logFallbackFired(
             'scene-outlines-stream',
@@ -691,7 +695,11 @@ export async function POST(req: NextRequest) {
                   `Outlines attempt ${attempt} stream error: ${lastError}, finishReason=${finishReason ?? 'none'}`,
                 );
 
-                if (attempt <= MAX_STREAM_RETRIES) {
+                // The same-model retry budget is spent once the fallback round
+                // ran (attempt was reset to 0 for it): emitting another
+                // "retrying" event here would flash at the client right before
+                // the final error.
+                if (attempt <= MAX_STREAM_RETRIES && !fellBack) {
                   const retryEvent = JSON.stringify({
                     type: 'retry',
                     attempt,
@@ -722,7 +730,9 @@ export async function POST(req: NextRequest) {
                   `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
                 );
 
-                if (attempt <= MAX_STREAM_RETRIES) {
+                // Same retry-budget note as the stream-error branch above:
+                // after the fallback round, no more same-model retry events.
+                if (attempt <= MAX_STREAM_RETRIES && !fellBack) {
                   log.warn(
                     `Empty outlines (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
                   );
@@ -753,7 +763,9 @@ export async function POST(req: NextRequest) {
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
               );
 
-              if (attempt <= MAX_STREAM_RETRIES) {
+              // Same retry-budget note as the stream-error branch above:
+              // after the fallback round, no more same-model retry events.
+              if (attempt <= MAX_STREAM_RETRIES && !fellBack) {
                 log.warn(
                   `Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`,
                   error,
