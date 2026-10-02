@@ -34,7 +34,7 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. OpenMAIC から接続する
 
-VoxCPM2 は自分のネットワーク上で動くため、エンドポイントはデプロイ側で設定し、ワークスペースは **設定 → モデル** で追加できません。`openmaic.yml` で宣言し、`options.backend` でバックエンドを選んで `tts` スロットに割り当ててください。API キーは不要です。
+VoxCPM2 は自分のネットワーク上で動くため、エンドポイントはデプロイ側で設定し、ワークスペースは **設定 → モデルサービス** で追加できません。`openmaic.yml` で宣言し、`options.backend` でバックエンドを選んで `tts` スロットに割り当ててください。API キーは不要です。
 
 ```yaml title="openmaic.yml"
 providers:
@@ -60,7 +60,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 ## 3. 音声管理
 
-VoxCPM2 を `tts` スロットに割り当て（手順 2）、**設定 → 音声 → VoxCPM 音声** を開きます。VoxCPM の音声管理は `tts` スロットが `voxcpm-tts` プロバイダーに解決される場合にだけ表示され、3 種類の音声モードがあります。
+VoxCPM2 を `tts` スロットに割り当て（手順 2）、**設定 → モデルサービス → 音声合成 → VoxCPM2** を開きます。VoxCPM の音声管理は `tts` スロットが `voxcpm-tts` プロバイダーに解決される場合にだけ表示され、3 種類の音声モードがあります。
 
 ### Auto Voice（既定）
 

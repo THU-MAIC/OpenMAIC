@@ -62,7 +62,7 @@ services:
 
 ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` は `.dockerignore` に含まれているため、リポジトリからビルドしたイメージに焼き込まれることはありません。実行時にマウントしてください。`openmaic.yml` がない場合は、旧来の `server-providers.yml` が引き続き `/app/server-providers.yml` から読み込まれます。
 
-Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は、`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188` のように `host.docker.internal` を使ってください。Linux の Docker では通常、`openmaic` サービスに `extra_hosts: ["host.docker.internal:host-gateway"]` も必要です。`openmaic.yml`（または旧来の変数）で宣言したプロバイダーはサーバー管理なので、そのエンドポイントは `ALLOW_LOCAL_NETWORKS` なしでホストやプライベートネットワーク上に置けます。この変数が関係するのはユーザーが入力するエンドポイント、つまり **設定 → モデル** で追加したチャットの Base URL と、非推奨のリクエストフィールドだけです。
+Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は、`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188` のように `host.docker.internal` を使ってください。Linux の Docker では通常、`openmaic` サービスに `extra_hosts: ["host.docker.internal:host-gateway"]` も必要です。`openmaic.yml`（または旧来の変数）で宣言したプロバイダーはサーバー管理なので、そのエンドポイントは `ALLOW_LOCAL_NETWORKS` なしでホストやプライベートネットワーク上に置けます。この変数が関係するのはユーザーが入力するエンドポイント、つまり **設定 → モデルサービス** で追加したチャットの Base URL と、非推奨のリクエストフィールドだけです。
 
 ## 自前の仮想マシンでのセルフホスト
 

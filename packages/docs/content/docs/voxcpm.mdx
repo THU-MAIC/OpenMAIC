@@ -34,7 +34,7 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. Point OpenMAIC at it
 
-VoxCPM2 runs on your own network, so its endpoint is configured by the deployment; workspaces cannot add it in **Settings → Models**. Declare it in `openmaic.yml`, choose the backend with `options.backend`, and assign it to the `tts` slot. No API key is required:
+VoxCPM2 runs on your own network, so its endpoint is configured by the deployment; workspaces cannot add it in **Settings → Model Services**. Declare it in `openmaic.yml`, choose the backend with `options.backend`, and assign it to the `tts` slot. No API key is required:
 
 ```yaml title="openmaic.yml"
 providers:
@@ -60,7 +60,7 @@ Because the provider is server-managed, its endpoint may be on a private network
 
 ## 3. Voice management
 
-Assign VoxCPM2 to the `tts` slot (step 2), then open **Settings → Voice → VoxCPM voices**. The VoxCPM voice manager appears only when the `tts` slot resolves to a `voxcpm-tts` provider, and it has three voice modes.
+Assign VoxCPM2 to the `tts` slot (step 2), then open **Settings → Model Services → Text-to-Speech → VoxCPM2**. The VoxCPM voice manager appears only when the `tts` slot resolves to a `voxcpm-tts` provider, and it has three voice modes.
 
 ### Auto Voice (default)
 

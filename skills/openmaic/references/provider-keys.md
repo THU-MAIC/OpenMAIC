@@ -7,7 +7,7 @@ OpenMAIC generation does not automatically reuse the OpenClaw agent's current mo
 OpenMAIC resolves every model and key on the server, from its own model configuration:
 
 - `openmaic.yml` (written by the operator; path overridable with `OPENMAIC_CONFIG`) declares providers and assigns models to capability slots. Keys stay in `.env.local` and are referenced from the file as `${VAR}`.
-- The model settings in the OpenMAIC web app (**Settings → Models**) edit the slots and providers `openmaic.yml` leaves open, for the current workspace.
+- The model settings in the OpenMAIC web app (**Settings → Token Plan**, **Model Services** and **Course Model Config**) edit the slots and providers `openmaic.yml` leaves open, for the current workspace.
 
 This skill does not rely on runtime overrides for model, provider, API key, base URL, or provider type. The old request headers (`x-model`, `x-api-key`, `x-base-url`, `x-model-routes`, `x-*-provider`, …) are deprecated and ignored once a slot is configured; never use them as a workaround.
 
@@ -94,7 +94,7 @@ Same shape for `openai` (`OPENAI_API_KEY`), `anthropic`, `deepseek`, `qwen`, `gl
 
 ### 3. Web App Only
 
-For a personal install where the user does not want to edit files: start OpenMAIC, open **Settings → Models**, and connect a service there. The key is entered in the browser, stored encrypted on the server, and never shown again. Nothing to edit in `openmaic.yml`.
+For a personal install where the user does not want to edit files: start OpenMAIC, open **Settings → Token Plan** and enter a plan key, or **Settings → Model Services** and enter a service key. The key is entered in the browser, stored encrypted on the server, and never shown again. Nothing to edit in `openmaic.yml`.
 
 ### 4. Existing Environment-Variable Setups
 

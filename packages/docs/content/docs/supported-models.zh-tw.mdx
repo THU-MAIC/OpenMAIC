@@ -11,7 +11,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 
 **單一能力範本**使用下方各表中的 provider ID，每種能力一個：`openai` 是 OpenAI 對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper`。有三個 ID 因為已被其他範本占用而與 registry ID 不同：MiniMax 網路搜尋是 `minimax-search`，豆包網路搜尋是 `doubao-search`，Lemonade 圖像生成是 `lemonade-image`。
 
-**Token Plan 範本**用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。首次使用引導連接這類供應商時，也會為方案推薦了模型的插槽填入模型。
+**Token Plan 範本**用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。在 **設定 → Token Plan** 中連接這類供應商時，也會為方案推薦了模型且仍未指派的插槽填入模型。
 
 | 範本 | 方案 | 涵蓋能力 |
 | --- | --- | --- |

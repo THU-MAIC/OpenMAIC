@@ -172,7 +172,7 @@ MinerU 的图片处理：
 Document extraction is the workspace's `document` slot, resolved on the
 server; the browser keeps no extractor settings and requests name no
 provider, key or base URL. Configure it in `openmaic.yml` (or per workspace
-in Settings → Models):
+in Settings → Model Services and Course Model Config):
 
 ```yaml
 providers:

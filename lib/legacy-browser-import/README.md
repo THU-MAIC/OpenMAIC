@@ -184,7 +184,7 @@ What the proposal holds:
 Not carried over:
 
 - per-stage routes (`llmStageRoutes`), which do not map one to one onto
-  slots: set per-stage models in Settings → Models (or `slots` in
+  slots: set per-stage models in Settings → Course Model Config (or `slots` in
   `openmaic.yml`);
 - the per-browser switches for image, video, narration and research
   (`imageGenerationEnabled`, `videoGenerationEnabled`, `ttsEnabled`,

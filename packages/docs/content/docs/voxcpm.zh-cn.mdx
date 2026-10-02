@@ -34,7 +34,7 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. 让 OpenMAIC 对接它
 
-VoxCPM2 运行在你自己的网络中，因此它的端点由部署配置，工作区不能在 **设置 → 模型** 中添加它。请在 `openmaic.yml` 中声明它，用 `options.backend` 选择后端，并分配给 `tts` 槽位，不需要 API key：
+VoxCPM2 运行在你自己的网络中，因此它的端点由部署配置，工作区不能在 **设置 → 模型服务** 中添加它。请在 `openmaic.yml` 中声明它，用 `options.backend` 选择后端，并分配给 `tts` 槽位，不需要 API key：
 
 ```yaml title="openmaic.yml"
 providers:
@@ -60,7 +60,7 @@ TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 
 ## 3. 声音管理
 
-先把 VoxCPM2 分配给 `tts` 槽位（第 2 步），再打开 **设置 → 语音 → VoxCPM 音色**。只有当 `tts` 槽位解析到 `voxcpm-tts` 服务商时才会出现 VoxCPM 音色管理，其中有三种音色模式。
+先把 VoxCPM2 分配给 `tts` 槽位（第 2 步），再打开 **设置 → 模型服务 → 语音合成 → VoxCPM2**。只有当 `tts` 槽位解析到 `voxcpm-tts` 服务商时才会出现 VoxCPM 音色管理，其中有三种音色模式。
 
 ### Auto Voice（默认）
 

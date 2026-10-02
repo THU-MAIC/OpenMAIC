@@ -169,7 +169,7 @@ export function translateLegacyConfig(
     // served a chat stage.
     if (!Object.hasOwn(server.providers, providerId) || !chatProviders.has(id)) {
       notices.push(
-        `${what} uses ${named} without server configuration; each workspace chooses its model in Settings → Models, or configure that provider and set DEFAULT_MODEL`,
+        `${what} uses ${named} without server configuration; each workspace chooses its model in Settings → Course Model Config, or configure that provider and set DEFAULT_MODEL`,
       );
       return undefined;
     }

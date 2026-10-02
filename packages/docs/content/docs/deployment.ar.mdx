@@ -62,7 +62,7 @@ services:
 
 لا تربط مسارًا غير موجود على المضيف: سينشئ Docker مجلدًا مكانه ويرفض الخادم البدء. مع `docker run` أضف `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`. أعد تشغيل الحاوية بعد تعديل الملف. الملف `openmaic.yml` مدرج في `.dockerignore`، فلا يُضمَّن أبدًا في صورة تُبنى من المستودع: اربطه وقت التشغيل بدلًا من ذلك. عند عدم وجود `openmaic.yml` ما زال `server-providers.yml` القديم يُقرأ من `/app/server-providers.yml`.
 
-داخل حاوية Docker يشير `localhost` إلى الحاوية نفسها. إذا كان Ollama أو Lemonade أو VoxCPM أو ComfyUI يعمل على المضيف، فاستخدم `host.docker.internal`، مثل `http://host.docker.internal:11434/v1` أو `http://host.docker.internal:8188`. وعادةً ما يتطلب Docker على Linux أيضًا إضافة `extra_hosts: ["host.docker.internal:host-gateway"]` إلى خدمة `openmaic`. المزودون المعلنون في `openmaic.yml` (أو عبر المتغيرات القديمة) يديرهم الخادم، لذا يمكن أن تكون عناوينهم على المضيف أو على شبكة خاصة دون `ALLOW_LOCAL_NETWORKS`. لا يهم هذا المتغير إلا للعناوين التي يكتبها المستخدم: عناوين URL الأساسية للمحادثة المضافة في **الإعدادات ← النماذج**، وحقول الطلب المهملة.
+داخل حاوية Docker يشير `localhost` إلى الحاوية نفسها. إذا كان Ollama أو Lemonade أو VoxCPM أو ComfyUI يعمل على المضيف، فاستخدم `host.docker.internal`، مثل `http://host.docker.internal:11434/v1` أو `http://host.docker.internal:8188`. وعادةً ما يتطلب Docker على Linux أيضًا إضافة `extra_hosts: ["host.docker.internal:host-gateway"]` إلى خدمة `openmaic`. المزودون المعلنون في `openmaic.yml` (أو عبر المتغيرات القديمة) يديرهم الخادم، لذا يمكن أن تكون عناوينهم على المضيف أو على شبكة خاصة دون `ALLOW_LOCAL_NETWORKS`. لا يهم هذا المتغير إلا للعناوين التي يكتبها المستخدم: عناوين URL الأساسية للمحادثة المضافة في **الإعدادات ← خدمات النماذج**، وحقول الطلب المهملة.
 
 ## الاستضافة الذاتية على جهاز افتراضي
 
