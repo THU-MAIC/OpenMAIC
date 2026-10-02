@@ -46,17 +46,17 @@ export type GenerationStep = {
 const MEDIA_EXTENSIONS = new Set(['mp4', 'mkv', 'avi', 'mov', 'wmv', 'mp3', 'wav', 'aac', 'm4a']);
 
 /** True when the uploaded material is audio/video (extraction is transcription). */
-function isMediaMaterial(session: GenerationSessionState | null): boolean {
+function isMediaMaterial(session: MaterialHint | null): boolean {
   const mimeType = session?.documentMimeType;
   if (mimeType && (mimeType.startsWith('video/') || mimeType.startsWith('audio/'))) return true;
   const extension = session?.pdfFileName?.split('.').pop()?.trim().toLowerCase();
   return !!extension && MEDIA_EXTENSIONS.has(extension);
 }
 
-export function getGenerationStepText(
-  step: GenerationStep,
-  session: GenerationSessionState | null,
-) {
+/** What the step text knows of the material: its MIME type or file name. */
+type MaterialHint = Partial<Pick<GenerationSessionState, 'documentMimeType' | 'pdfFileName'>>;
+
+export function getGenerationStepText(step: GenerationStep, session: MaterialHint | null) {
   if (step.id === 'pdf-analysis') {
     // Audio/video use a dedicated string ("Analyzing audio/video") — the
     // generic document copy ("Analyzing documents") would misdescribe them.

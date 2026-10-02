@@ -65,6 +65,12 @@ export interface RunView {
   /** The outline the run waits on or generates, with its revision. */
   outline: (GenerationRunOutline & { revision: number }) | null;
   researchSources: Array<{ title: string; url: string }>;
+  /** Whether each material (in order) is a document or audio/video, once the analysis says. */
+  materialKinds: Array<'document' | 'media'> | null;
+  /** The materials are analyzed (the preview drops the analysis step then, as it always did). */
+  materialsAnalyzed: boolean;
+  /** What of the materials the outline does not see in full. */
+  materialTruncated: { textChars?: number; images?: { total: number; max: number } } | null;
   /** The generated roster (auto agents), for the agent cards. */
   generatedAgents: GeneratedAgentConfig[] | null;
   stageId: string | null;

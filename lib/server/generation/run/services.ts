@@ -9,12 +9,16 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
+import {
+  MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
+  MAX_VISION_IMAGES,
+} from '@/lib/constants/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 import type { VisionPromptImage } from '@/lib/persistence/resolve-vision-images';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { getReadyOwnerMaterials } from '@/lib/persistence/owner-materials';
 import {
   DownloadByteBudget,
   MAX_REMOTE_IMAGE_BATCH_BYTES,
@@ -111,6 +115,16 @@ export interface AnalyzedMaterials {
   text: string;
   /** The bundle's images, in its order (the engine stores them as course assets). */
   images: RunMaterialImage[];
+  /** What the bundle left out, as the generation preview warned about it. */
+  truncated?: MaterialTruncation;
+}
+
+/** The material text and images the outline does not see in full. */
+export interface MaterialTruncation {
+  /** The text was longer than the outline's budget: only this many characters are used. */
+  textChars?: number;
+  /** More images than the outline looks at: `total` found, the first `max` used. */
+  images?: { total: number; max: number };
 }
 
 /**
@@ -145,6 +159,11 @@ export interface GenerateRunVideoInput {
 }
 
 export interface RunStepServices {
+  /**
+   * Whether each of the owner's materials (in order) is audio or video, which
+   * the preview names while it is analyzed ("Analyzing audio/video").
+   */
+  materialKinds(ownerId: string, materialIds: string[]): Promise<Array<'document' | 'media'>>;
   /** Extract and bundle the owner's materials: the outline's source text and the images. */
   analyzeMaterials(
     ownerId: string,
@@ -315,6 +334,20 @@ const sleep = (ms: number, signal?: AbortSignal) =>
   });
 
 export const defaultRunStepServices: RunStepServices = {
+  async materialKinds(ownerId, materialIds) {
+    const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+    const records = await getReadyOwnerMaterials(pool, ownerId, materialIds);
+    const byId = new Map(records.map((record) => [record.id, record]));
+    return materialIds.map((id) => {
+      const record = byId.get(id);
+      const mime = normalizeDocumentMimeType({
+        mimeType: record?.mime,
+        fileName: record?.originalName,
+      });
+      return mime.startsWith('audio/') || mime.startsWith('video/') ? 'media' : 'document';
+    });
+  },
+
   async analyzeMaterials(ownerId, materialIds, ctx) {
     const records = await resolveClassroomMaterials(ownerId, materialIds);
     const workspaceId = await backgroundWorkspaceId(ownerId);
@@ -370,7 +403,16 @@ export const defaultRunStepServices: RunStepServices = {
       });
     }
     const bundle = buildDocumentBundle(parts);
+    const truncated: MaterialTruncation = {
+      ...(bundle.totalRawTextLength > bundle.textContentBudget
+        ? { textChars: bundle.textContentBudget }
+        : {}),
+      ...(bundle.totalImageCount > MAX_VISION_IMAGES
+        ? { images: { total: bundle.totalImageCount, max: MAX_VISION_IMAGES } }
+        : {}),
+    };
     return {
+      ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
       text: bundle.text,
       images: bundle.images.map(({ src, ...image }) => {
         // The browser stores every image's bytes or fails the analysis.

@@ -539,6 +539,9 @@ export async function executeGenerationRun(
 
     switch (step.kind) {
       case 'material-analysis': {
+        // The preview names the kind of material it waits on.
+        const kinds = await services.materialKinds(owner, input.materialIds);
+        await commit({ events: [{ type: 'material_kinds', data: { kinds } }] });
         const analyzed = await withDeadline(
           stepId,
           STEP_DEADLINES_MS.materialAnalysis,
@@ -546,16 +549,23 @@ export async function executeGenerationRun(
           (callSignal) =>
             services.analyzeMaterials(owner, input.materialIds, { log, signal: callSignal }),
         );
+        // What the outline will not see in full, as the preview warns about it.
+        const warnings = analyzed.truncated
+          ? { events: [{ type: 'material_truncated' as const, data: { ...analyzed.truncated } }] }
+          : {};
         if (analyzed.images.length === 0) {
-          return done({ pdfText: analyzed.text } satisfies MaterialOutput);
+          return done({ pdfText: analyzed.text } satisfies MaterialOutput, warnings);
         }
         // The images become assets of the course, whose id is minted now.
         const stageId = generateClassroomId();
-        return done({
-          pdfText: analyzed.text,
-          ...(await storeMaterialImages(stageId, analyzed.images)),
-          stageId,
-        } satisfies MaterialOutput);
+        return done(
+          {
+            pdfText: analyzed.text,
+            ...(await storeMaterialImages(stageId, analyzed.images)),
+            stageId,
+          } satisfies MaterialOutput,
+          warnings,
+        );
       }
 
       case 'research': {

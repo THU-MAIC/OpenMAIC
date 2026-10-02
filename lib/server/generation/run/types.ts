@@ -251,6 +251,14 @@ export const GENERATION_RUN_EVENT_TYPES = [
   'step_completed',
   /** `{ step, message }`: a step failed after its retries; the run pauses. */
   'step_failed',
+  /** `{ kinds }`: whether each material (in order) is a `document` or audio/video `media`. */
+  'material_kinds',
+  /**
+   * `{ textChars?, images?: { total, max } }`: the material text or images the
+   * outline does not see in full (text cut at `textChars` characters, the
+   * first `max` of `total` images).
+   */
+  'material_truncated',
   /** `{ sources }`: what the research step found. */
   'research_sources',
   /** The outline stream restarted (a retry, a takeover): discard the items so far. */

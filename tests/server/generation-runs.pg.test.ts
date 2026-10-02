@@ -154,6 +154,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
     releasedClips: [] as string[],
   };
   const services: RunStepServices = {
+    materialKinds: async (_owner, materialIds) => materialIds.map(() => 'document' as const),
     analyzeMaterials: async () => ({ text: 'material text', images: [] }),
     research: async (_owner, input) => {
       calls.research.push(input);
@@ -575,6 +576,31 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const after = (await readGenerationRun(edited.id, OWNER))!;
     expect(after.outline).toMatchObject({ revision: 2, outlines: [OUTLINES[2]] });
     expect(after.progress).toEqual({ scenesTotal: 1, scenesCompleted: 1 });
+  });
+
+  it('names the material kinds while analyzing, and what the outline will not see in full', async () => {
+    const { services } = fakeServices({
+      research: async () => null,
+      materialKinds: async () => ['media'],
+      analyzeMaterials: async () => ({
+        text: 'material text',
+        images: [],
+        truncated: { textChars: 50000, images: { total: 30, max: 20 } },
+      }),
+    });
+    const run = await start(runInput({ outlineReview: 'auto', materialIds: ['mat-1'] }));
+    expect(await drive(run.id, services)).toBe('completed');
+    const events = await readGenerationRunEvents(run.id, 0);
+    const kinds = events.find((event) => event.type === 'material_kinds')!;
+    const analyzed = events.find(
+      (event) => event.type === 'step_completed' && event.data.step === 'material-analysis',
+    )!;
+    expect(kinds.data).toEqual({ kinds: ['media'] });
+    expect(kinds.seq).toBeLessThan(analyzed.seq);
+    expect(events.find((event) => event.type === 'material_truncated')?.data).toEqual({
+      textChars: 50000,
+      images: { total: 30, max: 20 },
+    });
   });
 
   it('commands are idempotent by commandId and refused in the wrong state', async () => {
