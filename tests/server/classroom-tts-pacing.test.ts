@@ -654,4 +654,48 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     expect(scene.actions?.filter((action) => action.type === 'speech')).toHaveLength(1);
     expect(ttsMocks.generateTTS).not.toHaveBeenCalled();
   });
+
+  it('sends the server-pinned model to generateTTS instead of the catalog default', async () => {
+    // Regression: the classroom pre-generation loop passed
+    // DEFAULT_TTS_MODELS[providerId] straight to generateTTS, bypassing the
+    // {PREFIX}_MODELS operator pin that the TTS route and agent-runtime
+    // scene-tts honor. Against a gateway serving only the pinned model every
+    // narration line failed with a model-not-found error.
+    vi.stubEnv('TTS_MINIMAX_API_KEY', '');
+    vi.stubEnv('TTS_MINIMAX_ENABLED', 'false');
+    vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-openai');
+    vi.stubEnv('TTS_OPENAI_ENABLED', 'true');
+    vi.stubEnv('TTS_OPENAI_MODELS', 'pinned-tts-a');
+
+    const seenModels: string[] = [];
+    ttsMocks.generateTTS.mockImplementation(async (config: { modelId?: string }) => {
+      seenModels.push(config.modelId ?? '');
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([speechScene([{ id: 'action_0', text: 'hello' }])]);
+
+    expect(coverage).toEqual({ written: 1, total: 1 });
+    expect(seenModels).toEqual(['pinned-tts-a']);
+  });
+
+  it('falls back to the catalog default model when the server pins no TTS models', async () => {
+    vi.stubEnv('TTS_MINIMAX_API_KEY', '');
+    vi.stubEnv('TTS_MINIMAX_ENABLED', 'false');
+    vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-openai');
+    vi.stubEnv('TTS_OPENAI_ENABLED', 'true');
+
+    const seenModels: string[] = [];
+    ttsMocks.generateTTS.mockImplementation(async (config: { modelId?: string }) => {
+      seenModels.push(config.modelId ?? '');
+      return { audio: CLIP, format: 'mp3' };
+    });
+
+    const coverage = await runClassroomTts([speechScene([{ id: 'action_0', text: 'hello' }])]);
+
+    expect(coverage).toEqual({ written: 1, total: 1 });
+    // Unpinned providers keep the catalog default — the pin only overrides,
+    // it must not blank the model selection.
+    expect(seenModels).toEqual(['gpt-4o-mini-tts']);
+  });
 });

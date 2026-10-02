@@ -32,6 +32,7 @@ import {
   resolveVideoModel,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
@@ -500,6 +501,15 @@ export async function generateTTSForClassroom(
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
   const ttsManaged = isServerConfiguredProvider('tts', providerId);
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
+  // Apply the operator's model pin ({PREFIX}_MODELS, e.g. TTS_OPENAI_MODELS)
+  // the same way the TTS route and agent-runtime scene-tts do. The raw
+  // DEFAULT_TTS_MODELS id would otherwise be sent verbatim and rejected by a
+  // gateway that only serves the pinned model, failing every narration line.
+  const modelId = resolveTTSModel(
+    providerId,
+    DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+    voice,
+  );
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
     return skippedTtsCoverage(
@@ -562,7 +572,7 @@ export async function generateTTSForClassroom(
           const result = await generateTTS(
             {
               providerId,
-              modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+              modelId,
               apiKey,
               baseUrl: ttsBaseUrl,
               managed: ttsManaged,
