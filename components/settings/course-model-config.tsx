@@ -536,10 +536,9 @@ export function CourseModelConfigPanel({
           // Follows the main model: nothing of its own, nothing locked.
           following: !!own && own.assignment === undefined && !own.locked,
           mediaLines: search && slotOn(search) ? [lineFor('webSearch')!] : [],
+          // Research runs only with a search service; a stage is off when its slot is null.
           allOff:
-            def.id === 'web-research'
-              ? !slotOn(search) && !slotOn(own)
-              : !slotOn(own) && own?.effective.status === 'disabled',
+            def.id === 'web-research' ? !slotOn(search) : own?.effective.status === 'disabled',
           locked: !!own?.locked,
         };
       }
