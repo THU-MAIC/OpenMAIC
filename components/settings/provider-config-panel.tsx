@@ -123,7 +123,13 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
         const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
         const current = models.map((model) => model.id);
         const additions = ids.filter((id) => !current.includes(id));
-        if (additions.length) await saveModels([...current, ...additions]);
+        // Report models as added only once the server saved them; a refused
+        // or lost write leaves a failure the user can retry.
+        if (additions.length && !(await saveModels([...current, ...additions]))) {
+          setFetchStatus('error');
+          setFetchMessage(t('settings.serverConfig.fetchNotSaved'));
+          return;
+        }
         setFetchStatus('success');
         setFetchMessage(
           t('settings.fetchModelsResult')

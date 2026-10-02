@@ -34,7 +34,7 @@ import {
 } from '@/lib/document/bundle';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
-import { ModelPicker } from '@/components/settings/model-picker';
+import { ModelPicker, ProviderLogo } from '@/components/settings/model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -84,6 +84,7 @@ export function GenerationToolbar({
   const modelId = llm?.modelId ?? '';
   const llmPickerGroups = useLLMPickerGroups(view);
   const currentProviderName = view && providerId ? providerLabel(view, providerId) : providerId;
+  const currentGroup = llmPickerGroups.find((group) => group.id === providerId);
   // The deployment may lock the course model; it is then shown, not picked.
   const llmEditable = !!llmSlot && !llmSlot.locked && llmPickerGroups.length > 0;
   const applyChange = async (change: ModelSettingsChange | undefined) => {
@@ -248,7 +249,11 @@ export function GenerationToolbar({
           aria-label={`${currentProviderName} / ${modelId}`}
           title={t('toolbar.modelLockedHint')}
         >
-          <Bot className="size-3.5" />
+          {currentGroup ? (
+            <ProviderLogo group={currentGroup} className="size-3.5" />
+          ) : (
+            <Bot className="size-3.5" />
+          )}
           <span className="max-w-[200px] truncate">{modelId || currentProviderName}</span>
         </span>
       ) : (

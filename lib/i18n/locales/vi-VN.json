@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "Được dùng khi dịch vụ này được chọn trong cấu hình mô hình khóa học.",
       "planServer": "Do máy chủ cấu hình",
       "providerIdHint": "Lưu với tên \"{{id}}\"",
-      "openaiCompatible": "Tương thích OpenAI"
+      "openaiCompatible": "Tương thích OpenAI",
+      "notNarration": "Dịch vụ này không phải giọng thuyết minh của không gian làm việc.",
+      "useForNarration": "Dùng cho thuyết minh",
+      "fetchNotSaved": "Đã tìm thấy mô hình nhưng không lưu được. Hãy thử lại."
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
         "clear": "Xóa thiết lập riêng",
         "clearHint": "Dùng thiết lập của máy chủ, nếu có",
-        "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa."
+        "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
+        "thinking": "Suy luận"
       },
       "slots": {
         "llm": {

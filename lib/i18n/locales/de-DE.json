@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "Wird verwendet, sobald dieser Dienst in der Kursmodell-Konfiguration ausgewählt ist.",
       "planServer": "Vom Server konfiguriert",
       "providerIdHint": "Gespeichert als „{{id}}“",
-      "openaiCompatible": "OpenAI-kompatibel"
+      "openaiCompatible": "OpenAI-kompatibel",
+      "notNarration": "Dieser Dienst ist nicht die Sprachausgabe des Arbeitsbereichs.",
+      "useForNarration": "Für die Sprachausgabe verwenden",
+      "fetchNotSaved": "Die Modelle wurden gefunden, konnten aber nicht gespeichert werden. Versuchen Sie es erneut."
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert.",
         "clear": "Eigene Einstellung entfernen",
         "clearHint": "Die Einstellung des Servers verwenden, falls vorhanden",
-        "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfe, ob die Änderung übernommen wurde."
+        "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfe, ob die Änderung übernommen wurde.",
+        "thinking": "Denken"
       },
       "slots": {
         "llm": {

@@ -29,8 +29,20 @@ import {
   providerLabel,
   providersFor,
   slotChange,
+  splitRef,
 } from '@/lib/model-settings/edit';
 import { cn } from '@/lib/utils';
+import type { SlotCapability } from '@/lib/config/model-slots';
+import {
+  assignService,
+  keylessServices,
+  slotThinking,
+  thinkingChange,
+  type ServiceEntry,
+} from '@/lib/model-settings/services';
+
+import { InlineThinkingControl, ProviderLogo } from '../model-picker';
+import { REGISTRY_INFO, entryIcon, entryName, logoInverts, providerLogo } from '../service-display';
 
 import { MS, applyErrorText, slotDescription, slotName } from './slot-meta';
 import { lineText } from './station-text';
@@ -52,7 +64,9 @@ function Row({
   onClick,
   children,
   note,
+  logo,
 }: {
+  logo?: React.ReactNode;
   current?: boolean;
   busy?: boolean;
   disabled?: boolean;
@@ -75,6 +89,7 @@ function Row({
         current && 'bg-primary/10 hover:bg-primary/10',
       )}
     >
+      {logo}
       <span className="min-w-0 max-w-[80%] shrink-0 truncate">{children}</span>
       {note && (
         <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{note}</span>
@@ -121,11 +136,39 @@ export function rovingKeys(event: React.KeyboardEvent<HTMLElement>) {
   next.focus();
 }
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
+function GroupLabel({ children, logo }: { children: React.ReactNode; logo?: React.ReactNode }) {
   return (
-    <p className="truncate px-2 pb-0.5 pt-2 text-[11px] text-muted-foreground" role="presentation">
+    <p
+      className="flex items-center gap-1.5 truncate px-2 pb-0.5 pt-2 text-[11px] text-muted-foreground"
+      role="presentation"
+    >
+      {logo}
       {children}
     </p>
+  );
+}
+
+/** A provider's logo for a capability, as Model Services shows it (the generic icon for a custom endpoint). */
+function Logo({
+  view,
+  providerId,
+  capability,
+  className,
+}: {
+  view: ModelSettingsView;
+  providerId: string;
+  capability: SlotCapability;
+  className?: string;
+}) {
+  return (
+    <ProviderLogo
+      group={{
+        name: providerId,
+        icon: providerLogo(view, providerId, capability) ?? null,
+        invertIcon: logoInverts(view, providerId, capability),
+      }}
+      className={className ?? 'size-3.5'}
+    />
   );
 }
 
@@ -216,6 +259,35 @@ export function SlotPicker({
     if (current.kind === 'model' && current.model === ref) return onDone();
     void run(ref, modelChange(slot, ref));
   };
+  // The thinking settings of the model the slot names itself, when the model has any.
+  const thinkingCapability = (() => {
+    if (current.kind !== 'model') return undefined;
+    const { providerId, modelId } = splitRef(current.model);
+    return view.providers
+      .find((provider) => provider.id === providerId)
+      ?.capabilities.chat?.models.find((model) => model.id === modelId)?.capabilities?.thinking;
+  })();
+  // Services the workspace may add without a key: listed for media slots, added when picked.
+  const keyless =
+    slot.capability === 'chat' || !view.policy.allowWorkspaceProviders
+      ? []
+      : keylessServices(
+          view,
+          slot.capability,
+          REGISTRY_INFO[slot.capability].ids,
+          REGISTRY_INFO[slot.capability].requiresApiKey,
+        );
+  const pickKeyless = async (entry: ServiceEntry) => {
+    setBusy(entry.id);
+    setMessage(null);
+    try {
+      const result = await assignService(apply, view, entry, slot.slot);
+      if (result.ok) onDone();
+      else setMessage(applyErrorText(result, t));
+    } finally {
+      setBusy(null);
+    }
+  };
   const isCurrent = (ref: string) => current.kind === 'model' && current.model === ref;
 
   // The rows in order, to make the current one (else the first) the Tab stop.
@@ -283,7 +355,7 @@ export function SlotPicker({
           </Row>
         )}
 
-        {providers.length === 0 && (
+        {providers.length === 0 && keyless.length === 0 && (
           <p className="px-2 py-2 text-xs text-muted-foreground">{t(`${MS}.picker.noProviders`)}</p>
         )}
 
@@ -298,6 +370,7 @@ export function SlotPicker({
                 busy={busy === provider.id}
                 disabled={!!busy}
                 onClick={() => pick(provider.id)}
+                logo={<Logo view={view} providerId={provider.id} capability={slot.capability} />}
               >
                 {providerLabel(view, provider.id)}
               </Row>
@@ -310,7 +383,11 @@ export function SlotPicker({
             const models = provider.capabilities[slot.capability]?.models ?? [];
             return (
               <div key={provider.id} role="group" aria-label={providerLabel(view, provider.id)}>
-                <GroupLabel>{providerLabel(view, provider.id)}</GroupLabel>
+                <GroupLabel
+                  logo={<Logo view={view} providerId={provider.id} capability={slot.capability} />}
+                >
+                  {providerLabel(view, provider.id)}
+                </GroupLabel>
                 {!chat && (
                   <Row
                     tabStop={tabStop === provider.id}
@@ -343,6 +420,33 @@ export function SlotPicker({
               </div>
             );
           })}
+
+        {/* Services that need no key (the browser's own speech): added on first use. */}
+        {keyless.map((entry) => (
+          <div key={entry.id} role="group" aria-label={entryName(entry, slot.capability, t)}>
+            <GroupLabel
+              logo={
+                <ProviderLogo
+                  group={{
+                    name: entry.id,
+                    icon: entryIcon(entry, slot.capability) ?? null,
+                  }}
+                  className="size-3.5"
+                />
+              }
+            >
+              {entryName(entry, slot.capability, t)}
+            </GroupLabel>
+            <Row
+              tabStop={false}
+              busy={busy === entry.id}
+              disabled={!!busy}
+              onClick={() => void pickKeyless(entry)}
+            >
+              {t(`${MS}.picker.providerDefault`)}
+            </Row>
+          </div>
+        ))}
 
         {slot.slot !== 'llm' && (
           <>
@@ -410,6 +514,27 @@ export function SlotPicker({
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {chat && current.kind === 'model' && thinkingCapability && (
+        <div
+          className="flex items-center gap-2 border-t px-3 py-2"
+          aria-label={t(`${MS}.picker.thinking`)}
+          role="group"
+        >
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {t(`${MS}.picker.thinking`)}
+          </span>
+          <InlineThinkingControl
+            capability={thinkingCapability}
+            config={slotThinking(slot)}
+            onChange={(config) => {
+              const change = thinkingChange(slot, config);
+              if (change) void run('thinking', change, false);
+            }}
+            t={t}
+          />
         </div>
       )}
 

@@ -6,7 +6,7 @@
 // groups，不传 thinking 回调，即为「仅搜索」的纯模型选择。
 
 import { useMemo, useState } from 'react';
-import { Bot, Brain, Check, CornerDownRight, Search } from 'lucide-react';
+import { Bot, Box, Brain, Check, CornerDownRight, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -43,6 +43,42 @@ export interface ModelPickerGroup {
   models: PickerModel[];
   /** Token Plan 套餐播种的目录：置顶展示并带标识 */
   isTokenPlan?: boolean;
+  /**
+   * The provider's logo. `null` draws the generic service icon (a custom
+   * endpoint); undefined draws none.
+   */
+  icon?: string | null;
+  /** A single-colour logo that is inverted on a dark background. */
+  invertIcon?: boolean;
+}
+
+/** A group's logo: its image, the generic service icon, or nothing. */
+export function ProviderLogo({
+  group,
+  className,
+}: {
+  group: Pick<ModelPickerGroup, 'icon' | 'invertIcon' | 'name'>;
+  className?: string;
+}) {
+  if (group.icon === undefined) return null;
+  if (group.icon === null) {
+    return <Box className={cn('shrink-0 text-muted-foreground', className)} aria-hidden="true" />;
+  }
+  return (
+    <img
+      src={group.icon}
+      alt=""
+      aria-hidden="true"
+      className={cn(
+        'shrink-0 rounded-sm object-contain',
+        group.invertIcon && 'dark:invert',
+        className,
+      )}
+      onError={(e) => {
+        (e.target as HTMLImageElement).style.display = 'none';
+      }}
+    />
+  );
 }
 
 function formatThinkingValue(value: string, t: (key: string) => string) {
@@ -63,7 +99,7 @@ function formatCompactThinkingValue(value: string | undefined) {
 }
 
 /** 行内思考强度控制（开/关/自动、档位、effort、budget） */
-function InlineThinkingControl({
+export function InlineThinkingControl({
   capability,
   config,
   onChange,
@@ -374,6 +410,7 @@ export function ModelPicker({
         >
           {value ? (
             <>
+              {selectedEntry && <ProviderLogo group={selectedEntry.group} className="size-4" />}
               <span className="min-w-0 flex-1 truncate text-left font-mono">{selectedLabel}</span>
               {thinkingBadge && (
                 <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
@@ -463,6 +500,7 @@ export function ModelPicker({
               <div key={group.id}>
                 {groups.length > 1 && (
                   <p className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[10px] font-medium text-muted-foreground">
+                    <ProviderLogo group={group} className="size-3.5" />
                     {group.name}
                     {group.isTokenPlan && (
                       <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold leading-tight text-primary">
@@ -496,6 +534,7 @@ export function ModelPicker({
                           : 'hover:bg-muted/60',
                       )}
                     >
+                      <ProviderLogo group={group} className="size-4" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-mono text-xs font-medium">{model.name}</div>
                         {model.id !== model.name && (

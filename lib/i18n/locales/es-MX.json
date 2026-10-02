@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "Se usa cuando este servicio se selecciona en la configuración de modelos del curso.",
       "planServer": "Configurado por el servidor",
       "providerIdHint": "Se guarda como \"{{id}}\"",
-      "openaiCompatible": "Compatible con OpenAI"
+      "openaiCompatible": "Compatible con OpenAI",
+      "notNarration": "Este servicio no es la narración del espacio de trabajo.",
+      "useForNarration": "Usar para la narración",
+      "fetchNotSaved": "Se encontraron los modelos, pero no se pudieron guardar. Inténtalo de nuevo."
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
         "clear": "Quitar ajuste propio",
         "clearHint": "Usar el ajuste del servidor, si tiene uno",
-        "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó."
+        "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó.",
+        "thinking": "Razonamiento"
       },
       "slots": {
         "llm": {

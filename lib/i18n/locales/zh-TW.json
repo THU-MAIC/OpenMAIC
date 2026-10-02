@@ -1891,7 +1891,10 @@
       "modelWhenInUse": "在「課程模型設定」中選用此服務後生效。",
       "planServer": "由伺服器設定",
       "providerIdHint": "儲存為「{{id}}」",
-      "openaiCompatible": "OpenAI 相容"
+      "openaiCompatible": "OpenAI 相容",
+      "notNarration": "此服務不是目前工作區的旁白語音。",
+      "useForNarration": "用作旁白語音",
+      "fetchNotSaved": "已找到模型，但未能儲存，請重試。"
     },
     "modelSettings": {
       "card": {
@@ -1941,7 +1944,8 @@
         "lockedNow": "伺服器現在設定了此項，因此未變更。",
         "clear": "清除單獨設定",
         "clearHint": "改用伺服器的設定（如有）",
-        "unconfirmed": "伺服器的回應遺失，設定已重新載入。請檢查變更是否已生效。"
+        "unconfirmed": "伺服器的回應遺失，設定已重新載入。請檢查變更是否已生效。",
+        "thinking": "思考"
       },
       "slots": {
         "llm": {

@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "Utilisé une fois ce service sélectionné dans la configuration des modèles du cours.",
       "planServer": "Configuré par le serveur",
       "providerIdHint": "Enregistré sous « {{id}} »",
-      "openaiCompatible": "Compatible OpenAI"
+      "openaiCompatible": "Compatible OpenAI",
+      "notNarration": "Ce service n'est pas la narration de l'espace de travail.",
+      "useForNarration": "Utiliser pour la narration",
+      "fetchNotSaved": "Les modèles ont été trouvés mais n'ont pas pu être enregistrés. Réessayez."
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié.",
         "clear": "Retirer le réglage propre",
         "clearHint": "Utiliser le réglage du serveur, s’il en a un",
-        "unconfirmed": "La réponse du serveur a été perdue ; les réglages ont été rechargés. Vérifiez si la modification a été prise en compte."
+        "unconfirmed": "La réponse du serveur a été perdue ; les réglages ont été rechargés. Vérifiez si la modification a été prise en compte.",
+        "thinking": "Réflexion"
       },
       "slots": {
         "llm": {

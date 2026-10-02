@@ -20,12 +20,14 @@ import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { defaultVoiceFor, slotVoxCPMBackend, ttsSelection } from '@/lib/audio/tts-selection';
 import { modelCapabilities } from '@/lib/model-settings/capabilities';
+import { assignService } from '@/lib/model-settings/services';
 import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers';
 import {
   ApiKeyField,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
+  reportApply,
   rootUse,
   saveServiceProvider,
   type ServicePanelProps,
@@ -128,6 +130,18 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
     use.inUse && selection ? selection.voice : defaultVoiceFor(providerId, use.modelId);
   const cloneSpeedDisabled = providerId === 'qwen-tts' && isQwenCloneVoice(effectiveVoice);
   const configured = entry.state === 'deployment' || entry.state === 'workspace' || isBrowser;
+  // A service that needs no key (the browser's own speech) can be made the
+  // workspace's narration here: it is added first when it is not saved yet.
+  const keyless = !ttsProvider?.requiresApiKey && entry.state !== 'server-only';
+  const [assigning, setAssigning] = useState(false);
+  const makeNarration = async () => {
+    setAssigning(true);
+    try {
+      reportApply(await assignService(apply, view, entry, 'tts'), t);
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -256,6 +270,22 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
               <p className="text-xs text-muted-foreground">{t('settings.qwenCloneSpeedHint')}</p>
             )}
           </div>
+
+          {keyless && !use.inUse && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm">
+              <span className="min-w-0 text-muted-foreground">
+                {t('settings.serverConfig.notNarration')}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={assigning || !use.slot || use.slot.locked}
+                onClick={() => void makeNarration()}
+              >
+                {t('settings.serverConfig.useForNarration')}
+              </Button>
+            </div>
+          )}
 
           {/* Test TTS */}
           <div className="space-y-2">

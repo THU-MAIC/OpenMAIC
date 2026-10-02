@@ -10,6 +10,7 @@ import { tokenPlanPresetId } from '@/lib/config/preset-ids';
 import type { ModelSettingsView } from '@/lib/model-settings/client';
 import { providerLabel, providersFor } from '@/lib/model-settings/edit';
 import type { ModelPickerGroup } from './model-picker';
+import { logoInverts, providerLogo } from './service-display';
 
 /** Each plan's preset id → its rank (the Token Plan list order) and recommended model order. */
 const PLAN_ORDER: ReadonlyMap<string, { rank: number; models: readonly string[] }> = new Map(
@@ -36,6 +37,9 @@ export function llmPickerGroups(view: ModelSettingsView | null): ModelPickerGrou
           id: provider.id,
           name: providerLabel(view, provider.id),
           isTokenPlan: !!plan,
+          // As Model Services shows it; a custom endpoint gets the generic icon.
+          icon: providerLogo(view, provider.id, 'chat') ?? null,
+          invertIcon: logoInverts(view, provider.id, 'chat'),
           planRank: plan?.rank ?? Number.MAX_SAFE_INTEGER,
           models: (provider.capabilities.chat?.models ?? [])
             .map((model) => ({

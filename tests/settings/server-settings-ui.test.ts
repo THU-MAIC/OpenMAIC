@@ -67,6 +67,7 @@ import { ModelMap } from '@/components/settings/models/model-map';
 import { llmPickerGroups } from '@/components/settings/use-llm-picker-groups';
 import { ProviderConfigPanel } from '@/components/settings/provider-config-panel';
 import { TokenPlanSettings } from '@/components/settings/token-plan-settings';
+import { TTSSettings } from '@/components/settings/tts-settings';
 import {
   createModelSettingsClient,
   modelSettingsClient,
@@ -457,5 +458,130 @@ describe("the server's providers wherever chat models are offered", () => {
     expect(deepseek).toHaveLength(1);
     expect(deepseek[0].textContent).toContain('settings.modelServices.configured');
     expect(deepseek[0].textContent).not.toContain('·');
+  });
+});
+
+describe('review fixes', () => {
+  it('makes the browser speech the narration from an empty workspace', async () => {
+    const browserTts: PresetView = {
+      id: 'browser-native-tts',
+      name: 'Browser TTS',
+      kind: 'single',
+      capabilities: { tts: { registryId: 'browser-native-tts', models: [] } },
+      requiresBaseUrl: false,
+      customEndpoint: false,
+      recommended: {},
+    };
+    const empty = makeView({ revision: 1, presets: [browserTts] });
+    const added = {
+      ...empty,
+      revision: 2,
+      providers: [
+        {
+          id: 'browser-native-tts',
+          preset: 'browser-native-tts',
+          source: 'workspace' as const,
+          capabilities: browserTts.capabilities,
+          key: { set: false },
+        },
+      ],
+    };
+    const changes: ModelSettingsChange[] = [];
+    const bases: (number | null)[] = [];
+    const apply = vi.fn(async (change: ModelSettingsChange, basis?: ModelSettingsView) => {
+      changes.push(change);
+      bases.push(basis?.revision ?? null);
+      return { ok: true as const, view: added };
+    });
+    const entry = serviceEntries(empty, 'tts', ['browser-native-tts'])[0];
+    expect(entry.state).toBe('available');
+    mount(createElement(TTSSettings, { view: empty, apply, entry }));
+    click(byText('settings.serverConfig.useForNarration'));
+    await flush();
+    expect(changes).toEqual([
+      { kind: 'provider', id: 'browser-native-tts', preset: 'browser-native-tts' },
+      { kind: 'slots', set: { tts: 'browser-native-tts' } },
+    ]);
+    expect(bases).toEqual([1, 2]);
+  });
+
+  it('does not report fetched models as added when saving them is refused', async () => {
+    const view = makeView({ providers: [workspaceProvider('acme')] });
+    const apply = vi.fn(
+      async (): Promise<ApplyResult> => ({ ok: false, reason: 'conflict', message: 'stale' }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ success: true, models: [{ id: 'acme-new' }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+      ),
+    );
+    const entry = serviceEntries(view, 'chat', ['acme'])[0];
+    mount(createElement(ProviderConfigPanel, { view, apply, entry }));
+    click(byText('settings.fetchModels'));
+    await flush();
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain('settings.serverConfig.fetchNotSaved');
+    expect(document.body.textContent).not.toContain('settings.fetchModelsResult');
+    // The button stays usable for another try.
+    expect((byText('settings.fetchModels') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("shows the provider's logo on the home picker and on every group and model", () => {
+    const view = deploymentView();
+    view.slots = view.slots.map((slot) =>
+      slot.slot === 'llm'
+        ? {
+            ...slot,
+            assignment: 'deepseek:deepseek-v4-pro',
+            effective: {
+              status: 'assigned',
+              resolvedAt: 'llm',
+              source: 'workspace',
+              requirements: [],
+              providerId: 'deepseek',
+              providerSource: 'deployment',
+              presetId: 'deepseek',
+              registryId: 'deepseek',
+              modelId: 'deepseek-v4-pro',
+            },
+          }
+        : slot,
+    );
+    const groups = llmPickerGroups(view);
+    expect(groups.find((group) => group.id === 'deepseek')?.icon).toContain('deepseek');
+    // A custom endpoint gets the generic icon (null), as in Model Services.
+    expect(groups.find((group) => group.id === 'gateway')?.icon).toBeNull();
+    modelSettingsClient.adopt(view);
+    try {
+      mount(
+        createElement(GenerationToolbar, {
+          courseMaterials: [],
+          onCourseMaterialsAdd: () => {},
+          onCourseMaterialRemove: () => {},
+          onPdfError: () => {},
+          onSettingsOpen: () => {},
+        }),
+      );
+      const trigger = document.body.querySelector<HTMLElement>(
+        '[aria-label="deepseek / deepseek-v4-pro"]',
+      )!;
+      expect(trigger.querySelector('img')?.getAttribute('src')).toContain('deepseek');
+      click(trigger);
+      const options = [...document.body.querySelectorAll<HTMLElement>('[role="button"]')];
+      expect(options.length).toBe(4);
+      for (const option of options) {
+        const gateway =
+          option.textContent?.includes('gpt-') || option.textContent?.includes('flash');
+        if (gateway) expect(option.querySelector('svg.lucide-box')).not.toBeNull();
+        else expect(option.querySelector('img')?.getAttribute('src')).toContain('deepseek');
+      }
+    } finally {
+      modelSettingsClient.adopt(null);
+    }
   });
 });

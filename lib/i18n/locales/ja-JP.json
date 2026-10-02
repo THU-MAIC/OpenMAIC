@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "コースモデル設定でこのサービスを選ぶと使われます。",
       "planServer": "サーバーで設定済み",
       "providerIdHint": "「{{id}}」として保存",
-      "openaiCompatible": "OpenAI 互換"
+      "openaiCompatible": "OpenAI 互換",
+      "notNarration": "このサービスはワークスペースのナレーションではありません。",
+      "useForNarration": "ナレーションに使う",
+      "fetchNotSaved": "モデルは見つかりましたが保存できませんでした。もう一度お試しください。"
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "サーバーがこの項目を設定したため、変更されませんでした。",
         "clear": "個別設定を解除",
         "clearHint": "サーバーの設定があればそれを使います",
-        "unconfirmed": "サーバーの応答が失われたため、設定を再読み込みしました。変更が反映されたか確認してください。"
+        "unconfirmed": "サーバーの応答が失われたため、設定を再読み込みしました。変更が反映されたか確認してください。",
+        "thinking": "思考"
       },
       "slots": {
         "llm": {

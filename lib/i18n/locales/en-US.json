@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "Used once this service is selected in Course Model Config.",
       "planServer": "Configured by the server",
       "providerIdHint": "Saved as \"{{id}}\"",
-      "openaiCompatible": "OpenAI-compatible"
+      "openaiCompatible": "OpenAI-compatible",
+      "notNarration": "This service is not the workspace's narration.",
+      "useForNarration": "Use for narration",
+      "fetchNotSaved": "The models were found but could not be saved. Try again."
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "The server now sets this, so it was not changed.",
         "clear": "Clear own setting",
         "clearHint": "Use the server's setting, if it has one",
-        "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect."
+        "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect.",
+        "thinking": "Thinking"
       },
       "slots": {
         "llm": {

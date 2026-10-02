@@ -19,6 +19,7 @@ import type { PresetView, ProviderView, SlotView } from './client';
 import {
   assignmentRefs,
   isFillable,
+  modelChange,
   modelRef,
   newProviderId,
   providersFor,
@@ -271,4 +272,43 @@ export async function flipSwitch(
     else memory.set(slot.slot, previous);
   }
   return result;
+}
+
+/**
+ * Set a slot to a service's model, adding the service first when it is not
+ * saved yet (a service that needs no key, like the browser's own speech).
+ * Each write is made against the view it was worked out from, so a change
+ * made elsewhere meanwhile is refused rather than overwritten.
+ */
+export async function assignService(
+  apply: (change: ModelSettingsChange, basis?: ModelSettingsView) => Promise<ApplyResult>,
+  view: ModelSettingsView,
+  entry: ServiceEntry,
+  slotId: string,
+  modelId?: string,
+): Promise<ApplyResult> {
+  let current = view;
+  if (!entry.provider) {
+    if (!entry.preset) {
+      return { ok: false, reason: 'invalid', message: `${entry.id} cannot be added here` };
+    }
+    const added = await apply({ kind: 'provider', id: entry.id, preset: entry.preset.id }, view);
+    if (!added.ok) return added;
+    current = added.view;
+  }
+  const slot = findSlot(current, slotId);
+  if (!slot) return { ok: false, reason: 'invalid', message: `Unknown slot ${slotId}` };
+  return apply(modelChange(slot, modelRef(entry.id, modelId)), current);
+}
+
+/** The services a workspace may add without a key, for a capability (the browser's own speech, a built-in parser). */
+export function keylessServices(
+  view: ModelSettingsView,
+  capability: SlotCapability,
+  registryIds: readonly string[],
+  requiresApiKey: (registryId: string) => boolean,
+): ServiceEntry[] {
+  return serviceEntries(view, capability, registryIds).filter(
+    (entry) => entry.state === 'available' && !requiresApiKey(entry.registryId),
+  );
 }

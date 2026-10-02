@@ -1906,7 +1906,10 @@
       "modelWhenInUse": "在「课程模型配置」中选用此服务后生效。",
       "planServer": "由服务器配置",
       "providerIdHint": "保存为「{{id}}」",
-      "openaiCompatible": "OpenAI 兼容"
+      "openaiCompatible": "OpenAI 兼容",
+      "notNarration": "此服务不是当前工作区的旁白语音。",
+      "useForNarration": "用作旁白语音",
+      "fetchNotSaved": "已找到模型，但未能保存，请重试。"
     },
     "modelSettings": {
       "card": {
@@ -1956,7 +1959,8 @@
         "lockedNow": "服务端现在设置了此项，因此未作更改。",
         "clear": "清除单独设置",
         "clearHint": "改用服务端的设置（如有）",
-        "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。"
+        "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。",
+        "thinking": "思考"
       },
       "slots": {
         "llm": {

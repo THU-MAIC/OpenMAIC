@@ -56,6 +56,8 @@ import {
   type ApplyResult,
   type ModelSettingsChange,
   type ModelSettingsView,
+  type PresetView,
+  type ProviderView,
   type SlotView,
 } from '@/lib/model-settings/client';
 
@@ -367,5 +369,134 @@ describe('picker keyboard', () => {
     await flush();
 
     expect(changes).toEqual([{ kind: 'slots', set: { classroom: 'acme:acme-large' } }]);
+  });
+});
+
+describe('the card picker', () => {
+  const thinkingProvider = (): ProviderView => ({
+    ...workspaceProvider('acme'),
+    capabilities: {
+      chat: {
+        models: [
+          {
+            id: 'acme-large',
+            name: 'Acme Large',
+            capabilities: {
+              thinking: { control: 'toggle', requestAdapter: 'openai', defaultMode: 'enabled' },
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  it("sets a stage's thinking on its own assignment, against the view it shows", async () => {
+    const view = withSlots(makeView({ revision: 4, providers: [thinkingProvider()] }), {
+      'course.outline': {
+        assignment: 'acme:acme-large',
+        effective: { ...assignedTts, resolvedAt: 'course.outline', modelId: 'acme-large' },
+      },
+    });
+    const bases: (number | null)[] = [];
+    const changes: ModelSettingsChange[] = [];
+    const apply = vi.fn(async (change: ModelSettingsChange, basis?: ModelSettingsView) => {
+      changes.push(change);
+      bases.push(basis?.revision ?? null);
+      return { ok: true as const, view };
+    });
+    mount(map(view, apply));
+    click(document.body.querySelector<HTMLElement>('[data-slot-id="course.outline"]')!);
+    const group = byLabel('settings.modelSettings.picker.thinking');
+    const select = group.querySelector('select')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(
+        select,
+        'disabled',
+      );
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flush();
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({
+      kind: 'slots',
+      set: { 'course.outline': { model: 'acme:acme-large', thinking: { mode: 'disabled' } } },
+    });
+    expect(bases).toEqual([4]);
+  });
+
+  it('adds and assigns a service that needs no key, from an empty workspace', async () => {
+    const browserTts: PresetView = {
+      id: 'browser-native-tts',
+      name: 'Browser TTS',
+      kind: 'single',
+      capabilities: { tts: { registryId: 'browser-native-tts', models: [] } },
+      requiresBaseUrl: false,
+      customEndpoint: false,
+      recommended: {},
+    };
+    const empty = makeView({ revision: 1, presets: [browserTts] });
+    const added = {
+      ...empty,
+      revision: 2,
+      providers: [
+        {
+          id: 'browser-native-tts',
+          preset: 'browser-native-tts',
+          source: 'workspace' as const,
+          capabilities: browserTts.capabilities,
+          key: { set: false },
+        },
+      ],
+    };
+    const changes: ModelSettingsChange[] = [];
+    const bases: (number | null)[] = [];
+    const apply = vi.fn(async (change: ModelSettingsChange, basis?: ModelSettingsView) => {
+      changes.push(change);
+      bases.push(basis?.revision ?? null);
+      return { ok: true as const, view: added };
+    });
+    mount(map(empty, apply));
+    click(document.body.querySelector<HTMLElement>('[data-slot-id="tts"]')!);
+    const group = byLabel('settings.providerBrowserNativeTTS');
+    click(
+      byText(
+        'settings.modelSettings.picker.providerDefault',
+        '[aria-label="settings.providerBrowserNativeTTS"] button',
+      ),
+    );
+    await flush();
+    expect(group).toBeTruthy();
+    expect(changes).toEqual([
+      { kind: 'provider', id: 'browser-native-tts', preset: 'browser-native-tts' },
+      { kind: 'slots', set: { tts: 'browser-native-tts' } },
+    ]);
+    // The assignment is written against the view the add answered.
+    expect(bases).toEqual([1, 2]);
+  });
+
+  it("shows each provider's logo, the generic one for a custom endpoint", () => {
+    const view = makeView({
+      providers: [
+        {
+          ...workspaceProvider('deepseek'),
+          preset: 'deepseek',
+          capabilities: { chat: { registryId: 'deepseek', models: [{ id: 'd', name: 'D' }] } },
+        },
+        {
+          ...workspaceProvider('gateway'),
+          preset: 'openai-compatible',
+          capabilities: { chat: { registryId: 'openai', models: [{ id: 'g', name: 'G' }] } },
+        },
+      ],
+    });
+    const { apply } = recordingApply(view);
+    mount(map(view, apply));
+    click(document.body.querySelector<HTMLElement>('[data-slot-id="llm"]')!);
+    const deepseek = byLabel('deepseek').querySelector('img');
+    expect(deepseek?.getAttribute('src')).toContain('deepseek');
+    const gateway = byLabel('gateway');
+    expect(gateway.querySelector('img')).toBeNull();
+    expect(gateway.querySelector('svg.lucide-box')).not.toBeNull();
   });
 });
