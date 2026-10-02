@@ -244,18 +244,22 @@ describe('/api/model-config', () => {
     expect(response.status).toBe(200);
     let answer = await response.json();
     expect(JSON.stringify(answer)).not.toContain(SECRET);
-    expect(answer.imported).toEqual(['mine', 'llm']);
-    expect(answer.skipped.map((entry: { item: string }) => entry.item)).toEqual([
-      'operator',
-      'local',
-      'video',
+    expect(answer.imported).toEqual([
+      { kind: 'provider', id: 'mine' },
+      { kind: 'slot', id: 'llm' },
     ]);
+    expect(
+      answer.skipped.map((entry: { kind: string; id: string }) => `${entry.kind}:${entry.id}`),
+    ).toEqual(['provider:operator', 'provider:local', 'slot:video']);
     expect(answer.view.revision).toBe(1);
 
-    // Repeating it changes nothing.
+    // Repeating it changes nothing, and finds its own provider there.
     response = await importFor('alice', proposal);
     answer = await response.json();
     expect(answer.imported).toEqual([]);
+    expect(answer.skipped).toContainEqual(
+      expect.objectContaining({ kind: 'provider', id: 'mine', code: 'EXISTS_SAME' }),
+    );
     expect(answer.view.revision).toBe(1);
 
     // Another owner sees none of it.
@@ -303,11 +307,88 @@ describe('/api/model-config', () => {
     );
     expect(response.status).toBe(200);
     const answer = await response.json();
-    expect(answer.imported).toEqual(['good', 'llm']);
-    expect(answer.skipped.map((entry: { item: string }) => entry.item)).toEqual([
+    expect(answer.imported).toEqual([
+      { kind: 'provider', id: 'good' },
+      { kind: 'slot', id: 'llm' },
+    ]);
+    expect(answer.skipped.map((entry: { id: string }) => entry.id)).toEqual([
       'bad_id',
       'typed',
       'course.outline',
+    ]);
+  });
+
+  it('lets the browser drop a provider only when the workspace stores the same key', async () => {
+    const { POST } = await import('@/app/api/model-config/import/route');
+    const importFor = (body: unknown) =>
+      POST(
+        new Request('http://localhost/api/model-config/import', {
+          method: 'POST',
+          headers: { 'x-test-session': 'alice', 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        }) as never,
+      );
+    const OTHER = 'sk-browser-other-secret-9876';
+    // The workspace's `openai` holds key A, sealed in the database.
+    expect(
+      (
+        await put('alice', null, {
+          kind: 'provider',
+          id: 'openai',
+          preset: 'openai',
+          apiKey: SECRET,
+        })
+      ).status,
+    ).toBe(200);
+    const stored = await pool.query('SELECT * FROM workspace_model_config');
+    expect(stored.rows).toHaveLength(1);
+    expect(JSON.stringify(stored.rows)).not.toContain(SECRET);
+
+    const codeFor = async (body: unknown) => {
+      const response = await importFor(body);
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      const answer = JSON.parse(text);
+      // Neither key comes back, and the outcome says nothing of them but
+      // equal or not (the view shows its usual mask).
+      for (const key of [SECRET, OTHER]) {
+        expect(text).not.toContain(key);
+        expect(JSON.stringify(answer.skipped)).not.toContain(key.slice(-4));
+      }
+      expect(answer.imported).toEqual([]);
+      return answer.skipped.map((entry: { kind: string; id: string; code: string }) => [
+        entry.kind,
+        entry.id,
+        entry.code,
+      ]);
+    };
+
+    // Key B under the same id: the server keeps A, and says it is not B.
+    expect(await codeFor({ providers: { openai: { preset: 'openai', apiKey: OTHER } } })).toEqual([
+      ['provider', 'openai', 'EXISTS_DIFFERENT'],
+    ]);
+    // No key, or another endpoint: not the same setting either.
+    expect(await codeFor({ providers: { openai: { preset: 'openai' } } })).toEqual([
+      ['provider', 'openai', 'EXISTS_DIFFERENT'],
+    ]);
+    expect(
+      await codeFor({
+        providers: {
+          openai: { preset: 'openai', apiKey: SECRET, baseUrl: 'https://gateway.example.com/v1' },
+        },
+      }),
+    ).toEqual([['provider', 'openai', 'EXISTS_DIFFERENT']]);
+    // Key A: the same setting, which the browser may let go of.
+    expect(await codeFor({ providers: { openai: { preset: 'openai', apiKey: SECRET } } })).toEqual([
+      ['provider', 'openai', 'EXISTS_SAME'],
+    ]);
+
+    // Under another instance secret the stored key cannot be opened: nothing is confirmed.
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'another-instance-secret');
+    const { resetInstanceKeyForTests } = await import('@/lib/server/secret-box');
+    resetInstanceKeyForTests();
+    expect(await codeFor({ providers: { openai: { preset: 'openai', apiKey: SECRET } } })).toEqual([
+      ['provider', 'openai', 'EXISTS_DIFFERENT'],
     ]);
   });
 
@@ -333,9 +414,9 @@ describe('/api/model-config', () => {
       throw new persistence.WorkspaceConfigConflictError();
     });
     let answer = await (await importOnce()).json();
-    expect(answer.imported).toEqual(['mine']);
+    expect(answer.imported).toEqual([{ kind: 'provider', id: 'mine' }]);
     expect(answer.skipped).toEqual([
-      { item: 'llm', code: 'EXISTS', reason: 'The workspace already sets this slot' },
+      { kind: 'slot', id: 'llm', code: 'EXISTS', reason: 'The workspace already sets this slot' },
     ]);
     expect(answer.view.revision).toBe(2);
 

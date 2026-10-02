@@ -65,6 +65,14 @@ export interface UnimportedModelSetting {
   };
 }
 
+/**
+ * A kept item's identity: provider ids and slot ids are separate namespaces
+ * (a provider may be called `tts`, like the slot).
+ */
+export function unimportedKey(item: Pick<UnimportedModelSetting, 'kind' | 'id'>): string {
+  return `${item.kind}:${item.id}`;
+}
+
 export interface UnimportedModelSettings {
   items: UnimportedModelSetting[];
   /** Whether the user was told about the current items (the one-time toast). */
@@ -101,10 +109,10 @@ function write(storage: StorageLike, state: UnimportedModelSettings): void {
 }
 
 /**
- * Keep settings that were not imported, over any kept before under the same
- * id. Answers whether they are durably kept (true when there is nothing to
- * keep): callers must not drop the settings they came from otherwise. New
- * items are announced again.
+ * Keep settings that were not imported, over any kept before as the same
+ * item ({@link unimportedKey}). Answers whether they are durably kept (true
+ * when there is nothing to keep): callers must not drop the settings they
+ * came from otherwise. New items are announced again.
  */
 export function keepUnimported(
   items: readonly UnimportedModelSetting[],
@@ -114,12 +122,15 @@ export function keepUnimported(
   if (!storage) return false;
   try {
     const current = readUnimported(storage);
-    const incoming = new Set(items.map((item) => item.id));
+    const incoming = new Set(items.map(unimportedKey));
     const fresh = items.some(
-      (item) => !current.items.some((kept) => kept.id === item.id && sameSettings(kept, item)),
+      (item) =>
+        !current.items.some(
+          (kept) => unimportedKey(kept) === unimportedKey(item) && sameSettings(kept, item),
+        ),
     );
     write(storage, {
-      items: [...current.items.filter((item) => !incoming.has(item.id)), ...items],
+      items: [...current.items.filter((item) => !incoming.has(unimportedKey(item))), ...items],
       ...(current.notified && !fresh ? { notified: true } : {}),
     });
     return true;
@@ -135,16 +146,22 @@ function sameSettings(a: UnimportedModelSetting, b: UnimportedModelSetting): boo
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-/** Forget kept settings by id (the user set them up again, or discarded them). */
+/**
+ * Forget kept settings by {@link unimportedKey} (the user set them up again,
+ * or discarded them).
+ */
 export function forgetUnimported(
-  ids: readonly string[],
+  keys: readonly string[],
   storage: StorageLike | null = defaultStorage(),
 ): void {
-  if (!storage || !ids.length) return;
+  if (!storage || !keys.length) return;
   try {
     const current = readUnimported(storage);
-    const drop = new Set(ids);
-    write(storage, { ...current, items: current.items.filter((item) => !drop.has(item.id)) });
+    const drop = new Set(keys);
+    write(storage, {
+      ...current,
+      items: current.items.filter((item) => !drop.has(unimportedKey(item))),
+    });
   } catch (error) {
     console.warn(
       `${LOG_PREFIX} Could not update the kept model settings (${errorCategory(error)})`,

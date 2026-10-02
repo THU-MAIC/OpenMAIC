@@ -4,8 +4,10 @@
  * Settings of an earlier build that could not be moved to the server and are
  * kept in this browser instead (`lib/legacy-browser-import/model-settings-unimported.ts`):
  * listed with the reason, so the user can set them up again, until the user
- * discards them. One the user set up again (a new workspace provider of its
- * preset, a slot the workspace now sets) leaves the list by itself.
+ * discards them. One the view shows set up again leaves the list by itself: a
+ * slot the workspace now sets, or a new workspace provider of its preset that
+ * holds its key (see {@link settledUnimported}). A kept key is never dropped
+ * on a guess: until then it can be copied, and only the user discards it.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Copy } from 'lucide-react';
@@ -22,12 +24,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { maskKey, UNINFORMATIVE_KEY_MASK } from '@/lib/config/key-mask';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   discardUnimported,
   forgetUnimported,
   readUnimported,
+  unimportedKey,
   type UnimportedModelSetting,
   type UnimportedReason,
 } from '@/lib/legacy-browser-import/model-settings-unimported';
@@ -52,7 +56,17 @@ const REASON_KEY: Record<UnimportedReason, string> = {
   unconfirmed: 'settings.unimported.reason.unconfirmed',
 };
 
-/** The kept items the view shows were set up again. */
+/**
+ * The kept items the view shows were set up again, by {@link unimportedKey}.
+ *
+ * A slot is set up again once the workspace sets it. A provider is, once a
+ * workspace provider of its preset that was not there when it was kept
+ * (`knownProviders`) exists, and, when the kept item holds a key, that
+ * provider holds the same key as far as the server says: its key is set,
+ * readable, and its mask (the last four characters) is the kept key's. A key
+ * too short to show in a mask, or a key pair (which a workspace provider
+ * cannot hold), is never confirmed this way: the user discards it.
+ */
 export function settledUnimported(
   items: readonly UnimportedModelSetting[],
   view: ModelSettingsView,
@@ -63,15 +77,21 @@ export function settledUnimported(
         return view.slots.some((slot) => slot.slot === item.id && slot.assignment !== undefined);
       }
       if (!item.preset) return false;
+      const { apiKey, accessKeyId, accessKeySecret } = item.settings;
+      if (accessKeyId || accessKeySecret) return false;
+      const mask = apiKey ? maskKey(apiKey) : undefined;
+      if (mask === UNINFORMATIVE_KEY_MASK) return false;
       const known = new Set(item.knownProviders ?? []);
       return view.providers.some(
         (provider) =>
           provider.source === 'workspace' &&
           provider.preset === item.preset &&
-          !known.has(provider.id),
+          !known.has(provider.id) &&
+          (mask === undefined ||
+            (provider.key?.set === true && !provider.key.unreadable && provider.key.mask === mask)),
       );
     })
-    .map((item) => item.id);
+    .map(unimportedKey);
 }
 
 export function UnimportedSettingsNotice({ view }: { view: ModelSettingsView }) {
@@ -86,7 +106,7 @@ export function UnimportedSettingsNotice({ view }: { view: ModelSettingsView }) 
     void discarded;
     const kept = readUnimported().items;
     const done = settledUnimported(kept, view);
-    return { items: kept.filter((item) => !done.includes(item.id)), settled: done };
+    return { items: kept.filter((item) => !done.includes(unimportedKey(item))), settled: done };
   }, [view, discarded]);
   useEffect(() => {
     if (settled.length) forgetUnimported(settled);
@@ -123,7 +143,7 @@ export function UnimportedSettingsNotice({ view }: { view: ModelSettingsView }) 
               const key = apiKey ?? keyPair;
               return (
                 <li
-                  key={item.id}
+                  key={unimportedKey(item)}
                   className="flex flex-wrap items-start justify-between gap-2 rounded-md bg-background/60 px-2 py-1.5"
                 >
                   <div className="min-w-0 space-y-0.5">

@@ -10,6 +10,8 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
+import { createHash, timingSafeEqual } from 'node:crypto';
+
 import { z } from 'zod';
 
 import {
@@ -29,6 +31,7 @@ import {
   type CatalogueModel,
   type ProviderPreset,
 } from '@/lib/config/provider-presets';
+import { maskKey } from '@/lib/config/key-mask';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import {
   presetOfficialRegionalEndpoint,
@@ -210,11 +213,6 @@ function viewEndpoint(url: string): string {
 
 /** A provider id as model references name it (openmaic.yml's grammar). */
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
-/** A key's last four characters, as far as that says nothing useful. */
-function maskKey(key: string): string {
-  return key.length >= 12 ? `…${key.slice(-4)}` : '…';
-}
 
 /**
  * What a provider can be assigned to, with its models: a workspace provider
@@ -712,18 +710,31 @@ export interface ModelSettingsProposal {
   slots?: Record<string, SlotAssignment>;
 }
 
+/**
+ * An item of a proposal: provider ids and slot ids are separate namespaces (a
+ * provider may be called `tts`, like the slot), so every answer names the kind.
+ */
+export interface ModelSettingsItem {
+  kind: 'provider' | 'slot';
+  id: string;
+}
+
 export interface ModelSettingsImport {
   config: ModelConfigFile;
-  /** What was taken: provider ids and slot ids. */
-  imported: string[];
+  /** What was taken. */
+  imported: ModelSettingsItem[];
   /**
-   * What was left out, and why. `code` is `EXISTS` when the workspace already
-   * has the item (an existing setting always wins, and is not replaced; a
-   * repeated import finds everything there), `PROVIDER_RESERVED` for a
-   * provider id the deployment declares, `MALFORMED` for an item of the wrong
-   * shape, else the code of the check that refused it.
+   * What was left out, and why. For a provider id the workspace already
+   * declares (an existing setting always wins, and is not replaced; a repeated
+   * import finds its own items there), `code` is `EXISTS_SAME` when the stored
+   * provider is the proposed one (same preset, key, endpoint and models: the
+   * browser may let go of its copy) and `EXISTS_DIFFERENT` otherwise (including
+   * a stored key this instance cannot open); nothing else is said about the
+   * stored provider. A slot the workspace already sets is `EXISTS`.
+   * `PROVIDER_RESERVED` is a provider id the deployment declares, `MALFORMED`
+   * an item of the wrong shape, else the code of the check that refused it.
    */
-  skipped: { item: string; code: string; reason: string }[];
+  skipped: (ModelSettingsItem & { code: string; reason: string })[];
 }
 
 /** One proposed provider: what an edit may set. */
@@ -735,6 +746,37 @@ const importedProviderSchema = z
     models: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
+
+/** Equal secrets, compared in constant time (digests, so lengths do not show). */
+function sameSecret(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  const digest = (value: string) => createHash('sha256').update(value, 'utf8').digest();
+  return timingSafeEqual(digest(a), digest(b));
+}
+
+/**
+ * Whether a stored workspace provider is the proposed one, as an import would
+ * store it: same preset, key, endpoint (an official regional endpoint in its
+ * normalised form) and models.
+ */
+function storesProposedProvider(
+  stored: Provider,
+  proposed: z.infer<typeof importedProviderSchema>,
+): boolean {
+  const baseUrl =
+    (proposed.baseUrl &&
+      officialEndpointOf({ preset: proposed.preset, baseUrl: proposed.baseUrl })) ||
+    proposed.baseUrl;
+  const models = (list: string[] | undefined) => JSON.stringify(list?.length ? list : []);
+  // Evaluated in full, so the answer takes as long whichever part differs.
+  const sameKey = sameSecret(stored.apiKey, proposed.apiKey);
+  return (
+    sameKey &&
+    stored.preset === proposed.preset &&
+    stored.baseUrl === baseUrl &&
+    models(stored.models) === models(proposed.models)
+  );
+}
 
 /**
  * Merge a proposal into a workspace's configuration, one item at a time and
@@ -749,44 +791,55 @@ export async function importModelSettings(
 ): Promise<ModelSettingsImport> {
   const { layer: deployment } = deploymentConfig();
   let config: ModelConfigFile = current ?? {};
-  const imported: string[] = [];
+  const imported: ModelSettingsImport['imported'] = [];
   const skipped: ModelSettingsImport['skipped'] = [];
-  const attempt = async (item: string, change: ModelSettingsChange) => {
+  const attempt = async (item: ModelSettingsItem, change: ModelSettingsChange) => {
     try {
       config = await applyModelSettingsChange(config, change);
       imported.push(item);
     } catch (error) {
       if (!(error instanceof ModelSettingsError)) throw error;
-      skipped.push({ item, code: error.code, reason: error.message });
+      skipped.push({ ...item, code: error.code, reason: error.message });
     }
   };
 
   for (const [id, provider] of Object.entries(proposal.providers ?? {})) {
+    const item = { kind: 'provider', id } as const;
+    const parsed = importedProviderSchema.safeParse(provider);
     if (Object.hasOwn(config.providers ?? {}, id)) {
-      skipped.push({ item: id, code: 'EXISTS', reason: 'A provider with this id already exists' });
+      const same = parsed.success && storesProposedProvider(config.providers![id], parsed.data);
+      skipped.push(
+        same
+          ? { ...item, code: 'EXISTS_SAME', reason: 'The workspace already holds this provider' }
+          : {
+              ...item,
+              code: 'EXISTS_DIFFERENT',
+              reason: 'A provider with this id already exists with other settings',
+            },
+      );
       continue;
     }
     if (Object.hasOwn(deployment?.config.providers ?? {}, id)) {
       skipped.push({
-        item: id,
+        ...item,
         code: 'PROVIDER_RESERVED',
         reason: 'The deployment declares this provider id',
       });
       continue;
     }
-    const parsed = importedProviderSchema.safeParse(provider);
     if (!parsed.success) {
-      skipped.push({ item: id, code: 'MALFORMED', reason: 'Malformed provider settings' });
+      skipped.push({ ...item, code: 'MALFORMED', reason: 'Malformed provider settings' });
       continue;
     }
-    await attempt(id, { kind: 'provider', id, ...parsed.data });
+    await attempt(item, { kind: 'provider', id, ...parsed.data });
   }
   for (const [slot, assignment] of Object.entries(proposal.slots ?? {})) {
+    const item = { kind: 'slot', id: slot } as const;
     if (Object.hasOwn(config.slots ?? {}, slot)) {
-      skipped.push({ item: slot, code: 'EXISTS', reason: 'The workspace already sets this slot' });
+      skipped.push({ ...item, code: 'EXISTS', reason: 'The workspace already sets this slot' });
       continue;
     }
-    await attempt(slot, { kind: 'slots', set: { [slot]: assignment } });
+    await attempt(item, { kind: 'slots', set: { [slot]: assignment } });
   }
   return { config, imported, skipped };
 }

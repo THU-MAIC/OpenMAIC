@@ -223,8 +223,15 @@ endpoints included), with the reason:
 | Anything a 2xx answer that cannot be read does not confirm           | `unconfirmed`      |
 
 Not kept: items the server imported, and skips that leave nothing behind:
-`EXISTS` (the workspace already holds the item; a repeated import finds its
-own items there) and, for slots, `SLOT_LOCKED`.
+for a provider, `EXISTS_SAME` (the workspace already holds that provider with
+the same preset, key, endpoint and models; a repeated import finds its own
+items there), and for a slot, `EXISTS` (the workspace already sets it) and
+`SLOT_LOCKED`. A provider id the workspace already uses with other settings,
+or with a key this instance cannot open, is `EXISTS_DIFFERENT` and kept as
+`refused`: the server compares the keys and answers only whether they are
+equal. The answer names each item's kind (`{ kind: 'provider' | 'slot', id }`),
+since a provider may share its id with a slot (`tts`); kept items are told
+apart the same way.
 
 An Azure Speech provider (TTS and STT) carries its regional endpoint
 (`https://<region>.tts.speech.microsoft.com`, `https://<region>.api.cognitive.microsoft.com`
@@ -237,9 +244,13 @@ After the import the user is told once, in a toast
 (`components/model-settings-init.tsx`); Settings → Model Services lists the
 kept items with their reason and a button to copy the key
 (`components/settings/unimported-settings-notice.tsx`) until the user discards
-them. An item leaves the list by itself once it is set up again: a new
-workspace provider of its preset, or the slot set in the workspace. Clearing
-the local cache keeps them.
+them. An item leaves the list by itself once it is set up again: the slot
+set in the workspace, or a new workspace provider of its preset that, when the
+kept item holds a key, holds the same key as far as the view shows (its key
+set, readable, and masked as the kept key's last four characters). A kept key
+the view cannot confirm (a new provider without a key or with another one, a
+key too short to show in a mask, a key pair) stays, with its copy button,
+until the user discards it. Clearing the local cache keeps them.
 
 A base URL a workspace may not set (any service but chat) makes the server
 skip that provider, with the reason in the server's answer. Provider ids are

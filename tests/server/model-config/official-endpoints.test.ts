@@ -179,10 +179,24 @@ describe('workspace Azure Speech providers', () => {
       },
       slots: { tts: 'azure-tts' },
     });
-    expect(result.imported).toEqual(['azure-tts', 'tts']);
+    expect(result.imported).toEqual([
+      { kind: 'provider', id: 'azure-tts' },
+      { kind: 'slot', id: 'tts' },
+    ]);
     expect(result.skipped).toEqual([
-      expect.objectContaining({ item: 'evil', code: 'INVALID_PROVIDER' }),
+      expect.objectContaining({ kind: 'provider', id: 'evil', code: 'INVALID_PROVIDER' }),
     ]);
     expect(result.config.providers?.['azure-tts']?.baseUrl).toBe(TTS);
+
+    // Imported again, in the form the browser staged it (its endpoint not yet
+    // normalised): the workspace holds the same provider.
+    const again = await importModelSettings(result.config, {
+      providers: {
+        'azure-tts': { preset: 'azure-tts', apiKey: 'azure-key-0123456789', baseUrl: `${TTS}/` },
+      },
+    });
+    expect(again.skipped).toEqual([
+      expect.objectContaining({ kind: 'provider', id: 'azure-tts', code: 'EXISTS_SAME' }),
+    ]);
   });
 });

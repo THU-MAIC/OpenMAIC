@@ -15,7 +15,9 @@
  * Its completion is tracked on its own: the proposal's key is removed once the
  * server has answered it (or refused it for good), independently of the course
  * import's ledger state. Only what the server confirmed it holds leaves the
- * browser: every item it skipped is kept, with its key, in
+ * browser (imported, or a provider it already holds with the same settings,
+ * key included: `EXISTS_SAME`): every other item it skipped is kept, with its
+ * key, in
  * `./model-settings-unimported.ts` (never sent again), and Settings → Model
  * Services tells the user once.
  *
@@ -95,21 +97,33 @@ async function bind(fetchImpl: Fetch, browserId: string): Promise<boolean> {
   }
 }
 
+type ItemKind = 'provider' | 'slot';
+
 interface ImportAnswer {
-  imported?: unknown;
-  skipped?: Array<{ item?: unknown; code?: unknown; reason?: unknown }>;
+  imported?: Array<{ kind?: unknown; id?: unknown }>;
+  skipped?: Array<{ kind?: unknown; id?: unknown; code?: unknown; reason?: unknown }>;
   view?: ModelSettingsView;
 }
 
 /**
- * Skips that leave nothing behind: the workspace already holds the item (an
- * existing setting wins, and a repeated import finds its own items there), or
- * the deployment locks the slot.
+ * Skips that leave nothing behind: the workspace already holds the item (for
+ * a provider, only when the server compared it and found the same settings,
+ * key included: `EXISTS_DIFFERENT` keeps the browser's copy), or the
+ * deployment locks the slot.
  */
-const SETTLED_SKIPS: Record<'provider' | 'slot', ReadonlySet<string>> = {
-  provider: new Set(['EXISTS']),
+const SETTLED_SKIPS: Record<ItemKind, ReadonlySet<string>> = {
+  provider: new Set(['EXISTS_SAME']),
   slot: new Set(['EXISTS', 'SLOT_LOCKED']),
 };
+
+/** Provider ids and slot ids are separate namespaces. */
+const itemKey = (kind: ItemKind, id: string) => `${kind}:${id}`;
+
+function answerItemKey(entry: { kind?: unknown; id?: unknown } | null | undefined) {
+  if (!entry || typeof entry.id !== 'string') return undefined;
+  if (entry.kind !== 'provider' && entry.kind !== 'slot') return undefined;
+  return itemKey(entry.kind, entry.id);
+}
 
 /**
  * The items of a proposal the answer does not show as held by the workspace,
@@ -120,15 +134,16 @@ export function unimportedItems(
   proposal: ModelSettingsProposal,
   answer: ImportAnswer | undefined,
 ): UnimportedModelSetting[] {
-  const imported = new Set(
-    Array.isArray(answer?.imported)
-      ? answer.imported.filter((item): item is string => typeof item === 'string')
-      : [],
-  );
+  const imported = new Set<string>();
+  for (const entry of Array.isArray(answer?.imported) ? answer.imported : []) {
+    const key = answerItemKey(entry);
+    if (key) imported.add(key);
+  }
   const skipped = new Map<string, { code: string; reason?: string }>();
   for (const entry of Array.isArray(answer?.skipped) ? answer.skipped : []) {
-    if (!entry || typeof entry.item !== 'string') continue;
-    skipped.set(entry.item, {
+    const key = answerItemKey(entry);
+    if (!key) continue;
+    skipped.set(key, {
       code: typeof entry.code === 'string' ? entry.code : '',
       ...(typeof entry.reason === 'string' ? { reason: entry.reason } : {}),
     });
@@ -141,8 +156,8 @@ export function unimportedItems(
 
   const items: UnimportedModelSetting[] = [];
   for (const [id, provider] of Object.entries(proposal.providers ?? {})) {
-    if (imported.has(id)) continue;
-    const skip = skipped.get(id);
+    if (imported.has(itemKey('provider', id))) continue;
+    const skip = skipped.get(itemKey('provider', id));
     if (skip && SETTLED_SKIPS.provider.has(skip.code)) continue;
     const preset =
       provider && typeof provider === 'object' ? getProviderPreset(provider.preset) : undefined;
@@ -159,8 +174,8 @@ export function unimportedItems(
     });
   }
   for (const [slot, assignment] of Object.entries(proposal.slots ?? {})) {
-    if (imported.has(slot)) continue;
-    const skip = skipped.get(slot);
+    if (imported.has(itemKey('slot', slot))) continue;
+    const skip = skipped.get(itemKey('slot', slot));
     if (skip && SETTLED_SKIPS.slot.has(skip.code)) continue;
     items.push({
       id: slot,
@@ -255,7 +270,7 @@ export async function runModelSettingsImport(
       // Item ids only: a reason may repeat what was submitted.
       console.warn(
         `${LOG_PREFIX} Model settings not imported (kept in this browser): ${unimported
-          .map((item) => item.id)
+          .map((item) => `${item.kind} ${item.id}`)
           .join(', ')}`,
       );
     }

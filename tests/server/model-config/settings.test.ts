@@ -589,10 +589,25 @@ describe('importModelSettings', () => {
     const result = await importModelSettings(null, {
       slots: { tts: null, image: null, video: null },
     });
-    expect(result.imported).toEqual(['tts', 'image']);
+    expect(result.imported).toEqual([
+      { kind: 'slot', id: 'tts' },
+      { kind: 'slot', id: 'image' },
+    ]);
     expect(result.skipped).toEqual([
-      expect.objectContaining({ item: 'video', code: 'SLOT_LOCKED' }),
+      expect.objectContaining({ kind: 'slot', id: 'video', code: 'SLOT_LOCKED' }),
     ]);
     expect(result.config.slots).toEqual({ tts: null, image: null });
+  });
+
+  it('names the kind of every item: a provider and a slot may share an id', async () => {
+    // A provider called `tts` that the server refuses, beside the `tts` slot it takes.
+    const result = await importModelSettings(null, {
+      providers: { tts: { preset: 'azure-tts', apiKey: 'k', baseUrl: 'https://evil.com' } },
+      slots: { tts: null },
+    });
+    expect(result.imported).toEqual([{ kind: 'slot', id: 'tts' }]);
+    expect(result.skipped).toEqual([
+      expect.objectContaining({ kind: 'provider', id: 'tts', code: 'INVALID_PROVIDER' }),
+    ]);
   });
 });
