@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Chế độ tương tác",
     "modelChangeFailed": "Không thể đổi mô hình: {{message}}",
     "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt",
-    "pickModel": "Chọn mô hình"
+    "pickModel": "Chọn mô hình",
+    "defaultModel": "Mặc định",
+    "defaultModelNote": "Thay đổi mô hình mặc định; các bước được thiết lập riêng vẫn giữ mô hình của chúng.",
+    "stagesSetSeparately": "{{count}} bước thiết lập riêng",
+    "stagesSetSeparately_one": "{{count}} bước thiết lập riêng",
+    "stagesSetSeparately_other": "{{count}} bước thiết lập riêng",
+    "stagesSetSeparatelyHint": "Các bước có mô hình riêng",
+    "perStageSetup": "Thiết lập theo bước",
+    "perStageSetupHint": "Mỗi bước của khóa học đều có mô hình riêng"
   },
   "export": {
     "pptx": "Xuất PPTX",

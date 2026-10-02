@@ -323,6 +323,8 @@ export function ModelPicker({
   size = 'sm',
   className,
   ariaLabel,
+  valuePrefix,
+  note,
   t,
 }: {
   groups: ModelPickerGroup[];
@@ -341,6 +343,10 @@ export function ModelPicker({
   className?: string;
   /** 触发器的可及名。首页工具栏传 `Provider / Model`，e2e 与读屏都依赖它。 */
   ariaLabel?: string;
+  /** A short word before the selected model on the trigger (the home toolbar's "Default"). */
+  valuePrefix?: string;
+  /** One muted line at the top of the dropdown, saying what picking here changes. */
+  note?: string;
   t: (key: string) => string;
 }) {
   const [open, setOpen] = useState(false);
@@ -411,6 +417,13 @@ export function ModelPicker({
           {value ? (
             <>
               {selectedEntry && <ProviderLogo group={selectedEntry.group} className="size-4" />}
+              {/* Hidden on phones, where the toolbar leaves room for the model name only. */}
+              {valuePrefix && (
+                <span className="hidden shrink-0 text-muted-foreground sm:inline">
+                  {valuePrefix}
+                  <span aria-hidden="true"> ·</span>
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate text-left font-mono">{selectedLabel}</span>
               {thinkingBadge && (
                 <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
@@ -448,6 +461,9 @@ export function ModelPicker({
         onWheelCapture={(e) => e.stopPropagation()}
       >
         <div className="border-b p-2">
+          {note && (
+            <p className="px-0.5 pb-2 text-[11px] leading-snug text-muted-foreground">{note}</p>
+          )}
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -462,7 +478,14 @@ export function ModelPicker({
         {/* 列表高度跟随 Radix 给出的可用高度自适应收缩（减去搜索区 ~64px）：
             trigger 靠近视口底部时弹层变矮而不是向上翻转溢出视口——否则顶部
             的搜索框会被裁到屏幕外（如第一行站点的检查器）。 */}
-        <div className="max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))] min-h-0 overflow-y-auto p-1.5">
+        <div
+          className={cn(
+            'min-h-0 overflow-y-auto p-1.5',
+            note
+              ? 'max-h-[min(320px,calc(var(--radix-popover-content-available-height)-96px))]'
+              : 'max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))]',
+          )}
+        >
           {followLabel && onFollow && (
             <button
               onClick={() => {

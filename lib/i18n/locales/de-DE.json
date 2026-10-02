@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Interaktiver Modus",
     "modelChangeFailed": "Das Modell konnte nicht geändert werden: {{message}}",
     "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt",
-    "pickModel": "Modell wählen"
+    "pickModel": "Modell wählen",
+    "defaultModel": "Standard",
+    "defaultModelNote": "Ändert das Standardmodell; separat eingestellte Schritte behalten ihr eigenes.",
+    "stagesSetSeparately": "{{count}} Schritte separat eingestellt",
+    "stagesSetSeparately_one": "{{count}} Schritt separat eingestellt",
+    "stagesSetSeparately_other": "{{count}} Schritte separat eingestellt",
+    "stagesSetSeparatelyHint": "Schritte mit eigenem Modell",
+    "perStageSetup": "Pro Schritt eingestellt",
+    "perStageSetupHint": "Jeder Kursschritt hat ein eigenes Modell"
   },
   "export": {
     "pptx": "PPTX exportieren",

@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Mode interactif",
     "modelChangeFailed": "Impossible de changer de modèle : {{message}}",
     "modelLockedHint": "Le modèle utilisé pour les cours, défini par ce serveur",
-    "pickModel": "Choisir un modèle"
+    "pickModel": "Choisir un modèle",
+    "defaultModel": "Par défaut",
+    "defaultModelNote": "Modifie le modèle par défaut ; les étapes configurées séparément gardent le leur.",
+    "stagesSetSeparately": "{{count}} étapes configurées séparément",
+    "stagesSetSeparately_one": "{{count}} étape configurée séparément",
+    "stagesSetSeparately_other": "{{count}} étapes configurées séparément",
+    "stagesSetSeparatelyHint": "Étapes avec leur propre modèle",
+    "perStageSetup": "Configuration par étape",
+    "perStageSetupHint": "Chaque étape du cours a son propre modèle"
   },
   "export": {
     "pptx": "Exporter en PPTX",

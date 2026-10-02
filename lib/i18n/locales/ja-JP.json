@@ -47,7 +47,15 @@
     "interactiveModeLabel": "インタラクティブモード",
     "modelChangeFailed": "モデルを変更できませんでした: {{message}}",
     "modelLockedHint": "コースで使用するモデル（このサーバーで設定）",
-    "pickModel": "モデルを選択"
+    "pickModel": "モデルを選択",
+    "defaultModel": "デフォルト",
+    "defaultModelNote": "ここではデフォルトモデルを変更します。個別に設定した工程は影響を受けません",
+    "stagesSetSeparately": "{{count}} 工程を個別設定",
+    "stagesSetSeparately_one": "{{count}} 工程を個別設定",
+    "stagesSetSeparately_other": "{{count}} 工程を個別設定",
+    "stagesSetSeparatelyHint": "個別のモデルを使う工程",
+    "perStageSetup": "工程別に設定",
+    "perStageSetupHint": "コース生成のすべての工程に個別のモデルが設定されています"
   },
   "export": {
     "pptx": "PPTXエクスポート",

@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Interactive Mode",
     "modelChangeFailed": "Could not change the model: {{message}}",
     "modelLockedHint": "The model courses use, set by this server",
-    "pickModel": "Pick a model"
+    "pickModel": "Pick a model",
+    "defaultModel": "Default",
+    "defaultModelNote": "Changes the default model; stages set separately keep their own.",
+    "stagesSetSeparately": "{{count}} stages set separately",
+    "stagesSetSeparately_one": "{{count}} stage set separately",
+    "stagesSetSeparately_other": "{{count}} stages set separately",
+    "stagesSetSeparatelyHint": "Stages with their own model",
+    "perStageSetup": "Per-stage setup",
+    "perStageSetupHint": "Every course stage has its own model"
   },
   "export": {
     "pptx": "Export PPTX",

@@ -47,7 +47,15 @@
     "interactiveModeLabel": "인터랙티브 모드",
     "modelChangeFailed": "모델을 변경할 수 없습니다: {{message}}",
     "modelLockedHint": "강의에 사용되는 모델(이 서버에서 설정)",
-    "pickModel": "모델 선택"
+    "pickModel": "모델 선택",
+    "defaultModel": "기본",
+    "defaultModelNote": "여기서는 기본 모델을 변경합니다. 따로 설정한 단계는 영향을 받지 않습니다",
+    "stagesSetSeparately": "{{count}}개 단계 별도 설정",
+    "stagesSetSeparately_one": "{{count}}개 단계 별도 설정",
+    "stagesSetSeparately_other": "{{count}}개 단계 별도 설정",
+    "stagesSetSeparatelyHint": "자체 모델을 쓰는 단계",
+    "perStageSetup": "단계별 설정",
+    "perStageSetupHint": "코스 생성의 모든 단계에 자체 모델이 설정되어 있습니다"
   },
   "export": {
     "pptx": "PPTX 내보내기",

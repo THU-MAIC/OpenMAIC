@@ -47,7 +47,15 @@
     "interactiveModeLabel": "深度交互",
     "modelChangeFailed": "无法切换模型：{{message}}",
     "modelLockedHint": "课程使用的模型，由此服务器设定",
-    "pickModel": "选择模型"
+    "pickModel": "选择模型",
+    "defaultModel": "默认",
+    "defaultModelNote": "这里修改默认模型，单独配置的环节不受影响",
+    "stagesSetSeparately": "{{count}} 个环节单独配置",
+    "stagesSetSeparately_one": "{{count}} 个环节单独配置",
+    "stagesSetSeparately_other": "{{count}} 个环节单独配置",
+    "stagesSetSeparatelyHint": "单独配置模型的环节",
+    "perStageSetup": "按环节配置",
+    "perStageSetupHint": "课程生成的每个环节都已单独配置模型"
   },
   "export": {
     "pptx": "导出 PPTX",

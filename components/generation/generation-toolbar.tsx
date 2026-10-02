@@ -38,7 +38,8 @@ import {
 } from '@/lib/document/bundle';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
-import { ModelPicker, ProviderLogo } from '@/components/settings/model-picker';
+import { ProviderLogo } from '@/components/settings/model-picker';
+import { HomeModelPicker } from '@/components/settings/home-model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -254,7 +255,9 @@ export function GenerationToolbar({
       {llmEditable ? (
         // Editable: the picker, with nothing selected while `llm` resolves to
         // nothing (no default model); picking a model sets the llm slot.
-        <ModelPicker
+        <HomeModelPicker
+          view={view}
+          onOpenCourseModels={onSettingsOpen && (() => onSettingsOpen('course-models'))}
           groups={llmPickerGroups}
           value={providerId && modelId ? { providerId, modelId } : null}
           onSelect={(pid, mid) => void selectModel(pid, mid)}

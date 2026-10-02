@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Modo Interativo",
     "modelChangeFailed": "Não foi possível trocar o modelo: {{message}}",
     "modelLockedHint": "O modelo usado pelos cursos, definido por este servidor",
-    "pickModel": "Escolha um modelo"
+    "pickModel": "Escolha um modelo",
+    "defaultModel": "Padrão",
+    "defaultModelNote": "Altera o modelo padrão; etapas configuradas separadamente mantêm o próprio.",
+    "stagesSetSeparately": "{{count}} etapas configuradas separadamente",
+    "stagesSetSeparately_one": "{{count}} etapa configurada separadamente",
+    "stagesSetSeparately_other": "{{count}} etapas configuradas separadamente",
+    "stagesSetSeparatelyHint": "Etapas com modelo próprio",
+    "perStageSetup": "Configuração por etapa",
+    "perStageSetupHint": "Cada etapa do curso tem seu próprio modelo"
   },
   "export": {
     "pptx": "Exportar PPTX",

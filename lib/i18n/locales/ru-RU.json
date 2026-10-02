@@ -47,7 +47,15 @@
     "interactiveModeLabel": "Интерактивный режим",
     "modelChangeFailed": "Не удалось сменить модель: {{message}}",
     "modelLockedHint": "Модель для курсов, заданная этим сервером",
-    "pickModel": "Выберите модель"
+    "pickModel": "Выберите модель",
+    "defaultModel": "По умолчанию",
+    "defaultModelNote": "Меняет модель по умолчанию; этапы с отдельной настройкой сохраняют свою.",
+    "stagesSetSeparately": "Отдельно настроено этапов: {{count}}",
+    "stagesSetSeparately_one": "Отдельно настроено этапов: {{count}}",
+    "stagesSetSeparately_other": "Отдельно настроено этапов: {{count}}",
+    "stagesSetSeparatelyHint": "Этапы со своей моделью",
+    "perStageSetup": "Настройка по этапам",
+    "perStageSetupHint": "У каждого этапа курса своя модель"
   },
   "export": {
     "pptx": "Экспорт PPTX",
