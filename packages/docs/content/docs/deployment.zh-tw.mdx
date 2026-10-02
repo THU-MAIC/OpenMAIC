@@ -17,7 +17,7 @@ OpenMAIC 是一個 Next.js 應用程式，需要一個常駐的 Node.js 行程�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -v openmaic-data:/app/data -p 3000:3000 openmaic
 ```
 
 建議使用儲存庫中的 Docker Compose 設定：
@@ -71,7 +71,7 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # 預設監聽 3000 連接埠
 ```
 
-請用行程管理器（systemd、pm2 或容器）保持服務執行並在結束後自動重新啟動，可在前方使用 nginx 或 Caddy 終止 TLS。課程、執行階段資料和產生的媒體都儲存在 PostgreSQL 中，多個實例可以共用同一個資料庫；此時每個實例都要設定相同的 `OPENMAIC_SECRET_KEY`（見下文）。
+請用行程管理器（systemd、pm2 或容器）保持服務執行並在結束後自動重新啟動，可在前方使用 nginx 或 Caddy 終止 TLS。課程和產生的課程媒體儲存在 PostgreSQL（或 S3）中，因此多個實例可以共用同一個資料庫，前提是它們同時共用資料目錄和相同的 `OPENMAIC_SECRET_KEY`（見下文）。
 
 ## 必要設定
 
@@ -80,11 +80,14 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `DATABASE_URL` | 已指向內建的 PostgreSQL | 必填；沒有它服務會在啟動時結束 |
 | 身分模式 | 單一使用者（`docker-compose.defaults.env` 中的 `OWNER_SINGLE_USER=true`） | 未設定時，每個瀏覽器是一個匿名擁有者 |
 | `OPENMAIC_SECRET_KEY` | 選用：產生的金鑰儲存在 `openmaic-data` 卷中 | 多個實例，或沒有持久化 `data/` 目錄時必填 |
+| 資料目錄 | 掛載在 `/app/data` 的 `openmaic-data` 卷 | 工作目錄下持久化的 `data/` 目錄，所有實例共用 |
 | 模型 | `openmaic.yml` 或 **設定 → 模型** | 同左 |
 
 **身分模式**決定課程歸誰所有。未設定時，每個瀏覽器都是獨立的匿名擁有者，換一個瀏覽器看到的是空的課程庫。個人安裝請設定 `OWNER_SINGLE_USER=true`；一個團隊共用一個課程庫時，設定 `PERSISTENCE_SHARED_OWNER_ID` 並搭配 `ACCESS_CODE`；需要真實帳號時，註冊擁有者驗證方法。詳見 README 的 [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) 和 `.env.example`。
 
 **`OPENMAIC_SECRET_KEY`** 用於加密在模型設定中儲存的供應商 key。未設定時，每個實例會在 `data/instance-secret.key` 中產生自己的金鑰，共用資料庫的實例之間就無法讀取彼此儲存的 key。請把它和資料庫備份放在一起，見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
+
+**多個實例**共用資料庫時，還需要共用同一個持久化資料目錄（工作目錄下的 `data/`，映像檔中為 `/app/data`；例如在每個實例上掛載同一個卷或網路檔案系統）。課程文件和產生的課程媒體儲存在 PostgreSQL（設定 `ASSET_S3_BUCKET` 時為 S3）中，但每個行程會把以下檔案放在自己的資料目錄裡：上傳的資料檔案及其擷取結果、由智慧體編輯的課程的講解與資料媒體（`data/classrooms`，或 `OPENMAIC_CLASSROOMS_DIR`）、用量紀錄（`data/usage`）以及自動產生的實例金鑰。由另一個實例接手的產生任務會從這裡讀取上傳的資料。
 
 ## 產生任務
 
@@ -122,7 +125,7 @@ PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 | 部署方式 | 操作 |
 | --- | --- |
-| `docker compose` | 拉取新版本，執行 `docker compose up --build`。把模型設定移到 `openmaic.yml` 或 **設定 → 模型**（沒有 `openmaic.yml` 時，供應商環境變數仍然有效），並把 `MODEL_ROUTES` 改寫為插槽：設定了它卻沒有 `openmaic.yml` 的服務會拒絕啟動。在每個存有本機課程的瀏覽器中開啟一次應用程式，完成匯入。 |
+| `docker compose` | 拉取新版本，執行 `docker compose up --build`。把模型設定移到 `openmaic.yml` 或 **設定 → 模型**（沒有 `openmaic.yml` 時，供應商環境變數仍然有效），並把 `MODEL_ROUTES` 改寫為插槽：設定了它卻沒有 `openmaic.yml` 的服務會拒絕啟動。在每個存有本機課程的瀏覽器中開啟一次應用程式，完成匯入。 如果 `.env.local` 設定了 `PERSISTENCE_SHARED_OWNER_ID`，還要設定 `OWNER_SINGLE_USER=false`：Compose 現在預設以單一使用者模式啟動。先前的伺服器端部署中屬於匿名擁有者的課程不會自動合併給單一使用者，需要在建立它們的每個瀏覽器中用 `POST /api/identity/claim` 認領（開啟瀏覽器只會匯入它在本機儲存的資料）。 |
 | `pnpm start` + 自己的 PostgreSQL | 設定 `DATABASE_URL`、身分模式；多個實例共用資料庫時設定 `OPENMAIC_SECRET_KEY`。其餘同上。 |
 | Vercel | 留在 1.1.x，或遷移到使用同一資料庫的常駐主機（見下文）。 |
 | Skill / API | 依更新後的 `openmaic` skill 操作：以同一擁有者上傳資料、提交並輪詢。 |

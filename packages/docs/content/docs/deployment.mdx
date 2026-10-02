@@ -17,7 +17,7 @@ The repository includes a production-ready `Dockerfile`. The image uses Node.js 
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -v openmaic-data:/app/data -p 3000:3000 openmaic
 ```
 
 We recommend the repository's Docker Compose configuration:
@@ -71,7 +71,7 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # listens on port 3000 by default
 ```
 
-Run it under a process manager (systemd, pm2, a container) that keeps it running and restarts it, and put nginx or Caddy in front for TLS termination. Courses, runtime data and generated media are stored in PostgreSQL, so several instances can share one database; set `OPENMAIC_SECRET_KEY` to the same value on each of them (see below).
+Run it under a process manager (systemd, pm2, a container) that keeps it running and restarts it, and put nginx or Caddy in front for TLS termination. Courses and generated course media are stored in PostgreSQL (or S3), so several instances can share one database, as long as they also share the data directory and `OPENMAIC_SECRET_KEY` (see below).
 
 ## Required configuration
 
@@ -80,11 +80,14 @@ Run it under a process manager (systemd, pm2, a container) that keeps it running
 | `DATABASE_URL` | set for the bundled PostgreSQL | required; the server exits at startup without it |
 | Identity mode | single user (`OWNER_SINGLE_USER=true` in `docker-compose.defaults.env`) | one anonymous owner per browser unless you choose one |
 | `OPENMAIC_SECRET_KEY` | optional: a generated secret is kept in the `openmaic-data` volume | required for several instances, or without a persistent `data/` directory |
+| Data directory | the `openmaic-data` volume at `/app/data` | a persistent `data/` directory in the working directory, shared by every instance |
 | Models | `openmaic.yml` or **Settings → Models** | the same |
 
 **Identity mode** decides who owns a course. Without one, every browser is its own anonymous owner and a second browser sees an empty library. Set `OWNER_SINGLE_USER=true` for a personal installation, `PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE` for one team sharing one library, or register owner auth methods for real accounts; see [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) in the README and `.env.example`.
 
 **`OPENMAIC_SECRET_KEY`** encrypts the provider keys saved in the model settings. Without it, each instance creates its own secret in `data/instance-secret.key`, so instances sharing a database cannot read each other's saved keys. Keep it with the database backups; see [Secrets and OPENMAIC_SECRET_KEY](./configuration.mdx#secrets-and-openmaic_secret_key).
+
+**Several instances** that share a database also need one shared, persistent data directory (`data/` in the working directory, `/app/data` in the image; for example the same volume or network file system on every instance). Course documents and generated course media live in PostgreSQL (or S3 with `ASSET_S3_BUCKET`), but each process keeps these files in its data directory: uploaded material files and their extraction results, the narration and material media of courses the agent edits (`data/classrooms`, or `OPENMAIC_CLASSROOMS_DIR`), usage records (`data/usage`) and the generated instance secret. A generation run that another instance takes over reads its uploaded materials from there.
 
 ## Generation runs
 
@@ -122,7 +125,7 @@ Earlier releases could keep courses in the browser (IndexedDB). That mode is gon
 
 | Deployment | Do |
 | --- | --- |
-| `docker compose` | Pull the new release and run `docker compose up --build`. Move model settings to `openmaic.yml` or **Settings → Models** (provider variables keep working while there is no `openmaic.yml`), and rewrite `MODEL_ROUTES` as slots: a server that sets it without `openmaic.yml` refuses to start. Open the app once in each browser that has local courses, so they are imported. |
+| `docker compose` | Pull the new release and run `docker compose up --build`. Move model settings to `openmaic.yml` or **Settings → Models** (provider variables keep working while there is no `openmaic.yml`), and rewrite `MODEL_ROUTES` as slots: a server that sets it without `openmaic.yml` refuses to start. Open the app once in each browser that has local courses, so they are imported. If `.env.local` sets `PERSISTENCE_SHARED_OWNER_ID`, also set `OWNER_SINGLE_USER=false`: Compose now starts in single-user mode. Courses an earlier server-backed deployment kept for anonymous owners are not merged into the single user automatically; claim them with `POST /api/identity/claim` from each browser that created them (opening a browser imports only what it kept locally). |
 | `pnpm start` with your own PostgreSQL | Set `DATABASE_URL`, an identity mode, and `OPENMAIC_SECRET_KEY` when several instances share the database; then as above. |
 | Vercel | Stay on 1.1.x, or move to a long-running host with the same database (below). |
 | Skill / API | Follow the updated `openmaic` skill: upload materials, submit, and poll as the same owner. |

@@ -17,7 +17,7 @@ OpenMAIC は Next.js アプリケーションで、常駐する Node.js プロ�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -v openmaic-data:/app/data -p 3000:3000 openmaic
 ```
 
 リポジトリにある Docker Compose 設定の利用を推奨します：
@@ -71,7 +71,7 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # デフォルトでポート 3000 をリッスンします
 ```
 
-プロセスマネージャー（systemd、pm2、コンテナなど）で常時稼働させ、停止時に再起動されるようにしてください。TLS 終端は nginx や Caddy などを前段に置いてください。授業、実行時データ、生成メディアは PostgreSQL に保存されるため、複数のインスタンスで 1 つのデータベースを共有できます。その場合は各インスタンスに同じ `OPENMAIC_SECRET_KEY` を設定してください（下記参照）。
+プロセスマネージャー（systemd、pm2、コンテナなど）で常時稼働させ、停止時に再起動されるようにしてください。TLS 終端は nginx や Caddy などを前段に置いてください。授業と生成された授業メディアは PostgreSQL（または S3）に保存されるため、データディレクトリと同じ `OPENMAIC_SECRET_KEY` もあわせて共有すれば、複数のインスタンスで 1 つのデータベースを共有できます（下記参照）。
 
 ## 必須の設定
 
@@ -80,11 +80,14 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `DATABASE_URL` | 同梱の PostgreSQL を指すよう設定済み | 必須。未設定ならサーバーは起動時に終了します |
 | ID モード | シングルユーザー（`docker-compose.defaults.env` の `OWNER_SINGLE_USER=true`） | 未設定ならブラウザごとに匿名オーナーになります |
 | `OPENMAIC_SECRET_KEY` | 任意。生成されたシークレットは `openmaic-data` ボリュームに保存されます | 複数インスタンスの場合、または永続的な `data/` ディレクトリがない場合は必須 |
+| データディレクトリ | `/app/data` にマウントした `openmaic-data` ボリューム | 作業ディレクトリの永続的な `data/` ディレクトリ。すべてのインスタンスで共有 |
 | モデル | `openmaic.yml` または **設定 → モデル** | 同左 |
 
 **ID モード**は授業の所有者を決めます。未設定の場合、ブラウザごとに別々の匿名オーナーとなり、別のブラウザでは空のライブラリが表示されます。個人利用では `OWNER_SINGLE_USER=true`、1 つのチームで 1 つのライブラリを共有する場合は `ACCESS_CODE` とあわせて `PERSISTENCE_SHARED_OWNER_ID` を設定し、実際のアカウントが必要な場合はオーナー認証メソッドを登録してください。詳しくは README の [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) と `.env.example` を参照してください。
 
 **`OPENMAIC_SECRET_KEY`** はモデル設定に保存されたプロバイダーキーを暗号化します。未設定の場合、各インスタンスが `data/instance-secret.key` に独自のシークレットを作成するため、データベースを共有するインスタンス同士で保存済みキーを読み取れません。データベースのバックアップと一緒に保管してください。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key) を参照してください。
+
+データベースを共有する**複数のインスタンス**には、共有された永続的なデータディレクトリも 1 つ必要です（作業ディレクトリの `data/`、イメージでは `/app/data`。たとえば各インスタンスに同じボリュームやネットワークファイルシステムをマウントします）。授業ドキュメントと生成された授業メディアは PostgreSQL（`ASSET_S3_BUCKET` を設定した場合は S3）に保存されますが、次のファイルは各プロセスのデータディレクトリに置かれます：アップロードされた資料ファイルとその抽出結果、エージェントが編集する授業のナレーションと資料メディア（`data/classrooms`、または `OPENMAIC_CLASSROOMS_DIR`）、利用記録（`data/usage`）、自動生成されたインスタンスシークレット。別のインスタンスが引き継いだ生成は、アップロードされた資料をここから読み込みます。
 
 ## 生成の実行
 
@@ -122,7 +125,7 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 
 | デプロイ | 手順 |
 | --- | --- |
-| `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。モデル設定を `openmaic.yml` または **設定 → モデル** に移し（`openmaic.yml` がない間はプロバイダーの環境変数も引き続き使えます）、`MODEL_ROUTES` をスロットとして書き直してください。`openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動を拒否します。ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 |
+| `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。モデル設定を `openmaic.yml` または **設定 → モデル** に移し（`openmaic.yml` がない間はプロバイダーの環境変数も引き続き使えます）、`MODEL_ROUTES` をスロットとして書き直してください。`openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動を拒否します。ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 `.env.local` で `PERSISTENCE_SHARED_OWNER_ID` を設定している場合は、`OWNER_SINGLE_USER=false` も設定してください（Compose はシングルユーザーモードで起動するようになりました）。以前のサーバー側デプロイで匿名オーナーが持っていた授業は、シングルユーザーに自動では統合されません。それらを作成した各ブラウザから `POST /api/identity/claim` で引き継いでください（ブラウザを開いてインポートされるのは、そのブラウザがローカルに保存していたデータだけです）。 |
 | `pnpm start` と自前の PostgreSQL | `DATABASE_URL` と ID モードを設定し、複数インスタンスでデータベースを共有する場合は `OPENMAIC_SECRET_KEY` も設定します。あとは上と同じです。 |
 | Vercel | 1.1.x にとどまるか、同じデータベースを使う常駐ホストに移行します（下記）。 |
 | Skill / API | 更新された `openmaic` skill に従い、同じオーナーとして資料をアップロード、送信、ポーリングします。 |
