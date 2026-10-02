@@ -797,6 +797,107 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     );
   });
 
+  function tableElement(base: Record<string, unknown>) {
+    return {
+      ...base,
+      type: 'table',
+      outline: {},
+      colWidths: [1],
+      cellMinHeight: 20,
+      data: [[{ id: 'cell-1', text: '<p>Cell</p>', colspan: 1, rowspan: 1 }]],
+    };
+  }
+
+  function codeElement(base: Record<string, unknown>) {
+    return { ...base, type: 'code', language: 'ts', lines: [{ id: 'L1', content: 'let x = 1' }] };
+  }
+
+  type ElementBuilder = (base: Record<string, unknown>) => Record<string, unknown>;
+
+  function withReferencedElement(kind: 'whiteboard' | 'slide', build: ElementBuilder) {
+    const body = kind === 'whiteboard' ? whiteboardBody() : makeBody();
+    const owner =
+      kind === 'whiteboard'
+        ? body.storeState.stage.whiteboard[0]
+        : body.storeState.scenes[0].content.canvas;
+    Object.assign(owner, { elements: [build(owner.elements[0])] });
+    return body;
+  }
+
+  describe.each(['whiteboard', 'slide'] as const)('%s table and code projection', (kind) => {
+    const malformed: Record<string, ElementBuilder> = {
+      'object table data': (base) => ({ ...tableElement(base), data: {} }),
+      'null table row': (base) => ({ ...tableElement(base), data: [null] }),
+      'null table cell': (base) => ({ ...tableElement(base), data: [[null]] }),
+      'missing table colWidths': (base) => ({ ...tableElement(base), colWidths: undefined }),
+      'object table rowHeights': (base) => ({ ...tableElement(base), rowHeights: {} }),
+      'object code lines': (base) => ({ ...codeElement(base), lines: {} }),
+      'null code line': (base) => ({ ...codeElement(base), lines: [null] }),
+    };
+
+    it.each(Object.keys(malformed))('rejects %s with 400 before any model call', async (shape) => {
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(withReferencedElement(kind, malformed[shape])));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ errorCode: 'INVALID_REQUEST' });
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    });
+
+    // Shapes outside the #1711 list that resolved before keep resolving.
+    it.each([
+      ['a table without optional rowHeights', tableElement],
+      ['a code element', codeElement],
+      ['a table with null rowHeights', (base) => ({ ...tableElement(base), rowHeights: null })],
+      ['a table with an object row', (base) => ({ ...tableElement(base), data: [{}] })],
+      ['a table with string colWidths', (base) => ({ ...tableElement(base), colWidths: '' })],
+      ['a table with string rowHeights', (base) => ({ ...tableElement(base), rowHeights: '' })],
+      ['a code element with string lines', (base) => ({ ...codeElement(base), lines: '' })],
+    ] as Array<[string, ElementBuilder]>)('still accepts %s', async (_label, build) => {
+      installAgentShell('Mock projection answer.');
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(withReferencedElement(kind, build)));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+      await response.text();
+    });
+  });
+
+  it.each(['null scene member', 'missing scene content', 'missing scene canvas'] as const)(
+    'rejects a slide reference with a %s with 400 before any model call',
+    async (shape) => {
+      const body = makeBody();
+      const scenes: unknown[] = body.storeState.scenes;
+      if (shape === 'null scene member') scenes.push(null);
+      if (shape === 'missing scene content')
+        Object.assign(scenes[0] as object, { content: undefined });
+      if (shape === 'missing scene canvas')
+        Object.assign(body.storeState.scenes[0].content, { canvas: undefined });
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ errorCode: 'INVALID_REQUEST' });
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still accepts a slide reference whose scenes contain a non-object member', async () => {
+    installAgentShell('Mock projection answer.');
+    const body = makeBody();
+    (body.storeState.scenes as unknown[]).push(7);
+    const { POST } = await import('@/app/api/chat/pi/route');
+    const response = await POST(makeRequest(body));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
+    await response.text();
+  });
+
   it('does not relabel unexpected resolver exceptions as invalid snapshot errors', async () => {
     const references = await import('@/lib/chat/pi/element-reference');
     const resolver = vi.spyOn(references, 'resolveElementReference').mockImplementation(() => {
