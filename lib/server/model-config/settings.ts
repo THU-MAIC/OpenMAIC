@@ -83,7 +83,10 @@ export interface PresetView {
   requiresBaseUrl: boolean;
   /** Whether a workspace provider of this preset may set its own base URL (chat only). */
   customEndpoint: boolean;
-  /** Assignments the first-run wizard fills for empty slots. */
+  /**
+   * Assignments the preset recommends: the first-run wizard fills the empty
+   * slots with them; connecting a token plan applies them over the slots.
+   */
   recommended: Partial<Record<SlotId, string>>;
 }
 

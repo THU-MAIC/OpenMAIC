@@ -1699,7 +1699,7 @@
       "capabilities": "Angebotene Funktionen",
       "offeredNote": "Von diesem Tarif angebotene Modelle. Wähle die gewünschten Modelle für die Generierungsleiste aus. Die Verfügbarkeit hängt von deiner Tarifstufe ab; nicht unterstützte Modelle führen bei der Generierung zu einem Fehler.",
       "statusConnected": "Verbunden",
-      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden erhalten Kursschritte ohne Modell die Modelle dieses Plans.",
+      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden werden die empfohlenen Modelle dieses Plans auf die Kursschritte angewendet; würden dabei von dir gewählte Modelle ersetzt, wirst du vorher gefragt.",
       "saveKey": "Speichern & aktivieren",
       "cancelKeyUpdate": "Aktualisierung abbrechen",
       "manageAccount": "Konto verwalten",
@@ -1719,7 +1719,11 @@
       "capWebSearch": "Websuche",
       "saved": "Verbindungseinstellungen gespeichert",
       "stageInteractive": "Interaktiv",
-      "stageSlide": "Kursfolien"
+      "stageSlide": "Kursfolien",
+      "applyTitle": "Empfohlene Einrichtung dieses Plans verwenden?",
+      "applyBody": "{{name}} empfiehlt eigene Modelle für diese Schritte, die derzeit von dir gewählte Modelle verwenden:",
+      "applyKeep": "Aktuelle Einrichtung behalten",
+      "applyRecommended": "Empfehlung des Plans verwenden"
     },
     "skills": {
       "nav": "Skills",

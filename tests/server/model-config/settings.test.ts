@@ -7,7 +7,11 @@ import {
   ModelSettingsError,
 } from '@/lib/server/model-config/settings';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
-import { wizardAssignments } from '@/lib/model-settings/edit';
+import {
+  tokenPlanAssignments,
+  tokenPlanConflicts,
+  tokenPlanRecommendation,
+} from '@/lib/model-settings/token-plan';
 
 const deployment = (config: ModelConfigLayer['config']) =>
   setDeploymentConfigForTests({
@@ -400,31 +404,138 @@ describe('applyModelSettingsChange', () => {
     expect(keyless.slots).toEqual({ 'agent.title': 'local:llama4', image: null });
   });
 
-  it("connecting a token plan fills the empty web search slot with the plan's search", async () => {
-    const config = await applyModelSettingsChange(null, {
+  it("connecting a token plan applies the plan's recommendation over the workspace's own picks", async () => {
+    // The workspace already picked its own models for some of the slots the plan recommends.
+    let config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'mine',
+      preset: 'openai',
+      apiKey: 'sk-mine-key-0001',
+    });
+    config = await applyModelSettingsChange(config, {
+      kind: 'slots',
+      set: {
+        'course.content.slide': 'mine:gpt-5.6',
+        'course.content.interactive': {
+          model: 'mine:gpt-5.6',
+          fallback: 'operator:deepseek-v4-pro',
+        },
+        webSearch: null,
+        'course.outline': 'mine:gpt-5.6',
+      },
+    });
+    config = await applyModelSettingsChange(config, {
       kind: 'provider',
       id: 'tokendance',
       preset: 'tokendance',
       apiKey: 'sk-plan-key-0001',
     });
-    const view = modelSettingsView({ config, revision: 1, unreadableSecrets: [] });
+    const view = modelSettingsView({ config, revision: 3, unreadableSecrets: [] });
     const preset = view.presets.find((entry) => entry.id === 'tokendance')!;
-    const set = wizardAssignments(view, preset, 'tokendance');
-    expect(set).toMatchObject({
-      webSearch: 'tokendance',
+    const provider = view.providers.find((entry) => entry.id === 'tokendance')!;
+    const recommendation = tokenPlanRecommendation(view, preset, provider);
+    // The deployment's locked slots (llm, video) are not part of it.
+    expect(recommendation).toEqual({
+      'course.content.slide': 'tokendance:cogevol-slide-0828',
+      'course.content.interactive': 'tokendance:cogevol-interactive-0828',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
+      webSearch: 'tokendance',
     });
-    // The deployment's own video choice (off) and default model are left alone.
-    expect(set).not.toHaveProperty('video');
-    expect(set).not.toHaveProperty('llm');
+    expect(tokenPlanConflicts(view, recommendation).map((c) => c.slot.slot)).toEqual([
+      'course.content.slide',
+      'course.content.interactive',
+      'webSearch',
+    ]);
+
+    const set = tokenPlanAssignments(view, recommendation, 'overwrite');
+    expect(set).toEqual({
+      'course.content.slide': 'tokendance:cogevol-slide-0828',
+      // A replaced language-model assignment keeps its fallback.
+      'course.content.interactive': {
+        model: 'tokendance:cogevol-interactive-0828',
+        fallback: 'operator:deepseek-v4-pro',
+      },
+      tts: 'tokendance:minimax-speech-2.8-turbo',
+      image: 'tokendance:seedream-5.0-lite',
+      webSearch: 'tokendance',
+    });
     const filled = await applyModelSettingsChange(config, { kind: 'slots', set });
-    const after = modelSettingsView({ config: filled, revision: 2, unreadableSecrets: [] });
-    expect(after.slots.find((slot) => slot.slot === 'webSearch')?.effective).toMatchObject({
+    const after = modelSettingsView({ config: filled, revision: 4, unreadableSecrets: [] });
+    const effective = (id: string) => after.slots.find((slot) => slot.slot === id)?.effective;
+    expect(effective('webSearch')).toMatchObject({
       status: 'assigned',
       providerId: 'tokendance',
       registryId: 'bocha',
     });
+    expect(effective('course.content.slide')).toMatchObject({
+      providerId: 'tokendance',
+      modelId: 'cogevol-slide-0828',
+    });
+    // A stage the plan does not name keeps the workspace's pick; locked slots stay the deployment's.
+    expect(effective('course.outline')).toMatchObject({ providerId: 'mine', modelId: 'gpt-5.6' });
+    expect(effective('llm')).toMatchObject({ source: 'deployment', providerId: 'operator' });
+    expect(effective('video')).toMatchObject({ status: 'disabled', source: 'deployment' });
+
+    // Keeping the workspace's setup fills only the slots with nothing of their own.
+    expect(tokenPlanAssignments(view, recommendation, 'keep')).toEqual({
+      tts: 'tokendance:minimax-speech-2.8-turbo',
+      image: 'tokendance:seedream-5.0-lite',
+    });
+
+    // Disconnecting frees the slots that named the plan: they follow their parents again.
+    const removed = await applyModelSettingsChange(filled, {
+      kind: 'remove-provider',
+      id: 'tokendance',
+    });
+    expect(removed.slots).toEqual({ 'course.outline': 'mine:gpt-5.6' });
+  });
+
+  it('connecting a token plan without a deployment applies the default model and the stages', async () => {
+    deployment({});
+    let config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'ds',
+      preset: 'deepseek',
+      apiKey: 'sk-ds-key-0001',
+    });
+    config = await applyModelSettingsChange(config, {
+      kind: 'slots',
+      set: { llm: 'ds:deepseek-v4-pro', 'course.content.slide': 'ds:deepseek-v4-flash' },
+    });
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'tokendance',
+      preset: 'tokendance',
+      apiKey: 'sk-plan-key-0001',
+    });
+    const view = modelSettingsView({ config, revision: 3, unreadableSecrets: [] });
+    const preset = view.presets.find((entry) => entry.id === 'tokendance')!;
+    const provider = view.providers.find((entry) => entry.id === 'tokendance')!;
+    const set = tokenPlanAssignments(
+      view,
+      tokenPlanRecommendation(view, preset, provider),
+      'overwrite',
+    );
+    expect(set).toMatchObject({
+      llm: 'tokendance:cogevol-base',
+      'course.content.slide': 'tokendance:cogevol-slide-0828',
+      'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      video: 'tokendance:minimax-h3',
+    });
+    const filled = await applyModelSettingsChange(config, { kind: 'slots', set });
+    expect(filled.slots).toMatchObject({
+      llm: 'tokendance:cogevol-base',
+      'course.content.slide': 'tokendance:cogevol-slide-0828',
+    });
+    // Removing the plan's key (rather than the plan) frees its slots as well.
+    const keyless = await applyModelSettingsChange(filled, {
+      kind: 'provider',
+      id: 'tokendance',
+      preset: 'tokendance',
+      apiKey: '',
+    });
+    expect(keyless.slots).toBeUndefined();
   });
 
   it('drops the assignments of a removed provider', async () => {

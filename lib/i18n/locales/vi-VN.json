@@ -1699,7 +1699,7 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài.",
       "statusConnected": "Đã kết nối",
-      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các bước khóa học chưa có mô hình sẽ dùng mô hình của gói này.",
+      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình bạn đã chọn, bạn sẽ được hỏi trước.",
       "saveKey": "Lưu và bật",
       "cancelKeyUpdate": "Hủy cập nhật",
       "manageAccount": "Quản lý tài khoản",
@@ -1719,7 +1719,11 @@
       "capWebSearch": "Tìm kiếm web",
       "saved": "Đã lưu cài đặt kết nối",
       "stageInteractive": "Tương tác",
-      "stageSlide": "Trang slide"
+      "stageSlide": "Trang slide",
+      "applyTitle": "Dùng cấu hình đề xuất của gói này?",
+      "applyBody": "{{name}} đề xuất mô hình riêng cho các bước sau, hiện đang dùng mô hình bạn đã chọn:",
+      "applyKeep": "Giữ cấu hình hiện tại",
+      "applyRecommended": "Dùng cấu hình đề xuất của gói"
     },
     "skills": {
       "nav": "Skill",

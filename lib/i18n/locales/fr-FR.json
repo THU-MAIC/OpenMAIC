@@ -1699,7 +1699,7 @@
       "capabilities": "Capacités proposées",
       "offeredNote": "Modèles proposés par ce forfait. Choisissez ceux que vous voulez voir dans la barre de génération : leur disponibilité dépend de votre niveau de forfait, et les modèles non pris en charge produiront une erreur au moment de la génération.",
       "statusConnected": "Connecté",
-      "keyStorage": "La clé est conservée chiffrée sur le serveur et n'est plus jamais affichée. La connexion attribue les modèles de cette offre aux étapes du cours qui n'en ont pas encore.",
+      "keyStorage": "La clé est conservée chiffrée sur le serveur et n'est plus jamais affichée. La connexion applique aux étapes du cours les modèles recommandés par cette offre ; si cela remplace des modèles que vous avez choisis, une confirmation vous est demandée.",
       "saveKey": "Enregistrer et activer",
       "cancelKeyUpdate": "Annuler la mise à jour",
       "manageAccount": "Gérer le compte",
@@ -1719,7 +1719,11 @@
       "capWebSearch": "Recherche web",
       "saved": "Paramètres de connexion enregistrés",
       "stageInteractive": "Interactif",
-      "stageSlide": "Diapositives"
+      "stageSlide": "Diapositives",
+      "applyTitle": "Utiliser la configuration recommandée de cette offre ?",
+      "applyBody": "{{name}} recommande ses propres modèles pour ces étapes, qui utilisent actuellement des modèles que vous avez choisis :",
+      "applyKeep": "Garder ma configuration",
+      "applyRecommended": "Utiliser la configuration recommandée"
     },
     "skills": {
       "nav": "Skills",

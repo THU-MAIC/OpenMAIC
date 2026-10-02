@@ -1699,7 +1699,7 @@
       "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar.",
       "statusConnected": "Conectado",
-      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, las etapas del curso sin modelo usan los modelos de este plan.",
+      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza modelos que elegiste, se te pregunta antes.",
       "saveKey": "Guardar y activar",
       "cancelKeyUpdate": "Cancelar actualización",
       "manageAccount": "Gestionar cuenta",
@@ -1719,7 +1719,11 @@
       "capWebSearch": "Búsqueda web",
       "saved": "Ajustes de conexión guardados",
       "stageInteractive": "Interactivo",
-      "stageSlide": "Diapositivas"
+      "stageSlide": "Diapositivas",
+      "applyTitle": "¿Usar la configuración recomendada de este plan?",
+      "applyBody": "{{name}} recomienda sus propios modelos para estas etapas, que ahora usan modelos que elegiste:",
+      "applyKeep": "Mantener mi configuración",
+      "applyRecommended": "Usar la configuración recomendada"
     },
     "skills": {
       "nav": "Skills",

@@ -4,9 +4,11 @@
 // left (logo, display-name mapping, status row, keyboard navigation) and a
 // one-line header on the right (status / update key / manage-account link / ⋯
 // menu disconnect). A plan is a provider of the workspace's model settings on
-// the server: saving its key adds that provider and fills the course stages
-// that have no model yet with the plan's recommendations; disconnecting
-// removes it. A plan the server configures is shown as connected, read-only.
+// the server: saving its key adds that provider (or replaces its key) and
+// applies the plan's recommended configuration to the slots. When that would
+// replace models the workspace picked, the user is asked first: the plan's
+// setup, or keep theirs and fill only the empty slots. Disconnecting removes
+// the provider. A plan the server configures is shown as connected, read-only.
 
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -52,10 +54,17 @@ import {
   type TokenPlanModality,
 } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
-import type { ApplyChange, ModelSettingsView } from '@/lib/model-settings/client';
-import { runFirstRunSetup } from '@/lib/model-settings/edit';
+import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
+import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
 import { planProvider } from '@/lib/model-settings/services';
+import {
+  connectConflicts,
+  connectTokenPlan,
+  type PlanApplyMode,
+  type PlanConflict,
+} from '@/lib/model-settings/token-plan';
 import { applyErrorText, reportApply, ServerOnlyNotice } from './server-settings';
+import { MS, slotName } from './models/slot-meta';
 
 const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   llm: 'settings.providers',
@@ -178,6 +187,12 @@ export function TokenPlanSettings({
   const [editingKey, setEditingKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  /** A connect waiting for the user to choose how to treat the slots it would replace. */
+  const [pending, setPending] = useState<{
+    plan: TokenPlanPreset;
+    key: string;
+    conflicts: PlanConflict[];
+  } | null>(null);
   const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
@@ -216,40 +231,20 @@ export function TokenPlanSettings({
     }
   };
 
-  // Save = connect: add the plan's provider with the key and fill the stages
-  // that have no model yet with the plan's recommendations. Updating the key
-  // of a connected plan replaces the stored key.
-  const handleApply = async (key: string) => {
-    const trimmedKey = key.trim();
-    if (!selected || !trimmedKey) return;
-    const provider = providerOf(selected);
-    const preset = presetOf(selected);
+  // Connect (or save a new key): add the plan's provider, or replace its key,
+  // then apply the plan's recommended configuration to the slots.
+  const connect = async (plan: TokenPlanPreset, key: string, mode: PlanApplyMode) => {
+    const preset = presetOf(plan);
+    if (!preset) return;
     setSaving(true);
     try {
-      if (provider) {
-        const result = await apply(
-          { kind: 'provider', id: provider.id, preset: provider.preset, apiKey: trimmedKey },
-          view,
-        );
-        if (!reportApply(result, t)) return;
-      } else {
-        if (!preset) return;
-        const result = await runFirstRunSetup(apply, view, preset, {
-          preset: preset.id,
-          keyAction: 'replace',
-          apiKey: trimmedKey,
-          baseUrl: '',
-          models: '',
-        });
-        if (result.status === 'failed') {
-          toast.error(applyErrorText(result, t));
-          return;
-        }
-        if (result.status === 'partial' && result.message) {
-          toast.warning(
-            applyErrorText({ reason: result.reason ?? '', message: result.message }, t),
-          );
-        }
+      const result = await connectTokenPlan(apply, view, preset, key, mode);
+      if (result.status === 'failed') {
+        toast.error(applyErrorText(result, t));
+        return;
+      }
+      if (result.status === 'partial' && result.message) {
+        toast.warning(applyErrorText({ reason: result.reason ?? '', message: result.message }, t));
       }
       setApiKey('');
       setEditingKey(false);
@@ -257,6 +252,46 @@ export function TokenPlanSettings({
     } finally {
       setSaving(false);
     }
+  };
+
+  // Save = connect. When the plan's recommendation would replace models the
+  // workspace picked, ask first; otherwise apply it straight away.
+  const handleApply = async (key: string) => {
+    const trimmedKey = key.trim();
+    if (!selected || !trimmedKey) return;
+    const preset = presetOf(selected);
+    if (!preset) return;
+    const conflicts = connectConflicts(view, preset);
+    if (conflicts.length) {
+      setPending({ plan: selected, key: trimmedKey, conflicts });
+      return;
+    }
+    await connect(selected, trimmedKey, 'overwrite');
+  };
+
+  const choose = (mode: PlanApplyMode) => {
+    const chosen = pending;
+    setPending(null);
+    if (chosen) void connect(chosen.plan, chosen.key, mode);
+  };
+
+  /** How a slot's assignment reads in the confirmation: its model (and provider), or off. */
+  const assignmentLabel = (
+    conflict: PlanConflict,
+    ref: string | null,
+    preset: PresetView | undefined,
+  ): string => {
+    if (ref === null) return t(`${MS}.card.off`);
+    const capability = conflict.slot.capability;
+    const { providerId, modelId } = splitRef(ref);
+    const known = view.providers.some((provider) => provider.id === providerId);
+    const provider = known ? providerLabel(view, providerId) : (preset?.name ?? providerId);
+    if (!modelId) return provider;
+    const model = known
+      ? modelName(view, capability, providerId, modelId)
+      : (preset?.capabilities[capability]?.models.find((entry) => entry.id === modelId)?.name ??
+        modelId);
+    return `${model} · ${provider}`;
   };
 
   const tp = 'settings.tokenPlan';
@@ -606,6 +641,56 @@ export function TokenPlanSettings({
           </div>
         )}
       </div>
+
+      {/* Connecting would replace models the workspace picked: ask first. */}
+      {pending && (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPending(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(`${tp}.applyTitle`)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(`${tp}.applyBody`, { name: presetDisplayName(pending.plan) })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <ul className="max-h-60 space-y-1.5 overflow-y-auto text-xs leading-5">
+              {pending.conflicts.map((conflict) => {
+                const preset = presetOf(pending.plan);
+                const current =
+                  conflict.current === null
+                    ? null
+                    : typeof conflict.current === 'string'
+                      ? conflict.current
+                      : conflict.current.model;
+                return (
+                  <li key={conflict.slot.slot} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium">{slotName(t, conflict.slot.slot)}</span>
+                    <span className="min-w-0 break-all text-muted-foreground">
+                      {assignmentLabel(conflict, current, preset)}
+                      {' → '}
+                      <span className="text-foreground">
+                        {assignmentLabel(conflict, conflict.recommended, preset)}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <AlertDialogFooter>
+              <AlertDialogAction variant="outline" onClick={() => choose('keep')}>
+                {t(`${tp}.applyKeep`)}
+              </AlertDialogAction>
+              <AlertDialogAction onClick={() => choose('overwrite')}>
+                {t(`${tp}.applyRecommended`)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
       {/* 解除连接确认 */}
       {selected && (

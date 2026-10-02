@@ -1684,7 +1684,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "此方案提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的方案檔位，不支援的模型會在生成時報錯。",
       "statusConnected": "已連接",
-      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後，尚未設定模型的課程環節會使用此方案的模型。",
+      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後會將此方案推薦的模型套用到課程環節；如果會取代你已選的模型，會先徵求你的確認。",
       "saveKey": "儲存並啟用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理帳號",
@@ -1704,7 +1704,11 @@
       "capWebSearch": "網路搜尋",
       "saved": "連線設定已儲存",
       "stageInteractive": "互動頁面",
-      "stageSlide": "課件頁面"
+      "stageSlide": "課件頁面",
+      "applyTitle": "使用此方案的推薦設定？",
+      "applyBody": "{{name}} 為以下環節推薦了自己的模型，這些環節目前使用的是你選的模型：",
+      "applyKeep": "保留目前設定",
+      "applyRecommended": "使用方案推薦設定"
     },
     "skills": {
       "nav": "技能",

@@ -1699,7 +1699,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。",
       "statusConnected": "已连接",
-      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后，尚未设置模型的课程环节会使用该套餐的模型。",
+      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换你已选的模型，会先征求你的确认。",
       "saveKey": "保存并启用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理账号",
@@ -1719,7 +1719,11 @@
       "capWebSearch": "联网搜索",
       "saved": "连接设置已保存",
       "stageInteractive": "互动页面",
-      "stageSlide": "课件页面"
+      "stageSlide": "课件页面",
+      "applyTitle": "使用该套餐的推荐配置？",
+      "applyBody": "{{name}} 为以下环节推荐了自己的模型，这些环节目前使用的是你选的模型：",
+      "applyKeep": "保留当前配置",
+      "applyRecommended": "使用套餐推荐配置"
     },
     "skills": {
       "nav": "技能",

@@ -49,7 +49,11 @@ export interface ProviderPreset {
   name: string;
   kind: 'single' | 'token-plan';
   capabilities: Partial<Record<SlotCapability, PresetCapabilityTarget>>;
-  /** Assignments the first-run wizard fills for slots that are still empty. */
+  /**
+   * Assignments the preset recommends: the first-run wizard fills the slots
+   * still empty with them; connecting a token plan applies them over the
+   * slots (lib/model-settings/token-plan.ts).
+   */
   recommended?: Partial<Record<SlotId, string>>;
   /** True when the preset needs a caller-supplied base URL. */
   requiresBaseUrl?: boolean;
@@ -151,8 +155,8 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
     const root = capability === 'chat' ? 'llm' : capability;
     if (lead) recommended[root as SlotId] = lead;
     // A capability without models to pick (web search) is served by the
-    // provider alone: the recommendation names its registry entry, which the
-    // first-run wizard turns into a provider-only assignment.
+    // provider alone: the recommendation names its registry entry, which
+    // becomes a provider-only assignment.
     else if (!target.defaultModels?.length) recommended[root as SlotId] = target.providerId;
     for (const [stage, model] of Object.entries(target.stageRoutes ?? {})) {
       const slot = STAGE_SLOTS[stage as LlmStage];
