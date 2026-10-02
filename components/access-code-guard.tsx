@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, ReactNode } from 'react';
+import { Fragment, useEffect, useState, ReactNode } from 'react';
 import { AccessCodeModal } from '@/components/access-code-modal';
 import { importLegacyModelSettings } from '@/components/model-settings-init';
 import { modelSettingsClient } from '@/lib/model-settings/client';
@@ -12,6 +12,10 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
     authenticated: boolean;
     loading: boolean;
   }>({ enabled: false, authenticated: false, loading: true });
+  // The page mounted under the gate has already sent its requests (library,
+  // folders, active runs, ...) and they were answered 401. Mounting it again
+  // once the code is accepted lets every one of them be sent authorized.
+  const [grantedCount, setGrantedCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +50,7 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
           open={true}
           onSuccess={() => {
             setStatus((s) => ({ ...s, authenticated: true }));
+            setGrantedCount((n) => n + 1);
             // Model settings are read on mount, which on an ACCESS_CODE-gated
             // deployment is before any access cookie exists: the middleware
             // answers 401 and nothing is known about the workspace's models
@@ -58,7 +63,7 @@ export function AccessCodeGuard({ children }: { children: ReactNode }) {
           }}
         />
       )}
-      {children}
+      <Fragment key={grantedCount}>{children}</Fragment>
     </>
   );
 }

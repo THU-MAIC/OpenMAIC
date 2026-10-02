@@ -154,7 +154,11 @@ function HomePage() {
     if (!workbenchBuildEnabled || workbenchRuntimeCache !== null) return;
     let cancelled = false;
     fetch('/api/agent/runtime')
-      .then((response) => (response.ok ? response.json() : null))
+      .then((response) => {
+        // Not cached: a 401 before the access code is accepted is not an answer.
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
       .then((body) => {
         workbenchRuntimeCache = body?.enabled === true;
         if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
