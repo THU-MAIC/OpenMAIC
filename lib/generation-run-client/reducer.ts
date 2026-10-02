@@ -32,22 +32,24 @@ export function viewFromSnapshot(snapshot: RunSnapshot): RunView {
     outlineRetrying: false,
     outline: snapshot.outline,
     researchSources: [],
-    materialKinds: null,
+    materialKinds: snapshot.materialKinds ?? null,
     materialsAnalyzed:
       snapshot.state !== 'preparing' ||
       (snapshot.step !== null && snapshot.step !== 'material-analysis'),
-    materialTruncated: null,
+    materialTruncated: snapshot.materialTruncated ?? null,
     generatedAgents: generated && generated.length > 0 ? generated : null,
     stageId: snapshot.stageId,
     progress: snapshot.progress,
     readyScenes: {},
     skippedScenes: {},
     error: snapshot.error,
-    failedSeq: snapshot.error ? snapshot.seq : 0,
+    // A failure's identity is the seq of the event that reported it, the same
+    // whether it is read from the snapshot or from the event itself.
+    failedSeq: snapshot.error ? (snapshot.error.failureSeq ?? snapshot.seq) : 0,
     media: Object.fromEntries(
       Object.entries(snapshot.media ?? {}).map(([elementId, state]) => [
         elementId,
-        { ...state, seq: snapshot.seq },
+        { ...state, seq: state.failureSeq ?? snapshot.seq },
       ]),
     ),
   };

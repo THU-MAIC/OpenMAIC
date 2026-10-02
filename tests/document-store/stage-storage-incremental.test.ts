@@ -243,3 +243,29 @@ describe('the outline a producer recorded', () => {
     });
   });
 });
+
+describe('a scene saved after its run placed media', () => {
+  it('writes the asset the run placed, not the placeholder this browser still holds', async () => {
+    const { recordMediaAllocation } = await import('@/lib/media/pending-media-allocations');
+    recordMediaAllocation({
+      stageId: 'stage-1',
+      placeholderRef: 'gen_img_9',
+      assetId: 'ast_placed',
+    });
+    const held = structuredClone(scenes[1]!) as Scene & {
+      content: { canvas: { elements: unknown[] } };
+    };
+    held.content.canvas.elements = [
+      { type: 'image', id: 'img-el', src: 'gen_img_9', left: 0, top: 0, width: 10, height: 10 },
+    ];
+    await saveStageDataIncremental(
+      'stage-1',
+      [{ kind: 'scene', sceneId: 'scene-2' }],
+      { ...data, scenes: [scenes[0]!, held] },
+      0,
+    );
+    expect(putScene).toHaveBeenCalledOnce();
+    expect(JSON.stringify(putScene.mock.calls[0]![1])).toContain('ast_placed');
+    expect(JSON.stringify(putScene.mock.calls[0]![1])).not.toContain('gen_img_9');
+  });
+});

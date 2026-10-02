@@ -50,7 +50,11 @@ import {
   courseGenerationUsable,
   requireModelCapabilities,
 } from '@/lib/model-settings/capabilities';
-import { RunApiError, discardGenerationRun } from '@/lib/generation-run-client/api';
+import {
+  RunApiError,
+  discardGenerationRun,
+  runApiErrorText,
+} from '@/lib/generation-run-client/api';
 import { RunStartRefusedError, startClassicRun } from '@/lib/generation-run-client/start';
 import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
 import {
@@ -644,8 +648,8 @@ function HomePage() {
       log.error('Error starting generation:', err);
       if (err instanceof RunStartRefusedError) {
         setError(t(err.reason, err.values));
-      } else if (err instanceof RunApiError && err.errorCode === 'ACTIVE_RUN_LIMIT') {
-        setError(t('generation.activeRunLimit'));
+      } else if (err instanceof RunApiError) {
+        setError(runApiErrorText(err, t));
       } else {
         setError(err instanceof Error ? err.message : t('upload.generateFailed'));
       }

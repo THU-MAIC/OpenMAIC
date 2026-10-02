@@ -1039,7 +1039,9 @@
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
     "courseMaterialCountLimit": "You can upload up to 5 course material files",
     "courseMaterialTotalSizeLimit": "Total course material size must be under 150MB",
-    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
+    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file.",
+    "materialQuotaExceeded": "Your material storage is full. Delete some materials and try again.",
+    "materialUploadFailed": "Uploading {{name}} failed. Please try again."
   },
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "Jump to a section that still needs a title",
     "analyzingMediaMaterial": "Analyzing audio/video",
     "modelSettingsUnavailable": "The model settings could not be read, so generation stopped. Please try again.",
-    "activeRunLimit": "You already have the maximum number of courses generating. Wait for one to finish and try again."
+    "activeRunLimit": "You already have the maximum number of courses generating. Wait for one to finish and try again.",
+    "outlineConfirmedElsewhere": "This outline was already confirmed elsewhere; your edits here were not applied.",
+    "runChangedElsewhere": "The generation already moved on elsewhere.",
+    "runLoadFailed": "Couldn't load this generation",
+    "runLoadRetrying": "Trying again…",
+    "mediaGenerationFailed": "Media generation failed",
+    "mediaGenerationDisabled": "Generation disabled"
   },
   "settings": {
     "title": "Settings",

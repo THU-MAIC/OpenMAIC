@@ -41,15 +41,21 @@ export function useGenerationRun(runId: string | null): FollowedRun {
     });
     followerRef.current = follower;
     void follower.start();
+    // A page shown again reads the run at once (a throttled tab may have
+    // missed polls, or its stream may have dropped).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void follower.wake();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
+      document.removeEventListener('visibilitychange', onVisible);
       follower.close();
       if (followerRef.current === follower) followerRef.current = null;
     };
   }, [runId]);
 
   const refresh = useCallback(async () => {
-    followerRef.current?.wake();
-    await followerRef.current?.resync();
+    await followerRef.current?.wake();
   }, []);
 
   // A state left from another run id reads as loading.

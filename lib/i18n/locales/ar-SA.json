@@ -1039,7 +1039,9 @@
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
     "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
     "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
-    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
+    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر.",
+    "materialQuotaExceeded": "مساحة تخزين المواد ممتلئة. احذف بعض المواد ثم حاول مرة أخرى.",
+    "materialUploadFailed": "فشل رفع {{name}}. يرجى المحاولة مرة أخرى."
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
     "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
     "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى.",
-    "activeRunLimit": "لديك بالفعل الحد الأقصى من المقررات قيد التوليد. انتظر حتى ينتهي أحدها ثم حاول مرة أخرى."
+    "activeRunLimit": "لديك بالفعل الحد الأقصى من المقررات قيد التوليد. انتظر حتى ينتهي أحدها ثم حاول مرة أخرى.",
+    "outlineConfirmedElsewhere": "تم تأكيد هذا المخطط في مكان آخر؛ لم تُطبَّق تعديلاتك هنا.",
+    "runChangedElsewhere": "تقدّم التوليد بالفعل في مكان آخر.",
+    "runLoadFailed": "تعذّر تحميل عملية التوليد هذه",
+    "runLoadRetrying": "جارٍ إعادة المحاولة…",
+    "mediaGenerationFailed": "فشل توليد الوسائط",
+    "mediaGenerationDisabled": "التوليد معطّل"
   },
   "settings": {
     "title": "الإعدادات",

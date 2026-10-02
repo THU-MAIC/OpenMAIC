@@ -8,18 +8,38 @@ import { resolveWorkbenchMaterialMime } from '@/lib/workbench/material-upload-po
 
 import type { GenerationRunInput, RunSnapshot } from './types';
 
+/**
+ * A refused or failed call. `serverMessage` is the route's caller-facing
+ * message; `fallbackKey` is the translation key that says what failed when the
+ * route gave none.
+ */
 export class RunApiError extends Error {
   constructor(
-    message: string,
     readonly status: number,
-    readonly errorCode?: string,
+    readonly errorCode: string | undefined,
+    readonly serverMessage: string | undefined,
+    readonly fallbackKey: string,
+    readonly fallbackValues: Record<string, string | number> = {},
   ) {
-    super(message);
+    super(serverMessage ?? `${fallbackKey} (HTTP ${status})`);
     this.name = 'RunApiError';
   }
 }
 
-async function failure(response: Response, fallback: string): Promise<RunApiError> {
+/** What to tell the learner about a failed call. */
+export function runApiErrorText(
+  error: RunApiError,
+  t: (key: string, values?: Record<string, string | number>) => string,
+): string {
+  if (error.errorCode === 'ACTIVE_RUN_LIMIT') return t('generation.activeRunLimit');
+  return error.serverMessage ?? t(error.fallbackKey, error.fallbackValues);
+}
+
+async function failure(
+  response: Response,
+  fallbackKey: string,
+  fallbackValues: Record<string, string | number> = {},
+): Promise<RunApiError> {
   const body = (await response.json().catch(() => null)) as {
     error?: unknown;
     message?: unknown;
@@ -30,21 +50,23 @@ async function failure(response: Response, fallback: string): Promise<RunApiErro
       ? body.error
       : typeof body?.message === 'string'
         ? body.message
-        : `${fallback}: HTTP ${response.status}`;
+        : undefined;
   return new RunApiError(
-    message,
     response.status,
     typeof body?.errorCode === 'string' ? body.errorCode : undefined,
+    message,
+    fallbackKey,
+    fallbackValues,
   );
 }
 
-async function postJson<T>(url: string, body: unknown, fallback: string): Promise<T> {
+async function postJson<T>(url: string, body: unknown, fallbackKey: string): Promise<T> {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw await failure(response, fallback);
+  if (!response.ok) throw await failure(response, fallbackKey);
   return (await response.json()) as T;
 }
 
@@ -55,7 +77,7 @@ export async function startGenerationRun(input: StartRunInput): Promise<RunSnaps
   const body = await postJson<{ run: RunSnapshot }>(
     '/api/generation-runs',
     input,
-    'Starting the generation failed',
+    'upload.generateFailed',
   );
   return body.run;
 }
@@ -66,14 +88,23 @@ export async function fetchGenerationRun(runId: string): Promise<RunSnapshot | n
     cache: 'no-store',
   });
   if (response.status === 404) return null;
-  if (!response.ok) throw await failure(response, 'Reading the generation failed');
+  if (!response.ok) throw await failure(response, 'generation.runLoadFailed');
   return ((await response.json()) as { run: RunSnapshot }).run;
 }
 
-export async function listActiveGenerationRuns(): Promise<RunSnapshot[]> {
+/** The owner's limits on runs: in progress, and waiting for their outline to be confirmed. */
+export interface RunLimits {
+  maxActive: number;
+  maxWaiting: number;
+}
+
+export async function listActiveGenerationRuns(): Promise<{
+  runs: RunSnapshot[];
+  limits?: RunLimits;
+}> {
   const response = await fetch('/api/generation-runs?active=1', { cache: 'no-store' });
-  if (!response.ok) throw await failure(response, 'Listing the generations failed');
-  return ((await response.json()) as { runs: RunSnapshot[] }).runs;
+  if (!response.ok) throw await failure(response, 'generation.runLoadFailed');
+  return (await response.json()) as { runs: RunSnapshot[]; limits?: RunLimits };
 }
 
 export function confirmRunOutline(
@@ -83,7 +114,7 @@ export function confirmRunOutline(
   return postJson(
     `/api/generation-runs/${encodeURIComponent(runId)}/confirm-outline`,
     command,
-    'Confirming the outline failed',
+    'generation.outlineGenerateFailed',
   );
 }
 
@@ -94,7 +125,7 @@ export function retryRun(
   return postJson(
     `/api/generation-runs/${encodeURIComponent(runId)}/retry`,
     command,
-    'Retrying failed',
+    'generation.sceneGenerateFailed',
   );
 }
 
@@ -104,7 +135,7 @@ export async function discardGenerationRun(runId: string): Promise<void> {
     method: 'DELETE',
   });
   if (!response.ok && response.status !== 404) {
-    throw await failure(response, 'Deleting the generation failed');
+    throw await failure(response, 'upload.generateFailed');
   }
 }
 
@@ -117,7 +148,7 @@ export interface MaterialPolicy {
 
 export async function fetchMaterialPolicy(): Promise<MaterialPolicy> {
   const response = await fetch('/api/generate-classroom/capabilities', { cache: 'no-store' });
-  if (!response.ok) throw await failure(response, 'Reading the supported materials failed');
+  if (!response.ok) throw await failure(response, 'upload.generateFailed');
   return ((await response.json()) as { materials: MaterialPolicy }).materials;
 }
 
@@ -127,6 +158,13 @@ export function materialMime(file: File): string {
     resolveWorkbenchMaterialMime({ mimeType: file.type, fileName: file.name }) ||
     'application/octet-stream'
   );
+}
+
+function uploadFailureKey(status: number): string {
+  if (status === 413) return 'upload.fileTooLarge';
+  if (status === 415) return 'upload.unsupportedCourseMaterial';
+  if (status === 429) return 'upload.materialQuotaExceeded';
+  return 'upload.materialUploadFailed';
 }
 
 /** Upload one material to the owner's library; its id. */
@@ -139,10 +177,24 @@ export async function uploadMaterial(file: File): Promise<string> {
     },
     body: file,
   });
-  if (!response.ok) throw await failure(response, `Uploading ${file.name} failed`);
+  if (!response.ok) {
+    const refused = await failure(response, uploadFailureKey(response.status), {
+      name: file.name,
+    });
+    // The upload route's refusals are said in the learner's language.
+    throw new RunApiError(
+      refused.status,
+      refused.errorCode,
+      undefined,
+      refused.fallbackKey,
+      refused.fallbackValues,
+    );
+  }
   const body = (await response.json()) as { materialId?: unknown };
   if (typeof body.materialId !== 'string') {
-    throw new RunApiError(`Uploading ${file.name} failed`, response.status);
+    throw new RunApiError(response.status, undefined, undefined, 'upload.materialUploadFailed', {
+      name: file.name,
+    });
   }
   return body.materialId;
 }

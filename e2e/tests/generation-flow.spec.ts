@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
 import { HomePage } from '../pages/home.page';
+import { MockApi } from '../fixtures/mock-api';
 import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
 import type { Page } from '@playwright/test';
 
@@ -123,4 +124,97 @@ test('a reload during outline review shows the same review, which confirms the r
   await preview.confirmOutlines();
   await preview.waitForRedirectToClassroom();
   expect(run.confirmations).toHaveLength(1);
+});
+
+test.describe('Generation runs', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(
+      (settings) => {
+        localStorage.setItem('maic:account:settings-storage', settings);
+      },
+      createSettingsStorage({ sidebarCollapsed: false }),
+    );
+  });
+
+  test('the classroom follows the run: scenes arrive, and the course is read-only until it completes', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForRedirectToClassroom();
+    const scenes = page.locator('[data-testid="scene-item"]');
+    await expect(scenes.first()).toBeVisible({ timeout: 15_000 });
+    // Generating: the Pro switch shows, disabled.
+    await expect(page.getByRole('switch')).toBeDisabled();
+    // The second scene arrives while the classroom is open.
+    await expect(scenes).toHaveCount(2, { timeout: 15_000 });
+    // Completed: editable.
+    await expect(page.getByRole('switch')).toBeEnabled({ timeout: 15_000 });
+    expect(page.url()).toContain(run.stageId);
+  });
+
+  test('a failed first scene pauses with Retry, and Retry resumes the run', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks({ failFirstScene: true });
+    await startFromHome(page);
+    const retry = page.getByTestId('generation-retry');
+    await expect(retry).toBeVisible({ timeout: 15_000 });
+    // The classic sentence for a provider that is unavailable.
+    await expect(page.getByText(/temporarily unavailable|暂时不可用/i)).toBeVisible();
+    await retry.click();
+    await new GenerationPreviewPage(page).waitForRedirectToClassroom();
+    expect(run.retries).toHaveLength(1);
+  });
+
+  test('a start over the active-run limit says so', async ({ page, mockApi }) => {
+    await mockApi.setupGenerationMocks({ atRunLimit: true });
+    const home = new HomePage(page);
+    await home.goto();
+    await home.fillRequirement('讲解光合作用');
+    await home.submit();
+    await expect(page.getByText(/maximum number of courses|同时生成的课程已达上限/i)).toBeVisible();
+    expect(page.url()).not.toContain('/generation-preview');
+  });
+
+  test('a confirmation that lost to another tab keeps the edits and says so', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForReviewOpportunity();
+    await preview.openOutlineReview();
+    await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    const title = page.locator('textarea').first();
+    await title.fill('Edited here');
+    run.confirmElsewhere();
+    await preview.confirmOutlines();
+    await expect(page.getByText(/already confirmed elsewhere|已在其他地方确认/i)).toBeVisible();
+    await expect(page.locator('textarea').first()).toHaveValue('Edited here');
+  });
+
+  test('a second tab shows the review instead of continuing on a timer', async ({
+    page,
+    mockApi,
+    context,
+  }) => {
+    const run = await mockApi.setupGenerationMocks({ stepMs: 400 });
+    await startFromHome(page);
+    // A second tab on the same run, attached while the outline streams.
+    const second = await context.newPage();
+    await new MockApi(second).mockModelSettings();
+    await run.attach(second);
+    await second.goto(page.url());
+    const secondPreview = new GenerationPreviewPage(second);
+    await secondPreview.waitForEditor();
+    // The tab that started the run continues on its beat; the second one never confirms.
+    await new GenerationPreviewPage(page).waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+    await second.close();
+  });
 });

@@ -23,13 +23,15 @@ import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import type { SceneOutline } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
-import { RunApiError } from '@/lib/generation-run-client/api';
+import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
+import { toast } from 'sonner';
 import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
 import {
   createAutoContinue,
   forgetRunStartedHere,
-  outlineReviewPhase,
+  nextPreviewPhase,
+  type PreviewPhase,
   wasRunStartedHere,
 } from '@/lib/generation-run-client/outline-review';
 import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
@@ -62,8 +64,6 @@ function writeReviewIntent(runId: string, intent: boolean): void {
   }
 }
 
-type PreviewPhase = 'progress' | 'outline-ready' | 'review';
-
 function GenerationPreviewContent() {
   const router = useRouter();
   const { t } = useI18n();
@@ -71,9 +71,11 @@ function GenerationPreviewContent() {
   const { view, status, caughtUp, refresh } = useGenerationRun(runId);
   const capabilities = useModelCapabilities();
 
-  // The 2.5 s auto-continue: it confirms whatever was armed last.
-  const pendingConfirmRef = useRef<() => void>(() => {});
-  const [autoContinue] = useState(() => createAutoContinue(() => pendingConfirmRef.current()));
+  // The 2.5 s auto-continue: it confirms the outline it was armed with.
+  const sendConfirmRef = useRef<(edits: SceneOutline[] | null) => void>(() => {});
+  const [autoContinue] = useState(() =>
+    createAutoContinue<SceneOutline[] | null>((edits) => sendConfirmRef.current(edits)),
+  );
   // Sticky: true once the learner opens the review (mid-stream or after),
   // until they collapse it again. Combined with `reviewOutlineEnabled` to
   // decide whether the outline waits for them or auto-continues.
@@ -84,6 +86,8 @@ function GenerationPreviewContent() {
   const [editedOutlines, setEditedOutlines] = useState<SceneOutline[] | null>(null);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
+  // This page's confirmation lost to one made elsewhere: its edits stay shown.
+  const [confirmConflict, setConfirmConflict] = useState(false);
   // The seq of a step Retry: the run shows as retrying until a step starts after it.
   const [retrySeq, setRetrySeq] = useState<number | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -92,8 +96,8 @@ function GenerationPreviewContent() {
   // waits for them, as generation did.
   const [agentRevealPending, setAgentRevealPending] = useState(false);
   const agentRevealShownRef = useRef(false);
-  // How the run looked when this page first caught up with it.
-  const attachedStateRef = useRef<string | null>(null);
+  // Whether this page has caught up with the run yet.
+  const attachedRef = useRef(false);
   const reviewOutlineEnabled = useSettingsStore((s) => s.reviewOutlineEnabled);
   const setReviewOutlineEnabled = useSettingsStore((s) => s.setReviewOutlineEnabled);
 
@@ -137,6 +141,7 @@ function GenerationPreviewContent() {
       writeReviewIntent(view.runId, false);
       forgetRunStartedHere(view.runId);
       setPhase('progress');
+      void refresh();
       // The learner committed to the course: the homepage draft can go. Before
       // this point, "back to requirements" must restore their input.
       try {
@@ -147,9 +152,16 @@ function GenerationPreviewContent() {
     } catch (error) {
       log.warn('Confirming the outline failed:', error);
       if (error instanceof RunApiError && error.errorCode === 'RUN_STATE_CONFLICT') {
+        // Confirmed (or changed) elsewhere: what the learner edited here stays
+        // in view, with what happened.
+        if (edits) {
+          setConfirmConflict(true);
+          setPhase('review');
+          setCommandError(t('generation.outlineConfirmedElsewhere'));
+        }
         await refresh();
-      } else if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
-        setCommandError(t('generation.activeRunLimit'));
+      } else if (error instanceof RunApiError) {
+        setCommandError(runApiErrorText(error, t));
       } else {
         setCommandError(error instanceof Error ? error.message : String(error));
       }
@@ -157,42 +169,34 @@ function GenerationPreviewContent() {
       setIsConfirmingOutlines(false);
     }
   };
+  useEffect(() => {
+    sendConfirmRef.current = (edits) => void sendConfirm(edits);
+  });
 
-  const armAutoContinue = (edits: SceneOutline[] | null) => {
-    pendingConfirmRef.current = () => void sendConfirm(edits);
-    autoContinue.arm();
-  };
+  const armAutoContinue = (edits: SceneOutline[] | null) => autoContinue.arm(edits);
 
-  // The outline is ready and the run waits for it. A run that was already
-  // waiting when this page opened (from its course card, or a reload) shows
-  // the review; one that gets there while the page is open keeps the classic
-  // pacing: the review when the learner asked for it, else a 2.5 s beat on the
-  // outline-ready card before generation continues.
+  // The outline is ready and the run waits for it. The tab whose composer
+  // started the run keeps the classic pacing (the review when the learner
+  // asked for it, else a 2.5 s beat on the outline-ready card); any other tab
+  // shows the review.
   useEffect(() => {
     if (!view || !caughtUp) return;
-    if (attachedStateRef.current === null) {
-      attachedStateRef.current = view.state;
-      // A reload while the learner had the review open mid-stream.
-      if (isOutlineStreaming && outlineReviewIntentRef.current) setPhase('review');
-    }
-    if (view.state !== 'awaiting_outline_confirmation') {
-      clearOutlineReviewTimer();
-      // A failure shows on the progress card with its Retry; a confirmed
-      // outline (here or from another device) moves on to generation.
-      if (phase === 'outline-ready' || view.state === 'paused') setPhase('progress');
-      if (phase === 'review' && !isOutlineStreaming && view.outline) setPhase('progress');
-      return;
-    }
-    if (phase !== 'progress') return;
-    const next = outlineReviewPhase({
-      attachedWaiting:
-        attachedStateRef.current === 'awaiting_outline_confirmation' &&
-        !wasRunStartedHere(view.runId),
+    const firstAttach = !attachedRef.current;
+    attachedRef.current = true;
+    const next = nextPreviewPhase({
+      phase,
+      state: view.state,
+      outlineStreaming: isOutlineStreaming,
+      hasOutline: !!view.outline,
+      firstAttach,
+      startedHere: wasRunStartedHere(view.runId),
       reviewOutlineEnabled: useSettingsStore.getState().reviewOutlineEnabled,
       reviewIntent: outlineReviewIntentRef.current,
+      confirmConflict,
     });
-    setPhase(next);
-    if (next === 'outline-ready') armAutoContinue(null);
+    if (next.cancelAutoContinue) clearOutlineReviewTimer();
+    if (next.phase !== phase) setPhase(next.phase);
+    if (next.armAutoContinue) armAutoContinue(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.state, caughtUp]);
 
@@ -223,12 +227,15 @@ function GenerationPreviewContent() {
     setCommandError(null);
     try {
       setRetrySeq(await retryPausedRun(view));
+      void refresh();
     } catch (error) {
       log.warn('Retrying the run failed:', error);
       if (error instanceof RunApiError && error.errorCode === 'RUN_STATE_CONFLICT') {
+        // Retried (or changed) elsewhere.
+        toast.info(t('generation.runChangedElsewhere'));
         await refresh();
-      } else if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
-        setCommandError(t('generation.activeRunLimit'));
+      } else if (error instanceof RunApiError) {
+        setCommandError(runApiErrorText(error, t));
       } else {
         setCommandError(error instanceof Error ? error.message : String(error));
       }
@@ -275,10 +282,36 @@ function GenerationPreviewContent() {
   };
 
   const handleConfirmOutlines = () => {
+    // The outline was confirmed elsewhere: follow the run as it goes.
+    if (confirmConflict) {
+      setConfirmConflict(false);
+      setCommandError(null);
+      setPhase('progress');
+      return;
+    }
     const finalOutlines = editedOutlines ?? outlines;
     if (finalOutlines.length === 0) return;
     void sendConfirm(editedOutlines);
   };
+
+  // The run cannot be read now; the page keeps trying.
+  if (status === 'error' && runId) {
+    return (
+      <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
+        <Card className="p-8 max-w-md w-full">
+          <div className="text-center space-y-4">
+            <div className="size-8 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin mx-auto" />
+            <h2 className="text-xl font-semibold">{t('generation.runLoadFailed')}</h2>
+            <p className="text-sm text-muted-foreground">{t('generation.runLoadRetrying')}</p>
+            <Button variant="outline" onClick={() => router.push('/')} className="w-full">
+              <ArrowLeft className="size-4 mr-2" />
+              {t('generation.backToHome')}
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   // Still reading the run
   if (status === 'loading' && runId) {

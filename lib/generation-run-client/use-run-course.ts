@@ -12,19 +12,20 @@
  * run completes the course is read-only here: the server refuses every other
  * writer.
  */
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { PENDING_SCENE_ID, setServerGeneratingStage, useStageStore } from '@/lib/store/stage';
+import { hasPendingSceneChange, setServerGeneratingStage, useStageStore } from '@/lib/store/stage';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { fetchScenesByIds, fetchStageManifest } from '@/lib/workbench/stage-freshness';
 import { createLogger } from '@/lib/logger';
 import { getClientTranslation } from '@/lib/i18n';
-import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 
 import { RunApiError } from './api';
 import { retryPausedRun, retryRunMedia } from './commands';
 import { applyRunMedia, registerRunMediaRetry } from './run-media';
+import { courseFenced, mergeServerScenes, RunCourseSceneSync } from './run-course';
 import { isFinishedRunState, type RunView } from './types';
 import { useGenerationRun } from './use-generation-run';
 
@@ -67,29 +68,6 @@ export function generationStatusOfRun(
   return 'generating';
 }
 
-/** Merge scenes read from the server into the store's, by id, in order; no save is queued. */
-function applyServerScenes(scenes: readonly Scene[]): void {
-  if (scenes.length === 0) return;
-  const state = useStageStore.getState();
-  const stageId = state.stage?.id;
-  const fresh = scenes.filter((scene) => scene.stageId === stageId);
-  if (fresh.length === 0) return;
-  const byId = new Map(state.scenes.map((scene) => [scene.id, scene]));
-  for (const scene of fresh) byId.set(scene.id, scene);
-  const merged = [...byId.values()].sort((a, b) => a.order - b.order);
-  const orders = new Set(merged.map((scene) => scene.order));
-  useStageStore.setState({
-    scenes: merged,
-    generatingOutlines: state.generationComplete
-      ? []
-      : state.outlines.filter((outline) => !orders.has(outline.order)),
-    currentSceneId:
-      state.currentSceneId && state.currentSceneId !== PENDING_SCENE_ID
-        ? state.currentSceneId
-        : (merged[0]?.id ?? null),
-  });
-}
-
 /** The scene of the store that holds a media element (by its placeholder). */
 function sceneHoldingElement(elementId: string): string | null {
   for (const scene of useStageStore.getState().scenes) {
@@ -110,86 +88,109 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
   const runId =
     input.ready && loadedId === input.classroomId ? runIdOfCourse(producer, producerRef) : null;
   const { view, status, refresh } = useGenerationRun(runId);
+  const capabilities = useModelCapabilities();
   const viewRef = useRef<RunView | null>(null);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
 
-  // While the run is not over, the course is read-only.
-  const active = !!view && !isFinishedRunState(view.state);
+  // The scene reads, for this course while it follows a run.
+  const [sync, setSync] = useState<RunCourseSceneSync | null>(null);
   useEffect(() => {
     if (!runId) return;
-    setServerGeneratingStage(active ? input.classroomId : null);
-    useStageStore.setState({ courseGenerating: active });
+    const stageId = input.classroomId;
+    const created = new RunCourseSceneSync(stageId, {
+      fetchManifest: fetchStageManifest,
+      fetchScenes: fetchScenesByIds,
+      knownSceneIds: () => useStageStore.getState().scenes.map((scene) => scene.id),
+      apply: (scenes) => {
+        const state = useStageStore.getState();
+        if (state.stage?.id !== stageId) return;
+        const patch = mergeServerScenes(state, scenes, stageId, (sceneId) =>
+          hasPendingSceneChange(stageId, sceneId),
+        );
+        if (patch) useStageStore.setState(patch);
+      },
+      onWarn: (message, error) => log.warn(`${message}:`, error),
+    });
+    setSync(created);
+    return () => {
+      created.close();
+      setSync(null);
+    };
+  }, [runId, input.classroomId]);
+
+  // The course is read-only while its run is not over, or not known to be; a
+  // finished run lifts it once the classroom holds the run's last writes.
+  const [reconciled, setReconciled] = useState(false);
+  const firstStateRef = useRef<string | null>(null);
+  const finished = !!view && isFinishedRunState(view.state);
+  useEffect(() => {
+    if (!view) return;
+    if (firstStateRef.current === null) {
+      firstStateRef.current = view.state;
+      // A run that was already over when the course was opened: the document
+      // the classroom loaded is its last write.
+      if (isFinishedRunState(view.state)) {
+        setReconciled(true);
+        return;
+      }
+    }
+    if (!finished || reconciled || !sync) return;
+    let cancelled = false;
+    void sync.reconcile().then(() => {
+      if (!cancelled) setReconciled(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, finished, reconciled, sync]);
+
+  const fenced = courseFenced({ runId, status, view, reconciled });
+  useEffect(() => {
+    if (!runId) return;
+    setServerGeneratingStage(fenced ? input.classroomId : null);
+    useStageStore.setState({ courseGenerating: fenced });
     return () => {
       setServerGeneratingStage(null);
       useStageStore.setState({ courseGenerating: false });
     };
-  }, [runId, active, input.classroomId]);
+  }, [runId, fenced, input.classroomId]);
 
   // A run that is unknown (its log was compacted after it finished) leaves the course as loaded.
   useEffect(() => {
     if (status === 'missing' && runId) log.info(`Run ${runId} of this course is no longer kept`);
   }, [status, runId]);
 
-  // Read the scenes the run appended (or changed) since this classroom read the course.
-  const syncing = useRef<Promise<void> | null>(null);
-  const resyncWanted = useRef(false);
-  const changedScenes = useRef(new Set<string>());
-  const syncScenes = useCallback(async (): Promise<void> => {
-    if (syncing.current) {
-      resyncWanted.current = true;
-      return syncing.current;
-    }
-    const stageId = input.classroomId;
-    syncing.current = (async () => {
-      do {
-        resyncWanted.current = false;
-        const manifest = await fetchStageManifest(stageId);
-        if (manifest.status !== 'ok') return;
-        const known = new Set(useStageStore.getState().scenes.map((scene) => scene.id));
-        const wanted = new Set(changedScenes.current);
-        changedScenes.current.clear();
-        for (const scene of manifest.manifest.scenes)
-          if (!known.has(scene.id)) wanted.add(scene.id);
-        if (wanted.size === 0) continue;
-        const scenes = await fetchScenesByIds(stageId, [...wanted]);
-        if (useStageStore.getState().stage?.id !== stageId) return;
-        applyServerScenes(scenes);
-      } while (resyncWanted.current);
-    })()
-      .catch((error) => log.warn('Reading the generated scenes failed:', error))
-      .finally(() => {
-        syncing.current = null;
-      });
-    return syncing.current;
-  }, [input.classroomId]);
-
-  const following = !!view;
+  // Scenes appended since this classroom read the course.
   const scenesCompleted = view?.progress.scenesCompleted ?? 0;
   const scenesReported = view ? Object.keys(view.readyScenes).length : 0;
   useEffect(() => {
-    if (following) void syncScenes();
-  }, [following, scenesCompleted, scenesReported, syncScenes]);
+    if (sync && view) void sync.sync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on progress, not every event
+  }, [sync, !!view, scenesCompleted, scenesReported]);
 
-  // A placed image or video rewrote its scene; completion may have too.
+  // Media: the run's states in the media store; a placed image or video
+  // rewrote its scene, which is read again.
+  const slots = { image: !!capabilities.image, video: !!capabilities.video };
   const lastMedia = useRef<Record<string, string>>({});
   useEffect(() => {
     if (!view) return;
-    let changed = false;
+    const changed: string[] = [];
     for (const [elementId, state] of Object.entries(view.media)) {
       if (state.status === 'done' && lastMedia.current[elementId] !== state.assetId) {
         lastMedia.current[elementId] = state.assetId ?? '';
         const sceneId = sceneHoldingElement(elementId);
-        if (sceneId) {
-          changedScenes.current.add(sceneId);
-          changed = true;
-        }
+        if (sceneId) changed.push(sceneId);
       }
     }
-    applyRunMedia(input.classroomId, view.media);
-    if (changed) void syncScenes();
-  }, [view?.media, input.classroomId, syncScenes]); // eslint-disable-line react-hooks/exhaustive-deps
+    applyRunMedia(input.classroomId, view.media, slots);
+    if (changed.length > 0 && sync) {
+      sync.markChanged(changed);
+      void sync.sync();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- slots is derived each render
+  }, [view?.media, input.classroomId, sync, slots.image, slots.video]);
 
   // The run's state as the classroom's generation state.
   useEffect(() => {
@@ -202,12 +203,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       failedOutlines: failedOutlinesOfRun(view, outlines),
       ...(completed ? { generationComplete: true, generatingOutlines: [] } : {}),
     });
-    if (completed) {
-      // The run's last writes: read every scene once more.
-      for (const scene of store.scenes) changedScenes.current.add(scene.id);
-      void syncScenes();
-    }
-  }, [view?.state, view?.error, view?.skippedScenes, view?.outline, syncScenes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view?.state, view?.error, view?.skippedScenes, view?.outline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Media Retry is the run's command while this classroom follows the run.
   useEffect(() => {
@@ -216,29 +212,36 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       const current = viewRef.current;
       if (!current) throw new Error('The generation run is not loaded');
       await retryRunMedia(current, elementId);
-      // A finished run's stream is closed: follow it again for the retry.
+      // Follow the run again for the retried item.
       await refresh();
     });
   }, [runId, input.classroomId, refresh]);
 
-  const retryOutline = useCallback(async (outlineId: string) => {
-    const current = viewRef.current;
-    if (!current || current.state !== 'paused') return;
-    const outlines = current.outline?.outlines ?? useStageStore.getState().outlines;
-    if (!failedOutlinesOfRun(current, outlines).some((outline) => outline.id === outlineId)) return;
-    try {
-      await retryPausedRun(current);
-      // Queued until the run picks it up (after a media item in flight).
-      useStageStore.setState({ failedOutlines: [], generationStatus: 'generating' });
-    } catch (error) {
-      log.warn('Retrying the run failed:', error);
-      // A paused run does not count against the limit on active runs; its
-      // Retry makes it count again.
-      if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
-        toast.error(getClientTranslation('generation.activeRunLimit'));
+  const retryOutline = useCallback(
+    async (outlineId: string) => {
+      const current = viewRef.current;
+      if (!current || current.state !== 'paused') return;
+      const outlines = current.outline?.outlines ?? useStageStore.getState().outlines;
+      if (!failedOutlinesOfRun(current, outlines).some((outline) => outline.id === outlineId)) {
+        return;
       }
-    }
-  }, []);
+      try {
+        await retryPausedRun(current);
+        // Queued until the run picks it up (after a media item in flight).
+        useStageStore.setState({ failedOutlines: [], generationStatus: 'generating' });
+      } catch (error) {
+        log.warn('Retrying the run failed:', error);
+        if (error instanceof RunApiError && error.errorCode === 'ACTIVE_RUN_LIMIT') {
+          // A paused run does not count against the limit; its Retry does.
+          toast.error(getClientTranslation('generation.activeRunLimit'));
+        } else if (error instanceof RunApiError && error.errorCode === 'RUN_STATE_CONFLICT') {
+          toast.info(getClientTranslation('generation.runChangedElsewhere'));
+        }
+      }
+      await refresh();
+    },
+    [refresh],
+  );
 
   return { runId: view ? runId : null, retryOutline };
 }

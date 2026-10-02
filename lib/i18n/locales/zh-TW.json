@@ -1024,7 +1024,9 @@
     "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
     "courseMaterialCountLimit": "最多可上傳 5 個課程材料檔案",
     "courseMaterialTotalSizeLimit": "課程材料總大小需小於 150MB",
-    "unsupportedCourseMaterial": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案"
+    "unsupportedCourseMaterial": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案",
+    "materialQuotaExceeded": "素材儲存空間已滿，請刪除部分素材後重試。",
+    "materialUploadFailed": "上傳 {{name}} 失敗，請重試。"
   },
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
@@ -1138,7 +1140,13 @@
     "jumpToBlankTitle": "跳至待補充標題的章節",
     "analyzingMediaMaterial": "解析音影片內容",
     "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。",
-    "activeRunLimit": "同時生成的課程已達上限，請等待其中一門完成後再試。"
+    "activeRunLimit": "同時生成的課程已達上限，請等待其中一門完成後再試。",
+    "outlineConfirmedElsewhere": "此大綱已在其他地方確認，此處的修改未生效。",
+    "runChangedElsewhere": "生成已在其他地方繼續。",
+    "runLoadFailed": "無法載入此次生成",
+    "runLoadRetrying": "正在重試…",
+    "mediaGenerationFailed": "媒體生成失敗",
+    "mediaGenerationDisabled": "生成已停用"
   },
   "settings": {
     "title": "設定",

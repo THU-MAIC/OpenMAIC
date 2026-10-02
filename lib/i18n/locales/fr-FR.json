@@ -1039,7 +1039,9 @@
     "fileTooLarge": "Fichier trop volumineux. Veuillez choisir un fichier de moins de 50 Mo",
     "courseMaterialCountLimit": "Vous pouvez envoyer jusqu’à 5 supports de cours",
     "courseMaterialTotalSizeLimit": "La taille totale des supports de cours doit rester sous 150 Mo",
-    "unsupportedCourseMaterial": "Ce format n’est pas pris en charge par l’extracteur actuel. Changez d’extracteur ou choisissez un autre fichier."
+    "unsupportedCourseMaterial": "Ce format n’est pas pris en charge par l’extracteur actuel. Changez d’extracteur ou choisissez un autre fichier.",
+    "materialQuotaExceeded": "Votre espace de stockage des supports est plein. Supprimez des supports et réessayez.",
+    "materialUploadFailed": "Échec de l'envoi de {{name}}. Veuillez réessayer."
   },
   "generation": {
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "Aller à une section dont le titre manque encore",
     "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo",
     "modelSettingsUnavailable": "Les réglages des modèles n'ont pas pu être lus : la génération s'est arrêtée. Réessayez.",
-    "activeRunLimit": "Le nombre maximal de cours en cours de génération est atteint. Attendez qu'un cours se termine, puis réessayez."
+    "activeRunLimit": "Le nombre maximal de cours en cours de génération est atteint. Attendez qu'un cours se termine, puis réessayez.",
+    "outlineConfirmedElsewhere": "Ce plan a déjà été confirmé ailleurs ; vos modifications ici n'ont pas été appliquées.",
+    "runChangedElsewhere": "La génération a déjà avancé ailleurs.",
+    "runLoadFailed": "Impossible de charger cette génération",
+    "runLoadRetrying": "Nouvelle tentative…",
+    "mediaGenerationFailed": "Échec de la génération du média",
+    "mediaGenerationDisabled": "Génération désactivée"
   },
   "settings": {
     "title": "Paramètres",

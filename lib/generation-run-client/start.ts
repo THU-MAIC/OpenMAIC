@@ -12,11 +12,15 @@ import { useUserProfileStore } from '@/lib/store/user-profile';
 
 import {
   fetchMaterialPolicy,
+  listActiveGenerationRuns,
+  RunApiError,
+  type RunLimits,
   materialMime,
   startGenerationRun,
   uploadMaterial,
   type StartRunInput,
 } from './api';
+import { runInProgress } from './owner-runs';
 import type { RunSnapshot } from './types';
 
 /** A start refused before anything was submitted; `reason` is the translation key that says why. */
@@ -74,6 +78,16 @@ export function selectedRunVoice(capabilities: ModelCapabilities): StartRunInput
   };
 }
 
+/** Whether one more run would be refused: as many in progress, or waiting, as allowed. */
+export function wouldExceedRunLimits(
+  runs: ReadonlyArray<Pick<RunSnapshot, 'state'>>,
+  limits: RunLimits,
+): boolean {
+  const inProgress = runs.filter((run) => runInProgress(run)).length;
+  const waiting = runs.filter((run) => run.state === 'awaiting_outline_confirmation').length;
+  return inProgress >= limits.maxActive || waiting >= limits.maxWaiting;
+}
+
 export async function startClassicRun(input: {
   requirement: string;
   materials: readonly File[];
@@ -85,6 +99,12 @@ export async function startClassicRun(input: {
 
   let materialIds: string[] = [];
   if (input.materials.length > 0) {
+    // Nothing is uploaded for a start the limits would refuse (the start
+    // checks again: this read can race another tab).
+    const { runs, limits } = await listActiveGenerationRuns();
+    if (limits && wouldExceedRunLimits(runs, limits)) {
+      throw new RunApiError(429, 'ACTIVE_RUN_LIMIT', undefined, 'generation.activeRunLimit');
+    }
     // Only what an extractor on this server reads is uploaded.
     const policy = await fetchMaterialPolicy();
     if (input.materials.length > policy.maxCount) {

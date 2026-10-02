@@ -1039,7 +1039,9 @@
     "fileTooLarge": "Archivo demasiado grande. Selecciona uno de menos de 50 MB",
     "courseMaterialCountLimit": "Puedes subir hasta 5 archivos de material del curso",
     "courseMaterialTotalSizeLimit": "El tamaño total del material del curso debe ser menor a 150 MB",
-    "unsupportedCourseMaterial": "El extractor actual no admite este formato. Cambia de extractor o elige otro archivo."
+    "unsupportedCourseMaterial": "El extractor actual no admite este formato. Cambia de extractor o elige otro archivo.",
+    "materialQuotaExceeded": "Tu almacenamiento de materiales está lleno. Elimina algunos materiales e inténtalo de nuevo.",
+    "materialUploadFailed": "No se pudo subir {{name}}. Inténtalo de nuevo."
   },
   "generation": {
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "Ir a una sección que aún necesita título",
     "analyzingMediaMaterial": "Analizando audio/video",
     "modelSettingsUnavailable": "No se pudo leer la configuración de modelos, así que la generación se detuvo. Inténtalo de nuevo.",
-    "activeRunLimit": "Ya tienes el número máximo de cursos generándose. Espera a que termine uno e inténtalo de nuevo."
+    "activeRunLimit": "Ya tienes el número máximo de cursos generándose. Espera a que termine uno e inténtalo de nuevo.",
+    "outlineConfirmedElsewhere": "Este esquema ya se confirmó en otro lugar; tus cambios aquí no se aplicaron.",
+    "runChangedElsewhere": "La generación ya avanzó en otro lugar.",
+    "runLoadFailed": "No se pudo cargar esta generación",
+    "runLoadRetrying": "Reintentando…",
+    "mediaGenerationFailed": "Falló la generación de medios",
+    "mediaGenerationDisabled": "Generación desactivada"
   },
   "settings": {
     "title": "Configuración",

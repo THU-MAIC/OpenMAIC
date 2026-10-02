@@ -349,7 +349,9 @@ export async function retryMediaTask(
   const runTask = useMediaGenerationStore.getState().getTask(elementId);
   const runRetry = runMediaRetryFor(runTask?.stageId);
   if (runTask && runRetry) {
-    if (runTask.status !== 'failed' || !isRetryableMediaFailure(runTask)) return;
+    if (runTask.status !== 'failed' || !(runTask.retryable ?? isRetryableMediaFailure(runTask))) {
+      return;
+    }
     useMediaGenerationStore.getState().markPendingForRetry(elementId);
     try {
       await runRetry(elementId);

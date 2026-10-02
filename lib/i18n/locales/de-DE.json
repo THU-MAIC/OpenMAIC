@@ -1039,7 +1039,9 @@
     "fileTooLarge": "Die Datei ist zu groß. Wähle bitte eine Datei unter 50 MB aus.",
     "courseMaterialCountLimit": "Du kannst bis zu 5 Dateien als Kursmaterial hochladen",
     "courseMaterialTotalSizeLimit": "Die Gesamtgröße der Kursmaterialien muss unter 150 MB liegen",
-    "unsupportedCourseMaterial": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei."
+    "unsupportedCourseMaterial": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei.",
+    "materialQuotaExceeded": "Dein Materialspeicher ist voll. Lösche einige Materialien und versuche es erneut.",
+    "materialUploadFailed": "Hochladen von {{name}} fehlgeschlagen. Bitte versuche es erneut."
   },
   "generation": {
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
     "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
     "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen.",
-    "activeRunLimit": "Es werden bereits so viele Kurse wie möglich generiert. Warte, bis einer fertig ist, und versuche es erneut."
+    "activeRunLimit": "Es werden bereits so viele Kurse wie möglich generiert. Warte, bis einer fertig ist, und versuche es erneut.",
+    "outlineConfirmedElsewhere": "Diese Gliederung wurde bereits anderswo bestätigt; deine Änderungen hier wurden nicht übernommen.",
+    "runChangedElsewhere": "Die Generierung ist anderswo bereits weitergegangen.",
+    "runLoadFailed": "Diese Generierung konnte nicht geladen werden",
+    "runLoadRetrying": "Neuer Versuch…",
+    "mediaGenerationFailed": "Mediengenerierung fehlgeschlagen",
+    "mediaGenerationDisabled": "Generierung deaktiviert"
   },
   "settings": {
     "title": "Einstellungen",

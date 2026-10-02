@@ -1039,7 +1039,9 @@
     "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
     "courseMaterialCountLimit": "教材ファイルは最大5件までアップロードできます",
     "courseMaterialTotalSizeLimit": "教材の合計サイズは150MB未満にしてください",
-    "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。"
+    "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。",
+    "materialQuotaExceeded": "資料の保存容量がいっぱいです。資料を削除してから再度お試しください。",
+    "materialUploadFailed": "{{name}} のアップロードに失敗しました。再度お試しください。"
   },
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
@@ -1153,7 +1155,13 @@
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
     "analyzingMediaMaterial": "音声・動画を解析中",
     "modelSettingsUnavailable": "モデル設定を読み込めなかったため、生成を停止しました。もう一度お試しください。",
-    "activeRunLimit": "同時に生成できるコースの上限に達しています。いずれかが完了してから再度お試しください。"
+    "activeRunLimit": "同時に生成できるコースの上限に達しています。いずれかが完了してから再度お試しください。",
+    "outlineConfirmedElsewhere": "このアウトラインは別の場所で確認済みです。ここでの編集は反映されていません。",
+    "runChangedElsewhere": "生成は別の場所で既に進んでいます。",
+    "runLoadFailed": "この生成を読み込めませんでした",
+    "runLoadRetrying": "再試行しています…",
+    "mediaGenerationFailed": "メディアの生成に失敗しました",
+    "mediaGenerationDisabled": "生成は無効です"
   },
   "settings": {
     "title": "設定",

@@ -97,9 +97,10 @@ export function Stage({
   const isOwner = useStageStore((s) => s.isOwner);
   const readOnly = useStageStore((s) => s.readOnly);
   // A course its generation run is still producing is read-only until the run
-  // completes (the server refuses its edits).
+  // completes (the server refuses its edits): the Pro switch shows, disabled,
+  // as it does while the browser generates.
   const courseGenerating = useStageStore((s) => s.courseGenerating);
-  const canEditOwnedStage = isOwner && !readOnly && !courseGenerating;
+  const canEditOwnedStage = isOwner && !readOnly;
 
   // Hosted by the Pro workspace's classroom pane. Ambient rather than a prop
   // because `Stage` is built by `ClassroomSurface`, which is mounted by both
@@ -137,6 +138,7 @@ export function Stage({
   // edit-mode entry that would immediately auto-exit.
   const isEditable =
     canEditOwnedStage &&
+    !courseGenerating &&
     isCurrentSceneEditable({
       currentSceneId,
       sceneCount: scenes.length,
@@ -150,7 +152,7 @@ export function Stage({
   const currentStageMatchesHost = !classroomId || stage?.id === classroomId;
   const hostedSceneEditable = isHostedSceneEditable({
     editorEnabled,
-    isOwner: canEditOwnedStage,
+    isOwner: canEditOwnedStage && !courseGenerating,
     stageMatchesHost: currentStageMatchesHost,
     currentSceneId,
     sceneCount: scenes.length,

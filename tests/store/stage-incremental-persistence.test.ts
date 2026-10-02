@@ -13,6 +13,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 
 import {
   flushStageSave,
+  hasPendingSceneChange,
   restorePendingStageChanges,
   setServerGeneratingStage,
   useStageStore,
@@ -73,8 +74,9 @@ afterEach(() => {
 });
 
 describe('a course its generation run is producing', () => {
-  it('queues no content save, only the reading position', async () => {
+  it('holds its content changes until the run completes, and writes them then', async () => {
     setServerGeneratingStage('stage-1');
+    // A learner's progress on a scene (PBL), and the reading position.
     useStageStore.getState().updateScene('scene-2', { title: 'changed' });
     useStageStore.getState().setCurrentSceneId('scene-2');
     await flushStageSave();
@@ -82,12 +84,16 @@ describe('a course its generation run is producing', () => {
     expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'currentScene' }]);
     expect(await useStageStore.getState().saveToStorage()).toBe(false);
     expect(fullSave).not.toHaveBeenCalled();
+    expect(hasPendingSceneChange('stage-1', 'scene-2')).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave).toHaveBeenCalledOnce();
 
-    // Once the run completes, edits save again.
+    // The run completes: the held change is written, without a new edit.
     setServerGeneratingStage(null);
-    useStageStore.getState().updateScene('scene-2', { title: 'edited' });
-    await flushStageSave();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
+    expect(hasPendingSceneChange('stage-1', 'scene-2')).toBe(false);
   });
 });
 

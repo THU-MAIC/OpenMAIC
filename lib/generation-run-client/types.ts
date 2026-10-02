@@ -37,6 +37,9 @@ export interface RunSnapshot {
   createdAt: string;
   updatedAt: string;
   media?: Record<string, GenerationRunMediaState>;
+  /** What the material analysis reported (in the run's own snapshot). */
+  materialKinds?: Array<'document' | 'media'>;
+  materialTruncated?: { textChars?: number; images?: { total: number; max: number } };
 }
 
 /** One frame of `GET /api/generation-runs/:id/events`. */

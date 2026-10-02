@@ -7,6 +7,14 @@
  * device rebuilds the same view this way. Closing the stream never affects the
  * run.
  *
+ * The stream is held only while the run can change on its own (it is
+ * executing, or generating media). A run that waits for its owner (the
+ * outline confirmation, a Retry of a paused step) or is settled is read again
+ * now and then instead; a command sent from this page wakes the stream again.
+ * A stream the server refuses or drops for good (a stream cap, a deploy) is
+ * reopened with a backoff, reading the snapshot meanwhile; so is a snapshot
+ * that cannot be read.
+ *
  * Framework-free so it can be driven directly; `useGenerationRun` is its React
  * face.
  */
@@ -15,6 +23,7 @@ import { GENERATION_RUN_EVENT_TYPES } from '@/lib/server/generation/run/types';
 import { applyRunEvent, followFrom, viewFromSnapshot } from './reducer';
 import { isFinishedRunState, type RunEvent, type RunSnapshot, type RunView } from './types';
 
+/** `error`: the run could not be read yet (the follower keeps trying). */
 export type RunFollowStatus = 'loading' | 'live' | 'missing' | 'error';
 
 export interface RunFollowerState {
@@ -28,6 +37,8 @@ export interface RunFollowerState {
 export interface RunEventSource {
   addEventListener(type: string, listener: (message: MessageEvent<string>) => void): void;
   close(): void;
+  /** `EventSource.CLOSED` (2) once the browser gave up on the stream. */
+  readonly readyState?: number;
 }
 
 export interface RunFollowerDeps {
@@ -36,7 +47,25 @@ export interface RunFollowerDeps {
   openEvents: ((url: string) => RunEventSource) | null;
   onChange: (state: RunFollowerState) => void;
   onWarn?: (message: string, error: unknown) => void;
+  /** How often a run without a stream is read (default 3 s while it can change, else 15 s). */
   pollIntervalMs?: number;
+  quietPollIntervalMs?: number;
+  /** The first delay before a failed read or stream is tried again (doubles to 30 s). */
+  retryBaseMs?: number;
+}
+
+const EVENT_SOURCE_CLOSED = 2;
+const MAX_RETRY_MS = 30_000;
+
+/** Whether the run can change without a command: what the stream is held for. */
+export function runIsMoving(view: RunView): boolean {
+  if (view.state === 'preparing' || view.state === 'outlining' || view.state === 'generating') {
+    return true;
+  }
+  // A paused or finished run whose media is still being generated.
+  return Object.values(view.media).some(
+    (media) => media.status === 'pending' || media.status === 'generating',
+  );
 }
 
 /** Keep what only the log carries when a snapshot replaces the view. */
@@ -46,21 +75,14 @@ export function mergeSnapshotView(current: RunView | null, snapshot: RunSnapshot
   return {
     ...next,
     researchSources: current.researchSources,
-    materialKinds: current.materialKinds,
-    materialTruncated: current.materialTruncated,
+    materialKinds: next.materialKinds ?? current.materialKinds,
+    materialTruncated: next.materialTruncated ?? current.materialTruncated,
     materialsAnalyzed: next.materialsAnalyzed || current.materialsAnalyzed,
     readyScenes: current.readyScenes,
     skippedScenes: current.skippedScenes,
     generatedAgents: next.generatedAgents ?? current.generatedAgents,
     streamingOutlines: next.outline ? next.streamingOutlines : current.streamingOutlines,
     stepStartedSeq: current.stepStartedSeq,
-    failedSeq: next.error ? (current.error ? current.failedSeq : next.failedSeq) : 0,
-    media: Object.fromEntries(
-      Object.entries(next.media).map(([id, state]) => [
-        id,
-        current.media[id]?.status === state.status ? current.media[id]! : state,
-      ]),
-    ),
     seq: Math.max(next.seq, current.seq),
   };
 }
@@ -68,10 +90,11 @@ export function mergeSnapshotView(current: RunView | null, snapshot: RunSnapshot
 export class RunFollower {
   private state: RunFollowerState = { view: null, status: 'loading', caughtUp: false };
   private source: RunEventSource | null = null;
-  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private resyncing: Promise<void> | null = null;
   private buffered: RunEvent[] = [];
   private closed = false;
+  private failures = 0;
 
   constructor(
     private readonly runId: string,
@@ -88,6 +111,20 @@ export class RunFollower {
     this.deps.onChange(this.state);
   }
 
+  private retryDelay(): number {
+    const base = this.deps.retryBaseMs ?? 1_000;
+    return Math.min(base * 2 ** Math.max(0, this.failures - 1), MAX_RETRY_MS);
+  }
+
+  private schedule(delayMs: number, run: () => void): void {
+    if (this.closed) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      run();
+    }, delayMs);
+  }
+
   private fold(event: RunEvent): void {
     if (this.resyncing) {
       this.buffered.push(event);
@@ -95,13 +132,14 @@ export class RunFollower {
     }
     if (!this.state.view) return;
     this.publish({ view: applyRunEvent(this.state.view, event) });
-    this.idleIfSettled();
+    this.settleTransport();
   }
 
   private async readSnapshot(): Promise<void> {
     const snapshot = await this.deps.fetchSnapshot(this.runId);
     if (this.closed) return;
     if (!snapshot) {
+      this.closeSource();
       this.publish({ status: 'missing' });
       return;
     }
@@ -109,7 +147,7 @@ export class RunFollower {
     const pending = this.buffered;
     this.buffered = [];
     for (const event of pending) next = applyRunEvent(next, event);
-    this.publish({ view: next });
+    this.publish({ view: next, status: 'live' });
   }
 
   /** Read the snapshot again (a `resync`, an edited outline, after a command). */
@@ -122,6 +160,7 @@ export class RunFollower {
           const pending = this.buffered;
           this.buffered = [];
           for (const event of pending) this.fold(event);
+          this.settleTransport();
         });
     }
     return this.resyncing;
@@ -135,6 +174,7 @@ export class RunFollower {
       return;
     }
     if (typeof frame.seq !== 'number' || typeof frame.type !== 'string') return;
+    this.failures = 0;
     const event: RunEvent = {
       seq: frame.seq,
       type: frame.type as RunEvent['type'],
@@ -145,79 +185,133 @@ export class RunFollower {
     if (event.type === 'outline_confirmed' && event.data.edited === true) void this.resync();
   };
 
-  private poll = async () => {
-    try {
-      await this.readSnapshot();
-    } catch (error) {
-      this.deps.onWarn?.('Reading the run snapshot failed', error);
-    }
-    if (!this.closed) this.pollTimer = setTimeout(this.poll, this.deps.pollIntervalMs ?? 3_000);
-  };
-
   async start(): Promise<void> {
     let snapshot: RunSnapshot | null;
     try {
       snapshot = await this.deps.fetchSnapshot(this.runId);
     } catch (error) {
+      if (this.closed) return;
+      // Not "no such run": the read failed, and is tried again.
+      this.failures += 1;
       this.deps.onWarn?.('Reading the run failed', error);
       this.publish({ status: 'error' });
+      this.schedule(this.retryDelay(), () => void this.start());
       return;
     }
     if (this.closed) return;
+    this.failures = 0;
     if (!snapshot) {
       this.publish({ status: 'missing' });
       return;
     }
     const start = followFrom(snapshot);
-    if (!this.deps.openEvents) {
-      this.publish({ view: start.view, status: 'live', caughtUp: true });
-      this.pollTimer = setTimeout(this.poll, this.deps.pollIntervalMs ?? 3_000);
-      return;
+    this.publish({ view: start.view, status: 'live', caughtUp: !this.deps.openEvents });
+    if (this.deps.openEvents && runIsMoving(start.view)) {
+      this.openEvents(start.after);
+    } else {
+      // A run that waits or is settled: what it logged is in its snapshot.
+      this.publish({ caughtUp: true });
+      this.settleTransport();
     }
-    this.publish({ view: start.view, status: 'live' });
-    this.openEvents(start.after);
   }
 
   private openEvents(after: number): void {
     if (this.closed || this.source || !this.deps.openEvents) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
     const source = this.deps.openEvents(
       `/api/generation-runs/${encodeURIComponent(this.runId)}/events?after=${after}`,
     );
     this.source = source;
+    // Until the stream replays what the run logged since `after`.
+    if (this.state.caughtUp) this.publish({ caughtUp: false });
     for (const type of GENERATION_RUN_EVENT_TYPES) source.addEventListener(type, this.onFrame);
     source.addEventListener('resync', () => void this.resync());
     source.addEventListener('caught_up', () => {
+      this.failures = 0;
       this.publish({ caughtUp: true });
-      this.idleIfSettled();
+      this.settleTransport();
+    });
+    source.addEventListener('error', () => {
+      // The browser reconnects by itself unless it gave up (a refusal: the
+      // stream cap, a 404 or a 5xx).
+      if (this.source !== source || source.readyState !== EVENT_SOURCE_CLOSED) return;
+      this.closeSource();
+      this.failures += 1;
+      this.deps.onWarn?.('The run event stream closed', null);
+      this.schedule(this.retryDelay(), () => void this.reconnect());
     });
   }
 
-  /**
-   * A finished run with nothing generating changes only through a command
-   * (a media Retry): the stream is closed until `wake` reopens it.
-   */
-  private idleIfSettled(): void {
-    const view = this.state.view;
-    if (!view || !this.state.caughtUp || !this.source) return;
-    if (!isFinishedRunState(view.state)) return;
-    const busy = Object.values(view.media).some(
-      (media) => media.status === 'pending' || media.status === 'generating',
-    );
-    if (busy) return;
-    this.source.close();
+  /** After a dropped stream: read the snapshot, then follow again from it. */
+  private async reconnect(): Promise<void> {
+    try {
+      await this.readSnapshot();
+    } catch (error) {
+      this.failures += 1;
+      this.deps.onWarn?.('Reading the run snapshot failed', error);
+      this.schedule(this.retryDelay(), () => void this.reconnect());
+      return;
+    }
+    this.settleTransport();
+  }
+
+  private closeSource(): void {
+    this.source?.close();
     this.source = null;
   }
 
-  /** Follow the run's events again (after a command to a run whose stream was closed). */
-  wake(): void {
-    if (this.state.view) this.openEvents(this.state.view.seq);
+  /** Hold the stream while the run can change on its own; else read it now and then. */
+  private settleTransport(): void {
+    const view = this.state.view;
+    if (this.closed || !view || this.resyncing || this.state.status === 'missing') return;
+    if (runIsMoving(view) && this.deps.openEvents) {
+      if (!this.source && !this.timer) this.openEvents(view.seq);
+      return;
+    }
+    if (this.source && !this.state.caughtUp) return;
+    this.closeSource();
+    if (this.timer) return;
+    const quiet = !runIsMoving(view);
+    const interval = quiet
+      ? (this.deps.quietPollIntervalMs ?? (isFinishedRunState(view.state) ? 30_000 : 15_000))
+      : (this.deps.pollIntervalMs ?? 3_000);
+    this.schedule(interval, () => void this.poll());
+  }
+
+  private async poll(): Promise<void> {
+    try {
+      await this.readSnapshot();
+      this.failures = 0;
+    } catch (error) {
+      this.failures += 1;
+      this.deps.onWarn?.('Reading the run snapshot failed', error);
+      this.schedule(this.retryDelay(), () => void this.poll());
+      return;
+    }
+    this.settleTransport();
+  }
+
+  /**
+   * Read the run again now and follow it as it is: after a command from this
+   * page (a confirmation, a Retry), or when the page is shown again.
+   */
+  async wake(): Promise<void> {
+    if (this.closed) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.failures = 0;
+    if (!this.state.view) {
+      await this.start();
+      return;
+    }
+    await this.resync();
   }
 
   close(): void {
     this.closed = true;
-    this.source?.close();
-    this.source = null;
-    if (this.pollTimer) clearTimeout(this.pollTimer);
-    this.pollTimer = null;
+    this.closeSource();
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
   }
 }
