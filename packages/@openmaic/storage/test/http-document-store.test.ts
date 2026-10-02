@@ -431,4 +431,67 @@ describe('HttpDocumentStore contract mapping', () => {
       details,
     });
   });
+
+  // The autosave keeps at most one save in flight and starts the next one only
+  // once that promise settles. A request that never settles therefore strands
+  // every later save for the life of the page — silently, because the store
+  // still reports the work as pending. The deadline is what turns that into an
+  // ordinary failure the backoff can retry.
+  test('rejects a stalled request at the deadline instead of holding its caller forever', async () => {
+    let aborted = false;
+    const stalledFetch = ((_input: string | URL | Request, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(init.signal?.reason ?? new Error('aborted'));
+        });
+      });
+    }) as typeof fetch;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: stalledFetch,
+      requestTimeoutMs: 30,
+    });
+
+    const started = Date.now();
+    await expect(client.saveDocument(makeDocument())).rejects.toMatchObject({
+      name: 'HttpDocumentStoreError',
+      status: 0,
+      code: 'HTTP_REQUEST_TIMEOUT',
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(aborted).toBe(true);
+  });
+
+  test('disarms the deadline once a request settles, so it cannot abort a completed one', async () => {
+    let signal: AbortSignal | undefined;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: async (_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Response(JSON.stringify([]), { status: 200 });
+      },
+      requestTimeoutMs: 30,
+    });
+
+    await expect(client.listDocuments()).resolves.toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(signal?.aborted).toBe(false);
+  });
+
+  test('a non-positive requestTimeoutMs leaves the wait unbounded', async () => {
+    let signal: AbortSignal | undefined;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: (_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      },
+      requestTimeoutMs: 0,
+    });
+
+    void client.listDocuments().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(signal).toBeUndefined();
+  });
 });
