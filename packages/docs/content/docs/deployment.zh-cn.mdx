@@ -90,7 +90,7 @@ DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 
 PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只会在数据库目录首次初始化时设置密码，之后修改环境变量不会自动修改已有数据库用户密码。
 
-除非设置了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 数据卷中还保存着 `instance-secret.key`，即自动生成的实例密钥，用于加密模型设置中保存的服务商 key。请把它和数据库一起备份：没有它，已保存的 key 需要重新填写。
+除非设置了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 数据卷中还保存着 `instance-secret.key`，即自动生成的实例密钥，用于加密模型设置中保存的服务商 key。请把它和数据库一起备份：没有它，已保存的 key 需要重新填写。如果运行多个副本、没有持久化数据卷或文件系统只读，请改为设置 `OPENMAIC_SECRET_KEY`（所有副本使用同一个值）；参见 [密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
 
 早期版本可以把课程保存在浏览器（IndexedDB）中。该模式已移除，`NEXT_PUBLIC_PERSISTENCE` 构建变量会被忽略。以这种方式保存在浏览器中的课程，会在该浏览器首次打开升级后的应用时自动搬到服务端：单向导入器把它们（连同对话、学习进度、文件夹和媒体）复制给服务端为该浏览器解析出的所有者，浏览器中的原始数据保持不变。每个浏览器只导入一次：服务端把该浏览器绑定给第一个加载升级后应用的所有者，认领会把绑定带到账号（匿名所有者在登录时被认领进账号）。服务端会拒绝导入器为其他所有者发出的请求，因此之后在同一浏览器中使用的其他所有者不会得到任何导入。整个过程无需操作，也没有界面提示；如有问题，会以 `[legacy-browser-import]` 前缀记录在浏览器控制台中。
 

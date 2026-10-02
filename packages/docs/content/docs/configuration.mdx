@@ -212,6 +212,8 @@ policy:
 
 Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or on hosts without a persistent data directory such as Vercel; any string works, for example the output of `openssl rand -base64 32`.
 
+Without it, a data directory that does not survive a restart (a container without a volume, an ephemeral disk) means a new secret on every start, and several replicas each generate their own; on a read-only working directory no secret can be created and saving a key in the model settings fails. At startup the server warns when `OPENMAIC_SECRET_KEY` is unset and the data directory is not writable, and when the database holds keys sealed under a different secret than the current one (for example because `data/instance-secret.key` was lost); it starts anyway.
+
 ```bash
 OPENMAIC_SECRET_KEY=...        # instance secret for keys saved in the model settings
 OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # optional: another path for openmaic.yml
@@ -235,7 +237,7 @@ A deployment that wants users to reach internal services declares those provider
 
 Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
 
-The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has no assignment in `openmaic.yml` or the workspace; once it has one, the configuration wins, and a slot set to `null` refuses the request whatever it names. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has no assignment in `openmaic.yml` or the workspace; once it has one, the configuration wins, and a slot set to `null` refuses the request whatever it names. Under `policy.allowWorkspaceProviders: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
 
 ### Migrating from the legacy configuration
 

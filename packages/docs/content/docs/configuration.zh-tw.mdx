@@ -212,6 +212,8 @@ policy:
 
 請把這把金鑰和資料庫備份放在一起：金鑰遺失或更換後，先前儲存的 key 無法讀取，需要重新填寫（模型設定會標示這些 key）。多個實例共用同一個資料庫時，或在沒有持久化資料目錄的平台（例如 Vercel）上，請明確設定 `OPENMAIC_SECRET_KEY`；任何字串都可以，例如 `openssl rand -base64 32` 的輸出。
 
+不設定它時，若資料目錄無法跨重新啟動保留（沒有掛載磁碟區的容器、暫存磁碟），每次啟動都會產生新金鑰；多個副本也會各自產生一把；工作目錄唯讀時則無法建立金鑰，在模型設定中儲存 key 會失敗。啟動時，若 `OPENMAIC_SECRET_KEY` 未設定且資料目錄不可寫入，或資料庫中已有 key 是以與目前不同的金鑰加密（例如 `data/instance-secret.key` 遺失），伺服器端會記錄警告，但仍會正常啟動。
+
 ```bash
 OPENMAIC_SECRET_KEY=...        # 模型設定中儲存的 key 所使用的實例金鑰
 OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他路徑
@@ -235,7 +237,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
 
-舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽在 `openmaic.yml` 和工作區中都沒有指派時才會生效；插槽一旦有指派，以設定為準；設為 `null` 的插槽無論請求寫了什麼都會拒絕。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
+舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽在 `openmaic.yml` 和工作區中都沒有指派時才會生效；插槽一旦有指派，以設定為準；設為 `null` 的插槽無論請求寫了什麼都會拒絕。在 `policy.allowWorkspaceProviders: false` 下，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
 
 ### 從舊設定遷移
 

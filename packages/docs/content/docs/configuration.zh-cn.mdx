@@ -212,6 +212,8 @@ policy:
 
 请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或在没有持久化数据目录的平台（例如 Vercel）上，请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
 
+不设置它时，如果数据目录不能跨重启保留（没有挂载卷的容器、临时磁盘），每次启动都会生成新密钥；多个副本也会各自生成一个；工作目录只读时则无法创建密钥，在模型设置中保存 key 会失败。启动时，若 `OPENMAIC_SECRET_KEY` 未设置且数据目录不可写，或数据库中已有 key 是用与当前不同的密钥加密的（例如 `data/instance-secret.key` 丢失），服务端会记录警告，但仍会正常启动。
+
 ```bash
 OPENMAIC_SECRET_KEY=...        # 模型设置中保存的 key 所用的实例密钥
 OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他路径
@@ -235,7 +237,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他�
 
 生成请求不再需要携带 key 或模型选择：`/api/generate-classroom` 等无浏览器 API 调用会按调用方所在的工作区，通过与 Web 端相同的槽位解析模型。
 
-旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位在 `openmaic.yml` 和工作区中都没有分配时才会生效；槽位一旦有分配，以配置为准；设为 `null` 的槽位无论请求写了什么都会拒绝。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
+旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位在 `openmaic.yml` 和工作区中都没有分配时才会生效；槽位一旦有分配，以配置为准；设为 `null` 的槽位无论请求写了什么都会拒绝。在 `policy.allowWorkspaceProviders: false` 下，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
 
 ### 从旧配置迁移
 

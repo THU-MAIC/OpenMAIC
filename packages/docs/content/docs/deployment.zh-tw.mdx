@@ -90,7 +90,7 @@ DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 
 PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRES_PASSWORD` 只會在資料庫目錄首次初始化時設定密碼，之後修改環境變數不會自動修改已有資料庫使用者密碼。
 
-除非設定了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 資料卷中還儲存著 `instance-secret.key`，也就是自動產生的實例金鑰，用於加密模型設定中儲存的供應商 key。請把它和資料庫一起備份：沒有它，已儲存的 key 需要重新填寫。
+除非設定了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 資料卷中還儲存著 `instance-secret.key`，也就是自動產生的實例金鑰，用於加密模型設定中儲存的供應商 key。請把它和資料庫一起備份：沒有它，已儲存的 key 需要重新填寫。如果執行多個副本、沒有持久化資料卷或檔案系統唯讀，請改為設定 `OPENMAIC_SECRET_KEY`（所有副本使用同一個值）；參見 [金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
 
 早期版本可以把課程儲存在瀏覽器（IndexedDB）中。該模式已移除，`NEXT_PUBLIC_PERSISTENCE` 建置變數會被忽略。以這種方式儲存在瀏覽器中的課程，會在該瀏覽器首次開啟升級後的應用程式時自動搬到伺服器：單向匯入器把它們（連同對話、學習進度、資料夾和媒體）複製給伺服器為該瀏覽器解析出的擁有者，瀏覽器中的原始資料保持不變。每個瀏覽器只匯入一次：伺服器把該瀏覽器綁定給第一個載入升級後應用程式的擁有者，認領會把綁定帶到帳號（匿名擁有者在登入時被認領進帳號）。伺服器會拒絕匯入器為其他擁有者發出的請求，因此之後在同一瀏覽器中使用的其他擁有者不會得到任何匯入。整個過程無需操作，也沒有介面提示；如有問題，會以 `[legacy-browser-import]` 前綴記錄在瀏覽器主控台中。
 
