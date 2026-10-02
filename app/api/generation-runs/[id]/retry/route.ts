@@ -1,7 +1,9 @@
 /**
  *   POST /api/generation-runs/:id/retry
  *     `{ commandId }`: re-run the step a paused run stopped at (409
- *     `RUN_STATE_CONFLICT` for a run that is not paused).
+ *     `RUN_STATE_CONFLICT` for a run that is not paused; 429 `ACTIVE_RUN_LIMIT`
+ *     when the owner already has the limit of runs in progress, since a paused
+ *     run does not count and a retried one does).
  *     `{ commandId, media: { elementId } }`: generate one failed image or
  *     video again, in a run that is generating, paused or completed; nothing
  *     else of the run runs again (409 `RUN_STATE_CONFLICT` for an element
@@ -21,8 +23,10 @@ import {
   parseRetry,
   readJsonBody,
 } from '@/lib/server/generation/run/input';
+import { generationRunConfig } from '@/lib/server/generation/run/config';
 import { wakeGenerationRunner } from '@/lib/server/generation/run/runner';
 import {
+  ActiveRunLimitError,
   isRunId,
   retryGenerationRun,
   RunCommandConflictError,
@@ -44,13 +48,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return ownerApiError('INVALID_REQUEST', 400, command.message, responseHeaders);
     }
     try {
-      const result = await retryGenerationRun(id, ownerId, command.value);
+      const result = await retryGenerationRun(id, ownerId, command.value, {
+        maxActiveRunsPerOwner: generationRunConfig().maxActiveRunsPerOwner,
+      });
       if (!result) return ownerNotFound(responseHeaders);
       wakeGenerationRunner();
       return withOwnerResponseHeaders(apiSuccess({ ...result }), responseHeaders);
     } catch (error) {
       if (error instanceof RunCommandConflictError) {
         return ownerApiError('RUN_STATE_CONFLICT', 409, error.message, responseHeaders);
+      }
+      if (error instanceof ActiveRunLimitError) {
+        return ownerApiError('ACTIVE_RUN_LIMIT', 429, error.message, responseHeaders);
       }
       throw error;
     }

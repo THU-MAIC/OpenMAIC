@@ -7,7 +7,7 @@
  */
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
@@ -17,9 +17,12 @@ import { executeGenerationRun } from '@/lib/server/generation/run/engine';
 import { defaultRunStepServices, type RunStepServices } from '@/lib/server/generation/run/services';
 import {
   claimNextGenerationRun,
+  compactFinishedGenerationRuns,
   readGenerationRun,
   resetGenerationRunSchemaForTests,
 } from '@/lib/server/generation/run/store';
+import type { MediaConnection } from '@/lib/server/model-config/media';
+import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { setMaterialByteStoreForTests } from '@/lib/server/materials/bytes';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -229,6 +232,18 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
     );
   }
 
+  async function retryStep(ownerCookie: string, runId: string, commandId: string) {
+    const retry = await import('@/app/api/generation-runs/[id]/retry/route');
+    return retry.POST(
+      new NextRequest(`http://localhost/api/generation-runs/${runId}/retry`, {
+        method: 'POST',
+        headers: { ...cookie(ownerCookie), 'content-type': 'application/json' },
+        body: JSON.stringify({ commandId }),
+      }),
+      { params: Promise.resolve({ id: runId }) },
+    );
+  }
+
   async function poll(ownerCookie: string, jobId: string) {
     const { GET } = await import('@/app/api/generate-classroom/[jobId]/route');
     const response = await GET(
@@ -324,6 +339,8 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
     const paused = await poll(OWNER_COOKIE, job.jobId);
     expect(paused.body).toMatchObject({
       runId: job.runId,
+      runState: 'paused',
+      retryable: true,
       status: 'failed',
       step: 'failed',
       scenesGenerated: 1,
@@ -332,15 +349,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
     });
     expect(paused.body.error).toMatch(/^scene:1:actions: /);
 
-    const retry = await import('@/app/api/generation-runs/[id]/retry/route');
-    const retried = await retry.POST(
-      new NextRequest(`http://localhost/api/generation-runs/${job.runId}/retry`, {
-        method: 'POST',
-        headers: { ...cookie(OWNER_COOKIE), 'content-type': 'application/json' },
-        body: JSON.stringify({ commandId: 'retry-1' }),
-      }),
-      { params: Promise.resolve({ id: job.runId }) },
-    );
+    const retried = await retryStep(OWNER_COOKIE, job.runId, 'retry-1');
     expect(retried.status).toBe(200);
     expect((await poll(OWNER_COOKIE, job.jobId)).body).toMatchObject({
       status: 'running',
@@ -364,7 +373,141 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
     const refused = await submit(limited, { requirement: 'Two' });
 
     expect(refused.status).toBe(429);
-    expect(await refused.json()).toMatchObject({ success: false, errorCode: 'ACTIVE_RUN_LIMIT' });
+    expect(await refused.json()).toMatchObject({
+      success: false,
+      errorCode: 'ACTIVE_RUN_LIMIT',
+      error: expect.stringContaining('paused ones'),
+    });
+  });
+
+  it('does not count a paused run toward the limit, and refuses its Retry over the limit', async () => {
+    process.env.OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER = '1';
+    const limited = '5f6a7b8c-9d0e-4f1a-8b2c-4d5e6f7a8b9c';
+    const base = fakeServices();
+    const { services } = fakeServices({
+      sceneActions: async (owner, input, ctx) => {
+        if (input.outline.id === 'o2') {
+          throw Object.assign(new Error('bad request'), { statusCode: 400 });
+        }
+        return base.services.sceneActions(owner, input, ctx);
+      },
+    });
+
+    const first = await (await submit(limited, { requirement: 'One' })).json();
+    expect(await drive(first.runId, services)).toBe('paused');
+
+    // The paused run holds no place: a new submission at the limit is accepted.
+    const second = await submit(limited, { requirement: 'Two' });
+    expect(second.status).toBe(202);
+    const secondJob = await second.json();
+
+    // Retrying the paused run would make two in progress.
+    const refused = await retryStep(limited, first.runId, 'retry-over');
+    expect(refused.status).toBe(429);
+    expect(await refused.json()).toMatchObject({ errorCode: 'ACTIVE_RUN_LIMIT' });
+    expect((await poll(limited, first.jobId)).body).toMatchObject({
+      runState: 'paused',
+      retryable: true,
+    });
+
+    // Once the other one finishes, the same command id is accepted.
+    expect(await drive(secondJob.runId, fakeServices().services)).toBe('completed');
+    expect((await retryStep(limited, first.runId, 'retry-over')).status).toBe(200);
+    expect((await poll(limited, first.jobId)).body).toMatchObject({ status: 'running' });
+  });
+
+  it('reports speech clips the narration left silent in the warning', async () => {
+    let clips = 0;
+    const { services } = fakeServices({
+      narrationTarget: async () => ({
+        connection: {
+          providerId: 'openai-tts',
+          managed: true,
+          userEndpoint: false,
+          origin: 'configuration',
+        } as MediaConnection,
+        providerId: 'openai-tts',
+        modelId: 'gpt-4o-mini-tts',
+      }),
+      // The first clip is refused by the asset store; the other is stored.
+      narrateClip: async (ownerId, input) => {
+        clips += 1;
+        if (clips === 1) return null;
+        const stored = await storeGeneratedAsset({
+          ownerId,
+          stageId: input.stageId,
+          bytes: new Uint8Array([1, 2, 3]),
+          mimeType: 'audio/mp3',
+          kind: 'audio',
+          fence: input.fence,
+        });
+        return stored.status === 'stored' ? stored.assetId : null;
+      },
+    });
+    const job = await (await submit(OWNER_COOKIE, { requirement: 'Narrated' })).json();
+    expect(await drive(job.runId, services)).toBe('completed');
+
+    const done = await poll(OWNER_COOKIE, job.jobId);
+    expect(done.body).toMatchObject({
+      status: 'succeeded',
+      result: { warning: '1 speech clip was left without narration' },
+    });
+  });
+
+  it('keeps the media failure count in the warning after the run is compacted', async () => {
+    const job = await (await submit(OWNER_COOKIE, { requirement: 'Compacted' })).json();
+    expect(await drive(job.runId, fakeServices().services)).toBe('completed');
+    // A final failure (no Retry changes it), so the run is compacted.
+    await pool.query(
+      `INSERT INTO generation_run_steps (run_id, step_id, output) VALUES ($1, 'media:img_1', $2)`,
+      [
+        job.runId,
+        {
+          mediaType: 'image',
+          status: 'failed',
+          message: 'refused',
+          errorCode: 'CONTENT_SENSITIVE',
+        },
+      ],
+    );
+    const warning = `1 of 1 images and videos could not be generated (see GET /api/generation-runs/${job.runId}; the retryable ones can be retried there)`;
+    expect((await poll(OWNER_COOKIE, job.jobId)).body.result.warning).toBe(warning);
+
+    await pool.query(
+      `UPDATE generation_runs SET updated_at = now() - interval '2 days' WHERE id = $1`,
+      [job.runId],
+    );
+    expect(await compactFinishedGenerationRuns(60_000)).toBeGreaterThanOrEqual(1);
+    const steps = await pool.query('SELECT 1 FROM generation_run_steps WHERE run_id = $1', [
+      job.runId,
+    ]);
+    expect(steps.rows).toEqual([]);
+    expect((await poll(OWNER_COOKIE, job.jobId)).body.result.warning).toBe(warning);
+  });
+
+  it('refuses a submission whose model provider has no key, at the route', async () => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { keyless: { preset: 'deepseek' } },
+          slots: { llm: 'keyless:deepseek-v4-flash' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    const keyless = '6a7b8c9d-0e1f-4a2b-9c3d-5e6f7a8b9c0d';
+    vi.stubEnv('DEEPSEEK_API_KEY', '');
+
+    const refused = await submit(keyless, { requirement: 'Teach' });
+    vi.unstubAllEnvs();
+
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toMatchObject({
+      errorCode: 'MISSING_API_KEY',
+      error: expect.stringContaining('API key required for provider: deepseek'),
+    });
   });
 
   it('refuses a submission without a configured model, creating no run', async () => {

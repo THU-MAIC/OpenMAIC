@@ -902,6 +902,8 @@ export async function executeGenerationRun(
     const stageId = agents().stage.id;
     const { languageDirective } = outline();
     const allocated: string[] = [];
+    // Clips left silent: the asset store refused them, or the voice is not the slot's.
+    let unvoiced = 0;
     const fence = (tx: Queryable) => fenceGenerationRunWriteIn(tx, lease);
 
     const narrate = async (
@@ -972,6 +974,8 @@ export async function executeGenerationRun(
       if (assetId) {
         allocated.push(assetId);
         action.audioId = assetId;
+      } else {
+        unvoiced += 1;
       }
     };
     try {
@@ -989,7 +993,10 @@ export async function executeGenerationRun(
       } else {
         for (const action of speechActions) await narrateOne(action);
       }
-      await appendScene(sceneIndex, stepId, scene);
+      if (unvoiced > 0) {
+        log.warn(`run ${run.id}: ${stepId} left ${unvoiced} speech clip(s) unvoiced`);
+      }
+      await appendScene(sceneIndex, stepId, scene, unvoiced);
     } catch (error) {
       // Nothing of this attempt committed: its clips are released (an entry
       // the scene's write did commit is not touched by the release).
@@ -1002,10 +1009,15 @@ export async function executeGenerationRun(
    * Write the narrated scene into the course with the step's checkpoint, in
    * one transaction, with the media already stored for it in place.
    */
-  const appendScene = (sceneIndex: number, stepId: string, scene: Scene): Promise<void> =>
+  const appendScene = (
+    sceneIndex: number,
+    stepId: string,
+    scene: Scene,
+    unvoiced = 0,
+  ): Promise<void> =>
     exclusive(async () => {
       const media = await placeHeldMedia(scene);
-      await writeScene(sceneIndex, stepId, scene, media);
+      await writeScene(sceneIndex, stepId, scene, media, unvoiced);
     });
 
   /**
@@ -1048,6 +1060,7 @@ export async function executeGenerationRun(
     stepId: string,
     scene: Scene,
     media: StepCommit,
+    unvoiced: number,
   ): Promise<void> => {
     const { stage } = agents();
     const change: StepCommit = {
@@ -1058,6 +1071,7 @@ export async function executeGenerationRun(
         scenesCompleted:
           [...steps.keys()].filter((id) => id !== stepId && id.endsWith(':narration')).length + 1,
         ...(sceneIndex === 0 ? { stageId: stage.id } : {}),
+        ...(unvoiced > 0 ? { narrationUnvoiced: unvoiced } : {}),
       },
       events: [
         { type: 'step_completed', data: { step: stepId } },

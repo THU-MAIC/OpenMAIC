@@ -110,7 +110,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 
 | 插槽 | 能力 | 父插槽 | 作用 |
 | --- | --- | --- | --- |
-| `llm` | chat | — | 預設對話模型：下方任何插槽都不涵蓋的對話呼叫，包括無瀏覽器 `/api/generate-classroom` API 中沒有專屬插槽的步驟 |
+| `llm` | chat | — | 預設對話模型：下方任何插槽都不涵蓋的對話呼叫 |
 | `course.research` | chat | `llm` | 課程研究時改寫網路搜尋查詢 |
 | `course.outline` | chat | `llm` | 場景大綱 |
 | `course.agents` | chat | `llm` | 老師和同學智慧體的人設 |

@@ -28,6 +28,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { notifyDurableAgentEvent } from '@/lib/server/agent-runtime/event-notify-bus';
 import type { SceneOutline } from '@/lib/types/generation';
 
+import { generationRunConfig } from './config';
 import {
   FINAL_RUN_MEDIA_FAILURE_CODES,
   isRetryableRunMedia,
@@ -75,8 +76,8 @@ export class ActiveRunLimitError extends Error {
   constructor(readonly limit: number) {
     super(
       `At most ${limit} course generation${limit === 1 ? '' : 's'} may be in progress at once ` +
-        '(one waiting for its outline to be confirmed does not count); wait for one to finish, ' +
-        'or delete its course, and try again.',
+        '(paused ones and ones waiting for their outline to be confirmed do not count); wait for ' +
+        'one to finish or pause, or delete its course, and try again.',
     );
     this.name = 'ActiveRunLimitError';
   }
@@ -99,8 +100,18 @@ export class RunCommandConflictError extends Error {
   }
 }
 
+/** A compacted run's image and video counts (its media checkpoints are gone). */
+export interface RunMediaSummary {
+  total: number;
+  failed: number;
+}
+
 export interface StoredRun extends GenerationRunSnapshot {
   ownerId: string;
+  /** Speech clips the narration left silent (refused by the asset store, or a voice off the slot). */
+  narrationUnvoiced: number;
+  /** Set once the run is compacted: what its media checkpoints counted. */
+  mediaSummary: RunMediaSummary | null;
   /** A paused or completed run still has media to generate (see the schema). */
   mediaPending: boolean;
   leaseWorkerId: string | null;
@@ -128,13 +139,16 @@ interface RunRow extends Record<string, unknown> {
   lease_generation: number;
   takeovers: number;
   media_pending: boolean;
+  narration_unvoiced: number;
+  media_summary: RunMediaSummary | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
 
 const RUN_COLUMNS = `id, owner_id, input, state, step, outline, outline_revision, agents, stage_id,
   scenes_total, scenes_completed, error, seq, lease_worker_id, lease_heartbeat_at,
-  lease_generation, takeovers, media_pending, created_at, updated_at`;
+  lease_generation, takeovers, media_pending, narration_unvoiced, media_summary, created_at,
+  updated_at`;
 
 function isoTimestamp(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
@@ -145,6 +159,8 @@ function storedRun(row: RunRow): StoredRun {
     id: row.id,
     ownerId: row.owner_id,
     mediaPending: row.media_pending,
+    narrationUnvoiced: row.narration_unvoiced,
+    mediaSummary: row.media_summary,
     state: row.state,
     step: row.step,
     seq: Number(row.seq),
@@ -201,6 +217,8 @@ export interface RunPatch {
   scenesTotal?: number;
   scenesCompleted?: number;
   error?: GenerationRunFailure | null;
+  /** Speech clips this commit's scene left silent: added to the run's count. */
+  narrationUnvoiced?: number;
   /** Release the lease with this commit (the run waits, pauses or ends). */
   releaseLease?: boolean;
 }
@@ -300,7 +318,8 @@ export async function currentOwnerOf(storedOwnerId: string): Promise<string> {
  * A follower still sees how a run ended; one further behind is told to
  * reload the snapshot (the events stream's `resync`). A completed run with an
  * image or video a Retry may still generate keeps everything, so that Retry
- * still works. Answers how many runs it compacted.
+ * still works. The counts of a compacted run's images and videos stay on the
+ * run (`media_summary`). Answers how many runs it compacted.
  */
 export async function compactFinishedGenerationRuns(graceMs: number): Promise<number> {
   const { withTransaction } = await provider();
@@ -323,6 +342,19 @@ export async function compactFinishedGenerationRuns(graceMs: number): Promise<nu
     );
     const ids = finished.rows.map((row) => row.id);
     if (ids.length === 0) return 0;
+    // What the media checkpoints counted outlives them, for the final report.
+    await tx.query(
+      `UPDATE generation_runs r SET media_summary = s.summary
+         FROM (SELECT run_id,
+                      jsonb_build_object(
+                        'total', count(*),
+                        'failed', count(*) FILTER (WHERE output->>'status' = 'failed')) AS summary
+                 FROM generation_run_steps
+                WHERE run_id = ANY($1) AND step_id LIKE '${MEDIA_STEP_PREFIX}%'
+                GROUP BY run_id) s
+        WHERE r.id = s.run_id`,
+      [ids],
+    );
     await tx.query('DELETE FROM generation_run_steps WHERE run_id = ANY($1)', [ids]);
     await tx.query(
       `DELETE FROM generation_run_events e USING generation_runs r
@@ -425,6 +457,10 @@ async function applyPatch(
   if (patch.stageId !== undefined) set('stage_id', patch.stageId);
   if (patch.scenesTotal !== undefined) set('scenes_total', patch.scenesTotal);
   if (patch.scenesCompleted !== undefined) set('scenes_completed', patch.scenesCompleted);
+  if (patch.narrationUnvoiced) {
+    params.push(patch.narrationUnvoiced);
+    sets.push(`narration_unvoiced = narration_unvoiced + $${params.length}`);
+  }
   if (patch.error !== undefined) {
     set('error', patch.error === null ? null : encodeJson(patch.error, 'error'), '::jsonb');
   }
@@ -1240,31 +1276,54 @@ export async function retryGenerationRun(
   runId: string,
   ownerId: string,
   command: { commandId: string; media?: { elementId: string } },
+  /**
+   * A step Retry makes a paused run active again: it counts toward the limit
+   * from then on. A media Retry does not change the run's state.
+   */
+  options: { maxActiveRunsPerOwner: number } = {
+    maxActiveRunsPerOwner: generationRunConfig().maxActiveRunsPerOwner,
+  },
 ): Promise<CommandResult | null> {
-  return runCommand(runId, ownerId, command.commandId, 'retry', async (tx, run) => {
-    if (command.media) return retryMediaIn(tx, run, command.media.elementId);
-    if (run.state !== 'paused') {
-      throw new RunCommandConflictError(
-        'state',
-        `The run is ${run.state.replaceAll('_', ' ')}, not paused`,
+  const limit = command.media
+    ? undefined
+    : async (tx: Queryable) => {
+        await enforceActiveRunLimitIn(tx, ownerId, options.maxActiveRunsPerOwner);
+      };
+  return runCommand(
+    runId,
+    ownerId,
+    command.commandId,
+    'retry',
+    async (tx, run, refusal) => {
+      if (command.media) return retryMediaIn(tx, run, command.media.elementId);
+      if (run.state !== 'paused') {
+        throw new RunCommandConflictError(
+          'state',
+          `The run is ${run.state.replaceAll('_', ' ')}, not paused`,
+        );
+      }
+      // The run is retryable: whether the owner may run one more decides.
+      if (refusal) throw refusal;
+      // A run paused before it chose a step resumes where it was executing.
+      const state = run.step
+        ? stateForRetry(run.step)
+        : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
+      const updated = await applyPatch(
+        tx,
+        runId,
+        // No lease is taken from a worker that holds the run (one generating a
+        // paused run's media): it sees the state when it finishes and goes on
+        // with the run itself. A run nobody holds is claimable as it is.
+        { state, error: null },
+        { resetTakeovers: true },
       );
-    }
-    // A run paused before it chose a step resumes where it was executing.
-    const state = run.step
-      ? stateForRetry(run.step)
-      : (run.error?.resumeState ?? (run.outline ? 'generating' : 'preparing'));
-    const updated = await applyPatch(
-      tx,
-      runId,
-      // No lease is taken from a worker that holds the run (one generating a
-      // paused run's media): it sees the state when it finishes and goes on
-      // with the run itself. A run nobody holds is claimable as it is.
-      { state, error: null },
-      { resetTakeovers: true },
-    );
-    const seq = await insertEvents(tx, runId, [{ type: 'state', data: { state, step: run.step } }]);
-    return { state: updated.state, seq };
-  });
+      const seq = await insertEvents(tx, runId, [
+        { type: 'state', data: { state, step: run.step } },
+      ]);
+      return { state: updated.state, seq };
+    },
+    limit,
+  );
 }
 
 /** Queue one failed media item of a run again (the run row is locked). */

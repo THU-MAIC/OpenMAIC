@@ -46,9 +46,11 @@ export const ACTIVE_RUN_STATES = [
 
 /**
  * States that count against the per-owner limit on active runs. A run waiting
- * for its outline to be confirmed holds no worker, so it does not count.
+ * for its outline to be confirmed and a paused run hold no worker, so they do
+ * not count; confirming the outline and a step Retry make the run count again,
+ * and are refused over the limit.
  */
-export const LIMITED_RUN_STATES = ['preparing', 'outlining', 'generating', 'paused'] as const;
+export const LIMITED_RUN_STATES = ['preparing', 'outlining', 'generating'] as const;
 
 /** Which agents teach the course. */
 export type GenerationRunAgents =

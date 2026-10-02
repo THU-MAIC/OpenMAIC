@@ -25,6 +25,12 @@
  * `stage_id` (and the completed ones with media pending), which every content
  * write of a course and its deletion look up; both queries' predicates imply
  * the index's.
+ *
+ * Version 3 adds what a finished run reports after its checkpoints are
+ * compacted away: `narration_unvoiced`, the speech clips its narration left
+ * silent (the asset store refused them, or the voice is not the tts slot's),
+ * and `media_summary`, the counts of its images and videos (`total`,
+ * `failed`), written by the compaction from the media checkpoints it removes.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
@@ -95,11 +101,16 @@ CREATE INDEX IF NOT EXISTS generation_runs_media_pending_idx
 CREATE INDEX IF NOT EXISTS generation_runs_stage_active_idx
   ON generation_runs (stage_id) WHERE state NOT IN ('completed','ended') OR media_pending`;
 
+const RUN_REPORT = `
+ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS narration_unvoiced INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS media_summary JSONB`;
+
 export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
   store: 'generation-runs',
   migrations: [
     { version: 1, name: 'baseline', up: SCHEMA, transaction: false },
     { version: 2, name: 'media_pending', up: MEDIA_PENDING },
+    { version: 3, name: 'run_report', up: RUN_REPORT },
   ],
 };
 

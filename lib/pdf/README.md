@@ -146,14 +146,11 @@ await generateSceneOutlinesFromRequirements(
   aiCall,
 );
 
-// 4. 生成场景（含图片）
-await buildSceneFromOutline(
-  outline,
-  aiCall,
-  stageId,
-  assignedImages, // 从 pdfImages 筛选
-  imageMapping, // 用于解析 img_1 到实际 URL
-);
+// 4. Generate a scene's content (with images)
+await generateSceneContent(outline, aiCall, {
+  assignedImages, // filtered from pdfImages
+  imageMapping, // resolves img_1 to the actual image
+});
 ```
 
 ## 图片处理流程

@@ -1033,7 +1033,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         maxActiveRunsPerOwner: 1,
         maxWaitingRunsPerOwner: 50,
       }),
-    ).rejects.toThrow(/does not count/);
+    ).rejects.toThrow(/do not count/);
     expect(await drive(waiting.id, services)).toBe('waiting');
     const next = await createGenerationRun(owner, runInput(), {
       maxActiveRunsPerOwner: 1,
@@ -1251,7 +1251,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     // ...but confirming the first would make two in progress.
     await expect(
       confirm(waiting.id, owner, { commandId: 'c1', outlineRevision: 1 }, 1),
-    ).rejects.toThrow(/does not count/);
+    ).rejects.toThrow(/do not count/);
     const { POST } = await import('@/app/api/generation-runs/[id]/confirm-outline/route');
     process.env.OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER = '1';
     const refused = await POST(

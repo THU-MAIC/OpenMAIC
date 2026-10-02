@@ -75,6 +75,8 @@ function storedRun(overrides: Partial<StoredRun> = {}): StoredRun {
     id: RUN_ID,
     ownerId: 'owner-1',
     mediaPending: false,
+    narrationUnvoiced: 0,
+    mediaSummary: null,
     state: 'preparing',
     step: null,
     seq: 1,
@@ -178,6 +180,7 @@ describe('POST /api/generate-classroom', () => {
       success: true,
       jobId: RUN_ID,
       runId: RUN_ID,
+      runState: 'preparing',
       status: 'queued',
       step: 'queued',
       progress: 0,
@@ -185,6 +188,7 @@ describe('POST /api/generate-classroom', () => {
       pollUrl: `http://localhost/api/generate-classroom/${RUN_ID}`,
       pollIntervalMs: 5000,
       scenesGenerated: 0,
+      retryable: false,
       done: false,
     });
     expect(mocks.createGenerationRun).toHaveBeenCalledWith(
@@ -200,11 +204,12 @@ describe('POST /api/generate-classroom', () => {
       { maxActiveRunsPerOwner: 2, maxWaitingRunsPerOwner: 10 },
     );
     expect(mocks.wakeGenerationRunner).toHaveBeenCalledTimes(1);
-    // The outline model is checked for the run's owner, through the outline slot.
-    expect(mocks.resolveModel).toHaveBeenCalledWith({
-      stage: 'scene-outlines-stream',
-      workspaceId: 'owner-1',
-    });
+    // The models every run needs are checked for the run's owner, through their slots.
+    expect(mocks.resolveModel.mock.calls.map(([request]) => request)).toEqual([
+      { stage: 'scene-outlines-stream', workspaceId: 'owner-1' },
+      { stage: 'scene-content', workspaceId: 'owner-1' },
+      { stage: 'scene-actions', workspaceId: 'owner-1' },
+    ]);
   });
 
   it('attaches the owner cookies the resolution minted to the response', async () => {
@@ -229,7 +234,12 @@ describe('POST /api/generate-classroom', () => {
     expect(res.status).toBe(429);
     const json = await res.json();
     expect(json.errorCode).toBe('ACTIVE_RUN_LIMIT');
-    expect(json.error).toContain('2');
+    // A headless caller learns that a paused job does not hold a place.
+    expect(json.error).toBe(
+      'At most 2 course generations may be in progress at once (paused ones and ones waiting ' +
+        'for their outline to be confirmed do not count); wait for one to finish or pause, or ' +
+        'delete its course, and try again.',
+    );
     expect(mocks.wakeGenerationRunner).not.toHaveBeenCalled();
   });
 
@@ -257,15 +267,26 @@ describe('POST /api/generate-classroom', () => {
     expect(mocks.createGenerationRun).not.toHaveBeenCalled();
   });
 
-  it('refuses a submission when the outline provider has no key', async () => {
-    mocks.resolveModel.mockResolvedValue({ providerId: 'openai', apiKey: '' });
+  it('refuses a submission when a model the run needs cannot be built', async () => {
+    const { ModelConfigurationError } = await import('@/lib/server/model-config/llm');
+    mocks.resolveModel.mockImplementation(async ({ stage }: { stage: string }) => {
+      if (stage === 'scene-actions') {
+        throw new ModelConfigurationError(
+          'MISSING_API_KEY',
+          'API key required for provider: openai',
+        );
+      }
+      return {};
+    });
 
     const res = await postGenerateClassroom({ requirement: 'Teach' });
 
     expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.errorCode).toBe('MISSING_API_KEY');
-    expect(json.error).toContain('openai');
+    await expect(res.json()).resolves.toEqual({
+      success: false,
+      errorCode: 'MISSING_API_KEY',
+      error: 'API key required for provider: openai',
+    });
     expect(mocks.createGenerationRun).not.toHaveBeenCalled();
   });
 
@@ -580,6 +601,7 @@ describe('GET /api/generate-classroom/:jobId', () => {
       success: true,
       jobId: RUN_ID,
       runId: RUN_ID,
+      runState: 'completed',
       status: 'succeeded',
       step: 'completed',
       progress: 100,
@@ -593,6 +615,7 @@ describe('GET /api/generate-classroom/:jobId', () => {
         url: 'http://localhost/classroom/stage-done',
         scenesCount: 3,
       },
+      retryable: false,
       done: true,
     });
   });
@@ -617,10 +640,46 @@ describe('GET /api/generate-classroom/:jobId', () => {
 
     const json = await (await pollJob(RUN_ID)).json();
 
-    const warning = `1 of 2 images and videos could not be generated; see GET /api/generation-runs/${RUN_ID} for each one`;
+    const warning = `1 of 2 images and videos could not be generated (see GET /api/generation-runs/${RUN_ID}; the retryable ones can be retried there)`;
     expect(json.status).toBe('succeeded');
     expect(json.message).toBe(warning);
     expect(json.result.warning).toBe(warning);
+  });
+
+  it('keeps counting failed media of a compacted run, from its summary', async () => {
+    answer(
+      storedRun({
+        state: 'completed',
+        stageId: 'stage-done',
+        progress: { scenesTotal: 1, scenesCompleted: 1 },
+        mediaSummary: { total: 3, failed: 1 },
+      }),
+    );
+
+    const json = await (await pollJob(RUN_ID)).json();
+
+    expect(json.result.warning).toMatch(/^1 of 3 images and videos could not be generated/);
+  });
+
+  it('names speech clips the narration left silent in the warning', async () => {
+    answer(
+      storedRun({
+        state: 'completed',
+        stageId: 'stage-done',
+        progress: { scenesTotal: 1, scenesCompleted: 1 },
+        narrationUnvoiced: 2,
+      }),
+      {
+        vid_1: { mediaType: 'video', status: 'failed', message: 'Video generation failed' },
+      },
+    );
+
+    const json = await (await pollJob(RUN_ID)).json();
+
+    expect(json.result.warning).toBe(
+      `1 of 1 images and videos could not be generated (see GET /api/generation-runs/${RUN_ID}; ` +
+        'the retryable ones can be retried there); 2 speech clips were left without narration',
+    );
   });
 
   it('answers a paused run as a failed job with the failed step, and its run id for Retry', async () => {
@@ -638,11 +697,16 @@ describe('GET /api/generate-classroom/:jobId', () => {
 
     expect(json).toMatchObject({
       runId: RUN_ID,
+      runState: 'paused',
       status: 'failed',
       step: 'failed',
       message: 'Classroom generation failed',
-      error: 'scene:1:content: Upstream rate limit reached.',
+      error:
+        'scene:1:content: Upstream rate limit reached. (the run is paused and keeps what it ' +
+        `generated; POST /api/generation-runs/${RUN_ID}/retry with { "commandId": "<a new id>" } ` +
+        'resumes it at this step)',
       scenesGenerated: 1,
+      retryable: true,
       done: true,
     });
     expect(json).not.toHaveProperty('result');
@@ -656,7 +720,7 @@ describe('GET /api/generate-classroom/:jobId', () => {
 
     const json = await (await pollJob(RUN_ID)).json();
 
-    expect(json).toMatchObject({ status: 'failed', error, done: true });
+    expect(json).toMatchObject({ status: 'failed', error, retryable: false, done: true });
   });
 
   it('reads the run for the request owner, and answers 404 when it is not theirs', async () => {

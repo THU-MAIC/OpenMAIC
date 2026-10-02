@@ -29,7 +29,8 @@ export interface GenerationRunConfig {
   maxTakeovers: number;
   /**
    * Runs one owner may have in progress at once: any state but completed,
-   * ended, or waiting for its outline to be confirmed (which holds no worker).
+   * ended, paused, or waiting for its outline to be confirmed (the last two
+   * hold no worker).
    */
   maxActiveRunsPerOwner: number;
   /** Runs one owner may have waiting for outline confirmation at once. */

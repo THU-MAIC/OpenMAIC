@@ -110,7 +110,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 
 | Slot | Capability | Parent | What it drives |
 | --- | --- | --- | --- |
-| `llm` | chat | — | The default chat model: every chat call no slot below covers, including the steps of the browserless `/api/generate-classroom` API that have no slot of their own |
+| `llm` | chat | — | The default chat model: every chat call no slot below covers |
 | `course.research` | chat | `llm` | Rewriting the web search query while researching a course |
 | `course.outline` | chat | `llm` | Scene outlines |
 | `course.agents` | chat | `llm` | Teacher and classmate agent profiles |

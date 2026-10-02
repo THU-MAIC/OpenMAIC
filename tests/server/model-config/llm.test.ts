@@ -99,7 +99,7 @@ describe('resolveStageModel', () => {
   it('says so when nothing resolves', async () => {
     state.lookup = lookupFromLayers('llm', { deployment: null, workspace: null, defaults: null });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: null }),
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: null }),
     ).rejects.toBeInstanceOf(SlotUnassignedError);
   });
 
@@ -115,12 +115,15 @@ describe('resolveStageModel', () => {
       });
     state.lookup = ws({ preset: 'bedrock' });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
-    ).rejects.toThrow(/Amazon Bedrock can only be configured by the deployment/);
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: 'u' }),
+    ).rejects.toMatchObject({
+      code: 'MODEL_CONFIG_INVALID',
+      message: expect.stringMatching(/Amazon Bedrock can only be configured by the deployment/),
+    });
     state.lookup = ws({ preset: 'openai', apiKey: 'k', proxy: 'http://10.0.0.1:3128' });
-    await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
-    ).rejects.toThrow(/A proxy can only be configured by the deployment/);
+    await expect(resolveStageModel({ stage: 'chat-adapter', workspaceId: 'u' })).rejects.toThrow(
+      /A proxy can only be configured by the deployment/,
+    );
     state.lookup = lookupFromLayers('llm', {
       deployment: layer('deployment', {
         providers: { p: { preset: 'openai', apiKey: 'k', proxy: 'http://10.0.0.1:3128' } },
@@ -130,7 +133,7 @@ describe('resolveStageModel', () => {
       defaults: null,
     });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: null }),
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: null }),
     ).resolves.toMatchObject({ modelId: 'm' });
   });
 
@@ -180,8 +183,12 @@ describe('resolveStageModel', () => {
       defaults: null,
     });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
-    ).rejects.toThrow(/API key required/);
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: 'u' }),
+    ).rejects.toMatchObject({
+      name: 'ModelConfigurationError',
+      code: 'MISSING_API_KEY',
+      message: expect.stringMatching(/API key required/),
+    });
   });
 
   it('checks a workspace endpoint like a caller-supplied one, and trusts the deployment', async () => {
@@ -196,8 +203,11 @@ describe('resolveStageModel', () => {
       defaults: null,
     });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: 'u' }),
-    ).rejects.toThrow(/Local\/private network URLs are not allowed/);
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: 'u' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_URL',
+      message: expect.stringMatching(/Local\/private network URLs are not allowed/),
+    });
     state.lookup = lookupFromLayers('llm', {
       deployment: layer('deployment', {
         providers: { local: provider },
@@ -207,7 +217,7 @@ describe('resolveStageModel', () => {
       defaults: null,
     });
     await expect(
-      resolveStageModel({ stage: 'generate-classroom', workspaceId: null }),
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: null }),
     ).resolves.toMatchObject({ baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'm' });
   });
 });

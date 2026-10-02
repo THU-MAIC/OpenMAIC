@@ -8,7 +8,7 @@
  * operator transport, which re-validates every redirect hop.
  */
 import { attachModelFallback } from '@/lib/ai/model-fallbacks';
-import { getModel, getProvider } from '@/lib/ai/providers';
+import { getModel, getProvider, isProviderKeyRequired } from '@/lib/ai/providers';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
 import type { LlmStage } from '@/lib/server/model-routes';
@@ -26,6 +26,21 @@ export interface SlotResolvedModel extends ResolvedModel {
   resolution: AssignedSlot;
 }
 
+/**
+ * A slot's model the configuration cannot build (no key for a provider that
+ * needs one, an endpoint or option the configuration may not set). The
+ * message is caller-facing and `code` is the API error code it answers with.
+ */
+export class ModelConfigurationError extends Error {
+  constructor(
+    readonly code: 'MISSING_API_KEY' | 'INVALID_URL' | 'MODEL_CONFIG_INVALID',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ModelConfigurationError';
+  }
+}
+
 /** A language model for one target (a slot's model or its fallback). */
 export async function languageModelFor(
   target: ResolvedModelTarget,
@@ -34,27 +49,50 @@ export async function languageModelFor(
   const registryId = target.registryId as ProviderId;
   const modelId = target.modelId;
   // resolveSlot refuses a chat reference without one; this is the type's guard.
-  if (!modelId) throw new Error(`A chat model needs "providerId:modelId"`);
+  if (!modelId) {
+    throw new ModelConfigurationError(
+      'MODEL_CONFIG_INVALID',
+      `A chat model needs "providerId:modelId"`,
+    );
+  }
   const registered = getProvider(registryId);
-  if (!registered) throw new Error(`The ${target.presetId} preset has no chat adapter`);
+  if (!registered) {
+    throw new ModelConfigurationError(
+      'MODEL_CONFIG_INVALID',
+      `The ${target.presetId} preset has no chat adapter`,
+    );
+  }
   const userEndpoint = target.providerSource === 'workspace';
   if (userEndpoint) {
     // Bedrock signs with the server's AWS credential chain when it has no key
     // of its own, and a proxy would route around the transport below: neither
     // is something a workspace may set.
     if (registered.type === 'bedrock') {
-      throw new Error('Amazon Bedrock can only be configured by the deployment (openmaic.yml)');
+      throw new ModelConfigurationError(
+        'MODEL_CONFIG_INVALID',
+        'Amazon Bedrock can only be configured by the deployment (openmaic.yml)',
+      );
     }
     if (target.proxy) {
-      throw new Error('A proxy can only be configured by the deployment (openmaic.yml)');
+      throw new ModelConfigurationError(
+        'MODEL_CONFIG_INVALID',
+        'A proxy can only be configured by the deployment (openmaic.yml)',
+      );
     }
   }
   const endpoint = target.baseUrl ?? registered.defaultBaseUrl;
   if (userEndpoint && endpoint) {
     const problem = await validateClientBaseUrl(endpoint);
-    if (problem) throw new Error(problem);
+    if (problem) throw new ModelConfigurationError('INVALID_URL', problem);
   }
   const apiKey = target.apiKey ?? '';
+  // Checked here rather than left to the adapter, so the refusal is typed.
+  if (isProviderKeyRequired(registryId) && !apiKey) {
+    throw new ModelConfigurationError(
+      'MISSING_API_KEY',
+      `API key required for provider: ${registryId} (configure a key for ${target.presetId})`,
+    );
+  }
   const { model, modelInfo } = getModel({
     providerId: registryId,
     modelId,

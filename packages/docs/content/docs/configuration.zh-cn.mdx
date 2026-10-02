@@ -110,7 +110,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 
 | 槽位 | 能力 | 父槽位 | 作用 |
 | --- | --- | --- | --- |
-| `llm` | chat | — | 默认对话模型：下面任何槽位都不覆盖的对话调用，包括无浏览器 `/api/generate-classroom` API 中没有专属槽位的步骤 |
+| `llm` | chat | — | 默认对话模型：下面任何槽位都不覆盖的对话调用 |
 | `course.research` | chat | `llm` | 课程调研时改写联网搜索查询 |
 | `course.outline` | chat | `llm` | 场景大纲 |
 | `course.agents` | chat | `llm` | 老师和同学智能体的人设 |

@@ -11,7 +11,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { generateSceneActions, generateSceneContent, type AICallFn } from '@openmaic/generation';
-import { buildSceneFromOutline } from '@/lib/server/scene-generation';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
 import { legacyPBLSceneFixture } from '@/tests/fixtures/pbl-v1-scene';
 import type {
@@ -277,40 +276,6 @@ describe('scene-generator language directive threading (issue #472)', () => {
         expect(user).toContain(DIRECTIVE);
         expect(user).not.toContain('{{languageDirective}}');
         expect(user).not.toContain('{{language}}');
-      }
-    });
-  });
-
-  describe('buildSceneFromOutline (high-level pipeline)', () => {
-    it('threads languageDirective through content AND actions for a slide', async () => {
-      const captured: string[] = [];
-      const aiCall: AICallFn = async (_system, user) => {
-        captured.push(user);
-        // First call is content (expects JSON); second is actions (expects array)
-        return captured.length === 1
-          ? JSON.stringify({ elements: [], background: null, remark: '' })
-          : '[]';
-      };
-
-      await buildSceneFromOutline(
-        baseOutline({ type: 'slide' }),
-        aiCall,
-        'stage-1',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        DIRECTIVE,
-      );
-
-      expect(captured).toHaveLength(2);
-      for (const user of captured) {
-        expect(user).toContain(DIRECTIVE);
-        expect(user).not.toContain('{{languageDirective}}');
       }
     });
   });

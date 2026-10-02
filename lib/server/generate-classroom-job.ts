@@ -17,12 +17,14 @@
  * | `paused` (a step failed after its retries)   | `failed`     |
  * | `ended` (course deleted or run discarded)    | `failed`     |
  *
- * A paused run is not over: `POST /api/generation-runs/<runId>/retry` re-runs
- * the failed step, and the job reads `running` again. Images and videos that
- * failed do not fail the job; they are counted in `result.warning`.
+ * A paused run is not over (`retryable: true`, `runState: "paused"`):
+ * `POST /api/generation-runs/<runId>/retry` re-runs the failed step, and the
+ * job reads `running` again. A paused run does not count toward the owner's
+ * limit on runs in progress; its Retry does. Images and videos that failed,
+ * and speech clips the narration left silent, do not fail the job; they are
+ * counted in `result.warning`.
  */
 import type { ApiErrorCode } from '@/lib/server/api-response';
-import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { parseRunInput } from '@/lib/server/generation/run/input';
 import type { StoredRun } from '@/lib/server/generation/run/store';
 import type {
@@ -30,7 +32,7 @@ import type {
   GenerationRunMediaState,
   GenerationRunState,
 } from '@/lib/server/generation/run/types';
-import { SlotRequirementError } from '@/lib/server/model-config/llm';
+import { ModelConfigurationError, SlotRequirementError } from '@/lib/server/model-config/llm';
 import {
   backgroundWorkspaceId,
   SlotDisabledError,
@@ -76,35 +78,39 @@ export function parseClassroomJobBody(raw: unknown): ParsedClassroomJobBody {
 }
 
 /**
- * Refuse a submission no run could get past its outline: the outline model
- * does not resolve for the owner (no model configured, its slot turned off,
- * or a model that cannot do the job), or its provider needs a key that is
- * not configured. Null when the outline model resolves.
+ * The stages every run needs a model for: the outline, the scene content
+ * (each scene type resolves through a child of it) and the actions. Agent
+ * profiles are not here: a run falls back to the built-in agents.
  */
-export async function outlineModelRefusal(
+const REQUIRED_STAGES = ['scene-outlines-stream', 'scene-content', 'scene-actions'] as const;
+
+/**
+ * Refuse a submission no run could complete: a stage it needs resolves to no
+ * model for the owner (none configured, its slot turned off, or a model that
+ * cannot do the job), or to one the configuration cannot build (no key for a
+ * provider that needs one, an endpoint or option it may not set). Checked
+ * without calling any provider. Null when every required stage resolves.
+ */
+export async function requiredModelRefusal(
   ownerId: string,
 ): Promise<{ code: ApiErrorCode; message: string } | null> {
-  let resolved;
-  try {
-    resolved = await resolveModel({
-      stage: 'scene-outlines-stream',
-      workspaceId: await backgroundWorkspaceId(ownerId),
-    });
-  } catch (error) {
-    if (
-      error instanceof SlotUnassignedError ||
-      error instanceof SlotDisabledError ||
-      error instanceof SlotRequirementError
-    ) {
-      return { code: 'MISSING_MODEL', message: error.message };
+  const workspaceId = await backgroundWorkspaceId(ownerId);
+  for (const stage of REQUIRED_STAGES) {
+    try {
+      await resolveModel({ stage, workspaceId });
+    } catch (error) {
+      if (
+        error instanceof SlotUnassignedError ||
+        error instanceof SlotDisabledError ||
+        error instanceof SlotRequirementError
+      ) {
+        return { code: 'MISSING_MODEL', message: error.message };
+      }
+      if (error instanceof ModelConfigurationError) {
+        return { code: error.code, message: error.message };
+      }
+      throw error;
     }
-    throw error;
-  }
-  if (isProviderKeyRequired(resolved.providerId) && !resolved.apiKey) {
-    return {
-      code: 'MISSING_API_KEY',
-      message: `No API key is configured for the outline model (provider "${resolved.providerId}").`,
-    };
   }
   return null;
 }
@@ -185,7 +191,8 @@ function jobMessage(run: StoredRun, step: ClassroomJobStep): string {
 function jobError(run: StoredRun): string | undefined {
   if (run.state === 'paused') {
     const message = run.error?.message ?? 'A generation step failed';
-    return run.error?.step ? `${run.error.step}: ${message}` : message;
+    const failed = run.error?.step ? `${run.error.step}: ${message}` : message;
+    return `${failed} (the run is paused and keeps what it generated; POST /api/generation-runs/${run.id}/retry with { "commandId": "<a new id>" } resumes it at this step)`;
   }
   if (run.state === 'ended') {
     return run.stageId
@@ -195,14 +202,35 @@ function jobError(run: StoredRun): string | undefined {
   return undefined;
 }
 
-function mediaWarning(
-  runId: string,
+/**
+ * What a completed run left out: images and videos that failed (counted from
+ * their checkpoints, or from the summary a compaction kept), and speech clips
+ * its narration left silent.
+ */
+function completionWarning(
+  run: StoredRun,
   media: Record<string, GenerationRunMediaState>,
 ): string | undefined {
   const states = Object.values(media);
-  const failed = states.filter((state) => state.status === 'failed').length;
-  if (failed === 0) return undefined;
-  return `${failed} of ${states.length} images and videos could not be generated; see GET /api/generation-runs/${runId} for each one`;
+  const counts =
+    states.length > 0
+      ? {
+          total: states.length,
+          failed: states.filter((state) => state.status === 'failed').length,
+        }
+      : (run.mediaSummary ?? { total: 0, failed: 0 });
+  const parts: string[] = [];
+  if (counts.failed > 0) {
+    parts.push(
+      `${counts.failed} of ${counts.total} images and videos could not be generated (see GET /api/generation-runs/${run.id}; the retryable ones can be retried there)`,
+    );
+  }
+  if (run.narrationUnvoiced > 0) {
+    parts.push(
+      `${run.narrationUnvoiced} speech clip${run.narrationUnvoiced === 1 ? ' was' : 's were'} left without narration`,
+    );
+  }
+  return parts.length > 0 ? parts.join('; ') : undefined;
 }
 
 /** The job a poll answers with: the run, in the job contract. */
@@ -213,12 +241,13 @@ export function classroomJobView(
 ) {
   const status = jobStatus(run);
   const step = jobStep(run, status);
-  const warning = status === 'succeeded' ? mediaWarning(run.id, media) : undefined;
+  const warning = status === 'succeeded' ? completionWarning(run, media) : undefined;
   const error = jobError(run);
   return {
     jobId: run.id,
     /** The run behind the job: `GET`/`POST /api/generation-runs/<runId>…` (Retry, events). */
     runId: run.id,
+    runState: run.state,
     status,
     step,
     progress: jobProgress(run, status),
@@ -238,6 +267,8 @@ export function classroomJobView(
         }
       : {}),
     ...(error ? { error } : {}),
+    /** A failed job whose run is paused: a step Retry resumes it. */
+    retryable: run.state === 'paused',
     done: status === 'succeeded' || status === 'failed',
   };
 }
