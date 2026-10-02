@@ -54,7 +54,10 @@ export type ModelSettingsImportOutcome =
    * server skipped is kept in the browser (see ./model-settings-unimported.ts).
    */
   | 'imported'
-  /** Unreadable, or refused for good (400); it is gone from the browser. */
+  /**
+   * Unreadable, or refused for good (400); it is gone from the browser. What a
+   * refused proposal held is kept in the browser first.
+   */
   | 'dropped'
   /**
    * Not now: the browser is not bound to this owner (or the binding could not
@@ -125,10 +128,15 @@ function answerItemKey(entry: { kind?: unknown; id?: unknown } | null | undefine
   return itemKey(entry.kind, entry.id);
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
 /**
  * The items of a proposal the answer does not show as held by the workspace,
  * as they were proposed (keys included). An answer that cannot be read
- * confirms nothing.
+ * confirms nothing, and neither does one that contradicts itself about an
+ * item (imported and skipped, or skipped with different codes): that item is
+ * kept as unconfirmed.
  */
 export function unimportedItems(
   proposal: ModelSettingsProposal,
@@ -140,13 +148,22 @@ export function unimportedItems(
     if (key) imported.add(key);
   }
   const skipped = new Map<string, { code: string; reason?: string }>();
+  const contradicted = new Set<string>();
   for (const entry of Array.isArray(answer?.skipped) ? answer.skipped : []) {
     const key = answerItemKey(entry);
     if (!key) continue;
+    const code = typeof entry.code === 'string' ? entry.code : '';
+    if (imported.has(key) || (skipped.has(key) && skipped.get(key)!.code !== code)) {
+      contradicted.add(key);
+    }
     skipped.set(key, {
-      code: typeof entry.code === 'string' ? entry.code : '',
+      code,
       ...(typeof entry.reason === 'string' ? { reason: entry.reason } : {}),
     });
+  }
+  for (const key of contradicted) {
+    imported.delete(key);
+    skipped.delete(key);
   }
   const known = (Array.isArray(answer?.view?.providers) ? answer.view.providers : [])
     .filter((provider) => provider.source === 'workspace')
@@ -155,7 +172,8 @@ export function unimportedItems(
     !skip ? 'unconfirmed' : skip.code === 'PROVIDER_RESERVED' ? 'reserved' : 'refused';
 
   const items: UnimportedModelSetting[] = [];
-  for (const [id, provider] of Object.entries(proposal.providers ?? {})) {
+  const providers = isRecord(proposal.providers) ? proposal.providers : {};
+  for (const [id, provider] of Object.entries(providers)) {
     if (imported.has(itemKey('provider', id))) continue;
     const skip = skipped.get(itemKey('provider', id));
     if (skip && SETTLED_SKIPS.provider.has(skip.code)) continue;
@@ -173,7 +191,8 @@ export function unimportedItems(
       settings: { ...provider },
     });
   }
-  for (const [slot, assignment] of Object.entries(proposal.slots ?? {})) {
+  const slots = isRecord(proposal.slots) ? proposal.slots : {};
+  for (const [slot, assignment] of Object.entries(slots)) {
     if (imported.has(itemKey('slot', slot))) continue;
     const skip = skipped.get(itemKey('slot', slot));
     if (skip && SETTLED_SKIPS.slot.has(skip.code)) continue;
@@ -193,9 +212,12 @@ export function unimportedItems(
  * Post a waiting proposal to the owner this browser is bound to. On a 2xx
  * answer the proposal is removed from the browser, and with it every key the
  * server now holds; what it did not take is kept in the browser first
- * (`./model-settings-unimported.ts`), never to be sent again. An unreadable
- * proposal or a 400 drops it, since sending it again cannot succeed; anything
- * else keeps it for a later load.
+ * (`./model-settings-unimported.ts`), never to be sent again. A 400 refuses
+ * the whole proposal, so sending it again cannot succeed: every item, keys
+ * included, is kept in the browser the same way (as refused) before the
+ * proposal is removed. An unreadable proposal is dropped. Anything else (a
+ * conflict, 401, 404, a 5xx, a network error) keeps the proposal for a later
+ * load.
  */
 export async function runModelSettingsImport(
   options: {
@@ -278,8 +300,26 @@ export async function runModelSettingsImport(
     return 'imported';
   }
   if (response.status === 400) {
+    let detail: string | undefined;
+    try {
+      const body = (await response.json()) as { error?: { message?: unknown } } | null;
+      if (typeof body?.error?.message === 'string') detail = body.error.message;
+    } catch {
+      // No reason given.
+    }
+    const refused = unimportedItems(proposal, undefined).map(
+      (item): UnimportedModelSetting => ({
+        ...item,
+        reason: 'refused',
+        ...(detail ? { detail } : {}),
+      }),
+    );
+    // As above: the proposal goes only once what it holds is kept elsewhere.
+    if (!keepUnimported(refused, storage)) return 'kept';
     storage.removeItem(MODEL_SETTINGS_IMPORT_KEY);
-    console.warn(`${LOG_PREFIX} The server refused the model settings; they are not imported`);
+    console.warn(
+      `${LOG_PREFIX} The server refused the model settings; they are kept in this browser`,
+    );
     return 'dropped';
   }
   // 409 LEGACY_IMPORT_NOT_BOUND (the owner changed since the binding), a

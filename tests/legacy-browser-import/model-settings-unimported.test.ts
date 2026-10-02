@@ -266,6 +266,46 @@ describe('an import that meets settings already in the workspace', () => {
   });
 });
 
+describe('an answer that contradicts itself', () => {
+  it('keeps a provider listed as both imported and skipped', async () => {
+    const storage = waiting({ providers: { openai: { preset: 'openai', apiKey: OPENAI_KEY } } });
+    const fetch = server({
+      imported: [{ kind: 'provider', id: 'openai' }],
+      skipped: [{ kind: 'provider', id: 'openai', code: 'EXISTS_DIFFERENT', reason: 'other' }],
+    });
+    expect(await runModelSettingsImport({ fetch, storage })).toBe('imported');
+    expect(readUnimported(storage).items).toEqual([
+      expect.objectContaining({
+        id: 'openai',
+        kind: 'provider',
+        reason: 'unconfirmed',
+        settings: expect.objectContaining({ apiKey: OPENAI_KEY }),
+      }),
+    ]);
+  });
+
+  it('keeps an item skipped twice with different codes, one of them settling', async () => {
+    const storage = waiting({
+      providers: { openai: { preset: 'openai', apiKey: OPENAI_KEY } },
+      slots: { llm: 'openai:gpt-5.6' },
+    });
+    const fetch = server({
+      imported: [],
+      skipped: [
+        { kind: 'provider', id: 'openai', code: 'EXISTS_DIFFERENT', reason: 'other' },
+        { kind: 'provider', id: 'openai', code: 'EXISTS_SAME', reason: 'held' },
+        // Repeated with the same outcome: no contradiction.
+        { kind: 'slot', id: 'llm', code: 'EXISTS', reason: 'set' },
+        { kind: 'slot', id: 'llm', code: 'EXISTS', reason: 'set' },
+      ],
+    });
+    await runModelSettingsImport({ fetch, storage });
+    expect(readUnimported(storage).items.map((item) => [item.kind, item.id, item.reason])).toEqual([
+      ['provider', 'openai', 'unconfirmed'],
+    ]);
+  });
+});
+
 describe('a provider and a slot of the same id', () => {
   const proposal = {
     providers: { tts: { preset: 'azure-tts', apiKey: AZURE_KEY, baseUrl: 'https://evil.com' } },

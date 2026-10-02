@@ -159,8 +159,9 @@ extraction). Model settings now live on the server (`/api/model-config`), and
 | Answer                                   | Handling                                                                                     |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Binding held by another owner, or not asked for yet | Nothing is sent; the proposal stays for a later load.                            |
-| 2xx                                      | Every item the answer does not show the workspace holding is kept in the browser first (see below), then the proposal is removed. Kept item ids are logged. If they cannot be kept, the proposal stays and a later load answers it again. |
-| 400, or an unreadable proposal           | The proposal is dropped: sending it again cannot succeed.                                    |
+| 2xx                                      | Every item the answer does not show the workspace holding is kept in the browser first (see below), then the proposal is removed. An item the answer contradicts itself about (imported and skipped, or skipped with different codes) is kept as `unconfirmed`. Kept item ids are logged. If they cannot be kept, the proposal stays and a later load answers it again. |
+| 400                                      | The whole proposal is refused, so sending it again cannot succeed: every item is kept in the browser first, keys included, as `refused` with the server's message, then the proposal is removed. If they cannot be kept, the proposal stays. |
+| An unreadable proposal                   | The proposal is dropped.                                                                     |
 | 401, 404, 409 (including `LEGACY_IMPORT_NOT_BOUND`), 5xx, network error | The proposal stays; a later load (or unlocking the access code) tries again. |
 
 Its completion is its own: the proposal's key is removed once the server

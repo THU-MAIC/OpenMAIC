@@ -392,6 +392,59 @@ describe('/api/model-config', () => {
     ]);
   });
 
+  it('keeps the browser settings, keys included, when the route refuses the proposal', async () => {
+    const { POST } = await import('@/app/api/model-config/import/route');
+    const { runModelSettingsImport } =
+      await import('@/lib/legacy-browser-import/model-settings-import');
+    const { MODEL_SETTINGS_IMPORT_ENDPOINT, MODEL_SETTINGS_IMPORT_KEY } =
+      await import('@/lib/legacy-browser-import/model-settings');
+    const { readUnimported } =
+      await import('@/lib/legacy-browser-import/model-settings-unimported');
+    const { BINDING_ENDPOINT } = await import('@/lib/legacy-browser-import/protocol');
+    const { MemoryStorage } = await import('../../legacy-browser-import/harness');
+
+    // A readable proposal with a valid provider and key, and one field the
+    // route does not expect.
+    const storage = new MemoryStorage();
+    storage.setItem(
+      MODEL_SETTINGS_IMPORT_KEY,
+      JSON.stringify({
+        providers: { mine: { preset: 'openai', apiKey: SECRET } },
+        slots: { llm: 'mine:gpt-5.6' },
+        unexpected: true,
+      }),
+    );
+    const statuses: number[] = [];
+    const fetch = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input === BINDING_ENDPOINT) return Response.json({ bound: true });
+      if (input !== MODEL_SETTINGS_IMPORT_ENDPOINT) throw new Error(`unexpected ${input}`);
+      const headers = new Headers(init?.headers);
+      headers.set('x-test-session', 'alice');
+      const response = await POST(
+        new Request(`http://localhost${input}`, { ...init, headers }) as never,
+      );
+      statuses.push(response.status);
+      return response;
+    });
+
+    expect(await runModelSettingsImport({ fetch, storage })).toBe('dropped');
+    expect(statuses).toEqual([400]);
+    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
+    expect(readUnimported(storage).items).toEqual([
+      expect.objectContaining({
+        kind: 'provider',
+        id: 'mine',
+        reason: 'refused',
+        settings: { preset: 'openai', apiKey: SECRET },
+      }),
+      expect.objectContaining({ kind: 'slot', id: 'llm', reason: 'refused' }),
+    ]);
+    // Nothing reached the workspace, and nothing is sent again.
+    expect((await (await get('alice')).json()).revision).toBeNull();
+    expect(await runModelSettingsImport({ fetch, storage })).toBe('none');
+    expect(statuses).toEqual([400]);
+  });
+
   it('recomputes an import against a settings write that won the race', async () => {
     const persistence = await import('@/lib/persistence/workspace-model-config');
     const { POST } = await import('@/app/api/model-config/import/route');

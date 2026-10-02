@@ -10,6 +10,10 @@ import {
   MODEL_SETTINGS_IMPORT_KEY,
 } from '@/lib/legacy-browser-import/model-settings';
 import { runModelSettingsImport } from '@/lib/legacy-browser-import/model-settings-import';
+import {
+  MODEL_SETTINGS_UNIMPORTED_KEY,
+  readUnimported,
+} from '@/lib/legacy-browser-import/model-settings-unimported';
 import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from '@/lib/legacy-browser-import/protocol';
 
 import { MemoryStorage } from './harness';
@@ -162,12 +166,43 @@ describe('runModelSettingsImport', () => {
     expect(consoleOutput()).not.toContain(SECRET);
   });
 
-  it('drops a proposal the server refuses (400)', async () => {
+  it('drops a proposal the server refuses (400), keeping its items and keys in the browser', async () => {
     const storage = waiting();
-    expect(await runModelSettingsImport({ fetch: server({ importStatus: 400 }), storage })).toBe(
-      'dropped',
-    );
+    const fetch = server({
+      importStatus: 400,
+      importBody: {
+        error: { code: 'INVALID_REQUEST', message: 'Expected { providers?, slots? }' },
+      },
+    });
+    expect(await runModelSettingsImport({ fetch, storage })).toBe('dropped');
     expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toBeNull();
+    expect(readUnimported(storage).items).toEqual([
+      expect.objectContaining({
+        id: 'openai',
+        kind: 'provider',
+        reason: 'refused',
+        detail: 'Expected { providers?, slots? }',
+        settings: { preset: 'openai', apiKey: SECRET },
+      }),
+    ]);
+    // Never sent again.
+    expect(await runModelSettingsImport({ fetch, storage })).toBe('none');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(consoleOutput()).not.toContain(SECRET);
+  });
+
+  it('keeps the proposal on a 400 when its items cannot be kept elsewhere', async () => {
+    const storage = waiting();
+    const setItem = storage.setItem.bind(storage);
+    vi.spyOn(storage, 'setItem').mockImplementation((key, value) => {
+      if (key === MODEL_SETTINGS_UNIMPORTED_KEY)
+        throw new DOMException('full', 'QuotaExceededError');
+      setItem(key, value);
+    });
+    expect(await runModelSettingsImport({ fetch: server({ importStatus: 400 }), storage })).toBe(
+      'kept',
+    );
+    expect(storage.getItem(MODEL_SETTINGS_IMPORT_KEY)).toContain(SECRET);
   });
 
   it('drops an unreadable proposal without sending it or logging its text', async () => {
