@@ -132,8 +132,16 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
 
 async function openRename(sessionId: string): Promise<HTMLInputElement> {
-  const trigger = byTestId(`pro-nav-more-session-${sessionId}`);
-  expect(trigger, `chat row ${sessionId} must have a ⋯ menu`).not.toBeNull();
+  // The rail mounts its rows after the test's dynamic import resolves, so wait
+  // for the row rather than assuming the commit has already landed — under a
+  // loaded machine the import and the first paint both take real time.
+  await vi.waitFor(() =>
+    expect(
+      byTestId(`pro-nav-more-session-${sessionId}`),
+      `chat row ${sessionId} must have a ⋯ menu`,
+    ).not.toBeNull(),
+  );
+  const trigger = byTestId(`pro-nav-more-session-${sessionId}`)!;
   await act(async () => {
     trigger!.dispatchEvent(
       new PointerEvent('pointerdown', { bubbles: true, button: 0, cancelable: true }),
@@ -164,10 +172,15 @@ async function submit(sessionId: string): Promise<void> {
   });
 }
 
+// The rail is a large module graph imported dynamically inside the first
+// test; on a loaded machine that import plus the first commit runs past the
+// 5s default, so the suite carries its own budget.
 describe('renaming a chat from its row', () => {
   it('shows the name the user gave it, and opens the box on that name', async () => {
     await renderRail();
-    expect(byTestId(`pro-nav-session-${NAMED}`)?.textContent).toContain('期末复习课');
+    await vi.waitFor(() =>
+      expect(byTestId(`pro-nav-session-${NAMED}`)?.textContent).toContain('期末复习课'),
+    );
     expect((await openRename(NAMED)).value).toBe('期末复习课');
   });
 
@@ -208,4 +221,4 @@ describe('renaming a chat from its row', () => {
     expect(onRenameSession).not.toHaveBeenCalled();
     expect(byTestId(`pro-nav-session-rename-${NAMED}-input`)).toBeNull();
   });
-});
+}, 30_000);
