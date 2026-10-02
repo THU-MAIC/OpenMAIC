@@ -11,12 +11,17 @@ import {
 } from '@/lib/store/stage';
 import type { MediaFileRecord } from '@/lib/device-storage/database';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import {
   collectDocumentMediaElements,
   withDocumentLegacyVideoRecovery,
 } from '@/lib/media/media-task-resolution';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
+import {
+  sceneCarriesMediaReference,
+  stageCarriesMediaReference,
+} from '@/lib/media/generated-media-references';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { createLogger } from '@/lib/logger';
 
@@ -144,6 +149,7 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       return { outcome: 'cancelled' };
     }
     applyRestoredMediaTasks(mediaTasks);
+    offerOutstandingMediaRetries(classroomId);
 
     // ── Roster hydration: the stage document is the source of truth ──
     // The legacy IndexedDB mirror is consulted as a read-only, per-stage
@@ -402,6 +408,72 @@ export function applyRestoredMediaTasks(
       moduleLog.warn('Deferred media hydration failed:', error);
     });
   }
+}
+
+/** Why an outstanding element shows as failed: nothing generated it. */
+export const OUTSTANDING_MEDIA_ERROR = 'This media was not generated';
+
+/**
+ * The media a course still waits for that nothing will generate: a course no
+ * generation run produces (made in the browser before 1.2.0) whose slides
+ * still carry an outline's generation placeholder with no task restored for
+ * it (no refusal record, no cached bytes). Each becomes a failed, retryable
+ * task, so the element offers Retry; nothing is generated until the author
+ * asks. A course a server job produces has its job's tasks instead.
+ */
+export function outstandingMediaRetryTasks(input: {
+  stageId: string;
+  stage: Pick<Stage, 'whiteboard'> | null;
+  scenes: readonly Scene[];
+  outlines: readonly SceneOutline[];
+  serverProduced: boolean;
+  tasks: Readonly<Record<string, MediaTask>>;
+}): Record<string, MediaTask> {
+  if (input.serverProduced) return {};
+  const known = new Set<string>();
+  for (const [key, task] of Object.entries(input.tasks)) {
+    known.add(key);
+    if (task.placeholderRef) known.add(task.placeholderRef);
+  }
+  const outstanding: Record<string, MediaTask> = {};
+  for (const outline of input.outlines) {
+    for (const request of outline.mediaGenerations ?? []) {
+      const ref = request.elementId;
+      if (known.has(ref) || outstanding[ref]) continue;
+      const carried =
+        input.scenes.some(
+          (scene) => scene.order === outline.order && sceneCarriesMediaReference(scene, ref),
+        ) || stageCarriesMediaReference(input.stage, ref);
+      if (!carried) continue;
+      outstanding[ref] = {
+        elementId: ref,
+        type: request.type,
+        status: 'failed',
+        prompt: request.prompt,
+        params: { aspectRatio: request.aspectRatio, style: request.style },
+        error: OUTSTANDING_MEDIA_ERROR,
+        retryCount: 0,
+        stageId: input.stageId,
+      };
+    }
+  }
+  return outstanding;
+}
+
+/** Offer Retry for the open course's outstanding media (see outstandingMediaRetryTasks). */
+export function offerOutstandingMediaRetries(stageId: string): void {
+  const { stage, scenes, outlines, outlineProducer } = useStageStore.getState();
+  if (stage?.id !== stageId) return;
+  const outstanding = outstandingMediaRetryTasks({
+    stageId,
+    stage,
+    scenes,
+    outlines,
+    serverProduced: outlineProducer === 'server-job',
+    tasks: useMediaGenerationStore.getState().tasks,
+  });
+  if (Object.keys(outstanding).length === 0) return;
+  useMediaGenerationStore.setState((state) => ({ tasks: { ...outstanding, ...state.tasks } }));
 }
 
 export function discardRestoredMediaTasks(restored: RestoredMediaTasks): void {

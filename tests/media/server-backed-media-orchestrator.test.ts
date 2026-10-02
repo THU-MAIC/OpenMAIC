@@ -74,6 +74,7 @@ vi.mock('@/lib/media/pending-media-allocations', () => ({
 }));
 
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { offerOutstandingMediaRetries } from '@/lib/classroom/load-classroom';
 import { noteStageGenerationOwnership } from '@/lib/classroom/generation-permission';
 import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { MediaReferenceWriteBackError } from '@/lib/media/persist-media-reference';
@@ -1047,5 +1048,45 @@ describe('server-backed media retry', () => {
     await runImageGeneration();
 
     expect(mocks.putAsset.mock.calls[0]![1]).toEqual({ contentType: 'image/png' });
+  });
+
+  // A course generated in the browser before 1.2.0 whose media pass never
+  // reached an element: no record, no cached bytes. Reopening it offers Retry,
+  // and nothing is generated until the author clicks it.
+  it('offers Retry for media a pre-run course never generated, and the Retry generates', async () => {
+    serveImage();
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [sceneWithImage(1, imageRef)],
+      outlines: [
+        {
+          id: 'outline-1',
+          type: 'slide',
+          title: 'Scene',
+          description: 'Scene',
+          keyPoints: ['media'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'A diagram', elementId: imageRef }],
+        },
+      ],
+      outlineProducer: null,
+      generationComplete: true,
+    });
+
+    offerOutstandingMediaRetries(stageId);
+
+    const offered = useMediaGenerationStore.getState().tasks[imageRef];
+    expect(offered).toMatchObject({ status: 'failed', prompt: 'A diagram', stageId });
+    expect(isRetryableMediaFailure(offered!)).toBe(true);
+    expect(providerCallCount()).toBe(0);
+
+    noteStageGenerationOwnership(stageId, 'owner');
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(1);
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
+    );
+    expect(useMediaGenerationStore.getState().tasks.ast_generated?.status).toBe('done');
   });
 });

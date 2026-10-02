@@ -110,6 +110,7 @@ vi.mock('@/lib/store', () => {
     use: {
       failedOutlines: () => [],
       generationComplete: () => true,
+      generationInterrupted: () => false,
     },
     getState: () => stageState,
   });
