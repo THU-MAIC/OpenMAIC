@@ -380,9 +380,9 @@ describe('generationComplete', () => {
     expect(healed.generationComplete).toBe(true);
   });
 
-  // Resume-on-refresh for a genuinely interrupted generation is preserved:
-  // when not complete, the missing outline still drives a placeholder.
-  it('keeps generating placeholders on load when generation is not complete', async () => {
+  // A course the browser was generating before runs: its missing outline
+  // still shows as a placeholder, marked interrupted (nothing produces it).
+  it('keeps placeholders for a browser-produced course and marks them interrupted', async () => {
     loadStageDataMock.mockResolvedValue({
       stage: makeStage(),
       scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
@@ -399,6 +399,30 @@ describe('generationComplete', () => {
 
     expect(useStageStore.getState().generationComplete).toBe(false);
     expect(useStageStore.getState().generatingOutlines.map((o) => o.order)).toEqual([3]);
+    expect(useStageStore.getState().generationInterrupted).toBe(true);
+  });
+
+  it('does not mark a server-produced course interrupted: its job finishes it', async () => {
+    stageOutlinesGet.mockResolvedValue(undefined);
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1)],
+      currentSceneId: 'a',
+      chats: [],
+      outline: {
+        outlines: [makeOutline(1), makeOutline(2)],
+        generationComplete: false,
+        producer: 'server-job',
+        producerRef: 'run-abc',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generatingOutlines.map((o) => o.order)).toEqual([2]);
+    expect(useStageStore.getState().generationInterrupted).toBe(false);
   });
 
   it('does not overwrite in-memory scenes that appear while runtime hydration is pending', async () => {

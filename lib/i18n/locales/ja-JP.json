@@ -237,6 +237,7 @@
     "generating": "生成中...",
     "paused": "一時停止中",
     "generationFailed": "生成に失敗しました",
+    "generationInterrupted": "生成は中断されました",
     "confirmSwitchTitle": "シーンの切り替え",
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",

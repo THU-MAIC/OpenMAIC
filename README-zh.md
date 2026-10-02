@@ -912,7 +912,7 @@ clawhub install openmaic
 OpenMAIC/
 ├── app/                        # Next.js App Router
 │   ├── api/                    #   服务端 API 路由（26 个端点组）
-│   │   ├── generate/           #     场景生成流水线（大纲、内容、图片、TTS…）
+│   │   ├── generate/           #     图片、视频、TTS 与音色注册
 │   │   ├── generate-classroom/ #     异步课堂生成提交与轮询
 │   │   ├── chat/               #     多智能体讨论（SSE 流式传输）
 │   │   ├── pbl/                #     项目制学习端点

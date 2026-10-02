@@ -301,6 +301,7 @@ function clearedStageState() {
     generationStatus: 'idle' as const,
     failedOutlines: [],
     generatingOutlines: [],
+    generationInterrupted: false,
   };
 }
 
@@ -410,6 +411,12 @@ interface StageState {
    * (no editing, no Pro mode) until it does.
    */
   courseGenerating: boolean;
+  /**
+   * The course's pending outlines will never be produced: it was generated in
+   * the browser before generation moved to the server (or its run is gone),
+   * and nothing resumes it. They show as interrupted, not as generating.
+   */
+  generationInterrupted: boolean;
 
   // Transient generation tracking (not persisted)
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
@@ -556,6 +563,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   outlineProducer: null,
   outlineProducerRef: null,
   courseGenerating: false,
+  generationInterrupted: false,
   isOwner: true,
   readOnly: false,
   generationStatus: 'idle' as const,
@@ -1105,6 +1113,13 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               scenes: migrated,
               failedOutlines,
             }));
+        // Compute generatingOutlines from persisted outlines minus completed
+        // scenes. Once generation is complete the deck is frozen for editing,
+        // so an orphaned outline (e.g. from a deleted slide) must NOT surface
+        // as a pending placeholder.
+        const generatingOutlines = generationComplete
+          ? []
+          : outlines.filter((o) => !migrated.some((s) => s.order === o.order));
         set({
           stage: data.stage,
           scenes: migrated,
@@ -1113,13 +1128,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,
           generationComplete,
-          // Compute generatingOutlines from persisted outlines minus completed
-          // scenes. Once generation is complete the deck is frozen for editing,
-          // so an orphaned outline (e.g. from a deleted slide) must NOT surface
-          // as a pending placeholder.
-          generatingOutlines: generationComplete
-            ? []
-            : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+          generatingOutlines,
+          // A course the browser was generating before generation moved to
+          // the server: no run will produce the rest (a server job's course
+          // is its job's to finish).
+          generationInterrupted: generatingOutlines.length > 0 && !serverProduced,
           outlineProducer: outlinesRecord?.producer ?? null,
           outlineProducerRef: outlinesRecord?.producerRef ?? null,
           // `mode` is transient UI state, not persisted with the stage.

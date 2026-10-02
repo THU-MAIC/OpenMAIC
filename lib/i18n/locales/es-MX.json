@@ -237,6 +237,7 @@
     "generating": "Generando...",
     "paused": "En pausa",
     "generationFailed": "Falló la generación",
+    "generationInterrupted": "La generación se interrumpió",
     "confirmSwitchTitle": "Cambiar de escena",
     "confirmSwitchMessage": "Hay un tema en curso. Cambiar de escena terminará el tema actual. ¿Quieres continuar?",
     "generatingNextPage": "La escena se está generando, espera un momento...",

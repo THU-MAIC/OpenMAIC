@@ -237,6 +237,7 @@
     "generating": "Генерация...",
     "paused": "Пауза",
     "generationFailed": "Ошибка генерации",
+    "generationInterrupted": "Генерация была прервана",
     "confirmSwitchTitle": "Переключить сцену",
     "confirmSwitchMessage": "В данный момент идёт обсуждение. Переключение сцены завершит текущую тему. Продолжить?",
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",

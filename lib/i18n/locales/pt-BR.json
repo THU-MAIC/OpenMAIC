@@ -650,6 +650,7 @@
     "generating": "Gerando...",
     "paused": "Pausado",
     "generationFailed": "Falha na geração",
+    "generationInterrupted": "A geração foi interrompida",
     "confirmSwitchTitle": "Trocar de Cena",
     "confirmSwitchMessage": "Há um tópico em andamento. Trocar de cena vai encerrá-lo. Tem certeza?",
     "generatingNextPage": "A cena está sendo gerada, aguarde...",

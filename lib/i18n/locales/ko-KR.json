@@ -237,6 +237,7 @@
     "generating": "생성 중...",
     "paused": "일시정지됨",
     "generationFailed": "생성 실패",
+    "generationInterrupted": "생성이 중단되었습니다",
     "confirmSwitchTitle": "장면 전환",
     "confirmSwitchMessage": "현재 진행 중인 주제가 있습니다. 장면을 전환하면 현재 주제가 종료됩니다. 계속하시겠습니까?",
     "generatingNextPage": "장면을 생성 중입니다. 잠시 기다려 주세요...",

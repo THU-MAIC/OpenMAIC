@@ -237,6 +237,7 @@
     "generating": "Génération…",
     "paused": "En pause",
     "generationFailed": "Échec de la génération",
+    "generationInterrupted": "La génération a été interrompue",
     "confirmSwitchTitle": "Changer de scène",
     "confirmSwitchMessage": "Un sujet est en cours. Changer de scène mettra fin au sujet actuel. Confirmez-vous ?",
     "generatingNextPage": "La scène est en cours de génération, veuillez patienter…",

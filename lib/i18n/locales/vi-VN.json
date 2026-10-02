@@ -237,6 +237,7 @@
     "generating": "Đang tạo…",
     "paused": "Đã tạm dừng",
     "generationFailed": "Tạo không thành công",
+    "generationInterrupted": "Quá trình tạo đã bị gián đoạn",
     "confirmSwitchTitle": "Chuyển cảnh",
     "confirmSwitchMessage": "Đang có một chủ đề dở dang. Chuyển cảnh sẽ kết thúc chủ đề đang học. Bạn có chắc không?",
     "generatingNextPage": "Cảnh đang được tạo, vui lòng đợi…",

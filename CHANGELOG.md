@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `POST /api/generate/scene-actions` is removed; use generation runs.
   - `POST /api/extract-document` is removed; use generation runs (upload materials with `POST /api/materials`).
   - `POST /api/web-search` is removed; use generation runs.
+- Courses interrupted in the browser before 1.2.0 are not resumed; their remaining scenes show as interrupted ("Generation was interrupted", with no Retry). The scenes they have keep working.
 - Embedders: the browser storage seams (`configureDocumentStorage`, `configureRuntimeStorage`, `configureAssetPoolStorage`) have no IndexedDB fallback any more. The browser bootstrap configures the HTTP stores; code outside the browser must configure a `store`, and resolving an unconfigured seam throws. [#1710](https://github.com/THU-MAIC/OpenMAIC/pull/1710)
 
 ### Deprecated

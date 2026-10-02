@@ -237,6 +237,7 @@
     "generating": "Wird generiert...",
     "paused": "Pausiert",
     "generationFailed": "Generierung fehlgeschlagen",
+    "generationInterrupted": "Generierung wurde unterbrochen",
     "confirmSwitchTitle": "Szene wechseln",
     "confirmSwitchMessage": "Ein Thema läuft gerade. Beim Wechseln der Szene wird das aktuelle Thema beendet. Möchtest du wirklich wechseln?",
     "generatingNextPage": "Die Szene wird generiert. Bitte warten...",

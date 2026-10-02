@@ -237,6 +237,7 @@
     "generating": "生成中...",
     "paused": "已暂停",
     "generationFailed": "生成失败",
+    "generationInterrupted": "生成已中断",
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",

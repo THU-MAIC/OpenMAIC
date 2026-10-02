@@ -152,10 +152,16 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
     };
   }, [runId, fenced, input.classroomId]);
 
-  // A run that is unknown (its log was compacted after it finished) leaves the course as loaded.
+  // A run that is unknown (its log was compacted after it finished) leaves the course as loaded;
+  // outlines it left pending will never be produced, so they show as interrupted.
   useEffect(() => {
-    if (status === 'missing' && runId) log.info(`Run ${runId} of this course is no longer kept`);
-  }, [status, runId]);
+    if (status !== 'missing' || !runId) return;
+    log.info(`Run ${runId} of this course is no longer kept`);
+    const state = useStageStore.getState();
+    if (state.stage?.id === input.classroomId && state.generatingOutlines.length > 0) {
+      useStageStore.setState({ generationInterrupted: true });
+    }
+  }, [status, runId, input.classroomId]);
 
   // Scenes appended since this classroom read the course.
   const scenesCompleted = view?.progress.scenesCompleted ?? 0;

@@ -237,6 +237,7 @@
     "generating": "生成中...",
     "paused": "已暫停",
     "generationFailed": "生成失敗",
+    "generationInterrupted": "生成已中斷",
     "confirmSwitchTitle": "切換頁面",
     "confirmSwitchMessage": "目前主題正在進行中，切換頁面將結束目前主題。確定要切換嗎？",
     "generatingNextPage": "場景正在生成，請稍候...",
