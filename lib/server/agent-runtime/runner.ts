@@ -77,6 +77,7 @@ import { buildScenePreviewTools } from './scene-preview';
 import {
   AgentSessionEntryStorage,
   loadSessionEntryHistory,
+  readPriorRunRecord,
   type SessionEntryHistory,
 } from './entry-tree-storage';
 import { planResume, type ResumeAction } from './resume';
@@ -772,15 +773,33 @@ export async function composeFollowUpTextWithElementRefs(
   return composeFollowUpText({ ...message, resolvedElementRefs });
 }
 
+/**
+ * The session's opening message among the pending ones: the first, unless
+ * earlier runs left the tree empty and it was posted after the first of them
+ * (then it is a follow-up, and the session was created without one).
+ */
+export function openingMessage(
+  pending: readonly FollowUpMessage[],
+  firstRunSeq?: number,
+): FollowUpMessage | undefined {
+  const first = pending[0];
+  if (!first || firstRunSeq === undefined) return first;
+  return first.durableMessageSeq !== undefined && first.durableMessageSeq < firstRunSeq
+    ? first
+    : undefined;
+}
+
 export function planRunStart(input: {
   plan: ResumeAction;
   claimReason: AgentSessionClaimReason;
   pending: FollowUpMessage[];
   prompt: string;
   idleAttach?: boolean;
+  /** {@link SessionEntryHistory.firstRunSeq}: earlier runs left the tree empty. */
+  firstRunSeq?: number;
 }): RunStart {
-  if (input.plan.kind === 'start' && input.pending.length > 0 && input.idleAttach) {
-    const opening = input.pending[0]!;
+  const opening = openingMessage(input.pending, input.firstRunSeq);
+  if (input.plan.kind === 'start' && opening && input.idleAttach) {
     return {
       kind: 'prompt',
       text: composeFollowUpText(opening),
@@ -793,7 +812,7 @@ export function planRunStart(input: {
     // message. Its classrooms must reach the model, or the run would not know
     // which classroom the user named. Nothing else changes: the raw prompt is
     // still the base, and materials are already listed in the system block.
-    const opening = input.pending[0];
+    // Messages that are not the opening one are delivered as follow-ups.
     if (opening?.courseRefs?.length || opening?.elementRefs?.length) {
       return {
         kind: 'prompt',
@@ -949,7 +968,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     );
     return loadSessionEntryHistory(entrySession, {
       sessionId: id,
-      hasPriorRun: await store.hasSessionRunHistory(id),
+      priorRuns: () => readPriorRunRecord(store, id),
     });
   };
 
@@ -1240,7 +1259,14 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       return;
     }
 
-    if (plan.kind === 'start' && (pending.length === 0 || !idleAttach)) {
+    // `session_start` opens the conversation once. A run that starts over on
+    // a tree earlier runs left empty (they failed before completing anything)
+    // resumes it instead, so the opening prompt is not painted again.
+    if (
+      plan.kind === 'start' &&
+      recovery.firstRunSeq === undefined &&
+      (pending.length === 0 || !idleAttach)
+    ) {
       emit(LIFECYCLE.sessionStart, {
         workerId: WORKER_ID,
         pid: process.pid,
@@ -1351,6 +1377,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       pending,
       prompt: meta.prompt,
       idleAttach,
+      firstRunSeq: recovery.firstRunSeq,
     });
     // The owner probe is the tool layer's legality boundary: every course call
     // declares its stageId, and stageAccess resolves that stage against the
