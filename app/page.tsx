@@ -60,6 +60,7 @@ import {
   type CourseRunStatus,
 } from '@/lib/generation-run-client/course-card';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
+import { markRunStartedHere } from '@/lib/generation-run-client/outline-review';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -637,6 +638,7 @@ function HomePage() {
         taskEngine: form.vocationalTestMode,
         capabilities,
       });
+      markRunStartedHere(run.id);
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
     } catch (err) {
       log.error('Error starting generation:', err);

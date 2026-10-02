@@ -106,7 +106,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
   const loadedId = useStageStore((s) => s.stage?.id ?? null);
   const runId =
     input.ready && loadedId === input.classroomId ? runIdOfCourse(producer, producerRef) : null;
-  const { view, status } = useGenerationRun(runId);
+  const { view, status, refresh } = useGenerationRun(runId);
   const viewRef = useRef<RunView | null>(null);
   useEffect(() => {
     viewRef.current = view;
@@ -213,8 +213,10 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
       const current = viewRef.current;
       if (!current) throw new Error('The generation run is not loaded');
       await retryRunMedia(current, elementId);
+      // A finished run's stream is closed: follow it again for the retry.
+      await refresh();
     });
-  }, [runId, input.classroomId]);
+  }, [runId, input.classroomId, refresh]);
 
   const retryOutline = useCallback(async (outlineId: string) => {
     const current = viewRef.current;

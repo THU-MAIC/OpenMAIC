@@ -24,7 +24,12 @@ import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { RunApiError } from '@/lib/generation-run-client/api';
 import { confirmOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
-import { createAutoContinue, outlineReviewPhase } from '@/lib/generation-run-client/outline-review';
+import {
+  createAutoContinue,
+  forgetRunStartedHere,
+  outlineReviewPhase,
+  wasRunStartedHere,
+} from '@/lib/generation-run-client/outline-review';
 import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
 import { useGenerationRun } from '@/lib/generation-run-client/use-generation-run';
@@ -127,6 +132,7 @@ function GenerationPreviewContent() {
       await confirmOutline(view, edits ?? undefined);
       outlineReviewIntentRef.current = false;
       writeReviewIntent(view.runId, false);
+      forgetRunStartedHere(view.runId);
       setPhase('progress');
       // The learner committed to the course: the homepage draft can go. Before
       // this point, "back to requirements" must restore their input.
@@ -176,7 +182,9 @@ function GenerationPreviewContent() {
     }
     if (phase !== 'progress') return;
     const next = outlineReviewPhase({
-      attachedWaiting: attachedStateRef.current === 'awaiting_outline_confirmation',
+      attachedWaiting:
+        attachedStateRef.current === 'awaiting_outline_confirmation' &&
+        !wasRunStartedHere(view.runId),
       reviewOutlineEnabled: useSettingsStore.getState().reviewOutlineEnabled,
       reviewIntent: outlineReviewIntentRef.current,
     });

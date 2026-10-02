@@ -13,7 +13,7 @@
 import { GENERATION_RUN_EVENT_TYPES } from '@/lib/server/generation/run/types';
 
 import { applyRunEvent, followFrom, viewFromSnapshot } from './reducer';
-import type { RunEvent, RunSnapshot, RunView } from './types';
+import { isFinishedRunState, type RunEvent, type RunSnapshot, type RunView } from './types';
 
 export type RunFollowStatus = 'loading' | 'live' | 'missing' | 'error';
 
@@ -92,6 +92,7 @@ export class RunFollower {
     }
     if (!this.state.view) return;
     this.publish({ view: applyRunEvent(this.state.view, event) });
+    this.idleIfSettled();
   }
 
   private async readSnapshot(): Promise<void> {
@@ -171,13 +172,42 @@ export class RunFollower {
       return;
     }
     this.publish({ view: start.view, status: 'live' });
+    this.openEvents(start.after);
+  }
+
+  private openEvents(after: number): void {
+    if (this.closed || this.source || !this.deps.openEvents) return;
     const source = this.deps.openEvents(
-      `/api/generation-runs/${encodeURIComponent(this.runId)}/events?after=${start.after}`,
+      `/api/generation-runs/${encodeURIComponent(this.runId)}/events?after=${after}`,
     );
     this.source = source;
     for (const type of GENERATION_RUN_EVENT_TYPES) source.addEventListener(type, this.onFrame);
     source.addEventListener('resync', () => void this.resync());
-    source.addEventListener('caught_up', () => this.publish({ caughtUp: true }));
+    source.addEventListener('caught_up', () => {
+      this.publish({ caughtUp: true });
+      this.idleIfSettled();
+    });
+  }
+
+  /**
+   * A finished run with nothing generating changes only through a command
+   * (a media Retry): the stream is closed until `wake` reopens it.
+   */
+  private idleIfSettled(): void {
+    const view = this.state.view;
+    if (!view || !this.state.caughtUp || !this.source) return;
+    if (!isFinishedRunState(view.state)) return;
+    const busy = Object.values(view.media).some(
+      (media) => media.status === 'pending' || media.status === 'generating',
+    );
+    if (busy) return;
+    this.source.close();
+    this.source = null;
+  }
+
+  /** Follow the run's events again (after a command to a run whose stream was closed). */
+  wake(): void {
+    if (this.state.view) this.openEvents(this.state.view.seq);
   }
 
   close(): void {

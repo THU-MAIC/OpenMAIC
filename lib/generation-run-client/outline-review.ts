@@ -4,12 +4,47 @@
  * for it (always-review, or by opening the streaming card), else a 2.5 s beat
  * on the outline-ready card before generation continues on its own. A run
  * already waiting when the page attaches (opened from its course card, or a
- * reload) shows the review: nobody is watching a countdown there.
+ * reload) shows the review: nobody is watching a countdown there. The page
+ * the composer opened is not such a page, even if the outline was ready
+ * before it attached.
  */
 export const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
+function startedHereKey(runId: string): string {
+  return `generationRunStartedHere:${runId}`;
+}
+
+/**
+ * Remember that this tab's composer started the run: its preview is the page
+ * that started generation, not one opened on a waiting run, even when the
+ * outline was ready before the preview attached.
+ */
+export function markRunStartedHere(runId: string): void {
+  try {
+    sessionStorage.setItem(startedHereKey(runId), '1');
+  } catch {
+    /* sessionStorage unavailable: the preview treats the run as opened later */
+  }
+}
+
+export function wasRunStartedHere(runId: string): boolean {
+  try {
+    return sessionStorage.getItem(startedHereKey(runId)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function forgetRunStartedHere(runId: string): void {
+  try {
+    sessionStorage.removeItem(startedHereKey(runId));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function outlineReviewPhase(input: {
-  /** The run was waiting for confirmation when this page first caught up with it. */
+  /** The run was already waiting when this page (not the one the composer opened) first caught up with it. */
   attachedWaiting: boolean;
   reviewOutlineEnabled: boolean;
   reviewIntent: boolean;

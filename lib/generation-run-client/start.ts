@@ -19,6 +19,9 @@ import {
 } from './api';
 import type { RunSnapshot } from './types';
 
+/** The built-in presets a course is taught by when the learner selected none. */
+const DEFAULT_PRESET_AGENT_IDS = ['default-1', 'default-2', 'default-3'];
+
 /** A start refused before anything was submitted; `reason` is the translation key that says why. */
 export class RunStartRefusedError extends Error {
   constructor(
@@ -55,9 +58,10 @@ export async function selectedRunAgents(): Promise<StartRunInput['agents']> {
     const agent = registry.getAgent(id);
     return !!agent && !agent.isGenerated;
   });
-  return settings.agentMode === 'auto'
-    ? { mode: 'auto', presetAgentIds: presetIds }
-    : { mode: 'preset', agentIds: presetIds };
+  if (settings.agentMode === 'auto') return { mode: 'auto', presetAgentIds: presetIds };
+  // A run is taught by at least one agent: an empty selection is the default
+  // presets, as the run falls back to when generated agents fail.
+  return { mode: 'preset', agentIds: presetIds.length > 0 ? presetIds : DEFAULT_PRESET_AGENT_IDS };
 }
 
 /** The learner's narrator voice for the tts slot's provider, when the server narrates. */

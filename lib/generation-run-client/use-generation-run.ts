@@ -18,7 +18,7 @@ export interface FollowedRun {
   status: RunFollowStatus;
   /** True once the stream replayed everything the run logged before it attached. */
   caughtUp: boolean;
-  /** Read the snapshot again (after a refused command, for instance). */
+  /** Read the snapshot again and follow the events again (after a command). */
   refresh: () => Promise<void>;
 }
 
@@ -48,6 +48,7 @@ export function useGenerationRun(runId: string | null): FollowedRun {
   }, [runId]);
 
   const refresh = useCallback(async () => {
+    followerRef.current?.wake();
     await followerRef.current?.resync();
   }, []);
 

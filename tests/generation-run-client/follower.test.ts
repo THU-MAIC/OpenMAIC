@@ -161,4 +161,31 @@ describe('RunFollower', () => {
     live.sources[0]!.frame(2, 'state', { state: 'paused', step: 'agents' });
     expect(live.states.length).toBe(before);
   });
+
+  it('closes the stream of a settled finished run and follows it again on wake', async () => {
+    const { follower, sources } = setup([
+      snapshot({ state: 'completed', seq: 30, outline: ready, stageId: 'stage-1' }),
+    ]);
+    await follower.start();
+    sources[0]!.emit('caught_up', { type: 'caught_up', seq: 30 });
+    expect(sources[0]!.closed).toBe(true);
+
+    // A media Retry: the run is followed again from where the view is.
+    follower.wake();
+    expect(sources[1]!.url).toMatch(/after=30$/);
+    sources[1]!.frame(31, 'media', {
+      elementId: 'gen_img_1',
+      mediaType: 'image',
+      status: 'pending',
+    });
+    expect(sources[1]!.closed).toBe(false);
+    sources[1]!.frame(32, 'media', {
+      elementId: 'gen_img_1',
+      mediaType: 'image',
+      status: 'done',
+      assetId: 'a',
+    });
+    expect(sources[1]!.closed).toBe(true);
+    expect(follower.current.view?.media.gen_img_1).toMatchObject({ status: 'done' });
+  });
 });

@@ -45,7 +45,12 @@ test.describe('Home → Generation', () => {
     }, SETTINGS_STORAGE);
   });
 
-  test('home page loads with core UI elements and submits requirement', async ({ page }) => {
+  test('home page loads with core UI elements and submits requirement', async ({
+    page,
+    mockApi,
+  }) => {
+    // Submitting starts a generation run (mocked: no provider is called).
+    const run = await mockApi.setupGenerationMocks();
     const home = new HomePage(page);
     await home.goto();
 
@@ -61,7 +66,8 @@ test.describe('Home → Generation', () => {
     // Submit → navigate to generation-preview
     await home.submit();
     await page.waitForURL(/\/generation-preview/);
-    expect(page.url()).toContain('/generation-preview');
+    expect(page.url()).toContain(`/generation-preview?run=${run.id}`);
+    expect(run.started).toBe(true);
   });
 
   test('keeps body spacing stable when the settings dialog opens', async ({ page }) => {
