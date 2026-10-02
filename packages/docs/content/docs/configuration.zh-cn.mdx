@@ -210,7 +210,7 @@ policy:
 - 工作区在模型设置中填写的 key 保存在数据库中，使用实例密钥 `OPENMAIC_SECRET_KEY` 以 AES-256-GCM 加密。
 - 未设置 `OPENMAIC_SECRET_KEY` 时，服务端会在首次使用时于 `data/instance-secret.key`（Docker Compose 中位于 `openmaic-data` 数据卷内）生成一个随机密钥，之后一直使用它。
 
-请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或在没有持久化数据目录的平台（例如 Vercel）上，请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
+请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或服务没有持久化数据目录时（例如未挂载数据卷的容器），请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
 
 ```bash
 OPENMAIC_SECRET_KEY=...        # 模型设置中保存的 key 所用的实例密钥

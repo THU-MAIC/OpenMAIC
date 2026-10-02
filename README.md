@@ -20,7 +20,6 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-workbench-integration"><img src="https://img.shields.io/badge/OpenClaw-Integration-F4511E?style=flat-square" alt="OpenClaw Integration"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -327,6 +326,12 @@ server refuses to start and tells you how to provide one (see
 pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
+Keep the server running as a long-running process (a process manager or a
+container): course generation runs inside it and continues after the browser
+leaves the page. See the
+[Deployment guide](packages/docs/content/docs/deployment.mdx) for the required
+configuration and for upgrading from 1.1.x.
+
 ### Optional: ACCESS_CODE (Shared Deployments)
 
 To protect your deployment with a site-level password, set `ACCESS_CODE` in `.env.local`:
@@ -340,25 +345,6 @@ Use a long random value — at least 16 characters from a random generator — b
 When set, visitors see a password prompt before accessing the app. All API routes are also protected. When unset (the default in `.env.example`), `middleware.ts` does not check a credential and every matched route — including the API — is reachable. That is fail-open: an unconfigured deployment is not gated, and there is no second enforcement point.
 
 The code is remembered in a signed token stored in an HTTP-only cookie for 7 days; the lifetime is enforced server-side, so visitors re-verify after it expires. Verification is rate limited only when `TRUST_PROXY_HEADERS=true` is set: behind a trusted reverse proxy that overwrites `x-forwarded-for` / `x-real-ip`, each client gets its own limit of 10 attempts per 60 seconds, and a successful check clears that client's counter. Without a trusted proxy the app cannot attribute requests to a client, so there is no throttle at all — the length and randomness of the code are the protection.
-
-### Vercel Deployment
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
-
-Or manually:
-
-1. Fork this repository
-2. Import into [Vercel](https://vercel.com/new)
-3. Set environment variables: `DATABASE_URL` pointing to an external PostgreSQL
-   database (a serverless function cannot run one itself), and at least one LLM
-   API key
-4. Deploy
-
-The server refuses to start without `DATABASE_URL`. Use a connection string your
-functions can reach from Vercel's network (a managed PostgreSQL service with
-TLS, or a pooled connection endpoint when your provider offers one). The same
-applies to any other serverless or container host: provide the database, then
-deploy.
 
 ### Docker Deployment
 
@@ -479,6 +465,25 @@ mirror separately if those pulls are slow. The pnpm store cache is reused by the
 same BuildKit builder across builds, subject to normal cache garbage collection;
 the cache only improves performance and is not required for a correct build.
 
+### Vercel Deployment (up to 1.1.x)
+
+Serverless deployment is supported up to OpenMAIC 1.1.x. From 1.2.0, course
+generation runs on the server in a process that outlives requests, so OpenMAIC
+needs a long-running Node.js process with PostgreSQL (the
+[Docker deployment](#docker-deployment) or `pnpm start`); Vercel and other
+serverless hosts are not supported, and the repository no longer ships a
+`vercel.json`. The button below deploys the `release/1.1.x` branch:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Ftree%2Frelease%2F1.1.x&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Frelease%2F1.1.x%2F.env.example&project-name=openmaic&framework=nextjs)
+
+Such a deployment can move to a long-running host later without losing data:
+point the new host's `DATABASE_URL` at the database it used, if it used one,
+and serve it at the same address, since browsers keep their data per site; the
+courses visitors kept in their browsers are imported the first time each
+browser opens the upgraded app. See
+[Upgrading from 1.1.x](packages/docs/content/docs/deployment.mdx#upgrading-from-11x)
+for every kind of deployment.
+
 ### Server-backed persistence (PostgreSQL)
 
 OpenMAIC always stores courses on the server. The
@@ -500,8 +505,7 @@ For local development, `pnpm db:up` starts a separate development database
 (the Compose `postgres` service definition under its own project and volume,
 `openmaic-dev-db`, shared by every checkout on this machine) and publishes it on `127.0.0.1` (port `OPENMAIC_DB_PORT`, default `5432`); the
 matching `DATABASE_URL` is commented in `.env.example`, and `pnpm db:down` stops
-it again. Serverless hosts (see [Vercel Deployment](#vercel-deployment)) point
-`DATABASE_URL` at an external PostgreSQL database.
+it again.
 
 Configure models as usual (`openmaic.yml` with keys in `.env.local`, or Settings → Models). Course documents, folders,
 chat history and learner runtime sessions, and generated media are stored on

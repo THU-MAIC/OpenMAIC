@@ -210,7 +210,7 @@ policy:
 - Keys a workspace enters in the model settings are stored in the database, encrypted with AES-256-GCM under the instance secret `OPENMAIC_SECRET_KEY`.
 - When `OPENMAIC_SECRET_KEY` is unset, the server creates a random secret on first use in `data/instance-secret.key` (inside the `openmaic-data` volume with Docker Compose) and uses it from then on.
 
-Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or on hosts without a persistent data directory such as Vercel; any string works, for example the output of `openssl rand -base64 32`.
+Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or when the server has no persistent data directory (a container without the data volume); any string works, for example the output of `openssl rand -base64 32`.
 
 ```bash
 OPENMAIC_SECRET_KEY=...        # instance secret for keys saved in the model settings

@@ -1,17 +1,14 @@
 ---
 title: デプロイ
-description: OpenMAIC を Vercel、Docker、または自分のホストにデプロイします。
+description: OpenMAIC を Docker でデプロイするか、自分のホストで pnpm start により実行します。
 ---
 
-OpenMAIC は標準的な Next.js アプリケーションであり、Next.js が動作する環境であればどこでも動作します。
+OpenMAIC は Next.js アプリケーションで、常駐する Node.js プロセスと PostgreSQL が必要です。授業の生成はサーバー側で行われます。各生成はデータベースに記録され、サーバープロセス内のワーカーが実行します。ブラウザがページを離れても生成は続き、プロセスが停止した場合は別のプロセス（または再起動した同じプロセス）が最後に完了したステップから引き継ぎます。サポートするデプロイ方法は次の 2 つです。
 
-## Vercel（一括デプロイ）
+- **Docker Compose**（推奨）：アプリと PostgreSQL の 2 つのコンテナ。
+- **Docker イメージまたは `pnpm start`**：自分で運用する PostgreSQL と組み合わせます。
 
-最速の方法です。[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC) にある Deploy ボタンをクリックし、リポジトリをフォークして、案内に従い少なくとも 1 つの LLM API キーを入力してください。
-
-Vercel はコミットのたびに Next.js アプリを再ビルドしてデプロイします。初回デプロイ後、アプリを開いてモデル設定でモデルサービスを接続するか、プロジェクト設定の環境変数でプロバイダーを設定してください（[旧来の変数](./configuration.mdx#旧設定からの移行)も引き続き使えます）。Vercel には永続的なデータディレクトリがないため、モデル設定でキーを保存する前に、プロジェクト設定で `OPENMAIC_SECRET_KEY` を設定してください。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key)を参照してください。
-
-Vercel は OpenMAIC をサーバーレス関数として実行するため、データベースを同梱できません。プロジェクト設定で `DATABASE_URL` を外部の PostgreSQL データベース（マネージドサービス。接続プールのエンドポイントがあればそちらを推奨）に向けてください。未設定の場合、サーバーは起動を拒否します。
+1.2.0 以降、Vercel などのサーバーレス環境はサポートしません。リクエストとともに終了する関数では生成を実行できないためです。下記の「Vercel（1.1.x まで）」を参照してください。
 
 ## Docker
 
@@ -74,7 +71,34 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # デフォルトでポート 3000 をリッスンします
 ```
 
-TLS 終端は nginx や Caddy などを前段に置いてください。授業、実行時データ、生成メディアは PostgreSQL に保存されるため、複数のインスタンスで 1 つのデータベースを共有できます。
+プロセスマネージャー（systemd、pm2、コンテナなど）で常時稼働させ、停止時に再起動されるようにしてください。TLS 終端は nginx や Caddy などを前段に置いてください。授業、実行時データ、生成メディアは PostgreSQL に保存されるため、複数のインスタンスで 1 つのデータベースを共有できます。その場合は各インスタンスに同じ `OPENMAIC_SECRET_KEY` を設定してください（下記参照）。
+
+## 必須の設定
+
+| 設定 | Docker Compose | Docker イメージまたは `pnpm start` |
+| --- | --- | --- |
+| `DATABASE_URL` | 同梱の PostgreSQL を指すよう設定済み | 必須。未設定ならサーバーは起動時に終了します |
+| ID モード | シングルユーザー（`docker-compose.defaults.env` の `OWNER_SINGLE_USER=true`） | 未設定ならブラウザごとに匿名オーナーになります |
+| `OPENMAIC_SECRET_KEY` | 任意。生成されたシークレットは `openmaic-data` ボリュームに保存されます | 複数インスタンスの場合、または永続的な `data/` ディレクトリがない場合は必須 |
+| モデル | `openmaic.yml` または **設定 → モデル** | 同左 |
+
+**ID モード**は授業の所有者を決めます。未設定の場合、ブラウザごとに別々の匿名オーナーとなり、別のブラウザでは空のライブラリが表示されます。個人利用では `OWNER_SINGLE_USER=true`、1 つのチームで 1 つのライブラリを共有する場合は `ACCESS_CODE` とあわせて `PERSISTENCE_SHARED_OWNER_ID` を設定し、実際のアカウントが必要な場合はオーナー認証メソッドを登録してください。詳しくは README の [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) と `.env.example` を参照してください。
+
+**`OPENMAIC_SECRET_KEY`** はモデル設定に保存されたプロバイダーキーを暗号化します。未設定の場合、各インスタンスが `data/instance-secret.key` に独自のシークレットを作成するため、データベースを共有するインスタンス同士で保存済みキーを読み取れません。データベースのバックアップと一緒に保管してください。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key) を参照してください。
+
+## 生成の実行
+
+すべてのサーバープロセスで生成ワーカーが動作し、`OPENMAIC_AGENT_RUNTIME_ENABLED` には依存しません。次の変数で調整できます（値は正の整数）。
+
+| 変数 | デフォルト | 意味 |
+| --- | --- | --- |
+| `OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER` | `2` | 1 人のオーナーが同時に進行できる生成の数。アウトラインの確認待ちや、失敗したステップで一時停止している生成は数えません。上限を超えると、開始・アウトラインの確認・リトライは `429 ACTIVE_RUN_LIMIT` を返します。 |
+| `OPENMAIC_MAX_WAITING_RUNS_PER_OWNER` | `10` | 1 人のオーナーが同時にアウトラインの確認待ちにできる生成の数。 |
+| `OPENMAIC_GENERATION_RUN_MAX_CONCURRENT` | `4` | 1 つのプロセスが同時に実行する生成の数。 |
+| `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 1 人のオーナーが 1 つのプロセスで同時に開ける生成イベントストリームの数。 |
+| `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 終了した生成が完全なイベントログを保持する時間（時間単位）。その後は圧縮されます。 |
+
+生成はエージェントランタイムのリース設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`。`.env.example` を参照）を共有します。サーバーを停止すると実行中の生成は退避され、別のインスタンスか、再起動した同じインスタンスが続きを実行します。
 
 ## サーバー側永続化（PostgreSQL）
 
@@ -93,6 +117,21 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 `OPENMAIC_SECRET_KEY` を設定していない場合、`openmaic-data` ボリュームには `instance-secret.key` も保存されます。これは自動生成されたインスタンスシークレットで、モデル設定に保存されたプロバイダーのキーを暗号化します。データベースと一緒にバックアップしてください。これがないと、保存済みのキーを再入力する必要があります。
 
 以前のリリースでは授業をブラウザ（IndexedDB）に保存できました。このモードは廃止され、`NEXT_PUBLIC_PERSISTENCE` ビルド変数は無視されます。その方法でブラウザに保存された授業は、そのブラウザでアップグレード後のアプリを初めて開いたときに自動的にサーバーへ移されます。一方向のインポーターが、それらを（チャット、学習の進捗、フォルダー、メディアとともに）サーバーがそのブラウザについて解決した所有者にコピーし、ブラウザ内の元のデータには手を加えません。インポートはブラウザごとに一度だけです。サーバーはそのブラウザを、アップグレード後のアプリを最初に読み込んだ所有者に紐付け、統合（サインイン時に匿名の所有者がアカウントに統合されること）によって紐付けはアカウントに移ります。サーバーはそれ以外の所有者のためのインポーターの要求を拒否します。それ以外に同じブラウザを後から使う所有者には何もインポートされません。操作は不要で、UI も表示されません。問題があればブラウザのコンソールに `[legacy-browser-import]` という接頭辞で記録されます。
+
+## 1.1.x からのアップグレード
+
+| デプロイ | 手順 |
+| --- | --- |
+| `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。モデル設定を `openmaic.yml` または **設定 → モデル** に移し（`openmaic.yml` がない間はプロバイダーの環境変数も引き続き使えます）、`MODEL_ROUTES` をスロットとして書き直してください。`openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動を拒否します。ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 |
+| `pnpm start` と自前の PostgreSQL | `DATABASE_URL` と ID モードを設定し、複数インスタンスでデータベースを共有する場合は `OPENMAIC_SECRET_KEY` も設定します。あとは上と同じです。 |
+| Vercel | 1.1.x にとどまるか、同じデータベースを使う常駐ホストに移行します（下記）。 |
+| Skill / API | 更新された `openmaic` skill に従い、同じオーナーとして資料をアップロード、送信、ポーリングします。 |
+
+ブラウザのデータ（授業、モデル設定、カスタムエージェント）は、各ブラウザがアップグレード後のアプリを初めて開いたときに一度だけインポートされます。モデル設定の移行は[設定](./configuration.mdx#旧設定からの移行)を、破壊的変更の一覧は [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md) を参照してください。
+
+## Vercel（1.1.x まで）
+
+サーバーレスでのデプロイは OpenMAIC 1.1.x までサポートされ、[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) の Deploy ボタンは `release/1.1.x` ブランチをデプロイします。このようなデプロイは、後でデータを失わずに常駐ホストへ移行できます。新しいホストの `DATABASE_URL` を（使っていた場合は）元のデータベースに向け、同じアドレスで公開してください。ブラウザはサイトごとにデータを保存しており、訪問者のブラウザにある授業は、各ブラウザがアップグレード後のアプリを初めて開いたときにインポートされます。
 
 ## オプション：MP4 動画エクスポート
 

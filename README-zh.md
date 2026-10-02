@@ -20,7 +20,6 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-工作台集成"><img src="https://img.shields.io/badge/OpenClaw-集成-F4511E?style=flat-square" alt="OpenClaw 集成"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -292,6 +291,8 @@ pnpm dev
 pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
+请让服务作为常驻进程运行（进程管理器或容器）：课程生成在其中进行，浏览器离开页面后仍会继续。必需配置和从 1.1.x 升级的步骤见[部署指南](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
 ### 可选：ACCESS_CODE（共享部署）
 
 为部署添加站点级密码保护，在 `.env.local` 中设置：
@@ -303,19 +304,6 @@ ACCESS_CODE=your-secret-code
 设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有匹配到的路由——包括 API——均可访问。这是 fail-open：未配置的部署没有门禁，也没有第二道校验。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
 
 验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有当应用运行在会覆盖 `x-forwarded-for` / `x-real-ip` 的反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流：按客户端限流（每个客户端 60 秒内 10 次），受信任客户端验证成功会清空自己的计数。没有可信代理时，应用无法把请求归因到具体客户端，因此完全不限流，保护完全依赖密码的长度和随机性。
-
-### Vercel 部署
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
-
-或者手动部署：
-
-1. Fork 本仓库
-2. 导入到 [Vercel](https://vercel.com/new)
-3. 配置环境变量：指向外部 PostgreSQL 数据库的 `DATABASE_URL`（Serverless 函数无法自己运行数据库），以及至少一个 LLM API Key
-4. 部署
-
-没有 `DATABASE_URL` 时服务会拒绝启动。请使用 Vercel 网络可达的连接串（启用 TLS 的托管 PostgreSQL；服务商提供连接池端点时优先使用）。其他 Serverless 或容器平台同理：先准备好数据库，再部署。
 
 ### Docker 部署
 
@@ -388,6 +376,14 @@ docker build \
 registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
 store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
+### Vercel 部署（1.1.x 及以前）
+
+Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。下面的按钮部署的是 `release/1.1.x` 分支：
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Ftree%2Frelease%2F1.1.x&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Frelease%2F1.1.x%2F.env.example&project-name=openmaic&framework=nextjs)
+
+这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址（浏览器按站点保存数据）；访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
 ### 服务端持久化（PostgreSQL）
 
 OpenMAIC 始终把课程保存在服务端。[Docker 部署](#docker-部署)只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
@@ -399,7 +395,7 @@ pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。Serverless 平台（见 [Vercel 部署](#vercel-部署)）请把 `DATABASE_URL` 指向外部 PostgreSQL。
+本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。
 
 和往常一样配置模型（`openmaic.yml` 加 `.env.local` 中的 key，或 设置 → 模型）。课程文档、文件夹、对话历史与学习者运行时会话、生成的媒体都保存在服务端。留在浏览器里的只有属于该设备、丢失也不会丢课的数据：应用设置与界面偏好、播放进度与编辑器当前场景、编辑器撤销历史、服务端已保存的讲解与媒体的本地缓存（以及因存储已满被拒、为重试保留的字节）、生成期间暂存的 PDF 图片，以及在该浏览器注册的 TTS 音色。**设置 → 清除本地缓存**只清除这些，不会动服务端的任何数据。
 

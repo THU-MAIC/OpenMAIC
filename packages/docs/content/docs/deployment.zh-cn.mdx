@@ -1,17 +1,14 @@
 ---
 title: 部署
-description: 部署 OpenMAIC 到 Vercel、Docker，或你自己的主机。
+description: 用 Docker 部署 OpenMAIC，或在你自己的主机上用 pnpm start 运行。
 ---
 
-OpenMAIC 是一个标准的 Next.js 应用，Next.js 能跑的地方它就能跑。
+OpenMAIC 是一个 Next.js 应用，需要一个常驻的 Node.js 进程和 PostgreSQL。课程生成在服务端进行：每次生成都作为记录保存在数据库中，由服务进程内的 worker 执行；浏览器离开页面后生成仍会继续，进程退出后由另一个进程（或重启后的同一进程）从最近完成的步骤接手。支持两种部署方式：
 
-## Vercel（一键）
+- **Docker Compose**（推荐）：应用和 PostgreSQL 两个容器。
+- **Docker 镜像或 `pnpm start`**，搭配你自己运行的 PostgreSQL。
 
-最快的路径。点[仓库 README](https://github.com/THU-MAIC/OpenMAIC)里的 Deploy 按钮，fork 仓库，按提示填入至少一个 LLM 的 API key 即可。
-
-Vercel 会在每次提交后重新构建并部署 Next.js 应用。首次部署后，打开应用，在模型设置中接入模型服务；也可以在项目设置中通过环境变量配置服务商（[旧版变量](./configuration.mdx#从旧配置迁移)仍然有效）。Vercel 没有持久化数据目录，因此在模型设置中保存 key 之前，请先在项目设置中设置 `OPENMAIC_SECRET_KEY`，见[密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
-
-Vercel 以 Serverless 函数运行 OpenMAIC，无法自带数据库。请在项目设置中把 `DATABASE_URL` 指向外部 PostgreSQL 数据库（托管服务；有连接池端点时优先使用）；没有它服务会拒绝启动。
+从 1.2.0 起不再支持 Vercel 等 Serverless 平台：随请求结束的函数无法运行一次生成。见下文「Vercel（1.1.x 及以前）」。
 
 ## Docker
 
@@ -74,7 +71,34 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # 默认监听 3000 端口
 ```
 
-前面套 nginx 或 Caddy 做 TLS 终止。课程、运行时数据和生成的媒体都保存在 PostgreSQL 中，多个实例可以共用同一个数据库。
+请用进程管理器（systemd、pm2 或容器）保持服务运行并在退出后自动重启，前面套 nginx 或 Caddy 做 TLS 终止。课程、运行时数据和生成的媒体都保存在 PostgreSQL 中，多个实例可以共用同一个数据库；此时每个实例都要设置相同的 `OPENMAIC_SECRET_KEY`（见下文）。
+
+## 必需配置
+
+| 配置 | Docker Compose | Docker 镜像或 `pnpm start` |
+| --- | --- | --- |
+| `DATABASE_URL` | 已指向自带的 PostgreSQL | 必填；没有它服务会在启动时退出 |
+| 身份模式 | 单用户（`docker-compose.defaults.env` 中的 `OWNER_SINGLE_USER=true`） | 不设置时，每个浏览器是一个匿名所有者 |
+| `OPENMAIC_SECRET_KEY` | 可选：生成的密钥保存在 `openmaic-data` 卷中 | 多个实例，或没有持久化 `data/` 目录时必填 |
+| 模型 | `openmaic.yml` 或 **设置 → 模型** | 同左 |
+
+**身份模式**决定课程归谁所有。不设置时，每个浏览器都是独立的匿名所有者，换一个浏览器看到的是空课程库。个人安装请设置 `OWNER_SINGLE_USER=true`；一个团队共用一个课程库时，设置 `PERSISTENCE_SHARED_OWNER_ID` 并配合 `ACCESS_CODE`；需要真实账号时，注册所有者认证方法。详见 README 的 [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) 和 `.env.example`。
+
+**`OPENMAIC_SECRET_KEY`** 用于加密在模型设置中保存的服务商 key。不设置时，每个实例会在 `data/instance-secret.key` 中生成自己的密钥，共用数据库的实例之间就无法读取彼此保存的 key。请把它和数据库备份放在一起，见[密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
+
+## 生成任务
+
+每个服务进程都运行一个生成 worker，与 `OPENMAIC_AGENT_RUNTIME_ENABLED` 无关。以下变量用于调整它（取值为正整数）：
+
+| 变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER` | `2` | 每个所有者同时进行中的生成数。等待确认大纲、或因步骤失败而暂停的生成不计入。超出时，开始、确认大纲或重试会返回 `429 ACTIVE_RUN_LIMIT`。 |
+| `OPENMAIC_MAX_WAITING_RUNS_PER_OWNER` | `10` | 每个所有者同时等待确认大纲的生成数。 |
+| `OPENMAIC_GENERATION_RUN_MAX_CONCURRENT` | `4` | 单个进程同时执行的生成数。 |
+| `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 每个所有者在单个进程上可同时打开的生成事件流数。 |
+| `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 已结束的生成保留完整事件日志的时长（小时），之后会被压缩。 |
+
+生成任务与 agent 运行时共用租约时间配置（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，见 `.env.example`）。停止服务时，其中的生成会被暂存，由另一个实例或重新启动的同一实例继续。
 
 ## 服务端持久化（PostgreSQL）
 
@@ -93,6 +117,21 @@ PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 除非设置了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 数据卷中还保存着 `instance-secret.key`，即自动生成的实例密钥，用于加密模型设置中保存的服务商 key。请把它和数据库一起备份：没有它，已保存的 key 需要重新填写。
 
 早期版本可以把课程保存在浏览器（IndexedDB）中。该模式已移除，`NEXT_PUBLIC_PERSISTENCE` 构建变量会被忽略。以这种方式保存在浏览器中的课程，会在该浏览器首次打开升级后的应用时自动搬到服务端：单向导入器把它们（连同对话、学习进度、文件夹和媒体）复制给服务端为该浏览器解析出的所有者，浏览器中的原始数据保持不变。每个浏览器只导入一次：服务端把该浏览器绑定给第一个加载升级后应用的所有者，认领会把绑定带到账号（匿名所有者在登录时被认领进账号）。服务端会拒绝导入器为其他所有者发出的请求，因此之后在同一浏览器中使用的其他所有者不会得到任何导入。整个过程无需操作，也没有界面提示；如有问题，会以 `[legacy-browser-import]` 前缀记录在浏览器控制台中。
+
+## 从 1.1.x 升级
+
+| 部署方式 | 操作 |
+| --- | --- |
+| `docker compose` | 拉取新版本，运行 `docker compose up --build`。把模型设置迁到 `openmaic.yml` 或 **设置 → 模型**（没有 `openmaic.yml` 时，服务商环境变量仍然有效），并把 `MODEL_ROUTES` 改写为槽位：设置了它却没有 `openmaic.yml` 的服务会拒绝启动。在每个存有本地课程的浏览器中打开一次应用，完成导入。 |
+| `pnpm start` + 自己的 PostgreSQL | 设置 `DATABASE_URL`、身份模式；多个实例共用数据库时设置 `OPENMAIC_SECRET_KEY`。其余同上。 |
+| Vercel | 留在 1.1.x，或迁移到使用同一数据库的常驻主机（见下文）。 |
+| Skill / API | 按更新后的 `openmaic` skill 操作：以同一所有者上传资料、提交并轮询。 |
+
+浏览器中的数据（课程、模型设置、自定义智能体）会在每个浏览器首次打开升级后的应用时导入一次。迁移模型设置见[配置](./configuration.mdx#从旧配置迁移)，完整的破坏性变更列表见 [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md)。
+
+## Vercel（1.1.x 及以前）
+
+Serverless 部署支持到 OpenMAIC 1.1.x，[仓库 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 中的 Deploy 按钮部署的是 `release/1.1.x` 分支。这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址——浏览器按站点保存数据，访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。
 
 ## 可选：MP4 视频导出
 
