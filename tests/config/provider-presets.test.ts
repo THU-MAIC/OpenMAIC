@@ -76,7 +76,10 @@ describe('provider presets', () => {
       llm: 'cogevol-base',
       'course.content.slide': 'cogevol-slide-0828',
       'course.content.interactive': 'cogevol-interactive-0828',
+      // Web search has no models: the plan's search serves it by itself.
+      webSearch: 'bocha',
     });
+    expect(getProviderPreset('minimax')!.recommended).toMatchObject({ webSearch: 'minimax' });
     for (const preset of PROVIDER_PRESETS) {
       for (const [slot, model] of Object.entries(preset.recommended ?? {})) {
         expect(isSlotId(slot), `${preset.id} → ${slot}`).toBe(true);

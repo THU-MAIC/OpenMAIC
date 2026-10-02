@@ -7,6 +7,7 @@ import {
   ModelSettingsError,
 } from '@/lib/server/model-config/settings';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
+import { wizardAssignments } from '@/lib/model-settings/edit';
 
 const deployment = (config: ModelConfigLayer['config']) =>
   setDeploymentConfigForTests({
@@ -397,6 +398,33 @@ describe('applyModelSettingsChange', () => {
       apiKey: '',
     });
     expect(keyless.slots).toEqual({ 'agent.title': 'local:llama4', image: null });
+  });
+
+  it("connecting a token plan fills the empty web search slot with the plan's search", async () => {
+    const config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'tokendance',
+      preset: 'tokendance',
+      apiKey: 'sk-plan-key-0001',
+    });
+    const view = modelSettingsView({ config, revision: 1, unreadableSecrets: [] });
+    const preset = view.presets.find((entry) => entry.id === 'tokendance')!;
+    const set = wizardAssignments(view, preset, 'tokendance');
+    expect(set).toMatchObject({
+      webSearch: 'tokendance',
+      tts: 'tokendance:minimax-speech-2.8-turbo',
+      image: 'tokendance:seedream-5.0-lite',
+    });
+    // The deployment's own video choice (off) and default model are left alone.
+    expect(set).not.toHaveProperty('video');
+    expect(set).not.toHaveProperty('llm');
+    const filled = await applyModelSettingsChange(config, { kind: 'slots', set });
+    const after = modelSettingsView({ config: filled, revision: 2, unreadableSecrets: [] });
+    expect(after.slots.find((slot) => slot.slot === 'webSearch')?.effective).toMatchObject({
+      status: 'assigned',
+      providerId: 'tokendance',
+      registryId: 'bocha',
+    });
   });
 
   it('drops the assignments of a removed provider', async () => {
