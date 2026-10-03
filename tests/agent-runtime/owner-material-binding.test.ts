@@ -1,11 +1,13 @@
 /**
- * Owner-material binding integration — the issue #1494 regression.
+ * Owner-material binding integration -- the issue #1494 regression, under
+ * attaching by link (RFC #1716 §4).
  *
  * Drives `bindOwnerMaterialsToSession` and the real session-creation route over
- * a PGlite-backed durable store. Before the fix the second session's bind hit
- * the global `agent_session_materials` primary key and the route answered 500;
- * now each session gets its own row id while the shared owner upload id is
- * recorded for idempotency, so both sessions bind and read their own row.
+ * a PGlite-backed durable store. Before #1494's fix the second session's bind
+ * hit the global `agent_session_materials` primary key and the route answered
+ * 500. Binding no longer copies at all: each session gets one link to the
+ * owner upload, both read it through the resolver, and a session that held a
+ * copy from before links keeps it.
  */
 import { createHash } from 'node:crypto';
 
@@ -64,8 +66,12 @@ import {
   bindOwnerMaterialsToSession,
   getSessionMaterial,
   listSessionMaterials,
-  resolveSessionMaterialRawAsset,
 } from '@/lib/server/agent-runtime/session-materials';
+import {
+  listSessionScopeMaterials,
+  readResolvedMaterialRaw,
+  resolveMaterial,
+} from '@/lib/server/agent-runtime/material-resolver';
 import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
@@ -78,6 +84,9 @@ async function makeHost() {
   await instance.waitReady;
   await ensureAgentSessionSchema(instance);
   await ensureOwnerMaterialSchema(instance);
+  // The session-material tables, as a database from before links has them:
+  // the links table is NOT created here, so every test below relies on the
+  // lazy bootstrap the code waits for, as an upgraded database does.
   await ensureAgentSessionMaterialSchema(instance);
   const bytes = new Map<string, Buffer>();
   const puts: string[] = [];
@@ -99,7 +108,11 @@ async function makeHost() {
   dbCounter += 1;
   vi.stubEnv('DATABASE_URL', `postgres://binding-${dbCounter}`);
   mocks.getAgentSessionStore.mockResolvedValue(sessionStore);
-  mocks.getServerPersistenceProvider.mockResolvedValue({ pool: instance });
+  mocks.getServerPersistenceProvider.mockResolvedValue({
+    pool: instance,
+    withTransaction: (body: (tx: Queryable) => Promise<unknown>) =>
+      instance.transaction((tx: Queryable) => body(tx)),
+  });
   mocks.resolveRequestOwnerId.mockImplementation((_request: NextRequest, headers: Headers) => {
     headers.append('Set-Cookie', 'anonymous_id=test; Path=/; HttpOnly');
     return 'owner-1';
@@ -152,9 +165,49 @@ afterEach(async () => {
   db = undefined;
 });
 
+/** The session's links, by material id. */
+async function linksOf(instance: PGlite, sessionId: string): Promise<string[]> {
+  const result = await instance.query<{ material_id: string }>(
+    'SELECT material_id FROM agent_session_material_links WHERE session_id = $1 ORDER BY material_id',
+    [sessionId],
+  );
+  return result.rows.map((row) => row.material_id);
+}
+
+/** What a consumer reads of a material the session reaches. */
+async function readRaw(sessionId: string, materialId: string): Promise<string | null> {
+  const material = await resolveMaterial(sessionId, materialId);
+  if (!material) return null;
+  return (await readResolvedMaterialRaw(sessionId, material))?.bytes.toString() ?? null;
+}
+
+describe('a database upgraded from before links', () => {
+  it('creates the links table before the first attachment uses it', async () => {
+    const { db: instance, sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'cold-session', ownerId: 'owner-1', prompt: 'p' });
+    await seedOwnerMaterial(instance, 'cold-material');
+
+    const bound = await bindOwnerMaterialsToSession('cold-session', 'owner-1', ['cold-material']);
+    expect(bound.map((item) => item.materialId)).toEqual(['cold-material']);
+    expect(await linksOf(instance, 'cold-session')).toEqual(['cold-material']);
+  });
+
+  it('creates the links table before the first session listing reads it', async () => {
+    const { sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'cold-list', ownerId: 'owner-1', prompt: 'p' });
+    expect(await listSessionScopeMaterials('cold-list')).toEqual([]);
+  });
+
+  it('creates the links table before the first lookup through a link', async () => {
+    const { sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'cold-lookup', ownerId: 'owner-1', prompt: 'p' });
+    expect(await resolveMaterial('cold-lookup', 'mat_missing')).toBeNull();
+  });
+});
+
 describe('owner-material binding across sessions', () => {
-  it('binds one owner upload to two sessions and both can read their own row', async () => {
-    const { db: instance, bytes, sessionStore } = await makeHost();
+  it('links one owner upload into two sessions, copying nothing, and both read it', async () => {
+    const { db: instance, bytes, puts, sessionStore } = await makeHost();
     await sessionStore.createSession({ id: 'session-a', ownerId: 'owner-1', prompt: 'p' });
     await sessionStore.createSession({ id: 'session-b', ownerId: 'owner-1', prompt: 'p' });
     await seedOwnerMaterial(instance, 'mat_owner');
@@ -163,45 +216,33 @@ describe('owner-material binding across sessions', () => {
     const first = await bindOwnerMaterialsToSession('session-a', 'owner-1', ['mat_owner']);
     const second = await bindOwnerMaterialsToSession('session-b', 'owner-1', ['mat_owner']);
 
-    expect(first).toHaveLength(1);
-    expect(second).toHaveLength(1);
-    // Both sessions got distinct session-side rows for the same owner upload.
-    expect(first[0]!.materialId).not.toBe(second[0]!.materialId);
+    // Both sessions know the upload by its own id; nothing was copied.
+    expect(first).toEqual([
+      { materialId: 'mat_owner', originalName: 'textbook.pdf', mime: 'application/pdf', bytes: 3 },
+    ]);
+    expect(second[0]!.materialId).toBe('mat_owner');
+    expect(puts).toEqual([]);
+    expect(await listSessionMaterials('session-a')).toEqual([]);
+    expect(await linksOf(instance, 'session-a')).toEqual(['mat_owner']);
+    expect(await linksOf(instance, 'session-b')).toEqual(['mat_owner']);
+    expect(await readRaw('session-a', 'mat_owner')).toBe('PDF');
+    expect(await readRaw('session-b', 'mat_owner')).toBe('PDF');
 
-    const rowA = await getSessionMaterial('session-a', first[0]!.materialId);
-    const rowB = await getSessionMaterial('session-b', second[0]!.materialId);
-    expect(rowA).toMatchObject({
-      id: first[0]!.materialId,
-      sessionId: 'session-a',
-      ownerMaterialId: 'mat_owner',
-      title: 'textbook.pdf',
-    });
-    expect(rowB).toMatchObject({
-      id: second[0]!.materialId,
-      sessionId: 'session-b',
-      ownerMaterialId: 'mat_owner',
-      title: 'textbook.pdf',
-    });
-    // Reads stay session-scoped: neither session can read the other's row.
-    expect(await getSessionMaterial('session-a', second[0]!.materialId)).toBeNull();
-    expect(await getSessionMaterial('session-b', first[0]!.materialId)).toBeNull();
-
-    // Rebinding the same owner upload into the same session is idempotent.
-    const rebound = await bindOwnerMaterialsToSession('session-a', 'owner-1', ['mat_owner']);
-    expect(rebound[0]!.materialId).toBe(first[0]!.materialId);
-    expect(await listSessionMaterials('session-a')).toHaveLength(1);
+    // Rebinding the same upload into the same session changes nothing.
+    await bindOwnerMaterialsToSession('session-a', 'owner-1', ['mat_owner']);
+    expect(await linksOf(instance, 'session-a')).toEqual(['mat_owner']);
   });
 
-  it('reuses and backfills a pre-upgrade legacy owner-material binding', async () => {
+  it('keeps reading a copy the session made before links, and links it elsewhere', async () => {
     const { db: instance, bytes, puts, sessionStore } = await makeHost();
     await sessionStore.createSession({ id: 'session-legacy', ownerId: 'owner-1', prompt: 'p' });
     await sessionStore.createSession({ id: 'session-other', ownerId: 'owner-1', prompt: 'p' });
     await seedOwnerMaterial(instance, 'mat_owner');
     bytes.set('owner/mat_owner/raw', Buffer.from('PDF'));
 
-    // Exactly what the previous binder wrote: row id = owner upload id,
+    // Exactly what the pre-upgrade binder wrote: row id = owner upload id,
     // owner_material_id NULL, copied bytes at the deterministic legacy key,
-    // and extraction already finished to prove the state must survive.
+    // and extraction already finished.
     const legacyKey = legacyRawKey('session-legacy', 'mat_owner');
     bytes.set(legacyKey, Buffer.from('PDF'));
     await instance.query(
@@ -212,91 +253,64 @@ describe('owner-material binding across sessions', () => {
                'done', 2, $2::jsonb, 'pdf@1', now())`,
       [legacyKey, JSON.stringify({ chars: 1234, pages: 2, imageCount: 0 })],
     );
-    const putsBefore = puts.length;
 
     const rebound = await bindOwnerMaterialsToSession('session-legacy', 'owner-1', ['mat_owner']);
 
-    // The legacy row is reused, not duplicated or re-copied.
-    expect(rebound).toHaveLength(1);
+    // The copy is the session's: no link beside it, no second row, its
+    // extraction state untouched.
     expect(rebound[0]!.materialId).toBe('mat_owner');
+    expect(await linksOf(instance, 'session-legacy')).toEqual([]);
     expect(await listSessionMaterials('session-legacy')).toHaveLength(1);
-    expect(puts).toHaveLength(putsBefore);
-    expect(bytes.get(legacyKey)).toEqual(Buffer.from('PDF'));
-
-    const row = await getSessionMaterial('session-legacy', 'mat_owner');
-    expect(row).toMatchObject({
-      id: 'mat_owner',
-      ownerMaterialId: 'mat_owner',
-      title: 'textbook.pdf',
+    expect(await getSessionMaterial('session-legacy', 'mat_owner')).toMatchObject({
       rawAssetId: legacyKey,
-      extraction: {
-        status: 'done',
-        attempts: 2,
-        extractorVersion: 'pdf@1',
-        stats: { chars: 1234, pages: 2, imageCount: 0 },
-      },
+      extraction: { status: 'done', attempts: 2, extractorVersion: 'pdf@1' },
     });
+    expect((await resolveMaterial('session-legacy', 'mat_owner'))?.origin).toBe('session');
 
-    // The backfill lets the next bind take the fast path without copying.
-    const again = await bindOwnerMaterialsToSession('session-legacy', 'owner-1', ['mat_owner']);
-    expect(again[0]!.materialId).toBe('mat_owner');
-    expect(await listSessionMaterials('session-legacy')).toHaveLength(1);
-    expect(puts).toHaveLength(putsBefore);
-
-    // A different session is still a fresh row with its own byte copy.
-    const other = await bindOwnerMaterialsToSession('session-other', 'owner-1', ['mat_owner']);
-    expect(other[0]!.materialId).not.toBe('mat_owner');
-    expect(await listSessionMaterials('session-other')).toHaveLength(1);
-    expect(await getSessionMaterial('session-other', other[0]!.materialId)).toMatchObject({
-      ownerMaterialId: 'mat_owner',
-      rawAssetId: expect.any(String),
-    });
-    expect(puts).toHaveLength(putsBefore + 1);
+    // Another session gets a link, not a copy.
+    await bindOwnerMaterialsToSession('session-other', 'owner-1', ['mat_owner']);
+    expect(await linksOf(instance, 'session-other')).toEqual(['mat_owner']);
+    expect(await listSessionMaterials('session-other')).toEqual([]);
+    expect(puts).toEqual([]);
   });
 
-  it('removes the losing upload when a concurrent bind wins the same session', async () => {
+  it('leaves one link when two binds of the same upload race into one session', async () => {
     const { db: instance, sessionStore } = await makeHost();
     await sessionStore.createSession({ id: 'session-race', ownerId: 'owner-1', prompt: 'p' });
     await seedOwnerMaterial(instance, 'mat_owner');
-    const ownerBytes = new Map<string, Buffer>([['owner/mat_owner/raw', Buffer.from('PDF')]]);
-    const sessionBytes = new Map<string, Buffer>();
-    let parkedLoser = true;
-    let winner: Awaited<ReturnType<typeof bindOwnerMaterialsToSession>> | undefined;
 
-    // The loser's upload of its own object is the pause point: the winner runs
-    // to completion there, so the loser is guaranteed to lose the unique index
-    // and must clean up the object it already stored.
-    setMaterialByteStoreForTests({
-      put: async (key, body) => {
-        sessionBytes.set(key, Buffer.from(body as Uint8Array));
-        if (parkedLoser) {
-          parkedLoser = false;
-          winner = await bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']);
-        }
-      },
-      get: async (key) => {
-        const value = sessionBytes.get(key) ?? ownerBytes.get(key);
-        if (!value) throw new Error(`missing material bytes: ${key}`);
-        return value;
-      },
-      delete: async (key) => {
-        sessionBytes.delete(key);
-        ownerBytes.delete(key);
-      },
-    });
+    const [one, two] = await Promise.all([
+      bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']),
+      bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']),
+    ]);
+    expect(one[0]!.materialId).toBe('mat_owner');
+    expect(two[0]!.materialId).toBe('mat_owner');
+    expect(await linksOf(instance, 'session-race')).toEqual(['mat_owner']);
+  });
 
-    const loser = await bindOwnerMaterialsToSession('session-race', 'owner-1', ['mat_owner']);
+  it('refuses another owner’s, a derivative, an unfinished upload and a deleted one, attaching nothing', async () => {
+    const { db: instance, sessionStore } = await makeHost();
+    await sessionStore.createSession({ id: 'session-x', ownerId: 'owner-1', prompt: 'p' });
+    await seedOwnerMaterial(instance, 'mat_owner');
+    await seedOwnerMaterial(instance, 'mat_other');
+    await instance.query(`UPDATE owner_material SET owner_id = 'owner-2' WHERE id = 'mat_other'`);
+    await seedOwnerMaterial(instance, 'mat_image');
+    await instance.query(
+      `UPDATE owner_material SET kind = 'image', derived_from = 'mat_owner' WHERE id = 'mat_image'`,
+    );
+    await seedOwnerMaterial(instance, 'mat_uploading');
+    await instance.query(
+      `UPDATE owner_material SET status = 'uploading' WHERE id = 'mat_uploading'`,
+    );
+    await seedOwnerMaterial(instance, 'mat_deleted');
+    await instance.query(`UPDATE owner_material SET deleted_at = 1 WHERE id = 'mat_deleted'`);
 
-    expect(winner).toBeDefined();
-    expect(loser).toHaveLength(1);
-    expect(loser[0]!.materialId).toBe(winner![0]!.materialId);
-
-    const rows = await listSessionMaterials('session-race');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.ownerMaterialId).toBe('mat_owner');
-    // Exactly one session byte object remains and it is the winner's.
-    expect([...sessionBytes.keys()]).toEqual([rows[0]!.rawAssetId]);
-    expect(ownerBytes.get('owner/mat_owner/raw')).toEqual(Buffer.from('PDF'));
+    for (const bad of ['mat_other', 'mat_image', 'mat_uploading', 'mat_deleted', 'missing']) {
+      await expect(
+        bindOwnerMaterialsToSession('session-x', 'owner-1', ['mat_owner', bad]),
+      ).rejects.toThrow('unavailable');
+    }
+    expect(await linksOf(instance, 'session-x')).toEqual([]);
   });
 
   it('POST /api/agent/sessions returns 202 when a second session reuses the upload', async () => {
@@ -307,20 +321,25 @@ describe('owner-material binding across sessions', () => {
     const first = await post({ prompt: 'Build a course', materialIds: ['mat_owner'] });
     expect(first.status).toBe(202);
 
-    // The regression: before the fix this second bind threw the primary-key
-    // violation, `withRequestOwner` swallowed it, and the response was 500.
+    // The regression: before #1494's fix this second bind threw the
+    // primary-key violation, and the response was 500.
     const second = await post({ prompt: 'Build the sequel', materialIds: ['mat_owner'] });
     expect(second.status).toBe(202);
   });
 
-  it('binds an upload that exists only in the pool next to one from before it', async () => {
+  it('reads an upload that exists only in the pool next to one from before it', async () => {
     const { db: instance, bytes, sessionStore } = await makeHost();
     await ensureAssetSchema(instance);
     const assetStore = new PgAssetStore(instance, {
       byteStore: new PgAssetByteStore(instance),
       withTransaction: (body) => instance.transaction((tx: Queryable) => body(tx)),
     });
-    mocks.getServerPersistenceProvider.mockResolvedValue({ pool: instance, assetStore });
+    mocks.getServerPersistenceProvider.mockResolvedValue({
+      pool: instance,
+      assetStore,
+      withTransaction: (body: (tx: Queryable) => Promise<unknown>) =>
+        instance.transaction((tx: Queryable) => body(tx)),
+    });
     await sessionStore.createSession({ id: 'session-mixed', ownerId: 'owner-1', prompt: 'p' });
 
     // A pre-pool upload, read by its object key.
@@ -333,39 +352,30 @@ describe('owner-material binding across sessions', () => {
     );
     await instance.query(
       `INSERT INTO owner_material
-         (id, owner_id, kind, mime, bytes, original_name, oss_key, asset_id, status, extraction,
-          created_at)
-       VALUES ('mat_new', 'owner-1', 'source', 'application/pdf', 3, 'new.pdf', '', $1, 'ready',
-               NULL, $2)`,
-      [assetId, Date.now()],
+         (id, owner_id, kind, mime, bytes, original_name, oss_key, asset_id, sha256, status,
+          extraction, created_at)
+       VALUES ('mat_new', 'owner-1', 'source', 'application/pdf', 3, 'new.pdf', '', $1, $2,
+               'ready', NULL, $3)`,
+      [assetId, createHash('sha256').update('NEW').digest('hex'), Date.now()],
     );
 
-    const bound = await bindOwnerMaterialsToSession('session-mixed', 'owner-1', [
-      'mat_old',
-      'mat_new',
-    ]);
+    await bindOwnerMaterialsToSession('session-mixed', 'owner-1', ['mat_old', 'mat_new']);
 
-    const read = async (materialId: string) => {
-      const row = await getSessionMaterial('session-mixed', materialId);
-      const raw = await resolveSessionMaterialRawAsset('session-mixed', row!.rawAssetId!);
-      return raw!.bytes.toString();
-    };
-    expect(await read(bound[0]!.materialId)).toBe('OLD');
-    expect(await read(bound[1]!.materialId)).toBe('NEW');
+    expect(await readRaw('session-mixed', 'mat_old')).toBe('OLD');
+    expect(await readRaw('session-mixed', 'mat_new')).toBe('NEW');
   });
 
-  it('refuses to bind an upload from before the pool whose object no longer matches its digest', async () => {
+  it('attaches an upload whose old object no longer matches its digest, which then reads as unavailable', async () => {
     const { db: instance, bytes, puts, sessionStore } = await makeHost();
     await sessionStore.createSession({ id: 'session-damaged', ownerId: 'owner-1', prompt: 'p' });
     await seedOwnerMaterial(instance, 'mat_damaged', 'PDF');
     bytes.set('owner/mat_damaged/raw', Buffer.from('PDX'));
-    const putsBefore = puts.length;
 
-    await expect(
-      bindOwnerMaterialsToSession('session-damaged', 'owner-1', ['mat_damaged']),
-    ).rejects.toThrow('bytes are unavailable');
-    // No session copy of the damaged bytes was written or recorded.
-    expect(puts).toHaveLength(putsBefore);
-    expect(await listSessionMaterials('session-damaged')).toEqual([]);
+    // Sending reads no bytes any more: the link is written...
+    await bindOwnerMaterialsToSession('session-damaged', 'owner-1', ['mat_damaged']);
+    expect(await linksOf(instance, 'session-damaged')).toEqual(['mat_damaged']);
+    // ...and a consumer reading it finds the bytes unavailable, never others.
+    expect(await readRaw('session-damaged', 'mat_damaged')).toBeNull();
+    expect(puts).toEqual([]);
   });
 });

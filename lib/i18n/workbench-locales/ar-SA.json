@@ -188,7 +188,12 @@
       "listFolderCourses": "عرض مكتبة الدروس",
       "createStage": "إنشاء درس",
       "renameStage": "إعادة تسمية الدرس",
-      "readStageOutline": "قراءة مخطط الدرس"
+      "readStageOutline": "قراءة مخطط الدرس",
+      "listMaterialFolders": "فحص مجلدات قاعدة المعرفة",
+      "createMaterialFolder": "إنشاء مجلد في قاعدة المعرفة",
+      "renameMaterialFolder": "إعادة تسمية مجلد في قاعدة المعرفة",
+      "moveMaterials": "نقل المواد",
+      "renameMaterial": "إعادة تسمية المادة"
     },
     "chip": {
       "seconds": "{{count}} ثانية",
@@ -222,7 +227,17 @@
       "allCourses": "كل الدروس",
       "folderCourses": "دروس مجلد واحد",
       "reusedCourse": "أُعيد استخدام درس موجود",
-      "movedToFolder": "نُقل إلى المجلد"
+      "movedToFolder": "نُقل إلى المجلد",
+      "materialFolders": "{{count}} مجلدات",
+      "materials": "{{count}} مواد",
+      "extractionStarted": "بدأ التحليل",
+      "extractionInProgress": "التحليل جارٍ بالفعل",
+      "extractionDone": "حُلّلت من قبل",
+      "extractionComplete": "اكتمل التحليل",
+      "extractionStillRunning": "لا يزال التحليل جاريًا",
+      "folderExisted": "المجلد موجود بالفعل",
+      "unchanged": "لا تغيير",
+      "movedToUnfiled": "نُقلت إلى غير مصنّف"
     },
     "error": {
       "materialExtraction": "فشل تحليل المادة",
@@ -263,7 +278,12 @@
       "createStage": "تعذّر إنشاء الدرس",
       "renameStage": "تعذّرت إعادة تسمية الدرس",
       "readStageOutline": "تعذّرت قراءة مخطط الدرس",
-      "generic": "فشل نداء الأداة"
+      "generic": "فشل نداء الأداة",
+      "listMaterialFolders": "تعذّر فحص مجلدات قاعدة المعرفة",
+      "createMaterialFolder": "تعذّر إنشاء مجلد قاعدة المعرفة",
+      "renameMaterialFolder": "تعذّرت إعادة تسمية مجلد قاعدة المعرفة",
+      "moveMaterials": "تعذّر نقل المواد",
+      "renameMaterial": "تعذّرت إعادة تسمية المادة"
     },
     "progress": {
       "scene": {

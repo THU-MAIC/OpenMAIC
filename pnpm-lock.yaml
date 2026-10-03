@@ -245,6 +245,9 @@ importers:
       mathml2omml:
         specifier: workspace:*
         version: link:packages/mathml2omml
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3
       micromark-extension-math:
         specifier: ^3.1.0
         version: 3.1.0

@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "サーバーは一時的に利用できません。しばらくしてからもう一度お試しください。",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "クラス",
+      "knowledgeBase": "ナレッジベース",
+      "emptyWithMaterials": "一致するクラスや素材はありません",
+      "attachMaterial": "{{name}} をこのメッセージに添付",
+      "materialAttached": "この会話にすでにあります",
+      "materialStaged": "このメッセージにすでにあります",
+      "materialExtracting": "解析中",
+      "materialFailed": "解析に失敗しました",
+      "unfiled": "未分類",
+      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
+      "materialNotExtracted": "未解析",
+      "materialExtracted": "解析済み"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "Pro モード",
     "badgeExit": "通常モードに戻る",
     "launchPlaceholder": "作りたい学習体験を描いてください",
-    "launchSend": "構築を開始"
+    "launchSend": "構築を開始",
+    "mentionCourseOrMaterial": "クラスまたはナレッジベースの素材を参照"
   },
   "workbench": {
     "tool": {

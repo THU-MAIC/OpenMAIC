@@ -188,7 +188,12 @@
       "listFolderCourses": "檢視課堂目錄",
       "createStage": "新增課堂",
       "renameStage": "重新命名課堂",
-      "readStageOutline": "讀取課堂大綱"
+      "readStageOutline": "讀取課堂大綱",
+      "listMaterialFolders": "查看知識庫資料夾",
+      "createMaterialFolder": "新增知識庫資料夾",
+      "renameMaterialFolder": "重新命名知識庫資料夾",
+      "moveMaterials": "移動材料",
+      "renameMaterial": "重新命名材料"
     },
     "chip": {
       "seconds": "{{count}} 秒",
@@ -222,7 +227,17 @@
       "allCourses": "全部課堂",
       "folderCourses": "某個資料夾內",
       "reusedCourse": "沿用已建課堂",
-      "movedToFolder": "已歸入資料夾"
+      "movedToFolder": "已歸入資料夾",
+      "materialFolders": "{{count}} 個資料夾",
+      "materials": "{{count}} 份材料",
+      "extractionStarted": "已開始解析",
+      "extractionInProgress": "已在解析中",
+      "extractionDone": "此前已解析完成",
+      "extractionComplete": "解析完成",
+      "extractionStillRunning": "仍在解析",
+      "folderExisted": "資料夾已存在",
+      "unchanged": "沒有變化",
+      "movedToUnfiled": "已移回未歸檔"
     },
     "error": {
       "materialExtraction": "材料解析失敗",
@@ -263,7 +278,12 @@
       "createStage": "課堂沒能建好",
       "renameStage": "課堂沒能改名",
       "readStageOutline": "課堂大綱沒能讀出來",
-      "generic": "呼叫失敗"
+      "generic": "呼叫失敗",
+      "listMaterialFolders": "沒能查看知識庫資料夾",
+      "createMaterialFolder": "知識庫資料夾沒能建好",
+      "renameMaterialFolder": "知識庫資料夾沒能改名",
+      "moveMaterials": "材料沒能移動",
+      "renameMaterial": "材料沒能改名"
     },
     "progress": {
       "scene": {

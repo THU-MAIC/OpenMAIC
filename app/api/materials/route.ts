@@ -52,11 +52,9 @@ import { apiError } from '@/lib/server/api-response';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { ownerJson, ownerNotFound } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import {
-  resolveOwnedSession,
-  listSessionMaterials,
-  publicMaterialView,
-} from '@/lib/server/agent-runtime/session-materials';
+import { resolveOwnedSession } from '@/lib/server/agent-runtime/session-materials';
+import { listSessionScopePage } from '@/lib/server/agent-runtime/material-resolver';
+import { sessionScopeMaterialView } from '@/lib/server/materials/library-view';
 import { AssetQuotaExceededError } from '@openmaic/storage';
 
 import {
@@ -130,7 +128,8 @@ function parseLimit(raw: string | null): { limit?: number } | { invalid: true } 
 }
 
 // GET /api/materials?sessionId=&limit=&before= — list one owned session's
-// materials, newest first, keyset-paged (the agent-tools list surface).
+// materials: its own rows newest first, then the library materials its links
+// reach, on one cursor (the agent-tools list surface).
 export async function GET(req: NextRequest) {
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
@@ -151,12 +150,12 @@ export async function GET(req: NextRequest) {
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     const session = await resolveOwnedSession(sessionId, ownerId);
     if (!session) return ownerNotFound(responseHeaders);
-    const materials = await listSessionMaterials(sessionId, {
+    const materials = await listSessionScopePage(sessionId, {
       ...(parsedLimit.limit === undefined ? {} : { limit: parsedLimit.limit }),
       ...(before ? { before } : {}),
     });
     return ownerJson(
-      { materials: materials.map((material) => publicMaterialView(material)) },
+      { materials: materials.map((material) => sessionScopeMaterialView(material)) },
       200,
       responseHeaders,
     );

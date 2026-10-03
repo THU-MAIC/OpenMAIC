@@ -304,7 +304,19 @@ export function presentTool(
           : {}),
       };
 
-    case 'extract_material':
+    case 'extract_material': {
+      // Whether THIS call started it, from the tool's own `started`: a source
+      // already extracting or already extracted is not started again.
+      if (!failed) {
+        const status = str(d.status);
+        if (d.started === true) {
+          chips.push({ label: t('workbench.tool.chip.extractionStarted'), tone: 'accent' });
+        } else if (status === 'pending' || status === 'running') {
+          chips.push({ label: t('workbench.tool.chip.extractionInProgress'), tone: 'neutral' });
+        } else if (status === 'done') {
+          chips.push({ label: t('workbench.tool.chip.extractionDone'), tone: 'neutral' });
+        }
+      }
       return {
         icon: FileSearch,
         label: t('workbench.tool.label.extractMaterial'),
@@ -312,14 +324,105 @@ export function presentTool(
         hidePayload: true,
         ...(failed ? { errorText: t('workbench.tool.error.materialExtraction') } : {}),
       };
+    }
 
     case 'wait_for_materials':
+      if (!failed && !extractionFailed) {
+        if (d.complete === true) {
+          chips.push({ label: t('workbench.tool.chip.extractionComplete'), tone: 'accent' });
+        } else if (d.timedOut === true) {
+          chips.push({ label: t('workbench.tool.chip.extractionStillRunning'), tone: 'neutral' });
+        }
+      }
       return {
         icon: FileSearch,
         label: t('workbench.tool.label.waitMaterials'),
         chips,
         hidePayload: true,
-        ...(failed ? { errorText: t('workbench.tool.error.materialExtraction') } : {}),
+        ...(failed || extractionFailed
+          ? { errorText: t('workbench.tool.error.materialExtraction') }
+          : {}),
+      };
+
+    // Organizing the knowledge base: one quiet row each, from the tool's own
+    // `status`. No result card, no undo, no link to a folder (RFC #1716 §6).
+    case 'list_material_folders': {
+      const folders = Array.isArray(d.folders) ? d.folders.length : undefined;
+      if (folders !== undefined && !failed) {
+        chips.push({ label: t('workbench.tool.chip.materialFolders', { count: folders }) });
+      }
+      return {
+        icon: FolderTree,
+        label: t('workbench.tool.label.listMaterialFolders'),
+        chips,
+        hidePayload: true,
+        ...(failed ? { errorText: t('workbench.tool.error.listMaterialFolders') } : {}),
+      };
+    }
+
+    case 'create_material_folder':
+      if (!failed && d.created === false) {
+        chips.push({ label: t('workbench.tool.chip.folderExisted'), tone: 'neutral' });
+      }
+      return {
+        icon: FolderPlus,
+        label: t('workbench.tool.label.createMaterialFolder'),
+        subject: str(d.name) ?? str(args.name),
+        chips,
+        hidePayload: true,
+        ...(failed ? { errorText: t('workbench.tool.error.createMaterialFolder') } : {}),
+      };
+
+    case 'rename_material_folder':
+      if (!failed && d.status === 'unchanged') {
+        chips.push({ label: t('workbench.tool.chip.unchanged'), tone: 'neutral' });
+      }
+      return {
+        icon: Pencil,
+        label: t('workbench.tool.label.renameMaterialFolder'),
+        subject: str(d.name) ?? str(args.name),
+        chips,
+        hidePayload: true,
+        ...(failed ? { errorText: t('workbench.tool.error.renameMaterialFolder') } : {}),
+      };
+
+    case 'move_materials': {
+      if (!failed) {
+        // What actually moved, not what was asked for: a source already in
+        // the folder is named but not moved.
+        const moved =
+          num(d.movedCount) ?? (Array.isArray(d.materialIds) ? d.materialIds.length : undefined);
+        if (d.status === 'unchanged') {
+          chips.push({ label: t('workbench.tool.chip.unchanged'), tone: 'neutral' });
+        } else {
+          if (moved !== undefined) {
+            chips.push({ label: t('workbench.tool.chip.materials', { count: moved }) });
+          }
+          if (d.folderId === null) {
+            chips.push({ label: t('workbench.tool.chip.movedToUnfiled'), tone: 'neutral' });
+          }
+        }
+      }
+      return {
+        icon: FolderInput,
+        label: t('workbench.tool.label.moveMaterials'),
+        chips,
+        hidePayload: true,
+        ...(failed ? { errorText: t('workbench.tool.error.moveMaterials') } : {}),
+      };
+    }
+
+    case 'rename_material':
+      if (!failed && d.status === 'unchanged') {
+        chips.push({ label: t('workbench.tool.chip.unchanged'), tone: 'neutral' });
+      }
+      return {
+        icon: Pencil,
+        label: t('workbench.tool.label.renameMaterial'),
+        subject: str(d.name) ?? str(args.name),
+        chips,
+        hidePayload: true,
+        ...(failed ? { errorText: t('workbench.tool.error.renameMaterial') } : {}),
       };
 
     case 'read_material':

@@ -188,7 +188,12 @@
       "listFolderCourses": "Voir la bibliothèque de classes",
       "createStage": "Créer la classe",
       "renameStage": "Renommer la classe",
-      "readStageOutline": "Lire le plan de la classe"
+      "readStageOutline": "Lire le plan de la classe",
+      "listMaterialFolders": "Vérifier les dossiers de la base de connaissances",
+      "createMaterialFolder": "Créer un dossier dans la base de connaissances",
+      "renameMaterialFolder": "Renommer un dossier de la base de connaissances",
+      "moveMaterials": "Déplacer des documents",
+      "renameMaterial": "Renommer le document"
     },
     "chip": {
       "seconds": "{{count}} s",
@@ -222,7 +227,17 @@
       "allCourses": "Toutes les classes",
       "folderCourses": "Classes d'un dossier",
       "reusedCourse": "Classe existante réutilisée",
-      "movedToFolder": "Déplacé vers le dossier"
+      "movedToFolder": "Déplacé vers le dossier",
+      "materialFolders": "{{count}} dossiers",
+      "materials": "{{count}} documents",
+      "extractionStarted": "Lancée",
+      "extractionInProgress": "Déjà en cours",
+      "extractionDone": "Déjà extrait",
+      "extractionComplete": "Terminée",
+      "extractionStillRunning": "Extraction en cours",
+      "folderExisted": "Le dossier existait déjà",
+      "unchanged": "Aucun changement",
+      "movedToUnfiled": "Déplacé vers Non classés"
     },
     "error": {
       "materialExtraction": "L'extraction du document a échoué",
@@ -263,7 +278,12 @@
       "createStage": "Impossible de créer la classe",
       "renameStage": "Impossible de renommer la classe",
       "readStageOutline": "Impossible de lire le plan de la classe",
-      "generic": "L'appel du tool a échoué"
+      "generic": "L'appel du tool a échoué",
+      "listMaterialFolders": "Impossible de vérifier les dossiers de la base de connaissances",
+      "createMaterialFolder": "Impossible de créer le dossier de la base de connaissances",
+      "renameMaterialFolder": "Impossible de renommer le dossier de la base de connaissances",
+      "moveMaterials": "Impossible de déplacer les documents",
+      "renameMaterial": "Impossible de renommer le document"
     },
     "progress": {
       "scene": {

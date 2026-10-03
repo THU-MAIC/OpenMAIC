@@ -40,7 +40,6 @@ import {
   createWebMaterial,
   getSessionMaterial,
   listSessionMaterials,
-  sessionMaterialsPromptBlock,
 } from '@/lib/server/agent-runtime/session-materials';
 import { buildFetchUrlTool } from '@/lib/server/agent-runtime/fetch-url';
 import { registerSessionUrls } from '@/lib/server/agent-runtime/session-urls';
@@ -183,42 +182,5 @@ describe('session materials persistence', () => {
     expect(await getSessionMaterial('session-1', rows[0]!.id)).not.toBeNull();
     // A material from another session reads as absent.
     expect(await getSessionMaterial('session-other', rows[0]!.id)).toBeNull();
-  });
-});
-
-describe('sessionMaterialsPromptBlock', () => {
-  it('lists safe metadata and directs the agent to the registered material tools', () => {
-    const prompt = sessionMaterialsPromptBlock([
-      {
-        id: 'mat_1',
-        sessionId: 'ses_1',
-        kind: 'web',
-        title: 'Sample article',
-        sourceUrl: 'https://example.com/a',
-        textAssetId: 'ast_1',
-        rawAssetId: null,
-        textChars: 42,
-        derivedFrom: null,
-        extraction: { status: 'done', attempts: 0 },
-        createdAt: new Date(0).toISOString(),
-      },
-    ]);
-
-    expect(prompt).toContain('Sample article');
-    expect(prompt).toContain('list_materials');
-    expect(prompt).toContain('read_material');
-    expect(prompt).toContain('nextOffset');
-    expect(prompt).toContain('search_material');
-    expect(prompt).toContain('literal text');
-    expect(prompt).toContain('fetched and extracted');
-    expect(prompt).toContain('extract_material');
-    expect(prompt).toContain('wait_for_materials');
-    expect(prompt).toContain('use_material_media');
-    expect(prompt).not.toContain('textAssetId');
-    expect(prompt).not.toContain('sourceUrl');
-  });
-
-  it('emits no block when the session has no materials', () => {
-    expect(sessionMaterialsPromptBlock([])).toBe('');
   });
 });

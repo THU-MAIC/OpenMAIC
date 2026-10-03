@@ -2008,7 +2008,19 @@
       "pillHint": "This message references {{name}}",
       "notAccepted": "The server is temporarily unavailable. Please try again shortly.",
       "reference": "Reference {{name}}",
-      "capped": "Showing the first {{count}} — keep typing to narrow it down"
+      "capped": "Showing the first {{count}} — keep typing to narrow it down",
+      "classrooms": "Classrooms",
+      "knowledgeBase": "Knowledge base",
+      "emptyWithMaterials": "No classroom or material matches",
+      "attachMaterial": "Attach {{name}} to this message",
+      "materialAttached": "Already in this conversation",
+      "materialStaged": "Already on this message",
+      "materialExtracting": "Extracting",
+      "materialFailed": "Extraction failed",
+      "unfiled": "Unfiled",
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
+      "materialNotExtracted": "Not extracted",
+      "materialExtracted": "Extracted"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2131,7 +2143,8 @@
     "badgeEnter": "Pro mode",
     "badgeExit": "Back to classic",
     "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build"
+    "launchSend": "Start build",
+    "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material"
   },
   "accessCode": {
     "title": "Enter Access Code",

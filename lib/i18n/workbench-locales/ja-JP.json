@@ -188,7 +188,12 @@
       "listFolderCourses": "授業一覧を見る",
       "createStage": "授業を作成",
       "renameStage": "授業名を変更",
-      "readStageOutline": "授業のアウトラインを読む"
+      "readStageOutline": "授業のアウトラインを読む",
+      "listMaterialFolders": "ナレッジベースのフォルダを確認",
+      "createMaterialFolder": "ナレッジベースにフォルダを作成",
+      "renameMaterialFolder": "ナレッジベースのフォルダ名を変更",
+      "moveMaterials": "素材を移動",
+      "renameMaterial": "素材の名前を変更"
     },
     "chip": {
       "seconds": "{{count}} 秒",
@@ -222,7 +227,17 @@
       "allCourses": "すべての授業",
       "folderCourses": "あるフォルダ内",
       "reusedCourse": "既存の授業を再利用",
-      "movedToFolder": "フォルダへ移動しました"
+      "movedToFolder": "フォルダへ移動しました",
+      "materialFolders": "{{count}} 個のフォルダ",
+      "materials": "{{count}} 件の素材",
+      "extractionStarted": "解析を開始しました",
+      "extractionInProgress": "すでに解析中です",
+      "extractionDone": "解析済みです",
+      "extractionComplete": "解析が完了しました",
+      "extractionStillRunning": "まだ解析中です",
+      "folderExisted": "フォルダはすでにありました",
+      "unchanged": "変更なし",
+      "movedToUnfiled": "未分類へ移動しました"
     },
     "error": {
       "materialExtraction": "素材の解析に失敗しました",
@@ -263,7 +278,12 @@
       "createStage": "授業を作成できませんでした",
       "renameStage": "授業名を変更できませんでした",
       "readStageOutline": "授業のアウトラインを読めませんでした",
-      "generic": "ツール呼び出しに失敗しました"
+      "generic": "ツール呼び出しに失敗しました",
+      "listMaterialFolders": "ナレッジベースのフォルダを確認できませんでした",
+      "createMaterialFolder": "ナレッジベースのフォルダを作成できませんでした",
+      "renameMaterialFolder": "ナレッジベースのフォルダ名を変更できませんでした",
+      "moveMaterials": "素材を移動できませんでした",
+      "renameMaterial": "素材の名前を変更できませんでした"
     },
     "progress": {
       "scene": {

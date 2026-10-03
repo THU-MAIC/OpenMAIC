@@ -40,6 +40,7 @@ const blankFold: WorkbenchFold = {
   pages: {},
   chat: [],
   libraryRevision: 0,
+  materialLibraryRevision: 0,
   stageLinkStageIds: [],
   touchedStageIds: [],
   runCourseStageIds: [],
@@ -267,6 +268,34 @@ describe('lifecycle events', () => {
     expect(contentOf(state).map((n) => n.kind)).toEqual(['user']);
     // And it says nothing about a stage link; that is a separate event.
     expect(state.stageId).toBeNull();
+  });
+
+  it('library_changed of the material library counts on its own counter, never the course tree’s', () => {
+    let state = foldAll([ev('session_start', { prompt: 'p' })]);
+    state = foldEvent(
+      state,
+      ev('library_changed', { library: 'materials', change: 'folder_created', folderId: 'mf1' }),
+    );
+    state = foldEvent(
+      state,
+      ev('library_changed', {
+        library: 'materials',
+        change: 'materials_moved',
+        materialIds: ['m1'],
+        folderId: null,
+      }),
+    );
+    expect(state.materialLibraryRevision).toBe(2);
+    expect(state.libraryRevision).toBe(0);
+    expect(state.stageLinkStageIds).toEqual([]);
+    // A course write leaves the material counter alone.
+    state = foldEvent(
+      state,
+      ev('library_changed', { change: 'stage_created', stageId: 'stage-day-1', title: 'Day 1' }),
+    );
+    expect(state.materialLibraryRevision).toBe(2);
+    expect(state.libraryRevision).toBe(1);
+    expect(contentOf(state).map((n) => n.kind)).toEqual(['user']);
   });
 
   it('remembers WHICH stages the run created, in creation order (one tab each)', () => {

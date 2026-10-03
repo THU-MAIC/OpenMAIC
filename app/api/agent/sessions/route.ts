@@ -199,6 +199,8 @@ export async function POST(req: NextRequest) {
       if (error instanceof SessionMaterialBindingError) {
         return new Response('Not found', { status: 404, headers: responseHeaders });
       }
+      const claimed = ownerWriteErrorResponse(error, responseHeaders);
+      if (claimed) return claimed;
       throw error;
     }
   });

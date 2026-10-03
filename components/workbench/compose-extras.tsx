@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils/cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   uploadWorkbenchMaterial,
+  useWorkbenchStore,
   WorkbenchMaterialUploadError,
   type WorkbenchMaterial,
 } from '@/lib/workbench/session-store';
@@ -26,6 +27,11 @@ import {
 } from '@/lib/workbench/material-upload-scheduling';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
 import { slashQuery } from '@/lib/workbench/composer-skills';
+import {
+  fetchMaterialMentionListing,
+  materialMentionCandidates,
+  type MaterialMentionCandidate,
+} from '@/lib/workbench/material-mention';
 import { ComposerPendingPill, ComposerPill, ComposerPillRow } from './composer-pill';
 
 // ── Skills (the `/` and composer `+` menus) ──────────────────────────────────
@@ -271,6 +277,12 @@ export interface ComposerMaterials {
   /** Entries whose upload failed (shown as removable error chips). */
   failed: MaterialUploadEntry[];
   addFiles: (files: FileList | File[]) => void;
+  /**
+   * Stage a material the knowledge base already holds (the `@` picker): one
+   * more pill, attached only when the message is sent. One already staged is
+   * left as it is; the per-message cap applies as it does to uploads.
+   */
+  addExisting: (material: WorkbenchMaterial) => void;
   remove: (materialId: string) => void;
   removeFailed: (id: string) => void;
   clear: () => void;
@@ -395,12 +407,29 @@ export function useComposerMaterials(
     void scheduleMaterialUploadBatch(identityGate.current, jobs, upload);
   };
 
+  const addExisting = (material: WorkbenchMaterial) => {
+    if (!enabled) return;
+    if (materials.some((item) => item.materialId === material.materialId)) return;
+    if (!slotLedger.current.canAccept(1)) {
+      toast.error(t('workbench.material.maxSelected', { count: MAX_COMPOSER_MATERIALS }));
+      return;
+    }
+    slotLedger.current.reserve(1);
+    slotLedger.current.settle(true);
+    setMaterials((current) =>
+      current.some((item) => item.materialId === material.materialId)
+        ? current
+        : [...current, material],
+    );
+  };
+
   return {
     enabled,
     materials,
     uploading,
     failed,
     addFiles,
+    addExisting,
     remove: (materialId) =>
       setMaterials((items) => {
         if (items.some((item) => item.materialId === materialId)) {
@@ -597,4 +626,46 @@ export function MaterialChips({
       ))}
     </ComposerPillRow>
   );
+}
+
+/**
+ * The knowledge base's sources for the `@` menu while it is open, matching
+ * the typed query (debounced), marked for this conversation and for what is
+ * already staged. `undefined` while materials are not offered at all, so the
+ * menu stays the classroom picker. A material change of this run
+ * (`materialLibraryRevision`) refetches.
+ */
+export function useMaterialMentions(input: {
+  open: boolean;
+  enabled: boolean;
+  query: string;
+  sessionId: string | null;
+  staged: readonly WorkbenchMaterial[];
+}): MaterialMentionCandidate[] | undefined {
+  const { open, enabled, query, sessionId, staged } = input;
+  const revision = useWorkbenchStore((state) => state.materialLibraryRevision);
+  const [listing, setListing] = useState<{
+    query: string;
+    sessionId: string | null;
+    materials: Awaited<ReturnType<typeof fetchMaterialMentionListing>>;
+  }>();
+  useEffect(() => {
+    if (!open || !enabled) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      void fetchMaterialMentionListing({ query, sessionId, signal: controller.signal }).then(
+        (materials) => {
+          if (!controller.signal.aborted) setListing({ query, sessionId, materials });
+        },
+      );
+    }, 150);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, enabled, query, sessionId, revision]);
+  if (!enabled) return undefined;
+  const listed =
+    listing?.query === query && listing.sessionId === sessionId ? listing.materials : [];
+  return materialMentionCandidates(listed, new Set(staged.map((material) => material.materialId)));
 }

@@ -188,7 +188,12 @@
       "listFolderCourses": "Ver la biblioteca de aulas",
       "createStage": "Crear aula",
       "renameStage": "Renombrar aula",
-      "readStageOutline": "Leer el esquema del aula"
+      "readStageOutline": "Leer el esquema del aula",
+      "listMaterialFolders": "Revisar carpetas de la base de conocimientos",
+      "createMaterialFolder": "Crear carpeta en la base de conocimientos",
+      "renameMaterialFolder": "Renombrar carpeta de la base de conocimientos",
+      "moveMaterials": "Mover materiales",
+      "renameMaterial": "Renombrar material"
     },
     "chip": {
       "seconds": "{{count}} s",
@@ -222,7 +227,17 @@
       "allCourses": "Todas las aulas",
       "folderCourses": "Aulas de una carpeta",
       "reusedCourse": "Se reutilizó un aula existente",
-      "movedToFolder": "Movido a la carpeta"
+      "movedToFolder": "Movido a la carpeta",
+      "materialFolders": "{{count}} carpetas",
+      "materials": "{{count}} materiales",
+      "extractionStarted": "Iniciado",
+      "extractionInProgress": "Ya está en curso",
+      "extractionDone": "Ya se había procesado",
+      "extractionComplete": "Terminado",
+      "extractionStillRunning": "Aún en procesamiento",
+      "folderExisted": "La carpeta ya existía",
+      "unchanged": "Sin cambios",
+      "movedToUnfiled": "Movido a Sin carpeta"
     },
     "error": {
       "materialExtraction": "Falló el procesamiento del material",
@@ -263,7 +278,12 @@
       "createStage": "No se pudo crear el aula",
       "renameStage": "No se pudo renombrar el aula",
       "readStageOutline": "No se pudo leer el esquema del aula",
-      "generic": "La llamada al tool falló"
+      "generic": "La llamada al tool falló",
+      "listMaterialFolders": "No se pudieron revisar las carpetas de la base de conocimientos",
+      "createMaterialFolder": "No se pudo crear la carpeta de la base de conocimientos",
+      "renameMaterialFolder": "No se pudo renombrar la carpeta de la base de conocimientos",
+      "moveMaterials": "No se pudieron mover los materiales",
+      "renameMaterial": "No se pudo renombrar el material"
     },
     "progress": {
       "scene": {

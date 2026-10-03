@@ -7,10 +7,10 @@
  * owner's `owner_material` row instead, so every conversation shares one
  * extraction of one source.
  *
- * Nothing in production calls this module yet: no runner claims from it and
- * no route or tool starts it. Its results are read by nothing until the
- * Phase 2 readers land, and RFC #1716 does not publish new extraction output
- * before then.
+ * `extract_material` ensures a source's extraction here, the owner runner
+ * (`lib/server/material-extraction/owner-extraction.ts`) claims and publishes,
+ * and the material tools read the results through the shared resolver
+ * (RFC #1716 Phase 2).
  *
  * ## State
  *
@@ -54,13 +54,13 @@
  * Every write here checks `deleted_at`: a deleted source is not claimed, and
  * a claim of one cannot heartbeat, settle or publish. Deleting a material --
  * marking it, cancelling its work and withdrawing its roots together -- is
- * the library operation's job (Phase 2), not this module's.
+ * the library's deletion operation, not this module's.
  */
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 import { encodeJson } from '@openmaic/storage/pg-json';
 
 import { MATERIAL_ROOT_KIND, withMaterialRoots } from './material-roots';
-import { fenceOwnerWrite } from './owner-merges';
+import { fenceOwnerWrite, forwardOwnerWrite } from './owner-merges';
 
 /** Claims one explicit start may spend, takeovers of an expired lease included. */
 export const MAX_OWNER_EXTRACTION_CLAIMS = 3;
@@ -96,6 +96,13 @@ export interface OwnerExtractionDerivative {
   sha256: string;
   pageNumber?: number;
   timeMs?: number;
+  /**
+   * What the result's text calls this derivative: a reference
+   * `openmaic-derivative:<key>` in the text names it. Keys belong to the
+   * result, not to a source, so a reused text names each source's own
+   * derivatives (`lib/server/material-extraction/document-images.ts`).
+   */
+  key?: string;
 }
 
 /** The latest successful extraction of a source, as `extraction_result` stores it. */
@@ -166,15 +173,21 @@ function statusJson(status: OwnerExtractionStatus): string {
  * are never re-run. Queueing resets the claim budget, never the token.
  * Returns the source's status afterwards, or `null` when the owner has no
  * such ready, undeleted source.
+ *
+ * `fence: 'request'` (the default) refuses a retired owner, as a request's
+ * write does. `fence: 'background'` follows a claim to the account: an agent
+ * run that started before its owner was claimed keeps working for the account
+ * its session moved to, as its other writes do.
  */
 export async function ensureOwnerMaterialExtraction(
   withTransaction: WithTransaction,
   ownerId: string,
   materialId: string,
+  options: { fence?: 'request' | 'background' } = {},
 ): Promise<{ status: OwnerExtractionStatus; queued: boolean } | null> {
   return withTransaction(async (tx) => {
-    // A request path: a retired owner is refused, not forwarded.
-    await fenceOwnerWrite(tx, ownerId);
+    if ((options.fence ?? 'request') === 'request') await fenceOwnerWrite(tx, ownerId);
+    else ownerId = await forwardOwnerWrite(tx, ownerId);
     const queued = await tx.query<{ id: string }>(
       `UPDATE owner_material
           SET extraction = $3::jsonb, extraction_claims = 0, extraction_token = NULL,

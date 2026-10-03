@@ -94,6 +94,16 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => 
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: vi.fn(async () => []) };
 });
+// The runner lists what the session reaches through the shared resolver;
+// links need a database these tests do not have.
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
+  return {
+    ...actual,
+    listSessionScopeMaterials: vi.fn(async () => []),
+  };
+});
 
 vi.mock('@/lib/server/agent-runtime/entry-tree-storage', async (importActual) => {
   const actual =

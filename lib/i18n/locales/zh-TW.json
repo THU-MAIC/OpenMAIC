@@ -1993,7 +1993,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "服務暫時不可用，請稍後重試。",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "課堂",
+      "knowledgeBase": "知識庫",
+      "emptyWithMaterials": "沒有符合的課堂或材料",
+      "attachMaterial": "把 {{name}} 附加到這則訊息",
+      "materialAttached": "本會話已有",
+      "materialStaged": "已在這則訊息裡",
+      "materialExtracting": "解析中",
+      "materialFailed": "解析失敗",
+      "unfiled": "未歸檔",
+      "materialsCapped": "只顯示前 {{count}} 份材料，繼續輸入可縮小範圍",
+      "materialNotExtracted": "未解析",
+      "materialExtracted": "已解析"
     },
     "heroTitle": "今天想創造點什麼？",
     "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "專業模式",
     "badgeExit": "返回普通模式",
     "launchPlaceholder": "描述你想創造的學習體驗",
-    "launchSend": "開始構建"
+    "launchSend": "開始構建",
+    "mentionCourseOrMaterial": "引用課堂或知識庫材料"
   },
   "workbench": {
     "tool": {

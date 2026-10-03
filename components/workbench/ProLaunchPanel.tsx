@@ -43,6 +43,7 @@ import {
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
+  useMaterialMentions,
   type AgentSkillInfo,
 } from '@/components/workbench/compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
@@ -51,6 +52,7 @@ import { useSkillHandleBackspace } from '@/components/workbench/use-skill-handle
 import { ComposerTextarea } from '@/components/workbench/composer-input';
 import { ComposerPillRow } from '@/components/workbench/composer-pill';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
+import { stagedMaterialOf } from '@/lib/workbench/material-mention';
 import { CourseRefPills } from '@/components/workbench/course-ref-pills';
 import {
   orderCourseMentionCandidates,
@@ -170,7 +172,8 @@ export function ProLaunchPanel({
     slashDismissedOn: slashDismissed,
     mentionDismissedOn: mentionDismissed,
     courseMenuRequested: mentionOpen,
-    courseMenuAvailable: courseOptions.length > 0,
+    // Classrooms, or the knowledge base when materials are enabled.
+    courseMenuAvailable: courseOptions.length > 0 || materials.enabled,
   });
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
@@ -190,6 +193,30 @@ export function ProLaunchPanel({
     setMentionDismissed(null);
     setMentionOpen(true);
   }, []);
+  /**
+   * What every pick leaves behind. Mid-sentence picks are possible, so the
+   * caret goes back to the gap the token left. Same rule as
+   * `WorkbenchChat.finishMentionPick`.
+   */
+  const finishMentionPick = () => {
+    const removal = mention ? replaceCourseMention(prompt, mention) : null;
+    if (removal) {
+      pendingCaret.current = removal.caret;
+      setCaret(removal.caret);
+      setPrompt(removal.draft);
+    }
+    setMentionDismissed(null);
+    setMentionOpen(false);
+    setSlashDismissed(removal?.draft ?? prompt);
+  };
+  // No conversation yet: nothing is attached, so no row is marked as such.
+  const materialMentions = useMaterialMentions({
+    open: mentionMenuOpen,
+    enabled: materials.enabled,
+    query: mention?.query ?? '',
+    sessionId: null,
+    staged: materials.materials,
+  });
   const untitledCourse = t('workspace.untitledCourse');
   const mentionCandidates = useMemo(
     () =>
@@ -371,17 +398,14 @@ export function ProLaunchPanel({
             onPick={(candidate) => {
               const ref = makeCourseRef(candidate.stageId, candidate.title);
               if (ref) setCourseRefs((current) => addCourseRef(current, ref));
-              // Mid-sentence picks are possible now, so the caret goes back to
-              // the gap the token left. Same rule as `WorkbenchChat.pickMention`.
-              const removal = mention ? replaceCourseMention(prompt, mention) : null;
-              if (removal) {
-                pendingCaret.current = removal.caret;
-                setCaret(removal.caret);
-                setPrompt(removal.draft);
-              }
-              setMentionDismissed(null);
-              setMentionOpen(false);
-              setSlashDismissed(removal?.draft ?? prompt);
+              finishMentionPick();
+            }}
+            // A knowledge-base pick stages one more pill, attached when the
+            // conversation starts -- the same rule as the conversation composer.
+            materials={materialMentions}
+            onPickMaterial={(candidate) => {
+              materials.addExisting(stagedMaterialOf(candidate));
+              finishMentionPick();
             }}
           />
         ) : null}
@@ -458,11 +482,15 @@ export function ProLaunchPanel({
             label={t('proMode.attach')}
             onFiles={materials.addFiles}
           />
-          {courseOptions.length > 0 ? (
+          {/* Shown exactly when the menu can open: classrooms to name, or the
+              knowledge base to pick from. */}
+          {courseOptions.length > 0 || materials.enabled ? (
             <AtSignButton
               testId="pro-launch-mention-button"
               disabled={submitting}
-              label={t('proMode.mentionCourse')}
+              label={t(
+                materials.enabled ? 'proMode.mentionCourseOrMaterial' : 'proMode.mentionCourse',
+              )}
               onClick={openMention}
             />
           ) : null}

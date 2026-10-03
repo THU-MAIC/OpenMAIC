@@ -22,6 +22,9 @@ vi.mock('@/lib/server/agent-runtime/runner', () => ({
 vi.mock('@/lib/server/material-extraction/runner', () => ({
   startMaterialExtractionRunner: () => ({ stop: async () => undefined }),
 }));
+vi.mock('@/lib/server/material-extraction/owner-extraction', () => ({
+  startOwnerExtractionRunner: () => ({ stop: async () => ({ drained: true, running: 0 }) }),
+}));
 vi.mock('@/lib/server/materials/migrate-to-pool', () => ({ migrateOwnerMaterialsToPool }));
 
 beforeEach(() => {

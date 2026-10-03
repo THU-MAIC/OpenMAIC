@@ -88,6 +88,7 @@ jobs:
             tests/persistence/owner-materials.pg.test.ts \
             tests/persistence/owner-material-extraction.pg.test.ts \
             tests/persistence/owner-material-pool.pg.test.ts \
+            tests/persistence/material-library.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \
             tests/agent-runtime/event-notify.pg.test.ts \
             tests/agent-runtime/park-attempt-budget.pg.test.ts \

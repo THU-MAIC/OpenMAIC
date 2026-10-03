@@ -335,15 +335,18 @@ export async function twoConversationsOneExtractionScenario(h: ExtractionHarness
   const result = state.extraction_result!;
   expect(result.revision).toEqual(expect.any(String));
   expect(result.extractor).toEqual({ id: 'test-doc', version: '1', options: {} });
-  // The text is kept as the provider wrote it, image reference included, and
-  // document images are not stored.
+  // The fake provider's image is not a readable image, so it is not kept,
+  // and the text's reference to it becomes its alt text rather than a file
+  // nothing holds. (Kept images: documentImagesScenario.)
   expect(result.derivatives).toEqual([]);
   expect(await rootsOf(h, 'src-shared')).toEqual([result.text.assetId]);
   const text = await h.provider.assetStore.resolve(
     { key: `owner:${ACCOUNT}` },
     result.text.assetId as never,
   );
-  expect(Buffer.from(text!.bytes).toString()).toContain('![](images/fig-1.jpg)');
+  const stored = Buffer.from(text!.bytes).toString();
+  expect(stored).toContain(String.raw`\[image\]`);
+  expect(stored).not.toContain('images/fig-1.jpg');
 
   // A failed source restarts, with a token no earlier claim held.
   await seedSource(h, 'src-retry');
@@ -852,11 +855,10 @@ export async function quotaFailureScenario(h: ExtractionHarness): Promise<void> 
   expect(state).toMatchObject({ status: 'failed', extraction_result: null });
   expect(state.extraction_error).toMatch(/no room/);
   expect(await rootCount(h)).toBe(0);
-  const pending = await h.pool.query<{ committed: boolean; expires: boolean }>(
-    `SELECT committed_at IS NOT NULL AS committed, expires_at IS NOT NULL AS expires
-       FROM asset_entries`,
-  );
-  expect(pending.rows).toEqual([{ committed: false, expires: true }]);
+  // The transcript's entry fitted, then the keyframe's was refused: the run
+  // can never publish, so it removed the transcript's entry instead of
+  // leaving it to hold quota until it expires. The refused one stored nothing.
+  expect(await entryCount(h)).toBe(0);
   expect(await ensure(h, 'vid-big')).toEqual({ status: 'pending', queued: true });
 }
 
@@ -933,7 +935,7 @@ export async function heartbeatLossScenario(h: ExtractionHarness): Promise<void>
 }
 
 /** The entry pass of the app's collector, run as if `aheadMs` had passed. */
-async function collectEntries(h: ExtractionHarness, aheadMs = 60_000): Promise<void> {
+export async function collectEntries(h: ExtractionHarness, aheadMs = 60_000): Promise<void> {
   const collector = new AssetCollector(
     h.pool as never,
     await resolveConfiguredAssetByteStore(h.pool as never),
@@ -949,7 +951,7 @@ async function collectEntries(h: ExtractionHarness, aheadMs = 60_000): Promise<v
   await collector.collectPass();
 }
 
-async function entryExists(h: ExtractionHarness, assetId: string): Promise<boolean> {
+export async function entryExists(h: ExtractionHarness, assetId: string): Promise<boolean> {
   const found = await h.pool.query('SELECT 1 FROM asset_entries WHERE id = $1', [assetId]);
   return found.rows.length > 0;
 }

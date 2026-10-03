@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "El servidor no está disponible temporalmente. Vuelve a intentarlo en un momento.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Aulas",
+      "knowledgeBase": "Base de conocimientos",
+      "emptyWithMaterials": "Ningún aula ni material coincide",
+      "attachMaterial": "Adjuntar {{name}} a este mensaje",
+      "materialAttached": "Ya está en esta conversación",
+      "materialStaged": "Ya está en este mensaje",
+      "materialExtracting": "Procesando",
+      "materialFailed": "Falló el procesamiento",
+      "unfiled": "Sin carpeta",
+      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
+      "materialNotExtracted": "Sin procesar",
+      "materialExtracted": "Procesado"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "Modo Pro",
     "badgeExit": "Volver al modo clásico",
     "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
-    "launchSend": "Iniciar construcción"
+    "launchSend": "Iniciar construcción",
+    "mentionCourseOrMaterial": "Mencionar un aula o un material de la base de conocimientos"
   },
   "workbench": {
     "tool": {

@@ -286,6 +286,15 @@ export interface WorkbenchFold {
    */
   libraryRevision: number;
   /**
+   * The same counter for the owner's MATERIAL library: bumped by a
+   * `library_changed` whose `library` is `materials` (a folder created or
+   * renamed, materials moved or renamed, an extraction started or settled).
+   * What lists materials -- the composer's picker and `@` -- refetches on an
+   * increase. Course writes never bump it, and material writes never bump
+   * `libraryRevision`, so neither list refetches for the other's changes.
+   */
+  materialLibraryRevision: number;
+  /**
    * Stage ids seen in `stage_link` events (legacy `course_link` accepted on
    * replay), in first-seen order. The workspace records how many came from the
    * attach backlog and may open only later live arrivals. Repeated links stay
@@ -546,6 +555,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     pages: {},
     chat: [],
     libraryRevision: 0,
+    materialLibraryRevision: 0,
     stageLinkStageIds: [],
     touchedStageIds: [],
     runCourseStageIds: [],
@@ -1605,6 +1615,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       break;
     }
     case 'library_changed': {
+      // A material-library write is not a course-library write: it bumps its
+      // own counter and stops here (it names no stage to sight).
+      if (data.library === 'materials') {
+        next.materialLibraryRevision = state.materialLibraryRevision + 1;
+        break;
+      }
       // A stage or folder write landed. The workspace's tree cannot know from
       // here WHAT it should look like — only that what it is showing predates a
       // write — so the fold counts the write and the shell refetches the

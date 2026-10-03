@@ -19,7 +19,7 @@ function textOf(result: unknown): string {
 }
 
 describe('generation media tools', () => {
-  it('copies session-scoped media bytes into classroom media', async () => {
+  it('copies session-scoped media bytes into a new pool entry of the run owner', async () => {
     const readRawBytes = vi.fn(async () => ({
       bytes: Buffer.from([1, 2, 3]),
       mime: 'image/png',
@@ -37,8 +37,14 @@ describe('generation media tools', () => {
       extraction: { status: 'done', attempts: 0 },
       createdAt: new Date(0).toISOString(),
     } satisfies AgentSessionMaterial;
+    const storeAsset = vi.fn(async () => ({
+      status: 'stored' as const,
+      assetId: 'ast_course_copy',
+    }));
     const tool = buildMaterialMediaTool({
       sessionId: 'session-a',
+      ownerId: 'owner-a',
+      storeAsset,
       getMaterial: vi.fn(async (sessionId) => (sessionId === 'session-a' ? material : null)),
       readRawBytes,
     });
@@ -47,13 +53,15 @@ describe('generation media tools', () => {
       stageId: 'stage-a',
     } as never);
     expect(readRawBytes).toHaveBeenCalledWith('session-a', 'ast_session_media');
-    expect(mocks.persist).toHaveBeenCalledWith(
-      expect.objectContaining({ stageId: 'stage-a', mime: 'image/png' }),
-    );
-    expect(response.details).toMatchObject({
-      src: '/api/classroom-media/stage-a/media/image.png',
+    expect(storeAsset).toHaveBeenCalledWith({
+      ownerId: 'owner-a',
+      stageId: 'stage-a',
+      bytes: Buffer.from([1, 2, 3]),
       mimeType: 'image/png',
+      kind: 'image',
     });
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(response.details).toMatchObject({ src: 'ast_course_copy', mimeType: 'image/png' });
   });
 
   it('renders only a page visible through the bound course store', async () => {

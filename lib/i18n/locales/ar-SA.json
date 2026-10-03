@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "الخادم غير متاح مؤقتًا. يُرجى إعادة المحاولة بعد قليل.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "الفصول",
+      "knowledgeBase": "قاعدة المعرفة",
+      "emptyWithMaterials": "لا يوجد فصل أو مادة مطابقة",
+      "attachMaterial": "إرفاق {{name}} بهذه الرسالة",
+      "materialAttached": "موجودة بالفعل في هذه المحادثة",
+      "materialStaged": "موجودة بالفعل في هذه الرسالة",
+      "materialExtracting": "جارٍ التحليل",
+      "materialFailed": "فشل التحليل",
+      "unfiled": "غير مصنّف",
+      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج",
+      "materialNotExtracted": "لم تُحلَّل",
+      "materialExtracted": "حُلِّلت"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "وضع Pro",
     "badgeExit": "العودة إلى الوضع العادي",
     "launchPlaceholder": "صِف تجربة التعلم التي تريد إنشاءها",
-    "launchSend": "بدء الإنشاء"
+    "launchSend": "بدء الإنشاء",
+    "mentionCourseOrMaterial": "الإشارة إلى فصل أو مادة من قاعدة المعرفة"
   },
   "workbench": {
     "tool": {

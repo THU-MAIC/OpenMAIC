@@ -188,7 +188,12 @@
       "listFolderCourses": "Xem thư viện lớp học",
       "createStage": "Tạo lớp học",
       "renameStage": "Đổi tên lớp học",
-      "readStageOutline": "Đọc dàn ý lớp học"
+      "readStageOutline": "Đọc dàn ý lớp học",
+      "listMaterialFolders": "Kiểm tra thư mục kho kiến thức",
+      "createMaterialFolder": "Tạo thư mục trong kho kiến thức",
+      "renameMaterialFolder": "Đổi tên thư mục kho kiến thức",
+      "moveMaterials": "Di chuyển tài liệu",
+      "renameMaterial": "Đổi tên tài liệu"
     },
     "chip": {
       "seconds": "{{count}} giây",
@@ -222,7 +227,17 @@
       "allCourses": "Tất cả lớp học",
       "folderCourses": "Lớp học trong một thư mục",
       "reusedCourse": "Dùng lại lớp học có sẵn",
-      "movedToFolder": "Đã chuyển vào thư mục"
+      "movedToFolder": "Đã chuyển vào thư mục",
+      "materialFolders": "{{count}} thư mục",
+      "materials": "{{count}} tài liệu",
+      "extractionStarted": "Đã bắt đầu bóc tách",
+      "extractionInProgress": "Đang bóc tách",
+      "extractionDone": "Đã bóc tách trước đó",
+      "extractionComplete": "Bóc tách xong",
+      "extractionStillRunning": "Vẫn đang bóc tách",
+      "folderExisted": "Thư mục đã có sẵn",
+      "unchanged": "Không thay đổi",
+      "movedToUnfiled": "Đã chuyển về Chưa phân loại"
     },
     "error": {
       "materialExtraction": "Bóc tách tài liệu thất bại",
@@ -263,7 +278,12 @@
       "createStage": "Không tạo được lớp học",
       "renameStage": "Không đổi được tên lớp học",
       "readStageOutline": "Không đọc được dàn ý lớp học",
-      "generic": "Lần gọi tool thất bại"
+      "generic": "Lần gọi tool thất bại",
+      "listMaterialFolders": "Không kiểm tra được thư mục kho kiến thức",
+      "createMaterialFolder": "Không tạo được thư mục kho kiến thức",
+      "renameMaterialFolder": "Không đổi tên được thư mục kho kiến thức",
+      "moveMaterials": "Không di chuyển được tài liệu",
+      "renameMaterial": "Không đổi tên được tài liệu"
     },
     "progress": {
       "scene": {

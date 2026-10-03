@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Сервер временно недоступен. Повторите попытку чуть позже.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Кабинеты",
+      "knowledgeBase": "База знаний",
+      "emptyWithMaterials": "Нет подходящих кабинетов или материалов",
+      "attachMaterial": "Прикрепить {{name}} к этому сообщению",
+      "materialAttached": "Уже в этой беседе",
+      "materialStaged": "Уже в этом сообщении",
+      "materialExtracting": "Идёт разбор",
+      "materialFailed": "Разбор не удался",
+      "unfiled": "Без папки",
+      "materialsCapped": "Показаны первые {{count}} материалов — продолжайте ввод, чтобы сузить список",
+      "materialNotExtracted": "Не разобран",
+      "materialExtracted": "Разобран"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "Pro-режим",
     "badgeExit": "Вернуться в обычный режим",
     "launchPlaceholder": "Опишите учебный опыт, который хотите создать",
-    "launchSend": "Начать сборку"
+    "launchSend": "Начать сборку",
+    "mentionCourseOrMaterial": "Упомянуть кабинет или материал из базы знаний"
   },
   "workbench": {
     "tool": {

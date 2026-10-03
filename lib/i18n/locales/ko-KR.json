@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "수업",
+      "knowledgeBase": "지식 베이스",
+      "emptyWithMaterials": "일치하는 수업이나 자료가 없습니다",
+      "attachMaterial": "{{name}}을(를) 이 메시지에 첨부",
+      "materialAttached": "이 대화에 이미 있습니다",
+      "materialStaged": "이 메시지에 이미 있습니다",
+      "materialExtracting": "분석 중",
+      "materialFailed": "분석 실패",
+      "unfiled": "미분류",
+      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요",
+      "materialNotExtracted": "분석 전",
+      "materialExtracted": "분석 완료"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "Pro 모드",
     "badgeExit": "일반 모드로 돌아가기",
     "launchPlaceholder": "만들고 싶은 학습 경험을 설명해 보세요",
-    "launchSend": "구축 시작"
+    "launchSend": "구축 시작",
+    "mentionCourseOrMaterial": "수업 또는 지식 베이스 자료 참조"
   },
   "workbench": {
     "tool": {

@@ -68,6 +68,7 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     description?: string;
     width?: number;
     height?: number;
+    path?: string;
   }> = [];
 
   Object.entries(imageData).forEach(([key, base64Url], index) => {
@@ -82,6 +83,8 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
       description: meta?.caption,
       width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
       height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+      // The file the markdown names this image by; the id above replaces it.
+      path: key,
     });
   });
 

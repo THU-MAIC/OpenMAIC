@@ -96,6 +96,18 @@ beforeEach(() => {
 });
 
 describe('agent session collection route', () => {
+  it('returns 503 and Retry-After when opening material binding loses an identity lock race', async () => {
+    const { OwnerBusyError } = await import('@/lib/persistence/owner-merges');
+    mocks.bindOwnerMaterialsToSession.mockRejectedValueOnce(new OwnerBusyError());
+    const response = await post({ prompt: 'Read this', materialIds: ['material-1'] });
+
+    expect(mocks.softDeleteSession).toHaveBeenCalledWith('session-1', 'anon:test');
+    expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('2');
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+  });
+
   it('creates a queued session and propagates a newly minted owner cookie', async () => {
     const response = await post({ prompt: ' Build a course ', skill: 'custom-skill' });
 

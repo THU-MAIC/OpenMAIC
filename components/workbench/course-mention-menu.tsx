@@ -57,12 +57,28 @@ import { Check } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { COURSE_MENTION_LIMIT, type CourseMentionCandidate } from '@/lib/workbench/course-mention';
+import {
+  MATERIAL_MENTION_LIMIT,
+  type MaterialMentionCandidate,
+} from '@/lib/workbench/material-mention';
+
+/**
+ * One row of the menu. Classrooms come first, then -- when the knowledge base
+ * is offered -- its materials (RFC #1716 §4). Each section keeps one verb: a
+ * classroom row names that classroom for this turn, a material row stages that
+ * material for this message. The keyboard walks both as one list.
+ */
+type MenuRow =
+  | { kind: 'course'; candidate: CourseMentionCandidate }
+  | { kind: 'material'; candidate: MaterialMentionCandidate };
 
 export function CourseMentionMenu({
   id,
   candidates,
   onPick,
   onClose,
+  materials,
+  onPickMaterial,
 }: {
   /** The trigger's `aria-controls` target. */
   readonly id?: string;
@@ -75,16 +91,32 @@ export function CourseMentionMenu({
    * keystroke and the `+` menu item — so every dismissal comes back through here.
    */
   readonly onClose: () => void;
+  /**
+   * The knowledge base's sources matching the query, when the composer offers
+   * them (materials enabled). Absent: the menu is the classroom picker alone.
+   */
+  readonly materials?: readonly MaterialMentionCandidate[];
+  /** Stage a material for this message. */
+  readonly onPickMaterial?: (candidate: MaterialMentionCandidate) => void;
 }) {
   const { t } = useI18n();
   const titleId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const offersMaterials = materials !== undefined && onPickMaterial !== undefined;
+  const rows: MenuRow[] = [
+    ...candidates.map((candidate) => ({ kind: 'course' as const, candidate })),
+    ...(offersMaterials
+      ? materials.map((candidate) => ({ kind: 'material' as const, candidate }))
+      : []),
+  ];
   // Filtering shortens the list under the highlight; the pick and the painted
   // row read the same clamped index rather than resetting state mid-typing —
   // the skill menu resolves its own highlight the same way.
-  const activeIndex = highlightedIndex < candidates.length ? highlightedIndex : 0;
+  const activeIndex = highlightedIndex < rows.length ? highlightedIndex : 0;
+  const pickRow = (row: MenuRow) =>
+    row.kind === 'course' ? onPick(row.candidate) : onPickMaterial?.(row.candidate);
 
   // Keep the highlighted row in view: the list scrolls now, so a keyboard walk
   // past the window's edge would otherwise move an invisible highlight.
@@ -135,15 +167,15 @@ export function CourseMentionMenu({
       }
       // Everything below is the textarea's keyboard contract, unchanged.
       if (!onTextarea) return;
-      if (candidates.length === 0) return;
+      if (rows.length === 0) return;
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         event.stopPropagation();
         const direction = event.key === 'ArrowDown' ? 1 : -1;
         setHighlightedIndex((current) => {
-          const from = current < candidates.length ? current : 0;
-          return (from + direction + candidates.length) % candidates.length;
+          const from = current < rows.length ? current : 0;
+          return (from + direction + rows.length) % rows.length;
         });
         return;
       }
@@ -151,13 +183,13 @@ export function CourseMentionMenu({
       if (event.key === 'Enter') {
         event.preventDefault();
         event.stopPropagation();
-        onPick(candidates[activeIndex] ?? candidates[0]!);
+        pickRow(rows[activeIndex] ?? rows[0]!);
       }
     };
 
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [activeIndex, candidates, onClose, onPick]);
+  });
 
   return (
     <div
@@ -179,12 +211,21 @@ export function CourseMentionMenu({
         // resting state cannot show half a row.
         className="ws-cmenu-scroll overflow-y-auto overscroll-contain"
       >
-        {candidates.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="px-3 py-3 text-[11px] text-muted-foreground">
-            {t('workspace.courseMention.empty')}
+            {t(
+              offersMaterials
+                ? 'workspace.courseMention.emptyWithMaterials'
+                : 'workspace.courseMention.empty',
+            )}
           </p>
-        ) : (
+        ) : candidates.length === 0 ? null : (
           <>
+            {offersMaterials && materials.length > 0 ? (
+              <p className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground">
+                {t('workspace.courseMention.classrooms')}
+              </p>
+            ) : null}
             <ul data-testid="workbench-course-all">
               {candidates.map((candidate, index) => {
                 const label = t('workspace.courseMention.reference', { name: candidate.title });
@@ -239,6 +280,81 @@ export function CourseMentionMenu({
             ) : null}
           </>
         )}
+        {offersMaterials && materials.length > 0 ? (
+          <>
+            <p
+              data-testid="workbench-material-section"
+              className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground"
+            >
+              {t('workspace.courseMention.knowledgeBase')}
+            </p>
+            <ul data-testid="workbench-material-all">
+              {materials.map((candidate, materialIndex) => {
+                const index = candidates.length + materialIndex;
+                // Every state is named, so a material not yet extracted and one
+                // ready to read look different (RFC #1716 §4).
+                const status = t(
+                  candidate.extractionStatus === 'failed'
+                    ? 'workspace.courseMention.materialFailed'
+                    : candidate.extractionStatus === 'pending' ||
+                        candidate.extractionStatus === 'running'
+                      ? 'workspace.courseMention.materialExtracting'
+                      : candidate.extractionStatus === 'done'
+                        ? 'workspace.courseMention.materialExtracted'
+                        : 'workspace.courseMention.materialNotExtracted',
+                );
+                const where = candidate.folderName ?? t('workspace.courseMention.unfiled');
+                const label = t('workspace.courseMention.attachMaterial', { name: candidate.name });
+                return (
+                  <li key={candidate.materialId}>
+                    <button
+                      ref={(node) => {
+                        optionRefs.current[index] = node;
+                      }}
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      data-highlighted={index === activeIndex ? 'true' : undefined}
+                      data-testid={`workbench-material-option-${candidate.materialId}`}
+                      title={label}
+                      aria-label={label}
+                      onClick={() => onPickMaterial(candidate)}
+                      onMouseEnter={() => setHighlightedIndex(index)}
+                      className={cn(
+                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted',
+                        index === activeIndex && 'bg-muted',
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+                        {candidate.name}
+                      </span>
+                      <span className="shrink-0 truncate text-[10.5px] text-muted-foreground">
+                        {`${where} · ${status}`}
+                      </span>
+                      {/* Already in this conversation, or already on this message. */}
+                      {candidate.attached || candidate.staged ? (
+                        <Check
+                          size={12}
+                          className="shrink-0 text-muted-foreground"
+                          aria-label={t(
+                            candidate.staged
+                              ? 'workspace.courseMention.materialStaged'
+                              : 'workspace.courseMention.materialAttached',
+                          )}
+                        />
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {materials.length >= MATERIAL_MENTION_LIMIT ? (
+              <p className="px-3 pb-2 pt-1 text-[10.5px] text-muted-foreground">
+                {t('workspace.courseMention.materialsCapped', { count: MATERIAL_MENTION_LIMIT })}
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </div>
     </div>
   );

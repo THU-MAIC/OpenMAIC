@@ -188,7 +188,12 @@
       "listFolderCourses": "Ver a biblioteca de salas",
       "createStage": "Criar sala",
       "renameStage": "Renomear sala",
-      "readStageOutline": "Ler a estrutura da sala"
+      "readStageOutline": "Ler a estrutura da sala",
+      "listMaterialFolders": "Verificar pastas da base de conhecimento",
+      "createMaterialFolder": "Criar pasta na base de conhecimento",
+      "renameMaterialFolder": "Renomear pasta da base de conhecimento",
+      "moveMaterials": "Mover materiais",
+      "renameMaterial": "Renomear material"
     },
     "chip": {
       "seconds": "{{count}} s",
@@ -222,7 +227,17 @@
       "allCourses": "Todas as salas",
       "folderCourses": "Salas de uma pasta",
       "reusedCourse": "Reaproveitou uma sala existente",
-      "movedToFolder": "Movido para a pasta"
+      "movedToFolder": "Movido para a pasta",
+      "materialFolders": "{{count}} pastas",
+      "materials": "{{count}} materiais",
+      "extractionStarted": "Iniciado",
+      "extractionInProgress": "Já em andamento",
+      "extractionDone": "Já processado",
+      "extractionComplete": "Concluído",
+      "extractionStillRunning": "Ainda em processamento",
+      "folderExisted": "A pasta já existia",
+      "unchanged": "Sem alteração",
+      "movedToUnfiled": "Movido para Sem pasta"
     },
     "error": {
       "materialExtraction": "O processamento do material falhou",
@@ -263,7 +278,12 @@
       "createStage": "Não foi possível criar a sala",
       "renameStage": "Não foi possível renomear a sala",
       "readStageOutline": "Não foi possível ler a estrutura da sala",
-      "generic": "A chamada do tool falhou"
+      "generic": "A chamada do tool falhou",
+      "listMaterialFolders": "Não foi possível verificar as pastas da base de conhecimento",
+      "createMaterialFolder": "Não foi possível criar a pasta da base de conhecimento",
+      "renameMaterialFolder": "Não foi possível renomear a pasta da base de conhecimento",
+      "moveMaterials": "Não foi possível mover os materiais",
+      "renameMaterial": "Não foi possível renomear o material"
     },
     "progress": {
       "scene": {

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   getSessionMaterial: vi.fn(),
+  getLinkedOwnerMaterial: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -25,8 +26,15 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importOriginal) =
     ...actual,
     resolveOwnedSession: mocks.resolveOwnedSession,
     getSessionMaterial: mocks.getSessionMaterial,
+    getSessionMaterialQueryable: async () => ({}),
   };
 });
+// What the session's links reach (covered over PGlite in
+// material-library-routes.test.ts); nothing here.
+vi.mock('@/lib/persistence/session-material-links', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/persistence/session-material-links')>()),
+  getLinkedOwnerMaterial: mocks.getLinkedOwnerMaterial,
+}));
 
 import { GET } from '@/app/api/materials/[id]/route';
 
@@ -61,6 +69,7 @@ beforeEach(() => {
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.resolveOwnedSession.mockResolvedValue({ id: SESSION_ID, ownerId: 'owner-1' });
   mocks.getSessionMaterial.mockResolvedValue(material());
+  mocks.getLinkedOwnerMaterial.mockResolvedValue(null);
 });
 
 describe('GET /api/materials/[id]', () => {

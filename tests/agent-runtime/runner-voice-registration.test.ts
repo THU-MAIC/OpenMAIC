@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => ({
   createCallLlmStreamFn: vi.fn(),
   buildAgent: vi.fn(),
   resolveWebSearchCapability: vi.fn(),
-  listSessionMaterials: vi.fn(async (): Promise<AgentSessionMaterial[]> => []),
+  listSessionMaterials: vi.fn(async (_sessionId: string): Promise<AgentSessionMaterial[]> => []),
   enabledServerTTSProviderIds: vi.fn(),
   resolveTTSApiKey: vi.fn(),
   getVoiceRegistrationAdapter: vi.fn(),
@@ -56,6 +56,20 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => 
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: mocks.listSessionMaterials };
+});
+// The runner lists what the session reaches through the shared resolver;
+// links need a database these tests do not have.
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
+  return {
+    ...actual,
+    listSessionScopeMaterials: async (sessionId: string) =>
+      (await mocks.listSessionMaterials(sessionId)).map((record) => ({
+        origin: 'session' as const,
+        record,
+      })),
+  };
 });
 
 vi.mock('@/lib/server/agent-runtime/entry-tree-storage', async (importActual) => {
@@ -311,6 +325,11 @@ describe('voice tool runner registration', () => {
       'search_material',
       'extract_material',
       'wait_for_materials',
+      'list_material_folders',
+      'create_material_folder',
+      'rename_material_folder',
+      'move_materials',
+      'rename_material',
       'list_voices',
       'set_roster',
       'clip_audio',
@@ -325,6 +344,7 @@ describe('voice tool runner registration', () => {
         'ask_user',
         'clip_audio',
         'create_folder',
+        'create_material_folder',
         'create_skill',
         'create_stage',
         'duplicate_scene',
@@ -338,9 +358,11 @@ describe('voice tool runner registration', () => {
         'grep_stage',
         'import_pptx',
         'list_folder_stages',
+        'list_material_folders',
         'list_materials',
         'list_scenes',
         'list_voices',
+        'move_materials',
         'move_to_folder',
         'patch_skill',
         'patch_stage',
@@ -351,6 +373,8 @@ describe('voice tool runner registration', () => {
         'read_stage',
         'read_stage_outline',
         'register_voice',
+        'rename_material',
+        'rename_material_folder',
         'rename_stage',
         'search_chats',
         'search_classrooms',
@@ -400,6 +424,11 @@ describe('voice tool runner registration', () => {
       'search_material',
       'extract_material',
       'wait_for_materials',
+      'list_material_folders',
+      'create_material_folder',
+      'rename_material_folder',
+      'move_materials',
+      'rename_material',
       'list_voices',
       'set_roster',
       'clip_audio',
@@ -413,6 +442,7 @@ describe('voice tool runner registration', () => {
         'ask_user',
         'clip_audio',
         'create_folder',
+        'create_material_folder',
         'create_skill',
         'create_stage',
         'duplicate_scene',
@@ -426,9 +456,11 @@ describe('voice tool runner registration', () => {
         'grep_stage',
         'import_pptx',
         'list_folder_stages',
+        'list_material_folders',
         'list_materials',
         'list_scenes',
         'list_voices',
+        'move_materials',
         'move_to_folder',
         'patch_skill',
         'patch_stage',
@@ -438,6 +470,8 @@ describe('voice tool runner registration', () => {
         'read_skill',
         'read_stage',
         'read_stage_outline',
+        'rename_material',
+        'rename_material_folder',
         'rename_stage',
         'search_chats',
         'search_classrooms',

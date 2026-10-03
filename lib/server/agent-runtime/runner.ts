@@ -45,6 +45,12 @@ import {
 } from './fetch-url';
 import { assembleRunnerTools, buildRunnerCoursePrompt } from './runner-contract';
 import { buildMaterialTools, MATERIAL_TOOL_NAMES } from './material-tools';
+import { startExtractionWatcher, type ExtractionWatcher } from './extraction-watcher';
+import {
+  buildMaterialLibraryTools,
+  MATERIAL_LIBRARY_TOOL_NAMES,
+  type MaterialLibraryChange,
+} from './material-library-tools';
 import { buildRosterTools, ROSTER_TOOL_NAMES, ROSTER_TOOLS_PROMPT } from './roster-tools';
 import {
   buildVoiceCloneTools,
@@ -61,7 +67,8 @@ import {
   preloadUserMessage,
   type SkillPreload,
 } from './skill-preload';
-import { listSessionMaterials, sessionMaterialsPromptBlock } from './session-materials';
+import { listSessionScopeMaterials } from './material-resolver';
+import { materialsPromptBlock } from './material-prompt';
 import {
   availableSkillsPromptBlock,
   createNativeSkillReadTool,
@@ -908,6 +915,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let criticalWriteError: unknown;
   let entryWritesHealthy = true;
   let terminalFrameEmitted = false;
+  let extractionWatcher: ExtractionWatcher | undefined;
 
   const markLeaseLost = () => {
     leaseLost = true;
@@ -991,6 +999,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         abort.abort();
       }
       return;
+    }
+    if (type === LIFECYCLE.sessionEnd || type === LIFECYCLE.sessionInterrupted) {
+      extractionWatcher?.stop();
     }
     runEventEmitted = true;
     if (type === LIFECYCLE.sessionEnd) terminalFrameEmitted = true;
@@ -1396,8 +1407,32 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // semantics: the material tools are always registered alongside the
     // capability-gated web_search). The listing only feeds the prompt block;
     // the tools read through the same session-scoped store on each call.
-    const materials = await listSessionMaterials(id);
-    const materialTools = buildMaterialTools({ sessionId: id });
+    const materials = await listSessionScopeMaterials(id);
+    // Material-library changes reach the client as the durable
+    // `library_changed` with `library: 'materials'`; its material lists
+    // refetch, and the course tree does not.
+    const onMaterialLibraryChanged = (change: MaterialLibraryChange) =>
+      emit(LIFECYCLE.libraryChanged, change);
+    // Sources whose extraction this run cares about are watched while it
+    // lasts, so a settlement reaches the client without another wait.
+    extractionWatcher = startExtractionWatcher({
+      onSettled: (materialIds) =>
+        onMaterialLibraryChanged({
+          library: 'materials',
+          change: 'extraction_settled',
+          materialIds,
+        }),
+    });
+    const materialTools = buildMaterialTools({
+      sessionId: id,
+      onLibraryChanged: onMaterialLibraryChanged,
+      extractionWatcher,
+    });
+    // Organizing the knowledge base: the run's owner, never a parameter.
+    const materialLibraryTools = buildMaterialLibraryTools({
+      ownerId: meta.ownerId,
+      onLibraryChanged: onMaterialLibraryChanged,
+    });
     // Session-scoped registered voices: register_voice appends here, and
     // list_voices / set_roster (roster-tools) read the same array, so a cloned
     // voice stays bindable within the session that registered it (in-session
@@ -1459,6 +1494,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       curriculumTools,
       scenePreviewTools,
       materialTools,
+      materialLibraryTools,
       rosterTools,
       voiceCloneTools,
       personalHistoryTools,
@@ -1473,7 +1509,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ...(search ? { search: searchPromptBlock() } : {}),
         fetch: fetchPromptBlock(),
         untrustedContent: untrustedContentPolicyPromptBlock(),
-        ...(materials.length ? { materials: sessionMaterialsPromptBlock(materials) } : {}),
+        // Always: a conversation with nothing attached can still use the
+        // knowledge base.
+        materials: materialsPromptBlock(materials),
         roster: ROSTER_TOOLS_PROMPT,
         voice: voiceCloneToolsPrompt(voiceRegistrationEnabled),
       }),
@@ -1486,6 +1524,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ...SKILL_EDIT_TOOL_NAMES,
         ...(skillReadTool ? ['read'] : []),
         ...MATERIAL_TOOL_NAMES,
+        ...MATERIAL_LIBRARY_TOOL_NAMES,
         ...dslTools.map((tool) => tool.name),
         ...scenePreviewTools.map((tool) => tool.name),
         ...CURRICULUM_ALLOWLIST,
@@ -1857,6 +1896,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   } finally {
     clearInterval(heartbeatTimer);
     clearInterval(cancelPoll);
+    extractionWatcher?.stop();
     unsubscribeWakeup();
     drainOnWake = null;
     await flushAll(false);

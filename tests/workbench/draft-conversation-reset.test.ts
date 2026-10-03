@@ -106,6 +106,7 @@ const RUN: readonly WorkbenchEvent[] = [
   }),
   ev('stage_link', { stageId: 'stage-b' }),
   ev('library_changed', { change: 'stage_created', stageId: 'stage-c' }),
+  ev('library_changed', { library: 'materials', change: 'folder_created', folderId: 'mf-1' }),
   ev('user_question', { question: '先做哪一版大纲？', options: [{ id: 'a', label: '按章节' }] }),
   // Queued: the session was idle, so this one opens the LLM gap indicator.
   ev('user_message', { text: '按章节', delivery: 'queued' }),

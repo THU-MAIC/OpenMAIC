@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "服务暂时不可用，请稍后重试。",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "课堂",
+      "knowledgeBase": "知识库",
+      "emptyWithMaterials": "没有匹配的课堂或材料",
+      "attachMaterial": "把 {{name}} 附加到这条消息",
+      "materialAttached": "本会话已有",
+      "materialStaged": "已在这条消息里",
+      "materialExtracting": "解析中",
+      "materialFailed": "解析失败",
+      "unfiled": "未归档",
+      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
+      "materialNotExtracted": "未解析",
+      "materialExtracted": "已解析"
     },
     "heroTitle": "今天想创造点什么？",
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "专业模式",
     "badgeExit": "返回普通模式",
     "launchPlaceholder": "描述你想创造的学习体验",
-    "launchSend": "开始构建"
+    "launchSend": "开始构建",
+    "mentionCourseOrMaterial": "引用课堂或知识库材料"
   },
   "workbench": {
     "tool": {

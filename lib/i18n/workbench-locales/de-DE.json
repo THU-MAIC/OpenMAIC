@@ -188,7 +188,12 @@
       "listFolderCourses": "Klassenbibliothek ansehen",
       "createStage": "Klasse erstellen",
       "renameStage": "Klasse umbenennen",
-      "readStageOutline": "Klassengliederung lesen"
+      "readStageOutline": "Klassengliederung lesen",
+      "listMaterialFolders": "Ordner der Wissensbasis prüfen",
+      "createMaterialFolder": "Ordner in der Wissensbasis erstellen",
+      "renameMaterialFolder": "Ordner der Wissensbasis umbenennen",
+      "moveMaterials": "Materialien verschieben",
+      "renameMaterial": "Material umbenennen"
     },
     "chip": {
       "seconds": "{{count}} Sek.",
@@ -222,7 +227,17 @@
       "allCourses": "Alle Klassen",
       "folderCourses": "Klassen in einem Ordner",
       "reusedCourse": "Bestehende Klasse weiterverwendet",
-      "movedToFolder": "In Ordner verschoben"
+      "movedToFolder": "In Ordner verschoben",
+      "materialFolders": "{{count}} Ordner",
+      "materials": "{{count}} Materialien",
+      "extractionStarted": "Gestartet",
+      "extractionInProgress": "Läuft bereits",
+      "extractionDone": "Bereits aufbereitet",
+      "extractionComplete": "Abgeschlossen",
+      "extractionStillRunning": "Wird noch aufbereitet",
+      "folderExisted": "Ordner gab es bereits",
+      "unchanged": "Keine Änderung",
+      "movedToUnfiled": "Nach „Ohne Ordner“ verschoben"
     },
     "error": {
       "materialExtraction": "Materialaufbereitung fehlgeschlagen",
@@ -263,7 +278,12 @@
       "createStage": "Die Klasse konnte nicht erstellt werden",
       "renameStage": "Die Klasse konnte nicht umbenannt werden",
       "readStageOutline": "Die Klassengliederung konnte nicht gelesen werden",
-      "generic": "Tool-Aufruf fehlgeschlagen"
+      "generic": "Tool-Aufruf fehlgeschlagen",
+      "listMaterialFolders": "Die Ordner der Wissensbasis konnten nicht geprüft werden",
+      "createMaterialFolder": "Der Ordner der Wissensbasis konnte nicht erstellt werden",
+      "renameMaterialFolder": "Der Ordner der Wissensbasis konnte nicht umbenannt werden",
+      "moveMaterials": "Die Materialien konnten nicht verschoben werden",
+      "renameMaterial": "Das Material konnte nicht umbenannt werden"
     },
     "progress": {
       "scene": {

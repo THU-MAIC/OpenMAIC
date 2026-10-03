@@ -20,18 +20,17 @@ import {
   type ListAgentSessionMaterialsOptions,
 } from '@openmaic/storage';
 import {
-  getReadyOwnerMaterials,
-  type OwnerMaterialRecord,
-} from '@/lib/persistence/owner-materials';
+  attachOwnerMaterialsToSession,
+  ensureSessionMaterialLinkSchema,
+} from '@/lib/persistence/session-material-links';
 
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
-import { readOwnerMaterialBytes } from '@/lib/server/materials/owner-material-bytes';
 
 import { getAgentSessionStore } from './store';
-import { isPptxMaterial } from './pptx-mime';
 import type { ExtractedWebPage } from './fetch-url';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 
 interface AgentSessionMaterialStoreState {
@@ -54,10 +53,11 @@ async function createMaterialStore(connectionString: string): Promise<PgAgentSes
   // The material table references agent_sessions(id), so the agent-session
   // schema (provisioned by getAgentSessionStore) must exist first — the same
   // dependency the URL trust-gate table has inside that schema.
-  await withSchemaBootstrapLock(
-    pool as unknown as ConnectableQueryable,
-    ensureAgentSessionMaterialSchema,
-  );
+  await withSchemaBootstrapLock(pool as unknown as ConnectableQueryable, async (locked) => {
+    await ensureAgentSessionMaterialSchema(locked);
+    // Links reference agent_sessions too, and are read beside the copies.
+    await ensureSessionMaterialLinkSchema(locked);
+  });
   return new PgAgentSessionMaterialStore(pool);
 }
 
@@ -85,6 +85,20 @@ export function getAgentSessionMaterialStore(): Promise<PgAgentSessionMaterialSt
   });
   storeState.storePromise = initialization;
   return initialization;
+}
+
+/**
+ * The pool, once the session-material schema -- the links table included -- is
+ * provisioned. Every read or write of `agent_session_material_links` goes
+ * through here: on a database upgraded from before links, the table is
+ * created by this lazy bootstrap, and a query that did not wait for it would
+ * find no table.
+ */
+export async function getSessionMaterialQueryable(): Promise<Queryable> {
+  await getAgentSessionMaterialStore();
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
+  return (await getServerPersistenceProvider(connectionString)).pool;
 }
 
 function sessionMaterialPrefix(sessionId: string): string {
@@ -215,14 +229,19 @@ export async function createSourceMaterial(
 }
 
 /**
- * Bind owner-library uploads to a session by copying their private bytes into
- * the session byte prefix and creating the material rows the agent reads.
+ * Attach owner-library sources to a session when a message is sent (RFC #1716
+ * §4): by id, through `agent_session_material_links`. Nothing is copied and no
+ * session row is minted; every consumer reads the source as it is now
+ * (`./material-resolver.ts`). A source the session already holds a copy of --
+ * from before links -- keeps that copy, so the conversation never lists one
+ * file twice. Repeating an attachment changes nothing.
  *
- * Row ids are globally unique (the extraction pipeline keys on them), so the
- * session row is minted with its own fresh `mat_` id and the owner upload id is
- * recorded in `ownerMaterialId`. That lets one owner material back several
- * sessions, and a unique `(session_id, owner_material_id)` index makes
- * rebinding the same upload into the same session idempotent.
+ * Refused as a whole, attaching nothing, unless every id is the owner's ready,
+ * undeleted source: another owner's, a derivative, an upload still in
+ * progress or a deleted one is `SessionMaterialBindingError`.
+ *
+ * Returns the id the conversation knows each material by (the source's own id
+ * for a link, the copy's id for a copy) with the metadata the message records.
  */
 export async function bindOwnerMaterialsToSession(
   sessionId: string,
@@ -231,155 +250,23 @@ export async function bindOwnerMaterialsToSession(
 ): Promise<Array<{ materialId: string; originalName?: string; mime?: string; bytes: number }>> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('Agent runtime requires DATABASE_URL');
+  // The links table is provisioned with the session-material schema.
+  await getAgentSessionMaterialStore();
   const provider = await getServerPersistenceProvider(connectionString);
-  const records = await getReadyOwnerMaterials(provider.pool, ownerId, materialIds);
-  const byteStore = getMaterialByteStore();
-  const byId = new Map(records.map((record) => [record.id, record]));
-  if (materialIds.some((id) => !byId.has(id))) {
+  const outcome = await attachOwnerMaterialsToSession(provider, {
+    sessionId,
+    ownerId,
+    materialIds,
+  });
+  if (outcome.status !== 'attached') {
     throw new SessionMaterialBindingError('one or more materials are unavailable');
   }
-  const store = await getAgentSessionMaterialStore();
-  const bound = [];
-  for (const id of materialIds) {
-    const record = byId.get(id)!;
-    const material = await bindOwnerMaterial(store, byteStore, sessionId, id, record);
-    bound.push({
-      materialId: material.id,
-      ...(record.originalName ? { originalName: record.originalName } : {}),
-      ...(record.mime ? { mime: record.mime } : {}),
-      bytes: record.bytes,
-    });
-  }
-  return bound;
-}
-
-/**
- * The deterministic object key the pre-upgrade binder copied an owner upload
- * to: the owner id was used as the session row id, so the key follows from the
- * session, the owner id, and the MIME type.
- */
-function legacyOwnerMaterialKey(
-  sessionId: string,
-  ownerMaterialId: string,
-  mime: string | null,
-): string {
-  return sessionMaterialKey(
-    sessionId,
-    ownerMaterialId,
-    rawObjectName(mime ?? 'application/octet-stream'),
-  );
-}
-
-/**
- * Whether a row written before `owner_material_id` existed is the legacy
- * binding of exactly this owner upload.
- *
- * The old binder keyed the row on the owner id, left `owner_material_id` NULL,
- * and copied the bytes to the deterministic key above, so a match on the row
- * id, kind, title, provenance, and that key plus the stored byte length is
- * unambiguous. A row that fails any check stays a distinct row and is never
- * silently adopted or overwritten.
- */
-async function isLegacyOwnerMaterialBinding(
-  byteStore: ReturnType<typeof getMaterialByteStore>,
-  legacy: AgentSessionMaterial,
-  sessionId: string,
-  ownerMaterialId: string,
-  record: Pick<OwnerMaterialRecord, 'mime' | 'originalName' | 'bytes'>,
-): Promise<boolean> {
-  if (legacy.id !== ownerMaterialId) return false;
-  if (legacy.ownerMaterialId !== null) return false;
-  if (legacy.kind !== 'source') return false;
-  if (legacy.title !== (record.originalName ?? ownerMaterialId)) return false;
-  // A legacy source binding carries copied raw bytes only: no fetch URL, no
-  // derivative, and no extracted text.
-  if (legacy.sourceUrl !== null || legacy.derivedFrom !== null) return false;
-  if (legacy.textAssetId !== null || legacy.textChars !== 0) return false;
-  const expectedKey = legacyOwnerMaterialKey(sessionId, ownerMaterialId, record.mime);
-  if (!isSessionMaterialKey(sessionId, expectedKey)) return false;
-  if (legacy.rawAssetId !== expectedKey) return false;
-  try {
-    return (await byteStore.get(expectedKey)).length === record.bytes;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Bind one owner upload to a session. The `(session_id, owner_material_id)`
- * unique index adjudicates concurrent binds of the same upload into the same
- * session, so the loser adopts the winner's row instead of failing.
- */
-async function bindOwnerMaterial(
-  store: PgAgentSessionMaterialStore,
-  byteStore: ReturnType<typeof getMaterialByteStore>,
-  sessionId: string,
-  ownerMaterialId: string,
-  record: Pick<
-    OwnerMaterialRecord,
-    'id' | 'ownerId' | 'assetId' | 'ossKey' | 'sha256' | 'mime' | 'originalName' | 'bytes'
-  >,
-): Promise<AgentSessionMaterial> {
-  const existing = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
-  if (existing) return existing;
-
-  // Upgrade path: rows written before `owner_material_id` existed use the
-  // owner upload id as the session row id. Reuse and backfill one instead of
-  // minting a duplicate row and copying the bytes a second time.
-  const legacy = await store.getMaterial(sessionId, ownerMaterialId);
-  if (
-    legacy &&
-    (await isLegacyOwnerMaterialBinding(byteStore, legacy, sessionId, ownerMaterialId, record))
-  ) {
-    const adopted = await store.backfillOwnerMaterialId(sessionId, legacy.id, ownerMaterialId);
-    if (adopted) return adopted;
-    // A concurrent bind upgraded or claimed the owner id first; take its row.
-    const winner = await store.getMaterialByOwnerMaterialId(sessionId, ownerMaterialId);
-    if (winner) return winner;
-  }
-
-  let source: Buffer;
-  try {
-    // Pool first, the pre-pool object otherwise; see readOwnerMaterialBytes.
-    source = await readOwnerMaterialBytes(record);
-  } catch {
-    throw new SessionMaterialBindingError(`material ${ownerMaterialId} bytes are unavailable`);
-  }
-  const mime = record.mime ?? 'application/octet-stream';
-  const sessionMaterialId = createMaterialId();
-  const rawObjectKey = sessionMaterialKey(sessionId, sessionMaterialId, rawObjectName(mime));
-  await byteStore.put(rawObjectKey, source, mime);
-  try {
-    return await store.createMaterial(sessionId, {
-      id: sessionMaterialId,
-      ownerMaterialId,
-      kind: 'source',
-      title: record.originalName ?? ownerMaterialId,
-      rawAssetId: rawObjectKey,
-      textChars: 0,
-    });
-  } catch (error) {
-    // A concurrent bind may have committed the row first (the unique index
-    // rejected ours); adopt it, and drop the object we just stored when the
-    // winner does not reference it. Cleanup is best-effort: a failed delete
-    // must not fail a bind that already succeeded.
-    const winner = await store
-      .getMaterialByOwnerMaterialId(sessionId, ownerMaterialId)
-      .catch(() => null);
-    if (winner) {
-      if (winner.rawAssetId !== rawObjectKey) {
-        await byteStore.delete(rawObjectKey).catch((cleanupError) => {
-          console.warn(
-            `[session-materials] failed to delete losing bind object ${rawObjectKey}:`,
-            cleanupError,
-          );
-        });
-      }
-      return winner;
-    }
-    await byteStore.delete(rawObjectKey).catch(() => undefined);
-    throw error;
-  }
+  return outcome.materials.map(({ materialId, record }) => ({
+    materialId,
+    ...(record.originalName ? { originalName: record.originalName } : {}),
+    ...(record.mime ? { mime: record.mime } : {}),
+    bytes: record.bytes,
+  }));
 }
 
 /**
@@ -491,32 +378,4 @@ export async function removeSessionMaterialRawAsset(
 ): Promise<void> {
   if (!isSessionMaterialKey(sessionId, rawAssetId)) return;
   await getMaterialByteStore().delete(rawAssetId);
-}
-
-/**
- * Safe metadata and typed-tool guidance for materials bound to one session.
- * Material contents stay in the byte store and are available only through
- * the session-scoped material tools, never through this block.
- */
-export function sessionMaterialsPromptBlock(materials: AgentSessionMaterial[]): string {
-  if (materials.length === 0) return '';
-
-  return [
-    '## Registered session materials',
-    '',
-    'These materials are associated with this session:',
-    ...materials.map(
-      (material) =>
-        `- "${material.title ?? material.id}" (${material.kind}, ${material.textChars} characters)`,
-    ),
-    '',
-    'Material workflow: call `list_materials` to inspect the session materials and discover `mat_` ids; call `extract_material` on an uploaded source, then `wait_for_materials`; call `read_material` on the resulting extraction `mat_` id to read its text in pages (continue with the returned `nextOffset`); call `search_material` to locate case-insensitive literal text across the readable materials.',
-    'To reuse session image, video, or audio bytes in a page, call `use_material_media` and use the returned stable `src`.',
-    'A `web` material was already fetched and extracted; read it directly with `read_material` and page through offsets.',
-    ...(materials.some((material) => isPptxMaterial({ originalName: material.title }))
-      ? [
-          'A registered .pptx can be imported INTO a stage as appended pages with `import_pptx` (layout-preserving: original slides become pages; the stage keeps its own title). Use that instead of an AI rewrite when the user wants the PowerPoint\u2019s own pages.',
-        ]
-      : []),
-  ].join('\n');
 }

@@ -2008,7 +2008,19 @@
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Máy chủ tạm thời không khả dụng. Vui lòng thử lại sau giây lát.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Lớp học",
+      "knowledgeBase": "Kho kiến thức",
+      "emptyWithMaterials": "Không có lớp học hay tài liệu phù hợp",
+      "attachMaterial": "Đính kèm {{name}} vào tin nhắn này",
+      "materialAttached": "Đã có trong cuộc trò chuyện này",
+      "materialStaged": "Đã có trong tin nhắn này",
+      "materialExtracting": "Đang bóc tách",
+      "materialFailed": "Bóc tách thất bại",
+      "unfiled": "Chưa phân loại",
+      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
+      "materialNotExtracted": "Chưa bóc tách",
+      "materialExtracted": "Đã bóc tách"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2136,7 +2148,8 @@
     "badgeEnter": "Chế độ Pro",
     "badgeExit": "Quay lại chế độ cổ điển",
     "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
-    "launchSend": "Bắt đầu tạo"
+    "launchSend": "Bắt đầu tạo",
+    "mentionCourseOrMaterial": "Nhắc đến một lớp học hoặc tài liệu trong kho kiến thức"
   },
   "workbench": {
     "tool": {

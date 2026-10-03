@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   listSessionMaterials: vi.fn(),
+  getSessionMaterial: vi.fn(),
+  listLinkedOwnerMaterials: vi.fn(),
   createSourceMaterial: vi.fn(),
   registerOwnerMaterial: vi.fn(),
   reclaimStaleOwnerMaterialUploads: vi.fn(),
@@ -43,9 +45,17 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importOriginal) =
     ...actual,
     resolveOwnedSession: mocks.resolveOwnedSession,
     listSessionMaterials: mocks.listSessionMaterials,
+    getSessionMaterial: mocks.getSessionMaterial,
+    getSessionMaterialQueryable: async () => mocks.queryPool,
     createSourceMaterial: mocks.createSourceMaterial,
   };
 });
+// The materials the session's links reach (covered over PGlite in
+// material-library-routes.test.ts); none here.
+vi.mock('@/lib/persistence/session-material-links', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/persistence/session-material-links')>()),
+  listLinkedOwnerMaterials: mocks.listLinkedOwnerMaterials,
+}));
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: mocks.queryPool,
@@ -116,6 +126,8 @@ beforeEach(() => {
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.resolveOwnedSession.mockResolvedValue({ id: SESSION_ID, ownerId: 'owner-1' });
   mocks.listSessionMaterials.mockResolvedValue([material()]);
+  mocks.getSessionMaterial.mockResolvedValue(material());
+  mocks.listLinkedOwnerMaterials.mockResolvedValue([]);
   mocks.registerOwnerMaterial.mockResolvedValue(ownerMaterial());
   mocks.reclaimStaleOwnerMaterialUploads.mockResolvedValue(undefined);
   mocks.allocateOwnerMaterialBytes.mockResolvedValue('ast_00000000000000000000000000');
@@ -148,10 +160,10 @@ describe('GET /api/materials', () => {
       ],
     });
     expect(mocks.resolveOwnedSession).toHaveBeenCalledWith(SESSION_ID, 'owner-1');
-    expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID, {});
+    expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID, { limit: 50 });
   });
 
-  it('passes limit and before through as keyset paging', async () => {
+  it('passes limit and a session row before through as keyset paging', async () => {
     const response = await GET(
       new NextRequest(
         `http://localhost/api/materials?sessionId=${SESSION_ID}&limit=10&before=mat_prev`,

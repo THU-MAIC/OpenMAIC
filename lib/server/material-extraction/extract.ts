@@ -137,6 +137,8 @@ export interface ExtractedSourceImage {
   title: string;
   pageNumber?: number;
   timeMs?: number;
+  /** What the extracted text calls this image (`openmaic-derivative:<key>`), if it names it. */
+  key?: string;
 }
 
 /** What one extraction produced, before any of it is stored. */

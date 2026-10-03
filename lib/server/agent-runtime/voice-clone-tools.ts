@@ -59,6 +59,11 @@ import {
   resolveSessionMaterialRawAsset,
   storeSessionMaterialRawAsset,
 } from './session-materials';
+import {
+  resolveRawMaterial,
+  sessionRowRawLookup,
+  type RawMaterialHandle,
+} from './material-resolver';
 
 const execFileAsync = promisify(execFile);
 const MIN_CLIP_SECONDS = 1;
@@ -99,6 +104,8 @@ const REGISTER_VOICE_SCHEMA = Type.Object({
 
 export interface VoiceCloneToolDependencies {
   sessionId: string;
+  /** Resolve a clip_audio source; defaults to the shared resolver (links and session rows). */
+  resolveSource?: (sessionId: string, materialId: string) => Promise<RawMaterialHandle | null>;
   /** Test seam; defaults to the session-scoped material read (foreign ids read as absent). */
   getMaterial?: (sessionId: string, materialId: string) => Promise<AgentSessionMaterial | null>;
   /** Test seam; defaults to the asset-registry raw-byte read scoped to the session. */
@@ -157,7 +164,7 @@ function resolveRegistrationProviderId(): string | undefined {
   return registrationCapableProviderIds()[0];
 }
 
-function sourceExtension(record: AgentSessionMaterial): string {
+function sourceExtension(record: { title: string | null }): string {
   const fromName = extname(record.title ?? '');
   if (fromName && fromName.length <= 10) return fromName;
   return '';
@@ -242,6 +249,16 @@ function throwIfAborted(signal?: AbortSignal): void {
 export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentTool<never, never>[] {
   const getMaterial = deps.getMaterial ?? getSessionMaterial;
   const readRawAsset = deps.readRawAsset ?? resolveSessionMaterialRawAsset;
+  // A clip source is any audio or video the session reaches: a linked library
+  // source or a session row (RFC #1716 §4). The clip itself stays a session
+  // audio-track, and register_voice reads only those.
+  const resolveSource =
+    deps.resolveSource ??
+    (deps.getMaterial || deps.readRawAsset
+      ? sessionRowRawLookup(getMaterial, async (record) =>
+          record.rawAssetId ? readRawAsset(deps.sessionId, record.rawAssetId) : null,
+        )
+      : resolveRawMaterial);
   const storeRawAsset = deps.storeRawAsset ?? storeSessionMaterialRawAsset;
   const removeRawAsset = deps.removeRawAsset ?? removeSessionMaterialRawAsset;
   const createMaterial =
@@ -280,15 +297,15 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
     execute: async (_callId, params, signal) => {
       validateClipRange(params.startSec, params.endSec);
       throwIfAborted(signal);
-      const source = await getMaterial(deps.sessionId, params.materialId);
+      const source = await resolveSource(deps.sessionId, params.materialId);
       throwIfAborted(signal);
       if (!source) {
         throw new Error('material does not exist or does not belong to this session owner');
       }
-      if (!source.rawAssetId) {
+      if (!source.hasBytes) {
         throw new Error('clip_audio requires an audio or video material');
       }
-      const raw = await readRawAsset(deps.sessionId, source.rawAssetId);
+      const raw = await source.read();
       throwIfAborted(signal);
       if (!raw) throw new Error('material bytes are unavailable');
       if (!isAudioOrVideo(raw.mime)) {

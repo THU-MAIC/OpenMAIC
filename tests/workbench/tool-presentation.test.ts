@@ -11,6 +11,7 @@ import { COURSE_AUDIO_DECK_TOOL_NAMES } from '@/lib/server/agent-runtime/course-
 import { MATERIAL_MEDIA_TOOL_NAME } from '@/lib/server/agent-runtime/material-media';
 import { CURRICULUM_ALLOWLIST } from '@/lib/server/agent-runtime/curriculum-tools';
 import { MATERIAL_TOOL_NAMES } from '@/lib/server/agent-runtime/material-tools';
+import { MATERIAL_LIBRARY_TOOL_NAMES } from '@/lib/server/agent-runtime/material-library-tools';
 import { ROSTER_TOOL_NAMES } from '@/lib/server/agent-runtime/roster-tools';
 import { VOICE_CLONE_TOOL_NAMES } from '@/lib/server/agent-runtime/voice-clone-tools';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from '@/lib/server/agent-runtime/scene-preview';
@@ -431,6 +432,91 @@ describe('untrusted content stays labelled data', () => {
  * builds its capability gate from, so a tool cannot enter the product without
  * passing through here.
  */
+describe('material library rows', () => {
+  const en = createWorkbenchTranslator('en-US');
+  const chipsOf = (toolName: string, toolDetails: unknown, toolArgs = {}) =>
+    presentTool(toolNode({ toolName, toolDetails, toolArgs }), [], en).chips.map(
+      (chip) => chip.label,
+    );
+
+  it('says whether extract_material started the extraction, or found it going or done', () => {
+    expect(chipsOf('extract_material', { status: 'pending', started: true })).toEqual(['Started']);
+    expect(chipsOf('extract_material', { status: 'running', started: false })).toEqual([
+      'Already in progress',
+    ]);
+    expect(chipsOf('extract_material', { status: 'done', started: false })).toEqual([
+      'Already extracted',
+    ]);
+  });
+
+  it('says whether a wait finished or ran out of time', () => {
+    expect(chipsOf('wait_for_materials', { complete: true, timedOut: false })).toEqual([
+      'Finished',
+    ]);
+    expect(chipsOf('wait_for_materials', { complete: false, timedOut: true })).toEqual([
+      'Still extracting',
+    ]);
+  });
+
+  it('shows what an organizing call changed, and when it changed nothing', () => {
+    expect(chipsOf('list_material_folders', { folders: [{}, {}] })).toEqual(['2 folders']);
+    expect(
+      chipsOf('create_material_folder', { status: 'exists', created: false, name: 'Unit' }),
+    ).toEqual(['Folder already existed']);
+    expect(
+      presentTool(
+        toolNode({
+          toolName: 'create_material_folder',
+          toolDetails: { created: true, name: 'Unit 1' },
+        }),
+        [],
+        en,
+      ).subject,
+    ).toBe('Unit 1');
+    expect(chipsOf('rename_material_folder', { status: 'unchanged', name: 'Unit' })).toEqual([
+      'No change',
+    ]);
+    expect(
+      chipsOf('move_materials', { status: 'moved', materialIds: ['a', 'b'], folderId: 'f' }),
+    ).toEqual(['2 materials']);
+    // Named two, moved one: the row counts what moved.
+    expect(
+      chipsOf('move_materials', {
+        status: 'moved',
+        materialIds: ['a', 'b'],
+        folderId: 'f',
+        movedCount: 1,
+      }),
+    ).toEqual(['1 materials']);
+    expect(
+      chipsOf('move_materials', { status: 'moved', materialIds: ['a'], folderId: null }),
+    ).toEqual(['1 materials', 'Moved to Unfiled']);
+    expect(
+      chipsOf('move_materials', { status: 'unchanged', materialIds: ['a'], folderId: null }),
+    ).toEqual(['No change']);
+    expect(chipsOf('rename_material', { status: 'unchanged', name: 'Lesson' })).toEqual([
+      'No change',
+    ]);
+  });
+
+  it('names the knowledge base in Chinese and hides the payload', () => {
+    const zh = presentTool(toolNode({ toolName: 'create_material_folder', toolDetails: {} }));
+    expect(zh.label).toBe('新建知识库文件夹');
+    expect(zh.hidePayload).toBe(true);
+    const refused = presentTool(
+      toolNode({
+        toolName: 'move_materials',
+        toolState: 'failed',
+        toolDetails: { status: 'not_movable' },
+      }),
+      [],
+      en,
+    );
+    expect(refused.errorText).toBe('Could not move the materials');
+    expect(refused.chips).toEqual([]);
+  });
+});
+
 describe('allowlist ↔ presentation reconciliation', () => {
   const runnerTools = [
     ...DSL_COURSE_TOOL_NAMES,
@@ -440,6 +526,7 @@ describe('allowlist ↔ presentation reconciliation', () => {
     RENDER_SCENE_PREVIEW_TOOL_NAME,
     ...CURRICULUM_ALLOWLIST,
     ...MATERIAL_TOOL_NAMES,
+    ...MATERIAL_LIBRARY_TOOL_NAMES,
     ...ROSTER_TOOL_NAMES,
     ...VOICE_CLONE_TOOL_NAMES,
     ...SKILL_EDIT_TOOL_NAMES,

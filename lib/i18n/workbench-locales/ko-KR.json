@@ -188,7 +188,12 @@
       "listFolderCourses": "수업 목록 보기",
       "createStage": "수업 만들기",
       "renameStage": "수업 이름 변경",
-      "readStageOutline": "수업 개요 읽기"
+      "readStageOutline": "수업 개요 읽기",
+      "listMaterialFolders": "지식 베이스 폴더 확인",
+      "createMaterialFolder": "지식 베이스 폴더 만들기",
+      "renameMaterialFolder": "지식 베이스 폴더 이름 변경",
+      "moveMaterials": "자료 이동",
+      "renameMaterial": "자료 이름 변경"
     },
     "chip": {
       "seconds": "{{count}}초",
@@ -222,7 +227,17 @@
       "allCourses": "모든 수업",
       "folderCourses": "어떤 폴더 안",
       "reusedCourse": "기존 수업 재사용",
-      "movedToFolder": "폴더로 옮겼습니다"
+      "movedToFolder": "폴더로 옮겼습니다",
+      "materialFolders": "폴더 {{count}}개",
+      "materials": "자료 {{count}}개",
+      "extractionStarted": "분석을 시작했습니다",
+      "extractionInProgress": "이미 분석 중입니다",
+      "extractionDone": "이미 분석했습니다",
+      "extractionComplete": "분석을 마쳤습니다",
+      "extractionStillRunning": "아직 분석 중입니다",
+      "folderExisted": "폴더가 이미 있습니다",
+      "unchanged": "변경 없음",
+      "movedToUnfiled": "미분류로 옮겼습니다"
     },
     "error": {
       "materialExtraction": "자료 분석에 실패했습니다",
@@ -263,7 +278,12 @@
       "createStage": "수업을 만들지 못했습니다",
       "renameStage": "수업 이름을 바꾸지 못했습니다",
       "readStageOutline": "수업 개요를 읽지 못했습니다",
-      "generic": "도구 호출에 실패했습니다"
+      "generic": "도구 호출에 실패했습니다",
+      "listMaterialFolders": "지식 베이스 폴더를 확인하지 못했습니다",
+      "createMaterialFolder": "지식 베이스 폴더를 만들지 못했습니다",
+      "renameMaterialFolder": "지식 베이스 폴더 이름을 바꾸지 못했습니다",
+      "moveMaterials": "자료를 옮기지 못했습니다",
+      "renameMaterial": "자료 이름을 바꾸지 못했습니다"
     },
     "progress": {
       "scene": {

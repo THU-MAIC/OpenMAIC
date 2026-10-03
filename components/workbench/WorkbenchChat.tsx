@@ -56,6 +56,7 @@ import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
 import { CourseRefPills } from './course-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
+import { stagedMaterialOf, type MaterialMentionCandidate } from '@/lib/workbench/material-mention';
 import {
   composerImagesFromClipboard,
   composerImagesFromDrop,
@@ -78,6 +79,7 @@ import {
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
+  useMaterialMentions,
   type AgentSkillInfo,
 } from './compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
@@ -333,7 +335,8 @@ export function WorkbenchChat({
     courseMenuRequested: mentionOpen,
     // The `@` keystroke and the `@` button hold the same bar: no courses to
     // name means no menu at all, not an empty one.
-    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0,
+    // Classrooms, or the knowledge base when materials are enabled.
+    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled,
   });
   const mentionQuery = mention?.query ?? null;
   const mentionMenuOpen = openMenu === 'course';
@@ -381,26 +384,48 @@ export function WorkbenchChat({
    * text is not part of the sentence, so it goes; a menu opened from the button
    * has no trigger to remove and leaves the draft alone.
    */
+  /** What every pick leaves behind: the token out of the draft, the menu shut. */
+  const finishMentionPick = useCallback(() => {
+    // The splice can land mid-sentence now, so the caret goes back where the
+    // token was rather than wherever a shrinking controlled value leaves it.
+    const removal = mention ? replaceCourseMention(draft, mention) : null;
+    const next = removal?.draft ?? draft;
+    if (removal) {
+      pendingCaret.current = removal.caret;
+      setCaret(removal.caret);
+      setDraft(removal.draft);
+    }
+    setMentionDismissed(null);
+    setMentionOpen(false);
+    // The other direction of the same rule: what the splice leaves behind may
+    // be a live `/handle`, and finishing with one menu must not open another.
+    setSlashDismissed(next);
+  }, [draft, mention]);
   const pickMention = useCallback(
     (candidate: CourseMentionCandidate) => {
       const ref = makeCourseRef(candidate.stageId, candidate.title);
       if (ref) useCourseRefsStore.getState().add(ref);
-      // The splice can land mid-sentence now, so the caret goes back where the
-      // token was rather than wherever a shrinking controlled value leaves it.
-      const removal = mention ? replaceCourseMention(draft, mention) : null;
-      const next = removal?.draft ?? draft;
-      if (removal) {
-        pendingCaret.current = removal.caret;
-        setCaret(removal.caret);
-        setDraft(removal.draft);
-      }
-      setMentionDismissed(null);
-      setMentionOpen(false);
-      // The other direction of the same rule: what the splice leaves behind may
-      // be a live `/handle`, and finishing with one menu must not open another.
-      setSlashDismissed(next);
+      finishMentionPick();
     },
-    [draft, mention],
+    [finishMentionPick],
+  );
+  /**
+   * A knowledge-base pick stages the material as one more pill, exactly like a
+   * finished upload: nothing is attached until the message is sent.
+   */
+  const materialMentions = useMaterialMentions({
+    open: mentionMenuOpen,
+    enabled: materials.enabled,
+    query: mentionQuery ?? '',
+    sessionId: draftConversation ? null : sessionId,
+    staged: materials.materials,
+  });
+  const pickMaterialMention = useCallback(
+    (candidate: MaterialMentionCandidate) => {
+      materials.addExisting(stagedMaterialOf(candidate));
+      finishMentionPick();
+    },
+    [finishMentionPick, materials],
   );
 
   /**
@@ -932,6 +957,8 @@ export function WorkbenchChat({
                     candidates={mentionCandidates}
                     onClose={closeMention}
                     onPick={pickMention}
+                    materials={materialMentions}
+                    onPickMaterial={pickMaterialMention}
                   />
                 ) : null}
                 {/* Two layers, one metric class: the mirror behind it draws the
@@ -987,11 +1014,17 @@ export function WorkbenchChat({
                     label={t('proMode.attach')}
                     onFiles={materials.addFiles}
                   />
-                  {(navigation?.courseOptions?.length ?? 0) > 0 ? (
+                  {/* Shown exactly when the menu can open: classrooms to name,
+                      or the knowledge base to pick from. */}
+                  {(navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled ? (
                     <AtSignButton
                       testId="workbench-mention-button"
                       disabled={busy || !canSend}
-                      label={t('proMode.mentionCourse')}
+                      label={t(
+                        materials.enabled
+                          ? 'proMode.mentionCourseOrMaterial'
+                          : 'proMode.mentionCourse',
+                      )}
                       onClick={openMention}
                     />
                   ) : null}
