@@ -38,6 +38,7 @@ vi.mock('@/lib/persistence/server-provider', () => ({
 
 import {
   createWebMaterial,
+  getAgentSessionMaterialStore,
   getSessionMaterial,
   listSessionMaterials,
   sessionMaterialsPromptBlock,
@@ -220,5 +221,22 @@ describe('sessionMaterialsPromptBlock', () => {
 
   it('emits no block when the session has no materials', () => {
     expect(sessionMaterialsPromptBlock([])).toBe('');
+  });
+});
+
+describe('the material store on a fresh database', () => {
+  it('provisions the agent-session schema before its own, whoever asks first', async () => {
+    const db = new PGlite();
+    await db.waitReady;
+    // The extraction runner's first scan can be the first caller: nothing has
+    // created agent_sessions yet, which the material table references.
+    mocks.getAgentSessionStore.mockImplementation(async () => {
+      await ensureAgentSessionSchema(db);
+      return {};
+    });
+    mocks.getServerPersistenceProvider.mockResolvedValue({ pool: db });
+    vi.stubEnv('DATABASE_URL', `postgres://fresh-${++dbCounter}`);
+    await expect(getAgentSessionMaterialStore()).resolves.toBeDefined();
+    expect(mocks.getAgentSessionStore).toHaveBeenCalledTimes(1);
   });
 });
