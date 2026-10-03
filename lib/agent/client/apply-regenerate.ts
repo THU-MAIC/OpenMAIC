@@ -13,7 +13,7 @@ import type { Scene, ScenePatch, SceneContent, InteractiveContent } from '@/lib/
 import type { GeneratedSlideContent } from '@/lib/types/generation';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 
-// Mirrors the default theme minted by createSceneWithActions for fresh slides.
+// Mirrors the default theme minted by buildCompleteScene (@openmaic/generation) for fresh slides.
 const DEFAULT_THEME = {
   backgroundColor: '#ffffff',
   themeColors: ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4'],

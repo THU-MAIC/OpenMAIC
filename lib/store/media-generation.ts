@@ -34,6 +34,8 @@ export interface MediaTask {
   posterAssetId?: string; // Allocated poster identity used by late scene reconciliation
   error?: string;
   errorCode?: string; // Structured error code (e.g. 'CONTENT_SENSITIVE')
+  /** Whether Retry may be offered, when the producer of the task says (a generation run does). */
+  retryable?: boolean;
   retryCount: number;
   stageId: string;
 }

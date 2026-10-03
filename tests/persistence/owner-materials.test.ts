@@ -132,17 +132,17 @@ describe('owner material reservations', () => {
       pool as unknown as ConnectableQueryable,
       input({
         extraction: {
-          status: 'idle',
-          diagnostics: [`bad\u0000diag`, `bad\uD800diag`],
-          emoji: '\u{1F600}',
+          status: 'failed',
+          error: `bad\u0000diag bad\uD800diag`,
+          extractor: '\u{1F600}',
         },
       }),
       { maxCount: 10, maxTotalBytes: 1_000 },
     );
     expect(record.extraction).toEqual({
-      status: 'idle',
-      diagnostics: ['bad\uFFFDdiag', 'bad\uFFFDdiag'],
-      emoji: '\u{1F600}',
+      status: 'failed',
+      error: 'bad\uFFFDdiag bad\uFFFDdiag',
+      extractor: '\u{1F600}',
     });
   });
 

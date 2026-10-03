@@ -7,10 +7,10 @@ import {
   VOXCPM_AUTO_VOICE,
   VOXCPM_AUTO_VOICE_ID,
   VOXCPM_TTS_PROVIDER_ID,
-  buildAutoVoxCPMVoicePrompt,
   getVoxCPMProfileIdFromVoiceId,
   getVoxCPMProfileVoiceId,
   voxCPMBackendSupportsVoiceRegistration,
+  voxCPMPromptProviderOptions,
   type VoxCPMProviderOptions,
   type VoxCPMVoicePromptContext,
 } from '@/lib/audio/voxcpm';
@@ -432,27 +432,17 @@ export async function getVoxCPMProviderOptions(
         ).catch(() => undefined)
       : undefined;
     return {
-      voiceMode: 'auto',
-      voicePrompt: buildAutoVoxCPMVoicePrompt(context), // inline fallback always set
+      // The inline fallback is always set.
+      ...voxCPMPromptProviderOptions(voiceId, context),
       ...(registeredVoiceId ? { registeredVoiceId } : {}),
     };
   }
 
   const profileId = getVoxCPMProfileIdFromVoiceId(voiceId);
-  if (!profileId) {
-    return {
-      voiceMode: 'prompt',
-      voicePrompt: voiceId,
-    };
-  }
+  if (!profileId) return voxCPMPromptProviderOptions(voiceId, context);
 
   const profile = await db.voiceProfiles.get(profileId);
-  if (!profile) {
-    return {
-      voiceMode: 'auto',
-      voicePrompt: buildAutoVoxCPMVoicePrompt(context),
-    };
-  }
+  if (!profile) return voxCPMPromptProviderOptions(voiceId, context);
 
   if (profile.kind === 'clone' && profile.referenceAudio) {
     return {

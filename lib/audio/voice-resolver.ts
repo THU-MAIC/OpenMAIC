@@ -182,6 +182,55 @@ export function resolveDeterministicFallbackVoice(
   };
 }
 
+/** Whether a narrator binding names a voice other than the global one. */
+export function narratorBindingDiffers(
+  bound: { providerId: string; voiceId: string } | undefined,
+  globalVoice: { providerId: string; voiceId: string },
+): boolean {
+  return (
+    !!bound &&
+    (bound.providerId !== globalVoice.providerId || bound.voiceId !== globalVoice.voiceId)
+  );
+}
+
+/** The deterministic last-resort narrator voice among the enabled providers, or null. */
+export function deterministicNarratorVoice(
+  providerConfigs: ProviderConfigMap,
+): ResolvedVoice | null {
+  return resolveDeterministicFallbackVoice(
+    getEnabledProvidersWithVoices(
+      providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
+    ),
+    0,
+  );
+}
+
+/**
+ * The one voice a narration clip is retried with after the provider said the
+ * voice clone it used does not exist (QWEN_VC_VOICE_NOT_FOUND), or null when
+ * no retry applies. Only a clip that used the bound narrator voice is
+ * retried: with the global voice when the binding differs from it, else (a
+ * pinned narrator, bound == global) with the deterministic enabled-provider
+ * pick — unless the clip already used an explicit fallback voice.
+ */
+export function narratorVoiceAfterMissingClone(input: {
+  bound: AgentConfig['voiceConfig'] | undefined;
+  globalVoice: ResolvedVoice;
+  failed: ResolvedVoice;
+  providerConfigs: ProviderConfigMap;
+  usedFallbackVoice: boolean;
+}): ResolvedVoice | null {
+  const { bound, globalVoice, failed } = input;
+  if (!bound || bound.providerId !== failed.providerId || bound.voiceId !== failed.voiceId) {
+    return null;
+  }
+  if (narratorBindingDiffers(bound, globalVoice)) {
+    return resolveNarratorVoiceBinding(undefined, globalVoice, input.providerConfigs);
+  }
+  if (input.usedFallbackVoice) return null;
+  return deterministicNarratorVoice(input.providerConfigs);
+}
+
 /**
  * The narrator (teacher) voice to pin at agent-profile generation time.
  *

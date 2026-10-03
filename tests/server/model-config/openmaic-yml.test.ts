@@ -40,8 +40,8 @@ slots:
   tts: minimax:speech-2.8-turbo
   video: null
 
-policy:
-  allowWorkspaceProviders: false
+lock: [tts, video]
+allowUserKeys: false
 `;
 
 describe('parseModelConfig', () => {
@@ -50,7 +50,34 @@ describe('parseModelConfig', () => {
     expect(config.providers?.minimax.apiKey).toBe('sk-test');
     expect(config.slots?.video).toBeNull();
     expect(config.slots?.classroom).toBe('local:qwen3:8b');
-    expect(config.policy?.allowWorkspaceProviders).toBe(false);
+    expect(config.lock).toEqual(['tts', 'video']);
+    expect(config.allowUserKeys).toBe(false);
+  });
+
+  it('leaves lock and allowUserKeys out when the file does not set them', () => {
+    const config = parseModelConfig('slots:\n  video: null\n', { env });
+    expect(config).toEqual({ slots: { video: null } });
+  });
+
+  it('accepts lock: all, and a locked slot written as null', () => {
+    expect(parseModelConfig('lock: all\n', { env })).toEqual({ lock: 'all' });
+    expect(parseModelConfig('slots:\n  video: null\nlock: [video]\n', { env }).lock).toEqual([
+      'video',
+    ]);
+  });
+
+  it('refuses locking an unknown slot or one not written under slots, by position', () => {
+    expect(issuesOf('slots:\n  video: null\nlock: [video, course.summary, image]\n')).toEqual([
+      'lock.1: unknown slot "course.summary"',
+      'lock.2: image is locked but not written under slots; give it its value there (null keeps it off)',
+    ]);
+    expect(issuesOf('lock: everything\n')).toEqual(['lock: expected "all" or a list of slots']);
+  });
+
+  it('refuses the policy key, naming allowUserKeys', () => {
+    const issues = issuesOf('policy:\n  allowWorkspaceProviders: false\n');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatch(/^policy: .*allowUserKeys/);
   });
 
   it('treats an empty file as no configuration', () => {
@@ -169,8 +196,8 @@ describe('parseModelConfig', () => {
   });
 
   it('refuses YAML values that are not mappings where mappings are expected', () => {
-    expect(issuesOf('policy: 2026-01-01\n')).toEqual([
-      'policy: unsupported YAML value; quote it to use it as text',
+    expect(issuesOf('slots: 2026-01-01\n')).toEqual([
+      'slots: unsupported YAML value; quote it to use it as text',
     ]);
     expect(issuesOf('2026-01-01\n')).toEqual([
       '(root): unsupported YAML value; quote it to use it as text',

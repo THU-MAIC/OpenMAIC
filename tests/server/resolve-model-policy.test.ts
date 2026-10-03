@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Under `policy.allowWorkspaceProviders: false` the deprecated request fields
+// Under `allowUserKeys: false` the deprecated request fields
 // (x-model, x-api-key, x-base-url) never pick the model: only providers
 // openmaic.yml declares are used.
 
@@ -43,7 +43,7 @@ const request = {
 function deployment(config: import('@/lib/server/model-config/openmaic-yml').ModelConfigFile) {
   runtime.setDeploymentConfigForTests({
     layer: { source: 'deployment', config },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 }
@@ -58,9 +58,9 @@ afterEach(() => {
   runtime.setDeploymentConfigForTests();
 });
 
-describe('resolveModel under policy.allowWorkspaceProviders: false', () => {
+describe('resolveModel under allowUserKeys: false', () => {
   it("ignores the request's model and key: an unassigned stage stays unassigned", async () => {
-    deployment({ policy: { allowWorkspaceProviders: false } });
+    deployment({ allowUserKeys: false });
     await expect(
       resolveModel({ ...request, stage: 'quiz-grade', workspaceId: null }),
     ).rejects.toBeInstanceOf(runtime.SlotUnassignedError);
@@ -69,7 +69,7 @@ describe('resolveModel under policy.allowWorkspaceProviders: false', () => {
 
   it("uses the deployment's model, never the request's", async () => {
     deployment({
-      policy: { allowWorkspaceProviders: false },
+      allowUserKeys: false,
       providers: { op: { preset: 'openai', apiKey: 'operator-key' } },
       slots: { llm: 'op:gpt-4o' },
     });
@@ -79,13 +79,13 @@ describe('resolveModel under policy.allowWorkspaceProviders: false', () => {
   });
 
   it('refuses a model the request names outside any stage (verify-model)', async () => {
-    deployment({ policy: { allowWorkspaceProviders: false } });
+    deployment({ allowUserKeys: false });
     await expect(resolveModel(request)).rejects.toThrow(REQUEST_PROVIDERS_REFUSED);
     expect(mocks.getModelCalls).toHaveLength(0);
   });
 
-  it.each([true, undefined])('honours the request while the policy is %s', async (allow) => {
-    deployment(allow === undefined ? {} : { policy: { allowWorkspaceProviders: allow } });
+  it.each([true, undefined])('honours the request while allowUserKeys is %s', async (allow) => {
+    deployment(allow === undefined ? {} : { allowUserKeys: allow });
     const resolved = await resolveModel({ ...request, stage: 'quiz-grade', workspaceId: null });
     expect(resolved).toMatchObject({ modelId: 'gpt-4o-mini', apiKey: 'caller-key' });
     expect((await resolveModel(request)).apiKey).toBe('caller-key');

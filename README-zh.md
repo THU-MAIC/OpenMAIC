@@ -20,7 +20,6 @@
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
-  <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-agent-工作台集成"><img src="https://img.shields.io/badge/OpenClaw-集成-F4511E?style=flat-square" alt="OpenClaw 集成"/></a>
   <a href="#lemonade-local-ai"><img src="https://img.shields.io/badge/Lemonade-Local_AI-FFD43B?style=flat-square" alt="Lemonade Local AI"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
@@ -128,7 +127,7 @@ slots:
   video: null                      # 关闭某项能力
 ```
 
-写进文件的槽位会被锁定；没写的槽位沿用父槽位，可以在 Web 端的模型设置里选择，用户也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。槽位说明、预设、回退模型和策略见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
+写进文件的槽位是服务端默认值：用户可以在 Web 端的模型设置里修改，也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。没写的槽位沿用父槽位。要对所有人固定某些槽位，把它们列在 `lock` 下（`lock: all` 固定所有槽位）；`allowUserKeys: false` 让用户不能自行添加服务商。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。槽位说明、预设、回退模型、锁定和 `allowUserKeys` 见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
 
 支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
 
@@ -292,6 +291,8 @@ pnpm dev
 pnpm build && DATABASE_URL=postgres://... pnpm start
 ```
 
+请让服务作为常驻进程运行（进程管理器或容器）：课程生成在其中进行，浏览器离开页面后仍会继续。必需配置和从 1.1.x 升级的步骤见[部署指南](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
 ### 可选：ACCESS_CODE（共享部署）
 
 为部署添加站点级密码保护，在 `.env.local` 中设置：
@@ -303,19 +304,6 @@ ACCESS_CODE=your-secret-code
 设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有匹配到的路由——包括 API——均可访问。这是 fail-open：未配置的部署没有门禁，也没有第二道校验。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
 
 验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有当应用运行在会覆盖 `x-forwarded-for` / `x-real-ip` 的反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流：按客户端限流（每个客户端 60 秒内 10 次），受信任客户端验证成功会清空自己的计数。没有可信代理时，应用无法把请求归因到具体客户端，因此完全不限流，保护完全依赖密码的长度和随机性。
-
-### Vercel 部署
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&env=DATABASE_URL&envDescription=DATABASE_URL%20must%20point%20to%20an%20external%20PostgreSQL%20database.%20Also%20configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs)
-
-或者手动部署：
-
-1. Fork 本仓库
-2. 导入到 [Vercel](https://vercel.com/new)
-3. 配置环境变量：指向外部 PostgreSQL 数据库的 `DATABASE_URL`（Serverless 函数无法自己运行数据库），以及至少一个 LLM API Key
-4. 部署
-
-没有 `DATABASE_URL` 时服务会拒绝启动。请使用 Vercel 网络可达的连接串（启用 TLS 的托管 PostgreSQL；服务商提供连接池端点时优先使用）。其他 Serverless 或容器平台同理：先准备好数据库，再部署。
 
 ### Docker 部署
 
@@ -388,6 +376,16 @@ docker build \
 registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
 store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
+### Vercel 部署（1.1.x 及以前）
+
+Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。在 Vercel 上部署 1.1.x：
+
+1. 在 GitHub 上 fork 本仓库，取消勾选 **Copy the `main` branch only**。
+2. 在 fork 中把默认分支设为 `release/1.1.x`（**Settings → General → Default branch**）。
+3. 在 Vercel 中 **Add New → Project** 导入这个 fork。Vercel 构建它的默认分支；按该分支的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/release/1.1.x/.env.example) 至少配置一个 LLM 服务的 key。
+
+这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址（浏览器按站点保存数据）；访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
 ### 服务端持久化（PostgreSQL）
 
 OpenMAIC 始终把课程保存在服务端。[Docker 部署](#docker-部署)只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
@@ -399,7 +397,7 @@ pnpm build
 DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
 ```
 
-本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。Serverless 平台（见 [Vercel 部署](#vercel-部署)）请把 `DATABASE_URL` 指向外部 PostgreSQL。
+本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。
 
 和往常一样配置模型（`openmaic.yml` 加 `.env.local` 中的 key，或 设置 → 模型服务）。课程文档、文件夹、对话历史与学习者运行时会话、生成的媒体都保存在服务端。留在浏览器里的只有属于该设备、丢失也不会丢课的数据：应用设置与界面偏好、播放进度与编辑器当前场景、编辑器撤销历史、服务端已保存的讲解与媒体的本地缓存（以及因存储已满被拒、为重试保留的字节）、生成期间暂存的 PDF 图片，以及在该浏览器注册的 TTS 音色。**设置 → 清除本地缓存**只清除这些，不会动服务端的任何数据。
 
@@ -501,7 +499,7 @@ OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-au
 
 匿名 cookie 未签名、不与账号绑定，也是核心读取的认领候选。它只对本主机有效，但同一可注册域名下的兄弟子域名可以设置带 Domain 属性的 `anonymous_id`，浏览器可能优先发送它，因此恶意子域名可以左右已登录访客认领哪个匿名身份。请把 OpenMAIC 部署在独立的可注册域名上（或确保没有不可信方控制兄弟子域名）。对 cookie 本身的加固（HTTPS 部署使用 `__Host-` 前缀、拒绝同时携带多个 `anonymous_id` 的请求）列为后续事项。
 
-按固定顺序移动：文件夹（账号已有同名文件夹时合并进去，名称比较不区分大小写，与 `createFolder` 一致；id 已被账号的其他文件夹占用时换用新 id；其余原样移动，排在账号自己的文件夹之后，课程归档随之调整）、课程（`stage_meta`，含已删除的课程）、资料、Agent 会话及其会话列表历史、用户技能（账号已占用的名称改为双方都未占用的第一个名称，如 `my-notes-2`、`my-notes-3`……）、运行时会话（学习者 key，按存储原样改键，由新版本写入的会话不会阻止认领）、资产条目（按所有者的分区，认领后的课程对所有观看者仍能显示其媒体）、旧版浏览器导入绑定（临时，随一次性旧浏览器数据导入存在：匿名所有者持有的浏览器旧数据此后归账号，导入为账号继续）。移动的内容不受配额限制：账号保留全部内容，若因此超出资产、资料、技能或文件夹上限，则在降回上限以下之前不能再新增。认领记录在 `owner_merges` 表中。
+按固定顺序移动：文件夹（账号已有同名文件夹时合并进去，名称比较不区分大小写，与 `createFolder` 一致；id 已被账号的其他文件夹占用时换用新 id；其余原样移动，排在账号自己的文件夹之后，课程归档随之调整）、课程（`stage_meta`，含已删除的课程）、资料、Agent 会话及其会话列表历史、用户技能（账号已占用的名称改为双方都未占用的第一个名称，如 `my-notes-2`、`my-notes-3`……）、运行时会话（学习者 key，按存储原样改键，由新版本写入的会话不会阻止认领）、资产条目（按所有者的分区，认领后的课程对所有观看者仍能显示其媒体）、旧版浏览器导入绑定（临时，随一次性旧浏览器数据导入存在：匿名所有者持有的浏览器旧数据此后归账号，导入为账号继续）、自定义智能体（账号已使用的智能体 id 保留账号自己的智能体）。移动的内容不受配额限制：账号保留全部内容，若因此超出资产、资料、技能、智能体或文件夹上限，则在降回上限以下之前不能再新增。认领记录在 `owner_merges` 表中。
 
 规则：只能认领匿名所有者，且只能由非匿名所有者认领；重复认领同一对所有者会成功且不做任何事；已被某账号认领的匿名所有者不能再被其他账号认领；不允许链式认领（已退役的账号不能认领，已吸收过其他所有者的所有者不能被认领），因此每个退役 id 一步即可转到当前所有者。
 
@@ -509,7 +507,7 @@ OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-au
 
 每个创建或修改所有者数据的写事务都以共享模式获取该所有者的 PostgreSQL advisory 锁（身份锁）作为第一条语句，认领则在修改任何行之前以独占模式获取双方的身份锁；因此受保护的写入与认领并发时，要么先提交并被移动，要么等待后被拒绝，测试中这些写入既未出现死锁，也未在退役 id 下残留数据。等待都有上限：认领获取两把身份锁最多等 `OWNER_CLAIM_LOCK_WAIT_MS`（默认 5000）毫秒（等待期间 PostgreSQL 会让双方新的写入排在它后面，因此这段等待要短）；写入获取所有者锁最多等 `OWNER_WRITE_LOCK_WAIT_MS`（默认 30000）毫秒；上传在写入字节期间持有该锁，因此认领会在上限内等待进行中的上传。超时返回 `503 OWNER_BUSY` 并附 `Retry-After`，不写入任何内容。资产回收器不获取身份锁，与认领并发处理同一批条目时 PostgreSQL 可能中止其中一方，被这样中止的认领同样返回 `OWNER_BUSY`。
 
-宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–800，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；认领的来源必须被 `describeStoredOwner` 描述为匿名（见 `principalFromStoredOwner`）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对被描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在其认证方法中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
+宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–950，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；认领的来源必须被 `describeStoredOwner` 描述为匿名（见 `principalFromStoredOwner`）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对被描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在其认证方法中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
 
 ##### 宿主扩展钩子
 
@@ -916,13 +914,13 @@ clawhub install openmaic
 OpenMAIC/
 ├── app/                        # Next.js App Router
 │   ├── api/                    #   服务端 API 路由（26 个端点组）
-│   │   ├── generate/           #     场景生成流水线（大纲、内容、图片、TTS…）
+│   │   ├── generate/           #     图片、视频、TTS 与音色注册
 │   │   ├── generate-classroom/ #     异步课堂生成提交与轮询
 │   │   ├── chat/               #     多智能体讨论（SSE 流式传输）
 │   │   ├── pbl/                #     项目制学习端点
 │   │   ├── persistence/        #     内嵌持久化服务（Runtime/Document Store HTTP 契约）
 │   │   ├── export-video/       #     MP4 视频导出（对接 render-service）
-│   │   └── ...                 #     quiz-grade, parse-pdf, web-search, transcription 等
+│   │   └── ...                 #     generation-runs, materials, quiz-grade, parse-pdf, transcription 等
 │   ├── classroom/[id]/         #   课堂回放页面
 │   └── page.tsx                #   首页（生成输入）
 │

@@ -47,7 +47,6 @@ const CONFIG_FILES = [
   'docker-compose.db.yml',
   'docker-compose.defaults.env',
   '.env.example',
-  'vercel.json',
   'package.json',
   '.github/workflows/ci.yml',
 ];

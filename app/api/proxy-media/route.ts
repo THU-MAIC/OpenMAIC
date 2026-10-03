@@ -20,8 +20,6 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ProxyMedia');
 
-export const maxDuration = 60;
-
 export async function POST(request: NextRequest) {
   let url: string | undefined;
   let dispatcher: Dispatcher | undefined;

@@ -28,7 +28,12 @@ import type {
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { fenceOwnerWrite } from './owner-merges';
-import { claimStageMeta, StageAccessError, tombstoneStageMeta } from './stage-meta';
+import {
+  claimStageMeta,
+  markStageGenerationComplete,
+  StageAccessError,
+  tombstoneStageMeta,
+} from './stage-meta';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 
 export interface PoolClientLike {
@@ -47,6 +52,12 @@ export interface OwnerBoundDocumentStoreOptions {
   validateStage: StageValidator;
   /** Runner-only lease fence, evaluated inside every mutation transaction. */
   mutationFence?: (queryable: Queryable) => Promise<void>;
+  /**
+   * The generation run writing through this store (with its lease fence).
+   * A course whose run is still producing it refuses every other writer's
+   * content writes with `COURSE_GENERATING`; the run's own go through.
+   */
+  generationRunId?: string;
   /**
    * The principal the request writing through this store was resolved to.
    * Passed to the create hooks; absent for a background agent run, which
@@ -116,6 +127,37 @@ interface PendingOperation {
   mode: OwnershipMode;
   /** A create that must insert: any existing course under the id refuses it. */
   exclusive?: CreateDocumentOptions;
+  /** A mutation's own rows, on its transaction (see {@link MutationOptions}). */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
+  /**
+   * Changes the course's content, which its generation run owns until it
+   * completes (every write but deletion and library organization).
+   */
+  content?: boolean;
+  /**
+   * A whole-document write whose outline says generation is complete: the
+   * ownership row's mirror of that flag is set in the same transaction.
+   */
+  completesGeneration?: boolean;
+}
+
+/** Whether a document's outline records its generation as complete. */
+function outlineCompletesGeneration(outline: unknown): boolean {
+  return (
+    typeof outline === 'object' &&
+    outline !== null &&
+    (outline as { generationComplete?: unknown }).generationComplete === true
+  );
+}
+
+/** What a scene write may add to its transaction. */
+export interface MutationOptions {
+  /**
+   * Runs on the write's transaction after the write, before COMMIT: whatever
+   * it writes commits or rolls back with the scene (a generation run's
+   * checkpoint, say).
+   */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
 }
 
 /** What {@link CreateOnlyDocumentStore.createDocument} may add to its transaction. */
@@ -158,7 +200,23 @@ export function isStageIdTakenError(error: unknown): error is StageIdTakenError 
  */
 export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extends Stage> {
   createDocument(doc: MaicDocument<TScene, TStage>, options?: CreateDocumentOptions): Promise<void>;
+  /** `putScene`, with rows of the caller's own committed in the same transaction. */
+  putScene(stageId: string, scene: TScene, options?: MutationOptions): Promise<void>;
+  /** A targeted read-modify-write of one scene (see the store's own documentation). */
+  mutateScene(
+    stageId: string,
+    sceneId: string,
+    mutate: (scene: TScene | null) => TScene | null,
+    after?: SceneMutationHook,
+  ): Promise<boolean>;
 }
+
+/**
+ * Runs on a scene mutation's transaction once it decided, before COMMIT:
+ * whatever it writes commits or rolls back with the scene. `wrote` says
+ * whether the scene was written.
+ */
+export type SceneMutationHook = (queryable: Queryable, wrote: boolean) => Promise<void>;
 
 interface RawOwnershipRow extends Record<string, unknown> {
   owner_id: string;
@@ -204,8 +262,14 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   }
 
   saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
-    return this.tagged({ stageId: doc.stage.id, mode: 'create' }, () =>
-      this.inner.saveDocument(doc),
+    return this.tagged(
+      {
+        stageId: doc.stage.id,
+        mode: 'create',
+        content: true,
+        completesGeneration: outlineCompletesGeneration(doc.outline),
+      },
+      () => this.inner.saveDocument(doc),
     );
   }
 
@@ -215,21 +279,62 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
    * per-id create lock, so two creates of one id cannot both land.
    */
   createDocument(doc: MaicDocument<TScene, TStage>, options: CreateDocumentOptions = {}) {
-    return this.tagged({ stageId: doc.stage.id, mode: 'create', exclusive: options }, () =>
-      this.inner.saveDocument(doc),
+    return this.tagged(
+      {
+        stageId: doc.stage.id,
+        mode: 'create',
+        exclusive: options,
+        content: true,
+        completesGeneration: outlineCompletesGeneration(doc.outline),
+      },
+      () => this.inner.saveDocument(doc),
     );
   }
 
   putStage(stageId: string, stage: TStage): Promise<void> {
-    return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.putStage(stageId, stage));
+    return this.tagged({ stageId, mode: 'mutate', content: true }, () =>
+      this.inner.putStage(stageId, stage),
+    );
   }
 
-  putScene(stageId: string, scene: TScene): Promise<void> {
-    return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.putScene(stageId, scene));
+  putScene(stageId: string, scene: TScene, options: MutationOptions = {}): Promise<void> {
+    return this.tagged(
+      { stageId, mode: 'mutate', inTransaction: options.inTransaction, content: true },
+      () => this.inner.putScene(stageId, scene),
+    );
+  }
+
+  /**
+   * Read one scene of the current document and write what `mutate` makes of
+   * it, in one transaction that holds the course's ownership row (which every
+   * other write of the course takes too): a targeted read-modify-write, so
+   * whatever else the scene holds now is kept. `mutate` answers null to leave
+   * the scene as it is (it is also handed null for a scene that is gone).
+   * Answers whether the scene was written.
+   */
+  mutateScene(
+    stageId: string,
+    sceneId: string,
+    mutate: (scene: TScene | null) => TScene | null,
+    after?: SceneMutationHook,
+  ): Promise<boolean> {
+    return this.tagged({ stageId, mode: 'mutate', content: true }, () =>
+      this.runTransaction(async (queryable) => {
+        // Pinned to this transaction, as in `deleteDocument`: a package call
+        // that opened its own would wait on the ownership row this one holds.
+        const pinned = this.pinnedToTransaction(queryable);
+        const next = mutate(await pinned.getScene(stageId, sceneId));
+        if (next) await pinned.putScene(stageId, next);
+        await after?.(queryable, next !== null);
+        return next !== null;
+      }),
+    );
   }
 
   deleteScene(stageId: string, sceneId: string): Promise<void> {
-    return this.tagged({ stageId, mode: 'mutate' }, () => this.inner.deleteScene(stageId, sceneId));
+    return this.tagged({ stageId, mode: 'mutate', content: true }, () =>
+      this.inner.deleteScene(stageId, sceneId),
+    );
   }
 
   /**
@@ -261,6 +366,11 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         // `stage_meta` row `FOR UPDATE` and refused a foreign owner, so the
         // delete is decided before anything below is written.
         await tombstoneStageMeta(queryable, stageId);
+        // A course that is still generating ends with its deletion, in this
+        // transaction, whatever state its run is in.
+        const { endGenerationRunsOfDeletedCourseIn } =
+          await import('@/lib/server/generation/run/store');
+        await endGenerationRunsOfDeletedCourseIn(queryable, stageId);
         await queryable.query('UPDATE document_stages SET folder_id = NULL WHERE id = $1', [
           stageId,
         ]);
@@ -427,6 +537,13 @@ export function createOwnerBoundDocumentStore<
             if (row.deleted_at !== null && operation.mode !== 'delete') {
               throw new StageAccessError(operation.stageId, options.ownerId, 'tombstoned');
             }
+            if (operation.content) {
+              // A course is read-only while its generation run produces it.
+              // Decided under the ownership row lock taken above, which every
+              // run commit into the course takes too.
+              const { assertCourseWritableIn } = await import('@/lib/server/generation/run/store');
+              await assertCourseWritableIn(queryable, operation.stageId, options.generationRunId);
+            }
           } else if (operation.mode === 'create') {
             const occupied = await queryable.query<{ exists: boolean } & Record<string, unknown>>(
               'SELECT EXISTS(SELECT 1 FROM document_stages WHERE id = $1) AS exists',
@@ -451,6 +568,9 @@ export function createOwnerBoundDocumentStore<
           // a refusal or a throw rolls the course and the ownership row back
           // together with anything the hooks wrote.
           const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
+          if (operation.completesGeneration) {
+            await markStageGenerationComplete(queryable, operation.stageId!);
+          }
           if (created) await runCreateHooks(createHooks, queryable, actor, operation.stageId!);
           if (operation.exclusive) {
             // An exclusive create found no row above and holds the create lock,
@@ -461,6 +581,7 @@ export function createOwnerBoundDocumentStore<
             await operation.exclusive.inTransaction?.(queryable);
           }
         }
+        if (operation?.mode === 'mutate') await operation.inTransaction?.(queryable);
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');
         return result;

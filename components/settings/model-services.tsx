@@ -43,6 +43,7 @@ import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ApplyChange, ModelSettingsView } from '@/lib/model-settings/client';
 import { serviceEntries, type ServiceEntry } from '@/lib/model-settings/services';
+import { canAddService } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 import type { SettingsSection } from '@/lib/types/settings';
 
@@ -122,11 +123,14 @@ export { REGISTRY_INFO, entryIcon, entryName, isEntryConfigured } from './servic
 export function ModelServicesPanel({
   view,
   apply,
+  tabs = SERVICE_TABS,
   tab,
   onTabChange,
 }: {
   view: ModelSettingsView;
   apply: ApplyChange;
+  /** The tabs shown: the capabilities where adding a service can change something. */
+  tabs?: readonly ServiceTab[];
   tab: ServiceTab;
   onTabChange: (tab: ServiceTab) => void;
 }) {
@@ -143,15 +147,21 @@ export function ModelServicesPanel({
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [deleting, setDeleting] = useState<ServiceEntry | null>(null);
 
-  const entry = entries.find((item) => item.id === selected[tab]) ?? entries[0];
+  // Until one is picked, the service in use (its voices and settings), else the first.
+  const entry =
+    entries.find((item) => item.id === selected[tab]) ??
+    entries.find((item) => item.provider && rootUse(view, capability, item.id).inUse) ??
+    entries[0];
   const select = (id: string) => setSelected((prev) => ({ ...prev, [tab]: id }));
-  const canAdd = view.policy.allowWorkspaceProviders && view.presets.length > 0;
+  const canAdd = canAddService(view, capability);
 
   const header = () => {
     if (!entry) return null;
     const name = entryName(entry, capability, t);
     const icon = entryIcon(entry, capability);
     const configured = isEntryConfigured(entry, capability);
+    // "Fill in credentials" only where this service can be set up here.
+    const settable = canAdd && entry.state !== 'server-only' && entry.state !== 'deployment';
     return (
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -177,7 +187,9 @@ export function ModelServicesPanel({
             <p className="text-[11px] text-muted-foreground">
               {configured
                 ? t('settings.modelServices.configuredHint')
-                : t('settings.modelServices.notConfiguredHint')}
+                : settable
+                  ? t('settings.modelServices.notConfiguredHint')
+                  : t('settings.modelServices.notConfigured')}
             </p>
           </div>
         </div>
@@ -216,7 +228,11 @@ export function ModelServicesPanel({
             </Badge>
           ) : (
             <Badge variant="secondary" className="shrink-0 text-amber-600 dark:text-amber-400">
-              {t('settings.modelServices.pending')}
+              {t(
+                settable
+                  ? 'settings.modelServices.pending'
+                  : 'settings.modelServices.notConfigured',
+              )}
             </Badge>
           )}
         </div>
@@ -232,7 +248,7 @@ export function ModelServicesPanel({
       <UnimportedSettingsNotice view={view} />
       {/* 七个服务的胶囊 tab（收拢后的一级列） */}
       <div className="flex gap-1 overflow-x-auto pb-3" role="tablist">
-        {SERVICE_TABS.map((id) => {
+        {tabs.map((id) => {
           const Icon = SERVICE_TAB_ICONS[id];
           const active = tab === id;
           return (

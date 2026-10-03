@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches:
-      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/provider-config]
+      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}
@@ -84,16 +84,21 @@ jobs:
             tests/persistence/host-create-hooks.pg.test.ts \
             tests/persistence/stage-meta-tenancy.pg.test.ts \
             tests/persistence/schema-bootstrap-concurrency.pg.test.ts \
+            tests/persistence/schema-migrations.pg.test.ts \
             tests/persistence/owner-claims.pg.test.ts \
             tests/persistence/owner-assets-legacy-race.pg.test.ts \
             tests/persistence/owner-materials.pg.test.ts \
             tests/persistence/workspace-model-config.pg.test.ts \
+            tests/server/agents/owner-agents.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \
             tests/agent-runtime/event-notify.pg.test.ts \
             tests/agent-runtime/park-attempt-budget.pg.test.ts \
             tests/agent-runtime/session-events-live.pg.test.ts \
+            tests/agent-runtime/prior-run-record.pg.test.ts \
             tests/legacy-browser-import/import-routes.pg.test.ts \
-            tests/server/classroom-generation-jobs.pg.test.ts \
-            tests/server/classroom-generation-persistence.pg.test.ts \
+            tests/server/classroom-persistence.pg.test.ts \
+            tests/server/generate-classroom-api.pg.test.ts \
+            tests/server/generation-runs.pg.test.ts \
+            tests/server/material-extraction.pg.test.ts \
             tests/server/legacy-classroom-import.pg.test.ts \
             tests/persistence/exclusive-create-invariant.pg.test.ts

@@ -32,7 +32,7 @@ function extensionForMime(mime: string): string {
  * `audioUrl` playback), and every server-side consumer of the reference reads
  * the local file or fetches it relative to the same origin. Request-bearing
  * routes that DO have an origin build absolute URLs through
- * `resolveMediaServingOrigin` (`classroom-media-generation.ts`).
+ * `resolveMediaServingOrigin` (`media-origin.ts`).
  */
 export async function persistClassroomMediaBytes(input: {
   stageId: string;

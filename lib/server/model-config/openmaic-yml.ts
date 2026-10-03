@@ -2,14 +2,15 @@
  * `openmaic.yml`: the operator's model configuration (RFC #1701, tracked in
  * #1725).
  *
- * The file declares providers, slot assignments and policy. Anything it sets
- * is locked for the web UI; anything it leaves out is left to the UI. Secrets
- * stay in the environment and are referenced as `${VAR}`.
+ * The file declares providers, the server's default assignments (`slots`),
+ * which slots are fixed for everyone (`lock`, each with its whole subtree) and
+ * whether users may add providers of their own (`allowUserKeys`). Users may
+ * change any slot that is not locked in the web UI. Secrets stay in the
+ * environment and are referenced as `${VAR}`.
  *
- * This module only reads and validates the file. Nothing resolves models
- * through it yet, so a deployment without the file behaves exactly as before,
- * and a deployment with an invalid file refuses to start (see
- * `validateModelConfiguration`, called from instrumentation).
+ * This module only reads and validates the file; an invalid file refuses to
+ * start the server (see `validateModelConfiguration`, called from
+ * instrumentation).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -128,13 +129,28 @@ export const providerSchema = z
   })
   .strict();
 
+/** What `lock` names: the slots fixed for everyone with their subtrees, or every slot. */
+const lockSchema = z.union([z.literal('all'), z.array(z.string())], {
+  error: 'expected "all" or a list of slots',
+});
+
 const fileSchema = z
   .object({
     providers: z
       .record(z.string().regex(PROVIDER_ID, 'invalid provider id'), providerSchema)
       .optional(),
+    /** The server's defaults: users may change them unless `lock` names them. */
     slots: z.record(z.string(), assignmentSchema).optional(),
-    policy: z.object({ allowWorkspaceProviders: z.boolean().optional() }).strict().optional(),
+    lock: lockSchema.optional(),
+    /** Whether users may add providers, keys and token plans of their own (default true). */
+    allowUserKeys: z.boolean().optional(),
+    // Never accepted: reported with the key that replaced it.
+    policy: z
+      .never({
+        error:
+          'policy is not a setting; use the top-level allowUserKeys (allowUserKeys: false keeps users from adding providers)',
+      })
+      .optional(),
   })
   .strict();
 
@@ -254,7 +270,8 @@ export function thinkingEffortIssue(slot: SlotId, assignment: SlotAssignment): s
 }
 
 /**
- * Checks that need the whole file: presets and provider references. They run
+ * Checks that need the whole file: presets, provider references and what
+ * `lock` names. They run
  * only on a file that passed the schema, so they never see a half-valid value.
  * Values that came from `${VAR}` are never printed.
  */
@@ -298,6 +315,20 @@ function crossCheck(
       );
     }
   };
+
+  if (Array.isArray(config.lock)) {
+    const written = config.slots ?? {};
+    config.lock.forEach((slot, index) => {
+      const at = `lock.${index}`;
+      if (!isSlotId(slot)) {
+        issues.push(`${at}: unknown slot ${shown(slot, at)}`);
+      } else if (!Object.hasOwn(written, slot)) {
+        issues.push(
+          `${at}: ${slot} is locked but not written under slots; give it its value there (null keeps it off)`,
+        );
+      }
+    });
+  }
 
   for (const [slot, assignment] of Object.entries(config.slots ?? {})) {
     if (!isSlotId(slot) || assignment === null) continue;

@@ -84,7 +84,7 @@ const view = (
 ) =>
   ({
     revision: 2,
-    policy: { allowWorkspaceProviders: true },
+    allowUserKeys: true,
     presets: [],
     providers: providers.map((provider) => ({
       source: 'workspace',

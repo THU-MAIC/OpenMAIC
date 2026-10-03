@@ -30,6 +30,7 @@ import {
   ROOT_SLOT,
   type ServiceEntry,
 } from '@/lib/model-settings/services';
+import { canAddService } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 
 export type T = (key: string, options?: Record<string, unknown>) => string;
@@ -107,22 +108,36 @@ export function ServerSettingsGate({
   return <>{children(view, apply)}</>;
 }
 
-/** The notice of a service the server configures: nothing about it can be changed here. */
-export function ServerConfiguredNotice() {
+/**
+ * The notice of a service the server configures: nothing about it can be
+ * changed here. It suggests adding a provider of one's own only where adding
+ * one can change something (see canAddService).
+ */
+export function ServerConfiguredNotice({
+  view,
+  capability,
+}: {
+  view: ModelSettingsView;
+  capability: SlotCapability;
+}) {
   const { t } = useI18n();
   return (
-    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+    <div
+      className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300"
+      data-server-configured-notice=""
+    >
       {t('settings.serverConfiguredNotice')}
+      {canAddService(view, capability) && <> {t('settings.serverConfiguredAddOwn')}</>}
     </div>
   );
 }
 
 /** Why a service cannot be set up here: only the server's configuration can. */
-export function ServerOnlyNotice({ policy }: { policy?: boolean }) {
+export function ServerOnlyNotice({ noUserKeys }: { noUserKeys?: boolean }) {
   const { t } = useI18n();
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-      {t(policy ? `${SC}.serverOnlyPolicy` : `${SC}.serverOnly`)}
+      {t(noUserKeys ? `${SC}.serverOnlyPolicy` : `${SC}.serverOnly`)}
     </div>
   );
 }

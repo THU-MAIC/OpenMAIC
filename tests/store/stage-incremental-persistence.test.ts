@@ -5,13 +5,26 @@ const { fullSave, incrementalSave } = vi.hoisted(() => ({
   incrementalSave: vi.fn().mockResolvedValue(undefined),
 }));
 
+const { preparePBL } = vi.hoisted(() => ({
+  preparePBL: vi.fn(async (_stageId: string, scenes: unknown[]) => scenes),
+}));
+vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
+  preparePBLScenesForDocumentPersistence: preparePBL,
+}));
+
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => fullSave(...args),
   saveStageDataIncremental: (...args: unknown[]) => incrementalSave(...args),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
-import { flushStageSave, restorePendingStageChanges, useStageStore } from '@/lib/store/stage';
+import {
+  flushStageSave,
+  hasLearnerSceneChange,
+  restorePendingStageChanges,
+  setServerGeneratingStage,
+  useStageStore,
+} from '@/lib/store/stage';
 import { getAssetPool } from '@/lib/media/asset-pool';
 import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -48,6 +61,7 @@ const scene = (id: string, stageId = 'stage-1'): Scene => ({
 });
 
 beforeEach(() => {
+  preparePBL.mockClear();
   vi.useFakeTimers();
   fullSave.mockReset().mockResolvedValue(undefined);
   incrementalSave.mockReset().mockResolvedValue(undefined);
@@ -61,9 +75,65 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setServerGeneratingStage(null);
   useStageStore.getState().clearStore();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('a course its generation run is producing', () => {
+  it('drops content changes queued before the fence, sending a scene change to its runtime store', async () => {
+    useStageStore.setState({
+      scenes: [
+        ...useStageStore.getState().scenes,
+        { ...scene('scene-pbl'), content: { type: 'pbl', projectV2: {} } } as unknown as Scene,
+      ],
+    });
+    // A PBL scene normalizes its project on mount, before the classroom fenced the course.
+    useStageStore.getState().updateScene('scene-pbl', { title: 'mounted' });
+    setServerGeneratingStage('stage-1');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave).not.toHaveBeenCalled();
+    expect(preparePBL).toHaveBeenCalledWith('stage-1', [
+      expect.objectContaining({ id: 'scene-pbl' }),
+    ]);
+    expect(hasLearnerSceneChange('stage-1', 'scene-pbl')).toBe(true);
+  });
+
+  it('writes no content while fenced, only the reading position; PBL progress goes to its runtime store', async () => {
+    setServerGeneratingStage('stage-1');
+    useStageStore.getState().updateScene('scene-2', { title: 'changed' });
+    useStageStore.getState().setCurrentSceneId('scene-2');
+    await flushStageSave();
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'currentScene' }]);
+    expect(await useStageStore.getState().saveToStorage()).toBe(false);
+    expect(fullSave).not.toHaveBeenCalled();
+    expect(hasLearnerSceneChange('stage-1', 'scene-2')).toBe(true);
+
+    // A PBL scene's learner progress is synced to the runtime store on its own.
+    useStageStore.setState({
+      scenes: [
+        ...useStageStore.getState().scenes,
+        { ...scene('scene-pbl'), content: { type: 'pbl', projectV2: {} } } as unknown as Scene,
+      ],
+    });
+    useStageStore.getState().updateScene('scene-pbl', { title: 'progress' });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(preparePBL).toHaveBeenCalledWith('stage-1', [
+      expect.objectContaining({ id: 'scene-pbl' }),
+    ]);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+
+    // Unfenced: nothing held is written; edits save again.
+    setServerGeneratingStage(null);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(hasLearnerSceneChange('stage-1', 'scene-2')).toBe(false);
+    useStageStore.getState().updateScene('scene-2', { title: 'edited' });
+    await flushStageSave();
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
+  });
 });
 
 describe('incremental stage flush', () => {

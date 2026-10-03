@@ -146,14 +146,11 @@ await generateSceneOutlinesFromRequirements(
   aiCall,
 );
 
-// 4. 生成场景（含图片）
-await buildSceneFromOutline(
-  outline,
-  aiCall,
-  stageId,
-  assignedImages, // 从 pdfImages 筛选
-  imageMapping, // 用于解析 img_1 到实际 URL
-);
+// 4. Generate a scene's content (with images)
+await generateSceneContent(outline, aiCall, {
+  assignedImages, // filtered from pdfImages
+  imageMapping, // resolves img_1 to the actual image
+});
 ```
 
 ## 图片处理流程
@@ -184,9 +181,8 @@ slots:
   document: mineru
 ```
 
-`/api/extract-document` and `/api/parse-pdf` take only the file; with the
-`document` slot unassigned the server picks a built-in extractor for the file
-type. (The request fields `providerId`, `apiKey` and `baseUrl` are still
+`/api/parse-pdf` takes only the file; with the `document` slot unassigned the
+server picks a built-in extractor for the file type. (The request fields `providerId`, `apiKey` and `baseUrl` are still
 accepted from API clients while the slot is unassigned, and are deprecated.)
 
 ## 添加新的提供商

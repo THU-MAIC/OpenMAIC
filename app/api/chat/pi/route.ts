@@ -48,8 +48,6 @@ import {
 
 const log = createLogger('Pi Chat API');
 
-export const maxDuration = 300;
-
 export async function POST(req: NextRequest) {
   if (!isPiChatEnabled()) {
     return apiError('INVALID_REQUEST', 404, 'Pi chat runtime is disabled');

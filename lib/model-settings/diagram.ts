@@ -10,6 +10,7 @@
  * added to the registry still shows up.
  */
 import type { ModelSettingsView, SlotView } from './client';
+import { setOnSlot } from './edit';
 
 export const CANVAS_WIDTH = 1140;
 export const NODE_WIDTH = 196;
@@ -189,7 +190,7 @@ export function edgeKind(slot: SlotView): 'inherit' | 'detached' | 'none' {
   const effective = slot.effective;
   if (effective.status === 'assigned' && effective.resolvedAt !== slot.slot) return 'inherit';
   if (effective.status === 'unassigned' || effective.status === 'invalid') {
-    return slot.assignment === undefined && !slot.locked ? 'none' : 'detached';
+    return setOnSlot(slot) ? 'detached' : 'none';
   }
   return 'detached';
 }

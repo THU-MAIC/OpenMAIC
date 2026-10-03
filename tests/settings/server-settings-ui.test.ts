@@ -234,7 +234,7 @@ describe('Model Services → provider changes', () => {
     const view = makeView({
       providers: [{ ...workspaceProvider('operator'), source: 'deployment', key: undefined }],
       presets: [],
-      policy: { allowWorkspaceProviders: false },
+      allowUserKeys: false,
     });
     const { apply } = recordingApply(() => view);
     mount(
@@ -359,11 +359,13 @@ describe('Token Plan → provider and recommended slots', () => {
 function deploymentView(): ModelSettingsView {
   return makeView({
     presets: [],
-    policy: { allowWorkspaceProviders: false },
+    allowUserKeys: false,
     providers: [
       {
         id: 'gateway',
         preset: 'openai-compatible',
+        presetName: 'OpenAI-compatible endpoint',
+        presetKind: 'single',
         source: 'deployment',
         models: ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731'],
         capabilities: {
@@ -379,6 +381,8 @@ function deploymentView(): ModelSettingsView {
       {
         id: 'deepseek',
         preset: 'deepseek',
+        presetName: 'DeepSeek',
+        presetKind: 'single',
         source: 'deployment',
         capabilities: {
           chat: {
@@ -528,6 +532,8 @@ describe('review fixes', () => {
         {
           id: 'browser-native-tts',
           preset: 'browser-native-tts',
+          presetName: 'Browser TTS',
+          presetKind: 'single' as const,
           source: 'workspace' as const,
           capabilities: browserTts.capabilities,
           key: { set: false },

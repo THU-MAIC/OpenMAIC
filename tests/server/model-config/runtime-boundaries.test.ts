@@ -26,7 +26,7 @@ vi.mock('@/lib/persistence/workspace-model-config', () => ({
 vi.mock('@/lib/server/model-config/deployment-layer', () => ({
   loadDeploymentLayer: () => {
     mocks.loads += 1;
-    return { layer: null, defaults: null, notices: [] };
+    return { layer: null, legacy: false, notices: [] };
   },
 }));
 
@@ -100,9 +100,12 @@ describe('workspaceLayer', () => {
     runtime.setDeploymentConfigForTests({
       layer: {
         source: 'deployment',
-        config: { providers: { o: { preset: 'openai', apiKey: 'k' } } },
+        config: {
+          providers: { o: { preset: 'openai', apiKey: 'k' } },
+          slots: { llm: 'o:gpt-5.6' },
+        },
       },
-      defaults: { source: 'default', config: { slots: { llm: 'o:gpt-5.6' } } },
+      legacy: true,
       notices: [],
     });
     runtime.setWorkspaceLayerLoaderForTests(async () => {

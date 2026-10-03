@@ -37,6 +37,7 @@ import {
 } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import { encodeJson } from '../pg-json.js';
+import { applySchemaMigrations, type SchemaMigrationSet } from '../pg-migrations.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
 export type { QueryResult, Queryable, WithTransaction } from '../runtime/pg.js';
@@ -191,8 +192,21 @@ export const ASSET_PG_SCHEMA: readonly string[] = [
    )`,
 ];
 
+/** The asset backend's migrations, recorded under the store `asset`. */
+export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'asset',
+  migrations: [
+    { version: 1, name: 'baseline', up: ASSET_PG_SCHEMA.join(';\n'), transaction: false },
+  ],
+};
+
+/**
+ * Create the tables owned by this backend, or bring an existing database up to
+ * date, by applying the pending {@link ASSET_PG_MIGRATIONS}. Safe to call on
+ * every start; a schema change is a new migration.
+ */
 export async function ensureAssetSchema(queryable: Queryable): Promise<void> {
-  for (const statement of ASSET_PG_SCHEMA) await queryable.query(statement);
+  await applySchemaMigrations(queryable, ASSET_PG_MIGRATIONS);
 }
 
 interface UsageRow extends Record<string, unknown> {

@@ -19,6 +19,7 @@
  * Temporary, like the importer: remove with it.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 
 /** The request header an importer request carries its browser id in. */
 export const LEGACY_IMPORT_HEADER = 'x-openmaic-legacy-import';
@@ -41,11 +42,13 @@ CREATE INDEX IF NOT EXISTS legacy_import_bindings_owner_idx
   ON legacy_import_bindings (owner_id);
 `;
 
+export const LEGACY_IMPORT_BINDING_MIGRATIONS: SchemaMigrationSet = {
+  store: 'legacy-import-bindings',
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA, transaction: false }],
+};
+
 export async function ensureLegacyImportBindingSchema(queryable: Queryable): Promise<void> {
-  for (const sql of SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
-  }
+  await applySchemaMigrations(queryable, LEGACY_IMPORT_BINDING_MIGRATIONS);
 }
 
 /**

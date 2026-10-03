@@ -46,16 +46,16 @@
     "interactiveModeHint": "啟用互動優先模式以獲得更多實作內容",
     "interactiveModeLabel": "互動模式",
     "modelChangeFailed": "無法切換模型：{{message}}",
-    "modelLockedHint": "課程使用的模型，由此伺服器設定",
     "pickModel": "選擇模型",
-    "defaultModel": "預設",
     "defaultModelNote": "這裡修改預設模型，單獨設定的環節不受影響",
-    "stagesSetSeparately": "{{count}} 個環節單獨設定",
-    "stagesSetSeparately_one": "{{count}} 個環節單獨設定",
-    "stagesSetSeparately_other": "{{count}} 個環節單獨設定",
-    "stagesSetSeparatelyHint": "單獨設定模型的環節",
-    "perStageSetup": "按環節設定",
-    "perStageSetupHint": "課程生成的每個環節都已單獨設定模型"
+    "materialUploading": "上傳中 {{percent}}%",
+    "materialParsing": "解析中…",
+    "materialTranscribing": "轉寫中…",
+    "materialReady": "已就緒",
+    "materialFailed": "失敗",
+    "materialRetry": "重試",
+    "materialMediaLabel": "影音",
+    "materialUnavailable": "此素材已無法使用，請移除後重新加入檔案。"
   },
   "export": {
     "pptx": "匯出 PPTX",
@@ -245,6 +245,7 @@
     "generating": "生成中...",
     "paused": "已暫停",
     "generationFailed": "生成失敗",
+    "generationInterrupted": "生成已中斷",
     "confirmSwitchTitle": "切換頁面",
     "confirmSwitchMessage": "目前主題正在進行中，切換頁面將結束目前主題。確定要切換嗎？",
     "generatingNextPage": "場景正在生成，請稍候...",
@@ -1017,7 +1018,11 @@
     "notFoundDesc": "課程不存在，或已被刪除。",
     "loadUnavailable": "暫時無法載入這門課程",
     "loadUnavailableDesc": "無法取得課程，請檢查存取權限或重試。",
-    "backToHome": "返回首頁"
+    "backToHome": "返回首頁",
+    "runOutlining": "正在生成大綱…",
+    "runAwaitingConfirmation": "等待確認",
+    "runGenerating": "生成中 {{completed}}/{{total}}",
+    "runPaused": "已暫停"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -1029,7 +1034,11 @@
     "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
     "courseMaterialCountLimit": "最多可上傳 5 個課程材料檔案",
     "courseMaterialTotalSizeLimit": "課程材料總大小需小於 150MB",
-    "unsupportedCourseMaterial": "{{parser}} 不支援此檔案類型，目前支援：{{formats}}"
+    "unsupportedCourseMaterial": "{{parser}} 不支援此檔案類型，目前支援：{{formats}}",
+    "unsupportedMaterialFormat": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案",
+    "materialQuotaExceeded": "素材儲存空間已滿，請刪除部分素材後重試。",
+    "materialUploadFailed": "上傳 {{name}} 失敗，請重試。",
+    "materialTooLarge": "{{name}} 過大：單個素材最大為 {{size}}。"
   },
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
@@ -1065,6 +1074,7 @@
     "continue": "繼續",
     "outlineRetrying": "大綱生成異常，正在重試...",
     "outlineEmptyResponse": "模型未傳回有效的大綱內容，請檢查模型設定後重試",
+    "customAgentsUnavailable": "無法載入你的自訂智慧體，請稍後再試。",
     "outlineGenerateFailed": "大綱生成失敗，請稍後重試",
     "sceneGenerateFailed": "場景生成失敗，請稍後重試",
     "sceneGenerateAuthFailed": "場景生成失敗：模型服務拒絕了目前憑證。請檢查模型設定。",
@@ -1141,7 +1151,14 @@
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳至待補充標題的章節",
     "analyzingMediaMaterial": "解析音影片內容",
-    "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。"
+    "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。",
+    "activeRunLimit": "同時生成的課程已達上限，請等待其中一門完成後再試。",
+    "outlineConfirmedElsewhere": "此大綱已在其他地方確認，此處的修改未生效。",
+    "runChangedElsewhere": "生成已在其他地方繼續。",
+    "runLoadFailed": "無法載入此次生成",
+    "runLoadRetrying": "正在重試…",
+    "mediaGenerationFailed": "媒體生成失敗",
+    "mediaGenerationDisabled": "生成已停用"
   },
   "settings": {
     "title": "設定",
@@ -1693,7 +1710,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "此方案提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的方案檔位，不支援的模型會在生成時報錯。",
       "statusConnected": "已連接",
-      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後會將此方案推薦的模型套用到課程環節；如果會取代你已選的模型，會先徵求你的確認。",
+      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後會將此方案推薦的模型套用到課程環節；如果會取代環節目前所用的模型（你選的模型或伺服器預設值），會先徵求你的確認。",
       "saveKey": "儲存並啟用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理帳號",
@@ -1715,7 +1732,7 @@
       "stageInteractive": "互動頁面",
       "stageSlide": "課件頁面",
       "applyTitle": "使用此方案的推薦設定？",
-      "applyBody": "{{name}} 為以下環節推薦了自己的模型，這些環節目前使用的是你選的模型：",
+      "applyBody": "{{name}} 為以下環節推薦了自己的模型。使用它們會取代這些環節目前所用的模型，包括伺服器預設值：",
       "applyKeep": "保留目前設定",
       "applyRecommended": "使用方案推薦設定"
     },
@@ -1864,7 +1881,7 @@
     "saveModel": "儲存",
     "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "serverConfigured": "服務端",
-    "serverConfiguredNotice": "此供應商由伺服器端管理，無法在此編輯。如需使用自己的憑證，請新增一個供應商。",
+    "serverConfiguredNotice": "此供應商由伺服器端管理，無法在此編輯。",
     "startRecording": "開始錄音",
     "stopRecording": "停止錄音",
     "supportedFormats": "支援的格式",
@@ -1889,7 +1906,7 @@
       "unavailableTitle": "模型由伺服器統一管理",
       "unavailableBody": "此伺服器不保存工作區的模型設定，使用的是管理員設定的模型。",
       "conflict": "設定已在別處被修改並已重新載入，請檢查後重試。",
-      "lockedNow": "此項現由伺服器設定，未做修改。",
+      "lockedNow": "管理員已固定此項，因此未變更。",
       "unconfirmed": "伺服器的回應遺失，已重新載入設定，請確認修改是否生效。",
       "serverOnly": "此服務只能透過伺服器設定（openmaic.yml）設定，請聯絡伺服器管理員。",
       "serverOnlyPolicy": "此伺服器不允許工作區新增自己的服務，請聯絡伺服器管理員。",
@@ -1920,8 +1937,7 @@
         "off": "已關閉",
         "unassigned": "未設定",
         "invalid": "設定無效",
-        "locked": "由伺服器設定",
-        "lockedHint": "由伺服器設定，無法在此變更。",
+        "lockedHint": "管理員已為此伺服器上的所有人固定此項，無法在此變更。",
         "followers": "跟隨它的環節：{{count}}",
         "childrenFollow": "頁型 · 全部跟隨",
         "childrenOwn": "頁型 · {{count}} 個單獨設定"
@@ -1930,7 +1946,7 @@
         "label": "圖例",
         "follows": "跟隨上層",
         "own": "單獨設定",
-        "locked": "由伺服器設定"
+        "locked": "由管理員固定"
       },
       "map": {
         "label": "課程模型圖。拖曳或使用方向鍵平移，使用縮放按鈕縮放。",
@@ -1957,11 +1973,13 @@
         "noFallback": "無",
         "manageProviders": "在模型服務中管理",
         "conflict": "設定已在別處變更並已重新載入，請檢查後再試一次。",
-        "lockedNow": "伺服器現在設定了此項，因此未變更。",
+        "lockedNow": "管理員已固定此項，因此未變更。",
         "clear": "清除單獨設定",
-        "clearHint": "改用伺服器的設定（如有）",
+        "clearHint": "改為不設定",
         "unconfirmed": "伺服器的回應遺失，設定已重新載入。請檢查變更是否已生效。",
-        "thinking": "思考"
+        "thinking": "思考",
+        "serverDefault": "伺服器預設",
+        "resetDefault": "恢復伺服器預設"
       },
       "slots": {
         "llm": {
@@ -2039,8 +2057,8 @@
       },
       "source": {
         "inherited": "跟隨{{name}}",
-        "deployment": "伺服器",
-        "default": "伺服器預設"
+        "default": "伺服器預設",
+        "locked": "由管理員固定"
       },
       "stations": {
         "research": "網路研究",
@@ -2056,7 +2074,8 @@
         "prompt": "還沒有可用的語言模型。在「模型服務」中設定服務，或在「Token Plan」中連接方案，其模型會填入尚未設定的環節。",
         "open": "開啟模型服務",
         "askAdmin": "尚未設定語言模型，請聯絡伺服器管理員。"
-      }
+      },
+      "adminNotice": "管理員已設定此伺服器使用的模型。"
     },
     "unimported": {
       "toast": "此瀏覽器中的部分模型設定未能遷移到伺服器，已列在「設定 → 模型服務」中。",
@@ -2078,7 +2097,8 @@
         "unsupported": "此類自訂服務商無法遷移：請作為 OpenAI 相容端點重新新增。",
         "unconfirmed": "伺服器未確認已匯入。"
       }
-    }
+    },
+    "serverConfiguredAddOwn": "如需使用自己的憑證，請新增一個供應商。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

@@ -148,6 +148,21 @@ describe('translateLegacyConfig: media defaults', () => {
     expect(unusable.notices.join('\n')).toContain('DEFAULT_IMAGE_PROVIDER "grok-image"');
   });
 
+  it('prefers MinerU Cloud, then self-hosted MinerU, for the document root', () => {
+    const document = (pdf: ServerConfig['pdf']) =>
+      translateLegacyConfig(server({ pdf })).config.slots?.document;
+    const alidocmind = { apiKey: '', accessKeyId: 'ak', accessKeySecret: 'sk' };
+    const unpdf = { apiKey: '', baseUrl: 'http://unpdf.example' };
+    const mineru = { apiKey: 'm', baseUrl: 'https://mineru.example' };
+    const cloud = { apiKey: 'c' };
+    // Ahead of the configuration order (unpdf, mineru, mineru-cloud, alidocmind).
+    expect(document({ unpdf, mineru, 'mineru-cloud': cloud, alidocmind })).toBe('mineru-cloud');
+    expect(document({ unpdf, mineru, alidocmind })).toBe('mineru');
+    // Without MinerU, the first configured service, as before.
+    expect(document({ unpdf, alidocmind })).toBe('unpdf');
+    expect(document({ alidocmind })).toBe('alidocmind');
+  });
+
   it('skips providers that were switched off or did not carry over', () => {
     const { config } = translateLegacyConfig(
       server({
@@ -172,15 +187,17 @@ describe('translateLegacyConfig: media defaults after an upgrade', () => {
     webSearch: { tavily: { apiKey: 'tv' } },
   });
   const { config } = translateLegacyConfig(legacy);
-  const deployment = { source: 'deployment' as const, config: { providers: config.providers } };
-  const defaults = { source: 'default' as const, config: { slots: config.slots } };
+  // Translated, they are server defaults exactly as `slots` in openmaic.yml.
+  const deployment = { source: 'deployment' as const, config };
   const slots = ['tts', 'image', 'video', 'webSearch'] as const;
 
-  it('starts on with the configured provider, locking nothing', () => {
+  it('starts on with the configured provider, as a server default locking nothing', () => {
     for (const slot of slots) {
-      const lookup = lookupFromLayers(slot, { deployment, workspace: null, defaults });
-      expect(lookup.configured.status).toBe('unassigned');
-      expect(lookup.defaults()).toMatchObject({ status: 'assigned', locked: false });
+      expect(lookupFromLayers(slot, { deployment, workspace: null })).toMatchObject({
+        status: 'assigned',
+        source: 'default',
+        locked: false,
+      });
     }
   });
 
@@ -190,12 +207,14 @@ describe('translateLegacyConfig: media defaults after an upgrade', () => {
       config: { slots: { tts: null, image: null, video: null, webSearch: null } },
     };
     for (const slot of slots) {
-      const lookup = lookupFromLayers(slot, { deployment, workspace, defaults });
-      expect(lookup.configured.status).toBe('disabled');
+      expect(lookupFromLayers(slot, { deployment, workspace })).toMatchObject({
+        status: 'disabled',
+        source: 'workspace',
+      });
     }
   });
 
-  it('leaves an explicit openmaic.yml assignment as written, and locked', () => {
+  it('leaves an openmaic.yml assignment a default too, locked only by lock', () => {
     const file = {
       source: 'deployment' as const,
       config: {
@@ -204,10 +223,21 @@ describe('translateLegacyConfig: media defaults after an upgrade', () => {
       },
     };
     const workspace = { source: 'workspace' as const, config: { slots: { image: null } } };
-    const image = lookupFromLayers('image', { deployment: file, workspace, defaults: null });
-    expect(image.configured).toMatchObject({ status: 'assigned', locked: true });
-    const video = lookupFromLayers('video', { deployment: file, workspace: null, defaults: null });
-    expect(video.configured).toMatchObject({ status: 'disabled', locked: true });
+    expect(lookupFromLayers('image', { deployment: file, workspace })).toMatchObject({
+      status: 'disabled',
+      source: 'workspace',
+      locked: false,
+    });
+    const locked = { ...file, config: { ...file.config, lock: ['image', 'video'] } };
+    expect(lookupFromLayers('image', { deployment: locked, workspace })).toMatchObject({
+      status: 'assigned',
+      source: 'locked',
+      locked: true,
+    });
+    expect(lookupFromLayers('video', { deployment: locked, workspace: null })).toMatchObject({
+      status: 'disabled',
+      locked: true,
+    });
   });
 });
 

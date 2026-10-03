@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,6 +29,39 @@ describe('LocalMaterialByteStore', () => {
     await expect(readFile(join(root, key))).resolves.toEqual(Buffer.from('material bytes'));
     await store.delete(key);
     await expect(store.get(key)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('writes through a temporary file, leaving no partial object when the body fails', async () => {
+    const { root, store } = await storeFixture();
+    const key = 'materials/owner-1/mat-1.extraction/attempt.json';
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"partial":'));
+        controller.error(new Error('body broke'));
+      },
+    });
+    await expect(store.put(key, failing)).rejects.toThrow('body broke');
+    await expect(store.get(key)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(readdir(join(root, 'materials/owner-1/mat-1.extraction'))).resolves.toEqual([]);
+  });
+
+  it('deletes every object under a prefix, and only those', async () => {
+    const { store } = await storeFixture();
+    await store.put('materials/o/m1', Buffer.from('bytes'));
+    await store.put('materials/o/m1.extraction/a.json', Buffer.from('a'));
+    await store.put('materials/o/m1.extraction/b.json', Buffer.from('b'));
+    await store.put('materials/o/m10.extraction/c.json', Buffer.from('c'));
+    await store.deletePrefix('materials/o/m1.extraction/');
+    await expect(store.get('materials/o/m1.extraction/a.json')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(store.get('materials/o/m1')).resolves.toEqual(Buffer.from('bytes'));
+    await expect(store.get('materials/o/m10.extraction/c.json')).resolves.toEqual(Buffer.from('c'));
+    // Absent is fine; a prefix that is not a folder is refused.
+    await store.deletePrefix('materials/o/none.extraction/');
+    await expect(store.deletePrefix('materials/o/m1')).rejects.toThrow(
+      'invalid material object prefix',
+    );
   });
 
   it('rejects path traversal for every operation', async () => {

@@ -1,8 +1,8 @@
 /**
  * Shared constants for agent profile generation.
  *
- * Used by both the client-side agent-profiles API route and the
- * server-side classroom-generation pipeline to keep colors / avatars in sync.
+ * Used by the agent-profiles generation step, the agent tools and the
+ * editor's agent operations to keep colors / avatars in sync.
  */
 
 /** Color palette cycled for generated agents */

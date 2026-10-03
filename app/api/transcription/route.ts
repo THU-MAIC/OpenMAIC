@@ -24,8 +24,6 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Transcription');
 
-export const maxDuration = 60;
-
 export async function POST(req: NextRequest) {
   let resolvedProviderId: string | undefined;
   let resolvedModelId: string | undefined;

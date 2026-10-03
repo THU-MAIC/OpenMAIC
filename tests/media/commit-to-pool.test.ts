@@ -28,13 +28,6 @@ vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
 });
 
 import { commitToPool } from '@/lib/media/commit-to-pool';
-import {
-  isAssetStorageFull,
-  markAssetStorageFull,
-  setAssetStorageFullStoreForTests,
-} from '@/lib/media/asset-storage-full';
-
-const stageId = 'commit-stage';
 
 function quotaRefusal(): Error {
   return Object.assign(new Error('asset quota exceeded for this principal'), {
@@ -43,24 +36,8 @@ function quotaRefusal(): Error {
   });
 }
 
-/** The device KV the storage-full marker lives in, in memory. */
-function memoryKv() {
-  const entries = new Map<string, unknown>();
-  return {
-    get: async <T>(key: string) => (entries.get(key) as T) ?? null,
-    set: async (key: string, value: unknown) => {
-      entries.set(key, value);
-    },
-    remove: async (key: string) => {
-      entries.delete(key);
-    },
-    keys: async (prefix = '') => [...entries.keys()].filter((key) => key.startsWith(prefix)),
-  };
-}
-
 function plan(overrides: Record<string, unknown> = {}) {
   return {
-    stageId,
     slot: 'gen_img_3',
     bytes: new Blob(['generated-bytes'], { type: 'image/png' }),
     mimeType: 'image/png',
@@ -129,7 +106,7 @@ describe('commitToPool', () => {
   });
 
   // The bytes leave with the outcome whether or not a sink was supplied: the
-  // media pass carries them out to the failure record it writes around them.
+  // media path carries them out to the failure record it writes around them.
   it('hands the refused bytes back even with no retain sink', async () => {
     mocks.poolPut.mockRejectedValue(quotaRefusal());
 
@@ -217,33 +194,5 @@ describe('commitToPool', () => {
     await expect(commitToPool(current)).rejects.toThrow('document refused');
 
     expect(current.mirror).not.toHaveBeenCalled();
-  });
-
-  // The marker belongs to the seam and to the paths that spend provider money.
-  // The primitive reads neither and writes neither: a successful write retires
-  // it because `putAsset` does that, and a refusal here sets nothing.
-  it('retires the course marker through the seam, and never sets one', async () => {
-    setAssetStorageFullStoreForTests(memoryKv());
-    try {
-      await markAssetStorageFull(stageId);
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
-
-      await expect(commitToPool(plan())).resolves.toMatchObject({ status: 'stored' });
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-
-      mocks.poolPut.mockRejectedValue(quotaRefusal());
-      await expect(commitToPool(plan())).resolves.toMatchObject({ status: 'refused-retained' });
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-    } finally {
-      setAssetStorageFullStoreForTests(undefined);
-    }
-  });
-
-  // A caller outside a course has no course marker to retire, so the seam is
-  // handed no stage rather than a made-up one.
-  it('omits the stage seam when the caller has no course', async () => {
-    await expect(commitToPool(plan({ stageId: undefined }))).resolves.toMatchObject({
-      status: 'stored',
-    });
   });
 });

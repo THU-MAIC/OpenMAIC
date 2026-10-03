@@ -20,7 +20,22 @@ const log = createLogger('AliDocMind');
 const POLL_INTERVAL_MS = 3_000;
 const POLL_MAX_MS = 15 * 60 * 1_000;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 // Fixed verification messages: SDK and service error text stays in the log.
 const PROBE_REJECTED_MESSAGE =
@@ -42,6 +57,8 @@ export interface AliDocMindCredentials {
 }
 
 export interface AliDocMindSubmitOptions {
+  /** Stops polling (and fails) once the caller stops waiting; a submitted job is left to expire. */
+  signal?: AbortSignal;
   buffer: Buffer;
   fileName: string;
   /** Extension without dot, e.g. 'pdf', 'mp4'. If omitted, inferred from fileName. */
@@ -133,8 +150,12 @@ export async function parseWithAliDocMindClient(
     connectTimeout: 30_000,
     readTimeout: 5 * 60_000,
   });
+  options.signal?.throwIfAborted();
   log.info(`Submitting ${options.fileName} (${options.buffer.byteLength} bytes)`);
   const submitRes = await client.submitDocParserJobAdvance(request, runtime);
+  // The SDK cannot abort a call: a caller that stopped waiting meanwhile gets
+  // no further request (the submitted job expires on its own).
+  options.signal?.throwIfAborted();
   const jobId = submitRes.body?.data?.id;
   if (!jobId) {
     throw new Error(`AliDocMind submit returned no job id: ${JSON.stringify(submitRes.body)}`);
@@ -144,6 +165,7 @@ export async function parseWithAliDocMindClient(
   const deadline = Date.now() + POLL_MAX_MS;
   let lastStatus = '';
   while (Date.now() < deadline) {
+    options.signal?.throwIfAborted();
     const statusRes = await client.queryDocParserStatus(
       new $Docmind.QueryDocParserStatusRequest({ id: jobId }),
     );
@@ -172,7 +194,7 @@ export async function parseWithAliDocMindClient(
       throw new Error(`AliDocMind job ${jobId} failed: ${statusRes.body?.message ?? 'unknown'}`);
     }
     if (status === 'success') {
-      const result = await fetchResult(client, jobId);
+      const result = await fetchResult(client, jobId, options.signal);
       return {
         jobId,
         data: result,
@@ -183,12 +205,20 @@ export async function parseWithAliDocMindClient(
         tokens: data?.tokens,
       };
     }
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(POLL_INTERVAL_MS, options.signal);
   }
   throw new Error(`AliDocMind job ${jobId} timed out after ${POLL_MAX_MS / 1000}s`);
 }
 
-async function fetchResult(client: Client, jobId: string): Promise<Record<string, unknown>> {
+/**
+ * Every page of a finished job's result. The SDK takes no abort signal, so a
+ * request in flight runs to its own timeout; `signal` stops the next one.
+ */
+async function fetchResult(
+  client: Client,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
   const STEP = 100;
   const merged: {
     layouts?: unknown[];
@@ -199,6 +229,7 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
   let layoutNum = 0;
 
   while (true) {
+    signal?.throwIfAborted();
     const res = await client.getDocParserResult(
       new $Docmind.GetDocParserResultRequest({
         id: jobId,

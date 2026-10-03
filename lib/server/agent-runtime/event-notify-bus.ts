@@ -42,7 +42,11 @@ export const AGENT_EVENT_NOTIFY_APPLICATION_NAME = 'openmaic-agent-notify-bus';
 export type AgentEventWakeupRoute =
   | { kind: 'owner'; ownerId: string }
   | { kind: 'session'; sessionId: string }
-  | { kind: 'stage'; stageId: string };
+  | { kind: 'stage'; stageId: string }
+  /** A generation run's event log (`lib/server/generation/run/`). */
+  | { kind: 'generation-run'; runId: string }
+  /** The generation runs of one owner: one changed state. */
+  | { kind: 'generation-run-owner'; ownerId: string };
 
 type Subscriber = () => void;
 
@@ -106,6 +110,10 @@ function routeKey(route: AgentEventWakeupRoute): string {
       return `session:${route.sessionId}`;
     case 'stage':
       return `stage:${route.stageId}`;
+    case 'generation-run':
+      return `generation-run:${route.runId}`;
+    case 'generation-run-owner':
+      return `generation-run-owner:${route.ownerId}`;
   }
 }
 
@@ -121,6 +129,16 @@ function parseRoute(notification: Notification): AgentEventWakeupRoute | null {
     }
     if (value.kind === 'stage' && typeof value.stageId === 'string' && value.stageId) {
       return { kind: 'stage', stageId: value.stageId };
+    }
+    if (value.kind === 'generation-run' && typeof value.runId === 'string' && value.runId) {
+      return { kind: 'generation-run', runId: value.runId };
+    }
+    if (
+      value.kind === 'generation-run-owner' &&
+      typeof value.ownerId === 'string' &&
+      value.ownerId
+    ) {
+      return { kind: 'generation-run-owner', ownerId: value.ownerId };
     }
   } catch {
     // A malformed or foreign payload is unrelated to this process's streams.

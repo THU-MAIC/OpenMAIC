@@ -16,6 +16,7 @@ import type { AssetByteStoreRegistration } from '@/lib/server/persistence-hooks/
 // register() is exercised for its hook validation only.
 vi.mock('@/lib/persistence/asset-quota', () => ({ resolveAssetQuotaBytes: vi.fn() }));
 vi.mock('@/lib/persistence/asset-pending-ttl', () => ({ resolveAssetPendingTtlMs: vi.fn() }));
+vi.mock('@/lib/persistence/schema-boot-check', () => ({ startSchemaBootCheck: vi.fn() }));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({
   startAssetCollectorSchedule: vi.fn(),
 }));

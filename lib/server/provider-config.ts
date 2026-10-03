@@ -561,7 +561,13 @@ function getConfig(): ServerConfig {
 
   const yamlData = loadYamlFile(DEFAULT_FILENAME);
   const config = buildConfig(yamlData);
-  logConfig(config, DEFAULT_FILENAME);
+  // Environment variables are always read; the file only when it has content.
+  logConfig(
+    config,
+    Object.keys(yamlData).length > 0
+      ? `${DEFAULT_FILENAME} and environment variables`
+      : 'environment variables',
+  );
   _configs.set('', config);
   return config;
 }

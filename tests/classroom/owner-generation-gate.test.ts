@@ -170,12 +170,12 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(session).toContain('useMayGenerateForStage(classroomId)');
     // Reset on course switch, so a previous course's answer never carries over.
     expect(session).toContain("noteStageGenerationOwnership(classroomId, 'unresolved')");
-    // The resume effect re-runs when the answer lands.
-    expect(surface).toMatch(/\}, \[loading, error, mayGenerate, generateRemaining\]\);/);
     // An unresolved answer is asked again rather than accepted for the load.
     expect(session).toContain('retryWhileOwnershipUnresolved');
     // The outline-retry affordance is withheld, not merely refused.
-    expect(surface).toMatch(/onRetryOutline=\{mayGenerate \? retrySingleOutline : undefined\}/);
+    expect(surface).toMatch(
+      /onRetryOutline=\{mayGenerate && runCourse\.runId \? runCourse\.retryOutline : undefined\}/,
+    );
   });
 
   it('the standalone route mounts the shared page variant', () => {
@@ -272,7 +272,6 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     );
     expect(source).toContain('clearPendingMediaAllocations(classroomId)');
     expect(source).toContain('clearNarrationAllocations(classroomId)');
-    expect(source).toContain('return () => stopGeneration()');
   });
 
   // Listening back to narration and seeing whether a line has any spend nothing,
@@ -291,18 +290,5 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     // Both regenerate affordances are withheld rather than merely refused.
     expect(bar).toMatch(/\{mayRegenerate \?/);
     expect(bar).toMatch(/ttsActive && mayGenerate &&/);
-  });
-
-  // A pass that is superseded must stop, or it goes on calling providers and
-  // storing assets for a course the user has left. What happens once it stops
-  // is covered behaviourally in the orchestrator suite ("picks up every element
-  // an aborted pass never reached"); this guards only that the surface does
-  // stop it, which no harness here can drive.
-  it('aborts the previous media pass before starting another', () => {
-    const source = readFileSync(join(process.cwd(), 'lib/hooks/use-scene-generator.ts'), 'utf8');
-    const abortAt = source.indexOf('mediaAbortRef.current?.abort()');
-    const installAt = source.indexOf('mediaAbortRef.current = new AbortController()');
-    expect(abortAt).toBeGreaterThan(0);
-    expect(installAt).toBeGreaterThan(abortAt);
   });
 });

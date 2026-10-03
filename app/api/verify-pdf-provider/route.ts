@@ -23,6 +23,8 @@ import {
   savedProviderRef,
   savedProviderResponse,
 } from '@/lib/server/model-config/saved-provider';
+import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('Verify PDF Provider');
 
@@ -126,6 +128,11 @@ export async function POST(req: NextRequest) {
       if (!ref) return apiError('MISSING_REQUIRED_FIELD', 400, 'Provider ID is required');
       providerId = ref;
       return await verifySavedProvider(req, ref);
+    }
+    // The old body form names its own provider and key: not under
+    // `allowUserKeys: false`, which leaves only saved providers (by id above).
+    if (!requestProvidersAllowed()) {
+      return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);
     }
     providerId = body.providerId;
     const { apiKey, baseUrl, accessKeyId, accessKeySecret } = body;

@@ -39,6 +39,8 @@ export interface MediaParseInput {
   fileName: string;
   mimeType: string;
   config: MediaParserConfig;
+  /** Stops the parse's polling when the caller stops waiting. */
+  signal?: AbortSignal;
 }
 
 export type MediaParseResult = MediaArtifact;

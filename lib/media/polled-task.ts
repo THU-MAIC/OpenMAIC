@@ -15,6 +15,24 @@ export interface PolledTaskTimeoutContext {
   lastPendingDetail?: string;
 }
 
+/** How a caller follows a provider task it may have to wait on again later. */
+export interface PolledTaskControl {
+  /**
+   * Told the provider's task id once the task is submitted, before the first
+   * wait, so a caller can record it and resume the wait elsewhere. A
+   * submission that is already terminal (done or failed) has nothing to wait
+   * on or resume, so this is not called for it. When this rejects, the wait
+   * is abandoned with that error although the provider task was submitted.
+   */
+  onSubmitted?: (taskId: string) => void | Promise<void>;
+  /**
+   * Wait on this task, submitted earlier, instead of submitting a new one.
+   * The resumed wait gets a fresh poll budget (`maxAttempts`), not what was
+   * left of the original one. An empty id is an error, never a new task.
+   */
+  resumeTaskId?: string;
+}
+
 export interface RunPolledTaskOptions<T> {
   submit: () => Promise<SubmitResult<T>>;
   poll: (taskId: string) => Promise<PollResult<T>>;
@@ -28,6 +46,7 @@ export interface RunPolledTaskOptions<T> {
    * poll period to take effect.
    */
   signal?: AbortSignal;
+  control?: PolledTaskControl;
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
@@ -53,17 +72,26 @@ export async function runPolledTask<T>({
   label,
   formatTimeout,
   signal,
+  control,
 }: RunPolledTaskOptions<T>): Promise<T> {
-  const submitted = await submit();
-  if (submitted.status === 'done') return submitted.result;
-  if (submitted.status === 'failed') throw new Error(submitted.message);
+  let taskId = control?.resumeTaskId;
+  if (taskId !== undefined && !taskId.trim()) {
+    throw new Error(`${label}: cannot resume a task without an id`);
+  }
+  if (taskId === undefined) {
+    const submitted = await submit();
+    if (submitted.status === 'done') return submitted.result;
+    if (submitted.status === 'failed') throw new Error(submitted.message);
+    taskId = submitted.taskId;
+    await control?.onSubmitted?.(taskId);
+  }
 
   let attempts = 0;
   let lastPendingDetail: string | undefined;
 
   while (attempts < maxAttempts) {
     await delay(intervalMs, signal);
-    const result = await poll(submitted.taskId);
+    const result = await poll(taskId);
     attempts++;
 
     if (result.status === 'done') return result.result;
@@ -73,7 +101,7 @@ export async function runPolledTask<T>({
 
   const timeoutContext: PolledTaskTimeoutContext = {
     label,
-    taskId: submitted.taskId,
+    taskId,
     attempts,
     intervalMs,
     elapsedMs: attempts * intervalMs,

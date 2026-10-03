@@ -91,12 +91,30 @@ export interface ImportLedger {
   failedRuns: number;
   /** Earliest time (epoch ms) the next run may start. */
   nextRunAt?: number;
+  /**
+   * The last run was refused as unauthorized (an expired credential, or an
+   * ACCESS_CODE gate the page had not passed yet). Accepting the access code
+   * retries such a run at once instead of waiting out the backoff.
+   */
+  pausedUnauthorized?: true;
   /** Set once nothing is pending: later loads skip the importer entirely. */
   completedAt?: number;
   courses: Record<string, CourseEntry>;
   folders: Record<string, FolderEntry>;
   /** The auto-voice reference clips were copied into the device cache. */
   autoVoiceCache?: 'done';
+  /**
+   * The custom agents of the old agent registry (`agent-registry-storage`)
+   * reached the server (`./agents-import.ts`). Tracked apart from the courses:
+   * it neither holds up nor waits for {@link ImportLedger.completedAt}.
+   */
+  agents?: 'done';
+  /**
+   * Ids of the old registry's custom agents that are settled: the server took
+   * them, or already had them. A later run sends only the others, so an agent
+   * the user deleted on the server after it arrived is not created again.
+   */
+  agentsSettled?: string[];
 }
 
 /** A course whose storage reads failed this often, over this long, settles. */
@@ -206,6 +224,10 @@ export function mergeStoredLedger(ledger: ImportLedger, stored: ImportLedger | u
     else if (progress(theirs) > progress(ours)) Object.assign(ours, theirs);
   }
   ledger.autoVoiceCache ??= stored.autoVoiceCache;
+  ledger.agents ??= stored.agents;
+  if (stored.agentsSettled?.length) {
+    ledger.agentsSettled = [...new Set([...(ledger.agentsSettled ?? []), ...stored.agentsSettled])];
+  }
 }
 
 /** Persist the ledger, merged with the stored copy. A full storage throws (transient). */

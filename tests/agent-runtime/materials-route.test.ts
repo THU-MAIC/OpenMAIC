@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     put: vi.fn(),
     get: vi.fn(),
     delete: vi.fn(),
+    deletePrefix: vi.fn(),
   },
   queryPool: {
     query: vi.fn(),
@@ -51,7 +52,8 @@ vi.mock('@/lib/persistence/server-provider', () => ({
     pool: mocks.queryPool,
   }),
 }));
-vi.mock('@/lib/server/materials/bytes', () => ({
+vi.mock('@/lib/server/materials/bytes', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/materials/bytes')>()),
   getMaterialByteStore: () => mocks.byteStore,
 }));
 vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => {
@@ -118,13 +120,20 @@ beforeEach(() => {
   mocks.listSessionMaterials.mockResolvedValue([material()]);
   mocks.registerOwnerMaterial.mockResolvedValue(ownerMaterial());
   mocks.reclaimStaleOwnerMaterialUploads.mockResolvedValue(undefined);
-  mocks.finalizeOwnerMaterial.mockImplementation(async (_pool: unknown, id: string) =>
-    ownerMaterial({ id }),
+  mocks.finalizeOwnerMaterial.mockImplementation(
+    async (
+      _pool: unknown,
+      id: string,
+      _bytes: number,
+      _sha: string,
+      options?: { extract?: boolean },
+    ) => ownerMaterial({ id, extraction: { status: options?.extract ? 'extracting' : 'idle' } }),
   );
   mocks.abandonOwnerMaterial.mockResolvedValue(undefined);
   mocks.byteStore.put.mockResolvedValue(undefined);
   mocks.byteStore.get.mockResolvedValue(null);
   mocks.byteStore.delete.mockResolvedValue(undefined);
+  mocks.byteStore.deletePrefix.mockResolvedValue(undefined);
 });
 
 describe('GET /api/materials', () => {
@@ -163,9 +172,51 @@ describe('GET /api/materials', () => {
     });
   });
 
-  it('rejects a missing sessionId', async () => {
-    const response = await GET(new NextRequest('http://localhost/api/materials'));
+  it('rejects an empty sessionId instead of listing the library', async () => {
+    const response = await GET(new NextRequest('http://localhost/api/materials?sessionId='));
     expect(response.status).toBe(400);
+    expect(mocks.resolveOwnedSession).not.toHaveBeenCalled();
+  });
+
+  it("lists the owner's own uploads with their extraction when no session is named", async () => {
+    mocks.runtimeConfigured = false;
+    mocks.queryPool.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 'mat_00000000000000000000000000',
+          owner_id: 'owner-1',
+          kind: 'source',
+          derived_from: null,
+          mime: 'video/mp4',
+          bytes: 5,
+          original_name: 'talk.mp4',
+          oss_key: 'materials/owner-1/x',
+          sha256: 'sha',
+          status: 'ready',
+          extraction: {
+            status: 'ready',
+            textChars: 10,
+            truncated: { textChars: 5 },
+            identityKey: '[]',
+            resultKey: 'materials/owner-1/x.extraction/a.json',
+            claimedAt: 1,
+          },
+          created_at: 1_700_000_000_000,
+          deleted_at: null,
+        },
+      ],
+    });
+    const response = await GET(new NextRequest('http://localhost/api/materials'));
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { materials: Array<Record<string, unknown>> };
+    expect(body.materials).toEqual([
+      expect.objectContaining({
+        materialId: 'mat_00000000000000000000000000',
+        mediaKind: 'media',
+        // The services key is internal.
+        extraction: { status: 'ready', textChars: 10, truncated: { textChars: 5 } },
+      }),
+    ]);
     expect(mocks.resolveOwnedSession).not.toHaveBeenCalled();
   });
 
@@ -207,6 +258,25 @@ describe('POST /api/materials', () => {
     );
   }
 
+  it('defers the extraction for an uploader that asks (the agent workspace)', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/materials?extract=false', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'a.pdf' },
+        body: Buffer.from('hello') as BodyInit,
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect((await response.json()).extraction).toEqual({ status: 'idle' });
+    expect(mocks.finalizeOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      5,
+      expect.any(String),
+      { extract: false },
+    );
+  });
+
   it('uploads raw bytes into the owner library and returns the flat 201 view', async () => {
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(201);
@@ -223,7 +293,9 @@ describe('POST /api/materials', () => {
       originalName: '讲义.pdf',
       bytes: 5,
       mime: 'application/pdf',
-      extraction: { status: 'idle' },
+      mediaKind: 'document',
+      // Extraction starts with the upload.
+      extraction: { status: 'extracting' },
     });
     // The uploader's error pairing header is echoed.
     expect(response.headers.get('x-request-id')).toBeTruthy();
@@ -246,6 +318,7 @@ describe('POST /api/materials', () => {
       body.materialId,
       5,
       '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      { extract: true },
     );
     // The object key is part of the reservation before its bytes are written,
     // closing the crash window between the byte write and finalize.
@@ -472,7 +545,9 @@ describe('DELETE /api/materials/[id]', () => {
       MATERIAL_ID,
       expect.any(Function),
     );
+    // The bytes, and the extraction result stored next to them.
     expect(mocks.byteStore.delete).toHaveBeenCalledWith('materials/owner-1/key');
+    expect(mocks.byteStore.deletePrefix).toHaveBeenCalledWith('materials/owner-1/key.extraction/');
   });
 
   it('answers a plain 404 for a material the owner does not have', async () => {

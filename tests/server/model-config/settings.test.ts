@@ -17,7 +17,7 @@ import {
 const deployment = (config: ModelConfigLayer['config']) =>
   setDeploymentConfigForTests({
     layer: { source: 'deployment', config },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 
@@ -25,7 +25,9 @@ beforeEach(() => {
   vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
   deployment({
     providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+    // llm is a server default the workspace may change; video is locked off.
     slots: { llm: 'operator:deepseek-v4-pro', video: null },
+    lock: ['video'],
   });
 });
 
@@ -49,8 +51,21 @@ describe('modelSettingsView', () => {
     expect(json).not.toContain('sk-workspace-secret');
     expect(view.revision).toBe(3);
     expect(view.providers.map(({ capabilities: _capabilities, ...rest }) => rest)).toEqual([
-      { id: 'operator', preset: 'deepseek', source: 'deployment' },
-      { id: 'mine', preset: 'openai', source: 'workspace', key: { set: true, mask: '…9876' } },
+      {
+        id: 'operator',
+        preset: 'deepseek',
+        presetName: 'DeepSeek',
+        presetKind: 'single',
+        source: 'deployment',
+      },
+      {
+        id: 'mine',
+        preset: 'openai',
+        presetName: 'OpenAI',
+        presetKind: 'single',
+        source: 'workspace',
+        key: { set: true, mask: '…9876' },
+      },
     ]);
     // Each provider lists the models it serves per capability, for the pickers.
     expect(view.providers[0].capabilities.chat?.models).toContainEqual(
@@ -63,14 +78,57 @@ describe('modelSettingsView', () => {
         ?.capabilities,
     ).toMatchObject({ tools: true });
     const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
-    expect(slot('llm')).toMatchObject({ locked: true, effective: { source: 'deployment' } });
-    expect(slot('video')).toMatchObject({ locked: true, effective: { status: 'disabled' } });
+    expect(view.allowUserKeys).toBe(true);
+    expect(view).not.toHaveProperty('policy');
+    expect(slot('llm')).toMatchObject({
+      locked: false,
+      source: { kind: 'default' },
+      serverDefault: 'operator:deepseek-v4-pro',
+      effective: { source: 'default' },
+    });
+    expect(slot('video')).toMatchObject({
+      locked: true,
+      source: { kind: 'locked' },
+      effective: { status: 'disabled', source: 'locked' },
+    });
     expect(slot('course.content.slide')).toMatchObject({
       locked: false,
+      source: { kind: 'inherited', from: 'course.content' },
       effective: { status: 'assigned', resolvedAt: 'course.content', modelId: 'gpt-5.6' },
     });
-    expect(slot('course.content')).toMatchObject({ assignment: 'mine:gpt-5.6' });
+    expect(slot('course.content')).toMatchObject({
+      assignment: 'mine:gpt-5.6',
+      source: { kind: 'workspace' },
+    });
+    expect(slot('course.content')).not.toHaveProperty('serverDefault');
+    expect(slot('image')).toMatchObject({ locked: false, source: { kind: 'unconfigured' } });
     expect(slot('agent.title')).toMatchObject({ configOnly: true });
+  });
+
+  it('leaves dormant workspace providers and their assignments out without user keys', () => {
+    deployment({
+      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      slots: { llm: 'operator:deepseek-v4-pro' },
+      allowUserKeys: false,
+    });
+    const view = modelSettingsView({
+      config: {
+        providers: { mine: { preset: 'openai', apiKey: 'sk-workspace-secret-9876' } },
+        slots: { llm: 'mine:gpt-5.6', 'course.outline': 'operator:deepseek-v4-flash' },
+      },
+      revision: 2,
+      unreadableSecrets: [],
+    });
+    expect(view.providers.map((provider) => provider.id)).toEqual(['operator']);
+    const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
+    // The dormant llm choice is neither shown nor used: the server default is.
+    expect(slot('llm')).not.toHaveProperty('assignment');
+    expect(slot('llm')).toMatchObject({ source: { kind: 'default' } });
+    // A choice among the deployment's providers stays.
+    expect(slot('course.outline')).toMatchObject({
+      assignment: 'operator:deepseek-v4-flash',
+      source: { kind: 'workspace' },
+    });
   });
 
   it('lists the presets a workspace may add, without deployment-only ones', () => {
@@ -94,7 +152,7 @@ describe('modelSettingsView', () => {
       customEndpoint: false,
     });
 
-    deployment({ policy: { allowWorkspaceProviders: false } });
+    deployment({ allowUserKeys: false });
     expect(modelSettingsView(null).presets).toEqual([]);
   });
 
@@ -180,7 +238,7 @@ describe('modelSettingsView', () => {
       await import('@/lib/server/model-config/settings');
     (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
       layer: null,
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const view = modelSettingsView(null);
@@ -221,10 +279,59 @@ describe('modelSettingsView', () => {
 });
 
 describe('applyModelSettingsChange', () => {
-  it('refuses a slot the deployment locks', async () => {
+  it('refuses a slot the deployment locks, and every slot below it', async () => {
     await expect(
-      applyModelSettingsChange(null, { kind: 'slots', set: { llm: 'operator:x' } }),
+      applyModelSettingsChange(null, { kind: 'slots', set: { video: 'operator:x' } }),
     ).rejects.toMatchObject({ code: 'SLOT_LOCKED' });
+    deployment({
+      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      slots: { llm: 'operator:deepseek-v4-pro' },
+      lock: ['llm'],
+    });
+    for (const slot of ['llm', 'course.content', 'course.content.slide', 'agent.title']) {
+      await expect(
+        applyModelSettingsChange(null, { kind: 'slots', set: { [slot]: null } }),
+      ).rejects.toMatchObject({ code: 'SLOT_LOCKED' });
+    }
+    // Clearing a stale assignment made before the lock is allowed.
+    expect(
+      await applyModelSettingsChange(
+        { slots: { 'course.outline': 'operator:deepseek-v4-flash', image: null } },
+        { kind: 'slots', clear: ['course.outline'] },
+      ),
+    ).toEqual({ slots: { image: null } });
+    await expect(
+      applyModelSettingsChange(null, {
+        kind: 'slots',
+        set: { 'course.content.slide': 'operator:deepseek-v4-flash' },
+      }),
+    ).rejects.toMatchObject({
+      code: 'SLOT_LOCKED',
+      message: 'course.content.slide is fixed by the administrator (with llm)',
+    });
+    // Other trees stay the workspace's.
+    expect(await applyModelSettingsChange(null, { kind: 'slots', set: { image: null } })).toEqual({
+      slots: { image: null },
+    });
+    deployment({ lock: 'all' });
+    await expect(
+      applyModelSettingsChange(null, { kind: 'slots', set: { image: null } }),
+    ).rejects.toMatchObject({ code: 'SLOT_LOCKED' });
+  });
+
+  it('lets the workspace replace a server default, and reset it by clearing', async () => {
+    const changed = await applyModelSettingsChange(null, {
+      kind: 'slots',
+      set: { llm: 'operator:deepseek-v4-flash' },
+    });
+    const view = modelSettingsView({ config: changed, revision: 1, unreadableSecrets: [] });
+    expect(view.slots.find((slot) => slot.slot === 'llm')).toMatchObject({
+      source: { kind: 'workspace' },
+      serverDefault: 'operator:deepseek-v4-pro',
+      effective: { modelId: 'deepseek-v4-flash' },
+    });
+    const reset = await applyModelSettingsChange(changed, { kind: 'slots', clear: ['llm'] });
+    expect(reset).toEqual({});
   });
 
   it('assigns, turns off and clears slots, over deployment providers too', async () => {
@@ -354,7 +461,7 @@ describe('applyModelSettingsChange', () => {
   });
 
   it('refuses providers when the deployment policy does not allow them', async () => {
-    deployment({ policy: { allowWorkspaceProviders: false } });
+    deployment({ allowUserKeys: false });
     await expect(
       applyModelSettingsChange(null, { kind: 'provider', id: 'mine', preset: 'openai' }),
     ).rejects.toMatchObject({ code: 'PROVIDERS_NOT_ALLOWED' });
@@ -365,7 +472,7 @@ describe('applyModelSettingsChange', () => {
       providers: { mine: { preset: 'openai', apiKey: 'sk-mine-0000000000' } },
       slots: { 'course.outline': 'mine:gpt-5.6' },
     };
-    deployment({ policy: { allowWorkspaceProviders: false } });
+    deployment({ allowUserKeys: false });
     await expect(
       applyModelSettingsChange(kept, { kind: 'slots', set: { llm: 'mine:gpt-5.6' } }),
     ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
@@ -374,8 +481,8 @@ describe('applyModelSettingsChange', () => {
     vi.resetModules();
     const fresh = await import('@/lib/server/model-config/settings');
     (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
-      layer: { source: 'deployment', config: { policy: { allowWorkspaceProviders: false } } },
-      defaults: null,
+      layer: { source: 'deployment', config: { allowUserKeys: false } },
+      legacy: false,
       notices: [],
     });
     const dormantSearch = {
@@ -463,22 +570,27 @@ describe('applyModelSettingsChange', () => {
     const preset = view.presets.find((entry) => entry.id === 'tokendance')!;
     const provider = view.providers.find((entry) => entry.id === 'tokendance')!;
     const recommendation = tokenPlanRecommendation(view, preset, provider);
-    // The deployment's locked slots (llm, video) are not part of it.
+    const planLlm = `tokendance:${preset.recommended.llm}`;
+    // The locked video is not part of it; llm, a server default, is.
     expect(recommendation).toEqual({
+      llm: planLlm,
       'course.content.slide': 'tokendance:cogevol-slide-0828',
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
       webSearch: 'tokendance',
     });
-    expect(tokenPlanConflicts(view, recommendation).map((c) => c.slot.slot)).toEqual([
-      'course.content.slide',
-      'course.content.interactive',
-      'webSearch',
+    // The server's default on llm is a current choice too: the user is asked about it.
+    expect(tokenPlanConflicts(view, recommendation).map((c) => [c.slot.slot, c.from])).toEqual([
+      ['llm', 'default'],
+      ['course.content.slide', 'workspace'],
+      ['course.content.interactive', 'workspace'],
+      ['webSearch', 'workspace'],
     ]);
 
     const set = tokenPlanAssignments(view, recommendation, 'overwrite');
     expect(set).toEqual({
+      llm: planLlm,
       'course.content.slide': 'tokendance:cogevol-slide-0828',
       // A replaced language-model assignment keeps its fallback.
       'course.content.interactive': {
@@ -501,12 +613,14 @@ describe('applyModelSettingsChange', () => {
       providerId: 'tokendance',
       modelId: 'cogevol-slide-0828',
     });
-    // A stage the plan does not name keeps the workspace's pick; locked slots stay the deployment's.
+    // A stage the plan does not name keeps the workspace's pick; the plan
+    // replaces the server's default model; the locked video stays off.
     expect(effective('course.outline')).toMatchObject({ providerId: 'mine', modelId: 'gpt-5.6' });
-    expect(effective('llm')).toMatchObject({ source: 'deployment', providerId: 'operator' });
-    expect(effective('video')).toMatchObject({ status: 'disabled', source: 'deployment' });
+    expect(effective('llm')).toMatchObject({ source: 'workspace', providerId: 'tokendance' });
+    expect(effective('video')).toMatchObject({ status: 'disabled', source: 'locked' });
 
-    // Keeping the workspace's setup fills only the slots with nothing of their own.
+    // Keeping the current setup fills only the slots with no choice of their
+    // own: the server's default llm stays.
     expect(tokenPlanAssignments(view, recommendation, 'keep')).toEqual({
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
@@ -585,7 +699,7 @@ describe('applyModelSettingsChange', () => {
 
 describe('importModelSettings', () => {
   it('imports a capability turned off, except where the deployment locks the slot', async () => {
-    deployment({ slots: { video: 'operator-video' } });
+    deployment({ slots: { video: 'operator-video' }, lock: ['video'] });
     const result = await importModelSettings(null, {
       slots: { tts: null, image: null, video: null },
     });

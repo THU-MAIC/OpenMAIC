@@ -24,8 +24,6 @@ import { runInstructorTurn } from '@/lib/pbl/v2/agents/instructor';
 import { applyQuizSignalsToProject } from '@/lib/pbl/v2/operations/runtime/quiz-snapshot';
 import type { PBLProjectV2, PriorQuizResult } from '@/lib/pbl/v2/types';
 
-export const maxDuration = 300;
-
 const log = createLogger('PBL v2 OpenTask API');
 
 interface OpenTaskRequest {

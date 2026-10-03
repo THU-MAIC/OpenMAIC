@@ -20,7 +20,10 @@ export type MediaResolution =
   | { readonly kind: 'placeholder' }
   | { readonly kind: 'raw'; readonly value: string };
 
-export type MediaTaskState = Pick<MediaTask, 'status' | 'objectUrl' | 'errorCode' | 'retryCount'>;
+export type MediaTaskState = Pick<
+  MediaTask,
+  'status' | 'objectUrl' | 'errorCode' | 'retryCount' | 'retryable'
+>;
 
 export const MISSING_ASSET_LEASE: AssetUrlLeaseState = Object.freeze({ status: 'missing' });
 
@@ -39,7 +42,8 @@ export function isConcreteMediaAddress(value: string | undefined): boolean {
 }
 
 function isRetryableFailure(task: MediaTaskState): boolean {
-  return isRetryableMediaFailure(task);
+  // A generation run says itself whether its Retry would be accepted.
+  return task.retryable ?? isRetryableMediaFailure(task);
 }
 
 /**

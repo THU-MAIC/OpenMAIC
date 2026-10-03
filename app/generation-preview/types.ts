@@ -1,39 +1,4 @@
 import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
-import { useSettingsStore } from '@/lib/store/settings';
-import type {
-  SceneOutline,
-  UserRequirements,
-  PdfImage,
-  ImageMapping,
-  SessionDocumentSource,
-} from '@/lib/types/generation';
-
-// Session state stored in sessionStorage
-export interface GenerationSessionState {
-  sessionId: string;
-  requirements: UserRequirements;
-  pdfText: string;
-  documentSources?: SessionDocumentSource[];
-  pdfImages?: PdfImage[];
-  imageStorageIds?: string[];
-  imageMapping?: ImageMapping;
-  sceneOutlines?: SceneOutline[] | null;
-  currentStep: 'generating' | 'complete';
-  previewPhase?: 'preparing' | 'outline-ready' | 'review' | 'generating-content';
-  // PDF deferred parsing fields
-  pdfStorageKey?: string;
-  pdfFileName?: string;
-  documentMimeType?: string;
-  // Web search context
-  researchContext?: string;
-  researchSources?: Array<{ title: string; url: string }>;
-  // Language directive inferred from outline generation
-  languageDirective?: string;
-  // Concise course title inferred from outline generation (used as the stage name)
-  courseTitle?: string;
-  // Server-effective vocational mode from the outline generation done event.
-  taskEngineMode?: boolean;
-}
 
 export type GenerationStep = {
   id: string;
@@ -46,17 +11,20 @@ export type GenerationStep = {
 const MEDIA_EXTENSIONS = new Set(['mp4', 'mkv', 'avi', 'mov', 'wmv', 'mp3', 'wav', 'aac', 'm4a']);
 
 /** True when the uploaded material is audio/video (extraction is transcription). */
-function isMediaMaterial(session: GenerationSessionState | null): boolean {
+function isMediaMaterial(session: MaterialHint | null): boolean {
   const mimeType = session?.documentMimeType;
   if (mimeType && (mimeType.startsWith('video/') || mimeType.startsWith('audio/'))) return true;
   const extension = session?.pdfFileName?.split('.').pop()?.trim().toLowerCase();
   return !!extension && MEDIA_EXTENSIONS.has(extension);
 }
 
-export function getGenerationStepText(
-  step: GenerationStep,
-  session: GenerationSessionState | null,
-) {
+/** What the step text knows of the material: its MIME type or file name. */
+interface MaterialHint {
+  documentMimeType?: string;
+  pdfFileName?: string;
+}
+
+export function getGenerationStepText(step: GenerationStep, session: MaterialHint | null) {
   if (step.id === 'pdf-analysis') {
     // Audio/video use a dedicated string ("Analyzing audio/video") — the
     // generic document copy ("Analyzing documents") would misdescribe them.
@@ -124,17 +92,3 @@ export const ALL_STEPS: GenerationStep[] = [
     type: 'visual',
   },
 ];
-
-export const getActiveSteps = (session: GenerationSessionState | null) => {
-  return ALL_STEPS.filter((step) => {
-    if (step.id === 'pdf-analysis') {
-      return Boolean(
-        session?.pdfStorageKey ||
-        ((session?.documentSources?.length ?? 0) > 0 && !session?.pdfText),
-      );
-    }
-    if (step.id === 'web-search') return !!session?.requirements?.webSearch;
-    if (step.id === 'agent-generation') return useSettingsStore.getState().agentMode === 'auto';
-    return true;
-  });
-};

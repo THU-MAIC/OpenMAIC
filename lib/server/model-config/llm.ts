@@ -9,7 +9,7 @@
  */
 import { attachModelFallback } from '@/lib/ai/model-fallbacks';
 import { getProviderPreset } from '@/lib/config/provider-presets';
-import { getModel, getProvider } from '@/lib/ai/providers';
+import { getModel, getProvider, isProviderKeyRequired } from '@/lib/ai/providers';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
 import type { LlmStage } from '@/lib/server/model-routes';
@@ -18,13 +18,28 @@ import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { ProviderId, ThinkingConfig } from '@/lib/types/provider';
 
 import type { ResolvedModelTarget, SlotResolution } from './resolve-slot';
-import { lookupStage, SlotDisabledError, SlotUnassignedError } from './runtime';
+import { lookupStage, requestMayChoose, SlotDisabledError, SlotUnassignedError } from './runtime';
 
 export type AssignedSlot = Extract<SlotResolution, { status: 'assigned' }>;
 
 export interface SlotResolvedModel extends ResolvedModel {
   /** The resolution this model came from; its `fallback` is the retry model. */
   resolution: AssignedSlot;
+}
+
+/**
+ * A slot's model the configuration cannot build (no key for a provider that
+ * needs one, an endpoint or option the configuration may not set). The
+ * message is caller-facing and `code` is the API error code it answers with.
+ */
+export class ModelConfigurationError extends Error {
+  constructor(
+    readonly code: 'MISSING_API_KEY' | 'INVALID_URL' | 'MODEL_CONFIG_INVALID',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ModelConfigurationError';
+  }
 }
 
 /** A language model for one target (a slot's model or its fallback). */
@@ -35,25 +50,41 @@ export async function languageModelFor(
   const registryId = target.registryId as ProviderId;
   const modelId = target.modelId;
   // resolveSlot refuses a chat reference without one; this is the type's guard.
-  if (!modelId) throw new Error(`A chat model needs "providerId:modelId"`);
+  if (!modelId) {
+    throw new ModelConfigurationError(
+      'MODEL_CONFIG_INVALID',
+      `A chat model needs "providerId:modelId"`,
+    );
+  }
   const registered = getProvider(registryId);
-  if (!registered) throw new Error(`The ${target.presetId} preset has no chat adapter`);
+  if (!registered) {
+    throw new ModelConfigurationError(
+      'MODEL_CONFIG_INVALID',
+      `The ${target.presetId} preset has no chat adapter`,
+    );
+  }
   const userEndpoint = target.providerSource === 'workspace';
   if (userEndpoint) {
     // Bedrock signs with the server's AWS credential chain when it has no key
     // of its own, and a proxy would route around the transport below: neither
     // is something a workspace may set.
     if (registered.type === 'bedrock') {
-      throw new Error('Amazon Bedrock can only be configured by the deployment (openmaic.yml)');
+      throw new ModelConfigurationError(
+        'MODEL_CONFIG_INVALID',
+        'Amazon Bedrock can only be configured by the deployment (openmaic.yml)',
+      );
     }
     if (target.proxy) {
-      throw new Error('A proxy can only be configured by the deployment (openmaic.yml)');
+      throw new ModelConfigurationError(
+        'MODEL_CONFIG_INVALID',
+        'A proxy can only be configured by the deployment (openmaic.yml)',
+      );
     }
   }
   const endpoint = target.baseUrl ?? registered.defaultBaseUrl;
   if (userEndpoint && endpoint) {
     const problem = await validateClientBaseUrl(endpoint);
-    if (problem) throw new Error(problem);
+    if (problem) throw new ModelConfigurationError('INVALID_URL', problem);
   }
   const apiKey = target.apiKey ?? '';
   // A self-hosted OpenAI-compatible server usually takes no key: its preset
@@ -61,6 +92,13 @@ export async function languageModelFor(
   // Every other preset keeps the registry's rule, so OpenAI itself still
   // needs a key.
   const keyOptional = getProviderPreset(target.presetId)?.apiKeyOptional === true;
+  // Checked here rather than left to the adapter, so the refusal is typed.
+  if (!keyOptional && isProviderKeyRequired(registryId) && !apiKey) {
+    throw new ModelConfigurationError(
+      'MISSING_API_KEY',
+      `API key required for provider: ${registryId} (the configured provider "${target.providerId}" has no key)`,
+    );
+  }
   const { model, modelInfo } = getModel({
     providerId: registryId,
     modelId,
@@ -119,30 +157,28 @@ export interface StageModelOptions {
   workspaceId: string | null;
   /**
    * What the request still names the old way (x-model and friends), or
-   * undefined when it names nothing. Consulted only when the configuration
-   * leaves the slot unassigned.
+   * undefined when it names nothing. Consulted only where requestMayChoose
+   * says so.
    */
   legacyRequest?: () => Promise<ResolvedModel | undefined>;
 }
 
 /**
- * The model for a stage: the configured slot, else the model the request
- * names (deprecated), else the legacy defaults. Fails loudly when the slot is
- * turned off or nothing resolves.
+ * The model for a stage: the configured slot, except where the model the
+ * request names (deprecated) may answer instead (see requestMayChoose).
+ * Fails loudly when the slot is turned off or nothing resolves.
  */
 export async function resolveStageModel({
   stage,
   workspaceId,
   legacyRequest,
 }: StageModelOptions): Promise<ResolvedModel> {
-  const lookup = await lookupStage(stage, workspaceId);
-  const { configured } = lookup;
-  if (configured.status === 'assigned') return slotLanguageModel(configured);
-  if (configured.status === 'disabled') throw new SlotDisabledError(configured.slot);
-  const requested = await legacyRequest?.();
-  if (requested) return requested;
-  const fallback = lookup.defaults();
-  if (fallback.status === 'assigned') return slotLanguageModel(fallback);
-  if (fallback.status === 'disabled') throw new SlotDisabledError(fallback.slot);
-  throw new SlotUnassignedError(configured.slot);
+  const resolution = await lookupStage(stage, workspaceId);
+  if (requestMayChoose(resolution)) {
+    const requested = await legacyRequest?.();
+    if (requested) return requested;
+  }
+  if (resolution.status === 'assigned') return slotLanguageModel(resolution);
+  if (resolution.status === 'disabled') throw new SlotDisabledError(resolution.slot);
+  throw new SlotUnassignedError(resolution.slot);
 }

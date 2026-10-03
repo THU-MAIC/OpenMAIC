@@ -46,16 +46,16 @@
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
     "interactiveModeLabel": "Chế độ tương tác",
     "modelChangeFailed": "Không thể đổi mô hình: {{message}}",
-    "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt",
     "pickModel": "Chọn mô hình",
-    "defaultModel": "Mặc định",
     "defaultModelNote": "Thay đổi mô hình mặc định; các bước được thiết lập riêng vẫn giữ mô hình của chúng.",
-    "stagesSetSeparately": "{{count}} bước thiết lập riêng",
-    "stagesSetSeparately_one": "{{count}} bước thiết lập riêng",
-    "stagesSetSeparately_other": "{{count}} bước thiết lập riêng",
-    "stagesSetSeparatelyHint": "Các bước có mô hình riêng",
-    "perStageSetup": "Thiết lập theo bước",
-    "perStageSetupHint": "Mỗi bước của khóa học đều có mô hình riêng"
+    "materialUploading": "Đang tải lên {{percent}}%",
+    "materialParsing": "Đang phân tích…",
+    "materialTranscribing": "Đang chép lời…",
+    "materialReady": "Sẵn sàng",
+    "materialFailed": "Thất bại",
+    "materialRetry": "Thử lại",
+    "materialMediaLabel": "Âm thanh/video",
+    "materialUnavailable": "Tài liệu này không còn khả dụng. Hãy xóa và đính kèm lại tệp."
   },
   "export": {
     "pptx": "Xuất PPTX",
@@ -245,6 +245,7 @@
     "generating": "Đang tạo…",
     "paused": "Đã tạm dừng",
     "generationFailed": "Tạo không thành công",
+    "generationInterrupted": "Quá trình tạo đã bị gián đoạn",
     "confirmSwitchTitle": "Chuyển cảnh",
     "confirmSwitchMessage": "Đang có một chủ đề dở dang. Chuyển cảnh sẽ kết thúc chủ đề đang học. Bạn có chắc không?",
     "generatingNextPage": "Cảnh đang được tạo, vui lòng đợi…",
@@ -1032,7 +1033,11 @@
     "notFoundDesc": "Khóa học này không tồn tại hoặc đã bị xóa.",
     "loadUnavailable": "Không tải được khóa học này",
     "loadUnavailableDesc": "Không thể truy xuất khóa học. Hãy kiểm tra quyền truy cập hoặc thử lại.",
-    "backToHome": "Về trang chủ"
+    "backToHome": "Về trang chủ",
+    "runOutlining": "Đang lập dàn ý…",
+    "runAwaitingConfirmation": "Đang chờ xác nhận",
+    "runGenerating": "Đang tạo {{completed}}/{{total}}",
+    "runPaused": "Đã tạm dừng"
   },
   "upload": {
     "pdfSizeLimit": "Nhận tệp PDF tối đa 50MB",
@@ -1044,7 +1049,11 @@
     "fileTooLarge": "Tệp quá lớn. Vui lòng chọn tệp nhỏ hơn 50MB",
     "courseMaterialCountLimit": "Bạn chỉ tải lên được tối đa 5 tệp tài liệu",
     "courseMaterialTotalSizeLimit": "Tổng dung lượng tài liệu phải dưới 150MB",
-    "unsupportedCourseMaterial": "{{parser}} không hỗ trợ loại tệp này. Định dạng được hỗ trợ: {{formats}}"
+    "unsupportedCourseMaterial": "{{parser}} không hỗ trợ loại tệp này. Định dạng được hỗ trợ: {{formats}}",
+    "unsupportedMaterialFormat": "Bộ bóc tách hiện tại không hỗ trợ định dạng này. Hãy đổi bộ bóc tách hoặc chọn tệp khác.",
+    "materialQuotaExceeded": "Bộ nhớ tài liệu đã đầy. Hãy xóa bớt tài liệu rồi thử lại.",
+    "materialUploadFailed": "Tải lên {{name}} thất bại. Vui lòng thử lại.",
+    "materialTooLarge": "{{name}} quá lớn: mỗi tài liệu tối đa {{size}}."
   },
   "generation": {
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",
@@ -1080,6 +1089,7 @@
     "continue": "Tiếp tục",
     "outlineRetrying": "Đề cương gặp sự cố, đang thử lại…",
     "outlineEmptyResponse": "Model không trả về đề cương hợp lệ. Vui lòng kiểm tra cấu hình model rồi thử lại",
+    "customAgentsUnavailable": "Không thể tải các tác nhân tùy chỉnh của bạn. Vui lòng thử lại.",
     "outlineGenerateFailed": "Tạo đề cương không thành công, vui lòng thử lại sau",
     "sceneGenerateFailed": "Tạo cảnh không thành công, vui lòng thử lại sau",
     "sceneGenerateAuthFailed": "Tạo cảnh không thành công vì nhà cung cấp model từ chối thông tin đăng nhập. Vui lòng kiểm tra cấu hình model.",
@@ -1156,7 +1166,14 @@
     "outlinesReadyCount": "{{ready}} / {{total}} phần đã xong",
     "jumpToBlankTitle": "Nhảy tới phần còn thiếu tên",
     "analyzingMediaMaterial": "Đang phân tích âm thanh/video",
-    "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại."
+    "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại.",
+    "activeRunLimit": "Bạn đã đạt số khóa học được tạo cùng lúc tối đa. Hãy chờ một khóa hoàn tất rồi thử lại.",
+    "outlineConfirmedElsewhere": "Dàn ý này đã được xác nhận ở nơi khác; các chỉnh sửa của bạn ở đây chưa được áp dụng.",
+    "runChangedElsewhere": "Quá trình tạo đã tiếp tục ở nơi khác.",
+    "runLoadFailed": "Không thể tải lần tạo này",
+    "runLoadRetrying": "Đang thử lại…",
+    "mediaGenerationFailed": "Tạo nội dung đa phương tiện thất bại",
+    "mediaGenerationDisabled": "Đã tắt chức năng tạo"
   },
   "settings": {
     "title": "Cài đặt",
@@ -1708,7 +1725,7 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài.",
       "statusConnected": "Đã kết nối",
-      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình bạn đã chọn, bạn sẽ được hỏi trước.",
+      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình một bước đang dùng (mô hình bạn đã chọn hoặc mặc định của máy chủ), bạn sẽ được hỏi trước.",
       "saveKey": "Lưu và bật",
       "cancelKeyUpdate": "Hủy cập nhật",
       "manageAccount": "Quản lý tài khoản",
@@ -1730,7 +1747,7 @@
       "stageInteractive": "Tương tác",
       "stageSlide": "Trang slide",
       "applyTitle": "Dùng cấu hình đề xuất của gói này?",
-      "applyBody": "{{name}} đề xuất mô hình riêng cho các bước sau, hiện đang dùng mô hình bạn đã chọn:",
+      "applyBody": "{{name}} đề xuất mô hình riêng cho các bước sau. Dùng chúng sẽ thay thế mô hình mỗi bước đang dùng, kể cả mặc định của máy chủ:",
       "applyKeep": "Giữ cấu hình hiện tại",
       "applyRecommended": "Dùng cấu hình đề xuất của gói"
     },
@@ -1879,7 +1896,7 @@
     "saveModel": "Lưu",
     "searxngServerOnlyNotice": "SearXNG phải được cấu hình trên máy chủ. Hãy đặt biến môi trường SEARXNG_BASE_URL (hoặc mục web-search trong server-providers.yml). Địa chỉ do phía người dùng gửi lên sẽ không được nhận.",
     "serverConfigured": "Máy chủ",
-    "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây. Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
+    "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây.",
     "startRecording": "Bắt đầu ghi âm",
     "stopRecording": "Dừng ghi âm",
     "supportedFormats": "Định dạng được hỗ trợ",
@@ -1904,7 +1921,7 @@
       "unavailableTitle": "Mô hình do máy chủ quản lý",
       "unavailableBody": "Máy chủ này không lưu cài đặt mô hình theo không gian làm việc nên dùng các mô hình do quản trị viên cấu hình.",
       "conflict": "Cài đặt đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-      "lockedNow": "Mục này giờ do máy chủ thiết lập nên không được thay đổi.",
+      "lockedNow": "Quản trị viên đã cố định mục này nên nó không được thay đổi.",
       "unconfirmed": "Mất phản hồi từ máy chủ nên cài đặt đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
       "serverOnly": "Chỉ cấu hình máy chủ (openmaic.yml) mới thiết lập được dịch vụ này. Hãy liên hệ quản trị viên máy chủ.",
       "serverOnlyPolicy": "Máy chủ này không cho phép không gian làm việc thêm dịch vụ riêng. Hãy liên hệ quản trị viên máy chủ.",
@@ -1935,8 +1952,7 @@
         "off": "Tắt",
         "unassigned": "Chưa đặt",
         "invalid": "Thiết lập không hợp lệ",
-        "locked": "Do máy chủ đặt",
-        "lockedHint": "Được đặt bởi cấu hình máy chủ. Không thể thay đổi tại đây.",
+        "lockedHint": "Quản trị viên đã cố định mục này cho mọi người trên máy chủ này; không thể thay đổi ở đây.",
         "followers": "Số bước theo nó: {{count}}",
         "childrenFollow": "Loại trang · tất cả theo",
         "childrenOwn": "Loại trang · {{count}} riêng"
@@ -1945,7 +1961,7 @@
         "label": "Chú giải",
         "follows": "Theo bước cha",
         "own": "Thiết lập riêng",
-        "locked": "Do máy chủ đặt"
+        "locked": "Quản trị viên đã cố định"
       },
       "map": {
         "label": "Sơ đồ mô hình của khóa học. Kéo hoặc dùng phím mũi tên để di chuyển; dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
@@ -1972,11 +1988,13 @@
         "noFallback": "Không",
         "manageProviders": "Quản lý trong Dịch vụ mô hình",
         "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
+        "lockedNow": "Quản trị viên đã cố định mục này nên nó không được thay đổi.",
         "clear": "Xóa thiết lập riêng",
-        "clearHint": "Dùng thiết lập của máy chủ, nếu có",
+        "clearHint": "Để không thiết lập",
         "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
-        "thinking": "Suy luận"
+        "thinking": "Suy luận",
+        "serverDefault": "Mặc định của máy chủ",
+        "resetDefault": "Đặt lại về mặc định của máy chủ"
       },
       "slots": {
         "llm": {
@@ -2054,8 +2072,8 @@
       },
       "source": {
         "inherited": "Theo {{name}}",
-        "deployment": "Máy chủ",
-        "default": "Mặc định của máy chủ"
+        "default": "Mặc định của máy chủ",
+        "locked": "Quản trị viên đã cố định"
       },
       "stations": {
         "research": "Tìm hiểu trên web",
@@ -2071,7 +2089,8 @@
         "prompt": "Chưa có mô hình ngôn ngữ. Thiết lập dịch vụ trong Dịch vụ mô hình hoặc kết nối gói trong Token Plan; các mô hình của nó sẽ điền vào những phần chưa thiết lập.",
         "open": "Mở Dịch vụ mô hình",
         "askAdmin": "Chưa cấu hình mô hình ngôn ngữ. Hãy nhờ quản trị viên máy chủ thiết lập."
-      }
+      },
+      "adminNotice": "Quản trị viên đã thiết lập các mô hình mà máy chủ này dùng."
     },
     "unimported": {
       "toast": "Một số cài đặt mô hình trong trình duyệt này không thể chuyển lên máy chủ. Chúng được liệt kê trong Cài đặt → Dịch vụ mô hình.",
@@ -2093,7 +2112,8 @@
         "unsupported": "Không thể chuyển loại nhà cung cấp tùy chỉnh này: hãy thêm lại dưới dạng endpoint tương thích OpenAI.",
         "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

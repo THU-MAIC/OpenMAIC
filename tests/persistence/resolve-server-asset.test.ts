@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssetNotFoundError, toAssetId } from '@openmaic/storage';
 
-import { resolveServerAsset } from '@/lib/persistence/resolve-server-asset';
+import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
 
-// Mock only the storage provider seam; the module under test and the owner
-// identity seam stay real, so the principal is derived from the request's
-// owner cookie by the actual implementation.
+// Mock only the storage provider seam; the module under test stays real, so
+// the principal is derived from the owner by the actual implementation.
 const mocks = vi.hoisted(() => ({
   getServerPersistenceProvider: vi.fn(),
   assetStoreIdentify: vi.fn(),
@@ -23,22 +22,17 @@ const RESOLVED_MIME = 'text/plain';
 const RESOLVED_BYTE_LENGTH = RESOLVED_BYTES.length;
 const SIZE_CAP = 1024 * 1024;
 
-const OWNER_COOKIE = '33333333-3333-4333-8333-333333333333';
-const OWNER_PRINCIPAL = { key: `owner:anon:${OWNER_COOKIE}`, learnerKey: `anon:${OWNER_COOKIE}` };
+const OWNER_ID = 'anon:33333333-3333-4333-8333-333333333333';
+const OWNER_PRINCIPAL = { key: `owner:${OWNER_ID}`, learnerKey: OWNER_ID };
 
-/** The renewal of that owner's cookie, which every resolved answer hands back. */
-const OWNER_COOKIES = [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))];
-
-/** A request from the owner above; a fresh object, so a fresh owner resolution. */
-function ownerRequest(): { headers: Headers } {
-  return { headers: new Headers({ cookie: `anonymous_id=${OWNER_COOKIE}` }) };
+function resolve(maxByteLength?: number) {
+  return resolveOwnedAsset(ASSET_ID, OWNER_ID, 'postgres://test', maxByteLength);
 }
 
-describe('resolveServerAsset', () => {
+describe('resolveOwnedAsset', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
-    vi.stubEnv('DATABASE_URL', 'postgres://test');
     mocks.getServerPersistenceProvider.mockReset();
     mocks.assetStoreIdentify.mockReset();
     mocks.assetStoreResolve.mockReset();
@@ -59,42 +53,21 @@ describe('resolveServerAsset', () => {
     });
   });
 
-  it('derives the owner asset principal from the resolved owner and resolves the asset', async () => {
+  it('derives the owner asset principal from the owner and resolves the asset', async () => {
     mocks.assetStoreResolve.mockResolvedValue({ bytes: RESOLVED_BYTES, mime: RESOLVED_MIME });
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    const resolution = await resolve(SIZE_CAP);
 
     expect(resolution).toEqual({
       status: 'resolved',
       buffer: RESOLVED_BYTES,
       mimeType: RESOLVED_MIME,
-      // The owner resolution's renewal, for the route to send back.
-      setCookies: [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))],
     });
     expect(mocks.getServerPersistenceProvider).toHaveBeenCalledWith('postgres://test');
     // The owner's own partition answers first; no foreign lookup is needed.
     expect(mocks.assetStoreIdentify).toHaveBeenCalledWith(OWNER_PRINCIPAL, toAssetId(ASSET_ID));
     expect(mocks.assetStoreResolve).toHaveBeenCalledWith(OWNER_PRINCIPAL, toAssetId(ASSET_ID));
     expect(mocks.poolQuery).not.toHaveBeenCalled();
-  });
-
-  it('hands back the owner resolution cookies whatever the answer', async () => {
-    mocks.assetStoreIdentify.mockResolvedValue(null);
-    const missing = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
-    expect(missing).toMatchObject({
-      status: 'missing',
-      setCookies: [expect.stringMatching(new RegExp(`^anonymous_id=${OWNER_COOKIE};`))],
-    });
-    mocks.assetStoreIdentify.mockResolvedValue({
-      mime: RESOLVED_MIME,
-      revision: 1,
-      byteLength: 10,
-    });
-    const tooLarge = await resolveServerAsset(ASSET_ID, ownerRequest(), 1);
-    expect(tooLarge).toMatchObject({ status: 'too_large', setCookies: [expect.any(String)] });
-    // A request without a cookie gets the minted owner's cookie.
-    const minted = await resolveServerAsset(ASSET_ID, { headers: new Headers() }, 1);
-    expect(minted.setCookies).toEqual([expect.stringMatching(/^anonymous_id=[0-9a-f-]{36};/)]);
   });
 
   it('reads another owner’s entry only under the rule the persistence route applies', async () => {
@@ -104,7 +77,7 @@ describe('resolveServerAsset', () => {
     );
     mocks.poolQuery.mockResolvedValue({ rows: [{ principal: foreign.key }] });
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
+    const resolution = await resolve();
 
     expect(resolution.status).toBe('resolved');
     expect(mocks.assetStoreResolve).toHaveBeenLastCalledWith(foreign, toAssetId(ASSET_ID));
@@ -123,9 +96,9 @@ describe('resolveServerAsset', () => {
       byteLength: 2 * SIZE_CAP,
     });
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    const resolution = await resolve(SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'too_large', setCookies: OWNER_COOKIES });
+    expect(resolution).toEqual({ status: 'too_large' });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     // The whole point: the store is never asked to materialize the bytes.
     expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
@@ -139,13 +112,12 @@ describe('resolveServerAsset', () => {
     });
     mocks.assetStoreResolve.mockResolvedValue({ bytes: RESOLVED_BYTES, mime: RESOLVED_MIME });
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    const resolution = await resolve(SIZE_CAP);
 
     expect(resolution).toEqual({
       status: 'resolved',
       buffer: RESOLVED_BYTES,
       mimeType: RESOLVED_MIME,
-      setCookies: OWNER_COOKIES,
     });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     expect(mocks.assetStoreResolve).toHaveBeenCalledTimes(1);
@@ -154,66 +126,27 @@ describe('resolveServerAsset', () => {
   it('does not consult the store at all when no cap is supplied', async () => {
     mocks.assetStoreResolve.mockResolvedValue({ bytes: RESOLVED_BYTES, mime: RESOLVED_MIME });
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
+    const resolution = await resolve();
 
     expect(resolution.status).toBe('resolved');
     expect(mocks.assetStoreIdentify).not.toHaveBeenCalled();
     expect(mocks.assetStoreResolve).toHaveBeenCalledTimes(1);
   });
 
-  it('reports unauthenticated when an owner auth method rejects the credential', async () => {
-    const { configureOwnerAuthentication } = await import('@/lib/server/identity');
-    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
-    // Earlier cases resolved owners through the built-ins; start from a clean registry.
-    resetOwnerAuthenticationForTests();
-    configureOwnerAuthentication({
-      methods: [{ name: 'rejecting', authenticate: async () => ({ status: 'invalid' }) }],
-    });
-    try {
-      const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
-
-      expect(resolution).toEqual({ status: 'unauthenticated' });
-      expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
-    } finally {
-      resetOwnerAuthenticationForTests();
-    }
-  });
-
-  it('ignores a retired development token: it neither grants nor is required', async () => {
-    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'retired');
-    mocks.assetStoreResolve.mockResolvedValue({ bytes: RESOLVED_BYTES, mime: RESOLVED_MIME });
-    const request = ownerRequest();
-    request.headers.set('authorization', 'Bearer wrong');
-
-    const resolution = await resolveServerAsset(ASSET_ID, request);
-
-    expect(resolution.status).toBe('resolved');
-    expect(mocks.assetStoreResolve).toHaveBeenCalledWith(OWNER_PRINCIPAL, toAssetId(ASSET_ID));
-  });
-
-  it('reports unconfigured when DATABASE_URL is absent', async () => {
-    vi.stubEnv('DATABASE_URL', '');
-
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
-
-    expect(resolution).toEqual({ status: 'unconfigured' });
-    expect(mocks.getServerPersistenceProvider).not.toHaveBeenCalled();
-  });
-
   it('reports missing when the store resolves no entry for the id', async () => {
     mocks.assetStoreResolve.mockResolvedValue(undefined);
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    const resolution = await resolve(SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
+    expect(resolution).toEqual({ status: 'missing' });
   });
 
   it('reports missing when the identity read finds no entry (resolve never called)', async () => {
     mocks.assetStoreIdentify.mockResolvedValue(null);
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest(), SIZE_CAP);
+    const resolution = await resolve(SIZE_CAP);
 
-    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
+    expect(resolution).toEqual({ status: 'missing' });
     expect(mocks.assetStoreIdentify).toHaveBeenCalledTimes(1);
     expect(mocks.assetStoreResolve).not.toHaveBeenCalled();
   });
@@ -221,15 +154,15 @@ describe('resolveServerAsset', () => {
   it('reports missing when the store raises AssetNotFoundError', async () => {
     mocks.assetStoreResolve.mockRejectedValue(new AssetNotFoundError());
 
-    const resolution = await resolveServerAsset(ASSET_ID, ownerRequest());
+    const resolution = await resolve();
 
-    expect(resolution).toEqual({ status: 'missing', setCookies: OWNER_COOKIES });
+    expect(resolution).toEqual({ status: 'missing' });
   });
 
-  it('rethrows any other store failure so the route can map it to a generic 500', async () => {
+  it('rethrows any other store failure', async () => {
     const failure = new Error('db connection refused');
     mocks.assetStoreResolve.mockRejectedValue(failure);
 
-    await expect(resolveServerAsset(ASSET_ID, ownerRequest())).rejects.toBe(failure);
+    await expect(resolve()).rejects.toBe(failure);
   });
 });

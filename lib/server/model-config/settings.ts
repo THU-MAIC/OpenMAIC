@@ -1,8 +1,10 @@
 /**
  * The model settings a workspace sees and edits (RFC #1701, tracked in #1725,
  * P2). This is the service behind `/api/model-config`: it reads the slot tree
- * with each slot's effective model, where it comes from and whether it is
- * locked, and applies changes to the workspace layer.
+ * with each slot's effective model, where it comes from (a server default,
+ * the workspace's own choice, a lock, or a parent it follows) and whether it
+ * is locked, and applies changes to the workspace layer. A slot in a locked
+ * subtree cannot be written.
  *
  * Keys are write-only: a view carries a mask and whether a key is set, never
  * the key. Deployment providers (openmaic.yml, or the legacy server
@@ -45,17 +47,21 @@ import {
   type SlotAssignment,
 } from './openmaic-yml';
 import {
+  findAssignment,
+  lockingNode,
   resolveSlot,
   SlotResolutionError,
   type ModelConfigLayer,
   type ResolvedModelTarget,
   type SlotResolution,
+  type SlotSource,
 } from './resolve-slot';
 import {
   deploymentConfig,
   lookupFromLayers,
+  usableWorkspace,
+  userKeysAllowed,
   workspaceOnlyProviders,
-  workspaceUnderPolicy,
 } from './runtime';
 
 type Provider = NonNullable<ModelConfigFile['providers']>[string];
@@ -63,6 +69,13 @@ type Provider = NonNullable<ModelConfigFile['providers']>[string];
 export interface ProviderView {
   id: string;
   preset: string;
+  /**
+   * The preset's display name and kind, for labels: served for every provider
+   * (a deployment's included), whether or not the preset is one a workspace
+   * may add from.
+   */
+  presetName: string;
+  presetKind: ProviderPreset['kind'];
   /** Where it is declared: deployment providers are read-only. */
   source: 'deployment' | 'workspace';
   baseUrl?: string;
@@ -123,31 +136,57 @@ export type EffectiveView =
   | ({
       status: 'assigned';
       resolvedAt: SlotId;
-      source: string;
+      source: SlotSource;
       requirements: unknown;
     } & TargetView & {
         fallback?: TargetView;
       })
-  | { status: 'disabled'; resolvedAt: SlotId; source: string }
+  | { status: 'disabled'; resolvedAt: SlotId; source: SlotSource }
   | { status: 'unassigned' }
   | { status: 'invalid'; message: string };
+
+/**
+ * Where a slot's value comes from, as its card says it: the server's default
+ * on this slot, the workspace's own choice, the deployment's fixed value (a
+ * locked subtree), the slot above it that it follows, or nothing at all.
+ */
+export type SlotSourceView =
+  | { kind: 'default' }
+  | { kind: 'workspace' }
+  | { kind: 'locked' }
+  | { kind: 'inherited'; from: SlotId }
+  | { kind: 'unconfigured' };
 
 export interface SlotView {
   slot: SlotId;
   parent: SlotId | null;
   capability: SlotCapability;
   configOnly: boolean;
-  /** Written in the deployment layer: the workspace cannot change it. */
+  /**
+   * In a locked subtree (the deployment's `lock` names the slot or an
+   * ancestor, or `lock: all`): fixed by the administrator, not writable.
+   */
   locked: boolean;
+  source: SlotSourceView;
   /** The workspace's own assignment, if any (undefined: follows its parent). */
   assignment?: SlotAssignment;
+  /**
+   * What the deployment writes on this slot itself, if anything: the value
+   * "Reset to server default" returns to (removing the workspace's own).
+   */
+  serverDefault?: SlotAssignment;
   effective: EffectiveView;
 }
 
 export interface ModelSettingsView {
   revision: number | null;
-  policy: { allowWorkspaceProviders: boolean };
-  /** The presets a workspace may add providers from (empty when the policy says no). */
+  /**
+   * Whether users may add providers, keys and token plans of their own
+   * (`allowUserKeys` in openmaic.yml, default true). Without it they choose
+   * among the deployment's providers.
+   */
+  allowUserKeys: boolean;
+  /** The presets a workspace may add providers from (empty without `allowUserKeys`). */
   presets: PresetView[];
   providers: ProviderView[];
   slots: SlotView[];
@@ -310,6 +349,12 @@ function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   return undefined;
 }
 
+/** A preset's name and kind as provider views carry them (its id, for a preset this build lacks). */
+function presetLabel(presetId: string): Pick<ProviderView, 'presetName' | 'presetKind'> {
+  const preset = getProviderPreset(presetId);
+  return { presetName: preset?.name ?? presetId, presetKind: preset?.kind ?? 'single' };
+}
+
 function stripTarget(target: ResolvedModelTarget): TargetView {
   const {
     apiKey: _apiKey,
@@ -343,16 +388,10 @@ function effectiveView(resolution: SlotResolution): EffectiveView {
 
 function effectiveFor(
   slot: SlotId,
-  layers: {
-    deployment: ModelConfigLayer | null;
-    workspace: ModelConfigLayer | null;
-    defaults: ModelConfigLayer | null;
-  },
+  layers: { deployment: ModelConfigLayer | null; workspace: ModelConfigLayer | null },
 ): EffectiveView {
   try {
-    const lookup = lookupFromLayers(slot, layers);
-    const resolution =
-      lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured;
+    const resolution = lookupFromLayers(slot, layers);
     // The calls refuse a provider the operator switched off (media.ts).
     if (
       resolution.status === 'assigned' &&
@@ -376,20 +415,36 @@ export interface StoredWorkspaceConfig {
   unreadableSecrets: string[];
 }
 
+/** Where a slot's value comes from, over the layers as the calls see them. */
+function sourceFor(
+  slot: SlotId,
+  deployment: ModelConfigLayer | null,
+  workspace: ModelConfigLayer | null,
+): SlotSourceView {
+  const found = findAssignment(slot, deployment ?? undefined, workspace ?? undefined);
+  if (!found) return { kind: 'unconfigured' };
+  if (found.node !== slot) return { kind: 'inherited', from: found.node };
+  return { kind: found.source };
+}
+
 /** The view of the settings for a workspace's stored configuration (or none). */
 export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSettingsView {
-  const { layer: deployment, defaults } = deploymentConfig();
+  const { layer: deployment } = deploymentConfig();
   const workspace: ModelConfigLayer | null = stored
     ? { source: 'workspace', config: stored.config }
     : null;
   const deploymentProviders = deployment?.config.providers ?? {};
-  const workspaceProviders = stored?.config.providers ?? {};
+  // The workspace as the calls count it: without user keys, providers it
+  // added earlier (and the assignments naming them) are dormant and left out.
+  const counted = usableWorkspace(workspace, deployment);
+  const workspaceProviders = counted?.config.providers ?? {};
   const unreadable = new Set(stored?.unreadableSecrets ?? []);
 
   const providers: ProviderView[] = [
     ...Object.entries(deploymentProviders).map(([id, provider]) => ({
       id,
       preset: provider.preset,
+      ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models),
@@ -397,6 +452,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
       id,
       preset: provider.preset,
+      ...presetLabel(provider.preset),
       source: 'workspace' as const,
       ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
       ...(provider.models ? { models: [...provider.models] } : {}),
@@ -413,8 +469,8 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
   ];
 
   const deploymentSlots = deployment?.config.slots ?? {};
-  const workspaceSlots = stored?.config.slots ?? {};
-  const layers = { deployment, workspace, defaults };
+  const workspaceSlots = counted?.config.slots ?? {};
+  const layers = { deployment, workspace };
   const slots: SlotView[] = MODEL_SLOTS.map(({ id }) => {
     const definition = getSlot(id);
     return {
@@ -422,16 +478,20 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       parent: (definition.parent as SlotId | null) ?? null,
       capability: definition.capability,
       configOnly: 'configOnly' in definition && definition.configOnly === true,
-      locked: Object.hasOwn(deploymentSlots, id),
+      locked: lockingNode(deployment?.config, id) !== undefined,
+      source: sourceFor(id, deployment, counted),
       ...(Object.hasOwn(workspaceSlots, id)
         ? { assignment: workspaceSlots[id as keyof typeof workspaceSlots] }
+        : {}),
+      ...(Object.hasOwn(deploymentSlots, id)
+        ? { serverDefault: deploymentSlots[id as keyof typeof deploymentSlots] }
         : {}),
       effective: effectiveFor(id, layers),
     };
   });
 
-  const allowWorkspaceProviders = deployment?.config.policy?.allowWorkspaceProviders ?? true;
-  const presets: PresetView[] = allowWorkspaceProviders
+  const allowUserKeys = userKeysAllowed(deployment);
+  const presets: PresetView[] = allowUserKeys
     ? PROVIDER_PRESETS.filter((preset) => !workspacePresetProblem(preset)).map((preset) => {
         const capabilities = capabilityModels(preset);
         const regionalEndpoint = presetRegionalEndpointTemplate(preset);
@@ -455,7 +515,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
 
   return {
     revision: stored?.revision ?? null,
-    policy: { allowWorkspaceProviders },
+    allowUserKeys,
     presets,
     providers,
     slots,
@@ -541,9 +601,8 @@ export async function applyModelSettingsChange(
   change: ModelSettingsChange,
 ): Promise<ModelConfigFile> {
   const { layer: deployment } = deploymentConfig();
-  const deploymentSlots = deployment?.config.slots ?? {};
   const deploymentProviders = deployment?.config.providers ?? {};
-  const allowProviders = deployment?.config.policy?.allowWorkspaceProviders ?? true;
+  const allowProviders = userKeysAllowed(deployment);
   const next: ModelConfigFile = {
     ...(current?.providers ? { providers: { ...current.providers } } : {}),
     ...(current?.slots ? { slots: { ...current.slots } } : {}),
@@ -552,8 +611,8 @@ export async function applyModelSettingsChange(
   const providers = (next.providers ??= {});
 
   if (change.kind === 'slots') {
-    // Under a policy without workspace providers, an assignment may not name
-    // one the workspace kept from before (the calls would not use it).
+    // Without user keys, an assignment may not name a provider the workspace
+    // kept from before (the calls would not use it).
     if (!allowProviders && current) {
       const forbidden = workspaceOnlyProviders(
         { source: 'workspace', config: current },
@@ -574,11 +633,22 @@ export async function applyModelSettingsChange(
         }
       }
     }
-    const touched = [...Object.keys(change.set ?? {}), ...(change.clear ?? [])];
-    for (const slot of touched) {
+    for (const slot of change.clear ?? []) {
       if (!isSlotId(slot)) throw new ModelSettingsError('UNKNOWN_SLOT', `Unknown slot ${slot}`);
-      if (Object.hasOwn(deploymentSlots, slot)) {
-        throw new ModelSettingsError('SLOT_LOCKED', `${slot} is set by the deployment`);
+    }
+    // A locked slot fixes its whole subtree: no slot under it may be set
+    // either. Clearing one is allowed: it only drops a stale assignment the
+    // workspace made before the lock, which nothing reads.
+    for (const slot of Object.keys(change.set ?? {})) {
+      if (!isSlotId(slot)) throw new ModelSettingsError('UNKNOWN_SLOT', `Unknown slot ${slot}`);
+      const lockedAt = lockingNode(deployment?.config, slot);
+      if (lockedAt !== undefined) {
+        throw new ModelSettingsError(
+          'SLOT_LOCKED',
+          lockedAt === slot
+            ? `${slot} is fixed by the administrator`
+            : `${slot} is fixed by the administrator (with ${lockedAt})`,
+        );
       }
     }
     for (const [slot, assignment] of Object.entries(change.set ?? {})) {
@@ -661,10 +731,10 @@ export async function applyModelSettingsChange(
 
   // Every slot the workspace writes must resolve against the whole
   // configuration: providers declared, capabilities offered.
-  // As the calls see it: under a policy without workspace providers, the
-  // assignments that name one are dormant and not checked (new ones were
-  // refused above).
-  const effective = workspaceUnderPolicy({ source: 'workspace', config: next }, deployment)!;
+  // As the calls see it: without user keys, the assignments that name a
+  // workspace provider are dormant and not checked (new ones were refused
+  // above).
+  const effective = usableWorkspace({ source: 'workspace', config: next }, deployment)!;
   const layers: ModelConfigLayer[] = [...(deployment ? [deployment] : []), effective];
   for (const slot of Object.keys(effective.config.slots ?? {})) {
     try {
@@ -786,7 +856,7 @@ function storesProposedProvider(
  * Merge a proposal into a workspace's configuration, one item at a time and
  * under the same checks as an edit. Nothing already there is replaced: a
  * provider id the workspace or the deployment already declares, a slot the
- * workspace already set or the deployment locks, are left as they are. Items
+ * workspace already set or one in a locked subtree, are left as they are. Items
  * that fail a check are skipped with the reason; the rest are kept.
  */
 export async function importModelSettings(

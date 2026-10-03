@@ -4,9 +4,9 @@
  * that never upgraded:
  *
  * - `mediaFiles` failure records (for example `CONTENT_SENSITIVE`): without
- *   them the media pass would generate a refused element again;
+ *   them a refused element would lose its refusal;
  * - `mediaFiles` rows still holding bytes for a generation placeholder the
- *   course carries: the media pass adopts them instead of paying a provider
+ *   course carries: its Retry adopts them instead of paying a provider
  *   again;
  * - `audioFiles` rows of the course whose derived key a speech action still
  *   carries: narration adoption uploads them on the next open;

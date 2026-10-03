@@ -46,16 +46,16 @@
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
     "interactiveModeLabel": "Interaktiver Modus",
     "modelChangeFailed": "Das Modell konnte nicht geändert werden: {{message}}",
-    "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt",
     "pickModel": "Modell wählen",
-    "defaultModel": "Standard",
     "defaultModelNote": "Ändert das Standardmodell; separat eingestellte Schritte behalten ihr eigenes.",
-    "stagesSetSeparately": "{{count}} Schritte separat eingestellt",
-    "stagesSetSeparately_one": "{{count}} Schritt separat eingestellt",
-    "stagesSetSeparately_other": "{{count}} Schritte separat eingestellt",
-    "stagesSetSeparatelyHint": "Schritte mit eigenem Modell",
-    "perStageSetup": "Pro Schritt eingestellt",
-    "perStageSetupHint": "Jeder Kursschritt hat ein eigenes Modell"
+    "materialUploading": "Wird hochgeladen {{percent}} %",
+    "materialParsing": "Wird analysiert…",
+    "materialTranscribing": "Wird transkribiert…",
+    "materialReady": "Bereit",
+    "materialFailed": "Fehlgeschlagen",
+    "materialRetry": "Erneut versuchen",
+    "materialMediaLabel": "Audio/Video",
+    "materialUnavailable": "Dieses Material ist nicht mehr verfügbar. Entferne es und hänge die Datei erneut an."
   },
   "export": {
     "pptx": "PPTX exportieren",
@@ -245,6 +245,7 @@
     "generating": "Wird generiert...",
     "paused": "Pausiert",
     "generationFailed": "Generierung fehlgeschlagen",
+    "generationInterrupted": "Generierung wurde unterbrochen",
     "confirmSwitchTitle": "Szene wechseln",
     "confirmSwitchMessage": "Ein Thema läuft gerade. Beim Wechseln der Szene wird das aktuelle Thema beendet. Möchtest du wirklich wechseln?",
     "generatingNextPage": "Die Szene wird generiert. Bitte warten...",
@@ -1032,7 +1033,11 @@
     "notFoundDesc": "Dieser Kurs existiert nicht oder wurde gelöscht.",
     "loadUnavailable": "Kurs konnte nicht geladen werden",
     "loadUnavailableDesc": "Der Kurs konnte nicht abgerufen werden. Prüfen Sie Ihren Zugriff oder versuchen Sie es erneut.",
-    "backToHome": "Zurück zur Startseite"
+    "backToHome": "Zurück zur Startseite",
+    "runOutlining": "Gliederung wird erstellt…",
+    "runAwaitingConfirmation": "Wartet auf Bestätigung",
+    "runGenerating": "Wird generiert {{completed}}/{{total}}",
+    "runPaused": "Pausiert"
   },
   "upload": {
     "pdfSizeLimit": "Unterstützt PDF-Dateien bis zu 50 MB",
@@ -1044,7 +1049,11 @@
     "fileTooLarge": "Die Datei ist zu groß. Wähle bitte eine Datei unter 50 MB aus.",
     "courseMaterialCountLimit": "Du kannst bis zu 5 Dateien als Kursmaterial hochladen",
     "courseMaterialTotalSizeLimit": "Die Gesamtgröße der Kursmaterialien muss unter 150 MB liegen",
-    "unsupportedCourseMaterial": "{{parser}} kann diesen Dateityp nicht lesen. Unterstützt: {{formats}}"
+    "unsupportedCourseMaterial": "{{parser}} kann diesen Dateityp nicht lesen. Unterstützt: {{formats}}",
+    "unsupportedMaterialFormat": "Dieses Format wird vom aktuellen Extraktor nicht unterstützt. Wechsle den Extraktor oder wähle eine andere Datei.",
+    "materialQuotaExceeded": "Dein Materialspeicher ist voll. Lösche einige Materialien und versuche es erneut.",
+    "materialUploadFailed": "Hochladen von {{name}} fehlgeschlagen. Bitte versuche es erneut.",
+    "materialTooLarge": "{{name}} ist zu groß: Ein Material darf höchstens {{size}} groß sein."
   },
   "generation": {
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
@@ -1080,6 +1089,7 @@
     "continue": "Weiter",
     "outlineRetrying": "Problem bei der Gliederungserstellung. Neuer Versuch…",
     "outlineEmptyResponse": "Das Modell hat keine gültige Gliederung zurückgegeben. Prüfe die Modellkonfiguration und versuche es erneut.",
+    "customAgentsUnavailable": "Deine eigenen Agenten konnten nicht geladen werden. Bitte versuche es erneut.",
     "outlineGenerateFailed": "Gliederung konnte nicht erstellt werden. Bitte versuche es später erneut.",
     "sceneGenerateFailed": "Szene konnte nicht erstellt werden. Bitte versuche es später erneut.",
     "sceneGenerateAuthFailed": "Die Szene konnte nicht erstellt werden, weil der Modellanbieter die Zugangsdaten abgelehnt hat. Prüfe deine Modellkonfiguration.",
@@ -1156,7 +1166,14 @@
     "outlinesReadyCount": "Abschnitte bereit: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Zu einem Abschnitt ohne Titel springen",
     "analyzingMediaMaterial": "Audio- und Videomaterial wird analysiert",
-    "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen."
+    "modelSettingsUnavailable": "Die Modelleinstellungen konnten nicht gelesen werden; die Erstellung wurde angehalten. Bitte erneut versuchen.",
+    "activeRunLimit": "Es werden bereits so viele Kurse wie möglich generiert. Warte, bis einer fertig ist, und versuche es erneut.",
+    "outlineConfirmedElsewhere": "Diese Gliederung wurde bereits anderswo bestätigt; deine Änderungen hier wurden nicht übernommen.",
+    "runChangedElsewhere": "Die Generierung ist anderswo bereits weitergegangen.",
+    "runLoadFailed": "Diese Generierung konnte nicht geladen werden",
+    "runLoadRetrying": "Neuer Versuch…",
+    "mediaGenerationFailed": "Mediengenerierung fehlgeschlagen",
+    "mediaGenerationDisabled": "Generierung deaktiviert"
   },
   "settings": {
     "title": "Einstellungen",
@@ -1708,7 +1725,7 @@
       "capabilities": "Angebotene Funktionen",
       "offeredNote": "Von diesem Tarif angebotene Modelle. Wähle die gewünschten Modelle für die Generierungsleiste aus. Die Verfügbarkeit hängt von deiner Tarifstufe ab; nicht unterstützte Modelle führen bei der Generierung zu einem Fehler.",
       "statusConnected": "Verbunden",
-      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden werden die empfohlenen Modelle dieses Plans auf die Kursschritte angewendet; würden dabei von dir gewählte Modelle ersetzt, wirst du vorher gefragt.",
+      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden werden die empfohlenen Modelle dieses Plans auf die Kursschritte angewendet; würde dabei ersetzt, was ein Schritt jetzt verwendet (ein von dir gewähltes Modell oder der Serverstandard), wirst du vorher gefragt.",
       "saveKey": "Speichern & aktivieren",
       "cancelKeyUpdate": "Aktualisierung abbrechen",
       "manageAccount": "Konto verwalten",
@@ -1730,7 +1747,7 @@
       "stageInteractive": "Interaktiv",
       "stageSlide": "Kursfolien",
       "applyTitle": "Empfohlene Einrichtung dieses Plans verwenden?",
-      "applyBody": "{{name}} empfiehlt eigene Modelle für diese Schritte, die derzeit von dir gewählte Modelle verwenden:",
+      "applyBody": "{{name}} empfiehlt eigene Modelle für diese Schritte. Damit wird ersetzt, was jeder Schritt jetzt verwendet, Serverstandards eingeschlossen:",
       "applyKeep": "Aktuelle Einrichtung behalten",
       "applyRecommended": "Empfehlung des Plans verwenden"
     },
@@ -1879,7 +1896,7 @@
     "saveModel": "Speichern",
     "searxngServerOnlyNotice": "SearXNG muss auf dem Server konfiguriert werden. Setze die Umgebungsvariable SEARXNG_BASE_URL (oder den Abschnitt web-search in server-providers.yml). Von Clients angegebene Instanz-URLs werden nicht akzeptiert.",
     "serverConfigured": "Server",
-    "serverConfiguredNotice": "Dieser Anbieter wird vom Server verwaltet und kann hier nicht bearbeitet werden. Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu.",
+    "serverConfiguredNotice": "Dieser Anbieter wird vom Server verwaltet und kann hier nicht bearbeitet werden.",
     "startRecording": "Aufnahme starten",
     "stopRecording": "Aufnahme stoppen",
     "supportedFormats": "Unterstützte Formate",
@@ -1904,7 +1921,7 @@
       "unavailableTitle": "Modelle werden vom Server verwaltet",
       "unavailableBody": "Dieser Server speichert keine Modelleinstellungen pro Arbeitsbereich und verwendet die von der Administration konfigurierten Modelle.",
       "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfen Sie sie und versuchen Sie es erneut.",
-      "lockedNow": "Dies wird jetzt vom Server festgelegt und wurde daher nicht geändert.",
+      "lockedNow": "Der Administrator hat dies festgelegt, daher wurde es nicht geändert.",
       "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfen Sie, ob die Änderung übernommen wurde.",
       "serverOnly": "Dieser Dienst kann nur in der Serverkonfiguration (openmaic.yml) eingerichtet werden. Wenden Sie sich an die Serveradministration.",
       "serverOnlyPolicy": "Dieser Server erlaubt Arbeitsbereichen keine eigenen Dienste. Wenden Sie sich an die Serveradministration.",
@@ -1935,8 +1952,7 @@
         "off": "Aus",
         "unassigned": "Nicht festgelegt",
         "invalid": "Ungültige Einstellung",
-        "locked": "Vom Server festgelegt",
-        "lockedHint": "Durch die Serverkonfiguration festgelegt. Kann hier nicht geändert werden.",
+        "lockedHint": "Der Administrator hat dies für alle auf diesem Server festgelegt; es kann hier nicht geändert werden.",
         "followers": "Schritte, die ihm folgen: {{count}}",
         "childrenFollow": "Seitentypen · alle folgen",
         "childrenOwn": "Seitentypen · {{count}} eigene"
@@ -1945,7 +1961,7 @@
         "label": "Legende",
         "follows": "Folgt übergeordnetem",
         "own": "Eigene Einstellung",
-        "locked": "Vom Server festgelegt"
+        "locked": "Vom Administrator festgelegt"
       },
       "map": {
         "label": "Kursmodellkarte. Ziehen oder Pfeiltasten zum Verschieben, Zoomschaltflächen zum Zoomen.",
@@ -1972,11 +1988,13 @@
         "noFallback": "Keiner",
         "manageProviders": "In den Modelldiensten verwalten",
         "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfe sie und versuche es erneut.",
-        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert.",
+        "lockedNow": "Der Administrator hat dies festgelegt, daher wurde es nicht geändert.",
         "clear": "Eigene Einstellung entfernen",
-        "clearHint": "Die Einstellung des Servers verwenden, falls vorhanden",
+        "clearHint": "Bleibt dann nicht festgelegt",
         "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfe, ob die Änderung übernommen wurde.",
-        "thinking": "Denken"
+        "thinking": "Denken",
+        "serverDefault": "Serverstandard",
+        "resetDefault": "Auf Serverstandard zurücksetzen"
       },
       "slots": {
         "llm": {
@@ -2054,8 +2072,8 @@
       },
       "source": {
         "inherited": "Folgt {{name}}",
-        "deployment": "Server",
-        "default": "Serverstandard"
+        "default": "Serverstandard",
+        "locked": "Vom Administrator festgelegt"
       },
       "stations": {
         "research": "Webrecherche",
@@ -2071,7 +2089,8 @@
         "prompt": "Noch kein Sprachmodell. Richten Sie in den Modelldiensten einen Dienst ein oder verbinden Sie im Token Plan einen Plan; seine Modelle übernehmen die Teile ohne Einstellung.",
         "open": "Modelldienste öffnen",
         "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitten Sie die Serveradministration, eines einzurichten."
-      }
+      },
+      "adminNotice": "Der Administrator hat festgelegt, welche Modelle dieser Server verwendet."
     },
     "unimported": {
       "toast": "Einige Modelleinstellungen dieses Browsers konnten nicht auf den Server übertragen werden. Sie sind unter Einstellungen → Modelldienste aufgeführt.",
@@ -2093,7 +2112,8 @@
         "unsupported": "Diese Art von eigenem Anbieter kann nicht übertragen werden: Fügen Sie ihn als OpenAI-kompatiblen Endpunkt erneut hinzu.",
         "unconfirmed": "Der Server hat den Import nicht bestätigt."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
