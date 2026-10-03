@@ -45,7 +45,12 @@ import {
 } from '@/lib/model-settings/client';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
-import { modelSettingsView, type StoredWorkspaceConfig } from '@/lib/server/model-config/settings';
+import {
+  applyModelSettingsChange,
+  modelSettingsView,
+  type StoredWorkspaceConfig,
+} from '@/lib/server/model-config/settings';
+import { courseStagesAllOverridden, defaultModelOverrides } from '@/lib/model-settings/overrides';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -415,6 +420,60 @@ describe('the home toolbar model picker', () => {
     mount(toolbar());
     expect(document.body.querySelector('[aria-label="toolbar.pickModel"]')).toBeNull();
     expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).not.toBeNull();
+  });
+
+  it('keeps the picker for unlocked server defaults on the stages, which choosing a default replaces', async () => {
+    const config = {
+      providers,
+      slots: {
+        llm: 'operator:deepseek-v4-pro',
+        'course.outline': 'operator:deepseek-v4-flash',
+        'course.content': 'operator:deepseek-v4-flash',
+        'course.actions': 'operator:deepseek-v4-flash',
+      },
+    } satisfies ModelConfigLayer['config'];
+    const view = viewFor(config);
+    expect(courseStagesAllOverridden(view)).toBe(false);
+    expect(defaultModelOverrides(view)).toEqual([]);
+    modelSettingsClient.adopt(view);
+    mount(toolbar());
+    expect(document.body.textContent).not.toContain('toolbar.perStageSetup');
+    expect(document.body.textContent).not.toContain('toolbar.stagesSetSeparately');
+    expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).not.toBeNull();
+
+    // Choosing a default model moves every stage onto it.
+    const chosen = await applyModelSettingsChange(null, {
+      kind: 'slots',
+      set: { llm: 'operator:deepseek-v4-flash' },
+    });
+    const after = viewFor(config, { config: chosen, revision: 1, unreadableSecrets: [] });
+    for (const stage of ['course.outline', 'course.content.slide', 'course.actions']) {
+      expect(after.slots.find((slot) => slot.slot === stage)).toMatchObject({
+        source: { kind: 'inherited', from: 'llm' },
+        effective: { source: 'workspace', modelId: 'deepseek-v4-flash' },
+      });
+    }
+  });
+
+  it('still says per-stage setup when the workspace or a lock holds every stage', () => {
+    const view = viewFor(
+      {
+        providers,
+        slots: { llm: 'operator:deepseek-v4-pro', 'course.content': 'operator:deepseek-v4-flash' },
+        lock: ['course.content'],
+      },
+      {
+        config: {
+          slots: {
+            'course.outline': 'operator:deepseek-v4-flash',
+            'course.actions': 'operator:deepseek-v4-flash',
+          },
+        },
+        revision: 1,
+        unreadableSecrets: [],
+      },
+    );
+    expect(courseStagesAllOverridden(view)).toBe(true);
   });
 
   it('renders no model control at all when the administrator fixed llm', () => {
