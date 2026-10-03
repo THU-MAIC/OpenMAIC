@@ -686,6 +686,41 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
       expect(await getOwnerMaterial(pool, OWNER, dropped.id)).toBeNull();
     });
 
+    it('keeps a material whose read commits while the sweep waits for its row', async () => {
+      const old = Date.now() - 48 * 60 * 60 * 1000;
+      const material = await upload('read-meanwhile.pdf', { createdAt: old });
+      // A read (GET /api/materials/{id}) holds the row in its transaction...
+      const reader = await pool.connect();
+      try {
+        await reader.query('BEGIN');
+        await reader.query('UPDATE owner_material SET touched_at = $2 WHERE id = $1', [
+          material.id,
+          Date.now(),
+        ]);
+        // ...while the sweep, which chose the material from the old version,
+        // waits for that row.
+        const sweeping = sweepUnusedOwnerMaterialsNow(bytes);
+        await expect
+          .poll(
+            async () =>
+              (
+                await admin.query(
+                  `SELECT count(*)::int AS n FROM pg_stat_activity
+                    WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+                )
+              ).rows[0].n,
+            UNTIL,
+          )
+          .toBeGreaterThan(0);
+        await reader.query('COMMIT');
+        expect(await sweeping).toMatchObject({ marked: 0, removed: 0 });
+      } finally {
+        reader.release();
+      }
+      expect(await getOwnerMaterial(pool, OWNER, material.id)).not.toBeNull();
+      expect(bytes.objects.has(material.ossKey)).toBe(true);
+    });
+
     it('deletes unpublished result objects once no attempt can still settle them', async () => {
       const material = await upload('orphans.pdf');
       await runNextOwnerMaterialExtraction('worker-a', deps());

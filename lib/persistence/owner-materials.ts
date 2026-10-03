@@ -722,6 +722,12 @@ export async function claimOwnerMaterialExtraction(
               extraction_heartbeat_at = $2,
               extraction = extraction || jsonb_build_object('claimedAt', $2::double precision)
         WHERE id = (SELECT id FROM next)
+          -- Rechecked on the row's latest version after its lock (a delete or
+          -- a restart that committed meanwhile is not claimed).
+          AND extraction->>'status' = 'extracting'
+          AND deleted_at IS NULL
+          AND status = 'ready'
+          AND (extraction_worker IS NULL OR extraction_heartbeat_at < $3)
        RETURNING ${OWNER_MATERIAL_COLUMNS}`,
       [lease, now, staleBefore, options.perOwnerLimit, [...(options.exclude ?? [])]],
     );
@@ -899,13 +905,19 @@ export async function sweepUnusedOwnerMaterials(
         SELECT c.id FROM owner_material c
          WHERE c.status = 'ready'
            AND c.deleted_at IS NULL
-           -- Age from the last time a composer that holds it read it.
            AND COALESCE(c.touched_at, c.created_at) < $1
-           ${runs ? `AND NOT EXISTS (SELECT 1 FROM generation_runs r WHERE r.input->'materialIds' ? c.id)` : ''}
-           ${sessions ? `AND NOT EXISTS (SELECT 1 FROM agent_session_materials s WHERE s.owner_material_id = c.id)` : ''}
          ORDER BY c.created_at
          LIMIT $3
       )
+        -- The conditions again on the row itself: PostgreSQL rechecks them
+        -- on the row's latest version after waiting for its lock, so a read
+        -- (a touch) that commits meanwhile keeps the material.
+        AND m.status = 'ready'
+        AND m.deleted_at IS NULL
+        -- Age from the last time a composer that holds it read it.
+        AND COALESCE(m.touched_at, m.created_at) < $1
+        ${runs ? `AND NOT EXISTS (SELECT 1 FROM generation_runs r WHERE r.input->'materialIds' ? m.id)` : ''}
+        ${sessions ? `AND NOT EXISTS (SELECT 1 FROM agent_session_materials s WHERE s.owner_material_id = m.id)` : ''}
       RETURNING m.id`,
     [sweep.untouchedBefore, Date.now(), limit],
   );
