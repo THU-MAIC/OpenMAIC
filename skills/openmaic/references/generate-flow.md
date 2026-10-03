@@ -160,7 +160,7 @@ answers `{ "material": { "materialId": "...", ..., "extraction": { "status": "..
 
 Waiting for `ready` before submitting is optional: a job whose material is still extracting waits for that extraction (it is not extracted twice), and a job whose material failed to extract fails with the extraction's error. Polling the material every few seconds before submitting lets you report a bad file before a job is created. Uploading the same file again reuses its finished extraction. `GET {url}/api/materials` (with no `sessionId` parameter) lists the owner's uploads with their extraction; with `sessionId` it lists an agent session's materials instead, and an empty `sessionId` answers `400`. The stored extraction counts against the owner's byte quota with the file.
 
-Submit the job within a day of the upload: an upload that no job (and no agent session) uses is deleted after 24 hours (`OPENMAIC_UNUSED_MATERIAL_TTL_HOURS`).
+Submit the job within a day of the upload: an upload that no job (and no agent session) uses is deleted once it has not been read for 24 hours (`OPENMAIC_UNUSED_MATERIAL_TTL_HOURS`); each `GET {url}/api/materials/{materialId}` counts as a read.
 
 4. Submit the job with the returned ids, in the order the documents should be read:
 

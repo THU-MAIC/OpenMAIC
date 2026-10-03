@@ -31,7 +31,7 @@ import {
   type ConnectableQueryable,
 } from '@openmaic/storage/server/reference';
 
-import { ensureOwnerMergeSchema, fenceOwnerWrite } from './owner-merges';
+import { ensureOwnerMergeSchema, fenceOwnerWrite, forwardOwnerWrite } from './owner-merges';
 
 export const OWNER_MATERIAL_STATUSES = ['uploading', 'ready'] as const;
 export type OwnerMaterialStatus = (typeof OWNER_MATERIAL_STATUSES)[number];
@@ -213,12 +213,22 @@ CREATE INDEX IF NOT EXISTS owner_material_owner_sha256_idx
   WHERE extraction->>'status' = 'ready' AND deleted_at IS NULL;
 `;
 
+/**
+ * Version 4: when the owner last showed a material is still in use (a
+ * composer that holds it reads it), so the unused-upload sweep counts its age
+ * from then rather than from the upload.
+ */
+const OWNER_MATERIAL_TOUCHED_AT = `
+ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS touched_at DOUBLE PRECISION;
+`;
+
 export const OWNER_MATERIAL_MIGRATIONS: SchemaMigrationSet = {
   store: 'owner-material',
   migrations: [
     { version: 1, name: 'baseline', up: OWNER_MATERIAL_SCHEMA, transaction: false },
     { version: 2, name: 'byte_store_key', up: OWNER_MATERIAL_BYTE_STORE_KEY },
     { version: 3, name: 'extraction_lease', up: OWNER_MATERIAL_EXTRACTION_LEASE },
+    { version: 4, name: 'touched_at', up: OWNER_MATERIAL_TOUCHED_AT },
   ],
 };
 
@@ -581,6 +591,26 @@ export async function getOwnerMaterial(
 }
 
 /**
+ * One of the owner's ready materials, read by the owner who still holds it
+ * (a composer): its last-touched time moves to now, which keeps it from the
+ * unused-upload sweep. Null as {@link getOwnerMaterial}.
+ */
+export async function touchOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<OwnerMaterialRecord | null> {
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `UPDATE owner_material
+        SET touched_at = $3
+      WHERE id = $1 AND owner_id = $2 AND status = 'ready' AND deleted_at IS NULL
+      RETURNING ${OWNER_MATERIAL_COLUMNS}`,
+    [materialId, ownerId, Date.now()],
+  );
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/**
  * Start the extraction of the given ready materials of `ownerId` whose
  * extraction is in one of the `from` states: `idle` (a run starts what was
  * never started), `failed` (a Retry). Answers the ids it started.
@@ -743,28 +773,64 @@ export async function releaseOwnerMaterialExtraction(
  * stored, or `failed`) and release its lease, in one fenced write. False when
  * the attempt no longer holds it (see {@link heartbeatOwnerMaterialExtraction}):
  * nothing is written, and the attempt's own result is its to delete.
+ *
+ * A `ready` result's bytes join the owner's byte usage. With `maxTotalBytes`,
+ * the check runs under the owner's quota lock, as an upload's reservation
+ * does, and a result that would exceed it throws
+ * {@link MaterialQuotaExceededError} with nothing written.
  */
 export async function settleOwnerMaterialExtraction(
-  queryable: Queryable,
+  queryable: ConnectableQueryable,
   materialId: string,
   lease: string,
   extraction: OwnerMaterialExtraction,
+  { maxTotalBytes }: { maxTotalBytes?: number } = {},
 ): Promise<boolean> {
-  const result = await queryable.query(
-    `UPDATE owner_material
-        SET extraction = $3::jsonb, extraction_worker = NULL, extraction_heartbeat_at = NULL
-      WHERE id = $1
-        AND extraction_worker = $2
-        AND extraction->>'status' = 'extracting'
-        AND deleted_at IS NULL
-      RETURNING id`,
-    [
-      materialId,
-      lease,
-      encodeJson({ ...extraction, updatedAt: Date.now() }, 'owner material extraction'),
-    ],
-  );
-  return result.rows.length > 0;
+  const write = async (tx: Queryable) => {
+    const result = await tx.query(
+      `UPDATE owner_material
+          SET extraction = $3::jsonb, extraction_worker = NULL, extraction_heartbeat_at = NULL
+        WHERE id = $1
+          AND extraction_worker = $2
+          AND extraction->>'status' = 'extracting'
+          AND deleted_at IS NULL
+        RETURNING id`,
+      [
+        materialId,
+        lease,
+        encodeJson({ ...extraction, updatedAt: Date.now() }, 'owner material extraction'),
+      ],
+    );
+    return result.rows.length > 0;
+  };
+  const resultBytes = extraction.status === 'ready' ? (extraction.resultBytes ?? 0) : 0;
+  if (maxTotalBytes === undefined || resultBytes === 0) return write(queryable);
+  const withTransaction = nodePostgresTransaction(queryable);
+  return withTransaction(async (tx) => {
+    const held = await tx.query<{ owner_id: string }>(
+      `SELECT owner_id FROM owner_material
+        WHERE id = $1 AND extraction_worker = $2 AND deleted_at IS NULL`,
+      [materialId, lease],
+    );
+    if (!held.rows[0]) return false;
+    // The locks an upload's reservation takes, in its order (a claim may have
+    // moved the material to the account it was claimed into).
+    const ownerId = await forwardOwnerWrite(tx, held.rows[0].owner_id);
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      ownerMaterialQuotaLockKey(ownerId),
+    ]);
+    const usage = await tx.query<{ total_bytes: number | string }>(
+      `SELECT COALESCE(SUM(bytes + COALESCE((extraction->>'resultBytes')::double precision, 0)), 0)::text
+                AS total_bytes
+         FROM owner_material
+        WHERE owner_id = $1 AND kind = 'source' AND deleted_at IS NULL`,
+      [ownerId],
+    );
+    if (Number(usage.rows[0]?.total_bytes ?? 0) + resultBytes > maxTotalBytes) {
+      throw new MaterialQuotaExceededError('bytes', maxTotalBytes);
+    }
+    return write(tx);
+  });
 }
 
 /**
@@ -798,8 +864,8 @@ export async function findReusableOwnerMaterialExtraction(
 
 /** Materials nobody used: old enough, and no run or agent session names them. */
 export interface UnusedOwnerMaterialSweep {
-  /** Ready uploads created before this (epoch ms) that nothing references are deleted. */
-  createdBefore: number;
+  /** Ready uploads last touched (or, never touched, created) before this (epoch ms) that nothing references are deleted. */
+  untouchedBefore: number;
   /** Deletes one material's objects; throws to keep its row for the next pass. */
   deleteObjects: (ossKey: string) => Promise<void>;
   /** At most this many rows per pass. */
@@ -808,7 +874,7 @@ export interface UnusedOwnerMaterialSweep {
 
 /**
  * Delete the uploads nobody used and finish deletes left behind, for every
- * owner: a ready material older than `createdBefore` that no generation run
+ * owner: a ready material untouched since `untouchedBefore` that no generation run
  * (in any state) and no agent session names is marked deleted (it stops
  * counting against its owner's quota); then every material marked deleted
  * (released by a run, swept, or a delete whose byte removal failed) has its
@@ -833,14 +899,15 @@ export async function sweepUnusedOwnerMaterials(
         SELECT c.id FROM owner_material c
          WHERE c.status = 'ready'
            AND c.deleted_at IS NULL
-           AND c.created_at < $1
+           -- Age from the last time a composer that holds it read it.
+           AND COALESCE(c.touched_at, c.created_at) < $1
            ${runs ? `AND NOT EXISTS (SELECT 1 FROM generation_runs r WHERE r.input->'materialIds' ? c.id)` : ''}
            ${sessions ? `AND NOT EXISTS (SELECT 1 FROM agent_session_materials s WHERE s.owner_material_id = c.id)` : ''}
          ORDER BY c.created_at
          LIMIT $3
       )
       RETURNING m.id`,
-    [sweep.createdBefore, Date.now(), limit],
+    [sweep.untouchedBefore, Date.now(), limit],
   );
   const doomed = await queryable.query<{ id: string; oss_key: string }>(
     `SELECT id, oss_key FROM owner_material
@@ -865,4 +932,21 @@ export async function sweepUnusedOwnerMaterials(
     removed += 1;
   }
   return { marked: marked.rows.length, removed };
+}
+
+/** The published result key of live materials, by id after `afterId` (the orphan sweep's pages). */
+export async function listOwnerMaterialResultKeys(
+  queryable: Queryable,
+  afterId: string,
+  limit: number,
+): Promise<Array<{ id: string; ossKey: string; resultKey: string | null }>> {
+  const result = await queryable.query<{ id: string; oss_key: string; result_key: string | null }>(
+    `SELECT id, oss_key, extraction->>'resultKey' AS result_key
+       FROM owner_material
+      WHERE id > $1 AND status = 'ready' AND deleted_at IS NULL AND oss_key <> ''
+      ORDER BY id
+      LIMIT $2`,
+    [afterId, limit],
+  );
+  return result.rows.map((row) => ({ id: row.id, ossKey: row.oss_key, resultKey: row.result_key }));
 }

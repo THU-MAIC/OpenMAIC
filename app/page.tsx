@@ -606,6 +606,10 @@ function HomePage() {
       // Nothing is started from settings that could not be read.
       const capabilities = await requireModelCapabilities();
       if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
+      // Nor from a material that went meanwhile: its chip shows it removed.
+      if (materialIds.length > 0 && !(await courseMaterials.verify())) {
+        throw new Error(t('toolbar.materialUnavailable'));
+      }
       const run = await startClassicRun({
         requirement: form.requirement,
         materialIds,

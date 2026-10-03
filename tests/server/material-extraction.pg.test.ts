@@ -20,7 +20,9 @@ import {
   registerOwnerMaterial,
   settleOwnerMaterialExtraction,
   startOwnerMaterialExtractions,
+  touchOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
+import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { decodeDataUrl } from '@/lib/server/provider-result-fetch';
 import { defaultRunStepServices } from '@/lib/server/generation/run/services';
@@ -37,6 +39,7 @@ import {
   extractionIdentityKey,
   MaterialExtractionFailedError,
   MaterialExtractionTimeoutError,
+  orphanResultAgeMs,
   runClaimedOwnerMaterialExtraction,
   runNextOwnerMaterialExtraction,
   startOwnerMaterialExtractor,
@@ -56,8 +59,15 @@ const UNTIL = { timeout: 20_000, interval: 25 };
 
 class MemoryByteStore implements MaterialByteStore {
   readonly objects = new Map<string, Buffer>();
+  readonly modifiedAt = new Map<string, number>();
   async put(key: string, body: MaterialByteInput): Promise<void> {
     this.objects.set(key, Buffer.from(body as Uint8Array));
+    this.modifiedAt.set(key, Date.now());
+  }
+  async list(prefix: string): Promise<Array<{ key: string; modifiedAt: number }>> {
+    return [...this.objects.keys()]
+      .filter((key) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/'))
+      .map((key) => ({ key, modifiedAt: this.modifiedAt.get(key) ?? 0 }));
   }
   async get(key: string): Promise<Buffer> {
     const value = this.objects.get(key);
@@ -561,6 +571,32 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
         ),
       ).rejects.toBeInstanceOf(MaterialQuotaExceededError);
 
+      // A result that would take the owner over its byte quota (checked under
+      // the upload lock) fails, and its object goes.
+      const full = await upload('full.txt');
+      await registerOwnerMaterial(
+        pool,
+        {
+          id: 'mat_filler',
+          ownerId: OWNER,
+          kind: 'source',
+          mime: 'text/plain',
+          bytes: agentRuntimeConfig.maxMaterialBytesPerOwner - 5 * 3 - resultBytes - 100,
+          ossKey: 'filler',
+        },
+        { maxCount: 100, maxTotalBytes: agentRuntimeConfig.maxMaterialBytesPerOwner },
+      );
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsed('q'.repeat(500))),
+      );
+      expect((await read(full.id)).extraction).toMatchObject({
+        status: 'failed',
+        errorCode: 'MATERIAL_QUOTA_EXCEEDED',
+      });
+      expect(published(full)).toEqual([]);
+      await pool.query("DELETE FROM owner_material WHERE id = 'mat_filler'");
+
       process.env.OPENMAIC_MATERIAL_EXTRACTION_MAX_RESULT_MB = '1';
       const huge = await upload('huge.txt');
       await runNextOwnerMaterialExtraction(
@@ -637,6 +673,36 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
   });
 
   describe('the sweep of unused uploads', () => {
+    it('counts age from the last time the owner read the material back', async () => {
+      const old = Date.now() - 48 * 60 * 60 * 1000;
+      const held = await upload('held.pdf', { createdAt: old });
+      const dropped = await upload('dropped.pdf', { createdAt: old });
+      // A composer that holds it reads it back (GET /api/materials/{id}).
+      expect((await touchOwnerMaterial(pool, OWNER, held.id))?.id).toBe(held.id);
+      expect(await touchOwnerMaterial(pool, OTHER, held.id)).toBeNull();
+      const swept = await sweepUnusedOwnerMaterialsNow(bytes);
+      expect(swept).toMatchObject({ marked: 1, removed: 1 });
+      expect(await getOwnerMaterial(pool, OWNER, held.id)).not.toBeNull();
+      expect(await getOwnerMaterial(pool, OWNER, dropped.id)).toBeNull();
+    });
+
+    it('deletes unpublished result objects once no attempt can still settle them', async () => {
+      const material = await upload('orphans.pdf');
+      await runNextOwnerMaterialExtraction('worker-a', deps());
+      const publishedKey = (await read(material.id)).extraction!.resultKey!;
+      const prefix = materialExtractionResultPrefix(material.ossKey);
+      const longAgo = Date.now() - orphanResultAgeMs() - 1000;
+      // A crashed attempt's result, a broken-off write, and a live attempt's result.
+      await bytes.put(`${prefix}crashed.json`, Buffer.from('{}'));
+      await bytes.put(`${prefix}crashed.json.123.tmp`, Buffer.from('{'));
+      await bytes.put(`${prefix}live.json`, Buffer.from('{}'));
+      bytes.modifiedAt.set(`${prefix}crashed.json`, longAgo);
+      bytes.modifiedAt.set(`${prefix}crashed.json.123.tmp`, longAgo);
+      bytes.modifiedAt.set(publishedKey, longAgo);
+      expect((await sweepUnusedOwnerMaterialsNow(bytes)).orphans).toBe(2);
+      expect(published(material).sort()).toEqual([publishedKey, `${prefix}live.json`].sort());
+    });
+
     it('deletes old uploads nothing references, keeps used and recent ones, and finishes released ones', async () => {
       await pool.query(
         'CREATE TABLE IF NOT EXISTS generation_runs (id TEXT PRIMARY KEY, input JSONB NOT NULL)',
@@ -664,7 +730,7 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
           Date.now(),
         ]);
 
-        expect(await sweepUnusedOwnerMaterialsNow(bytes)).toEqual({ marked: 1, removed: 2 });
+        expect(await sweepUnusedOwnerMaterialsNow(bytes)).toMatchObject({ marked: 1, removed: 2 });
         const left = await pool.query<{ id: string }>('SELECT id FROM owner_material ORDER BY id');
         expect(left.rows.map((row) => row.id).sort()).toEqual(
           [usedByRun.id, usedBySession.id, recent.id].sort(),

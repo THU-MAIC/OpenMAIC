@@ -192,6 +192,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
       deletePrefix: async (prefix: string) => {
         for (const key of [...bytes.keys()]) if (key.startsWith(prefix)) bytes.delete(key);
       },
+      list: async () => [],
     });
   });
 

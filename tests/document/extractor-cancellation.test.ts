@@ -85,3 +85,101 @@ describe('extractor cancellation', () => {
     expect(seen[0]).toBe(controller.signal);
   });
 });
+
+const docmind = vi.hoisted(() => ({
+  calls: [] as string[],
+  onCall: (_name: string): void => undefined,
+  status: 'processing',
+}));
+
+vi.mock('@alicloud/docmind-api20220711', () => {
+  class Request {
+    constructor(readonly fields: unknown) {}
+  }
+  class Client {
+    async submitDocParserJobAdvance() {
+      docmind.calls.push('submit');
+      docmind.onCall('submit');
+      return { body: { data: { id: 'job-1' } } };
+    }
+    async queryDocParserStatus() {
+      docmind.calls.push('status');
+      docmind.onCall('status');
+      return { body: { data: { status: docmind.status } } };
+    }
+    async getDocParserResult() {
+      docmind.calls.push('result');
+      docmind.onCall('result');
+      // A full page: there may be another.
+      return {
+        body: {
+          code: '200',
+          data: { layouts: Array.from({ length: 100 }, (_, i) => ({ text: `l${i}` })) },
+        },
+      };
+    }
+  }
+  return {
+    default: Client,
+    SubmitDocParserJobAdvanceRequest: Request,
+    SubmitDocParserJobAdvanceRequestMultimediaParameters: Request,
+    QueryDocParserStatusRequest: Request,
+    GetDocParserResultRequest: Request,
+  };
+});
+
+describe('AliDocMind cancellation', () => {
+  const run = async (abortOn: string, status: string) => {
+    const { parseWithAliDocMindClient } = await import('@/lib/pdf/alidocmind-client');
+    docmind.calls = [];
+    docmind.status = status;
+    const controller = new AbortController();
+    docmind.onCall = (name) => {
+      if (name === abortOn) controller.abort(new Error('material deleted'));
+    };
+    await expect(
+      parseWithAliDocMindClient(
+        { accessKeyId: 'id', accessKeySecret: 'secret' },
+        { buffer: Buffer.from('x'), fileName: 'a.pdf', signal: controller.signal },
+      ),
+    ).rejects.toThrow('material deleted');
+    return docmind.calls;
+  };
+
+  it('makes no request after an abort during submission, polling or result pages', async () => {
+    expect(await run('submit', 'processing')).toEqual(['submit']);
+    expect(await run('status', 'processing')).toEqual(['submit', 'status']);
+    expect(await run('result', 'success')).toEqual(['submit', 'status', 'result']);
+  });
+});
+
+describe('local media command cancellation', () => {
+  it('waits for a child that ignores SIGTERM to be killed before rejecting', async () => {
+    const { mkdtemp, readFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { runMediaCommandProcess } = await import('@/lib/document/extractors/local-media');
+    const dir = await mkdtemp(join(tmpdir(), 'openmaic-sigterm-'));
+    const pidFile = join(dir, 'pid');
+    const script = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`;
+    const controller = new AbortController();
+    const running = runMediaCommandProcess(
+      process.execPath,
+      ['-e', script],
+      60_000,
+      controller.signal,
+      300,
+    );
+    let pid = 0;
+    await vi.waitFor(async () => {
+      pid = Number(await readFile(pidFile, 'utf8'));
+      expect(pid).toBeGreaterThan(0);
+    });
+    const abortedAt = Date.now();
+    controller.abort(new Error('material deleted'));
+    await expect(running).rejects.toThrow('material deleted');
+    // Not before the grace ran out and SIGKILL ended it.
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(280);
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
+});

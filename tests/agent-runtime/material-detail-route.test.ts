@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   getSessionMaterial: vi.fn(),
-  getOwnerMaterial: vi.fn(),
+  touchOwnerMaterial: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -20,7 +20,7 @@ vi.mock('@/lib/persistence/server-provider', () => ({
 }));
 vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/persistence/owner-materials')>()),
-  getOwnerMaterial: mocks.getOwnerMaterial,
+  touchOwnerMaterial: mocks.touchOwnerMaterial,
 }));
 vi.mock('@/lib/server/identity/resolve', async () =>
   (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
@@ -92,7 +92,7 @@ describe('GET /api/materials/[id]', () => {
 
   it("reads the owner's own upload with its extraction when no session is named", async () => {
     mocks.runtimeConfigured = false;
-    mocks.getOwnerMaterial.mockResolvedValue({
+    mocks.touchOwnerMaterial.mockResolvedValue({
       id: MATERIAL_ID,
       ownerId: 'owner-1',
       kind: 'source',
@@ -115,10 +115,10 @@ describe('GET /api/materials/[id]', () => {
       mediaKind: 'document',
       extraction: { status: 'failed', error: 'no text' },
     });
-    expect(mocks.getOwnerMaterial).toHaveBeenCalledWith({}, 'owner-1', MATERIAL_ID);
+    expect(mocks.touchOwnerMaterial).toHaveBeenCalledWith({}, 'owner-1', MATERIAL_ID);
     expect(mocks.getSessionMaterial).not.toHaveBeenCalled();
 
-    mocks.getOwnerMaterial.mockResolvedValue(null);
+    mocks.touchOwnerMaterial.mockResolvedValue(null);
     const missing = await GET(new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}`), {
       params: Promise.resolve({ id: MATERIAL_ID }),
     });
@@ -131,7 +131,7 @@ describe('GET /api/materials/[id]', () => {
       { params: Promise.resolve({ id: MATERIAL_ID }) },
     );
     expect(response.status).toBe(400);
-    expect(mocks.getOwnerMaterial).not.toHaveBeenCalled();
+    expect(mocks.touchOwnerMaterial).not.toHaveBeenCalled();
   });
 
   it('answers 404 for a foreign or missing session (no existence oracle)', async () => {

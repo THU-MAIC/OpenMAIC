@@ -1,6 +1,7 @@
 /**
  * GET /api/materials/[id] — one of the caller's own library uploads (the ids
- * `POST /api/materials` returns) with its extraction: `idle`, `extracting`,
+ * `POST /api/materials` returns) with its extraction (reading it keeps an
+ * upload in use from the unused-upload sweep): `idle`, `extracting`,
  * `ready` (with what it found and what a course would leave out of it), or
  * `failed` (with the extractor's error). Needs only server persistence; an id
  * the owner does not have answers a plain 404.
@@ -31,8 +32,8 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import {
   deleteOwnerMaterial,
-  getOwnerMaterial,
   publicMaterial,
+  touchOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -64,7 +65,9 @@ export async function GET(req: NextRequest, { params }: Params) {
       const { id } = await params;
       if (!isMaterialId(id)) return ownerNotFound(responseHeaders);
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-      const record = await getOwnerMaterial(provider.pool, ownerId, id);
+      // Reading it says the owner still holds it: the unused-upload sweep
+      // counts its age from now.
+      const record = await touchOwnerMaterial(provider.pool, ownerId, id);
       if (!record) return ownerNotFound(responseHeaders);
       return ownerJson({ material: publicMaterial(record) }, 200, responseHeaders);
     });

@@ -215,36 +215,66 @@ async function resolveExecutable(name: 'ffmpeg' | 'ffprobe'): Promise<string> {
   );
 }
 
+/** How long a cancelled command gets to exit on SIGTERM before it is killed. */
+export const MEDIA_COMMAND_KILL_GRACE_MS = 2_000;
+
+/**
+ * Run one command. A caller that stops waiting (`signal`) has the process
+ * terminated (SIGTERM, then SIGKILL after {@link MEDIA_COMMAND_KILL_GRACE_MS})
+ * and gets the rejection only once it has exited, so a worker slot is never
+ * released while ffmpeg still runs.
+ */
+export function runMediaCommandProcess(
+  file: string,
+  args: string[],
+  timeoutMs: number,
+  signal?: AbortSignal,
+  killGraceMs: number = MEDIA_COMMAND_KILL_GRACE_MS,
+): Promise<MediaCommandResult> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    let aborted = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const child = execFile(
+      file,
+      args,
+      { timeout: timeoutMs, maxBuffer: COMMAND_MAX_BUFFER, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (aborted) return;
+        signal?.removeEventListener('abort', onAbort);
+        if (error) {
+          const detail = String(stderr || stdout || error.message)
+            .trim()
+            .slice(-4000);
+          const wrapped = new Error(`${basename(file)} failed: ${detail || error.message}`, {
+            cause: error,
+          }) as Error & { code?: string };
+          wrapped.code = (error as NodeJS.ErrnoException).code;
+          reject(wrapped);
+          return;
+        }
+        resolve({ stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
+    const onAbort = () => {
+      aborted = true;
+      child.once('close', () => {
+        if (killTimer) clearTimeout(killTimer);
+        reject(signal!.reason ?? new DOMException('Aborted', 'AbortError'));
+      });
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export const defaultMediaCommands: MediaCommandRunner = {
   resolve: resolveExecutable,
-  run(file, args, timeoutMs, signal) {
-    return new Promise((resolve, reject) => {
-      execFile(
-        file,
-        args,
-        {
-          timeout: timeoutMs,
-          maxBuffer: COMMAND_MAX_BUFFER,
-          encoding: 'utf8',
-          ...(signal ? { signal } : {}),
-        },
-        (error, stdout, stderr) => {
-          if (error) {
-            const detail = String(stderr || stdout || error.message)
-              .trim()
-              .slice(-4000);
-            const wrapped = new Error(`${basename(file)} failed: ${detail || error.message}`, {
-              cause: error,
-            }) as Error & { code?: string };
-            wrapped.code = (error as NodeJS.ErrnoException).code;
-            reject(wrapped);
-            return;
-          }
-          resolve({ stdout: String(stdout), stderr: String(stderr) });
-        },
-      );
-    });
-  },
+  run: (file, args, timeoutMs, signal) => runMediaCommandProcess(file, args, timeoutMs, signal),
 };
 
 export function parseMediaProbe(stdout: string): MediaProbe {

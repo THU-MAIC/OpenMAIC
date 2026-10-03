@@ -363,6 +363,42 @@ describe('the composer materials', () => {
     expect(probe.current!.materials[0]).toMatchObject({ status: 'ready' });
   });
 
+  it('reads its materials back while open (keeping them in use), and Generate checks they still exist', async () => {
+    api.uploadMaterial.mockResolvedValue({
+      materialId: 'mat_6',
+      bytes: 4,
+      mediaKind: 'document',
+      extraction: { status: 'ready' },
+    });
+    await act(async () => {
+      await probe.current!.add([pdf()]);
+    });
+    await flush();
+    api.fetchOwnerMaterial.mockResolvedValue({
+      materialId: 'mat_6',
+      bytes: 4,
+      mediaKind: 'document',
+      extraction: { status: 'ready' },
+    });
+    await flush(10 * 60 * 1000);
+    expect(api.fetchOwnerMaterial).toHaveBeenCalledWith('mat_6');
+    expect(probe.current!.materials[0]).toMatchObject({ status: 'ready' });
+
+    // Handed to a run, then found gone: the start is refused and the chip says so.
+    expect(probe.current!.handOff()).toEqual(['mat_6']);
+    api.fetchOwnerMaterial.mockResolvedValue(null);
+    let present: boolean | undefined;
+    await act(async () => {
+      present = await probe.current!.verify();
+    });
+    expect(present).toBe(false);
+    expect(probe.current!.materials[0]).toMatchObject({
+      status: 'failed',
+      failure: { key: 'toolbar.materialUnavailable' },
+    });
+    expect(probe.current!.allReady).toBe(false);
+  });
+
   it('keeps its materials when the page goes into the back/forward cache, and reconciles them on return', async () => {
     api.uploadMaterial.mockResolvedValue({
       materialId: 'mat_5',

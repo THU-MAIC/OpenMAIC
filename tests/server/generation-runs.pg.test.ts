@@ -2574,6 +2574,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         deletePrefix: async (prefix: string) => {
           for (const key of [...objects.keys()]) if (key.startsWith(prefix)) objects.delete(key);
         },
+        list: async () => [],
       };
       bytesModule.setMaterialByteStoreForTests(byteStore);
       const upload = async (name: string) => {

@@ -153,6 +153,9 @@ export async function parseWithAliDocMindClient(
   options.signal?.throwIfAborted();
   log.info(`Submitting ${options.fileName} (${options.buffer.byteLength} bytes)`);
   const submitRes = await client.submitDocParserJobAdvance(request, runtime);
+  // The SDK cannot abort a call: a caller that stopped waiting meanwhile gets
+  // no further request (the submitted job expires on its own).
+  options.signal?.throwIfAborted();
   const jobId = submitRes.body?.data?.id;
   if (!jobId) {
     throw new Error(`AliDocMind submit returned no job id: ${JSON.stringify(submitRes.body)}`);
@@ -191,7 +194,7 @@ export async function parseWithAliDocMindClient(
       throw new Error(`AliDocMind job ${jobId} failed: ${statusRes.body?.message ?? 'unknown'}`);
     }
     if (status === 'success') {
-      const result = await fetchResult(client, jobId);
+      const result = await fetchResult(client, jobId, options.signal);
       return {
         jobId,
         data: result,
@@ -207,7 +210,15 @@ export async function parseWithAliDocMindClient(
   throw new Error(`AliDocMind job ${jobId} timed out after ${POLL_MAX_MS / 1000}s`);
 }
 
-async function fetchResult(client: Client, jobId: string): Promise<Record<string, unknown>> {
+/**
+ * Every page of a finished job's result. The SDK takes no abort signal, so a
+ * request in flight runs to its own timeout; `signal` stops the next one.
+ */
+async function fetchResult(
+  client: Client,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
   const STEP = 100;
   const merged: {
     layouts?: unknown[];
@@ -218,6 +229,7 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
   let layoutNum = 0;
 
   while (true) {
+    signal?.throwIfAborted();
     const res = await client.getDocParserResult(
       new $Docmind.GetDocParserResultRequest({
         id: jobId,

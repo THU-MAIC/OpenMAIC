@@ -66,6 +66,12 @@ export interface CourseMaterialEntry extends SelectedCourseMaterial {
 const POLL_MS = 1500;
 /** Uploads at once. */
 const MAX_CONCURRENT_UPLOADS = 3;
+/**
+ * How often an open, visible composer reads its materials back: each read
+ * keeps the upload from the server's unused-upload sweep (24 hours by
+ * default) and shows one that went meanwhile as removed.
+ */
+const KEEPALIVE_MS = 10 * 60 * 1000;
 
 function kindOfFile(file: File): 'document' | 'media' {
   const mime = materialMime(file);
@@ -200,6 +206,11 @@ export interface CourseMaterials {
   handOff(): string[];
   /** Take back what {@link handOff} handed, when the run did not start. */
   takeBack(materialIds: readonly string[]): void;
+  /**
+   * Read the attached materials back from the server (which keeps them in
+   * use); false when one has gone, which its chip then shows as removed.
+   */
+  verify(): Promise<boolean>;
 }
 
 export function useCourseMaterials(): CourseMaterials {
@@ -392,6 +403,43 @@ export function useCourseMaterials(): CourseMaterials {
     };
   }, [extractingIds, update]);
 
+  /** Read the materials back (keeping them in use); false when one has gone. */
+  const reconcile = useCallback(
+    async ({ handedOffToo = false }: { handedOffToo?: boolean } = {}): Promise<boolean> => {
+      const checks = latest.current.flatMap((entry) => {
+        const materialId = entry.materialId;
+        if (!materialId || (!handedOffToo && handedOff.current.has(materialId))) return [];
+        return [
+          fetchOwnerMaterial(materialId).then((view) => {
+            update(entry.id, (item) =>
+              item.materialId !== materialId
+                ? item
+                : view
+                  ? fromServer(item, view)
+                  : {
+                      ...item,
+                      status: 'failed',
+                      failure: { stage: 'upload', key: 'toolbar.materialUnavailable' },
+                    },
+            );
+            return view !== null;
+          }),
+        ];
+      });
+      const present = await Promise.all(checks);
+      return present.every(Boolean);
+    },
+    [update],
+  );
+
+  // An open composer keeps its materials in use while it is visible.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void reconcile().catch(() => undefined);
+    }, KEEPALIVE_MS);
+    return () => clearInterval(timer);
+  }, [reconcile]);
+
   // What was not handed to a run is deleted when the composer goes away. A
   // page kept in the back/forward cache keeps its materials (it may come back
   // as it was); the server sweeps them if it never does.
@@ -409,26 +457,7 @@ export function useCourseMaterials(): CourseMaterials {
     };
     // Back from the cache: the materials may have changed (or gone) meanwhile.
     const onPageShow = (event: PageTransitionEvent) => {
-      if (!event.persisted) return;
-      for (const entry of latest.current) {
-        const materialId = entry.materialId;
-        if (!materialId || handedOff.current.has(materialId)) continue;
-        void fetchOwnerMaterial(materialId)
-          .then((view) =>
-            update(entry.id, (item) =>
-              item.materialId !== materialId
-                ? item
-                : view
-                  ? fromServer(item, view)
-                  : {
-                      ...item,
-                      status: 'failed',
-                      failure: { stage: 'upload', key: 'toolbar.materialUnavailable' },
-                    },
-            ),
-          )
-          .catch(() => undefined);
-      }
+      if (event.persisted) void reconcile().catch(() => undefined);
     };
     window.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
@@ -437,7 +466,7 @@ export function useCourseMaterials(): CourseMaterials {
       window.removeEventListener('pageshow', onPageShow);
       releaseAll();
     };
-  }, [update]);
+  }, [reconcile]);
 
   const handOff = useCallback(() => {
     const ids = [...latest.current]
@@ -453,5 +482,14 @@ export function useCourseMaterials(): CourseMaterials {
 
   const allReady = useMemo(() => materials.every((entry) => entry.status === 'ready'), [materials]);
 
-  return { materials, add, remove, retry, allReady, handOff, takeBack };
+  return {
+    materials,
+    add,
+    remove,
+    retry,
+    allReady,
+    handOff,
+    takeBack,
+    verify: () => reconcile({ handedOffToo: true }),
+  };
 }

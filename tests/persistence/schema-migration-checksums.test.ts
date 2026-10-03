@@ -89,6 +89,13 @@ const SHIPPED: readonly (readonly [
     'f021eaa2d167d4db15d893787ca5f32ae4a8b8d55a2386c6d9fc2a1c916434dd',
   ],
   [
+    'owner-material',
+    4,
+    'touched_at',
+    true,
+    '3acac29dc0790eee5fdd4831810f19864eba2e9cef251a8804b49f74f1c48609',
+  ],
+  [
     'asset',
     1,
     'baseline',

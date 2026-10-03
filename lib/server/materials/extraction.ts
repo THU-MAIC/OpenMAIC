@@ -36,6 +36,8 @@ import {
   releaseOwnerMaterialExtraction,
   settleOwnerMaterialExtraction,
   startOwnerMaterialExtractions,
+  listOwnerMaterialResultKeys,
+  MaterialQuotaExceededError,
   sweepUnusedOwnerMaterials,
   type OwnerMaterialExtraction,
   type OwnerMaterialExtractionClaim,
@@ -60,6 +62,7 @@ import {
   deleteMaterialObjects,
   getMaterialByteStore,
   materialExtractionResultKey,
+  materialExtractionResultPrefix,
   type MaterialByteStore,
 } from './bytes';
 import {
@@ -355,7 +358,9 @@ export function failedExtraction(error: unknown): OwnerMaterialExtraction {
         ? error.reason
         : error instanceof MaterialExtractionTimeoutError
           ? 'EXTRACTION_TIMEOUT'
-          : 'EXTRACTION_FAILED',
+          : error instanceof MaterialQuotaExceededError
+            ? 'MATERIAL_QUOTA_EXCEEDED'
+            : 'EXTRACTION_FAILED',
     retryable: isTransientExtractionError(error),
   };
 }
@@ -422,7 +427,21 @@ export async function runClaimedOwnerMaterialExtraction(
   } finally {
     clearInterval(heartbeat);
   }
-  if (!(await settleOwnerMaterialExtraction(pool, material.id, lease, extraction))) {
+  let settled: boolean;
+  try {
+    // The result's bytes count against the owner's byte quota, checked under
+    // the lock an upload's reservation takes.
+    settled = await settleOwnerMaterialExtraction(pool, material.id, lease, extraction, {
+      maxTotalBytes: agentRuntimeConfig.maxMaterialBytesPerOwner,
+    });
+  } catch (error) {
+    await dropOwnResult();
+    if (!(error instanceof MaterialQuotaExceededError)) throw error;
+    log.warn(`material ${material.id}: extraction result over the owner's byte quota`);
+    await settleOwnerMaterialExtraction(pool, material.id, lease, failedExtraction(error));
+    return;
+  }
+  if (!settled) {
     // Another attempt holds it now, or it is gone: this result is nobody's.
     await dropOwnResult();
     log.info(`material ${material.id}: extraction result dropped (lease lost)`);
@@ -585,19 +604,61 @@ export function startOwnerMaterialExtractor(
   return handle;
 }
 
+/**
+ * How old an unpublished result object must be before the sweep takes it: no
+ * live attempt can still settle it (an attempt writes it at the end of its
+ * extraction and settles right after, within its deadline and its lease).
+ */
+export function orphanResultAgeMs(): number {
+  return 2 * (STEP_DEADLINES_MS.materialAnalysis + agentRuntimeConfig.leaseTtlMs);
+}
+
+/** Where the orphan sweep goes on from, across passes. */
+let orphanCursor = '';
+
+/**
+ * Delete result objects of live materials that are not their published
+ * result and are older than {@link orphanResultAgeMs}: what an attempt left
+ * when it crashed after storing, failed to settle, or broke off a write (a
+ * temporary file). Pages through the materials (`limit` per pass) and starts
+ * over at the end. Answers how many objects it deleted.
+ */
+export async function sweepOrphanExtractionResults(
+  byteStore: MaterialByteStore,
+  { limit = 500, now = Date.now() }: { limit?: number; now?: number } = {},
+): Promise<number> {
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const materials = await listOwnerMaterialResultKeys(pool, orphanCursor, limit);
+  orphanCursor = materials.length < limit ? '' : materials[materials.length - 1]!.id;
+  const before = now - orphanResultAgeMs();
+  let deleted = 0;
+  for (const material of materials) {
+    for (const object of await byteStore.list(materialExtractionResultPrefix(material.ossKey))) {
+      if (object.key === material.resultKey || object.modifiedAt >= before) continue;
+      await byteStore.delete(object.key);
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
 /** One pass of the unused-upload sweep, with this deployment's TTL. */
 export async function sweepUnusedOwnerMaterialsNow(
   byteStore: MaterialByteStore = getMaterialByteStore(),
-): Promise<{ marked: number; removed: number }> {
+): Promise<{ marked: number; removed: number; orphans: number }> {
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
   const swept = await sweepUnusedOwnerMaterials(pool, {
-    createdBefore: Date.now() - unusedMaterialTtlMs(),
+    untouchedBefore: Date.now() - unusedMaterialTtlMs(),
     deleteObjects: (ossKey) => deleteMaterialObjects(byteStore, ossKey),
   });
-  if (swept.marked > 0 || swept.removed > 0) {
-    log.info(`swept ${swept.marked} unused material(s), removed ${swept.removed}`);
+  const orphans = await sweepOrphanExtractionResults(byteStore);
+  if (swept.marked > 0 || swept.removed > 0 || orphans > 0) {
+    log.info(
+      `swept ${swept.marked} unused material(s), removed ${swept.removed}, ` +
+        `${orphans} unpublished result object(s)`,
+    );
   }
-  return swept;
+  return { ...swept, orphans };
 }
 
 /** A material's extraction failed: the run's material step fails with its error. */

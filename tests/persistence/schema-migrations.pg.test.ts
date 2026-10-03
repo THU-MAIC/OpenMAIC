@@ -221,15 +221,15 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     await withPool((pool) =>
       pool.query(
         `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
-         VALUES ('owner-material', 4, 'from_a_newer_release', 'x')`,
+         VALUES ('owner-material', 5, 'from_a_newer_release', 'x')`,
       ),
     );
 
     await expect(boot()).rejects.toMatchObject({
       name: 'SchemaVersionAheadError',
       store: 'owner-material',
-      recordedVersion: 4,
-      knownVersion: 3,
+      recordedVersion: 5,
+      knownVersion: 4,
     });
   }, 60_000);
 

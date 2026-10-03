@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rename, rm } from 'node:fs/promises';
-import { dirname, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
@@ -13,6 +13,8 @@ export interface MaterialByteStore {
   delete(key: string): Promise<void>;
   /** Delete every object whose key starts with `prefix` (a `/`-terminated folder). */
   deletePrefix(prefix: string): Promise<void>;
+  /** The objects directly under `prefix` (a `/`-terminated folder), with when each was written. */
+  list(prefix: string): Promise<Array<{ key: string; modifiedAt: number }>>;
 }
 
 function nodeReadable(body: MaterialByteInput): Readable {
@@ -57,6 +59,24 @@ export class LocalMaterialByteStore implements MaterialByteStore {
 
   async delete(key: string): Promise<void> {
     await rm(safeLocalPath(this.root, key), { force: true });
+  }
+
+  async list(prefix: string): Promise<Array<{ key: string; modifiedAt: number }>> {
+    if (!prefix.endsWith('/')) throw new Error(`invalid material object prefix: ${prefix}`);
+    const folder = safeLocalPath(this.root, prefix.slice(0, -1));
+    let names: string[];
+    try {
+      names = await readdir(folder);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const entries = [];
+    for (const name of names) {
+      const info = await stat(join(folder, name)).catch(() => null);
+      if (info?.isFile()) entries.push({ key: `${prefix}${name}`, modifiedAt: info.mtimeMs });
+    }
+    return entries;
   }
 
   async deletePrefix(prefix: string): Promise<void> {
