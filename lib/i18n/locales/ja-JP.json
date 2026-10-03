@@ -1895,7 +1895,7 @@
     "saveModel": "保存",
     "searxngServerOnlyNotice": "SearXNG はサーバー側で設定する必要があります。SEARXNG_BASE_URL 環境変数（または server-providers.yml の web-search セクション）を設定してください。クライアントからのインスタンス URL は受け付けません。",
     "serverConfigured": "サーバー",
-    "serverConfiguredNotice": "このプロバイダーはサーバーで管理されており、ここでは編集できません。独自の認証情報を使うには、別のプロバイダーを追加してください。",
+    "serverConfiguredNotice": "このプロバイダーはサーバーで管理されており、ここでは編集できません。",
     "startRecording": "録音を開始",
     "stopRecording": "録音を停止",
     "supportedFormats": "対応フォーマット",
@@ -2111,7 +2111,8 @@
         "unsupported": "この種類のカスタムプロバイダーは移行できません。OpenAI 互換エンドポイントとして追加し直してください。",
         "unconfirmed": "サーバーがインポートを確認しませんでした。"
       }
-    }
+    },
+    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

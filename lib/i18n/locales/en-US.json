@@ -1895,7 +1895,7 @@
     "saveModel": "Save",
     "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
     "serverConfigured": "Server",
-    "serverConfiguredNotice": "This provider is managed by the server and can't be edited here. To use your own credentials, add a separate provider.",
+    "serverConfiguredNotice": "This provider is managed by the server and can't be edited here.",
     "startRecording": "Start Recording",
     "stopRecording": "Stop Recording",
     "supportedFormats": "Supported Formats",
@@ -2111,7 +2111,8 @@
         "unsupported": "This kind of custom provider cannot be moved: add it again as an OpenAI-compatible endpoint.",
         "unconfirmed": "The server did not confirm that it was imported."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "To use your own credentials, add a separate provider."
   },
   "workspace": {
     "untitledCourse": "Untitled course",

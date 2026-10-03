@@ -160,6 +160,8 @@ export function ModelServicesPanel({
     const name = entryName(entry, capability, t);
     const icon = entryIcon(entry, capability);
     const configured = isEntryConfigured(entry, capability);
+    // "Fill in credentials" only where this service can be set up here.
+    const settable = canAdd && entry.state !== 'server-only' && entry.state !== 'deployment';
     return (
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -185,7 +187,9 @@ export function ModelServicesPanel({
             <p className="text-[11px] text-muted-foreground">
               {configured
                 ? t('settings.modelServices.configuredHint')
-                : t('settings.modelServices.notConfiguredHint')}
+                : settable
+                  ? t('settings.modelServices.notConfiguredHint')
+                  : t('settings.modelServices.notConfigured')}
             </p>
           </div>
         </div>
@@ -224,7 +228,11 @@ export function ModelServicesPanel({
             </Badge>
           ) : (
             <Badge variant="secondary" className="shrink-0 text-amber-600 dark:text-amber-400">
-              {t('settings.modelServices.pending')}
+              {t(
+                settable
+                  ? 'settings.modelServices.pending'
+                  : 'settings.modelServices.notConfigured',
+              )}
             </Badge>
           )}
         </div>

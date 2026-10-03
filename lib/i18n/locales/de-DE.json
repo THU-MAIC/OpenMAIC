@@ -1895,7 +1895,7 @@
     "saveModel": "Speichern",
     "searxngServerOnlyNotice": "SearXNG muss auf dem Server konfiguriert werden. Setze die Umgebungsvariable SEARXNG_BASE_URL (oder den Abschnitt web-search in server-providers.yml). Von Clients angegebene Instanz-URLs werden nicht akzeptiert.",
     "serverConfigured": "Server",
-    "serverConfiguredNotice": "Dieser Anbieter wird vom Server verwaltet und kann hier nicht bearbeitet werden. Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu.",
+    "serverConfiguredNotice": "Dieser Anbieter wird vom Server verwaltet und kann hier nicht bearbeitet werden.",
     "startRecording": "Aufnahme starten",
     "stopRecording": "Aufnahme stoppen",
     "supportedFormats": "Unterstützte Formate",
@@ -2111,7 +2111,8 @@
         "unsupported": "Diese Art von eigenem Anbieter kann nicht übertragen werden: Fügen Sie ihn als OpenAI-kompatiblen Endpunkt erneut hinzu.",
         "unconfirmed": "Der Server hat den Import nicht bestätigt."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

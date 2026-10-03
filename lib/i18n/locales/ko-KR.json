@@ -1895,7 +1895,7 @@
     "saveModel": "저장",
     "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
     "serverConfigured": "서버",
-    "serverConfiguredNotice": "이 제공업체는 서버에서 관리되므로 여기서 편집할 수 없습니다. 본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요.",
+    "serverConfiguredNotice": "이 제공업체는 서버에서 관리되므로 여기서 편집할 수 없습니다.",
     "startRecording": "녹음 시작",
     "stopRecording": "녹음 중지",
     "supportedFormats": "지원 형식",
@@ -2111,7 +2111,8 @@
         "unsupported": "이 유형의 사용자 지정 공급자는 옮길 수 없습니다. OpenAI 호환 엔드포인트로 다시 추가하세요.",
         "unconfirmed": "서버가 가져오기를 확인하지 않았습니다."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

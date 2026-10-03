@@ -91,7 +91,7 @@ export function MediaServicePanel({
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability={kind} />}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {editable && (

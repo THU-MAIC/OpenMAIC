@@ -1895,7 +1895,7 @@
     "saveModel": "Guardar",
     "searxngServerOnlyNotice": "SearXNG debe configurarse en el servidor. Define la variable de entorno SEARXNG_BASE_URL (o la sección web-search en server-providers.yml). No se aceptan URLs de instancia proporcionadas por el cliente.",
     "serverConfigured": "Servidor",
-    "serverConfiguredNotice": "Este proveedor lo administra el servidor y no puede editarse aquí. Para usar tus propias credenciales, agrega un proveedor aparte.",
+    "serverConfiguredNotice": "Este proveedor lo administra el servidor y no puede editarse aquí.",
     "startRecording": "Iniciar grabación",
     "stopRecording": "Detener grabación",
     "supportedFormats": "Formatos compatibles",
@@ -2111,7 +2111,8 @@
         "unsupported": "Este tipo de proveedor personalizado no se puede mover: agrégalo de nuevo como endpoint compatible con OpenAI.",
         "unconfirmed": "El servidor no confirmó que se importara."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

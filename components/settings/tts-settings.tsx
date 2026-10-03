@@ -232,7 +232,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
         </div>
       )}
 
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability="tts" />}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* API Key & Base URL — the server's services are the operator's. */}

@@ -193,6 +193,31 @@ describe('the settings sections', () => {
     await flush();
     const tabs = [...document.body.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
     expect(tabs).toEqual(['settings.ttsSettings']);
+    // The service in use is the server's, read-only, with no "add your own" to it.
+    const notice = document.body.querySelector('[data-server-configured-notice]');
+    expect(notice?.textContent).toContain('settings.serverConfiguredNotice');
+    expect(notice?.textContent).not.toContain('settings.serverConfiguredAddOwn');
+    expect(document.body.textContent).not.toContain('settings.modelServices.notConfiguredHint');
+    expect(document.body.textContent).not.toContain('settings.modelServices.pending');
+  });
+
+  it('suggests adding a provider of your own only where that can change something', async () => {
+    await openDialog(
+      viewFor({
+        providers: {
+          ...providers,
+          qwen: { preset: 'qwen-tts', apiKey: 'sk-operator-secret-0003' },
+        },
+        slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
+      }),
+    );
+    click(document.body.querySelector<HTMLElement>('[data-testid="settings-nav-model-services"]')!);
+    await flush();
+    click(byText('settings.ttsSettings', '[role="tab"]'));
+    await flush();
+    expect(document.body.querySelector('[data-server-configured-notice]')?.textContent).toContain(
+      'settings.serverConfiguredAddOwn',
+    );
   });
 
   it('hides Token Plan when no plan can fill a slot that is not locked', async () => {

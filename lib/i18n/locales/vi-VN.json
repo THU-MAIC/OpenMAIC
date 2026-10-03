@@ -1895,7 +1895,7 @@
     "saveModel": "Lưu",
     "searxngServerOnlyNotice": "SearXNG phải được cấu hình trên máy chủ. Hãy đặt biến môi trường SEARXNG_BASE_URL (hoặc mục web-search trong server-providers.yml). Địa chỉ do phía người dùng gửi lên sẽ không được nhận.",
     "serverConfigured": "Máy chủ",
-    "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây. Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
+    "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây.",
     "startRecording": "Bắt đầu ghi âm",
     "stopRecording": "Dừng ghi âm",
     "supportedFormats": "Định dạng được hỗ trợ",
@@ -2111,7 +2111,8 @@
         "unsupported": "Không thể chuyển loại nhà cung cấp tùy chỉnh này: hãy thêm lại dưới dạng endpoint tương thích OpenAI.",
         "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

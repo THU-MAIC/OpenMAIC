@@ -1895,7 +1895,7 @@
     "saveModel": "حفظ",
     "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "serverConfigured": "الخادم",
-    "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا. لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا.",
     "startRecording": "بدء التسجيل",
     "stopRecording": "إيقاف التسجيل",
     "supportedFormats": "الصيغ المدعومة",
@@ -2111,7 +2111,8 @@
         "unsupported": "لا يمكن نقل هذا النوع من المزوّدين المخصصين: أضفه مجددًا كنقطة نهاية متوافقة مع OpenAI.",
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

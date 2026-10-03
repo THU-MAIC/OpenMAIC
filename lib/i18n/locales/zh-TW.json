@@ -1880,7 +1880,7 @@
     "saveModel": "儲存",
     "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "serverConfigured": "服務端",
-    "serverConfiguredNotice": "此供應商由伺服器端管理，無法在此編輯。如需使用自己的憑證，請新增一個供應商。",
+    "serverConfiguredNotice": "此供應商由伺服器端管理，無法在此編輯。",
     "startRecording": "開始錄音",
     "stopRecording": "停止錄音",
     "supportedFormats": "支援的格式",
@@ -2096,7 +2096,8 @@
         "unsupported": "此類自訂服務商無法遷移：請作為 OpenAI 相容端點重新新增。",
         "unconfirmed": "伺服器未確認已匯入。"
       }
-    }
+    },
+    "serverConfiguredAddOwn": "如需使用自己的憑證，請新增一個供應商。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
