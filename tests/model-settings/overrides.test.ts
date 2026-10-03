@@ -253,7 +253,14 @@ describe('courseStagesPlanName', () => {
     const view = withSlots(
       {
         ...base(),
-        providers: [{ ...workspaceProvider('other'), preset: 'openai-compatible' }],
+        providers: [
+          {
+            ...workspaceProvider('other'),
+            preset: 'openai-compatible',
+            presetName: 'OpenAI-compatible endpoint',
+            presetKind: 'single',
+          },
+        ],
       },
       allCourseStages('other:gpt-5'),
     );

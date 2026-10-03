@@ -69,6 +69,13 @@ type Provider = NonNullable<ModelConfigFile['providers']>[string];
 export interface ProviderView {
   id: string;
   preset: string;
+  /**
+   * The preset's display name and kind, for labels: served for every provider
+   * (a deployment's included), whether or not the preset is one a workspace
+   * may add from.
+   */
+  presetName: string;
+  presetKind: ProviderPreset['kind'];
   /** Where it is declared: deployment providers are read-only. */
   source: 'deployment' | 'workspace';
   baseUrl?: string;
@@ -342,6 +349,12 @@ function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   return undefined;
 }
 
+/** A preset's name and kind as provider views carry them (its id, for a preset this build lacks). */
+function presetLabel(presetId: string): Pick<ProviderView, 'presetName' | 'presetKind'> {
+  const preset = getProviderPreset(presetId);
+  return { presetName: preset?.name ?? presetId, presetKind: preset?.kind ?? 'single' };
+}
+
 function stripTarget(target: ResolvedModelTarget): TargetView {
   const {
     apiKey: _apiKey,
@@ -428,6 +441,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     ...Object.entries(deploymentProviders).map(([id, provider]) => ({
       id,
       preset: provider.preset,
+      ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models),
@@ -435,6 +449,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
       id,
       preset: provider.preset,
+      ...presetLabel(provider.preset),
       source: 'workspace' as const,
       ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
       ...(provider.models ? { models: [...provider.models] } : {}),

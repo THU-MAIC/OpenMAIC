@@ -537,6 +537,8 @@ describe('the card picker', () => {
         {
           id: 'browser-native-tts',
           preset: 'browser-native-tts',
+          presetName: 'Browser TTS',
+          presetKind: 'single' as const,
           source: 'workspace' as const,
           capabilities: browserTts.capabilities,
           key: { set: false },
@@ -575,11 +577,15 @@ describe('the card picker', () => {
         {
           ...workspaceProvider('deepseek'),
           preset: 'deepseek',
+          presetName: 'DeepSeek',
+          presetKind: 'single',
           capabilities: { chat: { registryId: 'deepseek', models: [{ id: 'd', name: 'D' }] } },
         },
         {
           ...workspaceProvider('gateway'),
           preset: 'openai-compatible',
+          presetName: 'OpenAI-compatible endpoint',
+          presetKind: 'single',
           capabilities: { chat: { registryId: 'openai', models: [{ id: 'g', name: 'G' }] } },
         },
       ],
@@ -587,7 +593,7 @@ describe('the card picker', () => {
     const { apply } = recordingApply(view);
     mount(map(view, apply));
     click(document.body.querySelector<HTMLElement>('[data-slot-id="llm"]')!);
-    const deepseek = byLabel('deepseek').querySelector('img');
+    const deepseek = byLabel('DeepSeek').querySelector('img');
     expect(deepseek?.getAttribute('src')).toContain('deepseek');
     const gateway = byLabel('gateway');
     expect(gateway.querySelector('img')).toBeNull();

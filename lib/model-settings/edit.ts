@@ -421,8 +421,7 @@ export function slotKey(slot: string): string {
  */
 export function providerLabel(view: ModelSettingsView, providerId: string): string {
   const provider = view.providers.find((entry) => entry.id === providerId);
-  const preset = provider ? presetOf(view, provider) : undefined;
-  return preset && preset.id === providerId ? preset.name : providerId;
+  return provider && provider.preset === providerId ? provider.presetName : providerId;
 }
 
 /** A client's apply: the change, and the view it was worked out from. */

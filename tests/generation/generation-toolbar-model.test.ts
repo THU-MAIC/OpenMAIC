@@ -34,6 +34,8 @@ function withChatProvider(view: ModelSettingsView): ModelSettingsView {
     {
       id: 'openai',
       preset: 'openai',
+      presetName: 'OpenAI',
+      presetKind: 'single',
       source: 'workspace',
       capabilities: { chat: { models: [{ id: 'gpt-5', name: 'GPT-5' }] } },
       key: { set: true },
@@ -59,7 +61,7 @@ describe('the toolbar course model', () => {
         }),
       ),
     );
-    expect(markup).toContain('aria-label="openai / gpt-5"');
+    expect(markup).toContain('aria-label="OpenAI / gpt-5"');
   });
 
   it('asks to set up a model when there is nothing to pick', () => {
@@ -68,7 +70,7 @@ describe('the toolbar course model', () => {
     expect(markup).not.toContain('toolbar.pickModel');
   });
 
-  it('is read-only when the deployment sets the model', () => {
+  it('renders no model control at all when the deployment locks the default model', () => {
     const view = withChatProvider(
       modelSettingsViewFor({
         llm: { registryId: 'openai', providerId: 'openai', modelId: 'gpt-5' },
@@ -76,7 +78,8 @@ describe('the toolbar course model', () => {
     );
     view.slots.find((slot) => slot.slot === 'llm')!.locked = true;
     const markup = render(view);
-    expect(markup).toContain('title="toolbar.modelLockedHint"');
+    expect(markup).not.toContain('gpt-5');
     expect(markup).not.toContain('toolbar.pickModel');
+    expect(markup).not.toContain('toolbar.configureProvider');
   });
 });

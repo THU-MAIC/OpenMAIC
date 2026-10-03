@@ -142,6 +142,5 @@ export function courseStagesPlanName(view: ModelSettingsView | null): string | u
   }
   if (providers.size !== 1) return undefined;
   const provider = view.providers.find((entry) => entry.id === [...providers][0]);
-  const preset = provider && view.presets.find((entry) => entry.id === provider.preset);
-  return preset?.kind === 'token-plan' ? preset.name : undefined;
+  return provider?.presetKind === 'token-plan' ? provider.presetName : undefined;
 }

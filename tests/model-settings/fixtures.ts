@@ -75,6 +75,8 @@ export function workspaceProvider(id: string, preset = chatPreset): ProviderView
   return {
     id,
     preset: preset.id,
+    presetName: preset.name,
+    presetKind: preset.kind,
     source: 'workspace',
     capabilities: preset.capabilities,
     key: { set: true, mask: '…abcd' },

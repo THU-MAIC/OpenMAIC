@@ -133,6 +133,8 @@ describe('/api/model-config', () => {
       capabilities: expect.any(Object),
       id: 'mine',
       preset: 'openai',
+      presetName: 'OpenAI',
+      presetKind: 'single',
       source: 'workspace',
       key: { set: true, mask: '…4321' },
     });

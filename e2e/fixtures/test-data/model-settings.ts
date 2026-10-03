@@ -75,6 +75,8 @@ export function createModelSettingsView(options: ModelSettingsOptions = {}) {
     providers: Object.entries(providers).map(([id, models]) => ({
       id,
       preset: id,
+      presetName: PRESET_NAMES[id] ?? id,
+      presetKind: 'single',
       source: 'workspace',
       capabilities: { chat: { models: models.map((model) => ({ id: model, name: model })) } },
       key: { set: true, mask: '…' },
