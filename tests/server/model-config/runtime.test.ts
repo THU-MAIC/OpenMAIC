@@ -149,25 +149,29 @@ describe('requestMayChoose', () => {
     source: 'deployment',
     config: { ...deployment.config, lock: ['llm'] },
   };
+  const yml = { legacyDefaults: false };
+  const legacy = { legacyDefaults: true };
+  const at = (slot: 'llm' | 'agent' | 'image', layers: Parameters<typeof lookupFromLayers>[1]) =>
+    lookupFromLayers(slot, layers);
 
-  it('lets a request name its own model over nothing or a server default', () => {
-    expect(requestMayChoose(lookupFromLayers('llm', { deployment: null, workspace: null }))).toBe(
-      true,
-    );
-    expect(requestMayChoose(lookupFromLayers('llm', { deployment, workspace: null }))).toBe(true);
+  it('lets a request name its own model where nothing is assigned', () => {
+    expect(requestMayChoose(at('llm', { deployment: null, workspace: null }), yml)).toBe(true);
   });
 
-  it("keeps the workspace's choice, a lock and a slot turned off", () => {
-    expect(requestMayChoose(lookupFromLayers('llm', { deployment, workspace }))).toBe(false);
-    expect(requestMayChoose(lookupFromLayers('llm', { deployment: locked, workspace: null }))).toBe(
-      false,
-    );
-    expect(requestMayChoose(lookupFromLayers('agent', { deployment, workspace: null }))).toBe(
+  it("keeps openmaic.yml's default, the workspace's choice and a lock", () => {
+    expect(requestMayChoose(at('llm', { deployment, workspace: null }), yml)).toBe(false);
+    expect(requestMayChoose(at('llm', { deployment, workspace }), yml)).toBe(false);
+    expect(requestMayChoose(at('llm', { deployment, workspace }), legacy)).toBe(false);
+    expect(requestMayChoose(at('llm', { deployment: locked, workspace: null }), legacy)).toBe(
       false,
     );
     const all: ModelConfigLayer = { source: 'deployment', config: { lock: 'all' } };
-    expect(requestMayChoose(lookupFromLayers('image', { deployment: all, workspace: null }))).toBe(
-      false,
-    );
+    expect(requestMayChoose(at('image', { deployment: all, workspace: null }), yml)).toBe(false);
+  });
+
+  it('ranks a default translated from the legacy variables below the request, as before', () => {
+    expect(requestMayChoose(at('llm', { deployment, workspace: null }), legacy)).toBe(true);
+    expect(requestMayChoose(at('agent', { deployment, workspace: null }), legacy)).toBe(true);
+    expect(requestMayChoose(at('agent', { deployment, workspace: null }), yml)).toBe(false);
   });
 });

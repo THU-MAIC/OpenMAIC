@@ -257,7 +257,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他�
 
 生成请求不再需要携带 key 或模型选择：`/api/generate-classroom` 等无浏览器 API 调用会按调用方所在的工作区，通过与 Web 端相同的槽位解析模型。
 
-旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位没有分配、或只有服务端默认值（来自 `openmaic.yml` 的 `slots` 或转换后的旧变量）时才会生效；工作区自己的选择和锁定的槽位优先，设为 `null` 的槽位无论请求写了什么都会拒绝。设置 `allowUserKeys: false` 时，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
+旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位没有分配，或者在仍通过旧变量配置的服务端上只有由旧变量转换得到的默认值时（`DEFAULT_MODEL` 一直排在请求指定的模型之后），才会生效；`openmaic.yml` 中的默认值、工作区自己的选择和锁定的槽位优先，设为 `null` 的槽位无论请求写了什么都会拒绝。设置 `allowUserKeys: false` 时，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
 
 ### 从旧配置迁移
 

@@ -157,15 +157,15 @@ export interface StageModelOptions {
   workspaceId: string | null;
   /**
    * What the request still names the old way (x-model and friends), or
-   * undefined when it names nothing. Consulted only when the configuration
-   * leaves the slot unassigned or on a server default.
+   * undefined when it names nothing. Consulted only where requestMayChoose
+   * says so.
    */
   legacyRequest?: () => Promise<ResolvedModel | undefined>;
 }
 
 /**
- * The model for a stage: the configured slot; where that leaves nothing or
- * only a server default, the model the request names (deprecated) first.
+ * The model for a stage: the configured slot, except where the model the
+ * request names (deprecated) may answer instead (see requestMayChoose).
  * Fails loudly when the slot is turned off or nothing resolves.
  */
 export async function resolveStageModel({

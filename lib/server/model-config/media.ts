@@ -4,9 +4,9 @@
  * document extraction.
  *
  * The order matches language models: the configured slot (a lock, the
- * workspace's choice, or the server's default), except that the provider a
- * request names the old way (deprecated) answers where the slot has nothing
- * or only a server default; else a loud error. A slot turned off fails
+ * workspace's choice, or the server's default); the provider a request names
+ * the old way (deprecated) only where nothing is assigned, or over a default
+ * translated from the legacy variables; else a loud error. A slot turned off fails
  * whatever the request names, and under `allowUserKeys: false` the request's
  * provider is ignored.
  *
@@ -94,11 +94,6 @@ export interface MediaConnection {
    * variables (to which the legacy model pins still apply).
    */
   origin: 'configuration' | 'request' | 'default';
-  /**
-   * A server default (not locked, not the workspace's own choice): what a
-   * request names the old way may still replace it.
-   */
-  serverDefault?: true;
 }
 
 /**
@@ -192,8 +187,7 @@ export interface MediaSlotOptions {
   workspaceId: string | null;
   /**
    * The provider the request names the old way, or undefined when it names
-   * none. Consulted only when the configuration leaves the slot unassigned
-   * or on a server default.
+   * none. Consulted only where requestMayChoose says so.
    */
   legacyRequest?: () => Promise<MediaConnection | undefined>;
 }
@@ -211,13 +205,8 @@ export async function resolveMediaSlot(
     if (requested) return requested;
   }
   if (resolution.status === 'assigned') {
-    if (resolution.source !== 'default') return fromTarget(slot, resolution, 'configuration');
-    const connection = await fromTarget(
-      slot,
-      resolution,
-      deploymentConfig().legacy ? 'default' : 'configuration',
-    );
-    return { ...connection, serverDefault: true };
+    const legacyDefault = resolution.source === 'default' && deploymentConfig().legacy;
+    return fromTarget(slot, resolution, legacyDefault ? 'default' : 'configuration');
   }
   if (resolution.status === 'disabled') throw new SlotDisabledError(slot);
   throw new SlotUnassignedError(slot);

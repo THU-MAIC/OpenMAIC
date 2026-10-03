@@ -257,7 +257,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別の�
 
 生成リクエストでキーやモデルの選択を送る必要はなくなりました。`/api/generate-classroom` のようなブラウザーを使わない API 呼び出しも、呼び出し元のワークスペースについて Web アプリと同じスロットで解決されます。
 
-旧来のリクエストヘッダー `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`、および音声・検索・ドキュメント API の対応するボディフィールドは非推奨です。これらは、影響するスロットに何も割り当てられていないか、サーバーの既定値（`openmaic.yml` の `slots` または変換されたレガシー変数）しかない間だけ有効です。ワークスペース自身の選択とロックされたスロットが優先され、`null` のスロットはリクエストの内容にかかわらず拒否されます。`allowUserKeys: false` の場合は常に無視されます。リクエストが初めてこれらを使ったとき、サーバーは警告をログに記録します。上記のモデル設定のリリースから 2 マイナーバージョン後に削除される予定です。
+旧来のリクエストヘッダー `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`、および音声・検索・ドキュメント API の対応するボディフィールドは非推奨です。これらは、影響するスロットに何も割り当てられていない間、またはレガシー変数で構成されたままのサーバーで、それらから変換された既定値しかない間だけ有効です（`DEFAULT_MODEL` は以前からリクエストが指定したモデルより優先度が低いため）。`openmaic.yml` の既定値、ワークスペース自身の選択、ロックされたスロットが優先され、`null` のスロットはリクエストの内容にかかわらず拒否されます。`allowUserKeys: false` の場合は常に無視されます。リクエストが初めてこれらを使ったとき、サーバーは警告をログに記録します。上記のモデル設定のリリースから 2 マイナーバージョン後に削除される予定です。
 
 ### 旧設定からの移行
 

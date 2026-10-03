@@ -257,7 +257,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
 
-舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽沒有指派、或只有伺服器端預設值（來自 `openmaic.yml` 的 `slots` 或轉換後的舊變數）時才會生效；工作區自己的選擇和鎖定的插槽優先，設為 `null` 的插槽無論請求寫了什麼都會拒絕。設定 `allowUserKeys: false` 時，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
+舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽沒有指派，或者在仍透過舊變數設定的伺服器上只有由舊變數轉換得到的預設值時（`DEFAULT_MODEL` 一直排在請求指定的模型之後），才會生效；`openmaic.yml` 中的預設值、工作區自己的選擇和鎖定的插槽優先，設為 `null` 的插槽無論請求寫了什麼都會拒絕。設定 `allowUserKeys: false` 時，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
 
 ### 從舊設定遷移
 

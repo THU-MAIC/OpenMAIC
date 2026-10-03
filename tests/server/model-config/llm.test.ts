@@ -71,45 +71,45 @@ describe('resolveStageModel', () => {
     expect(legacyRequest).not.toHaveBeenCalled();
   });
 
-  it('lets what the request names replace a server default, and only that', async () => {
+  it("keeps openmaic.yml's default over what the request names, and a legacy default under it", async () => {
+    const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
     const deployment = layer('deployment', {
       providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
       slots: { llm: 'openai:gpt-5.6' },
     });
     state.lookup = lookupFromLayers('course.outline', { deployment, workspace: null });
-    expect(
-      await resolveStageModel({
-        stage: 'scene-outlines-stream',
-        workspaceId: null,
-        legacyRequest: async () => legacyModel,
-      }),
-    ).toBe(legacyModel);
-    expect(
-      await resolveStageModel({
-        stage: 'scene-outlines-stream',
-        workspaceId: null,
-        legacyRequest: async () => undefined,
-      }),
-    ).toMatchObject({ modelId: 'gpt-5.6', apiKey: 'sk-operator' });
-
-    // A workspace choice or a lock is not replaced.
-    const legacyRequest = vi.fn(async () => legacyModel);
-    for (const lookup of [
-      lookupFromLayers('course.outline', {
-        deployment,
-        workspace: layer('workspace', { slots: { 'course.outline': 'openai:gpt-5.6-mini' } }),
-      }),
-      lookupFromLayers('course.outline', {
-        deployment: layer('deployment', { ...deployment.config, lock: ['llm'] }),
-        workspace: null,
-      }),
-    ]) {
-      state.lookup = lookup;
-      await expect(
-        resolveStageModel({ stage: 'scene-outlines-stream', workspaceId: null, legacyRequest }),
-      ).resolves.toMatchObject({ providerId: 'openai' });
+    const run = (legacyRequest: () => Promise<ResolvedModel | undefined>) =>
+      resolveStageModel({ stage: 'scene-outlines-stream', workspaceId: null, legacyRequest });
+    try {
+      // openmaic.yml: its default stands.
+      setDeploymentConfigForTests({ layer: deployment, legacy: false, notices: [] });
+      expect(await run(async () => legacyModel)).toMatchObject({ modelId: 'gpt-5.6' });
+      // The same default translated from DEFAULT_MODEL: the request's model first, as before.
+      setDeploymentConfigForTests({ layer: deployment, legacy: true, notices: [] });
+      expect(await run(async () => legacyModel)).toBe(legacyModel);
+      expect(await run(async () => undefined)).toMatchObject({
+        modelId: 'gpt-5.6',
+        apiKey: 'sk-operator',
+      });
+      // A workspace choice or a lock is never replaced.
+      const legacyRequest = vi.fn(async () => legacyModel);
+      for (const lookup of [
+        lookupFromLayers('course.outline', {
+          deployment,
+          workspace: layer('workspace', { slots: { 'course.outline': 'openai:gpt-5.6-mini' } }),
+        }),
+        lookupFromLayers('course.outline', {
+          deployment: layer('deployment', { ...deployment.config, lock: ['llm'] }),
+          workspace: null,
+        }),
+      ]) {
+        state.lookup = lookup;
+        await expect(run(legacyRequest)).resolves.toMatchObject({ providerId: 'openai' });
+      }
+      expect(legacyRequest).not.toHaveBeenCalled();
+    } finally {
+      setDeploymentConfigForTests();
     }
-    expect(legacyRequest).not.toHaveBeenCalled();
   });
 
   it('says so when nothing resolves', async () => {

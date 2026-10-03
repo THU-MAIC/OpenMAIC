@@ -6,8 +6,8 @@
  * request owner's web settings), walked together over the whole slot tree: a
  * workspace model on `llm` covers every chat slot below it that has nothing
  * nearer. What a request still names the old way (model and key headers,
- * deprecated) counts only where that walk finds nothing or a server default
- * (see {@link requestMayChoose}).
+ * deprecated) counts only where that walk finds nothing, or a default
+ * translated from the legacy variables (see {@link requestMayChoose}).
  */
 import { slotForStage, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { createLogger } from '@/lib/logger';
@@ -69,14 +69,18 @@ export function requestProvidersAllowed(): boolean {
 
 /**
  * Whether what a request names the old way may answer for a slot that
- * resolved like this: when nothing is assigned, or only a server default
- * (the deployment's, not locked), as DEFAULT_MODEL always ranked below the
- * model a request named. A workspace's own choice, a lock and a slot turned
- * off all stand.
+ * resolved like this: when nothing is assigned and nothing locks it, and on a
+ * deployment still configured through the legacy variables, over a default
+ * they translate to (DEFAULT_MODEL always ranked below the model a request
+ * named). openmaic.yml's defaults, the workspace's own choice and a lock all
+ * stand.
  */
-export function requestMayChoose(resolution: SlotResolution): boolean {
+export function requestMayChoose(
+  resolution: SlotResolution,
+  { legacyDefaults = deploymentConfig().legacy }: { legacyDefaults?: boolean } = {},
+): boolean {
   if (resolution.status === 'unassigned') return !resolution.locked;
-  return resolution.status === 'assigned' && resolution.source === 'default';
+  return legacyDefaults && resolution.source === 'default';
 }
 
 type WorkspaceLayerLoader = (ownerId: string) => Promise<ModelConfigLayer | null>;
