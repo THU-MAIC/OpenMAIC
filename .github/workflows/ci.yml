@@ -12,7 +12,6 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
-        integration/server-first,
       ]
   pull_request:
     branches:
@@ -22,7 +21,6 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
-        integration/server-first,
       ]
 
 concurrency:
