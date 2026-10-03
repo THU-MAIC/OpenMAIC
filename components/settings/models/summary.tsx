@@ -56,28 +56,32 @@ export function ModelSummary({ view, t }: { view: ModelSettingsView; t: T }) {
     { key: 'media', slots: shown.filter((slot) => slot.capability !== 'chat') },
   ];
   return (
-    <div className="flex max-w-2xl flex-col gap-4 overflow-y-auto">
-      <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
-        <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <div className="space-y-1">
-          <h3 className="text-sm font-semibold">{t(`${MS}.summary.title`)}</h3>
-          <p className="text-xs leading-relaxed text-muted-foreground">{t(`${MS}.summary.desc`)}</p>
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex max-w-2xl flex-col gap-4 pb-1">
+        <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
+          <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold">{t(`${MS}.summary.title`)}</h3>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t(`${MS}.summary.desc`)}
+            </p>
+          </div>
         </div>
+        {groups.map((group) =>
+          group.slots.length ? (
+            <section key={group.key} aria-label={t(`${MS}.summary.${group.key}`)}>
+              <h4 className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">
+                {t(`${MS}.summary.${group.key}`)}
+              </h4>
+              <ul className="divide-y rounded-xl border">
+                {group.slots.map((slot) => (
+                  <SummaryRow key={slot.slot} view={view} slot={slot} t={t} />
+                ))}
+              </ul>
+            </section>
+          ) : null,
+        )}
       </div>
-      {groups.map((group) =>
-        group.slots.length ? (
-          <section key={group.key} aria-label={t(`${MS}.summary.${group.key}`)}>
-            <h4 className="px-1 pb-1.5 text-xs font-medium text-muted-foreground">
-              {t(`${MS}.summary.${group.key}`)}
-            </h4>
-            <ul className="divide-y rounded-xl border">
-              {group.slots.map((slot) => (
-                <SummaryRow key={slot.slot} view={view} slot={slot} t={t} />
-              ))}
-            </ul>
-          </section>
-        ) : null,
-      )}
     </div>
   );
 }

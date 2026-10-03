@@ -43,33 +43,38 @@ function LockedLine({ slot, ctx, label }: { slot: SlotView; ctx: NodeContext; la
   const text = lineText(view, slot, t);
   const fixed = t(`${MS}.source.locked`);
   return (
-    <div
-      className="flex min-w-0 items-center gap-1.5 px-1.5 py-1 text-[12.5px]"
-      data-locked-slot={slot.slot}
-      title={`${text.value} · ${fixed}`}
-    >
-      {label && <span className="shrink-0 text-[11px] text-muted-foreground/80">{label}</span>}
-      <span
-        className={cn(
-          'min-w-0 truncate',
-          text.tone === 'own' ? 'font-semibold' : 'text-muted-foreground/70',
-        )}
-      >
-        {text.value}
-      </span>
-      <Tooltip>
-        <TooltipTrigger asChild>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            'grid min-w-0 items-baseline gap-x-1.5 rounded-md px-1.5 py-1 text-left',
+            label ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]',
+          )}
+          data-locked-slot={slot.slot}
+          tabIndex={0}
+          aria-label={`${slotName(t, slot.slot)}: ${text.value} · ${fixed}`}
+        >
+          {label && (
+            <span className="row-span-2 min-w-6 self-center text-[11px] text-muted-foreground/80">
+              {label}
+            </span>
+          )}
           <span
-            className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/80"
-            tabIndex={0}
+            className={cn(
+              'min-w-0 truncate text-[12.5px]',
+              text.tone === 'own' ? 'font-semibold' : 'text-muted-foreground/70',
+            )}
           >
-            <Lock className="size-3" aria-hidden="true" />
-            {fixed}
+            {text.value}
           </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-56 text-xs">{t(`${MS}.card.lockedHint`)}</TooltipContent>
-      </Tooltip>
-    </div>
+          <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground/80">
+            <Lock className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">{fixed}</span>
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-56 text-xs">{t(`${MS}.card.lockedHint`)}</TooltipContent>
+    </Tooltip>
   );
 }
 
