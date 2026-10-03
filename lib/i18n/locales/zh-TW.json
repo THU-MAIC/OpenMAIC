@@ -46,7 +46,6 @@
     "interactiveModeHint": "啟用互動優先模式以獲得更多實作內容",
     "interactiveModeLabel": "互動模式",
     "modelChangeFailed": "無法切換模型：{{message}}",
-    "modelLockedHint": "課程使用的模型，由此伺服器設定",
     "pickModel": "選擇模型",
     "defaultModel": "預設",
     "defaultModelNote": "這裡修改預設模型，單獨設定的環節不受影響",
@@ -1710,7 +1709,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "此方案提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的方案檔位，不支援的模型會在生成時報錯。",
       "statusConnected": "已連接",
-      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後會將此方案推薦的模型套用到課程環節；如果會取代你已選的模型，會先徵求你的確認。",
+      "keyStorage": "金鑰加密保存在伺服器上，之後不再顯示。連接後會將此方案推薦的模型套用到課程環節；如果會取代環節目前所用的模型（你選的模型或伺服器預設值），會先徵求你的確認。",
       "saveKey": "儲存並啟用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理帳號",
@@ -1732,7 +1731,7 @@
       "stageInteractive": "互動頁面",
       "stageSlide": "課件頁面",
       "applyTitle": "使用此方案的推薦設定？",
-      "applyBody": "{{name}} 為以下環節推薦了自己的模型，這些環節目前使用的是你選的模型：",
+      "applyBody": "{{name}} 為以下環節推薦了自己的模型。使用它們會取代這些環節目前所用的模型，包括伺服器預設值：",
       "applyKeep": "保留目前設定",
       "applyRecommended": "使用方案推薦設定"
     },
@@ -2075,12 +2074,7 @@
         "open": "開啟模型服務",
         "askAdmin": "尚未設定語言模型，請聯絡伺服器管理員。"
       },
-      "summary": {
-        "title": "由管理員設定",
-        "desc": "管理員已設定此伺服器使用的模型，無法在此變更。",
-        "chat": "語言模型",
-        "media": "其他能力"
-      }
+      "adminNotice": "管理員已設定此伺服器使用的模型。"
     },
     "unimported": {
       "toast": "此瀏覽器中的部分模型設定未能遷移到伺服器，已列在「設定 → 模型服務」中。",

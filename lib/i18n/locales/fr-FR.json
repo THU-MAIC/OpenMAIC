@@ -46,7 +46,6 @@
     "interactiveModeHint": "Activez le mode interactif pour obtenir un contenu plus pratique",
     "interactiveModeLabel": "Mode interactif",
     "modelChangeFailed": "Impossible de changer de modèle : {{message}}",
-    "modelLockedHint": "Le modèle utilisé pour les cours, défini par ce serveur",
     "pickModel": "Choisir un modèle",
     "defaultModel": "Par défaut",
     "defaultModelNote": "Modifie le modèle par défaut ; les étapes configurées séparément gardent le leur.",
@@ -1725,7 +1724,7 @@
       "capabilities": "Capacités proposées",
       "offeredNote": "Modèles proposés par ce forfait. Choisissez ceux que vous voulez voir dans la barre de génération : leur disponibilité dépend de votre niveau de forfait, et les modèles non pris en charge produiront une erreur au moment de la génération.",
       "statusConnected": "Connecté",
-      "keyStorage": "La clé est conservée chiffrée sur le serveur et n'est plus jamais affichée. La connexion applique aux étapes du cours les modèles recommandés par cette offre ; si cela remplace des modèles que vous avez choisis, une confirmation vous est demandée.",
+      "keyStorage": "La clé est conservée chiffrée sur le serveur et n'est plus jamais affichée. La connexion applique aux étapes du cours les modèles recommandés par cette offre ; si cela remplace ce qu’une étape utilise actuellement (un modèle que vous avez choisi ou le défaut du serveur), une confirmation vous est demandée.",
       "saveKey": "Enregistrer et activer",
       "cancelKeyUpdate": "Annuler la mise à jour",
       "manageAccount": "Gérer le compte",
@@ -1747,7 +1746,7 @@
       "stageInteractive": "Interactif",
       "stageSlide": "Diapositives",
       "applyTitle": "Utiliser la configuration recommandée de cette offre ?",
-      "applyBody": "{{name}} recommande ses propres modèles pour ces étapes, qui utilisent actuellement des modèles que vous avez choisis :",
+      "applyBody": "{{name}} recommande ses propres modèles pour ces étapes. Les utiliser remplace ce que chacune utilise actuellement, défauts du serveur compris :",
       "applyKeep": "Garder ma configuration",
       "applyRecommended": "Utiliser la configuration recommandée"
     },
@@ -2090,12 +2089,7 @@
         "open": "Ouvrir les services de modèles",
         "askAdmin": "Aucun modèle de langage n'est configuré. Demandez à l'administrateur du serveur d'en configurer un."
       },
-      "summary": {
-        "title": "Configuré par l’administrateur",
-        "desc": "L’administrateur a choisi les modèles utilisés par ce serveur. Ils ne peuvent pas être modifiés ici.",
-        "chat": "Modèles de langage",
-        "media": "Autres capacités"
-      }
+      "adminNotice": "L’administrateur a choisi les modèles utilisés par ce serveur."
     },
     "unimported": {
       "toast": "Certains réglages de modèles de ce navigateur n'ont pas pu être transférés sur le serveur. Ils sont listés dans Paramètres → Services de modèles.",

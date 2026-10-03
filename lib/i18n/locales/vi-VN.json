@@ -46,7 +46,6 @@
     "interactiveModeHint": "Bật chế độ ưu tiên tương tác để có nhiều nội dung thực hành hơn",
     "interactiveModeLabel": "Chế độ tương tác",
     "modelChangeFailed": "Không thể đổi mô hình: {{message}}",
-    "modelLockedHint": "Mô hình dùng cho khóa học, do máy chủ này đặt",
     "pickModel": "Chọn mô hình",
     "defaultModel": "Mặc định",
     "defaultModelNote": "Thay đổi mô hình mặc định; các bước được thiết lập riêng vẫn giữ mô hình của chúng.",
@@ -1725,7 +1724,7 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài.",
       "statusConnected": "Đã kết nối",
-      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình bạn đã chọn, bạn sẽ được hỏi trước.",
+      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình một bước đang dùng (mô hình bạn đã chọn hoặc mặc định của máy chủ), bạn sẽ được hỏi trước.",
       "saveKey": "Lưu và bật",
       "cancelKeyUpdate": "Hủy cập nhật",
       "manageAccount": "Quản lý tài khoản",
@@ -1747,7 +1746,7 @@
       "stageInteractive": "Tương tác",
       "stageSlide": "Trang slide",
       "applyTitle": "Dùng cấu hình đề xuất của gói này?",
-      "applyBody": "{{name}} đề xuất mô hình riêng cho các bước sau, hiện đang dùng mô hình bạn đã chọn:",
+      "applyBody": "{{name}} đề xuất mô hình riêng cho các bước sau. Dùng chúng sẽ thay thế mô hình mỗi bước đang dùng, kể cả mặc định của máy chủ:",
       "applyKeep": "Giữ cấu hình hiện tại",
       "applyRecommended": "Dùng cấu hình đề xuất của gói"
     },
@@ -2090,12 +2089,7 @@
         "open": "Mở Dịch vụ mô hình",
         "askAdmin": "Chưa cấu hình mô hình ngôn ngữ. Hãy nhờ quản trị viên máy chủ thiết lập."
       },
-      "summary": {
-        "title": "Do quản trị viên cấu hình",
-        "desc": "Quản trị viên đã thiết lập các mô hình mà máy chủ này dùng. Không thể thay đổi ở đây.",
-        "chat": "Mô hình ngôn ngữ",
-        "media": "Khả năng khác"
-      }
+      "adminNotice": "Quản trị viên đã thiết lập các mô hình mà máy chủ này dùng."
     },
     "unimported": {
       "toast": "Một số cài đặt mô hình trong trình duyệt này không thể chuyển lên máy chủ. Chúng được liệt kê trong Cài đặt → Dịch vụ mô hình.",

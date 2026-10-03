@@ -46,7 +46,6 @@
     "interactiveModeHint": "Aktiviere den interaktiven Modus, damit bevorzugt interaktive Inhalte erzeugt werden",
     "interactiveModeLabel": "Interaktiver Modus",
     "modelChangeFailed": "Das Modell konnte nicht geändert werden: {{message}}",
-    "modelLockedHint": "Das Modell für Kurse, von diesem Server festgelegt",
     "pickModel": "Modell wählen",
     "defaultModel": "Standard",
     "defaultModelNote": "Ändert das Standardmodell; separat eingestellte Schritte behalten ihr eigenes.",
@@ -1725,7 +1724,7 @@
       "capabilities": "Angebotene Funktionen",
       "offeredNote": "Von diesem Tarif angebotene Modelle. Wähle die gewünschten Modelle für die Generierungsleiste aus. Die Verfügbarkeit hängt von deiner Tarifstufe ab; nicht unterstützte Modelle führen bei der Generierung zu einem Fehler.",
       "statusConnected": "Verbunden",
-      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden werden die empfohlenen Modelle dieses Plans auf die Kursschritte angewendet; würden dabei von dir gewählte Modelle ersetzt, wirst du vorher gefragt.",
+      "keyStorage": "Der Schlüssel wird verschlüsselt auf dem Server gespeichert und nicht wieder angezeigt. Beim Verbinden werden die empfohlenen Modelle dieses Plans auf die Kursschritte angewendet; würde dabei ersetzt, was ein Schritt jetzt verwendet (ein von dir gewähltes Modell oder der Serverstandard), wirst du vorher gefragt.",
       "saveKey": "Speichern & aktivieren",
       "cancelKeyUpdate": "Aktualisierung abbrechen",
       "manageAccount": "Konto verwalten",
@@ -1747,7 +1746,7 @@
       "stageInteractive": "Interaktiv",
       "stageSlide": "Kursfolien",
       "applyTitle": "Empfohlene Einrichtung dieses Plans verwenden?",
-      "applyBody": "{{name}} empfiehlt eigene Modelle für diese Schritte, die derzeit von dir gewählte Modelle verwenden:",
+      "applyBody": "{{name}} empfiehlt eigene Modelle für diese Schritte. Damit wird ersetzt, was jeder Schritt jetzt verwendet, Serverstandards eingeschlossen:",
       "applyKeep": "Aktuelle Einrichtung behalten",
       "applyRecommended": "Empfehlung des Plans verwenden"
     },
@@ -2090,12 +2089,7 @@
         "open": "Modelldienste öffnen",
         "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitten Sie die Serveradministration, eines einzurichten."
       },
-      "summary": {
-        "title": "Vom Administrator konfiguriert",
-        "desc": "Der Administrator hat festgelegt, welche Modelle dieser Server verwendet. Sie können hier nicht geändert werden.",
-        "chat": "Sprachmodelle",
-        "media": "Weitere Funktionen"
-      }
+      "adminNotice": "Der Administrator hat festgelegt, welche Modelle dieser Server verwendet."
     },
     "unimported": {
       "toast": "Einige Modelleinstellungen dieses Browsers konnten nicht auf den Server übertragen werden. Sie sind unter Einstellungen → Modelldienste aufgeführt.",

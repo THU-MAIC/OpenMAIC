@@ -206,20 +206,64 @@ describe('the settings sections', () => {
     expect(document.body.textContent).not.toContain('settings.addProviderButton');
   });
 
-  it('shows only a read-only summary when the administrator fixed everything', async () => {
+  it('shows the diagram with every card read-only when the administrator fixed everything', async () => {
     const nav = await openDialog(
       viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' }, lock: 'all' }),
     );
     expect(nav).toEqual(['course-models', 'general']);
-    expect(document.body.textContent).toContain('settings.modelSettings.summary.title');
-    expect(
-      document.body.querySelector('[data-summary-slot="llm"]')?.getAttribute('aria-label'),
-    ).toMatch(/DeepSeek V4 Pro/);
-    expect(
-      document.body.querySelector('[data-summary-slot="image"]')?.getAttribute('aria-label'),
-    ).toContain('settings.modelSettings.card.unassigned');
+    expect(document.body.querySelector('[data-admin-notice]')?.textContent).toContain(
+      'settings.modelSettings.adminNotice',
+    );
+    expect(document.body.querySelector('[data-locked-slot="llm"]')?.textContent).toMatch(
+      /DeepSeek V4 Pro/,
+    );
+    expect(document.body.querySelector('[data-locked-slot="image"]')?.textContent).toContain(
+      'settings.modelSettings.card.unassigned',
+    );
     expect(document.body.querySelector('[data-slot-id]')).toBeNull();
     expect(document.body.querySelector('[role="switch"]')).toBeNull();
+  });
+});
+
+describe('labels without user keys or with everything locked', () => {
+  // The preset catalogue is not served then; provider names must still show.
+  const labelled = {
+    providers: {
+      deepseek: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' },
+      mineru: { preset: 'mineru', baseUrl: 'https://mineru.example' },
+      bocha: { preset: 'bocha', apiKey: 'sk-operator-secret-0003' },
+    },
+    slots: { llm: 'deepseek:deepseek-v4-flash', document: 'mineru', webSearch: 'bocha' },
+  } satisfies ModelConfigLayer['config'];
+
+  it('names deployment providers on the map and in the pickers under allowUserKeys: false', () => {
+    const view = viewFor({ ...labelled, allowUserKeys: false, lock: ['document'] });
+    expect(view.presets).toEqual([]);
+    const { apply } = recordingApply(view);
+    mount(createElement(ModelMap, { view, apply, t: T }));
+    expect(document.body.querySelector('[data-locked-slot="document"]')?.textContent).toContain(
+      'MinerU',
+    );
+    expect(document.body.querySelector('[data-slot-id="webSearch"]')?.textContent).toContain(
+      'Bocha',
+    );
+    expect(document.body.querySelector('[data-slot-id="llm"]')?.textContent).toContain('DeepSeek');
+    const slot = view.slots.find((entry) => entry.slot === 'llm')!;
+    mount(createElement(SlotPicker, { view, slot, apply, onDone: () => {}, t: T }));
+    expect(
+      document.body
+        .querySelector('[data-slot-picker="llm"] [role="group"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('DeepSeek');
+  });
+
+  it('names them on the read-only diagram', async () => {
+    await openDialog(viewFor({ ...labelled, lock: 'all' }));
+    const line = (slot: string) =>
+      document.body.querySelector(`[data-locked-slot="${slot}"]`)?.textContent;
+    expect(line('document')).toContain('MinerU');
+    expect(line('webSearch')).toContain('Bocha');
+    expect(line('llm')).toContain('DeepSeek');
   });
 });
 
@@ -280,7 +324,7 @@ describe('the course model map', () => {
     const view = viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' }, lock: ['llm'] });
     const { apply } = recordingApply(view);
     mount(createElement(CourseModelMap, { view, apply, onManageProviders: () => {} }));
-    expect(document.body.textContent).not.toContain('settings.modelSettings.summary.title');
+    expect(document.body.querySelector('[data-admin-notice]')).toBeNull();
     expect(document.body.querySelector('[data-slot-id="image"]')).not.toBeNull();
   });
 });
@@ -302,14 +346,14 @@ describe('the home toolbar model picker', () => {
     expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).not.toBeNull();
   });
 
-  it('shows the model read-only when the administrator fixed llm', () => {
+  it('renders no model control at all when the administrator fixed llm', () => {
     modelSettingsClient.adopt(
       viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' }, lock: ['llm'] }),
     );
     mount(toolbar());
-    const pill = document.body.querySelector('[title="toolbar.modelLockedHint"]');
-    expect(pill?.tagName).toBe('SPAN');
-    expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).toBeNull();
+    expect(document.body.textContent).not.toMatch(/deepseek-v4-pro|DeepSeek V4 Pro/);
+    expect(document.body.querySelector('[aria-label="toolbar.pickModel"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('toolbar.configureProvider');
   });
 
   it('offers no setup shortcut where nothing can set up a language model', () => {

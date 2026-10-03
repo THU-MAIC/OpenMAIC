@@ -51,8 +51,21 @@ describe('modelSettingsView', () => {
     expect(json).not.toContain('sk-workspace-secret');
     expect(view.revision).toBe(3);
     expect(view.providers.map(({ capabilities: _capabilities, ...rest }) => rest)).toEqual([
-      { id: 'operator', preset: 'deepseek', source: 'deployment' },
-      { id: 'mine', preset: 'openai', source: 'workspace', key: { set: true, mask: '…9876' } },
+      {
+        id: 'operator',
+        preset: 'deepseek',
+        presetName: 'DeepSeek',
+        presetKind: 'single',
+        source: 'deployment',
+      },
+      {
+        id: 'mine',
+        preset: 'openai',
+        presetName: 'OpenAI',
+        presetKind: 'single',
+        source: 'workspace',
+        key: { set: true, mask: '…9876' },
+      },
     ]);
     // Each provider lists the models it serves per capability, for the pickers.
     expect(view.providers[0].capabilities.chat?.models).toContainEqual(
@@ -534,10 +547,12 @@ describe('applyModelSettingsChange', () => {
       image: 'tokendance:seedream-5.0-lite',
       webSearch: 'tokendance',
     });
-    expect(tokenPlanConflicts(view, recommendation).map((c) => c.slot.slot)).toEqual([
-      'course.content.slide',
-      'course.content.interactive',
-      'webSearch',
+    // The server's default on llm is a current choice too: the user is asked about it.
+    expect(tokenPlanConflicts(view, recommendation).map((c) => [c.slot.slot, c.from])).toEqual([
+      ['llm', 'default'],
+      ['course.content.slide', 'workspace'],
+      ['course.content.interactive', 'workspace'],
+      ['webSearch', 'workspace'],
     ]);
 
     const set = tokenPlanAssignments(view, recommendation, 'overwrite');
@@ -571,9 +586,9 @@ describe('applyModelSettingsChange', () => {
     expect(effective('llm')).toMatchObject({ source: 'workspace', providerId: 'tokendance' });
     expect(effective('video')).toMatchObject({ status: 'disabled', source: 'locked' });
 
-    // Keeping the workspace's setup fills only the slots with nothing of their own.
+    // Keeping the current setup fills only the slots with no choice of their
+    // own: the server's default llm stays.
     expect(tokenPlanAssignments(view, recommendation, 'keep')).toEqual({
-      llm: planLlm,
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
     });

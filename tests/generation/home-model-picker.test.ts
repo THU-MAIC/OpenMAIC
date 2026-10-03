@@ -182,12 +182,12 @@ describe('the home model picker', () => {
     expect(opened).toEqual(['course-models']);
   });
 
-  it('leaves the read-only pill of a locked default alone', () => {
+  it('renders nothing for a locked default model', () => {
     const view = workspace({ 'course.outline': own('course.outline', 'other:gpt-5') });
     view.slots.find((slot) => slot.slot === 'llm')!.locked = true;
     const { host } = mount(view);
-    expect(host.querySelector('[title="toolbar.modelLockedHint"]')).not.toBeNull();
     expect(host.textContent).not.toContain('toolbar.defaultModel');
+    expect(host.textContent).not.toContain('toolbar.stagesSetSeparately');
   });
 });
 

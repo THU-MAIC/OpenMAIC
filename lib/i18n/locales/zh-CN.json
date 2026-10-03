@@ -46,7 +46,6 @@
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
     "interactiveModeLabel": "深度交互",
     "modelChangeFailed": "无法切换模型：{{message}}",
-    "modelLockedHint": "课程使用的模型，由此服务器设定",
     "pickModel": "选择模型",
     "defaultModel": "默认",
     "defaultModelNote": "这里修改默认模型，单独配置的环节不受影响",
@@ -1725,7 +1724,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。",
       "statusConnected": "已连接",
-      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换你已选的模型，会先征求你的确认。",
+      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换环节当前所用的模型（你选的模型或服务端默认值），会先征求你的确认。",
       "saveKey": "保存并启用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理账号",
@@ -1747,7 +1746,7 @@
       "stageInteractive": "互动页面",
       "stageSlide": "课件页面",
       "applyTitle": "使用该套餐的推荐配置？",
-      "applyBody": "{{name}} 为以下环节推荐了自己的模型，这些环节目前使用的是你选的模型：",
+      "applyBody": "{{name}} 为以下环节推荐了自己的模型。使用它们会替换这些环节当前所用的模型，包括服务端默认值：",
       "applyKeep": "保留当前配置",
       "applyRecommended": "使用套餐推荐配置"
     },
@@ -2090,12 +2089,7 @@
         "open": "打开模型服务",
         "askAdmin": "尚未配置语言模型，请联系服务器管理员。"
       },
-      "summary": {
-        "title": "由管理员配置",
-        "desc": "管理员已设定此服务器使用的模型，无法在此更改。",
-        "chat": "语言模型",
-        "media": "其他能力"
-      }
+      "adminNotice": "管理员已设定此服务器使用的模型。"
     },
     "unimported": {
       "toast": "此浏览器中的部分模型设置未能迁移到服务器，已列在「设置 → 模型服务」中。",

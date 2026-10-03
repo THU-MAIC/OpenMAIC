@@ -9,8 +9,8 @@
  *   still change a slot;
  * - `choose` (choose a model): no keys of their own, so only the course model
  *   map, choosing among the deployment's providers;
- * - `admin` (configured by the administrator): nothing a user may set, so a
- *   read-only summary of what each part uses.
+ * - `admin` (configured by the administrator): nothing a user may set, so
+ *   the course model map with every card read-only.
  *
  * Pure functions over the view; every component asks these instead of
  * checking locks or the deployment's switches itself.
@@ -35,6 +35,18 @@ export const SERVICE_CAPABILITIES: readonly SlotCapability[] = [
 /** Whether a user may set this slot: shown in the settings and not in a locked subtree. */
 export function slotEditable(slot: SlotView | undefined): slot is SlotView {
   return !!slot && !slot.locked && !slot.configOnly;
+}
+
+/**
+ * Whether the default model (the `llm` root) can be changed: it is not locked
+ * and some provider offers a language model to pick. The home page's model
+ * picker, a shortcut for it, appears only then.
+ */
+export function canChangeDefaultModel(view: ModelSettingsView): boolean {
+  return (
+    slotEditable(view.slots.find((slot) => slot.slot === 'llm')) &&
+    view.providers.some((provider) => !!provider.capabilities.chat)
+  );
 }
 
 /** Whether some slot of a capability can still be set. */
@@ -85,8 +97,6 @@ export interface SettingsSections {
   tokenPlan: boolean;
   /** Model Services, with the capabilities whose tab is shown (adding a service there can change something). */
   modelServices: readonly SlotCapability[];
-  /** Course Model Config: the editable map, or the read-only summary. */
-  courseModels: 'map' | 'summary';
 }
 
 export function settingsSections(view: ModelSettingsView): SettingsSections {
@@ -102,7 +112,6 @@ export function settingsSections(view: ModelSettingsView): SettingsSections {
     modelServices: yourself
       ? SERVICE_CAPABILITIES.filter((capability) => canAddService(view, capability))
       : [],
-    courseModels: shape === 'admin' ? 'summary' : 'map',
   };
 }
 

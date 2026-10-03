@@ -202,9 +202,9 @@ The settings take one of three shapes, derived from the configuration:
 | --- | --- | --- |
 | **Set it up yourself** | `allowUserKeys` is on (the default) | Token Plan, Model Services and Course Model Config |
 | **Choose a model** | `allowUserKeys: false` | Only Course Model Config, choosing among the providers `openmaic.yml` declares |
-| **Configured by the administrator** | Every slot is locked (`lock: all`) | A read-only summary of which model each part uses (or that it is off or not configured) |
+| **Configured by the administrator** | Every slot is locked (`lock: all`) | The course model diagram, every card read-only (each shows its model, or that it is off or not set) |
 
-One rule decides every control: it is shown only if using it can change something. A Model Services tab, and adding a service there, appears only while its capability has a slot a user may set; Token Plan appears only while a plan can still fill a slot that is not locked, and connecting a plan never touches a locked slot. A locked card in Course Model Config is one read-only line marked **Fixed by the administrator**. The home toolbar's model picker is read-only while `llm` is locked.
+One rule decides every control: it is shown only if using it can change something. A Model Services tab, and adding a service there, appears only while its capability has a slot a user may set; Token Plan appears only while a plan can still fill a slot that is not locked, and connecting a plan never touches a locked slot. A locked card in Course Model Config is one read-only line marked **Fixed by the administrator**. The home page model picker appears only when the default model can be changed (`llm` is not locked and a provider offers a language model).
 
 The model settings in the web app read and edit the same tree for the current workspace:
 

@@ -5,6 +5,7 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { modelSettingsView } from '@/lib/server/model-config/settings';
 import {
   canAddService,
+  canChangeDefaultModel,
   canResetToServerDefault,
   capabilityEditable,
   settingsSections,
@@ -57,7 +58,6 @@ describe('settingsShape', () => {
         'document',
         'webSearch',
       ]);
-      expect(sections.courseModels).toBe('map');
     }
   });
 
@@ -73,7 +73,6 @@ describe('settingsShape', () => {
       shape: 'choose',
       tokenPlan: false,
       modelServices: [],
-      courseModels: 'map',
     });
     expect(canAddService(view, 'chat')).toBe(false);
     // The deployment's providers are still there to choose among.
@@ -88,7 +87,6 @@ describe('settingsShape', () => {
       shape: 'admin',
       tokenPlan: false,
       modelServices: [],
-      courseModels: 'summary',
     });
     // Unwritten roots resolve to nothing, and are shown so.
     expect(slot(view, 'image')).toMatchObject({
@@ -163,5 +161,28 @@ describe('canResetToServerDefault', () => {
     expect(canResetToServerDefault(slot(changed, 'llm'))).toBe(true);
     // No default on the outline itself: it follows its parent instead.
     expect(canResetToServerDefault(slot(changed, 'course.outline'))).toBe(false);
+  });
+});
+
+describe('canChangeDefaultModel', () => {
+  it('holds while llm is not locked and some provider serves chat', () => {
+    expect(
+      canChangeDefaultModel(viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' } })),
+    ).toBe(true);
+    expect(
+      canChangeDefaultModel(
+        viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' }, allowUserKeys: false }),
+      ),
+    ).toBe(true);
+  });
+
+  it('fails when llm is locked, everything is locked, or nothing offers a language model', () => {
+    const fixed = { providers, slots: { llm: 'operator:deepseek-v4-pro' } };
+    expect(canChangeDefaultModel(viewFor({ ...fixed, lock: ['llm'] }))).toBe(false);
+    expect(canChangeDefaultModel(viewFor({ ...fixed, lock: 'all' }))).toBe(false);
+    expect(
+      canChangeDefaultModel(viewFor({ providers: { tts: { preset: 'qwen-tts', apiKey: 'k' } } })),
+    ).toBe(false);
+    expect(canChangeDefaultModel(viewFor({}))).toBe(false);
   });
 });

@@ -25,7 +25,7 @@ import {
 } from '@/lib/model-settings/capabilities';
 import { assignmentRefs, modelChange, modelRef, providerLabel } from '@/lib/model-settings/edit';
 import { serviceEntries, slotThinking, thinkingChange } from '@/lib/model-settings/services';
-import { settingsSections, slotEditable } from '@/lib/model-settings/shape';
+import { canChangeDefaultModel, settingsSections, slotEditable } from '@/lib/model-settings/shape';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import {
@@ -39,7 +39,6 @@ import {
 } from '@/lib/document/bundle';
 import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
-import { ProviderLogo } from '@/components/settings/model-picker';
 import { HomeModelPicker } from '@/components/settings/home-model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
@@ -113,9 +112,8 @@ export function GenerationToolbar({
   const modelId = llm?.modelId ?? '';
   const llmPickerGroups = useLLMPickerGroups(view);
   const currentProviderName = view && providerId ? providerLabel(view, providerId) : providerId;
-  const currentGroup = llmPickerGroups.find((group) => group.id === providerId);
-  // The administrator may fix the course model; it is then shown, not picked.
-  const llmEditable = slotEditable(llmSlot) && llmPickerGroups.length > 0;
+  // A shortcut for the default model: not rendered at all where it cannot change it.
+  const llmEditable = !!view && canChangeDefaultModel(view);
   // Where the settings can still set up a language model, if anywhere.
   const sections = view ? settingsSections(view) : null;
   const setupSection: SettingsSection | undefined = !sections
@@ -261,7 +259,7 @@ export function GenerationToolbar({
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
-      {/* ── Course model: pill (picker popover), read-only pill, or Set-up CTA (#580) ── */}
+      {/* ── Course model: pill (picker popover), or Set-up CTA (#580) ── */}
       {llmEditable ? (
         // Editable: the picker, with nothing selected while `llm` resolves to
         // nothing (no default model); picking a model sets the llm slot.
@@ -282,19 +280,6 @@ export function GenerationToolbar({
           className="h-8 w-auto max-w-[260px] gap-1.5 rounded-full px-2.5 text-xs"
           t={t}
         />
-      ) : llm ? (
-        <span
-          className={cn(pillCls, 'cursor-default border-border/50 text-muted-foreground')}
-          aria-label={`${currentProviderName} / ${modelId}`}
-          title={t('toolbar.modelLockedHint')}
-        >
-          {currentGroup ? (
-            <ProviderLogo group={currentGroup} className="size-3.5" />
-          ) : (
-            <Bot className="size-3.5" />
-          )}
-          <span className="max-w-[200px] truncate">{modelId || currentProviderName}</span>
-        </span>
       ) : (
         view &&
         !courseGenerationUsable(modelCapabilities(view)) &&

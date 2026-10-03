@@ -46,7 +46,6 @@
     "interactiveModeHint": "Activa el modo interactivo para obtener contenido más práctico",
     "interactiveModeLabel": "Modo interactivo",
     "modelChangeFailed": "No se pudo cambiar el modelo: {{message}}",
-    "modelLockedHint": "El modelo que usan los cursos, definido por este servidor",
     "pickModel": "Elige un modelo",
     "defaultModel": "Predeterminado",
     "defaultModelNote": "Cambia el modelo predeterminado; los pasos configurados por separado conservan el suyo.",
@@ -1725,7 +1724,7 @@
       "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar.",
       "statusConnected": "Conectado",
-      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza modelos que elegiste, se te pregunta antes.",
+      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza lo que una etapa usa ahora (un modelo que elegiste o el predeterminado del servidor), se te pregunta antes.",
       "saveKey": "Guardar y activar",
       "cancelKeyUpdate": "Cancelar actualización",
       "manageAccount": "Gestionar cuenta",
@@ -1747,7 +1746,7 @@
       "stageInteractive": "Interactivo",
       "stageSlide": "Diapositivas",
       "applyTitle": "¿Usar la configuración recomendada de este plan?",
-      "applyBody": "{{name}} recomienda sus propios modelos para estas etapas, que ahora usan modelos que elegiste:",
+      "applyBody": "{{name}} recomienda sus propios modelos para estas etapas. Usarlos reemplaza lo que cada una usa ahora, incluidos los predeterminados del servidor:",
       "applyKeep": "Mantener mi configuración",
       "applyRecommended": "Usar la configuración recomendada"
     },
@@ -2090,12 +2089,7 @@
         "open": "Abrir Servicios de modelos",
         "askAdmin": "No hay un modelo de lenguaje configurado. Pide al administrador del servidor que configure uno."
       },
-      "summary": {
-        "title": "Configurado por el administrador",
-        "desc": "El administrador definió qué modelos usa este servidor. No se pueden cambiar aquí.",
-        "chat": "Modelos de lenguaje",
-        "media": "Otras capacidades"
-      }
+      "adminNotice": "El administrador definió qué modelos usa este servidor."
     },
     "unimported": {
       "toast": "Algunos ajustes de modelos de este navegador no se pudieron mover al servidor. Aparecen en Configuración → Servicios de modelos.",

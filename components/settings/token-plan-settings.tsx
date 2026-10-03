@@ -674,6 +674,7 @@ export function TokenPlanSettings({
                     <span className="font-medium">{slotName(t, conflict.slot.slot)}</span>
                     <span className="min-w-0 break-all text-muted-foreground">
                       {assignmentLabel(conflict, current, preset)}
+                      {conflict.from === 'default' && ` (${t(`${MS}.source.default`)})`}
                       {' → '}
                       <span className="text-foreground">
                         {assignmentLabel(conflict, conflict.recommended, preset)}
