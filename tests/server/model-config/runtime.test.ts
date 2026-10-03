@@ -46,14 +46,14 @@ describe('lookupFromLayers', () => {
     });
   });
 
-  it('keeps a server default on a child below a workspace choice on its parent', () => {
-    // agent: null is the deployment's default on the agent node itself: it is
-    // nearer than the workspace's llm, so the agent stays off until the
-    // workspace sets the agent itself.
+  it('prefers a workspace model anywhere up the tree over any default', () => {
+    // The deployment's default on the agent node itself (agent: null, as
+    // DEFAULT_MODEL translates) yields to the workspace's llm higher up.
     expect(lookupFromLayers('agent', { deployment, workspace })).toMatchObject({
-      status: 'disabled',
-      resolvedAt: 'agent',
-      source: 'default',
+      status: 'assigned',
+      resolvedAt: 'llm',
+      source: 'workspace',
+      providerId: 'ds',
     });
   });
 

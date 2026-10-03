@@ -12,10 +12,10 @@
  * - A slot in a locked subtree (the slot or an ancestor is named by `lock`, or
  *   `lock: all`) resolves from the deployment alone, walking up to the locked
  *   node: nothing a workspace sets there counts.
- * - Any other slot consults, at each node on the way up, the workspace's
- *   assignment and then the deployment's default. The first node with either
- *   wins, so a deployment default on a child outranks a workspace assignment
- *   on its parent: the child was set more specifically.
+ * - Any other slot walks the workspace's assignments from the slot up to
+ *   the root first, and only when it finds none, the deployment's defaults
+ *   the same way: the user's choice anywhere up the tree beats a server
+ *   default, even one written nearer the slot. `null` stops either walk.
  *
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
@@ -274,9 +274,14 @@ export function findAssignment(
     }
     return undefined;
   }
+  // The user's choice anywhere up the tree beats the server's defaults: only
+  // when the workspace assigns nothing from the slot to the root do the
+  // defaults count.
   for (const node of lineage) {
     const own = assignmentIn(workspace, node);
     if (own) return { node, source: 'workspace', ...own };
+  }
+  for (const node of lineage) {
     const fallback = assignmentIn(deployment, node);
     if (fallback) return { node, source: 'default', ...fallback };
   }

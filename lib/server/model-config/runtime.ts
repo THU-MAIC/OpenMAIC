@@ -248,7 +248,11 @@ export class SlotDisabledError extends Error {
 }
 
 export class SlotUnassignedError extends Error {
-  constructor(readonly slot: SlotId) {
+  constructor(
+    readonly slot: SlotId,
+    /** In a locked subtree (`lock: all` over a root the deployment leaves unset). */
+    readonly locked = false,
+  ) {
     super(
       `No model is configured for ${slot}. Set one in the model settings, or assign the slot (or an ancestor) in openmaic.yml.`,
     );

@@ -434,7 +434,10 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     ? { source: 'workspace', config: stored.config }
     : null;
   const deploymentProviders = deployment?.config.providers ?? {};
-  const workspaceProviders = stored?.config.providers ?? {};
+  // The workspace as the calls count it: without user keys, providers it
+  // added earlier (and the assignments naming them) are dormant and left out.
+  const counted = usableWorkspace(workspace, deployment);
+  const workspaceProviders = counted?.config.providers ?? {};
   const unreadable = new Set(stored?.unreadableSecrets ?? []);
 
   const providers: ProviderView[] = [
@@ -466,9 +469,8 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
   ];
 
   const deploymentSlots = deployment?.config.slots ?? {};
-  const workspaceSlots = stored?.config.slots ?? {};
+  const workspaceSlots = counted?.config.slots ?? {};
   const layers = { deployment, workspace };
-  const counted = usableWorkspace(workspace, deployment);
   const slots: SlotView[] = MODEL_SLOTS.map(({ id }) => {
     const definition = getSlot(id);
     return {
@@ -631,10 +633,14 @@ export async function applyModelSettingsChange(
         }
       }
     }
-    const touched = [...Object.keys(change.set ?? {}), ...(change.clear ?? [])];
-    for (const slot of touched) {
+    for (const slot of change.clear ?? []) {
       if (!isSlotId(slot)) throw new ModelSettingsError('UNKNOWN_SLOT', `Unknown slot ${slot}`);
-      // A locked slot fixes its whole subtree: no slot under it may be set either.
+    }
+    // A locked slot fixes its whole subtree: no slot under it may be set
+    // either. Clearing one is allowed: it only drops a stale assignment the
+    // workspace made before the lock, which nothing reads.
+    for (const slot of Object.keys(change.set ?? {})) {
+      if (!isSlotId(slot)) throw new ModelSettingsError('UNKNOWN_SLOT', `Unknown slot ${slot}`);
       const lockedAt = lockingNode(deployment?.config, slot);
       if (lockedAt !== undefined) {
         throw new ModelSettingsError(

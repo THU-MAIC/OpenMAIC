@@ -13,11 +13,17 @@ import {
 import { BROWSER_NATIVE_ASR_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
 import {
+  mediaWorkspaceId,
+  resolveMediaSlot,
   serverMediaConnection,
   WorkspaceEndpointError,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
-import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import {
+  requestProvidersAllowed,
+  SlotDisabledError,
+  SlotUnassignedError,
+} from '@/lib/server/model-config/runtime';
 
 const log = createLogger('ExtractionServices');
 
@@ -27,15 +33,33 @@ export interface ExtractionServices {
   /**
    * How the document slot resolved: configured (openmaic.yml or the model
    * settings), a legacy default, turned off (self-contained extraction only),
-   * or unassigned (a request may still name a provider the old way).
+   * unassigned (a request may still name a provider the old way), or
+   * unassigned inside a locked subtree (`lock: all`): fixed as nothing, so
+   * a request names nothing either.
    */
-  documentStatus?: 'configured' | 'default' | 'disabled' | 'unassigned';
+  documentStatus?: 'configured' | 'default' | 'disabled' | 'unassigned' | 'locked';
   /** The asr slot's connection, or undefined when speech recognition is off or unset. */
   asr?: ASRModelConfig;
 }
 
-const usable = (connection: MediaConnection | 'off' | null) =>
-  connection && connection !== 'off' ? connection : null;
+const usable = (connection: MediaConnection | 'off' | 'locked' | null) =>
+  connection && connection !== 'off' && connection !== 'locked' ? connection : null;
+
+/** The document slot's connection; 'locked' when a lock fixes it as unassigned. */
+async function documentConnection(
+  ownerId: string | undefined,
+  forward: boolean,
+): Promise<MediaConnection | 'off' | 'locked' | null> {
+  try {
+    return await resolveMediaSlot('document', {
+      workspaceId: await mediaWorkspaceId(ownerId, { forward }),
+    });
+  } catch (error) {
+    if (error instanceof SlotDisabledError) return 'off';
+    if (error instanceof SlotUnassignedError) return error.locked ? 'locked' : null;
+    throw error;
+  }
+}
 
 /**
  * Resolve the services for `ownerId`: a stored owner of background work, or a
@@ -46,7 +70,7 @@ export async function resolveExtractionServices(
   { forward = true }: { forward?: boolean } = {},
 ): Promise<ExtractionServices> {
   const [document, asr] = await Promise.all([
-    serverMediaConnection('document', ownerId, { forward }),
+    documentConnection(ownerId, forward),
     // Speech only serves media extraction: an asr assignment this workspace
     // may not use leaves transcription unavailable, not every extraction.
     serverMediaConnection('asr', ownerId, { forward }).catch((error: unknown) => {
@@ -62,11 +86,13 @@ export async function resolveExtractionServices(
     documentStatus:
       document === 'off'
         ? 'disabled'
-        : !document
-          ? 'unassigned'
-          : document.origin === 'configuration'
-            ? 'configured'
-            : 'default',
+        : document === 'locked'
+          ? 'locked'
+          : !document
+            ? 'unassigned'
+            : document.origin === 'configuration'
+              ? 'configured'
+              : 'default',
     ...(speech
       ? {
           asr: {
@@ -96,7 +122,11 @@ export function isSelfContainedExtractor(id: string): boolean {
 
 /** Whether the document slot, not the deprecated request fields, decides the service. */
 export function documentSlotGoverns(services: ExtractionServices): boolean {
-  return services.documentStatus === 'configured' || services.documentStatus === 'disabled';
+  return (
+    services.documentStatus === 'configured' ||
+    services.documentStatus === 'disabled' ||
+    services.documentStatus === 'locked'
+  );
 }
 
 interface RequestedExtraction {

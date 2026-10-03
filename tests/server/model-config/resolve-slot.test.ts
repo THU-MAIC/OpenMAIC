@@ -385,19 +385,45 @@ slots:
 `,
   );
 
-  it('lets a workspace assignment on a parent leave a server default on its child in place', () => {
-    // The child's default is the more specific setting: it wins over the
-    // workspace's choice higher up, until the workspace sets the child itself.
+  it("lets the workspace's choice anywhere up the tree beat a server default on the slot", () => {
+    // Whatever the user changes wins; what follows a parent follows the user's parent.
     const defaults = layer('deployment', `${providers}slots:\n  course.outline: mm:MiniMax-M2.7\n`);
     expect(resolveSlot('course.outline', [defaults, own])).toMatchObject({
+      resolvedAt: 'llm',
+      source: 'workspace',
+      providerId: 'ds',
+    });
+    // Without a workspace choice up the tree, the default stands.
+    expect(resolveSlot('course.outline', [defaults])).toMatchObject({
       resolvedAt: 'course.outline',
       source: 'default',
       providerId: 'mm',
     });
-    expect(resolveSlot('course.agents', [defaults, own])).toMatchObject({
+  });
+
+  it('prefers a workspace llm over a yml default on course.content', () => {
+    const defaults = layer(
+      'deployment',
+      `${providers}slots:\n  llm: mm:MiniMax-M3\n  course.content: mm:MiniMax-M2.7\n`,
+    );
+    const workspaceLlm = layer(
+      'workspace',
+      'providers:\n  ds:\n    preset: deepseek\n    apiKey: k\nslots:\n  llm: ds:deepseek-v4-pro\n',
+    );
+    expect(resolveSlot('course.content.slide', [defaults, workspaceLlm])).toMatchObject({
       resolvedAt: 'llm',
       source: 'workspace',
       providerId: 'ds',
+    });
+  });
+
+  it('stops at a workspace null before any default', () => {
+    const defaults = layer('deployment', `${providers}slots:\n  course.outline: mm:MiniMax-M2.7\n`);
+    const off = layer('workspace', 'slots:\n  llm: null\n');
+    expect(resolveSlot('course.outline', [defaults, off])).toMatchObject({
+      status: 'disabled',
+      resolvedAt: 'llm',
+      source: 'workspace',
     });
   });
 

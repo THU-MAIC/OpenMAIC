@@ -104,6 +104,15 @@ describe('agent driver model', () => {
     await expect(resolve()).rejects.toThrow('agent capability is turned off');
   });
 
+  it('follows the default model a user chose, on a deployment configured through DEFAULT_MODEL', async () => {
+    const resolve = await configure(undefined, {
+      defaults: { llm: 'openai:gpt-5.6', agent: null },
+      workspace: { source: 'workspace', config: { slots: { llm: 'openai:gpt-5.6-luna' } } },
+    });
+    const resolved = await resolve('user:alice');
+    expect(resolved.piModel).toMatchObject({ id: 'gpt-5.6-luna', provider: 'openai' });
+  });
+
   it("uses the owner's workspace model", async () => {
     const resolve = await configure(undefined, {
       workspace: { source: 'workspace', config: { slots: { llm: 'openai:gpt-5.6-luna' } } },

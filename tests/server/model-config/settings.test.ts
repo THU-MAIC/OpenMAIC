@@ -105,6 +105,32 @@ describe('modelSettingsView', () => {
     expect(slot('agent.title')).toMatchObject({ configOnly: true });
   });
 
+  it('leaves dormant workspace providers and their assignments out without user keys', () => {
+    deployment({
+      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      slots: { llm: 'operator:deepseek-v4-pro' },
+      allowUserKeys: false,
+    });
+    const view = modelSettingsView({
+      config: {
+        providers: { mine: { preset: 'openai', apiKey: 'sk-workspace-secret-9876' } },
+        slots: { llm: 'mine:gpt-5.6', 'course.outline': 'operator:deepseek-v4-flash' },
+      },
+      revision: 2,
+      unreadableSecrets: [],
+    });
+    expect(view.providers.map((provider) => provider.id)).toEqual(['operator']);
+    const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
+    // The dormant llm choice is neither shown nor used: the server default is.
+    expect(slot('llm')).not.toHaveProperty('assignment');
+    expect(slot('llm')).toMatchObject({ source: { kind: 'default' } });
+    // A choice among the deployment's providers stays.
+    expect(slot('course.outline')).toMatchObject({
+      assignment: 'operator:deepseek-v4-flash',
+      source: { kind: 'workspace' },
+    });
+  });
+
   it('lists the presets a workspace may add, without deployment-only ones', () => {
     const presets = modelSettingsView(null).presets;
     const ids = presets.map((preset) => preset.id);
@@ -264,9 +290,16 @@ describe('applyModelSettingsChange', () => {
     });
     for (const slot of ['llm', 'course.content', 'course.content.slide', 'agent.title']) {
       await expect(
-        applyModelSettingsChange(null, { kind: 'slots', clear: [slot] }),
+        applyModelSettingsChange(null, { kind: 'slots', set: { [slot]: null } }),
       ).rejects.toMatchObject({ code: 'SLOT_LOCKED' });
     }
+    // Clearing a stale assignment made before the lock is allowed.
+    expect(
+      await applyModelSettingsChange(
+        { slots: { 'course.outline': 'operator:deepseek-v4-flash', image: null } },
+        { kind: 'slots', clear: ['course.outline'] },
+      ),
+    ).toEqual({ slots: { image: null } });
     await expect(
       applyModelSettingsChange(null, {
         kind: 'slots',

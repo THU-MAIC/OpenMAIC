@@ -209,7 +209,7 @@ export async function resolveMediaSlot(
     return fromTarget(slot, resolution, legacyDefault ? 'default' : 'configuration');
   }
   if (resolution.status === 'disabled') throw new SlotDisabledError(slot);
-  throw new SlotUnassignedError(slot);
+  throw new SlotUnassignedError(slot, resolution.status === 'unassigned' && !!resolution.locked);
 }
 
 /**
@@ -250,6 +250,18 @@ export function mediaResolutionResponse(error: unknown, what: string): Response 
 }
 
 /**
+ * The workspace background work on behalf of `storedOwnerId` resolves for:
+ * the owner it belongs to now when `forward` (see serverMediaConnection).
+ */
+export async function mediaWorkspaceId(
+  storedOwnerId: string | undefined,
+  { forward = true }: { forward?: boolean } = {},
+): Promise<string | null> {
+  if (!storedOwnerId) return null;
+  return forward ? backgroundWorkspaceId(storedOwnerId) : storedOwnerId;
+}
+
+/**
  * The connection for background work on behalf of a stored owner (an agent
  * run, a generation job): 'off' when the slot is turned off, null when
  * nothing is assigned. Requests do not name providers here.
@@ -268,13 +280,10 @@ export async function serverMediaConnection(
     forward?: boolean;
   } = {},
 ): Promise<MediaConnection | 'off' | null> {
-  const workspaceId = storedOwnerId
-    ? forward
-      ? await backgroundWorkspaceId(storedOwnerId)
-      : storedOwnerId
-    : null;
   try {
-    return await resolveMediaSlot(slot, { workspaceId });
+    return await resolveMediaSlot(slot, {
+      workspaceId: await mediaWorkspaceId(storedOwnerId, { forward }),
+    });
   } catch (error) {
     if (error instanceof SlotDisabledError) return 'off';
     if (error instanceof SlotUnassignedError) return null;

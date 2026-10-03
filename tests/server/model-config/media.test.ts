@@ -258,3 +258,71 @@ describe('allowUserKeys: false and providers a request names', () => {
     });
   });
 });
+
+describe('what a request names the old way, against defaults and locks', () => {
+  const requested = {
+    providerId: 'seedream',
+    apiKey: 'caller-key',
+    baseUrl: 'https://images.example',
+    managed: false,
+    userEndpoint: true,
+    origin: 'request' as const,
+  };
+  const operator = {
+    providers: { sd: { preset: 'seedream', apiKey: 'operator-key' } },
+    slots: { image: 'sd' },
+  } satisfies Config;
+  const deployment = (config: Config, legacy = false) =>
+    runtime.setDeploymentConfigForTests({
+      layer: { source: 'deployment', config },
+      legacy,
+      notices: [],
+    });
+
+  it("keeps openmaic.yml's default over the request's provider", async () => {
+    deployment(operator);
+    const legacyRequest = vi.fn(async () => requested);
+    expect(await resolveMediaSlot('image', { workspaceId: null, legacyRequest })).toMatchObject({
+      apiKey: 'operator-key',
+      origin: 'configuration',
+    });
+    expect(legacyRequest).not.toHaveBeenCalled();
+  });
+
+  it('lets the request replace a default translated from the legacy variables', async () => {
+    deployment(operator, true);
+    expect(
+      await resolveMediaSlot('image', { workspaceId: null, legacyRequest: async () => requested }),
+    ).toBe(requested);
+    // Naming nothing, the legacy default answers, with the legacy pins.
+    expect(
+      await resolveMediaSlot('image', { workspaceId: null, legacyRequest: async () => undefined }),
+    ).toMatchObject({ apiKey: 'operator-key', origin: 'default' });
+  });
+
+  it('refuses the request on a slot lock: all leaves unassigned', async () => {
+    deployment({ lock: 'all' });
+    const legacyRequest = vi.fn(async () => requested);
+    const error = await resolveMediaSlot('image', { workspaceId: null, legacyRequest }).catch(
+      (e: unknown) => e,
+    );
+    expect(legacyRequest).not.toHaveBeenCalled();
+    expect(error).toMatchObject({ name: 'SlotUnassignedError', locked: true });
+  });
+
+  it('keeps document request fields out when lock: all leaves the slot unassigned', async () => {
+    deployment({ lock: 'all' });
+    const services = await resolveExtractionServices();
+    expect(services.documentStatus).toBe('locked');
+    expect(
+      slotGovernedRequest(services, {
+        providerId: 'mineru-cloud',
+        apiKey: 'caller-key',
+        baseUrl: 'https://mineru.example',
+      }),
+    ).toEqual({});
+    expect(slotGovernedRequest(services, { providerId: 'unpdf', apiKey: 'k' })).toEqual({
+      providerId: 'unpdf',
+    });
+  });
+});
