@@ -61,6 +61,9 @@ async function makeHost() {
       return value;
     },
     delete: async (key) => void bytes.delete(key),
+    deletePrefix: async (prefix: string) => {
+      for (const key of [...bytes.keys()]) if (key.startsWith(prefix)) bytes.delete(key);
+    },
   });
   const sessionStore = new PgAgentSessionStore(db, {
     withTransaction: (body) => db.transaction((tx: Queryable) => body(tx)),

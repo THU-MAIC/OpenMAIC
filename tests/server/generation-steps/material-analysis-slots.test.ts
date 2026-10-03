@@ -94,6 +94,29 @@ describe('material analysis from the slots', () => {
     });
   });
 
+  it("hands the caller's signal to the extractor, which stops its requests on it", async () => {
+    await deploymentSlots({
+      providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },
+      slots: { document: 'mc' },
+    });
+    const { resolveExtractionServices } = await import('@/lib/server/material-extraction/services');
+    const controller = new AbortController();
+    await analyzeMaterial(
+      {
+        source: source('%PDF-1.4', 'application/pdf', 'lesson.pdf'),
+        services: await resolveExtractionServices(),
+        request: {},
+        redactCallerInput: false,
+      },
+      { log: testLogger(), signal: controller.signal },
+    );
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal }),
+      expect.any(Buffer),
+      'lesson.pdf',
+    );
+  });
+
   it("uses the document slot's service and key", async () => {
     await deploymentSlots({
       providers: { mc: { preset: 'mineru-cloud', apiKey: 'slot-key' } },

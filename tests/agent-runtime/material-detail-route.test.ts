@@ -103,7 +103,7 @@ describe('GET /api/materials/[id]', () => {
       ossKey: 'materials/owner-1/x',
       sha256: 'sha',
       status: 'ready',
-      extraction: { status: 'failed', error: 'no text', servicesKey: 'internal' },
+      extraction: { status: 'failed', error: 'no text', identityKey: 'internal' },
       createdAt: 1_700_000_000_000,
       deletedAt: null,
     });
@@ -123,6 +123,15 @@ describe('GET /api/materials/[id]', () => {
       params: Promise.resolve({ id: MATERIAL_ID }),
     });
     expect(missing.status).toBe(404);
+  });
+
+  it('rejects an empty sessionId instead of reading the library', async () => {
+    const response = await GET(
+      new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}?sessionId=`),
+      { params: Promise.resolve({ id: MATERIAL_ID }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.getOwnerMaterial).not.toHaveBeenCalled();
   });
 
   it('answers 404 for a foreign or missing session (no existence oracle)', async () => {

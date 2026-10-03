@@ -151,7 +151,12 @@ function parseLimit(raw: string | null): { limit?: number } | { invalid: true } 
 // GET /api/materials?sessionId=&limit=&before= — list one owned session's
 // materials, newest first, keyset-paged (the agent-tools list surface).
 export async function GET(req: NextRequest) {
-  if (!new URL(req.url).searchParams.get('sessionId')?.trim()) {
+  const searchParams = new URL(req.url).searchParams;
+  // A session named but empty is a mistake, not a request for the library.
+  if (searchParams.has('sessionId') && !searchParams.get('sessionId')?.trim()) {
+    return apiError('MISSING_REQUIRED_FIELD', 400, 'sessionId must not be empty');
+  }
+  if (!searchParams.has('sessionId')) {
     if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
     return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
       const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');

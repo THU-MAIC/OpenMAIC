@@ -1402,7 +1402,7 @@ export async function retryGenerationRun(
       // A run paused at its materials failed with an extraction's error:
       // Retry extracts the failed ones again.
       if (run.step === 'material-analysis') {
-        await restartFailedRunMaterialExtractionsIn(tx, run.input.materialIds);
+        await restartFailedRunMaterialExtractionsIn(tx, run.owner_id, run.input.materialIds);
       }
       // A run paused before it chose a step resumes where it was executing.
       const state = run.step
@@ -1426,9 +1426,14 @@ export async function retryGenerationRun(
   );
 }
 
-/** Start the failed extractions of a run's materials again (a no-op without the table). */
+/**
+ * Start the failed extractions of a run's materials again, only among the
+ * materials its owner holds now (a claim moves them to the account; a no-op
+ * without the table).
+ */
 async function restartFailedRunMaterialExtractionsIn(
   tx: Queryable,
+  storedOwnerId: string,
   materialIds: readonly string[],
 ): Promise<void> {
   if (materialIds.length === 0) return;
@@ -1436,7 +1441,17 @@ async function restartFailedRunMaterialExtractionsIn(
     "SELECT to_regclass('owner_material')::text AS present",
   );
   if (!provisioned.rows[0]?.present) return;
-  await startOwnerMaterialExtractions(tx, materialIds, ['failed']);
+  let owner = storedOwnerId;
+  for (let hop = 0; hop < MAX_MERGE_HOPS; hop += 1) {
+    const merged = await tx.query<{ to_owner_id: string }>(
+      'SELECT to_owner_id FROM owner_merges WHERE from_owner_id = $1',
+      [owner],
+    );
+    const next = merged.rows[0]?.to_owner_id;
+    if (!next) break;
+    owner = next;
+  }
+  await startOwnerMaterialExtractions(tx, owner, materialIds, ['failed']);
 }
 
 /** Queue one failed media item of a run again (the run row is locked). */

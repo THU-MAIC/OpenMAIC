@@ -378,7 +378,7 @@ export const defaultRunStepServices: RunStepServices = {
     const parts: ParsedDocumentPart[] = [];
     for (const [order, record] of records.entries()) {
       const fileName = record.originalName ?? record.id;
-      const result = await readMaterialExtractionResult(record.ossKey, byteStore);
+      const result = await readMaterialExtractionResult(record, byteStore);
       parts.push({
         source: {
           id: record.id,

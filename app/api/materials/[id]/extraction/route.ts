@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     const { id } = await params;
     if (!isMaterialId(id)) return ownerNotFound(responseHeaders);
     const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
-    const started = await startOwnerMaterialExtractions(pool, [id], ['failed', 'idle'], ownerId);
+    const started = await startOwnerMaterialExtractions(pool, ownerId, [id], ['failed', 'idle']);
     const record = await getOwnerMaterial(pool, ownerId, id);
     if (!record) return ownerNotFound(responseHeaders);
     if (started.length === 0) {

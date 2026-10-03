@@ -192,7 +192,7 @@ function formatTimestamp(ms: number): string {
  */
 export async function analyzeMaterial(
   input: MaterialAnalysisInput,
-  _ctx: StepContext,
+  ctx: StepContext,
 ): Promise<ParsedPdfContent> {
   const { services, source, redactCallerInput } = input;
   const trace = input.trace ?? {};
@@ -211,7 +211,8 @@ export async function analyzeMaterial(
       fileName,
       fileSize,
       mimeType,
-      config: extractorConfig,
+      // The caller's signal stops the extractor's requests and commands.
+      config: ctx.signal ? { ...extractorConfig, signal: ctx.signal } : extractorConfig,
     });
     const result = documentArtifactToParsedPdfContent(artifact);
 
@@ -278,8 +279,9 @@ export async function analyzeMaterial(
       fileSize,
       mimeType,
       config: slotMedia
-        ? { ...slotMedia, providerId: requestConfig.providerId || '' }
+        ? { ...slotMedia, providerId: requestConfig.providerId || '', signal: ctx.signal }
         : {
+            signal: ctx.signal,
             providerId: requestConfig.providerId || '',
             // Local transcription uses the asr slot's connection.
             ...(services.asr ? { asr: services.asr } : {}),

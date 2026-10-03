@@ -546,13 +546,13 @@ export async function executeGenerationRun(
           const kinds = await services.materialKinds(owner, input.materialIds);
           await commit({ events: [{ type: 'material_kinds', data: { kinds } }] });
         }
-        const analyzed = await withDeadline(
-          stepId,
-          STEP_DEADLINES_MS.materialAnalysis,
+        // No step deadline around the wait: a material queued behind other
+        // extractions waits its turn, and each extraction has the step's
+        // budget once a worker runs it (awaitOwnerMaterialExtractions).
+        const analyzed = await services.analyzeMaterials(owner, input.materialIds, {
+          log,
           signal,
-          (callSignal) =>
-            services.analyzeMaterials(owner, input.materialIds, { log, signal: callSignal }),
-        );
+        });
         // What the outline will not see in full, as the preview warns about it.
         const warnings = analyzed.truncated
           ? { events: [{ type: 'material_truncated' as const, data: { ...analyzed.truncated } }] }

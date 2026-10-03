@@ -86,6 +86,9 @@ async function makeHost() {
       return value;
     },
     delete: async (key) => void bytes.delete(key),
+    deletePrefix: async (prefix: string) => {
+      for (const key of [...bytes.keys()]) if (key.startsWith(prefix)) bytes.delete(key);
+    },
   });
   const sessionStore = new PgAgentSessionStore(instance, {
     withTransaction: (body) => instance.transaction((tx: Queryable) => body(tx)),
@@ -273,6 +276,12 @@ describe('owner-material binding across sessions', () => {
       delete: async (key) => {
         sessionBytes.delete(key);
         ownerBytes.delete(key);
+      },
+      deletePrefix: async (prefix: string) => {
+        for (const key of [...sessionBytes.keys()])
+          if (key.startsWith(prefix)) sessionBytes.delete(key);
+        for (const key of [...ownerBytes.keys()])
+          if (key.startsWith(prefix)) ownerBytes.delete(key);
       },
     });
 

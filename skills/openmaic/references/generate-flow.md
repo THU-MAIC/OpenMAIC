@@ -158,7 +158,9 @@ answers `{ "material": { "materialId": "...", ..., "extraction": { "status": "..
 - `ready` — done; `textChars`, `pageCount` and `imageCount` say what it found, and `truncated` (when present) what a classroom leaves out of this file: `textChars` (only that many characters of its text are used) and `images` (`total` found, the first `max` looked at);
 - `failed` — `error` says why (for example the extraction service failed, or the file contains no text). `POST {url}/api/materials/{materialId}/extraction` extracts it again; or delete it and upload a fixed file.
 
-Waiting for `ready` before submitting is optional: a job whose material is still extracting waits for that extraction (it is not extracted twice), and a job whose material failed to extract fails with the extraction's error. Polling the material every few seconds before submitting lets you report a bad file before a job is created. Uploading the same file again reuses its finished extraction. `GET {url}/api/materials` lists the owner's uploads with their extraction.
+Waiting for `ready` before submitting is optional: a job whose material is still extracting waits for that extraction (it is not extracted twice), and a job whose material failed to extract fails with the extraction's error. Polling the material every few seconds before submitting lets you report a bad file before a job is created. Uploading the same file again reuses its finished extraction. `GET {url}/api/materials` (with no `sessionId` parameter) lists the owner's uploads with their extraction; with `sessionId` it lists an agent session's materials instead, and an empty `sessionId` answers `400`. The stored extraction counts against the owner's byte quota with the file.
+
+Submit the job within a day of the upload: an upload that no job (and no agent session) uses is deleted after 24 hours (`OPENMAIC_UNUSED_MATERIAL_TTL_HOURS`).
 
 4. Submit the job with the returned ids, in the order the documents should be read:
 

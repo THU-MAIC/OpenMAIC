@@ -598,13 +598,14 @@ function HomePage() {
     // The set is frozen while the run starts (`preparingGenerate` makes add,
     // remove and Retry inert), from the ready materials in their order.
     setPreparingGenerate(true);
-    let materialIds: string[] = [];
+    // The run releases the materials it is started from once it is over.
+    // Handed off before anything is awaited: a navigation in between must not
+    // delete them under the run.
+    const materialIds = courseMaterials.handOff();
     try {
       // Nothing is started from settings that could not be read.
       const capabilities = await requireModelCapabilities();
       if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
-      // The run releases the materials it is started from once it is over.
-      materialIds = courseMaterials.handOff();
       const run = await startClassicRun({
         requirement: form.requirement,
         materialIds,

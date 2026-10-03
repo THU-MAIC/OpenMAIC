@@ -6,7 +6,10 @@
 
 /** Per call, in milliseconds. */
 export const STEP_DEADLINES_MS = {
-  /** Material analysis (1.1.x declared no budget; the platform's default applied). */
+  /**
+   * One material's extraction, once a worker runs it (1.1.x declared no
+   * budget; the platform's default applied).
+   */
   materialAnalysis: 300_000,
   /** Research (1.1.x declared no budget; the platform's default applied). */
   research: 300_000,

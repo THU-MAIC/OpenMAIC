@@ -74,9 +74,9 @@ describe('POST /api/materials/[id]/extraction', () => {
     expect((await response.json()).material.extraction).toEqual({ status: 'extracting' });
     expect(mocks.startOwnerMaterialExtractions).toHaveBeenCalledWith(
       {},
+      'owner-1',
       [ID],
       ['failed', 'idle'],
-      'owner-1',
     );
     expect(mocks.wake).toHaveBeenCalled();
   });

@@ -38,6 +38,7 @@ import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { deleteMaterialObjects, getMaterialByteStore } from '@/lib/server/materials/bytes';
 import { isMaterialId } from '@/lib/server/materials/material-id';
+import { apiError } from '@/lib/server/api-response';
 import {
   getSessionMaterial,
   publicMaterialView,
@@ -51,7 +52,12 @@ export const runtime = 'nodejs';
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(req: NextRequest, { params }: Params) {
-  const sessionId = new URL(req.url).searchParams.get('sessionId')?.trim();
+  const searchParams = new URL(req.url).searchParams;
+  const sessionId = searchParams.get('sessionId')?.trim();
+  // A session named but empty is a mistake, not a request for the library.
+  if (searchParams.has('sessionId') && !sessionId) {
+    return apiError('MISSING_REQUIRED_FIELD', 400, 'sessionId must not be empty');
+  }
   if (!sessionId) {
     if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
     return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {

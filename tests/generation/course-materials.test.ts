@@ -314,6 +314,85 @@ describe('the composer materials', () => {
     root = createRoot(document.createElement('div'));
     await act(async () => root.render(createElement(Probe)));
   });
+
+  it('shows the chip (and holds Generate) before the policy is read, and withdraws it on a refusal', async () => {
+    let answer!: (policy: MaterialPolicy) => void;
+    api.fetchMaterialPolicy.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    let adding!: Promise<unknown>;
+    await act(async () => {
+      adding = probe.current!.add([
+        new File([new Uint8Array(50)], 'big.pdf', { type: 'application/pdf' }),
+      ]);
+    });
+    expect(probe.current!.materials).toHaveLength(1);
+    expect(probe.current!.allReady).toBe(false);
+    await act(async () => {
+      answer(POLICY);
+      await adding;
+    });
+    expect(await adding).toMatchObject({ key: 'upload.materialTooLarge' });
+    expect(probe.current!.materials).toEqual([]);
+    expect(probe.current!.allReady).toBe(true);
+    expect(api.uploadMaterial).not.toHaveBeenCalled();
+  });
+
+  it('follows an extraction that was already restarted when its Retry answers 409', async () => {
+    api.uploadMaterial.mockResolvedValue({
+      materialId: 'mat_4',
+      bytes: 4,
+      mediaKind: 'document',
+      extraction: { status: 'failed', error: 'no text' },
+    });
+    await act(async () => {
+      await probe.current!.add([pdf()]);
+    });
+    await flush();
+    api.retryMaterialExtraction.mockRejectedValue(
+      new RunApiError(409, 'INVALID_REQUEST', 'extracting', 'upload.materialUploadFailed'),
+    );
+    api.fetchOwnerMaterial.mockResolvedValue({
+      materialId: 'mat_4',
+      bytes: 4,
+      mediaKind: 'document',
+      extraction: { status: 'ready', textChars: 4 },
+    });
+    await act(async () => probe.current!.retry(probe.current!.materials[0]!.id));
+    await flush();
+    expect(probe.current!.materials[0]).toMatchObject({ status: 'extracting' });
+    await flush(1600);
+    expect(probe.current!.materials[0]).toMatchObject({ status: 'ready' });
+  });
+
+  it('keeps its materials when the page goes into the back/forward cache, and reconciles them on return', async () => {
+    api.uploadMaterial.mockResolvedValue({
+      materialId: 'mat_5',
+      bytes: 4,
+      mediaKind: 'document',
+      extraction: { status: 'ready' },
+    });
+    await act(async () => {
+      await probe.current!.add([pdf()]);
+    });
+    await flush();
+    const page = (type: string, persisted: boolean) => {
+      const event = new Event(type) as PageTransitionEvent;
+      Object.defineProperty(event, 'persisted', { value: persisted });
+      return event;
+    };
+    await act(async () => void window.dispatchEvent(page('pagehide', true)));
+    expect(api.deleteMaterial).not.toHaveBeenCalled();
+    // Swept while the page was away.
+    api.fetchOwnerMaterial.mockResolvedValue(null);
+    await act(async () => void window.dispatchEvent(page('pageshow', true)));
+    await flush();
+    expect(probe.current!.materials[0]).toMatchObject({
+      status: 'failed',
+      failure: { key: 'toolbar.materialUnavailable' },
+    });
+    // A real unload releases what is left.
+    await act(async () => void window.dispatchEvent(page('pagehide', false)));
+    expect(api.deleteMaterial).toHaveBeenCalledWith('mat_5', { keepalive: true });
+  });
 });
 
 describe('the preview of a run started from ready materials', () => {

@@ -21,6 +21,8 @@
  * its object first, then the reservation, so a crash mid-reclaim never loses
  * the pointer to the bytes.
  */
+import { randomUUID } from 'node:crypto';
+
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 import { encodeJson } from '@openmaic/storage/pg-json';
@@ -76,10 +78,17 @@ export interface OwnerMaterialExtraction {
   /** The extractor that produced the result. */
   extractor?: string;
   /**
-   * The owner's extraction services when it ran (internal): a ready
-   * extraction of the same bytes is reused only under the same services.
+   * What picked and ran the extractor (internal): the material's type and the
+   * owner's extraction services. A ready extraction of the same bytes is
+   * reused only under the same identity.
    */
-  servicesKey?: string;
+  identityKey?: string;
+  /** The stored result's object key (internal), published by the attempt that settled. */
+  resultKey?: string;
+  /** The stored result's size in bytes: it counts against the owner's byte quota. */
+  resultBytes?: number;
+  /** When the running attempt claimed it, epoch ms (internal). */
+  claimedAt?: number;
   /** Epoch ms of the last change. */
   updatedAt?: number;
 }
@@ -112,7 +121,7 @@ export interface OwnerMaterialView {
   originalName?: string;
   /** `media` for audio and video (transcribed), `document` for everything else. */
   mediaKind: 'document' | 'media';
-  extraction?: Omit<OwnerMaterialExtraction, 'servicesKey'>;
+  extraction?: Omit<OwnerMaterialExtraction, 'identityKey' | 'resultKey' | 'claimedAt'>;
   createdAt: string;
 }
 
@@ -284,7 +293,9 @@ export function materialMediaKind(mime: string | null | undefined): 'document' |
 
 export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
   const extraction = record.extraction ? { ...record.extraction } : undefined;
-  delete extraction?.servicesKey;
+  delete extraction?.identityKey;
+  delete extraction?.resultKey;
+  delete extraction?.claimedAt;
   return {
     materialId: record.id,
     kind: record.kind,
@@ -445,9 +456,11 @@ export async function registerOwnerMaterial(
       ownerMaterialQuotaLockKey(input.ownerId),
     ]);
 
+    // An extraction's stored result counts as the owner's bytes too.
     const usage = await tx.query<{ count: number | string; total_bytes: number | string }>(
       `SELECT COUNT(*)::text AS count,
-              COALESCE(SUM(bytes), 0)::text AS total_bytes
+              COALESCE(SUM(bytes + COALESCE((extraction->>'resultBytes')::double precision, 0)), 0)::text
+                AS total_bytes
          FROM owner_material
         WHERE owner_id = $1 AND kind = 'source' AND deleted_at IS NULL`,
       [input.ownerId],
@@ -568,16 +581,15 @@ export async function getOwnerMaterial(
 }
 
 /**
- * Start the extraction of the given ready materials whose extraction is in one
- * of the `from` states: `idle` (a run starts what was never started), `failed`
- * (a Retry). Answers the ids it started. `ownerId` restricts it to one
- * owner's materials (a request); a run names its own materials by id.
+ * Start the extraction of the given ready materials of `ownerId` whose
+ * extraction is in one of the `from` states: `idle` (a run starts what was
+ * never started), `failed` (a Retry). Answers the ids it started.
  */
 export async function startOwnerMaterialExtractions(
   queryable: Queryable,
+  ownerId: string,
   materialIds: readonly string[],
   from: readonly ('idle' | 'failed')[],
-  ownerId?: string,
 ): Promise<string[]> {
   if (materialIds.length === 0 || from.length === 0) return [];
   const result = await queryable.query<{ id: string }>(
@@ -589,67 +601,114 @@ export async function startOwnerMaterialExtractions(
         AND status = 'ready'
         AND deleted_at IS NULL
         AND COALESCE(extraction->>'status', 'idle') = ANY($2::text[])
-        AND ($4::text IS NULL OR owner_id = $4)
+        AND owner_id = $4
       RETURNING id`,
-    [[...materialIds], [...from], Date.now(), ownerId ?? null],
+    [[...materialIds], [...from], Date.now(), ownerId],
   );
   return result.rows.map((row) => row.id);
 }
 
+/** One claim of a material's extraction: every later write of the attempt names its lease. */
+export interface OwnerMaterialExtractionClaim {
+  material: OwnerMaterialRecord;
+  /** The attempt's own lease (`<workerId>:<attempt>`), unique per claim. */
+  lease: string;
+  /** The attempt's id: its result is stored under its own key. */
+  attempt: string;
+}
+
+export interface ClaimOwnerMaterialExtractionOptions {
+  /** A lease older than this (no heartbeat) is taken over. */
+  leaseTtlMs: number;
+  /** At most this many of one owner's extractions run at once (every process). */
+  perOwnerLimit: number;
+  /** Materials this process already extracts: never claimed again by it. */
+  exclude?: readonly string[];
+}
+
+/** Serializes claims, so the per-owner limit holds across concurrent claimers. */
+const EXTRACTION_CLAIM_LOCK_KEY = 'owner-materials:extraction-claim';
+
 /**
- * Claim the oldest material whose extraction no live worker holds: one
- * waiting for a worker, or one whose worker stopped heartbeating for
- * `leaseTtlMs` (a crash or a restart). A material whose bytes an earlier
- * upload of the owner is still extracting waits for that one (it reuses the
- * result then, see {@link findReusableOwnerMaterialExtraction}). The claim is the lease: every later
- * write of the worker names it.
+ * Claim one material whose extraction no live worker holds: one waiting for a
+ * worker, or one whose worker stopped heartbeating for `leaseTtlMs` (a crash
+ * or a restart). Owners take turns: an owner with fewer extractions running
+ * goes first, then the oldest material, and an owner at `perOwnerLimit` waits.
+ * A material whose bytes an earlier upload of the owner is still extracting
+ * waits for that one (it reuses the result then, see
+ * {@link findReusableOwnerMaterialExtraction}). The claim is the lease:
+ * every later write of the attempt names it.
  */
 export async function claimOwnerMaterialExtraction(
-  queryable: Queryable,
+  queryable: ConnectableQueryable,
   workerId: string,
-  leaseTtlMs: number,
-): Promise<OwnerMaterialRecord | null> {
-  const now = Date.now();
-  const result = await queryable.query<RawOwnerMaterialRow>(
-    `UPDATE owner_material
-        SET extraction_worker = $1, extraction_heartbeat_at = $2
-      WHERE id = (
-        SELECT m.id FROM owner_material m
-         WHERE m.extraction->>'status' = 'extracting'
-           AND m.deleted_at IS NULL
-           AND m.status = 'ready'
-           AND (m.extraction_worker IS NULL OR m.extraction_heartbeat_at < $3)
-           -- The same bytes uploaded again while an earlier upload of them
-           -- still extracts wait for it, and then reuse its result.
-           AND NOT EXISTS (
-             SELECT 1 FROM owner_material o
-              WHERE o.owner_id = m.owner_id
-                AND o.sha256 = m.sha256
-                AND o.id <> m.id
-                AND o.status = 'ready'
-                AND o.deleted_at IS NULL
-                AND o.extraction->>'status' = 'extracting'
-                AND (o.created_at, o.id) < (m.created_at, m.id)
-           )
-         ORDER BY m.created_at
-         LIMIT 1
-           FOR UPDATE SKIP LOCKED
-      )
-      RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-    [workerId, now, now - leaseTtlMs],
-  );
-  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+  options: ClaimOwnerMaterialExtractionOptions,
+): Promise<OwnerMaterialExtractionClaim | null> {
+  const attempt = randomUUID();
+  const lease = `${workerId}:${attempt}`;
+  const withTransaction = nodePostgresTransaction(queryable);
+  const row = await withTransaction(async (tx) => {
+    await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      EXTRACTION_CLAIM_LOCK_KEY,
+    ]);
+    const now = Date.now();
+    const staleBefore = now - options.leaseTtlMs;
+    const result = await tx.query<RawOwnerMaterialRow>(
+      `WITH running AS (
+         SELECT owner_id, COUNT(*) AS n
+           FROM owner_material
+          WHERE extraction->>'status' = 'extracting'
+            AND deleted_at IS NULL
+            AND extraction_worker IS NOT NULL
+            AND extraction_heartbeat_at >= $3
+          GROUP BY owner_id
+       ), next AS (
+         SELECT m.id
+           FROM owner_material m
+           LEFT JOIN running r ON r.owner_id = m.owner_id
+          WHERE m.extraction->>'status' = 'extracting'
+            AND m.deleted_at IS NULL
+            AND m.status = 'ready'
+            AND (m.extraction_worker IS NULL OR m.extraction_heartbeat_at < $3)
+            AND COALESCE(r.n, 0) < $4
+            AND NOT (m.id = ANY($5::text[]))
+            -- The same bytes uploaded again while an earlier upload of them
+            -- still extracts wait for it, and then reuse its result.
+            AND NOT EXISTS (
+              SELECT 1 FROM owner_material o
+               WHERE o.owner_id = m.owner_id
+                 AND o.sha256 = m.sha256
+                 AND o.id <> m.id
+                 AND o.status = 'ready'
+                 AND o.deleted_at IS NULL
+                 AND o.extraction->>'status' = 'extracting'
+                 AND (o.created_at, o.id) < (m.created_at, m.id)
+            )
+          ORDER BY COALESCE(r.n, 0), m.created_at, m.id
+          LIMIT 1
+       )
+       UPDATE owner_material
+          SET extraction_worker = $1,
+              extraction_heartbeat_at = $2,
+              extraction = extraction || jsonb_build_object('claimedAt', $2::double precision)
+        WHERE id = (SELECT id FROM next)
+       RETURNING ${OWNER_MATERIAL_COLUMNS}`,
+      [lease, now, staleBefore, options.perOwnerLimit, [...(options.exclude ?? [])]],
+    );
+    return result.rows[0];
+  });
+  return row ? { material: rowToRecord(row), lease, attempt } : null;
 }
 
 /**
- * Keep a held extraction's lease. False once the worker no longer holds it:
- * the material was deleted, its extraction restarted, or another worker took
- * it over; the worker then drops its work.
+ * Keep a held extraction's lease. False once the attempt no longer holds it:
+ * the material was deleted, its extraction restarted, or another attempt took
+ * it over; the attempt then drops its work.
  */
 export async function heartbeatOwnerMaterialExtraction(
   queryable: Queryable,
   materialId: string,
-  workerId: string,
+  lease: string,
 ): Promise<boolean> {
   const result = await queryable.query(
     `UPDATE owner_material
@@ -659,7 +718,7 @@ export async function heartbeatOwnerMaterialExtraction(
         AND extraction->>'status' = 'extracting'
         AND deleted_at IS NULL
       RETURNING id`,
-    [materialId, workerId, Date.now()],
+    [materialId, lease, Date.now()],
   );
   return result.rows.length > 0;
 }
@@ -668,25 +727,27 @@ export async function heartbeatOwnerMaterialExtraction(
 export async function releaseOwnerMaterialExtraction(
   queryable: Queryable,
   materialId: string,
-  workerId: string,
+  lease: string,
 ): Promise<void> {
   await queryable.query(
     `UPDATE owner_material
-        SET extraction_worker = NULL, extraction_heartbeat_at = NULL
+        SET extraction_worker = NULL, extraction_heartbeat_at = NULL,
+            extraction = extraction - 'claimedAt'
       WHERE id = $1 AND extraction_worker = $2`,
-    [materialId, workerId],
+    [materialId, lease],
   );
 }
 
 /**
- * Settle a held extraction (`ready` or `failed`) and release its lease. False
- * when the worker no longer holds it (see {@link heartbeatOwnerMaterialExtraction}):
- * nothing is written.
+ * Settle a held extraction (`ready` with the key of the result this attempt
+ * stored, or `failed`) and release its lease, in one fenced write. False when
+ * the attempt no longer holds it (see {@link heartbeatOwnerMaterialExtraction}):
+ * nothing is written, and the attempt's own result is its to delete.
  */
 export async function settleOwnerMaterialExtraction(
   queryable: Queryable,
   materialId: string,
-  workerId: string,
+  lease: string,
   extraction: OwnerMaterialExtraction,
 ): Promise<boolean> {
   const result = await queryable.query(
@@ -699,7 +760,7 @@ export async function settleOwnerMaterialExtraction(
       RETURNING id`,
     [
       materialId,
-      workerId,
+      lease,
       encodeJson({ ...extraction, updatedAt: Date.now() }, 'owner material extraction'),
     ],
   );
@@ -708,13 +769,14 @@ export async function settleOwnerMaterialExtraction(
 
 /**
  * A ready extraction of the same bytes (`sha256`) among the owner's other
- * live materials, made under the same extraction services: its result is
- * reused instead of extracting the bytes again.
+ * live materials, made with the same extraction identity (the type and the
+ * services that pick and run the extractor): its result is reused instead of
+ * extracting the bytes again.
  */
 export async function findReusableOwnerMaterialExtraction(
   queryable: Queryable,
   material: Pick<OwnerMaterialRecord, 'id' | 'ownerId' | 'sha256'>,
-  servicesKey: string,
+  identityKey: string,
 ): Promise<OwnerMaterialRecord | null> {
   if (!material.sha256) return null;
   const result = await queryable.query<RawOwnerMaterialRow>(
@@ -726,10 +788,81 @@ export async function findReusableOwnerMaterialExtraction(
         AND status = 'ready'
         AND deleted_at IS NULL
         AND extraction->>'status' = 'ready'
-        AND extraction->>'servicesKey' = $4
+        AND extraction->>'identityKey' = $4
       ORDER BY created_at DESC
       LIMIT 1`,
-    [material.ownerId, material.sha256, material.id, servicesKey],
+    [material.ownerId, material.sha256, material.id, identityKey],
   );
   return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/** Materials nobody used: old enough, and no run or agent session names them. */
+export interface UnusedOwnerMaterialSweep {
+  /** Ready uploads created before this (epoch ms) that nothing references are deleted. */
+  createdBefore: number;
+  /** Deletes one material's objects; throws to keep its row for the next pass. */
+  deleteObjects: (ossKey: string) => Promise<void>;
+  /** At most this many rows per pass. */
+  limit?: number;
+}
+
+/**
+ * Delete the uploads nobody used and finish deletes left behind, for every
+ * owner: a ready material older than `createdBefore` that no generation run
+ * (in any state) and no agent session names is marked deleted (it stops
+ * counting against its owner's quota); then every material marked deleted
+ * (released by a run, swept, or a delete whose byte removal failed) has its
+ * objects removed and its row deleted, pointer last. Answers how many rows it
+ * marked and how many it removed.
+ */
+export async function sweepUnusedOwnerMaterials(
+  queryable: Queryable,
+  sweep: UnusedOwnerMaterialSweep,
+): Promise<{ marked: number; removed: number }> {
+  const limit = sweep.limit ?? 200;
+  const present = await queryable.query<{ runs: string | null; sessions: string | null }>(
+    `SELECT to_regclass('generation_runs')::text AS runs,
+            to_regclass('agent_session_materials')::text AS sessions`,
+  );
+  const runs = Boolean(present.rows[0]?.runs);
+  const sessions = Boolean(present.rows[0]?.sessions);
+  const marked = await queryable.query<{ id: string }>(
+    `UPDATE owner_material m
+        SET deleted_at = $2
+      WHERE m.id IN (
+        SELECT c.id FROM owner_material c
+         WHERE c.status = 'ready'
+           AND c.deleted_at IS NULL
+           AND c.created_at < $1
+           ${runs ? `AND NOT EXISTS (SELECT 1 FROM generation_runs r WHERE r.input->'materialIds' ? c.id)` : ''}
+           ${sessions ? `AND NOT EXISTS (SELECT 1 FROM agent_session_materials s WHERE s.owner_material_id = c.id)` : ''}
+         ORDER BY c.created_at
+         LIMIT $3
+      )
+      RETURNING m.id`,
+    [sweep.createdBefore, Date.now(), limit],
+  );
+  const doomed = await queryable.query<{ id: string; oss_key: string }>(
+    `SELECT id, oss_key FROM owner_material
+      WHERE deleted_at IS NOT NULL
+      ORDER BY deleted_at
+      LIMIT $1`,
+    [limit],
+  );
+  let removed = 0;
+  for (const row of doomed.rows) {
+    if (row.oss_key !== '') {
+      try {
+        await sweep.deleteObjects(row.oss_key);
+      } catch {
+        // Not confirmed gone: the row keeps the pointer for the next pass.
+        continue;
+      }
+    }
+    await queryable.query(`DELETE FROM owner_material WHERE id = $1 AND deleted_at IS NOT NULL`, [
+      row.id,
+    ]);
+    removed += 1;
+  }
+  return { marked: marked.rows.length, removed };
 }

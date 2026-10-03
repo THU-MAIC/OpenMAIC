@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     put: vi.fn(),
     get: vi.fn(),
     delete: vi.fn(),
+    deletePrefix: vi.fn(),
   },
   queryPool: {
     query: vi.fn(),
@@ -132,6 +133,7 @@ beforeEach(() => {
   mocks.byteStore.put.mockResolvedValue(undefined);
   mocks.byteStore.get.mockResolvedValue(null);
   mocks.byteStore.delete.mockResolvedValue(undefined);
+  mocks.byteStore.deletePrefix.mockResolvedValue(undefined);
 });
 
 describe('GET /api/materials', () => {
@@ -170,6 +172,12 @@ describe('GET /api/materials', () => {
     });
   });
 
+  it('rejects an empty sessionId instead of listing the library', async () => {
+    const response = await GET(new NextRequest('http://localhost/api/materials?sessionId='));
+    expect(response.status).toBe(400);
+    expect(mocks.resolveOwnedSession).not.toHaveBeenCalled();
+  });
+
   it("lists the owner's own uploads with their extraction when no session is named", async () => {
     mocks.runtimeConfigured = false;
     mocks.queryPool.query.mockResolvedValueOnce({
@@ -189,7 +197,9 @@ describe('GET /api/materials', () => {
             status: 'ready',
             textChars: 10,
             truncated: { textChars: 5 },
-            servicesKey: '[]',
+            identityKey: '[]',
+            resultKey: 'materials/owner-1/x.extraction/a.json',
+            claimedAt: 1,
           },
           created_at: 1_700_000_000_000,
           deleted_at: null,
@@ -537,7 +547,7 @@ describe('DELETE /api/materials/[id]', () => {
     );
     // The bytes, and the extraction result stored next to them.
     expect(mocks.byteStore.delete).toHaveBeenCalledWith('materials/owner-1/key');
-    expect(mocks.byteStore.delete).toHaveBeenCalledWith('materials/owner-1/key.extraction.json');
+    expect(mocks.byteStore.deletePrefix).toHaveBeenCalledWith('materials/owner-1/key.extraction/');
   });
 
   it('answers a plain 404 for a material the owner does not have', async () => {

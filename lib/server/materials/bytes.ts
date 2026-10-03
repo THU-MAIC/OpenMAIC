@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -10,6 +11,8 @@ export interface MaterialByteStore {
   put(key: string, body: MaterialByteInput, mime?: string): Promise<void>;
   get(key: string): Promise<Buffer>;
   delete(key: string): Promise<void>;
+  /** Delete every object whose key starts with `prefix` (a `/`-terminated folder). */
+  deletePrefix(prefix: string): Promise<void>;
 }
 
 function nodeReadable(body: MaterialByteInput): Readable {
@@ -34,13 +37,16 @@ export class LocalMaterialByteStore implements MaterialByteStore {
     this.root = resolve(root);
   }
 
+  /** Written to a temporary file and renamed into place: a reader never sees a torn object. */
   async put(key: string, body: MaterialByteInput, _mime?: string): Promise<void> {
     const path = safeLocalPath(this.root, key);
     await mkdir(dirname(path), { recursive: true });
+    const temporary = `${path}.${randomUUID()}.tmp`;
     try {
-      await pipeline(nodeReadable(body), createWriteStream(path));
+      await pipeline(nodeReadable(body), createWriteStream(temporary));
+      await rename(temporary, path);
     } catch (error) {
-      await rm(path, { force: true }).catch(() => undefined);
+      await rm(temporary, { force: true }).catch(() => undefined);
       throw error;
     }
   }
@@ -51,6 +57,11 @@ export class LocalMaterialByteStore implements MaterialByteStore {
 
   async delete(key: string): Promise<void> {
     await rm(safeLocalPath(this.root, key), { force: true });
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    if (!prefix.endsWith('/')) throw new Error(`invalid material object prefix: ${prefix}`);
+    await rm(safeLocalPath(this.root, prefix.slice(0, -1)), { force: true, recursive: true });
   }
 }
 
@@ -66,22 +77,29 @@ export function setMaterialByteStoreForTests(store: MaterialByteStore | null): v
 }
 
 /**
- * The object a material's extraction result is stored in, next to its bytes
- * (`lib/server/materials/extraction.ts`): it lives and goes with them.
+ * Where a material's extraction results are stored, next to its bytes: one
+ * immutable object per attempt (`materialExtractionResultKey`), so an attempt
+ * that lost its lease can never overwrite or delete the result another
+ * attempt published. They go with the material.
  */
-export function materialExtractionResultKey(ossKey: string): string {
-  return `${ossKey}.extraction.json`;
+export function materialExtractionResultPrefix(ossKey: string): string {
+  return `${ossKey}.extraction/`;
+}
+
+/** The result object of one extraction attempt. */
+export function materialExtractionResultKey(ossKey: string, attempt: string): string {
+  return `${materialExtractionResultPrefix(ossKey)}${attempt}.json`;
 }
 
 /**
- * Delete a material's objects: its bytes and its extraction result. Resolves
- * once both are gone or confirmed absent; throws to keep the material's row
- * (the pointer to them) for the next reclaim pass.
+ * Delete a material's objects: its extraction results and its bytes. Resolves
+ * once they are gone or confirmed absent; throws to keep the material's row
+ * (the pointer to them) for the next pass.
  */
 export async function deleteMaterialObjects(
   store: MaterialByteStore,
   ossKey: string,
 ): Promise<void> {
-  await store.delete(materialExtractionResultKey(ossKey));
+  await store.deletePrefix(materialExtractionResultPrefix(ossKey));
   await store.delete(ossKey);
 }

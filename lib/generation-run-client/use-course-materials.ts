@@ -256,20 +256,10 @@ export function useCourseMaterials(): CourseMaterials {
 
   const add = useCallback(
     async (incoming: File[]): Promise<CourseMaterialMessage | null> => {
-      const current = latest.current;
-      const fresh = dedupeCourseMaterialFiles(current, incoming);
+      const fresh = dedupeCourseMaterialFiles(latest.current, incoming);
       if (fresh.length === 0) return null;
-      policy.current ??= fetchMaterialPolicy().catch((error) => {
-        policy.current = null;
-        throw error;
-      });
-      let refusal: CourseMaterialMessage | null;
-      try {
-        refusal = policyRefusal(await policy.current, latest.current, fresh);
-      } catch (error) {
-        return uploadFailure(error);
-      }
-      if (refusal) return refusal;
+      // The chips appear at once (Generate waits for them) while the policy
+      // is read; a refusal takes them away again.
       const additions: CourseMaterialEntry[] = fresh.map((file) => ({
         id: nanoid(8),
         file,
@@ -282,6 +272,8 @@ export function useCourseMaterials(): CourseMaterials {
         progress: 0,
         mediaKind: kindOfFile(file),
       }));
+      const before = latest.current;
+      const added = new Set<string>();
       setMaterials((prev) => {
         // Two attaches in one batch dedupe against the same stale list: drop
         // what the latest state already carries.
@@ -291,14 +283,36 @@ export function useCourseMaterials(): CourseMaterials {
               (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
             ),
         );
-        for (const addition of missing) {
-          files.current.set(addition.id, addition.file);
-          queue.current.push(addition.id);
-        }
+        for (const addition of missing) added.add(addition.id);
         return [...prev, ...missing].map((entry, index) => ({ ...entry, order: index + 1 }));
       });
-      // The queued uploads start once the state above is committed.
-      setTimeout(pump, 0);
+      const withdraw = () =>
+        setMaterials((prev) =>
+          prev
+            .filter((entry) => !added.has(entry.id))
+            .map((entry, index) => ({ ...entry, order: index + 1 })),
+        );
+      policy.current ??= fetchMaterialPolicy().catch((error) => {
+        policy.current = null;
+        throw error;
+      });
+      let refusal: CourseMaterialMessage | null;
+      try {
+        refusal = policyRefusal(await policy.current, before, fresh);
+      } catch (error) {
+        withdraw();
+        return uploadFailure(error);
+      }
+      if (refusal) {
+        withdraw();
+        return refusal;
+      }
+      for (const addition of additions) {
+        if (!added.has(addition.id)) continue;
+        files.current.set(addition.id, addition.file);
+        queue.current.push(addition.id);
+      }
+      pump();
       return null;
     },
     [pump],
@@ -328,13 +342,15 @@ export function useCourseMaterials(): CourseMaterials {
       update(id, (item) => ({ ...item, status: 'extracting', failure: undefined }));
       void retryMaterialExtraction(entry.materialId)
         .then((view) => update(id, (item) => fromServer(item, view)))
-        .catch((error: unknown) =>
+        .catch((error: unknown) => {
+          // Already restarted (another tab, a run's Retry): the poll follows it.
+          if (error instanceof RunApiError && error.status === 409) return;
           update(id, (item) => ({
             ...item,
             status: 'failed',
             failure: { stage: 'extraction', ...uploadFailure(error) },
-          })),
-        );
+          }));
+        });
     },
     [pump, update],
   );
@@ -376,7 +392,9 @@ export function useCourseMaterials(): CourseMaterials {
     };
   }, [extractingIds, update]);
 
-  // What was not handed to a run is deleted when the composer goes away.
+  // What was not handed to a run is deleted when the composer goes away. A
+  // page kept in the back/forward cache keeps its materials (it may come back
+  // as it was); the server sweeps them if it never does.
   useEffect(() => {
     const releaseAll = () => {
       for (const abort of uploads.current.values()) abort.abort();
@@ -386,12 +404,40 @@ export function useCourseMaterials(): CourseMaterials {
         void deleteMaterial(entry.materialId, { keepalive: true }).catch(() => undefined);
       }
     };
-    window.addEventListener('pagehide', releaseAll);
+    const onPageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) releaseAll();
+    };
+    // Back from the cache: the materials may have changed (or gone) meanwhile.
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      for (const entry of latest.current) {
+        const materialId = entry.materialId;
+        if (!materialId || handedOff.current.has(materialId)) continue;
+        void fetchOwnerMaterial(materialId)
+          .then((view) =>
+            update(entry.id, (item) =>
+              item.materialId !== materialId
+                ? item
+                : view
+                  ? fromServer(item, view)
+                  : {
+                      ...item,
+                      status: 'failed',
+                      failure: { stage: 'upload', key: 'toolbar.materialUnavailable' },
+                    },
+            ),
+          )
+          .catch(() => undefined);
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('pageshow', onPageShow);
     return () => {
-      window.removeEventListener('pagehide', releaseAll);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
       releaseAll();
     };
-  }, []);
+  }, [update]);
 
   const handOff = useCallback(() => {
     const ids = [...latest.current]
