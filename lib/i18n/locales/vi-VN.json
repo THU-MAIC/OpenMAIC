@@ -2093,7 +2093,8 @@
         "unsupported": "Không thể chuyển loại nhà cung cấp tùy chỉnh này: hãy thêm lại dưới dạng endpoint tương thích OpenAI.",
         "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

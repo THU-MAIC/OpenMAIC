@@ -2093,7 +2093,8 @@
         "unsupported": "この種類のカスタムプロバイダーは移行できません。OpenAI 互換エンドポイントとして追加し直してください。",
         "unconfirmed": "サーバーがインポートを確認しませんでした。"
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

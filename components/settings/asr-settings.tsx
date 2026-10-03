@@ -23,6 +23,7 @@ import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { modelChange, modelRef } from '@/lib/model-settings/edit';
 import {
   ApiKeyField,
+  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   RegionalEndpointField,
   ServerConfiguredNotice,
@@ -184,39 +185,42 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
 
       {/* API Key & Base URL — the server's services are the operator's. */}
       {editable && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-sm">{t('settings.asrApiKey')}</Label>
-            <ApiKeyField
-              name={`asr-api-key-${entry.id}`}
-              provider={entry.provider}
-              inputClassName="font-mono text-sm"
-              onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
-              onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
-            {regionalEndpoint ? (
-              // Azure Speech takes its official endpoint for the key's region.
-              <RegionalEndpointField
-                name={`asr-endpoint-${entry.id}`}
+        <>
+          <ApiKeySecurityNotice />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm">{t('settings.asrApiKey')}</Label>
+              <ApiKeyField
+                name={`asr-api-key-${entry.id}`}
                 provider={entry.provider}
-                template={regionalEndpoint}
-                onSave={(baseUrl) => saveServiceProvider(view, apply, entry, { baseUrl }, t)}
+                inputClassName="font-mono text-sm"
+                onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
+                onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
               />
-            ) : (
-              <>
-                {asrProvider?.defaultBaseUrl && (
-                  <p className="text-xs text-muted-foreground break-all">
-                    {t('settings.requestUrl')}: {asrProvider.defaultBaseUrl}
-                  </p>
-                )}
-                <EndpointServerOnlyHint />
-              </>
-            )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
+              {regionalEndpoint ? (
+                // Azure Speech takes its official endpoint for the key's region.
+                <RegionalEndpointField
+                  name={`asr-endpoint-${entry.id}`}
+                  provider={entry.provider}
+                  template={regionalEndpoint}
+                  onSave={(baseUrl) => saveServiceProvider(view, apply, entry, { baseUrl }, t)}
+                />
+              ) : (
+                <>
+                  {asrProvider?.defaultBaseUrl && (
+                    <p className="text-xs text-muted-foreground break-all">
+                      {t('settings.requestUrl')}: {asrProvider.defaultBaseUrl}
+                    </p>
+                  )}
+                  <EndpointServerOnlyHint />
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Test ASR */}

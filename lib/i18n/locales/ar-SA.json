@@ -2093,7 +2093,8 @@
         "unsupported": "لا يمكن نقل هذا النوع من المزوّدين المخصصين: أضفه مجددًا كنقطة نهاية متوافقة مع OpenAI.",
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

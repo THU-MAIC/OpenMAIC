@@ -18,6 +18,7 @@ import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { modelChange, modelRef } from '@/lib/model-settings/edit';
 import {
   ApiKeyField,
+  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -66,6 +67,7 @@ export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
       {editable && provider && (
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
+            <ApiKeySecurityNotice />
             <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
             <ApiKeyField
               name={`web-search-api-key-${entry.id}`}

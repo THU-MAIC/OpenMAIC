@@ -2093,7 +2093,8 @@
         "unsupported": "Este tipo de proveedor personalizado no se puede mover: agrégalo de nuevo como endpoint compatible con OpenAI.",
         "unconfirmed": "El servidor no confirmó que se importara."
       }
-    }
+    },
+    "apiKeySecurityNotice": "Credentials you enter here will be sent to the server hosting this instance. Only enter them if you trust the deployment operator."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

@@ -12,6 +12,7 @@ import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ApiKeyField,
+  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -85,6 +86,7 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
 
       {editable && (
         <>
+          <ApiKeySecurityNotice />
           <div className="space-y-2">
             <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
             <ApiKeyField

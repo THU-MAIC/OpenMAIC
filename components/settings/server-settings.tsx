@@ -133,6 +133,15 @@ export function EndpointServerOnlyHint() {
   return <p className="text-xs text-muted-foreground">{t(`${SC}.endpointServerOnly`)}</p>;
 }
 
+export function ApiKeySecurityNotice() {
+  const { t } = useI18n();
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+      {t('settings.apiKeySecurityNotice')}
+    </div>
+  );
+}
+
 /**
  * A write-only API key: the stored key is never shown, only its mask. Typing
  * a key and leaving the field (or pressing Enter) saves it; "Remove key"
