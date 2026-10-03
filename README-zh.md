@@ -378,9 +378,11 @@ store；缓存只用于提升性能，不是正确完成构建的必要条件。
 
 ### Vercel 部署（1.1.x 及以前）
 
-Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。下面的按钮部署的是 `release/1.1.x` 分支：
+Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。在 Vercel 上部署 1.1.x：
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Ftree%2Frelease%2F1.1.x&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Frelease%2F1.1.x%2F.env.example&project-name=openmaic&framework=nextjs)
+1. 在 GitHub 上 fork 本仓库，取消勾选 **Copy the `main` branch only**。
+2. 在 fork 中把默认分支设为 `release/1.1.x`（**Settings → General → Default branch**）。
+3. 在 Vercel 中 **Add New → Project** 导入这个 fork。Vercel 构建它的默认分支；按该分支的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/release/1.1.x/.env.example) 至少配置一个 LLM 服务的 key。
 
 这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址（浏览器按站点保存数据）；访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
 

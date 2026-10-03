@@ -472,9 +472,11 @@ generation runs on the server in a process that outlives requests, so OpenMAIC
 needs a long-running Node.js process with PostgreSQL (the
 [Docker deployment](#docker-deployment) or `pnpm start`); Vercel and other
 serverless hosts are not supported, and the repository no longer ships a
-`vercel.json`. The button below deploys the `release/1.1.x` branch:
+`vercel.json`. To deploy 1.1.x on Vercel:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Ftree%2Frelease%2F1.1.x&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Frelease%2F1.1.x%2F.env.example&project-name=openmaic&framework=nextjs)
+1. Fork this repository on GitHub, unchecking **Copy the `main` branch only**.
+2. In the fork, set the default branch to `release/1.1.x` (**Settings → General → Default branch**).
+3. In Vercel, **Add New → Project** and import the fork. Vercel builds its default branch; configure at least one LLM provider key as described in that branch's [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/release/1.1.x/.env.example).
 
 Such a deployment can move to a long-running host later without losing data:
 point the new host's `DATABASE_URL` at the database it used, if it used one,
