@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} étapes configurées séparément",
     "stagesSetSeparatelyHint": "Étapes avec leur propre modèle",
     "perStageSetup": "Configuration par étape",
-    "perStageSetupHint": "Chaque étape du cours a son propre modèle"
+    "perStageSetupHint": "Chaque étape du cours a son propre modèle",
+    "materialUploading": "Envoi {{percent}} %",
+    "materialParsing": "Analyse…",
+    "materialTranscribing": "Transcription…",
+    "materialReady": "Prêt",
+    "materialFailed": "Échec",
+    "materialRetry": "Réessayer",
+    "materialMediaLabel": "Audio/vidéo",
+    "materialUnavailable": "Ce support n'est plus disponible. Retirez-le et joignez à nouveau le fichier."
   },
   "export": {
     "pptx": "Exporter en PPTX",

@@ -30,13 +30,18 @@
  *   upload's 24-hour sweep.
  * - Every response echoes the `x-request-id` header so the uploader can pair
  *   a failure with its log line.
+ * - Extraction starts with the upload: the row is finalized `extracting` and
+ *   the background extractor (`lib/server/materials/extraction.ts`) extracts
+ *   it; `GET /api/materials/{id}` reports its state. `?extract=false` defers
+ *   it (`idle`): a run that uses the material starts it then.
  *
  * Gates: the upload writes only the owner-scoped material library, so it is
  * served whenever server persistence is configured (a DATABASE_URL), with the
  * agent runtime on or off — `POST /api/generate-classroom` consumes these
- * uploads by id. The list stays behind the agent runtime gate: it names an
- * agent session (`sessionId`) and reads that session's materials, which only
- * exist with the runtime on. Either gate closed answers the same plain 404.
+ * uploads by id; so is the owner's own list (no `sessionId`). A session's
+ * list stays behind the agent runtime gate: it names an agent session
+ * (`sessionId`) and reads that session's materials, which only exist with
+ * the runtime on. Either gate closed answers the same plain 404.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
@@ -63,6 +68,7 @@ import {
 import {
   abandonOwnerMaterial,
   finalizeOwnerMaterial,
+  listOwnerMaterials,
   MaterialQuotaExceededError,
   publicMaterial,
   reclaimStaleOwnerMaterialUploads,
@@ -70,7 +76,8 @@ import {
 } from '@/lib/persistence/owner-materials';
 import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { deleteMaterialObjects, getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { wakeOwnerMaterialExtractor } from '@/lib/server/materials/extractor-wake';
 import {
   MATERIAL_DOCUMENT_UPLOAD_LIMIT,
   MATERIAL_MEDIA_UPLOAD_LIMIT,
@@ -139,14 +146,23 @@ function parseLimit(raw: string | null): { limit?: number } | { invalid: true } 
   return { limit: parsed };
 }
 
+// GET /api/materials — the caller's own library uploads, newest first, each
+// with its extraction (served with server persistence).
 // GET /api/materials?sessionId=&limit=&before= — list one owned session's
 // materials, newest first, keyset-paged (the agent-tools list surface).
 export async function GET(req: NextRequest) {
+  if (!new URL(req.url).searchParams.get('sessionId')?.trim()) {
+    if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
+    return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
+      const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+      const records = await listOwnerMaterials(provider.pool, ownerId);
+      return ownerJson({ materials: records.map(publicMaterial) }, 200, responseHeaders);
+    });
+  }
   if (!isAgentRuntimeConfigured()) return new Response('Not found', { status: 404 });
 
   const url = new URL(req.url);
-  const sessionId = url.searchParams.get('sessionId')?.trim();
-  if (!sessionId) return apiError('MISSING_REQUIRED_FIELD', 400, 'sessionId is required');
+  const sessionId = url.searchParams.get('sessionId')!.trim();
 
   const parsedLimit = parseLimit(url.searchParams.get('limit'));
   if ('invalid' in parsedLimit) {
@@ -209,6 +225,9 @@ export async function POST(req: NextRequest) {
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
     try {
       phase = 'validate_request';
+      // Extraction starts with the upload unless the uploader defers it (the
+      // agent workspace, which extracts what a session binds itself).
+      const extract = new URL(req.url).searchParams.get('extract') !== 'false';
       const rawMime = (req.headers.get('content-type') ?? '').split(';', 1)[0];
       declaredMime = rawMime;
       const originalName = materialFilename(req);
@@ -275,7 +294,7 @@ export async function POST(req: NextRequest) {
         ownerId,
         async (objectKey) => {
           try {
-            await byteStore.delete(objectKey);
+            await deleteMaterialObjects(byteStore, objectKey);
           } catch (error) {
             console.warn(
               'material stale byte deletion failed; keeping its reservation for the next pass',
@@ -383,7 +402,9 @@ export async function POST(req: NextRequest) {
           createdMaterialId,
           bytes.byteLength,
           hash,
+          { extract },
         );
+        if (extract) wakeOwnerMaterialExtractor();
         const view = publicMaterial(row);
         const res = NextResponse.json(
           {
@@ -391,6 +412,7 @@ export async function POST(req: NextRequest) {
             originalName: view.originalName,
             bytes: view.bytes,
             mime: view.mime,
+            mediaKind: view.mediaKind,
             extraction: view.extraction,
           },
           { status: 201 },

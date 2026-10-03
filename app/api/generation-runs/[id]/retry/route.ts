@@ -32,6 +32,7 @@ import {
   RunCommandConflictError,
 } from '@/lib/server/generation/run/store';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { wakeOwnerMaterialExtractor } from '@/lib/server/materials/extractor-wake';
 
 export const runtime = 'nodejs';
 
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       });
       if (!result) return ownerNotFound(responseHeaders);
       wakeGenerationRunner();
+      // A Retry at the materials restarts their failed extractions.
+      wakeOwnerMaterialExtractor();
       return withOwnerResponseHeaders(apiSuccess({ ...result }), responseHeaders);
     } catch (error) {
       if (error instanceof RunCommandConflictError) {

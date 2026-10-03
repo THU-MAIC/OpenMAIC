@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} Schritte separat eingestellt",
     "stagesSetSeparatelyHint": "Schritte mit eigenem Modell",
     "perStageSetup": "Pro Schritt eingestellt",
-    "perStageSetupHint": "Jeder Kursschritt hat ein eigenes Modell"
+    "perStageSetupHint": "Jeder Kursschritt hat ein eigenes Modell",
+    "materialUploading": "Wird hochgeladen {{percent}} %",
+    "materialParsing": "Wird analysiert…",
+    "materialTranscribing": "Wird transkribiert…",
+    "materialReady": "Bereit",
+    "materialFailed": "Fehlgeschlagen",
+    "materialRetry": "Erneut versuchen",
+    "materialMediaLabel": "Audio/Video",
+    "materialUnavailable": "Dieses Material ist nicht mehr verfügbar. Entferne es und hänge die Datei erneut an."
   },
   "export": {
     "pptx": "PPTX exportieren",

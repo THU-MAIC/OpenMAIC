@@ -144,7 +144,21 @@ curl -sS -c cookies.txt -b cookies.txt \
   {url}/api/materials
 ```
 
-A successful upload answers `201` with `{ "materialId": "...", "originalName": "...", "bytes": ..., "mime": "...", "extraction": { "status": "idle" } }`. Other answers: `413` (the file exceeds the limit; the body's `maxBytes` gives it), `415` (unsupported type), `429` (the owner's material library is full — it holds a bounded number of files and bytes per owner, 100 files and 2 GiB by default; delete materials you no longer need, see below). Extraction happens later, inside the generation job, so `status: "idle"` is expected.
+A successful upload answers `201` with `{ "materialId": "...", "originalName": "...", "bytes": ..., "mime": "...", "mediaKind": "document", "extraction": { "status": "extracting" } }` (`mediaKind` is `media` for audio and video). Other answers: `413` (the file exceeds the limit; the body's `maxBytes` gives it), `415` (unsupported type), `429` (the owner's material library is full — it holds a bounded number of files and bytes per owner, 100 files and 2 GiB by default; delete materials you no longer need, see below).
+
+The server starts extracting the file (parsing a document, transcribing audio or video) right after the upload, in the background. Its state is on the material:
+
+```text
+GET {url}/api/materials/{materialId}
+```
+
+answers `{ "material": { "materialId": "...", ..., "extraction": { "status": "..." } } }`, where `status` is:
+
+- `extracting` — still running;
+- `ready` — done; `textChars`, `pageCount` and `imageCount` say what it found, and `truncated` (when present) what a classroom leaves out of this file: `textChars` (only that many characters of its text are used) and `images` (`total` found, the first `max` looked at);
+- `failed` — `error` says why (for example the extraction service failed, or the file contains no text). `POST {url}/api/materials/{materialId}/extraction` extracts it again; or delete it and upload a fixed file.
+
+Waiting for `ready` before submitting is optional: a job whose material is still extracting waits for that extraction (it is not extracted twice), and a job whose material failed to extract fails with the extraction's error. Polling the material every few seconds before submitting lets you report a bad file before a job is created. Uploading the same file again reuses its finished extraction. `GET {url}/api/materials` lists the owner's uploads with their extraction.
 
 4. Submit the job with the returned ids, in the order the documents should be read:
 
@@ -161,7 +175,7 @@ The submission is checked before a job is created, and answers `400 INVALID_REQU
 - a material's type has no extractor available on this server;
 - the materials together exceed `maxTotalBytes`.
 
-If a document still cannot be extracted when the job runs (for example the extraction service fails, or the file contains no text), the job fails rather than generating without it; surface the error to the user.
+If a material cannot be extracted (its extraction failed, see above), the job fails rather than generating without it; surface the error to the user. Retrying such a job extracts the failed material again.
 
 5. After the job reaches `succeeded`, or `failed` with no Retry planned, delete the uploads you no longer need:
 

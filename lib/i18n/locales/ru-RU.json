@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "Отдельно настроено этапов: {{count}}",
     "stagesSetSeparatelyHint": "Этапы со своей моделью",
     "perStageSetup": "Настройка по этапам",
-    "perStageSetupHint": "У каждого этапа курса своя модель"
+    "perStageSetupHint": "У каждого этапа курса своя модель",
+    "materialUploading": "Загрузка {{percent}}%",
+    "materialParsing": "Разбор…",
+    "materialTranscribing": "Расшифровка…",
+    "materialReady": "Готово",
+    "materialFailed": "Ошибка",
+    "materialRetry": "Повторить",
+    "materialMediaLabel": "Аудио/видео",
+    "materialUnavailable": "Этот материал больше недоступен. Удалите его и прикрепите файл снова."
   },
   "export": {
     "pptx": "Экспорт PPTX",

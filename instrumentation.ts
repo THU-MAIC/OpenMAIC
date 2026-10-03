@@ -85,6 +85,9 @@ export async function register(): Promise<void> {
   let generationRunner:
     | import('@/lib/server/generation/run/runner').GenerationRunnerHandle
     | undefined;
+  let materialExtractor:
+    | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
+    | undefined;
   try {
     // Course generation runs on the server in every deployment (classic
     // generation is the default product), so its worker does not depend on
@@ -94,6 +97,17 @@ export async function register(): Promise<void> {
     generationRunner = startGenerationRunner();
   } catch (error) {
     console.error('[instrumentation] Generation runner startup failed', error);
+  }
+  try {
+    // Uploaded materials are extracted in the background from their upload
+    // on (lib/server/materials/extraction.ts), wherever uploads are served.
+    const { isServerPersistenceConfigured } = await import('@/lib/config/feature-flags');
+    if (isServerPersistenceConfigured()) {
+      const { startOwnerMaterialExtractor } = await import('@/lib/server/materials/extraction');
+      materialExtractor = startOwnerMaterialExtractor();
+    }
+  } catch (error) {
+    console.error('[instrumentation] Material extractor startup failed', error);
   }
   try {
     const { isAgentRuntimeConfigured } = await import('@/lib/config/feature-flags');
@@ -125,6 +139,11 @@ export async function register(): Promise<void> {
         await extractionRunner?.stop();
       } catch (error) {
         console.error('[instrumentation] Material extraction runner drain failed', error);
+      }
+      try {
+        await materialExtractor?.stop();
+      } catch (error) {
+        console.error('[instrumentation] Material extractor drain failed', error);
       }
       try {
         await runner?.stop();

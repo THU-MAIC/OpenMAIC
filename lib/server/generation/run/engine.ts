@@ -538,9 +538,14 @@ export async function executeGenerationRun(
 
     switch (step.kind) {
       case 'material-analysis': {
-        // The preview names the kind of material it waits on.
-        const kinds = await services.materialKinds(owner, input.materialIds);
-        await commit({ events: [{ type: 'material_kinds', data: { kinds } }] });
+        // Materials are extracted since their upload. Only a run that waits
+        // for an extraction tells the preview what it waits on (the kind of
+        // material it names); one whose materials are all ready reads their
+        // results and shows no analysis.
+        if (!(await services.materialsReady(owner, input.materialIds))) {
+          const kinds = await services.materialKinds(owner, input.materialIds);
+          await commit({ events: [{ type: 'material_kinds', data: { kinds } }] });
+        }
         const analyzed = await withDeadline(
           stepId,
           STEP_DEADLINES_MS.materialAnalysis,

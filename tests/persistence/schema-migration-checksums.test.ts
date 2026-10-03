@@ -82,6 +82,13 @@ const SHIPPED: readonly (readonly [
     'fd7c8d270394855d7c6a14470ff60311d69dff3ddf4ba23befe0fff8ba664661',
   ],
   [
+    'owner-material',
+    3,
+    'extraction_lease',
+    true,
+    'f021eaa2d167d4db15d893787ca5f32ae4a8b8d55a2386c6d9fc2a1c916434dd',
+  ],
+  [
     'asset',
     1,
     'baseline',

@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} 工程を個別設定",
     "stagesSetSeparatelyHint": "個別のモデルを使う工程",
     "perStageSetup": "工程別に設定",
-    "perStageSetupHint": "コース生成のすべての工程に個別のモデルが設定されています"
+    "perStageSetupHint": "コース生成のすべての工程に個別のモデルが設定されています",
+    "materialUploading": "アップロード中 {{percent}}%",
+    "materialParsing": "解析中…",
+    "materialTranscribing": "文字起こし中…",
+    "materialReady": "準備完了",
+    "materialFailed": "失敗",
+    "materialRetry": "再試行",
+    "materialMediaLabel": "音声/動画",
+    "materialUnavailable": "この資料は利用できなくなりました。削除してからファイルを追加し直してください。"
   },
   "export": {
     "pptx": "PPTXエクスポート",

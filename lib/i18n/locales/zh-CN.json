@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} 个环节单独配置",
     "stagesSetSeparatelyHint": "单独配置模型的环节",
     "perStageSetup": "按环节配置",
-    "perStageSetupHint": "课程生成的每个环节都已单独配置模型"
+    "perStageSetupHint": "课程生成的每个环节都已单独配置模型",
+    "materialUploading": "上传中 {{percent}}%",
+    "materialParsing": "解析中…",
+    "materialTranscribing": "转写中…",
+    "materialReady": "已就绪",
+    "materialFailed": "失败",
+    "materialRetry": "重试",
+    "materialMediaLabel": "音视频",
+    "materialUnavailable": "该素材已不可用，请移除后重新添加文件。"
   },
   "export": {
     "pptx": "导出 PPTX",

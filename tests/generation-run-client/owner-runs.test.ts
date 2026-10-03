@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RunEventSource } from '@/lib/generation-run-client/follower';
 import { OwnerRunsWatcher } from '@/lib/generation-run-client/owner-runs';
-import { startDefinitelyRefused, wouldExceedRunLimits } from '@/lib/generation-run-client/start';
+import { startDefinitelyRefused } from '@/lib/generation-run-client/start';
 import { RunApiError } from '@/lib/generation-run-client/api';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
 
@@ -136,25 +136,7 @@ describe('the owner run list', () => {
     watcher.close();
   });
 
-  it('tells a start the limits would refuse before anything is uploaded', () => {
-    const limits = { maxActive: 2, maxWaiting: 1 };
-    expect(wouldExceedRunLimits([snapshot({ state: 'generating' })], limits)).toBe(false);
-    expect(
-      wouldExceedRunLimits(
-        [snapshot({ state: 'generating' }), snapshot({ state: 'outlining' })],
-        limits,
-      ),
-    ).toBe(true);
-    // A paused run does not count; a waiting one counts against the waiting limit.
-    expect(
-      wouldExceedRunLimits([snapshot({ state: 'paused' }), snapshot({ state: 'paused' })], limits),
-    ).toBe(false);
-    expect(
-      wouldExceedRunLimits([snapshot({ state: 'awaiting_outline_confirmation' })], limits),
-    ).toBe(true);
-  });
-
-  it('releases the uploads of a start only when the server refused it', () => {
+  it('takes the materials of a start back only when the server refused it', () => {
     const refused = (status: number) => new RunApiError(status, undefined, undefined, 'x');
     expect(startDefinitelyRefused(refused(429))).toBe(true);
     expect(startDefinitelyRefused(refused(400))).toBe(true);

@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} stages set separately",
     "stagesSetSeparatelyHint": "Stages with their own model",
     "perStageSetup": "Per-stage setup",
-    "perStageSetupHint": "Every course stage has its own model"
+    "perStageSetupHint": "Every course stage has its own model",
+    "materialUploading": "Uploading {{percent}}%",
+    "materialParsing": "Parsing…",
+    "materialTranscribing": "Transcribing…",
+    "materialReady": "Ready",
+    "materialFailed": "Failed",
+    "materialRetry": "Retry",
+    "materialMediaLabel": "Audio/video",
+    "materialUnavailable": "This material is no longer available. Remove it and attach the file again."
   },
   "export": {
     "pptx": "Export PPTX",

@@ -9,10 +9,7 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import {
-  MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES,
-  MAX_VISION_IMAGES,
-} from '@/lib/constants/generation';
+import { MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES } from '@/lib/constants/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { resolveOwnedAsset } from '@/lib/persistence/resolve-server-asset';
@@ -48,7 +45,6 @@ import type {
   VisionImageResolver,
   VisionPromptImage,
 } from '@/lib/server/generation/steps/context';
-import { analyzeMaterial } from '@/lib/server/generation/steps/material-analysis';
 import { synthesizeNarration } from '@/lib/server/generation/steps/narration';
 import {
   generateOutlines,
@@ -67,8 +63,12 @@ import {
   type SceneContentInput,
   type SceneContentResult,
 } from '@/lib/server/generation/steps/scene-content';
-import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import {
+  awaitOwnerMaterialExtractions,
+  bundleTruncation,
+  readMaterialExtractionResult,
+} from '@/lib/server/materials/extraction';
 import {
   resolveMediaSlot,
   WorkspaceEndpointError,
@@ -167,6 +167,12 @@ export interface RunStepServices {
    * the preview names while it is analyzed ("Analyzing audio/video").
    */
   materialKinds(ownerId: string, materialIds: string[]): Promise<Array<'document' | 'media'>>;
+  /**
+   * Whether every one of the owner's materials is extracted already (since
+   * its upload): the step then only reads the results, and the preview shows
+   * no analysis.
+   */
+  materialsReady(ownerId: string, materialIds: string[]): Promise<boolean>;
   /** Extract and bundle the owner's materials: the outline's source text and the images. */
   analyzeMaterials(
     ownerId: string,
@@ -351,29 +357,28 @@ export const defaultRunStepServices: RunStepServices = {
     });
   },
 
+  async materialsReady(ownerId, materialIds) {
+    const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+    const records = await getReadyOwnerMaterials(pool, ownerId, materialIds);
+    return (
+      records.length === materialIds.length &&
+      records.every((record) => record.extraction?.status === 'ready')
+    );
+  },
+
   async analyzeMaterials(ownerId, materialIds, ctx) {
-    const records = await resolveClassroomMaterials(ownerId, materialIds);
-    const workspaceId = await backgroundWorkspaceId(ownerId);
-    const services = await resolveExtractionServices(workspaceId);
+    // Extracted in the background since their upload (lib/server/materials/
+    // extraction.ts): the step waits for what is still extracting, and reads
+    // the stored results.
+    const records = await awaitOwnerMaterialExtractions(
+      await resolveClassroomMaterials(ownerId, materialIds),
+      ctx.signal,
+    );
     const byteStore = getMaterialByteStore();
     const parts: ParsedDocumentPart[] = [];
     for (const [order, record] of records.entries()) {
       const fileName = record.originalName ?? record.id;
-      const buffer = await byteStore.get(record.ossKey);
-      const parsed = await analyzeMaterial(
-        {
-          source: {
-            fileName,
-            fileSize: record.bytes,
-            mimeType: normalizeDocumentMimeType({ mimeType: record.mime, fileName }),
-            buffer,
-          },
-          services,
-          request: {},
-          redactCallerInput: false,
-        },
-        ctx,
-      );
+      const result = await readMaterialExtractionResult(record.ossKey, byteStore);
       parts.push({
         source: {
           id: record.id,
@@ -382,38 +387,14 @@ export const defaultRunStepServices: RunStepServices = {
           ...(record.mime ? { mimeType: record.mime } : {}),
           order,
         },
-        text: parsed.text,
-        rawTextLength: parsed.text.length,
-        ...(parsed.metadata?.pageCount !== undefined
-          ? { pageCount: parsed.metadata.pageCount }
-          : {}),
-        // The images as the generation preview reads them off the
-        // extraction: the extractor's own list, else its bare data URLs.
-        images: parsed.metadata?.pdfImages
-          ? parsed.metadata.pdfImages.map((image) => ({
-              id: image.id,
-              src: image.src || '',
-              pageNumber: image.pageNumber ?? 1,
-              description: image.description,
-              width: image.width,
-              height: image.height,
-            }))
-          : (parsed.images ?? []).map((src, index) => ({
-              id: `img_${index + 1}`,
-              src,
-              pageNumber: 1,
-            })),
+        text: result.text,
+        rawTextLength: result.text.length,
+        ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
+        images: result.images,
       });
     }
     const bundle = buildDocumentBundle(parts);
-    const truncated: MaterialTruncation = {
-      ...(bundle.totalRawTextLength > bundle.textContentBudget
-        ? { textChars: bundle.textContentBudget }
-        : {}),
-      ...(bundle.totalImageCount > MAX_VISION_IMAGES
-        ? { images: { total: bundle.totalImageCount, max: MAX_VISION_IMAGES } }
-        : {}),
-    };
+    const truncated: MaterialTruncation = bundleTruncation(bundle);
     return {
       ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
       text: bundle.text,

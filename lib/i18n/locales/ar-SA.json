@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} مراحل مضبوطة بشكل منفصل",
     "stagesSetSeparatelyHint": "مراحل بنموذج خاص بها",
     "perStageSetup": "ضبط حسب المرحلة",
-    "perStageSetupHint": "لكل مرحلة من مراحل الدورة نموذج خاص بها"
+    "perStageSetupHint": "لكل مرحلة من مراحل الدورة نموذج خاص بها",
+    "materialUploading": "جارٍ الرفع {{percent}}%",
+    "materialParsing": "جارٍ التحليل…",
+    "materialTranscribing": "جارٍ التفريغ النصي…",
+    "materialReady": "جاهز",
+    "materialFailed": "فشل",
+    "materialRetry": "إعادة المحاولة",
+    "materialMediaLabel": "صوت/فيديو",
+    "materialUnavailable": "لم تعد هذه المادة متاحة. أزلها ثم أرفق الملف مرة أخرى."
   },
   "export": {
     "pptx": "تصدير PPTX",

@@ -11,8 +11,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot, RefreshCw } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sparkles, AlertCircle, ArrowLeft, Bot, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
@@ -34,7 +33,11 @@ import {
   type PreviewPhase,
   wasRunStartedHere,
 } from '@/lib/generation-run-client/outline-review';
-import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
+import {
+  previewStepIds,
+  previewStepIndex,
+  showsMaterialAnalysis,
+} from '@/lib/generation-run-client/preview-steps';
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
 import { useGenerationRun } from '@/lib/generation-run-client/use-generation-run';
 import { ALL_STEPS, getGenerationStepText } from './types';
@@ -111,8 +114,8 @@ function GenerationPreviewContent() {
   const steps = useMemo(() => {
     if (!view) return [];
     const ids = previewStepIds({
-      // The analysis step shows until the materials are analyzed, as it did.
-      hasMaterials: view.input.materialIds.length > 0 && !view.materialsAnalyzed,
+      // What a course leaves out of the materials is said where they were attached.
+      hasMaterials: showsMaterialAnalysis(view),
       webSearch: !!capabilities.webSearch,
       autoAgents: view.input.agents.mode === 'auto',
     });
@@ -369,19 +372,6 @@ function GenerationPreviewContent() {
     activeStep,
     view.materialKinds?.[0] === 'media' ? { documentMimeType: 'audio/' } : null,
   );
-  const truncationWarnings = [
-    ...(view.materialTruncated?.textChars !== undefined
-      ? [t('generation.textTruncated', { n: view.materialTruncated.textChars })]
-      : []),
-    ...(view.materialTruncated?.images
-      ? [
-          t('generation.imageTruncated', {
-            total: view.materialTruncated.images.total,
-            max: view.materialTruncated.images.max,
-          }),
-        ]
-      : []),
-  ];
 
   if (isReviewingOutlines) {
     const outlineStepIndex = Math.max(
@@ -567,63 +557,6 @@ function GenerationPreviewContent() {
                       {error ? error : statusMessage || t(activeStepText.description)}
                     </p>
                   </motion.div>
-                </AnimatePresence>
-
-                {/* Truncation warning indicator */}
-                <AnimatePresence>
-                  {truncationWarnings.length > 0 && !error && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0 }}
-                      transition={{
-                        type: 'spring',
-                        stiffness: 500,
-                        damping: 30,
-                      }}
-                      className="flex justify-center"
-                    >
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <motion.button
-                            type="button"
-                            animate={{
-                              boxShadow: [
-                                '0 0 0 0 rgba(251, 191, 36, 0), 0 0 0 0 rgba(251, 191, 36, 0)',
-                                '0 0 16px 4px rgba(251, 191, 36, 0.12), 0 0 4px 1px rgba(251, 191, 36, 0.08)',
-                                '0 0 0 0 rgba(251, 191, 36, 0), 0 0 0 0 rgba(251, 191, 36, 0)',
-                              ],
-                            }}
-                            transition={{
-                              duration: 3,
-                              repeat: Infinity,
-                              ease: 'easeInOut',
-                            }}
-                            className="relative size-7 rounded-full flex items-center justify-center cursor-default
-                                       bg-gradient-to-br from-amber-400/15 to-orange-400/10
-                                       border border-amber-400/25 hover:border-amber-400/40
-                                       hover:from-amber-400/20 hover:to-orange-400/15
-                                       transition-colors duration-300
-                                       focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30"
-                          >
-                            <AlertTriangle
-                              className="size-3.5 text-amber-500 dark:text-amber-400"
-                              strokeWidth={2.5}
-                            />
-                          </motion.button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" sideOffset={6}>
-                          <div className="space-y-1 py-0.5">
-                            {truncationWarnings.map((w, i) => (
-                              <p key={i} className="text-xs leading-relaxed">
-                                {w}
-                              </p>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </motion.div>
-                  )}
                 </AnimatePresence>
               </div>
             </div>

@@ -2185,7 +2185,9 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     mimeType: file.type,
     fileName: file.name,
   });
-  const res = await fetch('/api/materials', {
+  // A session extracts what it binds itself: the library's own extraction
+  // (for classic generation) is not started for it.
+  const res = await fetch('/api/materials?extract=false', {
     method: 'POST',
     headers: {
       'content-type': mimeType || 'application/octet-stream',

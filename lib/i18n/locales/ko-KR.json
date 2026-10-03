@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}}개 단계 별도 설정",
     "stagesSetSeparatelyHint": "자체 모델을 쓰는 단계",
     "perStageSetup": "단계별 설정",
-    "perStageSetupHint": "코스 생성의 모든 단계에 자체 모델이 설정되어 있습니다"
+    "perStageSetupHint": "코스 생성의 모든 단계에 자체 모델이 설정되어 있습니다",
+    "materialUploading": "업로드 중 {{percent}}%",
+    "materialParsing": "분석 중…",
+    "materialTranscribing": "받아쓰는 중…",
+    "materialReady": "준비됨",
+    "materialFailed": "실패",
+    "materialRetry": "다시 시도",
+    "materialMediaLabel": "오디오/비디오",
+    "materialUnavailable": "이 자료는 더 이상 사용할 수 없습니다. 제거한 뒤 파일을 다시 첨부하세요."
   },
   "export": {
     "pptx": "PPTX 내보내기",

@@ -40,12 +40,6 @@ import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
-import { nanoid } from 'nanoid';
-import {
-  courseMaterialFingerprint,
-  dedupeCourseMaterialFiles,
-} from '@/lib/document/course-materials';
-import type { SelectedCourseMaterial } from '@/lib/types/generation';
 import {
   courseGenerationUsable,
   requireModelCapabilities,
@@ -55,7 +49,15 @@ import {
   discardGenerationRun,
   runApiErrorText,
 } from '@/lib/generation-run-client/api';
-import { RunStartRefusedError, startClassicRun } from '@/lib/generation-run-client/start';
+import {
+  RunStartRefusedError,
+  startClassicRun,
+  startDefinitelyRefused,
+} from '@/lib/generation-run-client/start';
+import {
+  useCourseMaterials,
+  type CourseMaterialMessage,
+} from '@/lib/generation-run-client/use-course-materials';
 import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
 import {
   courseRunHref,
@@ -124,14 +126,12 @@ const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
 let workbenchRuntimeCache: boolean | null = null;
 
 interface FormState {
-  courseMaterials: SelectedCourseMaterial[];
   requirement: string;
   interactiveMode: boolean;
   vocationalTestMode: boolean;
 }
 
 const initialFormState: FormState = {
-  courseMaterials: [],
   requirement: '',
   interactiveMode: false,
   vocationalTestMode: false,
@@ -234,11 +234,10 @@ function HomePage() {
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // True while the Generate click drains upload-time ingests and builds the
-  // generation session. Doubles as the guard flag that freezes the course
-  // material set for the duration of prep and as the switch that disables the
-  // toolbar's add/remove affordances, so the session is always built from a
-  // set that cannot change under it.
+  // True while the Generate click starts the run. Doubles as the guard flag
+  // that freezes the course material set for the duration of the start and as
+  // the switch that disables the toolbar's add/remove/Retry affordances, so
+  // the run is always started from a set that cannot change under it.
   const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
@@ -566,52 +565,21 @@ function HomePage() {
     }
   };
 
-  const addCourseMaterials = (files: File[]) => {
-    // The set is frozen for the duration of generate-prep: adding is inert
-    // while `preparingGenerate` is set (the toolbar affordance is disabled
-    // via the same state), so nothing can slip into the set mid-prep.
-    if (preparingGenerate) return;
-    const dedupedFiles = dedupeCourseMaterialFiles(form.courseMaterials, files);
-    const startOrder = form.courseMaterials.length + 1;
-    const additions = dedupedFiles.map((file, index) => ({
-      id: nanoid(8),
-      file,
-      name: file.name,
-      size: file.size,
-      lastModified: file.lastModified,
-      type: file.type,
-      order: startOrder + index,
-    }));
+  // Attached materials upload and extract at once; Generate waits for them.
+  const courseMaterials = useCourseMaterials();
+  const materialMessage = (message: CourseMaterialMessage) =>
+    message.text ?? (message.key ? t(message.key, message.values) : '');
 
-    if (additions.length === 0) return;
-    setForm((prev) => {
-      // Pure updater: drop any addition the latest state already carries — by
-      // id (a replayed or superseded update) or by content fingerprint (two
-      // addCourseMaterials calls in one render batch both dedupe against the
-      // same stale closure list, so the same file could otherwise enter twice
-      // under two ids and ingest/extract twice) — then append the rest.
-      const missing = additions.filter((addition) => {
-        if (prev.courseMaterials.some((item) => item.id === addition.id)) return false;
-        return !prev.courseMaterials.some(
-          (item) => courseMaterialFingerprint(item) === courseMaterialFingerprint(addition),
-        );
-      });
-      if (missing.length === 0) return prev;
-      return { ...prev, courseMaterials: [...prev.courseMaterials, ...missing] };
-    });
+  const addCourseMaterials = async (files: File[]) => {
+    // The set is frozen while a run is being started.
+    if (preparingGenerate) return;
+    const refusal = await courseMaterials.add(files);
+    setError(refusal ? materialMessage(refusal) : null);
   };
 
   const removeCourseMaterial = (id: string) => {
-    // The set is frozen for the duration of generate-prep: removing is inert
-    // while `preparingGenerate` is set (the toolbar affordance is disabled
-    // via the same state), so nothing can slip out of the set mid-prep.
     if (preparingGenerate) return;
-    setForm((prev) => ({
-      ...prev,
-      courseMaterials: prev.courseMaterials
-        .filter((item) => item.id !== id)
-        .map((item, index) => ({ ...item, order: index + 1 })),
-    }));
+    courseMaterials.remove(id);
   };
 
   const handleGenerate = async () => {
@@ -627,21 +595,19 @@ function HomePage() {
 
     setError(null);
 
-    // The material list is frozen for the duration of prep: `preparingGenerate`
-    // makes add/remove inert, so it cannot change under the uploads below.
-    // Capture it at click time and start the run from this snapshot, never
-    // from live form state.
-    const frozenMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+    // The set is frozen while the run starts (`preparingGenerate` makes add,
+    // remove and Retry inert), from the ready materials in their order.
     setPreparingGenerate(true);
+    let materialIds: string[] = [];
     try {
       // Nothing is started from settings that could not be read.
       const capabilities = await requireModelCapabilities();
       if (!capabilities) throw new Error(t('generation.modelSettingsUnavailable'));
-      // The server generates the course: the materials go to the owner's
-      // library, and the run follows the workspace's model settings.
+      // The run releases the materials it is started from once it is over.
+      materialIds = courseMaterials.handOff();
       const run = await startClassicRun({
         requirement: form.requirement,
-        materials: frozenMaterials.map((item) => item.file),
+        materialIds,
         interactive: form.vocationalTestMode ? true : form.interactiveMode,
         taskEngine: form.vocationalTestMode,
         capabilities,
@@ -650,6 +616,11 @@ function HomePage() {
       router.push(`/generation-preview?run=${encodeURIComponent(run.id)}`);
     } catch (err) {
       log.error('Error starting generation:', err);
+      // Only a definitive refusal says no run holds them: they stay attached.
+      // A lost answer may hide a run that releases them when it is over.
+      if (!(err instanceof RunApiError) || startDefinitelyRefused(err)) {
+        courseMaterials.takeBack(materialIds);
+      }
       if (err instanceof RunStartRefusedError) {
         setError(t(err.reason, err.values));
       } else if (err instanceof RunApiError) {
@@ -676,7 +647,8 @@ function HomePage() {
     return date.toLocaleDateString();
   };
 
-  const canGenerate = !!form.requirement.trim() && hasUsableProvider;
+  // Generate waits for every attached material to be uploaded and extracted.
+  const canGenerate = !!form.requirement.trim() && hasUsableProvider && courseMaterials.allReady;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -882,9 +854,12 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  courseMaterials={form.courseMaterials}
-                  onCourseMaterialsAdd={addCourseMaterials}
+                  courseMaterials={courseMaterials.materials}
+                  onCourseMaterialsAdd={(files) => void addCourseMaterials(files)}
                   onCourseMaterialRemove={removeCourseMaterial}
+                  onCourseMaterialRetry={(id) => {
+                    if (!preparingGenerate) courseMaterials.retry(id);
+                  }}
                   onPdfError={setError}
                   materialsLocked={preparingGenerate}
                   onSettingsOpen={(section) => {

@@ -47,6 +47,76 @@ export class MockApi {
     return run;
   }
 
+  /**
+   * The owner's material library (`/api/materials/**`) and the material
+   * policy: an upload answers `extracting`, and a material is `ready` after
+   * `pollsUntilReady` reads (or `failed` with `failWith`).
+   */
+  async mockMaterials(options: { pollsUntilReady?: number; failWith?: string } = {}) {
+    const materials = new Map<
+      string,
+      { name: string; mime: string; bytes: number; polls: number }
+    >();
+    const deleted: string[] = [];
+    const view = (id: string) => {
+      const material = materials.get(id)!;
+      const settled = material.polls >= (options.pollsUntilReady ?? 2);
+      return {
+        materialId: id,
+        originalName: material.name,
+        bytes: material.bytes,
+        mime: material.mime,
+        mediaKind: 'document',
+        extraction: !settled
+          ? { status: 'extracting' }
+          : options.failWith
+            ? { status: 'failed', error: options.failWith, errorCode: 'EXTRACTION_FAILED' }
+            : { status: 'ready', textChars: 1200, pageCount: 3, imageCount: 0 },
+      };
+    };
+    await this.page.route('**/api/generate-classroom/capabilities', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          materials: {
+            formats: [
+              { mime: 'text/plain', extensions: ['.txt'] },
+              { mime: 'application/pdf', extensions: ['.pdf'] },
+            ],
+            maxCount: 5,
+            maxTotalBytes: 150 * 1024 * 1024,
+            maxDocumentBytes: 50 * 1024 * 1024,
+            maxMediaBytes: 200 * 1024 * 1024,
+          },
+        },
+      }),
+    );
+    await this.page.route('**/api/materials**', async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path === '/api/materials' && request.method() === 'POST') {
+        const id = `mat_${Array.from({ length: 26 }, () => 'abcdefghjkmnpqrstvwxyz0123456789'[Math.floor(Math.random() * 32)]).join('')}`;
+        materials.set(id, {
+          name: decodeURIComponent(request.headers()['x-material-filename'] ?? 'file'),
+          mime: request.headers()['content-type'] ?? 'application/octet-stream',
+          bytes: request.postDataBuffer()?.byteLength ?? 0,
+          polls: 0,
+        });
+        return route.fulfill({ status: 201, json: view(id) });
+      }
+      const id = path.split('/')[3] ?? '';
+      if (!materials.has(id)) return route.fulfill({ status: 404, body: 'Not found' });
+      if (request.method() === 'DELETE') {
+        materials.delete(id);
+        deleted.push(id);
+        return route.fulfill({ json: { materialId: id, deleted: true } });
+      }
+      materials.get(id)!.polls += 1;
+      return route.fulfill({ json: { material: view(id) } });
+    });
+    return { materials, deleted };
+  }
+
   /** Set up API mocks for the generation flow. Note: model settings are already mocked by the base fixture. */
   async setupGenerationMocks(options: MockRunOptions = {}) {
     return this.mockGenerationRun(options);
@@ -64,6 +134,9 @@ export interface MockRunOptions {
   /** How long the run takes between its scripted steps (ms). */
   stepMs?: number;
 }
+
+/** The body of the start request a run was created from. */
+export type MockRunInput = Record<string, unknown>;
 
 /**
  * A run as the server keeps it, scripted: starting it streams the outline
@@ -90,7 +163,7 @@ export class MockGenerationRun {
   private courseStageId: string | null = null;
   private scenesDone = 0;
   private error: Record<string, unknown> | null = null;
-  private input: Record<string, unknown> = {};
+  input: MockRunInput = {};
   private readonly outlines: typeof mockOutlines;
   private readonly stepMs: number;
 

@@ -155,6 +155,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
   };
   const services: RunStepServices = {
     materialKinds: async (_owner, materialIds) => materialIds.map(() => 'document' as const),
+    materialsReady: async () => false,
     analyzeMaterials: async () => ({ text: 'material text', images: [] }),
     research: async (_owner, input) => {
       calls.research.push(input);
@@ -2549,6 +2550,184 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         [run.id],
       );
       expect(raw.rows.some((row) => row.output.includes('base64'))).toBe(false);
+    });
+
+    /** Owner materials extracted at upload, with their objects in memory. */
+    async function uploadedMaterials() {
+      const owner = await import('@/lib/persistence/owner-materials');
+      const bytesModule = await import('@/lib/server/materials/bytes');
+      const extraction = await import('@/lib/server/materials/extraction');
+      await owner.ensureOwnerMaterialSchema(pool);
+      const objects = new Map<string, Buffer>();
+      const byteStore = {
+        put: async (key: string, body: unknown) => {
+          objects.set(key, Buffer.from(body as Uint8Array));
+        },
+        get: async (key: string) => {
+          const value = objects.get(key);
+          if (!value) throw new Error(`no object ${key}`);
+          return value;
+        },
+        delete: async (key: string) => {
+          objects.delete(key);
+        },
+      };
+      bytesModule.setMaterialByteStoreForTests(byteStore);
+      const upload = async (name: string) => {
+        const id = `mat_${crypto.randomUUID().replace(/-/g, '').slice(0, 26)}`;
+        const ossKey = `materials/test/${id}`;
+        await owner.registerOwnerMaterial(
+          pool,
+          {
+            id,
+            ownerId: OWNER,
+            kind: 'source',
+            mime: 'text/plain',
+            bytes: 4,
+            originalName: name,
+            ossKey,
+          },
+          { maxCount: 100, maxTotalBytes: 1_000_000 },
+        );
+        await byteStore.put(ossKey, Buffer.from('text'));
+        await owner.finalizeOwnerMaterial(pool, id, 4, `sha-${id}`, { extract: true });
+        return { id, ossKey };
+      };
+      const extract = (analyze: () => Promise<unknown>) =>
+        extraction.runNextOwnerMaterialExtraction('extractor', {
+          byteStore,
+          services: async () => ({ document: null, documentStatus: 'unassigned' }),
+          analyze: analyze as never,
+          leaseTtlMs: 60_000,
+          heartbeatIntervalMs: 1_000,
+        });
+      const parsedWithImage = async () => ({
+        text: 'material text [img_1]',
+        images: [],
+        metadata: {
+          pageCount: 1,
+          pdfImages: [
+            {
+              id: 'img_1',
+              src: `data:image/png;base64,${Buffer.from(IMAGE_BYTES).toString('base64')}`,
+              pageNumber: 2,
+              description: 'A chloroplast',
+              width: 640,
+              height: 480,
+            },
+          ],
+        },
+      });
+      return { owner, bytesModule, objects, byteStore, upload, extract, parsedWithImage };
+    }
+
+    /** The real material services over fakes for every other step. */
+    function materialServices(overrides: Partial<RunStepServices> = {}) {
+      const contentInputs: Array<Record<string, unknown>> = [];
+      const built = mediaServices({
+        mediaConnections: async () => ({ image: OFF, video: OFF }),
+        materialKinds: defaultRunStepServices.materialKinds,
+        materialsReady: defaultRunStepServices.materialsReady,
+        analyzeMaterials: defaultRunStepServices.analyzeMaterials,
+        outline: async () => ({
+          outlines: OUTLINES.map((outline, index) =>
+            index === 0 ? { ...outline, suggestedImageIds: ['img_1'] } : outline,
+          ),
+          languageDirective: 'Use English.',
+          courseTitle: 'Plants',
+          taskEngineMode: false,
+        }),
+        sceneContent: async (owner, input, ctx) => {
+          contentInputs.push(input as never);
+          return fakeServices().services.sceneContent(owner, input, ctx);
+        },
+        sceneActions: async (_owner, input) => {
+          const mapping = (contentInputs.at(-1)?.imageMapping ?? {}) as Record<string, string>;
+          const imageSrc = input.outline.id === 'o1' ? mapping.img_1 : undefined;
+          return {
+            scene: mediaScene(input.stageId, input.outline, imageSrc) as never,
+            previousSpeeches: [],
+          };
+        },
+        ...overrides,
+      });
+      return built;
+    }
+
+    it('generates from materials extracted at upload without an analysis, and a released material leaves the course image', async () => {
+      const materials = await uploadedMaterials();
+      try {
+        const material = await materials.upload('notes.txt');
+        expect(await materials.extract(materials.parsedWithImage)).toBe(true);
+        const run = await start(
+          runInput({ outlineReview: 'auto', materialIds: [material.id], releaseMaterials: true }),
+        );
+        expect(await drive(run.id, materialServices().services)).toBe('completed');
+
+        // Nothing was waited on: the preview is told of no material to analyze.
+        expect(await eventTypes(run.id)).not.toContain('material_kinds');
+        const checkpoint = (await readGenerationRunSteps(run.id)).get('material-analysis') as {
+          pdfText: string;
+          pdfImages: Array<Record<string, unknown>>;
+          imageMapping: Record<string, string>;
+        };
+        // The same checkpoint extracting during the run produced.
+        const assetId = checkpoint.imageMapping.img_1!;
+        expect(checkpoint.pdfText).toContain('material text [img_1]');
+        expect(checkpoint.pdfImages).toEqual([
+          expect.objectContaining({ id: 'img_1', src: '', assetId, description: 'A chloroplast' }),
+        ]);
+        const stored = (await readGenerationRun(run.id, OWNER))!;
+        const document = (await documentStore(OWNER).loadDocument(stored.stageId!))!;
+        expect(
+          elementsOf(document.scenes[0]).find((element) => element.id === 'el-material')!.src,
+        ).toBe(assetId);
+
+        // The run released its material; its objects go with the next reclaim,
+        // and the course keeps the image it copied.
+        await materials.owner.reclaimStaleOwnerMaterialUploads(pool, OWNER, (key) =>
+          materials.bytesModule.deleteMaterialObjects(materials.byteStore, key),
+        );
+        expect([...materials.objects.keys()].filter((key) => key.includes(material.id))).toEqual(
+          [],
+        );
+        expect(await committedAt(assetId)).not.toBeNull();
+      } finally {
+        materials.bytesModule.setMaterialByteStoreForTests(null);
+      }
+    });
+
+    it('waits for a material still extracting, fails with its extraction error, and Retry extracts it again', async () => {
+      const materials = await uploadedMaterials();
+      try {
+        const material = await materials.upload('slides.txt');
+        const run = await start(runInput({ outlineReview: 'auto', materialIds: [material.id] }));
+        const execution = drive(run.id, materialServices().services);
+        // The run says what it waits on.
+        await expect.poll(() => eventTypes(run.id), UNTIL).toContain('material_kinds');
+        expect(
+          await materials.extract(async () => {
+            throw new Error('document extraction failed (unpdf: no text)');
+          }),
+        ).toBe(true);
+        expect(await execution).toBe('paused');
+        expect((await readGenerationRun(run.id, OWNER))!.error).toMatchObject({
+          step: 'material-analysis',
+          message: 'document extraction failed (unpdf: no text)',
+        });
+
+        // Retry extracts the failed material again; the run reads its result.
+        await retryGenerationRun(run.id, OWNER, { commandId: 'retry-material' });
+        const rows = await pool.query<{ status: string }>(
+          "SELECT extraction->>'status' AS status FROM owner_material WHERE id = $1",
+          [material.id],
+        );
+        expect(rows.rows[0]!.status).toBe('extracting');
+        expect(await materials.extract(materials.parsedWithImage)).toBe(true);
+        expect(await drive(run.id, materialServices().services)).toBe('completed');
+      } finally {
+        materials.bytesModule.setMaterialByteStoreForTests(null);
+      }
     });
 
     it('a slot the route refuses fails its items with the route code; a fault of the pass fails the media, not the run', async () => {

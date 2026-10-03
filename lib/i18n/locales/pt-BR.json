@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} etapas configuradas separadamente",
     "stagesSetSeparatelyHint": "Etapas com modelo próprio",
     "perStageSetup": "Configuração por etapa",
-    "perStageSetupHint": "Cada etapa do curso tem seu próprio modelo"
+    "perStageSetupHint": "Cada etapa do curso tem seu próprio modelo",
+    "materialUploading": "Enviando {{percent}}%",
+    "materialParsing": "Analisando…",
+    "materialTranscribing": "Transcrevendo…",
+    "materialReady": "Pronto",
+    "materialFailed": "Falhou",
+    "materialRetry": "Tentar novamente",
+    "materialMediaLabel": "Áudio/vídeo",
+    "materialUnavailable": "Este material não está mais disponível. Remova-o e anexe o arquivo novamente."
   },
   "export": {
     "pptx": "Exportar PPTX",

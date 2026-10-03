@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} bước thiết lập riêng",
     "stagesSetSeparatelyHint": "Các bước có mô hình riêng",
     "perStageSetup": "Thiết lập theo bước",
-    "perStageSetupHint": "Mỗi bước của khóa học đều có mô hình riêng"
+    "perStageSetupHint": "Mỗi bước của khóa học đều có mô hình riêng",
+    "materialUploading": "Đang tải lên {{percent}}%",
+    "materialParsing": "Đang phân tích…",
+    "materialTranscribing": "Đang chép lời…",
+    "materialReady": "Sẵn sàng",
+    "materialFailed": "Thất bại",
+    "materialRetry": "Thử lại",
+    "materialMediaLabel": "Âm thanh/video",
+    "materialUnavailable": "Tài liệu này không còn khả dụng. Hãy xóa và đính kèm lại tệp."
   },
   "export": {
     "pptx": "Xuất PPTX",

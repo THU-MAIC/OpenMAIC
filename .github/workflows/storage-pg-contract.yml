@@ -99,5 +99,6 @@ jobs:
             tests/server/classroom-persistence.pg.test.ts \
             tests/server/generate-classroom-api.pg.test.ts \
             tests/server/generation-runs.pg.test.ts \
+            tests/server/material-extraction.pg.test.ts \
             tests/server/legacy-classroom-import.pg.test.ts \
             tests/persistence/exclusive-create-invariant.pg.test.ts

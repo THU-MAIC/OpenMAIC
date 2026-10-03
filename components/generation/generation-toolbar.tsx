@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useRef, useMemo, useEffect } from 'react';
-import { Bot, Paperclip, FileText, X } from 'lucide-react';
+import {
+  AlertCircle,
+  Bot,
+  Check,
+  FileAudio,
+  FileText,
+  Loader2,
+  Paperclip,
+  RotateCw,
+  X,
+} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -33,18 +43,17 @@ import {
   getFormatLabelsForProviders,
   isMimeSupportedByProviders,
 } from '@/lib/document/mime';
+import { MAX_DOCUMENT_BUNDLE_FILES } from '@/lib/document/bundle';
 import {
-  MAX_DOCUMENT_BUNDLE_FILES,
-  MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
-} from '@/lib/document/bundle';
-import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
-import type { SelectedCourseMaterial } from '@/lib/types/generation';
+  combinedTruncation,
+  type CourseMaterialEntry,
+  type CourseMaterialMessage,
+} from '@/lib/generation-run-client/use-course-materials';
 import { HomeModelPicker } from '@/components/settings/home-model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
-const MAX_COURSE_MATERIAL_SIZE_BYTES = MAX_COURSE_MATERIAL_SIZE_MB * 1024 * 1024;
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -71,16 +80,19 @@ export function unsupportedCourseMaterialMessage(
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
-  // PDF
-  courseMaterials: SelectedCourseMaterial[];
+  /** The attached materials, each uploading, extracting, ready or failed. */
+  courseMaterials: CourseMaterialEntry[];
+  /** Attach files (the parent checks them against the server's policy and uploads them). */
   onCourseMaterialsAdd: (files: File[]) => void;
   onCourseMaterialRemove: (id: string) => void;
+  /** Upload or extract a failed material again. */
+  onCourseMaterialRetry?: (id: string) => void;
   onPdfError: (error: string | null) => void;
   /**
-   * When set, the course-material add/remove affordances and the extractor
-   * Select are all disabled (the parent freezes the material set and the
-   * session inputs for the duration of generate-prep). The parent's handlers
-   * are inert under the same flag; this only mirrors it in the UI.
+   * When set, the course-material add/remove/Retry affordances and the
+   * extractor Select are all disabled (the parent freezes the material set
+   * while it starts a run). The parent's handlers are inert under the same
+   * flag; this only mirrors it in the UI.
    */
   materialsLocked?: boolean;
   /**
@@ -95,6 +107,7 @@ export function GenerationToolbar({
   courseMaterials,
   onCourseMaterialsAdd,
   onCourseMaterialRemove,
+  onCourseMaterialRetry,
   onPdfError,
   materialsLocked = false,
   onSettingsOpen,
@@ -222,34 +235,16 @@ export function GenerationToolbar({
       onPdfError(unsupportedMessage());
       return;
     }
-    if (supportedFiles.some((file) => file.size > MAX_COURSE_MATERIAL_SIZE_BYTES)) {
-      onPdfError(t('upload.fileTooLarge'));
-      return;
-    }
-
-    const dedupedFiles = dedupeCourseMaterialFiles(courseMaterials, supportedFiles);
-    if (dedupedFiles.length === 0) return;
-
-    if (courseMaterials.length + dedupedFiles.length > MAX_DOCUMENT_BUNDLE_FILES) {
-      onPdfError(t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES }));
-      return;
-    }
-
-    const totalSize =
-      courseMaterials.reduce((sum, file) => sum + file.size, 0) +
-      dedupedFiles.reduce((sum, file) => sum + file.size, 0);
-    if (totalSize > MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES) {
-      onPdfError(
-        t('upload.courseMaterialTotalSizeLimit', {
-          n: Math.floor(MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES / 1024 / 1024),
-        }),
-      );
-      return;
-    }
-
+    // The size and count limits are the server's, checked as they are attached.
     onPdfError(null);
-    onCourseMaterialsAdd(dedupedFiles);
+    onCourseMaterialsAdd(supportedFiles);
   };
+
+  // What the ready materials leave out together, beyond what each does alone.
+  const combined = useMemo(
+    () => combinedTruncation([...courseMaterials].sort((a, b) => a.order - b.order)),
+    [courseMaterials],
+  );
 
   // ─── Pill button helper ─────────────────────────────
   const pillCls =
@@ -308,8 +303,16 @@ export function GenerationToolbar({
       <Popover>
         <PopoverTrigger asChild>
           {courseMaterials.length > 0 ? (
-            <button className={pillActive}>
-              <Paperclip className="size-3.5" />
+            <button className={pillActive} data-testid="course-material-pill">
+              {courseMaterials.some((item) => item.status === 'failed') ? (
+                <AlertCircle className="size-3.5 text-destructive" />
+              ) : courseMaterials.some(
+                  (item) => item.status === 'uploading' || item.status === 'extracting',
+                ) ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Paperclip className="size-3.5" />
+              )}
               <span className="max-w-[140px] truncate">
                 {courseMaterials.length === 1
                   ? courseMaterials[0].name
@@ -424,41 +427,166 @@ export function GenerationToolbar({
                     {[...courseMaterials]
                       .sort((a, b) => a.order - b.order)
                       .map((file) => (
-                        <div
+                        <CourseMaterialChip
                           key={file.id}
-                          className="flex items-center gap-2 rounded-lg border border-border/50 px-2 py-2"
-                        >
-                          <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                            <FileText className="size-4 text-violet-600 dark:text-violet-400" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">
-                              {file.order}. {file.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                          <button
-                            onClick={() => onCourseMaterialRemove(file.id)}
-                            disabled={materialsLocked}
-                            className={cn(
-                              'size-6 rounded-full inline-flex items-center justify-center text-muted-foreground transition-colors',
-                              materialsLocked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted',
-                            )}
-                            aria-label={t('toolbar.removeCourseMaterial')}
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
+                          material={file}
+                          locked={materialsLocked}
+                          onRemove={() => onCourseMaterialRemove(file.id)}
+                          onRetry={() => onCourseMaterialRetry?.(file.id)}
+                        />
                       ))}
                   </div>
+                  {combined && (
+                    <div className="space-y-0.5" data-testid="course-material-combined-truncation">
+                      {truncationNotices(t, combined).map((notice) => (
+                        <p key={notice} className="text-[10px] text-amber-600 dark:text-amber-400">
+                          {notice}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+/** The notices of what generation leaves out of a material (or of all of them together). */
+function truncationNotices(
+  t: Translate,
+  truncated: { textChars?: number; images?: { total: number; max: number } },
+): string[] {
+  return [
+    ...(truncated.textChars !== undefined
+      ? [t('generation.textTruncated', { n: truncated.textChars })]
+      : []),
+    ...(truncated.images
+      ? [
+          t('generation.imageTruncated', {
+            total: truncated.images.total,
+            max: truncated.images.max,
+          }),
+        ]
+      : []),
+  ];
+}
+
+function materialMessageText(t: Translate, message: CourseMaterialMessage | undefined): string {
+  if (!message) return '';
+  return message.text ?? (message.key ? t(message.key, message.values) : '');
+}
+
+/** One attached material: its upload, its extraction, and what generation leaves out of it. */
+export function CourseMaterialChip({
+  material,
+  locked,
+  onRemove,
+  onRetry,
+}: {
+  material: CourseMaterialEntry;
+  locked: boolean;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const { t } = useI18n();
+  const media = material.mediaKind === 'media';
+  const Icon = media ? FileAudio : FileText;
+  const notices =
+    material.status === 'ready' && material.extraction?.truncated
+      ? truncationNotices(t, material.extraction.truncated)
+      : [];
+  return (
+    <div
+      className="rounded-lg border border-border/50 px-2 py-2"
+      data-testid="course-material-chip"
+      data-status={material.status}
+    >
+      <div className="flex items-center gap-2">
+        <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+          <Icon className="size-4 text-violet-600 dark:text-violet-400" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium truncate">
+            {material.order}. {material.name}
+          </p>
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            {media && (
+              <span className="shrink-0 rounded border px-1 text-[9px]">
+                {t('toolbar.materialMediaLabel')}
+              </span>
+            )}
+            {material.status === 'uploading' && (
+              <span>
+                {t('toolbar.materialUploading', { percent: Math.round(material.progress * 100) })}
+              </span>
+            )}
+            {material.status === 'extracting' && (
+              <>
+                <Loader2 className="size-3 shrink-0 animate-spin" />
+                <span>{t(media ? 'toolbar.materialTranscribing' : 'toolbar.materialParsing')}</span>
+              </>
+            )}
+            {material.status === 'ready' && (
+              <>
+                <Check className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>{t('toolbar.materialReady')}</span>
+                <span className="text-muted-foreground/60">
+                  · {(material.size / 1024 / 1024).toFixed(2)} MB
+                </span>
+              </>
+            )}
+            {material.status === 'failed' && (
+              <span className="text-destructive">{t('toolbar.materialFailed')}</span>
+            )}
+          </p>
+        </div>
+        {material.status === 'failed' && (
+          <button
+            onClick={onRetry}
+            disabled={locked}
+            className={cn(
+              'h-6 rounded-full px-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors',
+              locked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted hover:text-foreground',
+            )}
+          >
+            <RotateCw className="size-3" />
+            {t('toolbar.materialRetry')}
+          </button>
+        )}
+        <button
+          onClick={onRemove}
+          disabled={locked}
+          className={cn(
+            'size-6 rounded-full inline-flex items-center justify-center text-muted-foreground transition-colors',
+            locked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted',
+          )}
+          aria-label={t('toolbar.removeCourseMaterial')}
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      {material.status === 'uploading' && (
+        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full bg-violet-500 transition-[width]"
+            style={{ width: `${Math.round(material.progress * 100)}%` }}
+          />
+        </div>
+      )}
+      {material.status === 'failed' && material.failure && (
+        <p className="mt-1 text-[11px] leading-snug text-destructive break-words">
+          {materialMessageText(t, material.failure)}
+        </p>
+      )}
+      {notices.map((notice) => (
+        <p key={notice} className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">
+          {notice}
+        </p>
+      ))}
     </div>
   );
 }

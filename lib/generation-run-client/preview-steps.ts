@@ -14,6 +14,19 @@ export type PreviewStepId =
   | 'slide-content'
   | 'actions';
 
+/**
+ * Whether the preview lists the material analysis: materials are extracted
+ * since their upload, so only while the run waits for an extraction (it then
+ * names the kinds of material it waits on) and until they are analyzed.
+ */
+export function showsMaterialAnalysis(
+  view: Pick<RunView, 'input' | 'materialKinds' | 'materialsAnalyzed'>,
+): boolean {
+  return (
+    view.input.materialIds.length > 0 && view.materialKinds !== null && !view.materialsAnalyzed
+  );
+}
+
 /** The steps the preview lists for a run, in order. */
 export function previewStepIds(input: {
   hasMaterials: boolean;

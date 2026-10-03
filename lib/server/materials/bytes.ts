@@ -64,3 +64,24 @@ export function getMaterialByteStore(): MaterialByteStore {
 export function setMaterialByteStoreForTests(store: MaterialByteStore | null): void {
   sharedStore = store;
 }
+
+/**
+ * The object a material's extraction result is stored in, next to its bytes
+ * (`lib/server/materials/extraction.ts`): it lives and goes with them.
+ */
+export function materialExtractionResultKey(ossKey: string): string {
+  return `${ossKey}.extraction.json`;
+}
+
+/**
+ * Delete a material's objects: its bytes and its extraction result. Resolves
+ * once both are gone or confirmed absent; throws to keep the material's row
+ * (the pointer to them) for the next reclaim pass.
+ */
+export async function deleteMaterialObjects(
+  store: MaterialByteStore,
+  ossKey: string,
+): Promise<void> {
+  await store.delete(materialExtractionResultKey(ossKey));
+  await store.delete(ossKey);
+}

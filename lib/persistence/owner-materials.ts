@@ -37,9 +37,51 @@ export type OwnerMaterialStatus = (typeof OWNER_MATERIAL_STATUSES)[number];
 export const OWNER_MATERIAL_KINDS = ['source', 'web'] as const;
 export type OwnerMaterialKind = (typeof OWNER_MATERIAL_KINDS)[number];
 
+export const OWNER_MATERIAL_EXTRACTION_STATUSES = [
+  'idle',
+  'extracting',
+  'ready',
+  'failed',
+] as const;
+export type OwnerMaterialExtractionStatus = (typeof OWNER_MATERIAL_EXTRACTION_STATUSES)[number];
+
+/** What the material's text and images leave out when it is generated from on its own. */
+export interface OwnerMaterialTruncation {
+  /** The text is longer than the outline's budget: only this many characters are used. */
+  textChars?: number;
+  /** More images than the outline looks at: `total` found, the first `max` used. */
+  images?: { total: number; max: number };
+}
+
+/**
+ * A material's extraction (see `lib/server/materials/extraction.ts`): not
+ * started (`idle`, uploads made before extraction started at upload, or
+ * deferred by the uploader), running in the background (`extracting`), done
+ * with its result stored next to the bytes (`ready`), or `failed` with the
+ * extractor's error. Started again (Retry) from `failed` or `idle`.
+ */
 export interface OwnerMaterialExtraction {
-  status: 'idle' | 'pending' | 'running' | 'done' | 'failed';
-  [key: string]: unknown;
+  status: OwnerMaterialExtractionStatus;
+  /** Why it failed, as the extractor said it. */
+  error?: string;
+  /** The failure's kind: a refusal reason of the analysis, or `EXTRACTION_FAILED`. */
+  errorCode?: string;
+  /** Whether trying again may succeed. */
+  retryable?: boolean;
+  /** The extracted text's length, in characters. */
+  textChars?: number;
+  pageCount?: number;
+  imageCount?: number;
+  truncated?: OwnerMaterialTruncation;
+  /** The extractor that produced the result. */
+  extractor?: string;
+  /**
+   * The owner's extraction services when it ran (internal): a ready
+   * extraction of the same bytes is reused only under the same services.
+   */
+  servicesKey?: string;
+  /** Epoch ms of the last change. */
+  updatedAt?: number;
 }
 
 export interface OwnerMaterialRecord {
@@ -68,7 +110,9 @@ export interface OwnerMaterialView {
   mime?: string;
   bytes: number;
   originalName?: string;
-  extraction?: OwnerMaterialExtraction;
+  /** `media` for audio and video (transcribed), `document` for everything else. */
+  mediaKind: 'document' | 'media';
+  extraction?: Omit<OwnerMaterialExtraction, 'servicesKey'>;
   createdAt: string;
 }
 
@@ -138,11 +182,34 @@ ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS oss_key TEXT NOT NULL DEFAUL
 ALTER TABLE owner_material DROP COLUMN IF EXISTS asset_id;
 `;
 
+/**
+ * Version 3, extraction at upload: the lease of the background extractor
+ * that holds a material's extraction (`lib/server/materials/extraction.ts`),
+ * and the index its claim scans. The extraction states of earlier versions
+ * (never written past `idle`) become `idle`, so such a material is extracted
+ * when a run first uses it.
+ */
+const OWNER_MATERIAL_EXTRACTION_LEASE = `
+ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS extraction_worker TEXT;
+ALTER TABLE owner_material ADD COLUMN IF NOT EXISTS extraction_heartbeat_at DOUBLE PRECISION;
+UPDATE owner_material
+   SET extraction = '{"status":"idle"}'::jsonb
+ WHERE extraction IS NULL
+    OR extraction->>'status' NOT IN ('idle', 'extracting', 'ready', 'failed');
+CREATE INDEX IF NOT EXISTS owner_material_extracting_idx
+  ON owner_material (created_at)
+  WHERE extraction->>'status' = 'extracting' AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS owner_material_owner_sha256_idx
+  ON owner_material (owner_id, sha256)
+  WHERE extraction->>'status' = 'ready' AND deleted_at IS NULL;
+`;
+
 export const OWNER_MATERIAL_MIGRATIONS: SchemaMigrationSet = {
   store: 'owner-material',
   migrations: [
     { version: 1, name: 'baseline', up: OWNER_MATERIAL_SCHEMA, transaction: false },
     { version: 2, name: 'byte_store_key', up: OWNER_MATERIAL_BYTE_STORE_KEY },
+    { version: 3, name: 'extraction_lease', up: OWNER_MATERIAL_EXTRACTION_LEASE },
   ],
 };
 
@@ -203,20 +270,21 @@ function rowToRecord(row: RawOwnerMaterialRow): OwnerMaterialRecord {
 function extractionOf(raw: unknown): OwnerMaterialExtraction | null {
   if (!raw || typeof raw !== 'object') return null;
   const value = raw as Record<string, unknown>;
-  const status = value.status;
-  if (
-    status !== 'idle' &&
-    status !== 'pending' &&
-    status !== 'running' &&
-    status !== 'done' &&
-    status !== 'failed'
-  ) {
+  if (!(OWNER_MATERIAL_EXTRACTION_STATUSES as readonly unknown[]).includes(value.status)) {
     return null;
   }
   return value as unknown as OwnerMaterialExtraction;
 }
 
+/** Whether a material of `mime` is audio or video, which extraction transcribes. */
+export function materialMediaKind(mime: string | null | undefined): 'document' | 'media' {
+  const value = (mime ?? '').toLowerCase();
+  return value.startsWith('audio/') || value.startsWith('video/') ? 'media' : 'document';
+}
+
 export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
+  const extraction = record.extraction ? { ...record.extraction } : undefined;
+  delete extraction?.servicesKey;
   return {
     materialId: record.id,
     kind: record.kind,
@@ -224,7 +292,8 @@ export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
     ...(record.mime ? { mime: record.mime } : {}),
     bytes: record.bytes,
     ...(record.originalName ? { originalName: record.originalName } : {}),
-    ...(record.extraction ? { extraction: record.extraction } : {}),
+    mediaKind: materialMediaKind(record.mime),
+    ...(extraction ? { extraction } : {}),
     createdAt: new Date(record.createdAt).toISOString(),
   };
 }
@@ -415,22 +484,30 @@ export async function registerOwnerMaterial(
   });
 }
 
-/** Finalize a successfully stored object. Reserved bytes may only shrink. */
+/**
+ * Finalize a successfully stored object. Reserved bytes may only shrink. With
+ * `extract`, the material's extraction starts (`extracting`) in the same
+ * write, for the background extractor to claim; otherwise it stays `idle`.
+ */
 export async function finalizeOwnerMaterial(
   queryable: Queryable,
   materialId: string,
   bytes: number,
   sha256: string,
+  { extract = false }: { extract?: boolean } = {},
 ): Promise<OwnerMaterialRecord> {
   const result = await queryable.query<RawOwnerMaterialRow>(
     `UPDATE owner_material
-        SET bytes = $2, sha256 = $3, status = 'ready'
+        SET bytes = $2, sha256 = $3, status = 'ready',
+            extraction = CASE WHEN $4::boolean
+              THEN jsonb_build_object('status', 'extracting', 'updatedAt', $5::double precision)
+              ELSE COALESCE(extraction, '{"status":"idle"}'::jsonb) END
       WHERE id = $1
         AND status = 'uploading'
         AND deleted_at IS NULL
         AND bytes >= $2
       RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-    [materialId, bytes, sha256],
+    [materialId, bytes, sha256, extract, Date.now()],
   );
   if (!result.rows[0]) throw new Error(`material ${materialId} cannot be finalized`);
   return rowToRecord(result.rows[0]);
@@ -478,4 +555,181 @@ export async function getReadyOwnerMaterials(
     [ownerId, [...materialIds]],
   );
   return result.rows.map(rowToRecord);
+}
+
+/** One of the owner's ready materials, or null (missing, unfinished, deleted or another owner's). */
+export async function getOwnerMaterial(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<OwnerMaterialRecord | null> {
+  const [record] = await getReadyOwnerMaterials(queryable, ownerId, [materialId]);
+  return record ?? null;
+}
+
+/**
+ * Start the extraction of the given ready materials whose extraction is in one
+ * of the `from` states: `idle` (a run starts what was never started), `failed`
+ * (a Retry). Answers the ids it started. `ownerId` restricts it to one
+ * owner's materials (a request); a run names its own materials by id.
+ */
+export async function startOwnerMaterialExtractions(
+  queryable: Queryable,
+  materialIds: readonly string[],
+  from: readonly ('idle' | 'failed')[],
+  ownerId?: string,
+): Promise<string[]> {
+  if (materialIds.length === 0 || from.length === 0) return [];
+  const result = await queryable.query<{ id: string }>(
+    `UPDATE owner_material
+        SET extraction = jsonb_build_object('status', 'extracting', 'updatedAt', $3::double precision),
+            extraction_worker = NULL,
+            extraction_heartbeat_at = NULL
+      WHERE id = ANY($1::text[])
+        AND status = 'ready'
+        AND deleted_at IS NULL
+        AND COALESCE(extraction->>'status', 'idle') = ANY($2::text[])
+        AND ($4::text IS NULL OR owner_id = $4)
+      RETURNING id`,
+    [[...materialIds], [...from], Date.now(), ownerId ?? null],
+  );
+  return result.rows.map((row) => row.id);
+}
+
+/**
+ * Claim the oldest material whose extraction no live worker holds: one
+ * waiting for a worker, or one whose worker stopped heartbeating for
+ * `leaseTtlMs` (a crash or a restart). A material whose bytes an earlier
+ * upload of the owner is still extracting waits for that one (it reuses the
+ * result then, see {@link findReusableOwnerMaterialExtraction}). The claim is the lease: every later
+ * write of the worker names it.
+ */
+export async function claimOwnerMaterialExtraction(
+  queryable: Queryable,
+  workerId: string,
+  leaseTtlMs: number,
+): Promise<OwnerMaterialRecord | null> {
+  const now = Date.now();
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `UPDATE owner_material
+        SET extraction_worker = $1, extraction_heartbeat_at = $2
+      WHERE id = (
+        SELECT m.id FROM owner_material m
+         WHERE m.extraction->>'status' = 'extracting'
+           AND m.deleted_at IS NULL
+           AND m.status = 'ready'
+           AND (m.extraction_worker IS NULL OR m.extraction_heartbeat_at < $3)
+           -- The same bytes uploaded again while an earlier upload of them
+           -- still extracts wait for it, and then reuse its result.
+           AND NOT EXISTS (
+             SELECT 1 FROM owner_material o
+              WHERE o.owner_id = m.owner_id
+                AND o.sha256 = m.sha256
+                AND o.id <> m.id
+                AND o.status = 'ready'
+                AND o.deleted_at IS NULL
+                AND o.extraction->>'status' = 'extracting'
+                AND (o.created_at, o.id) < (m.created_at, m.id)
+           )
+         ORDER BY m.created_at
+         LIMIT 1
+           FOR UPDATE SKIP LOCKED
+      )
+      RETURNING ${OWNER_MATERIAL_COLUMNS}`,
+    [workerId, now, now - leaseTtlMs],
+  );
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
+}
+
+/**
+ * Keep a held extraction's lease. False once the worker no longer holds it:
+ * the material was deleted, its extraction restarted, or another worker took
+ * it over; the worker then drops its work.
+ */
+export async function heartbeatOwnerMaterialExtraction(
+  queryable: Queryable,
+  materialId: string,
+  workerId: string,
+): Promise<boolean> {
+  const result = await queryable.query(
+    `UPDATE owner_material
+        SET extraction_heartbeat_at = $3
+      WHERE id = $1
+        AND extraction_worker = $2
+        AND extraction->>'status' = 'extracting'
+        AND deleted_at IS NULL
+      RETURNING id`,
+    [materialId, workerId, Date.now()],
+  );
+  return result.rows.length > 0;
+}
+
+/** Hand a held extraction back (the worker stops): the next scan takes it over at once. */
+export async function releaseOwnerMaterialExtraction(
+  queryable: Queryable,
+  materialId: string,
+  workerId: string,
+): Promise<void> {
+  await queryable.query(
+    `UPDATE owner_material
+        SET extraction_worker = NULL, extraction_heartbeat_at = NULL
+      WHERE id = $1 AND extraction_worker = $2`,
+    [materialId, workerId],
+  );
+}
+
+/**
+ * Settle a held extraction (`ready` or `failed`) and release its lease. False
+ * when the worker no longer holds it (see {@link heartbeatOwnerMaterialExtraction}):
+ * nothing is written.
+ */
+export async function settleOwnerMaterialExtraction(
+  queryable: Queryable,
+  materialId: string,
+  workerId: string,
+  extraction: OwnerMaterialExtraction,
+): Promise<boolean> {
+  const result = await queryable.query(
+    `UPDATE owner_material
+        SET extraction = $3::jsonb, extraction_worker = NULL, extraction_heartbeat_at = NULL
+      WHERE id = $1
+        AND extraction_worker = $2
+        AND extraction->>'status' = 'extracting'
+        AND deleted_at IS NULL
+      RETURNING id`,
+    [
+      materialId,
+      workerId,
+      encodeJson({ ...extraction, updatedAt: Date.now() }, 'owner material extraction'),
+    ],
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * A ready extraction of the same bytes (`sha256`) among the owner's other
+ * live materials, made under the same extraction services: its result is
+ * reused instead of extracting the bytes again.
+ */
+export async function findReusableOwnerMaterialExtraction(
+  queryable: Queryable,
+  material: Pick<OwnerMaterialRecord, 'id' | 'ownerId' | 'sha256'>,
+  servicesKey: string,
+): Promise<OwnerMaterialRecord | null> {
+  if (!material.sha256) return null;
+  const result = await queryable.query<RawOwnerMaterialRow>(
+    `SELECT ${OWNER_MATERIAL_COLUMNS}
+       FROM owner_material
+      WHERE owner_id = $1
+        AND sha256 = $2
+        AND id <> $3
+        AND status = 'ready'
+        AND deleted_at IS NULL
+        AND extraction->>'status' = 'ready'
+        AND extraction->>'servicesKey' = $4
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [material.ownerId, material.sha256, material.id, servicesKey],
+  );
+  return result.rows[0] ? rowToRecord(result.rows[0]) : null;
 }

@@ -54,7 +54,15 @@
     "stagesSetSeparately_other": "{{count}} 個環節單獨設定",
     "stagesSetSeparatelyHint": "單獨設定模型的環節",
     "perStageSetup": "按環節設定",
-    "perStageSetupHint": "課程生成的每個環節都已單獨設定模型"
+    "perStageSetupHint": "課程生成的每個環節都已單獨設定模型",
+    "materialUploading": "上傳中 {{percent}}%",
+    "materialParsing": "解析中…",
+    "materialTranscribing": "轉寫中…",
+    "materialReady": "已就緒",
+    "materialFailed": "失敗",
+    "materialRetry": "重試",
+    "materialMediaLabel": "影音",
+    "materialUnavailable": "此素材已無法使用，請移除後重新加入檔案。"
   },
   "export": {
     "pptx": "匯出 PPTX",

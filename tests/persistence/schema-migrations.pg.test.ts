@@ -201,8 +201,9 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     expect(await recordedVersions()).toEqual(EVERY_VERSION);
     await withPool(async (pool) => {
       expect(await hasColumn(pool, 'owner_material', 'asset_id')).toBe(false);
-      const rows = await pool.query('SELECT id, oss_key FROM owner_material');
-      expect(rows.rows).toEqual([{ id: 'mat-1', oss_key: '' }]);
+      const rows = await pool.query('SELECT id, oss_key, extraction FROM owner_material');
+      // An extraction never started is `idle` (version 3): a run starts it.
+      expect(rows.rows).toEqual([{ id: 'mat-1', oss_key: '', extraction: { status: 'idle' } }]);
       // A later schema brings the column back for a purpose of its own...
       await pool.query('ALTER TABLE owner_material ADD COLUMN asset_id TEXT');
     });
@@ -220,15 +221,15 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     await withPool((pool) =>
       pool.query(
         `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
-         VALUES ('owner-material', 3, 'from_a_newer_release', 'x')`,
+         VALUES ('owner-material', 4, 'from_a_newer_release', 'x')`,
       ),
     );
 
     await expect(boot()).rejects.toMatchObject({
       name: 'SchemaVersionAheadError',
       store: 'owner-material',
-      recordedVersion: 3,
-      knownVersion: 2,
+      recordedVersion: 4,
+      knownVersion: 3,
     });
   }, 60_000);
 
