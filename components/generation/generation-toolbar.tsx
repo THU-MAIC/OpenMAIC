@@ -49,7 +49,7 @@ import {
   type CourseMaterialEntry,
   type CourseMaterialMessage,
 } from '@/lib/generation-run-client/use-course-materials';
-import { HomeModelPicker } from '@/components/settings/home-model-picker';
+import { ModelPicker } from '@/components/settings/model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -257,10 +257,11 @@ export function GenerationToolbar({
       {/* ── Course model: pill (picker popover), or Set-up CTA (#580) ── */}
       {llmEditable ? (
         // Editable: the picker, with nothing selected while `llm` resolves to
-        // nothing (no default model); picking a model sets the llm slot.
-        <HomeModelPicker
-          view={view}
-          onOpenCourseModels={onSettingsOpen && (() => onSettingsOpen('course-models'))}
+        // nothing (no default model); picking a model sets the llm slot, which
+        // every slot that follows it (the course stages, the classroom, the
+        // agents) then uses.
+        <ModelPicker
+          note={t('toolbar.defaultModelNote')}
           groups={llmPickerGroups}
           value={providerId && modelId ? { providerId, modelId } : null}
           onSelect={(pid, mid) => void selectModel(pid, mid)}

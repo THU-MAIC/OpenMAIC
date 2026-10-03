@@ -50,7 +50,6 @@ import {
   modelSettingsView,
   type StoredWorkspaceConfig,
 } from '@/lib/server/model-config/settings';
-import { courseStagesAllOverridden, defaultModelOverrides } from '@/lib/model-settings/overrides';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -433,12 +432,8 @@ describe('the home toolbar model picker', () => {
       },
     } satisfies ModelConfigLayer['config'];
     const view = viewFor(config);
-    expect(courseStagesAllOverridden(view)).toBe(false);
-    expect(defaultModelOverrides(view)).toEqual([]);
     modelSettingsClient.adopt(view);
     mount(toolbar());
-    expect(document.body.textContent).not.toContain('toolbar.perStageSetup');
-    expect(document.body.textContent).not.toContain('toolbar.stagesSetSeparately');
     expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).not.toBeNull();
 
     // Choosing a default model moves every stage onto it.
@@ -455,25 +450,32 @@ describe('the home toolbar model picker', () => {
     }
   });
 
-  it('still says per-stage setup when the workspace or a lock holds every stage', () => {
-    const view = viewFor(
-      {
-        providers,
-        slots: { llm: 'operator:deepseek-v4-pro', 'course.content': 'operator:deepseek-v4-flash' },
-        lock: ['course.content'],
-      },
-      {
-        config: {
+  it('keeps the picker when the workspace or a lock holds every stage', () => {
+    modelSettingsClient.adopt(
+      viewFor(
+        {
+          providers,
           slots: {
-            'course.outline': 'operator:deepseek-v4-flash',
-            'course.actions': 'operator:deepseek-v4-flash',
+            llm: 'operator:deepseek-v4-pro',
+            'course.content': 'operator:deepseek-v4-flash',
           },
+          lock: ['course.content'],
         },
-        revision: 1,
-        unreadableSecrets: [],
-      },
+        {
+          config: {
+            slots: {
+              'course.outline': 'operator:deepseek-v4-flash',
+              'course.actions': 'operator:deepseek-v4-flash',
+            },
+          },
+          revision: 1,
+          unreadableSecrets: [],
+        },
+      ),
     );
-    expect(courseStagesAllOverridden(view)).toBe(true);
+    mount(toolbar());
+    // Changing the default still changes every slot that follows it.
+    expect(document.body.querySelector('button[aria-label*="deepseek-v4-pro"]')).not.toBeNull();
   });
 
   it('renders no model control at all when the administrator fixed llm', () => {
