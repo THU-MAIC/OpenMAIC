@@ -565,6 +565,7 @@ export function startOwnerMaterialExtractor(
     );
   const sweepTimer = sweepIntervalMs > 0 ? setInterval(sweep, sweepIntervalMs) : null;
   sweepTimer?.unref?.();
+  if (sweepTimer) sweep();
 
   const handle: OwnerMaterialExtractorHandle = {
     workerId,
