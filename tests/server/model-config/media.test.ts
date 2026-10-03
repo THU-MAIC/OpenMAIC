@@ -26,7 +26,7 @@ beforeEach(() => {
   vi.stubEnv('DATABASE_URL', 'postgres://test');
   mocks.forwarded.clear();
   workspaces.clear();
-  runtime.setDeploymentConfigForTests({ layer: null, defaults: null, notices: [] });
+  runtime.setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   runtime.setWorkspaceLayerLoaderForTests(async (ownerId) => {
     const config = workspaces.get(ownerId);
     return config ? { source: 'workspace', config } : null;
@@ -83,7 +83,7 @@ describe('workspace media endpoints', () => {
           slots: { webSearch: 'tv' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     expect(await resolveMediaSlot('webSearch', { workspaceId: null })).toMatchObject({
@@ -184,17 +184,17 @@ describe('slotTTSModel', () => {
   });
 });
 
-describe('policy.allowWorkspaceProviders: false and providers a request names', () => {
-  const policy = (allowWorkspaceProviders?: boolean, config: Config = {}) =>
+describe('allowUserKeys: false and providers a request names', () => {
+  const keys = (allowUserKeys?: boolean, config: Config = {}) =>
     runtime.setDeploymentConfigForTests({
       layer: {
         source: 'deployment',
         config: {
           ...config,
-          ...(allowWorkspaceProviders === undefined ? {} : { policy: { allowWorkspaceProviders } }),
+          ...(allowUserKeys === undefined ? {} : { allowUserKeys: allowUserKeys }),
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
   const requested = {
@@ -207,7 +207,7 @@ describe('policy.allowWorkspaceProviders: false and providers a request names', 
   };
 
   it('ignores the provider a request names, so an unassigned slot stays unassigned', async () => {
-    policy(false);
+    keys(false);
     const legacyRequest = vi.fn(async () => requested);
     const error = await resolveMediaSlot('image', { workspaceId: null, legacyRequest }).catch(
       (e: unknown) => e,
@@ -217,7 +217,7 @@ describe('policy.allowWorkspaceProviders: false and providers a request names', 
   });
 
   it("uses the deployment's assignment, never the request's provider", async () => {
-    policy(false, {
+    keys(false, {
       providers: { sd: { preset: 'seedream', apiKey: 'operator-key' } },
       slots: { image: 'sd' },
     });
@@ -230,9 +230,9 @@ describe('policy.allowWorkspaceProviders: false and providers a request names', 
   });
 
   it.each([true, undefined])(
-    'still honours the provider a request names when the policy is %s',
+    'still honours the provider a request names when allowUserKeys is %s',
     async (allow) => {
-      policy(allow);
+      keys(allow);
       expect(
         await resolveMediaSlot('image', {
           workspaceId: null,
@@ -243,7 +243,7 @@ describe('policy.allowWorkspaceProviders: false and providers a request names', 
   );
 
   it('keeps only a self-contained extractor from the request fields', async () => {
-    policy(false);
+    keys(false);
     const services = await resolveExtractionServices();
     expect(services.documentStatus).toBe('unassigned');
     expect(

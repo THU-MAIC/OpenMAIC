@@ -1921,7 +1921,7 @@
       "unavailableTitle": "Mô hình do máy chủ quản lý",
       "unavailableBody": "Máy chủ này không lưu cài đặt mô hình theo không gian làm việc nên dùng các mô hình do quản trị viên cấu hình.",
       "conflict": "Cài đặt đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-      "lockedNow": "Mục này giờ do máy chủ thiết lập nên không được thay đổi.",
+      "lockedNow": "Quản trị viên đã cố định mục này nên nó không được thay đổi.",
       "unconfirmed": "Mất phản hồi từ máy chủ nên cài đặt đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
       "serverOnly": "Chỉ cấu hình máy chủ (openmaic.yml) mới thiết lập được dịch vụ này. Hãy liên hệ quản trị viên máy chủ.",
       "serverOnlyPolicy": "Máy chủ này không cho phép không gian làm việc thêm dịch vụ riêng. Hãy liên hệ quản trị viên máy chủ.",
@@ -1952,8 +1952,7 @@
         "off": "Tắt",
         "unassigned": "Chưa đặt",
         "invalid": "Thiết lập không hợp lệ",
-        "locked": "Do máy chủ đặt",
-        "lockedHint": "Được đặt bởi cấu hình máy chủ. Không thể thay đổi tại đây.",
+        "lockedHint": "Quản trị viên đã cố định mục này cho mọi người trên máy chủ này; không thể thay đổi ở đây.",
         "followers": "Số bước theo nó: {{count}}",
         "childrenFollow": "Loại trang · tất cả theo",
         "childrenOwn": "Loại trang · {{count}} riêng"
@@ -1962,7 +1961,7 @@
         "label": "Chú giải",
         "follows": "Theo bước cha",
         "own": "Thiết lập riêng",
-        "locked": "Do máy chủ đặt"
+        "locked": "Quản trị viên đã cố định"
       },
       "map": {
         "label": "Sơ đồ mô hình của khóa học. Kéo hoặc dùng phím mũi tên để di chuyển; dùng các nút thu phóng để phóng to hoặc thu nhỏ.",
@@ -1989,11 +1988,13 @@
         "noFallback": "Không",
         "manageProviders": "Quản lý trong Dịch vụ mô hình",
         "conflict": "Thiết lập đã được thay đổi ở nơi khác và đã tải lại. Hãy kiểm tra rồi thử lại.",
-        "lockedNow": "Máy chủ hiện đặt mục này nên không có gì thay đổi.",
+        "lockedNow": "Quản trị viên đã cố định mục này nên nó không được thay đổi.",
         "clear": "Xóa thiết lập riêng",
-        "clearHint": "Dùng thiết lập của máy chủ, nếu có",
+        "clearHint": "Để không thiết lập",
         "unconfirmed": "Phản hồi của máy chủ bị mất nên thiết lập đã được tải lại. Hãy kiểm tra xem thay đổi đã có hiệu lực chưa.",
-        "thinking": "Suy luận"
+        "thinking": "Suy luận",
+        "serverDefault": "Mặc định của máy chủ",
+        "resetDefault": "Đặt lại về mặc định của máy chủ"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "Theo {{name}}",
-        "deployment": "Máy chủ",
-        "default": "Mặc định của máy chủ"
+        "default": "Mặc định của máy chủ",
+        "locked": "Quản trị viên đã cố định"
       },
       "stations": {
         "research": "Tìm hiểu trên web",
@@ -2088,6 +2089,12 @@
         "prompt": "Chưa có mô hình ngôn ngữ. Thiết lập dịch vụ trong Dịch vụ mô hình hoặc kết nối gói trong Token Plan; các mô hình của nó sẽ điền vào những phần chưa thiết lập.",
         "open": "Mở Dịch vụ mô hình",
         "askAdmin": "Chưa cấu hình mô hình ngôn ngữ. Hãy nhờ quản trị viên máy chủ thiết lập."
+      },
+      "summary": {
+        "title": "Do quản trị viên cấu hình",
+        "desc": "Quản trị viên đã thiết lập các mô hình mà máy chủ này dùng. Không thể thay đổi ở đây.",
+        "chat": "Mô hình ngôn ngữ",
+        "media": "Khả năng khác"
       }
     },
     "unimported": {

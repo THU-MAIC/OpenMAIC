@@ -167,9 +167,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
     <div className="space-y-6 max-w-3xl">
       {/* Server-configured notice */}
       {serverConfigured && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* The server's providers are the operator's: their key and endpoint
           are neither shown nor editable here. */}

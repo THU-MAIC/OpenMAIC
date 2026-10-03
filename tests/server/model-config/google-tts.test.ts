@@ -50,7 +50,7 @@ beforeEach(() => {
   vi.stubEnv('DATABASE_URL', 'postgres://test');
   vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
   workspaces.clear();
-  runtime.setDeploymentConfigForTests({ layer: null, defaults: null, notices: [] });
+  runtime.setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   runtime.setWorkspaceLayerLoaderForTests(async (ownerId) => {
     const config = workspaces.get(ownerId);
     return config ? { source: 'workspace', config } : null;
@@ -170,7 +170,7 @@ describe('tts slot resolution', () => {
           slots: { tts: 'gemini' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const connection = await resolveMediaSlot('tts', { workspaceId: null });

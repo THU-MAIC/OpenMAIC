@@ -25,9 +25,10 @@ export interface ExtractionServices {
   /** The document slot's service, or null for self-contained extraction only. */
   document: MediaConnection | null;
   /**
-   * How the document slot resolved: configured (openmaic.yml or the model
-   * settings), a legacy default, turned off (self-contained extraction only),
-   * or unassigned (a request may still name a provider the old way).
+   * How the document slot resolved: configured (locked, or the model
+   * settings), a server default, turned off (self-contained extraction only),
+   * or unassigned (on a default or unassigned, a request may still name a
+   * provider the old way).
    */
   documentStatus?: 'configured' | 'default' | 'disabled' | 'unassigned';
   /** The asr slot's connection, or undefined when speech recognition is off or unset. */
@@ -64,7 +65,7 @@ export async function resolveExtractionServices(
         ? 'disabled'
         : !document
           ? 'unassigned'
-          : document.origin === 'configuration'
+          : document.origin === 'configuration' && !document.serverDefault
             ? 'configured'
             : 'default',
     ...(speech
@@ -109,8 +110,8 @@ interface RequestedExtraction {
 
 /**
  * The deprecated request fields that still apply: all of them while the
- * document slot is unassigned (or a legacy default); once it is configured or
- * turned off, or always under `policy.allowWorkspaceProviders: false`, only
+ * document slot is unassigned (or on a server default); once it is configured or
+ * turned off, or always under `allowUserKeys: false`, only
  * the choice of a self-contained extractor or of the slot's own service, and
  * never request credentials or endpoints.
  */

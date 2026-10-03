@@ -234,7 +234,7 @@ describe('Model Services → provider changes', () => {
     const view = makeView({
       providers: [{ ...workspaceProvider('operator'), source: 'deployment', key: undefined }],
       presets: [],
-      policy: { allowWorkspaceProviders: false },
+      allowUserKeys: false,
     });
     const { apply } = recordingApply(() => view);
     mount(
@@ -359,7 +359,7 @@ describe('Token Plan → provider and recommended slots', () => {
 function deploymentView(): ModelSettingsView {
   return makeView({
     presets: [],
-    policy: { allowWorkspaceProviders: false },
+    allowUserKeys: false,
     providers: [
       {
         id: 'gateway',

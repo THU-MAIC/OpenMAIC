@@ -40,7 +40,7 @@ const BAD_HOSTS = [
 
 beforeEach(() => {
   vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
-  setDeploymentConfigForTests({ layer: null, defaults: null, notices: [] });
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
 });
 
 afterEach(() => {

@@ -1921,7 +1921,7 @@
       "unavailableTitle": "Les modèles sont gérés par le serveur",
       "unavailableBody": "Ce serveur ne conserve pas de paramètres de modèles par espace de travail ; il utilise les modèles configurés par son administrateur.",
       "conflict": "Les paramètres ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
-      "lockedNow": "Ce réglage est désormais défini par le serveur ; il n'a pas été modifié.",
+      "lockedNow": "L’administrateur l’a fixé, il n’a donc pas été modifié.",
       "unconfirmed": "La réponse du serveur a été perdue ; les paramètres ont été rechargés. Vérifiez si la modification a été prise en compte.",
       "serverOnly": "Seule la configuration du serveur (openmaic.yml) peut configurer ce service. Contactez l'administrateur du serveur.",
       "serverOnlyPolicy": "Ce serveur ne permet pas aux espaces de travail d'ajouter leurs propres services. Contactez l'administrateur du serveur.",
@@ -1952,8 +1952,7 @@
         "off": "Désactivé",
         "unassigned": "Non défini",
         "invalid": "Réglage invalide",
-        "locked": "Défini par le serveur",
-        "lockedHint": "Défini par la configuration du serveur. Impossible de le modifier ici.",
+        "lockedHint": "L’administrateur l’a fixé pour tous sur ce serveur ; il ne peut pas être modifié ici.",
         "followers": "Étapes qui le suivent : {{count}}",
         "childrenFollow": "Types de page · tous suivent",
         "childrenOwn": "Types de page · {{count}} propres"
@@ -1962,7 +1961,7 @@
         "label": "Légende",
         "follows": "Suit le parent",
         "own": "Réglage propre",
-        "locked": "Défini par le serveur"
+        "locked": "Fixé par l’administrateur"
       },
       "map": {
         "label": "Carte des modèles du cours. Faites glisser ou utilisez les flèches pour vous déplacer, et les boutons de zoom pour zoomer.",
@@ -1989,11 +1988,13 @@
         "noFallback": "Aucun",
         "manageProviders": "Gérer dans les services de modèles",
         "conflict": "Les réglages ont été modifiés ailleurs et rechargés. Vérifiez-les puis réessayez.",
-        "lockedNow": "Le serveur définit désormais ce réglage ; rien n’a été modifié.",
+        "lockedNow": "L’administrateur l’a fixé, il n’a donc pas été modifié.",
         "clear": "Retirer le réglage propre",
-        "clearHint": "Utiliser le réglage du serveur, s’il en a un",
+        "clearHint": "Le laisse non défini",
         "unconfirmed": "La réponse du serveur a été perdue ; les réglages ont été rechargés. Vérifiez si la modification a été prise en compte.",
-        "thinking": "Réflexion"
+        "thinking": "Réflexion",
+        "serverDefault": "Défaut du serveur",
+        "resetDefault": "Rétablir le défaut du serveur"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "Suit {{name}}",
-        "deployment": "Serveur",
-        "default": "Défaut du serveur"
+        "default": "Défaut du serveur",
+        "locked": "Fixé par l’administrateur"
       },
       "stations": {
         "research": "Recherche web",
@@ -2088,6 +2089,12 @@
         "prompt": "Aucun modèle de langage pour l'instant. Configurez un service dans Services de modèles ou connectez une offre dans Token Plan ; ses modèles remplissent les parties non définies.",
         "open": "Ouvrir les services de modèles",
         "askAdmin": "Aucun modèle de langage n'est configuré. Demandez à l'administrateur du serveur d'en configurer un."
+      },
+      "summary": {
+        "title": "Configuré par l’administrateur",
+        "desc": "L’administrateur a choisi les modèles utilisés par ce serveur. Ils ne peuvent pas être modifiés ici.",
+        "chat": "Modèles de langage",
+        "media": "Autres capacités"
       }
     },
     "unimported": {

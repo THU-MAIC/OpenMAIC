@@ -118,11 +118,11 @@ export function ServerConfiguredNotice() {
 }
 
 /** Why a service cannot be set up here: only the server's configuration can. */
-export function ServerOnlyNotice({ policy }: { policy?: boolean }) {
+export function ServerOnlyNotice({ noUserKeys }: { noUserKeys?: boolean }) {
   const { t } = useI18n();
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-      {t(policy ? `${SC}.serverOnlyPolicy` : `${SC}.serverOnly`)}
+      {t(noUserKeys ? `${SC}.serverOnlyPolicy` : `${SC}.serverOnly`)}
     </div>
   );
 }

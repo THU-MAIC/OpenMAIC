@@ -1921,7 +1921,7 @@
       "unavailableTitle": "模型由服务器统一管理",
       "unavailableBody": "此服务器不保存工作区的模型设置，使用的是管理员配置的模型。",
       "conflict": "设置已在别处被修改并已重新加载，请检查后重试。",
-      "lockedNow": "该项现由服务器设定，未做修改。",
+      "lockedNow": "管理员已固定此项，因此未更改。",
       "unconfirmed": "服务器的响应丢失，已重新加载设置，请确认修改是否生效。",
       "serverOnly": "此服务只能通过服务器配置（openmaic.yml）设置，请联系服务器管理员。",
       "serverOnlyPolicy": "此服务器不允许工作区添加自己的服务，请联系服务器管理员。",
@@ -1952,8 +1952,7 @@
         "off": "已关闭",
         "unassigned": "未配置",
         "invalid": "配置无效",
-        "locked": "由服务端设置",
-        "lockedHint": "由服务端配置设置，无法在此更改。",
+        "lockedHint": "管理员已为此服务器上的所有人固定此项，无法在此更改。",
         "followers": "跟随它的环节：{{count}}",
         "childrenFollow": "页型 · 全部跟随",
         "childrenOwn": "页型 · {{count}} 个单独设置"
@@ -1962,7 +1961,7 @@
         "label": "图例",
         "follows": "跟随上级",
         "own": "单独设置",
-        "locked": "由服务端设置"
+        "locked": "由管理员固定"
       },
       "map": {
         "label": "课程模型图。拖动或使用方向键平移，使用缩放按钮缩放。",
@@ -1989,11 +1988,13 @@
         "noFallback": "无",
         "manageProviders": "在模型服务中管理",
         "conflict": "设置已在别处更改并已重新加载，请检查后重试。",
-        "lockedNow": "服务端现在设置了此项，因此未作更改。",
+        "lockedNow": "管理员已固定此项，因此未更改。",
         "clear": "清除单独设置",
-        "clearHint": "改用服务端的设置（如有）",
+        "clearHint": "改为不设置",
         "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。",
-        "thinking": "思考"
+        "thinking": "思考",
+        "serverDefault": "服务端默认",
+        "resetDefault": "恢复服务端默认"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "跟随{{name}}",
-        "deployment": "服务端",
-        "default": "服务端默认"
+        "default": "服务端默认",
+        "locked": "由管理员固定"
       },
       "stations": {
         "research": "联网调研",
@@ -2088,6 +2089,12 @@
         "prompt": "还没有可用的语言模型。在「模型服务」中配置服务，或在「Token Plan」中接入套餐，其模型会填入尚未设置的环节。",
         "open": "打开模型服务",
         "askAdmin": "尚未配置语言模型，请联系服务器管理员。"
+      },
+      "summary": {
+        "title": "由管理员配置",
+        "desc": "管理员已设定此服务器使用的模型，无法在此更改。",
+        "chat": "语言模型",
+        "media": "其他能力"
       }
     },
     "unimported": {

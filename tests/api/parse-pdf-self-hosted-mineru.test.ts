@@ -277,7 +277,7 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
           slots: { document: 'mu' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     try {

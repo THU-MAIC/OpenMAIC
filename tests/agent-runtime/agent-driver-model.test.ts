@@ -59,13 +59,16 @@ const providers = {
 
 async function configure(
   agent: unknown,
-  { workspace, defaults }: { workspace?: ModelConfigLayer; defaults?: ModelConfigLayer } = {},
+  {
+    workspace,
+    defaults,
+  }: { workspace?: ModelConfigLayer; defaults?: ModelConfigLayer['config']['slots'] } = {},
 ) {
   const runtime = await import('@/lib/server/model-config/runtime');
-  const slots = agent === undefined ? {} : { agent };
+  const slots = agent === undefined ? { ...defaults } : { ...defaults, agent };
   runtime.setDeploymentConfigForTests({
     layer: { source: 'deployment', config: { providers, slots } as ModelConfigLayer['config'] },
-    defaults: defaults ?? null,
+    legacy: !!defaults,
     notices: [],
   });
   runtime.setWorkspaceLayerLoaderForTests(async (ownerId) => {
@@ -96,7 +99,7 @@ describe('agent driver model', () => {
 
   it('stays off where an older deployment had no driver route', async () => {
     const resolve = await configure(undefined, {
-      defaults: { source: 'default', config: { slots: { llm: 'openai:gpt-5.6', agent: null } } },
+      defaults: { llm: 'openai:gpt-5.6', agent: null },
     });
     await expect(resolve()).rejects.toThrow('agent capability is turned off');
   });

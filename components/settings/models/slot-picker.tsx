@@ -30,7 +30,10 @@ import {
   providersFor,
   slotChange,
   splitRef,
+  assignmentRefs,
+  modelName,
 } from '@/lib/model-settings/edit';
+import { canAddService, canResetToServerDefault } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 import { slotRefusesThinkingEffort, type SlotCapability } from '@/lib/config/model-slots';
 import { thinkingCapabilityWithoutEffort } from '@/lib/ai/thinking-config';
@@ -275,7 +278,7 @@ export function SlotPicker({
   })();
   // Services the workspace may add without a key: listed for media slots, added when picked.
   const keyless =
-    slot.capability === 'chat' || !view.policy.allowWorkspaceProviders
+    slot.capability === 'chat' || !canAddService(view, slot.capability)
       ? []
       : keylessServices(
           view,
@@ -296,10 +299,24 @@ export function SlotPicker({
   };
   const isCurrent = (ref: string) => current.kind === 'model' && current.model === ref;
 
+  // A default the deployment writes on the slot itself takes the place of
+  // following the parent: removing the workspace's own choice returns to it.
+  const serverDefault = slot.serverDefault !== undefined;
+  const defaultText = (() => {
+    if (!serverDefault) return undefined;
+    if (slot.serverDefault === null) return t(`${MS}.card.off`);
+    const ref = assignmentRefs(slot.serverDefault).model;
+    if (!ref) return undefined;
+    const { providerId, modelId } = splitRef(ref);
+    return modelId
+      ? modelName(view, slot.capability, providerId, modelId)
+      : providerLabel(view, providerId);
+  })();
+
   // The rows in order, to make the current one (else the first) the Tab stop.
   const rowKeys = [
-    ...(parent ? ['follow'] : []),
-    ...(!parent && slot.assignment !== undefined ? ['clear'] : []),
+    ...(serverDefault || parent ? ['follow'] : []),
+    ...(!serverDefault && !parent && slot.assignment !== undefined ? ['clear'] : []),
     ...providers.flatMap((provider) =>
       providerOnly
         ? [provider.id]
@@ -330,7 +347,28 @@ export function SlotPicker({
         data-slot-picker={slot.slot}
         onKeyDown={rovingKeys}
       >
-        {parent && (
+        {serverDefault && (
+          <Row
+            tabStop={tabStop === 'follow'}
+            current={current.kind === 'follow'}
+            busy={busy === 'follow'}
+            disabled={!!busy}
+            onClick={() =>
+              current.kind === 'follow'
+                ? onDone()
+                : void run('follow', slotChange(slot, { kind: 'follow' }))
+            }
+            note={defaultText}
+          >
+            {t(
+              canResetToServerDefault(slot)
+                ? `${MS}.picker.resetDefault`
+                : `${MS}.picker.serverDefault`,
+            )}
+          </Row>
+        )}
+
+        {!serverDefault && parent && (
           <Row
             tabStop={tabStop === 'follow'}
             current={current.kind === 'follow'}
@@ -347,9 +385,9 @@ export function SlotPicker({
           </Row>
         )}
 
-        {/* A root has no parent to follow: dropping its own setting leaves
-            whatever the server provides (its value or default), if anything. */}
-        {!parent && slot.assignment !== undefined && (
+        {/* A root with no server default and no parent: dropping its own
+            setting leaves it not set. */}
+        {!serverDefault && !parent && slot.assignment !== undefined && (
           <Row
             tabStop={tabStop === 'clear'}
             busy={busy === 'follow'}

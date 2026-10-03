@@ -14,7 +14,7 @@ const { languageModelFor } = await import('@/lib/server/model-config/llm');
 const { clientBaseUrlLlmFetch } = await import('@/lib/server/llm-provider-fetch');
 const { fetchWithRedirectValidation } = await import('@/lib/server/fetch-with-redirect-validation');
 
-const target = (providerSource: 'deployment' | 'workspace' | 'default') => ({
+const target = (providerSource: 'deployment' | 'workspace') => ({
   providerId: 'p',
   providerSource,
   presetId: 'openai',
@@ -30,11 +30,8 @@ describe('the transport a slot model gets', () => {
     expect(calls.at(-1)?.fetchImpl).toBe(clientBaseUrlLlmFetch);
   });
 
-  it.each(['deployment', 'default'] as const)(
-    'keeps the operator transport for a %s provider',
-    async (source) => {
-      await languageModelFor(target(source));
-      expect(calls.at(-1)?.fetchImpl).toBe(fetchWithRedirectValidation);
-    },
-  );
+  it('keeps the operator transport for a deployment provider', async () => {
+    await languageModelFor(target('deployment'));
+    expect(calls.at(-1)?.fetchImpl).toBe(fetchWithRedirectValidation);
+  });
 });

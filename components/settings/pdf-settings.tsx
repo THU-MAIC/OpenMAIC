@@ -79,9 +79,7 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
   return (
     <div className="space-y-6 max-w-3xl">
       {entry.state === 'deployment' && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {editable && (
         <>

@@ -43,6 +43,7 @@ import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ApplyChange, ModelSettingsView } from '@/lib/model-settings/client';
 import { serviceEntries, type ServiceEntry } from '@/lib/model-settings/services';
+import { canAddService } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 import type { SettingsSection } from '@/lib/types/settings';
 
@@ -122,11 +123,14 @@ export { REGISTRY_INFO, entryIcon, entryName, isEntryConfigured } from './servic
 export function ModelServicesPanel({
   view,
   apply,
+  tabs = SERVICE_TABS,
   tab,
   onTabChange,
 }: {
   view: ModelSettingsView;
   apply: ApplyChange;
+  /** The tabs shown: the capabilities where adding a service can change something. */
+  tabs?: readonly ServiceTab[];
   tab: ServiceTab;
   onTabChange: (tab: ServiceTab) => void;
 }) {
@@ -145,7 +149,7 @@ export function ModelServicesPanel({
 
   const entry = entries.find((item) => item.id === selected[tab]) ?? entries[0];
   const select = (id: string) => setSelected((prev) => ({ ...prev, [tab]: id }));
-  const canAdd = view.policy.allowWorkspaceProviders && view.presets.length > 0;
+  const canAdd = canAddService(view, capability);
 
   const header = () => {
     if (!entry) return null;
@@ -232,7 +236,7 @@ export function ModelServicesPanel({
       <UnimportedSettingsNotice view={view} />
       {/* 七个服务的胶囊 tab（收拢后的一级列） */}
       <div className="flex gap-1 overflow-x-auto pb-3" role="tablist">
-        {SERVICE_TABS.map((id) => {
+        {tabs.map((id) => {
           const Icon = SERVICE_TAB_ICONS[id];
           const active = tab === id;
           return (

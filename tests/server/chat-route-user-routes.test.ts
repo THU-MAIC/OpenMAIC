@@ -69,7 +69,7 @@ describe('POST /api/chat — per-stage user routes (classroom interaction)', () 
     statelessGenerate.mockImplementation(async function* () {});
     (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
       layer: null,
-      defaults: null,
+      legacy: false,
       notices: [],
     });
   });
@@ -101,16 +101,17 @@ describe('POST /api/chat — per-stage user routes (classroom interaction)', () 
     );
   });
 
-  it('lets a configured classroom slot win over the user route', async () => {
+  it('lets a locked classroom slot win over the user route', async () => {
     (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
       layer: {
         source: 'deployment',
         config: {
           providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
           slots: { classroom: 'openai:gpt-5.4' },
+          lock: ['classroom'],
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const { POST } = await import('@/app/api/chat/route');

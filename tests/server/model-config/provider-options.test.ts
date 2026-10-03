@@ -26,7 +26,7 @@ type Config = import('@/lib/server/model-config/openmaic-yml').ModelConfigFile;
 function deployment(config: Config) {
   runtime.setDeploymentConfigForTests({
     layer: { source: 'deployment', config },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 }
@@ -39,7 +39,7 @@ const voxcpm = (backend: string): Config => ({
 });
 
 beforeEach(() => {
-  runtime.setDeploymentConfigForTests({ layer: null, defaults: null, notices: [] });
+  runtime.setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   fetchMock.mockReset().mockImplementation(
     async () =>
       new Response(new Uint8Array([82, 73, 70, 70]), {
@@ -135,7 +135,7 @@ describe('POST /api/generate/tts with a VoxCPM backend', () => {
     const runtimeAgain = await import('@/lib/server/model-config/runtime');
     runtimeAgain.setDeploymentConfigForTests({
       layer: { source: 'deployment', config: voxcpm(backend) },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const { POST } = await import('@/app/api/generate/tts/route');
@@ -187,7 +187,7 @@ describe('voice registration follows the backend', () => {
     const runtimeAgain = await import('@/lib/server/model-config/runtime');
     runtimeAgain.setDeploymentConfigForTests({
       layer: { source: 'deployment', config: voxcpm('python-api') },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const { POST } = await import('@/app/api/generate/voice/route');

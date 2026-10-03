@@ -25,6 +25,7 @@ import {
 } from '@/lib/model-settings/capabilities';
 import { assignmentRefs, modelChange, modelRef, providerLabel } from '@/lib/model-settings/edit';
 import { serviceEntries, slotThinking, thinkingChange } from '@/lib/model-settings/services';
+import { settingsSections, slotEditable } from '@/lib/model-settings/shape';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import {
@@ -113,8 +114,17 @@ export function GenerationToolbar({
   const llmPickerGroups = useLLMPickerGroups(view);
   const currentProviderName = view && providerId ? providerLabel(view, providerId) : providerId;
   const currentGroup = llmPickerGroups.find((group) => group.id === providerId);
-  // The deployment may lock the course model; it is then shown, not picked.
-  const llmEditable = !!llmSlot && !llmSlot.locked && llmPickerGroups.length > 0;
+  // The administrator may fix the course model; it is then shown, not picked.
+  const llmEditable = slotEditable(llmSlot) && llmPickerGroups.length > 0;
+  // Where the settings can still set up a language model, if anywhere.
+  const sections = view ? settingsSections(view) : null;
+  const setupSection: SettingsSection | undefined = !sections
+    ? undefined
+    : sections.modelServices.includes('chat')
+      ? 'model-services'
+      : slotEditable(llmSlot)
+        ? 'course-models'
+        : undefined;
   const applyChange = async (change: ModelSettingsChange | undefined) => {
     if (!change) return;
     const result = await modelSettingsClient.apply(change);
@@ -288,11 +298,12 @@ export function GenerationToolbar({
       ) : (
         view &&
         !courseGenerationUsable(modelCapabilities(view)) &&
-        onSettingsOpen && (
+        onSettingsOpen &&
+        setupSection && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => onSettingsOpen('model-services')}
+                onClick={() => onSettingsOpen(setupSection)}
                 className={cn(
                   pillCls,
                   'text-amber-600 dark:text-amber-400 animate-pulse',

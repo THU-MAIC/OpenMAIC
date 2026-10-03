@@ -18,7 +18,11 @@ import { chatPreset, makeView, withLlm, withSlots, workspaceProvider } from './f
 
 type Effective = SlotView['effective'];
 
-function assigned(resolvedAt: string, ref: string, source = 'workspace'): Effective {
+function assigned(
+  resolvedAt: string,
+  ref: string,
+  source: 'workspace' | 'default' | 'locked' = 'workspace',
+): Effective {
   const [providerId, modelId] = ref.split(':');
   return {
     status: 'assigned',
@@ -26,7 +30,7 @@ function assigned(resolvedAt: string, ref: string, source = 'workspace'): Effect
     source,
     requirements: [],
     providerId,
-    providerSource: source === 'deployment' ? 'deployment' : 'workspace',
+    providerSource: source === 'workspace' ? 'workspace' : 'deployment',
     presetId: providerId,
     registryId: 'x',
     modelId,
@@ -87,7 +91,7 @@ describe('defaultModelOverrides', () => {
     const view = withSlots(base(), {
       'course.actions': {
         locked: true,
-        effective: assigned('course.actions', 'server:big', 'deployment'),
+        effective: assigned('course.actions', 'server:big', 'locked'),
       },
     });
     expect(defaultModelOverrides(view).map((entry) => entry.slot)).toEqual(['course.actions']);
@@ -97,7 +101,7 @@ describe('defaultModelOverrides', () => {
     const view = withSlots(base(), {
       'course.actions': {
         locked: true,
-        effective: assigned('course.actions', 'acme:acme-large', 'deployment'),
+        effective: assigned('course.actions', 'acme:acme-large', 'locked'),
       },
     });
     expect(defaultModelOverrides(view)).toEqual([]);
@@ -211,7 +215,7 @@ describe('courseStagesAllOverridden', () => {
     const stages = allCourseStages('other:gpt-5');
     stages['course.outline'] = {
       locked: true,
-      effective: assigned('course.outline', 'server:big', 'deployment'),
+      effective: assigned('course.outline', 'server:big', 'locked'),
     };
     expect(courseStagesAllOverridden(withSlots(base(), stages))).toBe(true);
   });

@@ -1921,7 +1921,7 @@
       "unavailableTitle": "El servidor administra los modelos",
       "unavailableBody": "Este servidor no guarda configuración de modelos por espacio de trabajo, así que usa los modelos que configuró su administrador.",
       "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
-      "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
+      "lockedNow": "El administrador fijó esto, así que no se cambió.",
       "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó.",
       "serverOnly": "Solo la configuración del servidor (openmaic.yml) puede configurar este servicio. Consulta al administrador del servidor.",
       "serverOnlyPolicy": "Este servidor no permite que los espacios de trabajo agreguen sus propios servicios. Consulta al administrador del servidor.",
@@ -1952,8 +1952,7 @@
         "off": "Desactivado",
         "unassigned": "Sin definir",
         "invalid": "Ajuste no válido",
-        "locked": "Definido por el servidor",
-        "lockedHint": "Lo define la configuración del servidor. No se puede cambiar aquí.",
+        "lockedHint": "El administrador fijó esto para todos en este servidor; no se puede cambiar aquí.",
         "followers": "Pasos que lo siguen: {{count}}",
         "childrenFollow": "Tipos de página · todos siguen",
         "childrenOwn": "Tipos de página · {{count}} propios"
@@ -1962,7 +1961,7 @@
         "label": "Leyenda",
         "follows": "Sigue al superior",
         "own": "Ajuste propio",
-        "locked": "Definido por el servidor"
+        "locked": "Fijado por el administrador"
       },
       "map": {
         "label": "Mapa de modelos del curso. Arrastra o usa las flechas para desplazarte; usa los botones de zoom para acercar o alejar.",
@@ -1989,11 +1988,13 @@
         "noFallback": "Ninguno",
         "manageProviders": "Administrar en Servicios de modelos",
         "conflict": "La configuración cambió en otro lugar y se volvió a cargar. Revísala e inténtalo de nuevo.",
-        "lockedNow": "Ahora el servidor define esto, así que no se cambió.",
+        "lockedNow": "El administrador fijó esto, así que no se cambió.",
         "clear": "Quitar ajuste propio",
-        "clearHint": "Usar el ajuste del servidor, si tiene uno",
+        "clearHint": "Lo deja sin definir",
         "unconfirmed": "Se perdió la respuesta del servidor, así que la configuración se volvió a cargar. Comprueba si el cambio se aplicó.",
-        "thinking": "Razonamiento"
+        "thinking": "Razonamiento",
+        "serverDefault": "Predeterminado del servidor",
+        "resetDefault": "Restablecer al predeterminado del servidor"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "Sigue a {{name}}",
-        "deployment": "Servidor",
-        "default": "Predeterminado del servidor"
+        "default": "Predeterminado del servidor",
+        "locked": "Fijado por el administrador"
       },
       "stations": {
         "research": "Investigación web",
@@ -2088,6 +2089,12 @@
         "prompt": "Aún no hay modelo de lenguaje. Configura un servicio en Servicios de modelos o conecta un plan en Token Plan; sus modelos ocupan las partes sin configurar.",
         "open": "Abrir Servicios de modelos",
         "askAdmin": "No hay un modelo de lenguaje configurado. Pide al administrador del servidor que configure uno."
+      },
+      "summary": {
+        "title": "Configurado por el administrador",
+        "desc": "El administrador definió qué modelos usa este servidor. No se pueden cambiar aquí.",
+        "chat": "Modelos de lenguaje",
+        "media": "Otras capacidades"
       }
     },
     "unimported": {

@@ -14,8 +14,27 @@ export function emptySlots(): SlotView[] {
     capability: slot.capability,
     configOnly: 'configOnly' in slot && slot.configOnly === true,
     locked: false,
+    source: { kind: 'unconfigured' },
     effective: { status: 'unassigned' },
   }));
+}
+
+/**
+ * Where a slot's value comes from, as the server works it out, for a slot a
+ * test patched without saying: the node that resolved it, else its own
+ * assignment, else a lock.
+ */
+export function derivedSource(slot: SlotView): SlotView['source'] {
+  const effective = slot.effective;
+  if (effective.status === 'assigned' || effective.status === 'disabled') {
+    if (effective.resolvedAt !== slot.slot)
+      return { kind: 'inherited', from: effective.resolvedAt };
+    return { kind: effective.source };
+  }
+  if (slot.locked) return { kind: 'locked' };
+  if (slot.assignment !== undefined) return { kind: 'workspace' };
+  if (slot.serverDefault !== undefined) return { kind: 'default' };
+  return { kind: 'unconfigured' };
 }
 
 export const chatPreset: PresetView = {
@@ -65,7 +84,7 @@ export function workspaceProvider(id: string, preset = chatPreset): ProviderView
 export function makeView(overrides: Partial<ModelSettingsView> = {}): ModelSettingsView {
   return {
     revision: null,
-    policy: { allowWorkspaceProviders: true },
+    allowUserKeys: true,
     presets: [chatPreset, compatiblePreset],
     providers: [],
     slots: emptySlots(),
@@ -80,7 +99,12 @@ export function withSlots(
 ): ModelSettingsView {
   return {
     ...view,
-    slots: view.slots.map((slot) => (patch[slot.slot] ? { ...slot, ...patch[slot.slot] } : slot)),
+    slots: view.slots.map((slot) => {
+      const changed = patch[slot.slot];
+      if (!changed) return slot;
+      const next = { ...slot, ...changed };
+      return changed.source ? next : { ...next, source: derivedSource(next) };
+    }),
   };
 }
 

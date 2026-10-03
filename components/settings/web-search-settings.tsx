@@ -48,12 +48,12 @@ export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
     <div className="space-y-6 max-w-3xl">
       {entry.state === 'deployment' && <ServerConfiguredNotice />}
       {entry.state === 'server-only' &&
-        (entry.registryId === 'searxng' && view.policy.allowWorkspaceProviders ? (
+        (entry.registryId === 'searxng' && view.allowUserKeys ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
             {t('settings.searxngServerOnlyNotice')}
           </div>
         ) : (
-          <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
+          <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />
         ))}
 
       {editable && provider && !provider.requiresApiKey && (

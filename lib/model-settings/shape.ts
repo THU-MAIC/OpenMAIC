@@ -1,0 +1,115 @@
+/**
+ * What the model settings show, derived in one place from the server's view
+ * (RFC #1701, "What the settings show"). One rule decides every control:
+ * render it only if using it can change something. Users never see slots,
+ * locks or policies as concepts; the settings take one of three shapes:
+ *
+ * - `yourself` (set it up yourself): users may add keys (`allowUserKeys`), so
+ *   Token Plan, Model Services and the course model map, each where it can
+ *   still change a slot;
+ * - `choose` (choose a model): no keys of their own, so only the course model
+ *   map, choosing among the deployment's providers;
+ * - `admin` (configured by the administrator): nothing a user may set, so a
+ *   read-only summary of what each part uses.
+ *
+ * Pure functions over the view; every component asks these instead of
+ * checking locks or the deployment's switches itself.
+ */
+import type { SlotCapability } from '@/lib/config/model-slots';
+
+import type { ModelSettingsView, PresetView, SlotView } from './client';
+
+export type SettingsShape = 'yourself' | 'choose' | 'admin';
+
+/** The capabilities Model Services has a tab for, in its order. */
+export const SERVICE_CAPABILITIES: readonly SlotCapability[] = [
+  'chat',
+  'image',
+  'video',
+  'tts',
+  'asr',
+  'document',
+  'webSearch',
+];
+
+/** Whether a user may set this slot: shown in the settings and not in a locked subtree. */
+export function slotEditable(slot: SlotView | undefined): slot is SlotView {
+  return !!slot && !slot.locked && !slot.configOnly;
+}
+
+/** Whether some slot of a capability can still be set. */
+export function capabilityEditable(view: ModelSettingsView, capability: SlotCapability): boolean {
+  return view.slots.some((slot) => slot.capability === capability && slotEditable(slot));
+}
+
+/**
+ * Whether adding a service for a capability can change anything: users may
+ * add keys, a preset offers the capability, and some slot of it can be set.
+ */
+export function canAddService(view: ModelSettingsView, capability: SlotCapability): boolean {
+  return (
+    view.allowUserKeys &&
+    capabilityEditable(view, capability) &&
+    view.presets.some((preset) => !!preset.capabilities[capability])
+  );
+}
+
+/**
+ * The slots connecting a plan may fill: the ones it recommends, and `llm`
+ * when it serves chat (connecting sets the default model at least).
+ */
+function planSlots(preset: PresetView): string[] {
+  const slots = Object.keys(preset.recommended);
+  return preset.capabilities.chat && !slots.includes('llm') ? [...slots, 'llm'] : slots;
+}
+
+/**
+ * Whether connecting a token plan can change anything: users may add keys and
+ * at least one slot the plan would fill is not locked (connecting never
+ * touches a locked one).
+ */
+export function tokenPlanCanChange(view: ModelSettingsView, preset: PresetView): boolean {
+  if (!view.allowUserKeys) return false;
+  const slots = new Map<string, SlotView>(view.slots.map((slot) => [slot.slot, slot]));
+  return planSlots(preset).some((id) => slotEditable(slots.get(id)));
+}
+
+export function settingsShape(view: ModelSettingsView): SettingsShape {
+  if (!view.slots.some(slotEditable)) return 'admin';
+  return view.allowUserKeys ? 'yourself' : 'choose';
+}
+
+export interface SettingsSections {
+  shape: SettingsShape;
+  /** Token Plan: some plan can still fill a slot. */
+  tokenPlan: boolean;
+  /** Model Services, with the capabilities whose tab is shown (adding a service there can change something). */
+  modelServices: readonly SlotCapability[];
+  /** Course Model Config: the editable map, or the read-only summary. */
+  courseModels: 'map' | 'summary';
+}
+
+export function settingsSections(view: ModelSettingsView): SettingsSections {
+  const shape = settingsShape(view);
+  const yourself = shape === 'yourself';
+  return {
+    shape,
+    tokenPlan:
+      yourself &&
+      view.presets.some(
+        (preset) => preset.kind === 'token-plan' && tokenPlanCanChange(view, preset),
+      ),
+    modelServices: yourself
+      ? SERVICE_CAPABILITIES.filter((capability) => canAddService(view, capability))
+      : [],
+    courseModels: shape === 'admin' ? 'summary' : 'map',
+  };
+}
+
+/**
+ * Whether a slot's card may offer "Reset to server default": the workspace
+ * set it, and the deployment writes a default on the slot itself.
+ */
+export function canResetToServerDefault(slot: SlotView): boolean {
+  return slotEditable(slot) && slot.assignment !== undefined && slot.serverDefault !== undefined;
+}

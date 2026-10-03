@@ -17,7 +17,7 @@ async function configureSlots(slots: Record<string, unknown>) {
         slots,
       } as never,
     },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 }

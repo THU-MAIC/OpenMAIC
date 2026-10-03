@@ -8,6 +8,7 @@
 import type { SlotId } from '@/lib/config/model-slots';
 
 import type { ModelSettingsView, SlotView } from './client';
+import { setOnSlot } from './edit';
 
 /** A stage set separately: its own setting resolves to something other than the default. */
 export interface OverriddenStage {
@@ -41,17 +42,6 @@ function slotsById(view: ModelSettingsView): Map<string, SlotView> {
   return new Map(view.slots.map((slot) => [slot.slot, slot]));
 }
 
-/** Whether a slot has a setting of its own (the workspace's or the deployment's). */
-function hasOwnSetting(slot: SlotView): boolean {
-  const effective = slot.effective;
-  return (
-    slot.assignment !== undefined ||
-    slot.locked ||
-    ((effective.status === 'assigned' || effective.status === 'disabled') &&
-      effective.resolvedAt === slot.slot)
-  );
-}
-
 /**
  * Whether a slot follows the default model: it resolves at `llm`, or nothing
  * between it and `llm` has a setting of its own (so it would take whatever
@@ -62,7 +52,7 @@ export function followsDefault(view: ModelSettingsView, slotId: string): boolean
   let current = slots.get(slotId);
   while (current) {
     if (current.slot === 'llm') return true;
-    if (hasOwnSetting(current)) return false;
+    if (setOnSlot(current)) return false;
     current = current.parent ? slots.get(current.parent) : undefined;
   }
   return false;
@@ -102,7 +92,7 @@ export function defaultModelOverrides(view: ModelSettingsView | null): Overridde
   const overridden: OverriddenStage[] = [];
   for (const slot of view.slots) {
     if (slot.configOnly || slot.slot === 'llm' || !underDefault(slots, slot)) continue;
-    if (!hasOwnSetting(slot) || resolvedKey(slot) === defaultKey) continue;
+    if (!setOnSlot(slot) || resolvedKey(slot) === defaultKey) continue;
     const effective = slot.effective;
     if (effective.status === 'assigned') {
       overridden.push({

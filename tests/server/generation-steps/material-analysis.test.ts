@@ -12,7 +12,7 @@ import { testLogger } from './helpers';
 // No model configuration: the self-contained extractors and the providers a
 // request names.
 vi.mock('@/lib/server/model-config/deployment-layer', () => ({
-  loadDeploymentLayer: () => ({ layer: null, defaults: null, notices: [] }),
+  loadDeploymentLayer: () => ({ layer: null, legacy: false, notices: [] }),
 }));
 
 const services: ExtractionServices = { document: null, documentStatus: 'unassigned' };

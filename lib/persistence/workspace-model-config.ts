@@ -150,10 +150,13 @@ export async function saveWorkspaceModelConfig(
 ): Promise<number> {
   const { config, issues } = checkModelConfigShape(next);
   if (!config) throw new WorkspaceConfigInvalidError(issues);
-  if (config.policy !== undefined) {
-    throw new WorkspaceConfigInvalidError([
-      'policy: only the deployment configuration sets policy',
-    ]);
+  const deploymentOnly = (['lock', 'allowUserKeys'] as const).filter(
+    (key) => config[key] !== undefined,
+  );
+  if (deploymentOnly.length) {
+    throw new WorkspaceConfigInvalidError(
+      deploymentOnly.map((key) => `${key}: only the deployment configuration sets ${key}`),
+    );
   }
 
   const withTransaction = nodePostgresTransaction(queryable);

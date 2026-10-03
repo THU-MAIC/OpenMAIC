@@ -96,11 +96,13 @@ describe('document slot from the legacy provider variables', () => {
       ].join('\n'),
     );
     const services = await documentServices();
-    expect(services.documentStatus).toBe('configured');
+    // A server default from the file, not the legacy one: no legacy pins.
+    expect(services.documentStatus).toBe('default');
     expect(services.document).toMatchObject({
       providerId: 'mineru',
       baseUrl: 'https://mineru.yml.example',
       origin: 'configuration',
+      serverDefault: true,
     });
     expect(services.document?.apiKey).toBeUndefined();
   });

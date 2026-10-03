@@ -13,7 +13,7 @@ async function check(deployment: ModelConfigFile | null, workspace: ModelConfigF
   const runtime = await import('@/lib/server/model-config/runtime');
   runtime.setDeploymentConfigForTests({
     layer: deployment ? { source: 'deployment', config: deployment } : null,
-    defaults: null,
+    legacy: false,
     notices: [],
   });
   runtime.setWorkspaceLayerLoaderForTests(async () =>

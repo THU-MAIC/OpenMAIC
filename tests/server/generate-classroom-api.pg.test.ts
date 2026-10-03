@@ -158,7 +158,7 @@ const MODEL_CONFIG = {
       slots: { llm: 'main:gpt-4o-mini' },
     },
   },
-  defaults: null,
+  legacy: false,
   notices: [],
 };
 
@@ -503,7 +503,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
           slots: { llm: 'main:gpt-4o-mini', 'course.content.quiz': 'keyless:gpt-4o-mini' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     vi.stubEnv('OPENAI_API_KEY', '');
@@ -553,7 +553,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
           slots: { llm: 'keyless:deepseek-v4-flash' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const keyless = '6a7b8c9d-0e1f-4a2b-9c3d-5e6f7a8b9c0d';
@@ -570,7 +570,7 @@ describe.skipIf(!contractUrl)('the headless classroom API on PostgreSQL', () => 
   });
 
   it('refuses a submission without a configured model, creating no run', async () => {
-    setDeploymentConfigForTests({ layer: null, defaults: null, notices: [] });
+    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
     const lonely = '4e5f6a7b-8c9d-4e0f-9a1b-3c4d5e6f7a8b';
 
     const refused = await submit(lonely, { requirement: 'Teach' });

@@ -38,6 +38,7 @@ vi.mock('@/components/settings/model-services', () => ({
   SERVICE_TABS: ['providers'],
   SERVICE_TAB_DESCRIPTIONS: { providers: 'providers' },
   SERVICE_TAB_LABELS: { providers: 'providers' },
+  TAB_CAPABILITY: { providers: 'chat' },
 }));
 vi.mock('@/components/settings/server-settings', () => ({
   ServerSettingsGate: ({ children }: { children: (view: null, apply: null) => unknown }) =>
@@ -62,8 +63,11 @@ afterEach(() => {
 });
 
 function stubRuntime(enabled: boolean) {
-  const fetchMock = vi.fn(async () =>
-    Response.json({ enabled, runtimeEnabled: enabled, persistence: true }),
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+    // The model settings are not what this file is about: none are kept.
+    String(input).includes('/api/model-config')
+      ? new Response('Not found', { status: 404 })
+      : Response.json({ enabled, runtimeEnabled: enabled, persistence: true }),
   );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;

@@ -1921,7 +1921,7 @@
       "unavailableTitle": "Models are managed by the server",
       "unavailableBody": "This server does not keep model settings per workspace, so it uses the models its administrator configured.",
       "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
-      "lockedNow": "The server now sets this, so it was not changed.",
+      "lockedNow": "The administrator has fixed this, so it was not changed.",
       "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect.",
       "serverOnly": "Only the server's configuration (openmaic.yml) can set up this service. Ask the server's administrator.",
       "serverOnlyPolicy": "This server does not let workspaces add their own services. Ask the server's administrator.",
@@ -1952,8 +1952,7 @@
         "off": "Off",
         "unassigned": "Not set",
         "invalid": "Invalid setting",
-        "locked": "Set by the server",
-        "lockedHint": "Set by the server's configuration. It cannot be changed here.",
+        "lockedHint": "The administrator fixed this for everyone on this server; it cannot be changed here.",
         "followers": "Parts following it: {{count}}",
         "childrenFollow": "Page types · all follow",
         "childrenOwn": "Page types · {{count}} own"
@@ -1962,7 +1961,7 @@
         "label": "Legend",
         "follows": "Follows parent",
         "own": "Own setting",
-        "locked": "Set by the server"
+        "locked": "Fixed by the administrator"
       },
       "map": {
         "label": "Course model map. Drag or use the arrow keys to pan; use the zoom controls to zoom.",
@@ -1989,11 +1988,13 @@
         "noFallback": "None",
         "manageProviders": "Manage in Model Services",
         "conflict": "The settings changed elsewhere and were reloaded. Check them and try again.",
-        "lockedNow": "The server now sets this, so it was not changed.",
+        "lockedNow": "The administrator has fixed this, so it was not changed.",
         "clear": "Clear own setting",
-        "clearHint": "Use the server's setting, if it has one",
+        "clearHint": "Leaves it not set",
         "unconfirmed": "The server's answer was lost, so the settings were reloaded. Check whether the change took effect.",
-        "thinking": "Thinking"
+        "thinking": "Thinking",
+        "serverDefault": "Server default",
+        "resetDefault": "Reset to server default"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "Follows {{name}}",
-        "deployment": "Server",
-        "default": "Server default"
+        "default": "Server default",
+        "locked": "Fixed by the administrator"
       },
       "stations": {
         "research": "Web research",
@@ -2088,6 +2089,12 @@
         "prompt": "No language model yet. Set up a service in Model Services or connect a plan in Token Plan; its models fill the parts that are not set.",
         "open": "Open Model Services",
         "askAdmin": "No language model is configured. Ask the server's administrator to set one up."
+      },
+      "summary": {
+        "title": "Configured by the administrator",
+        "desc": "The administrator set up which models this server uses. They cannot be changed here.",
+        "chat": "Language models",
+        "media": "Other capabilities"
       }
     },
     "unimported": {

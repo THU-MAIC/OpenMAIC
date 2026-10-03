@@ -405,31 +405,9 @@ export function groupPresets(
   })).filter((entry) => entry.presets.length > 0);
 }
 
-/** Where a slot's effective value comes from, for its card. */
-export type SlotSource =
-  | { kind: 'own' }
-  | { kind: 'deployment' }
-  | { kind: 'default' }
-  | { kind: 'inherited'; from: string }
-  | { kind: 'none' };
-
-export function slotSource(slot: SlotView): SlotSource {
-  const effective = slot.effective;
-  if (effective.status === 'assigned' || effective.status === 'disabled') {
-    if (effective.resolvedAt !== slot.slot)
-      return { kind: 'inherited', from: effective.resolvedAt };
-    if (effective.source === 'deployment') return { kind: 'deployment' };
-    if (effective.source === 'default') return { kind: 'default' };
-    return { kind: 'own' };
-  }
-  if (slot.locked) return { kind: 'deployment' };
-  if (slot.assignment !== undefined) return { kind: 'own' };
-  return slot.parent ? { kind: 'inherited', from: slot.parent } : { kind: 'none' };
-}
-
-/** A slot that merely follows its parent: nothing of its own, nothing locked. */
-export function followsParent(slot: SlotView): boolean {
-  return slot.parent !== null && !slot.locked && slot.assignment === undefined;
+/** Whether a slot is set on itself (by the workspace, a server default or a lock), not inherited. */
+export function setOnSlot(slot: SlotView): boolean {
+  return slot.source.kind !== 'inherited' && slot.source.kind !== 'unconfigured';
 }
 
 /** The i18n key segment for a slot id (`course.content.slide` → `courseContentSlide`). */

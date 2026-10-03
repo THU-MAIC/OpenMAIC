@@ -20,9 +20,9 @@ vi.mock('@/lib/logger', () => ({
 const DRIVER_MODEL = { modelId: 'driver-model' };
 const TITLE_MODEL = { modelId: 'title-model' };
 
-/** A lookup whose configured answer is `configured`, and whose defaults are `defaults`. */
-function lookup(configured: object, defaults: object = { status: 'unassigned' }) {
-  mocks.lookupSlot.mockResolvedValue({ configured, defaults: () => defaults });
+/** A lookup that resolves the title slot to `resolution`. */
+function lookup(resolution: object) {
+  mocks.lookupSlot.mockResolvedValue(resolution);
 }
 const assigned = (resolvedAt: string, thinking?: object) => ({
   status: 'assigned',
@@ -82,15 +82,12 @@ describe('conversation title generator', () => {
     );
   });
 
-  it('falls back to the defaults, and makes no title where they turn the agent off', async () => {
-    lookup({ status: 'unassigned', slot: 'agent.title' }, assigned('agent'));
-    await expect(generate('Plan a launch')).resolves.toBe('Project planning');
+  it('makes no title where nothing is assigned or the agent is turned off', async () => {
+    lookup({ status: 'unassigned', slot: 'agent.title' });
+    await expect(generate('Plan a launch')).resolves.toBeNull();
 
     vi.clearAllMocks();
-    lookup(
-      { status: 'unassigned', slot: 'agent.title' },
-      { status: 'disabled', slot: 'agent.title', resolvedAt: 'agent' },
-    );
+    lookup({ status: 'disabled', slot: 'agent.title', resolvedAt: 'agent' });
     await expect(generate('Plan a launch')).resolves.toBeNull();
     expect(mocks.callLLM).not.toHaveBeenCalled();
   });

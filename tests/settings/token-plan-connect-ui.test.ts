@@ -38,7 +38,7 @@ import { applyModelSettingsChange, modelSettingsView } from '@/lib/server/model-
 const deployment = (config: ModelConfigLayer['config'] | null) =>
   setDeploymentConfigForTests({
     layer: config ? { source: 'deployment', config } : null,
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 
@@ -201,20 +201,21 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
 
   it('leaves the slots the deployment locks out of the question and the change', async () => {
     const picks = await workspaceWithOwnPicks();
-    // The deployment locks the default model the workspace had picked.
+    // The deployment locks the slide model the workspace had picked.
     deployment({
       providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
-      slots: { llm: 'operator:deepseek-v4-pro' },
+      slots: { 'course.content.slide': 'operator:deepseek-v4-pro' },
+      lock: ['course.content.slide'],
     });
     const panel = mountPanel(picks);
     await connectTokenDance();
     const rows = [...dialog()!.querySelectorAll('li')].map((row) => row.textContent);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatch(/^course\.content\.slide/);
+    expect(rows[0]).toMatch(/^llm/);
     act(() => byText('settings.tokenPlan.applyRecommended', '[role="alertdialog"] button').click());
     await flush();
     const set = (panel.changes[1] as Extract<ModelSettingsChange, { kind: 'slots' }>).set!;
-    expect(set).not.toHaveProperty('llm');
-    expect(set).toHaveProperty('course.content.slide', 'tokendance:cogevol-slide-0828');
+    expect(set).not.toHaveProperty('course.content.slide');
+    expect(set.llm).toMatch(/^tokendance:/);
   });
 });

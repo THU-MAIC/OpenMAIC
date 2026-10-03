@@ -1921,7 +1921,7 @@
       "unavailableTitle": "Modelle werden vom Server verwaltet",
       "unavailableBody": "Dieser Server speichert keine Modelleinstellungen pro Arbeitsbereich und verwendet die von der Administration konfigurierten Modelle.",
       "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfen Sie sie und versuchen Sie es erneut.",
-      "lockedNow": "Dies wird jetzt vom Server festgelegt und wurde daher nicht geändert.",
+      "lockedNow": "Der Administrator hat dies festgelegt, daher wurde es nicht geändert.",
       "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfen Sie, ob die Änderung übernommen wurde.",
       "serverOnly": "Dieser Dienst kann nur in der Serverkonfiguration (openmaic.yml) eingerichtet werden. Wenden Sie sich an die Serveradministration.",
       "serverOnlyPolicy": "Dieser Server erlaubt Arbeitsbereichen keine eigenen Dienste. Wenden Sie sich an die Serveradministration.",
@@ -1952,8 +1952,7 @@
         "off": "Aus",
         "unassigned": "Nicht festgelegt",
         "invalid": "Ungültige Einstellung",
-        "locked": "Vom Server festgelegt",
-        "lockedHint": "Durch die Serverkonfiguration festgelegt. Kann hier nicht geändert werden.",
+        "lockedHint": "Der Administrator hat dies für alle auf diesem Server festgelegt; es kann hier nicht geändert werden.",
         "followers": "Schritte, die ihm folgen: {{count}}",
         "childrenFollow": "Seitentypen · alle folgen",
         "childrenOwn": "Seitentypen · {{count}} eigene"
@@ -1962,7 +1961,7 @@
         "label": "Legende",
         "follows": "Folgt übergeordnetem",
         "own": "Eigene Einstellung",
-        "locked": "Vom Server festgelegt"
+        "locked": "Vom Administrator festgelegt"
       },
       "map": {
         "label": "Kursmodellkarte. Ziehen oder Pfeiltasten zum Verschieben, Zoomschaltflächen zum Zoomen.",
@@ -1989,11 +1988,13 @@
         "noFallback": "Keiner",
         "manageProviders": "In den Modelldiensten verwalten",
         "conflict": "Die Einstellungen wurden an anderer Stelle geändert und neu geladen. Prüfe sie und versuche es erneut.",
-        "lockedNow": "Der Server legt dies jetzt fest, daher wurde nichts geändert.",
+        "lockedNow": "Der Administrator hat dies festgelegt, daher wurde es nicht geändert.",
         "clear": "Eigene Einstellung entfernen",
-        "clearHint": "Die Einstellung des Servers verwenden, falls vorhanden",
+        "clearHint": "Bleibt dann nicht festgelegt",
         "unconfirmed": "Die Antwort des Servers ging verloren, daher wurden die Einstellungen neu geladen. Prüfe, ob die Änderung übernommen wurde.",
-        "thinking": "Denken"
+        "thinking": "Denken",
+        "serverDefault": "Serverstandard",
+        "resetDefault": "Auf Serverstandard zurücksetzen"
       },
       "slots": {
         "llm": {
@@ -2071,8 +2072,8 @@
       },
       "source": {
         "inherited": "Folgt {{name}}",
-        "deployment": "Server",
-        "default": "Serverstandard"
+        "default": "Serverstandard",
+        "locked": "Vom Administrator festgelegt"
       },
       "stations": {
         "research": "Webrecherche",
@@ -2088,6 +2089,12 @@
         "prompt": "Noch kein Sprachmodell. Richten Sie in den Modelldiensten einen Dienst ein oder verbinden Sie im Token Plan einen Plan; seine Modelle übernehmen die Teile ohne Einstellung.",
         "open": "Modelldienste öffnen",
         "askAdmin": "Es ist kein Sprachmodell konfiguriert. Bitten Sie die Serveradministration, eines einzurichten."
+      },
+      "summary": {
+        "title": "Vom Administrator konfiguriert",
+        "desc": "Der Administrator hat festgelegt, welche Modelle dieser Server verwendet. Sie können hier nicht geändert werden.",
+        "chat": "Sprachmodelle",
+        "media": "Weitere Funktionen"
       }
     },
     "unimported": {

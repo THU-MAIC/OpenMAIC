@@ -24,7 +24,7 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
 }));
 // No model configuration beyond what each case installs.
 vi.mock('@/lib/server/model-config/deployment-layer', () => ({
-  loadDeploymentLayer: () => ({ layer: null, defaults: null, notices: [] }),
+  loadDeploymentLayer: () => ({ layer: null, legacy: false, notices: [] }),
 }));
 vi.mock('@/lib/pdf/mineru-cloud', () => ({
   parseWithMinerUCloud: mocks.parseWithMinerUCloud,
@@ -45,10 +45,11 @@ function source(text: string, mimeType: string, fileName: string) {
   return { fileName, fileSize: buffer.byteLength, mimeType, buffer };
 }
 
-async function deploymentSlots(config: ModelConfigFile, defaults?: ModelConfigFile) {
+/** The deployment's configuration; `legacy` when it was translated from the old variables. */
+async function deploymentSlots(config: ModelConfigFile, { legacy = false } = {}) {
   (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
     layer: { source: 'deployment', config },
-    defaults: defaults ? { source: 'default', config: defaults } : null,
+    legacy,
     notices: [],
   });
 }
@@ -111,8 +112,11 @@ describe('material analysis from the slots', () => {
   it('uses the document default translated from the legacy provider variables', async () => {
     // What loadDeploymentLayer builds from PDF_MINERU_CLOUD_API_KEY alone.
     await deploymentSlots(
-      { providers: { 'mineru-cloud': { preset: 'mineru-cloud', apiKey: 'env-key' } } },
-      { slots: { document: 'mineru-cloud' } },
+      {
+        providers: { 'mineru-cloud': { preset: 'mineru-cloud', apiKey: 'env-key' } },
+        slots: { document: 'mineru-cloud' },
+      },
+      { legacy: true },
     );
     await analyze(source('%PDF-1.4', 'application/pdf', 'lesson.pdf'));
 

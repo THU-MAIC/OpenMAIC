@@ -40,8 +40,8 @@ describe('resolveSlot', () => {
       status: 'assigned',
       slot: 'course.outline',
       resolvedAt: 'llm',
-      source: 'deployment',
-      // Inheriting a deployment value does not lock the slot itself.
+      // The deployment's slots are server defaults: nothing here is locked.
+      source: 'default',
       locked: false,
       providerId: 'mm',
       presetId: 'minimax',
@@ -81,8 +81,8 @@ describe('resolveSlot', () => {
       status: 'disabled',
       slot: 'video',
       resolvedAt: 'video',
-      source: 'deployment',
-      locked: true,
+      source: 'default',
+      locked: false,
     });
     const offContent = layer('deployment', 'slots:\n  course.content: null\n');
     expect(resolveSlot('course.content.pbl', [offContent])).toMatchObject({
@@ -90,19 +90,17 @@ describe('resolveSlot', () => {
       resolvedAt: 'course.content',
       locked: false,
     });
-    expect(resolveSlot('course.content', [offContent])).toMatchObject({ locked: true });
-    expect(resolveSlot('llm', [deployment])).toMatchObject({ locked: true });
     expect(resolveSlot('image', [deployment])).toEqual({ status: 'unassigned', slot: 'image' });
     expect(resolveSlot('llm', [])).toEqual({ status: 'unassigned', slot: 'llm' });
   });
 
-  it('lets the deployment win at a node and the workspace fill the rest', () => {
+  it('lets the workspace replace a server default at a node and follow the rest', () => {
     const workspace = layer(
       'workspace',
-      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  llm: own:deepseek-v4-pro\n  course.outline: own:deepseek-v4-flash\n',
+      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  course.outline: own:deepseek-v4-flash\n',
     );
     const layers = [deployment, workspace];
-    expect(resolveSlot('llm', layers)).toMatchObject({ source: 'deployment', providerId: 'mm' });
+    expect(resolveSlot('llm', layers)).toMatchObject({ source: 'default', providerId: 'mm' });
     expect(resolveSlot('course.outline', layers)).toMatchObject({
       source: 'workspace',
       locked: false,
@@ -111,25 +109,27 @@ describe('resolveSlot', () => {
     });
     expect(resolveSlot('course.agents', layers)).toMatchObject({
       resolvedAt: 'llm',
+      source: 'default',
       providerId: 'mm',
     });
   });
 
-  it('puts the deployment first whatever order the layers come in', () => {
+  it('resolves the same whatever order the layers come in', () => {
     const workspace = layer(
       'workspace',
       'providers:\n  mm:\n    preset: deepseek\n    apiKey: other\n  mv:\n    preset: minimax\n    apiKey: other\nslots:\n  llm: mm:deepseek-v4-pro\n  video: mv:MiniMax-Hailuo-2.3\n',
     );
-    const reversed = [workspace, deployment];
-    expect(resolveSlot('llm', reversed)).toMatchObject({
-      source: 'deployment',
-      locked: true,
+    for (const slot of ['llm', 'video', 'course.content.slide'] as const) {
+      expect(resolveSlot(slot, [workspace, deployment])).toEqual(
+        resolveSlot(slot, [deployment, workspace]),
+      );
+    }
+    // The workspace's llm names `mm`, which the deployment declares: the
+    // deployment's provider answers for it.
+    expect(resolveSlot('llm', [workspace, deployment])).toMatchObject({
+      source: 'workspace',
       presetId: 'minimax',
       apiKey: 'sk-test',
-    });
-    expect(resolveSlot('video', reversed)).toMatchObject({
-      status: 'disabled',
-      source: 'deployment',
     });
   });
 
@@ -360,5 +360,122 @@ describe('resolveSlot', () => {
         expect((error as Error).message).not.toContain(secret);
       }
     }
+  });
+});
+
+describe('resolveSlot with server defaults and locks', () => {
+  const providers = `providers:
+  mm:
+    preset: minimax
+    apiKey: \${KEY}
+`;
+  const own = layer(
+    'workspace',
+    `providers:
+  ds:
+    preset: deepseek
+    apiKey: k
+  mv:
+    preset: minimax
+    apiKey: k
+slots:
+  llm: ds:deepseek-v4-pro
+  course.content.slide: ds:deepseek-v4-flash
+  video: mv:MiniMax-Hailuo-2.3
+`,
+  );
+
+  it('lets a workspace assignment on a parent leave a server default on its child in place', () => {
+    // The child's default is the more specific setting: it wins over the
+    // workspace's choice higher up, until the workspace sets the child itself.
+    const defaults = layer('deployment', `${providers}slots:\n  course.outline: mm:MiniMax-M2.7\n`);
+    expect(resolveSlot('course.outline', [defaults, own])).toMatchObject({
+      resolvedAt: 'course.outline',
+      source: 'default',
+      providerId: 'mm',
+    });
+    expect(resolveSlot('course.agents', [defaults, own])).toMatchObject({
+      resolvedAt: 'llm',
+      source: 'workspace',
+      providerId: 'ds',
+    });
+  });
+
+  it('ignores the workspace anywhere inside a locked subtree', () => {
+    const locked = layer('deployment', `${providers}slots:\n  llm: mm:MiniMax-M3\nlock: [llm]\n`);
+    for (const slot of ['llm', 'course.content', 'course.content.slide', 'agent.title'] as const) {
+      expect(resolveSlot(slot, [locked, own])).toMatchObject({
+        status: 'assigned',
+        resolvedAt: 'llm',
+        source: 'locked',
+        locked: true,
+        providerId: 'mm',
+        modelId: 'MiniMax-M3',
+      });
+    }
+    // Other trees are not locked: the workspace's video stands.
+    expect(resolveSlot('video', [locked, own])).toMatchObject({
+      source: 'workspace',
+      locked: false,
+    });
+  });
+
+  it('resolves a locked subtree from the deployment alone, up to the locked node', () => {
+    const locked = layer(
+      'deployment',
+      `${providers}slots:
+  llm: mm:MiniMax-M3
+  course.content: mm:MiniMax-M2.7
+  course.content.quiz: null
+lock: [course.content]
+`,
+    );
+    expect(resolveSlot('course.content.slide', [locked, own])).toMatchObject({
+      resolvedAt: 'course.content',
+      source: 'locked',
+      modelId: 'MiniMax-M2.7',
+    });
+    expect(resolveSlot('course.content.quiz', [locked, own])).toMatchObject({
+      status: 'disabled',
+      resolvedAt: 'course.content.quiz',
+      source: 'locked',
+      locked: true,
+    });
+    // Above the locked node the workspace still decides.
+    expect(resolveSlot('llm', [locked, own])).toMatchObject({ source: 'workspace', locked: false });
+  });
+
+  it('locks every slot with lock: all, leaving unwritten roots unconfigured', () => {
+    const all = layer('deployment', `${providers}slots:\n  llm: mm:MiniMax-M3\nlock: all\n`);
+    expect(resolveSlot('course.content.slide', [all, own])).toMatchObject({
+      resolvedAt: 'llm',
+      source: 'locked',
+      locked: true,
+    });
+    expect(resolveSlot('video', [all, own])).toEqual({
+      status: 'unassigned',
+      slot: 'video',
+      locked: true,
+    });
+  });
+
+  it('lets a user turn on a capability that is off by default, but not one locked off', () => {
+    const offByDefault = layer('deployment', `${providers}slots:\n  video: null\n`);
+    expect(resolveSlot('video', [offByDefault])).toMatchObject({
+      status: 'disabled',
+      source: 'default',
+      locked: false,
+    });
+    expect(resolveSlot('video', [offByDefault, own])).toMatchObject({
+      status: 'assigned',
+      source: 'workspace',
+      providerId: 'mv',
+    });
+    const lockedOff = layer('deployment', `${providers}slots:\n  video: null\nlock: [video]\n`);
+    expect(resolveSlot('video', [lockedOff, own])).toMatchObject({
+      status: 'disabled',
+      source: 'locked',
+      locked: true,
+    });
   });
 });
