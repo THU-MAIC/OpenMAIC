@@ -6,6 +6,7 @@
  * something. Driven through the components over views from the real settings
  * service, so locks, defaults and allowUserKeys come out as the server says.
  */
+import 'fake-indexeddb/auto';
 import { act, createElement, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -176,6 +177,24 @@ describe('the settings sections', () => {
     expect(document.body.textContent).toContain('settings.courseModels.nav');
   });
 
+  it('keeps the Text-to-Speech tab for user voices without user keys', async () => {
+    const nav = await openDialog(
+      viewFor({
+        providers: {
+          ...providers,
+          qwen: { preset: 'qwen-tts', apiKey: 'sk-operator-secret-0003' },
+        },
+        slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
+        allowUserKeys: false,
+      }),
+    );
+    expect(nav).toEqual(['model-services', 'course-models', 'general']);
+    click(document.body.querySelector<HTMLElement>('[data-testid="settings-nav-model-services"]')!);
+    await flush();
+    const tabs = [...document.body.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
+    expect(tabs).toEqual(['settings.ttsSettings']);
+  });
+
   it('hides Token Plan when no plan can fill a slot that is not locked', async () => {
     const nav = await openDialog(
       viewFor({
@@ -308,6 +327,33 @@ describe('the course model map', () => {
     click(byText('settings.modelSettings.picker.resetDefault'));
     await flush();
     expect(changes).toEqual([{ kind: 'slots', clear: ['course.outline'] }]);
+  });
+
+  it("follows the user's parent over a server default on the slot, and still offers that default", async () => {
+    const view = viewFor(
+      { providers, slots: { 'course.outline': 'operator:deepseek-v4-pro' } },
+      {
+        config: { slots: { llm: 'operator:deepseek-v4-flash' } },
+        revision: 1,
+        unreadableSecrets: [],
+      },
+    );
+    const slot = view.slots.find((entry) => entry.slot === 'course.outline')!;
+    expect(slot.source).toEqual({ kind: 'inherited', from: 'llm' });
+    const { apply, changes } = recordingApply(view);
+    mount(createElement(ModelMap, { view, apply, t: T }));
+    expect(document.body.querySelector('[data-slot-id="course.outline"]')?.textContent).toContain(
+      'settings.modelSettings.source.inherited',
+    );
+    mount(createElement(SlotPicker, { view, slot, apply, onDone: () => {}, t: T }));
+    const follow = byText('settings.modelSettings.picker.follow');
+    expect(follow.getAttribute('aria-pressed')).toBe('true');
+    // The default is written as the slot's own: clearing would follow the parent.
+    click(byText('settings.modelSettings.picker.serverDefault'));
+    await flush();
+    expect(changes).toEqual([
+      { kind: 'slots', set: { 'course.outline': 'operator:deepseek-v4-pro' } },
+    ]);
   });
 
   it('marks the server default as the current choice while the user has not changed it', () => {

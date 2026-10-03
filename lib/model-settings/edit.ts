@@ -405,6 +405,30 @@ export function groupPresets(
   })).filter((entry) => entry.presets.length > 0);
 }
 
+/** An assignment in one comparable form: a bare reference is `{ model }`, keys sorted. */
+function normalizedAssignment(assignment: SlotAssignment | undefined): string {
+  if (assignment === undefined || assignment === null) return String(assignment);
+  const value = typeof assignment === 'string' ? { model: assignment } : assignment;
+  const sorted = (entry: unknown): unknown =>
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.entries(entry as Record<string, unknown>)
+            .filter(([, inner]) => inner !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, inner]) => [key, sorted(inner)]),
+        )
+      : entry;
+  return JSON.stringify(sorted(value));
+}
+
+/** Whether two assignments say the same: model, fallback, thinking and parameters. */
+export function sameAssignment(
+  a: SlotAssignment | undefined,
+  b: SlotAssignment | undefined,
+): boolean {
+  return normalizedAssignment(a) === normalizedAssignment(b);
+}
+
 /** Whether a slot is set on itself (by the workspace, a server default or a lock), not inherited. */
 export function setOnSlot(slot: SlotView): boolean {
   return slot.source.kind !== 'inherited' && slot.source.kind !== 'unconfigured';

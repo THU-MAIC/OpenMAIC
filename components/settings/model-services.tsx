@@ -147,7 +147,11 @@ export function ModelServicesPanel({
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [deleting, setDeleting] = useState<ServiceEntry | null>(null);
 
-  const entry = entries.find((item) => item.id === selected[tab]) ?? entries[0];
+  // Until one is picked, the service in use (its voices and settings), else the first.
+  const entry =
+    entries.find((item) => item.id === selected[tab]) ??
+    entries.find((item) => item.provider && rootUse(view, capability, item.id).inUse) ??
+    entries[0];
   const select = (id: string) => setSelected((prev) => ({ ...prev, [tab]: id }));
   const canAdd = canAddService(view, capability);
 

@@ -133,7 +133,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 How a slot resolves:
 
 - Resolution starts at the slot of the call and walks up to its capability root. The first assignment found wins, so a parent's assignment is the default for its whole subtree. Changing a parent changes every child without its own assignment.
-- Inside a locked subtree (the slot or an ancestor is named by `lock`, or `lock: all`), only `openmaic.yml` counts: the walk goes up to the locked slot and the first assignment the file writes wins. Everywhere else, each slot consults the workspace's own assignment first and then the default `openmaic.yml` writes there. A default written on a child therefore stays in force when a workspace sets the parent; the workspace replaces it by setting the child itself.
+- Inside a locked subtree (the slot or an ancestor is named by `lock`, or `lock: all`), only `openmaic.yml` counts: the walk goes up to the locked slot and the first assignment the file writes wins. Everywhere else the user's choice wins: the walk first looks for the workspace's own assignment from the slot up to the root, and only when there is none, for the defaults `openmaic.yml` writes, again from the slot up. So a slot whose server default the workspace has not changed follows the workspace's choice on a parent; server values are only defaults.
 - `null` stops the walk: the slot and every slot below it that has no assignment of its own are off.
 - Reaching the root without an assignment leaves the capability unconfigured. Calls fail with an error that names the slot; there is no fallback to any vendor.
 - Requirements belong to the slot that declares them and are checked against the model it resolves to, assigned or inherited. `agent` requires tool calling; if the built-in catalogue says its model lacks it, the agent refuses to run instead of making do. A model the catalogue does not know is allowed. `agent.title` has no requirement, so it can use a smaller model.
@@ -187,8 +187,7 @@ What `openmaic.yml` writes under `slots` is the server's **default**: users may 
 
 ```yaml
 lock: [llm, video]   # these slots and every slot below them
-# or
-lock: all            # every slot
+# lock: all          # every slot
 ```
 
 - Every slot `lock` names must be written under `slots` (`null` counts: `video: null` with `lock: [video]` keeps video off for everyone). An unknown slot, or a locked slot `slots` does not write, stops the server at startup with its position (`lock.1: ...`).

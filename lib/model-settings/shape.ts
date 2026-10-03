@@ -18,6 +18,7 @@
 import type { SlotCapability } from '@/lib/config/model-slots';
 
 import type { ModelSettingsView, PresetView, SlotView } from './client';
+import { sameAssignment } from './edit';
 
 export type SettingsShape = 'yourself' | 'choose' | 'admin';
 
@@ -80,10 +81,38 @@ function planSlots(preset: PresetView): string[] {
  * at least one slot the plan would fill is not locked (connecting never
  * touches a locked one).
  */
+/**
+ * Whether Token Plan lists a plan: connecting it can change something, or
+ * the workspace connected it already (its key can still be replaced or the
+ * plan disconnected, whatever is locked since).
+ */
+export function tokenPlanListed(view: ModelSettingsView, preset: PresetView): boolean {
+  if (!view.allowUserKeys) return false;
+  return (
+    tokenPlanCanChange(view, preset) ||
+    view.providers.some(
+      (provider) => provider.source === 'workspace' && provider.preset === preset.id,
+    )
+  );
+}
+
 export function tokenPlanCanChange(view: ModelSettingsView, preset: PresetView): boolean {
   if (!view.allowUserKeys) return false;
   const slots = new Map<string, SlotView>(view.slots.map((slot) => [slot.slot, slot]));
   return planSlots(preset).some((id) => slotEditable(slots.get(id)));
+}
+
+/** Narration services with voices a user manages in the settings (designed or cloned). */
+const USER_VOICE_SERVICES: readonly string[] = ['voxcpm-tts', 'qwen-tts'];
+
+/**
+ * Whether the narration the workspace uses has voices of the user's own to
+ * manage (VoxCPM designs, Qwen clones): the Text-to-Speech tab is shown for
+ * them whatever else can change.
+ */
+export function narrationVoicesManageable(view: ModelSettingsView): boolean {
+  const tts = view.slots.find((slot) => slot.slot === 'tts')?.effective;
+  return tts?.status === 'assigned' && USER_VOICE_SERVICES.includes(tts.registryId);
 }
 
 export function settingsShape(view: ModelSettingsView): SettingsShape {
@@ -93,9 +122,13 @@ export function settingsShape(view: ModelSettingsView): SettingsShape {
 
 export interface SettingsSections {
   shape: SettingsShape;
-  /** Token Plan: some plan can still fill a slot. */
+  /** Token Plan: some plan can still fill a slot, or one the workspace connected is there to manage. */
   tokenPlan: boolean;
-  /** Model Services, with the capabilities whose tab is shown (adding a service there can change something). */
+  /**
+   * Model Services, with the capabilities whose tab is shown: adding a service
+   * there can change something, or (Text-to-Speech) the narration in use has
+   * voices of the user's own to manage.
+   */
   modelServices: readonly SlotCapability[];
 }
 
@@ -104,21 +137,42 @@ export function settingsSections(view: ModelSettingsView): SettingsSections {
   const yourself = shape === 'yourself';
   return {
     shape,
-    tokenPlan:
-      yourself &&
-      view.presets.some(
-        (preset) => preset.kind === 'token-plan' && tokenPlanCanChange(view, preset),
-      ),
-    modelServices: yourself
-      ? SERVICE_CAPABILITIES.filter((capability) => canAddService(view, capability))
-      : [],
+    tokenPlan: view.presets.some(
+      (preset) => preset.kind === 'token-plan' && tokenPlanListed(view, preset),
+    ),
+    modelServices: SERVICE_CAPABILITIES.filter(
+      (capability) =>
+        (yourself && canAddService(view, capability)) ||
+        (capability === 'tts' && narrationVoicesManageable(view)),
+    ),
   };
 }
 
 /**
  * Whether a slot's card may offer "Reset to server default": the workspace
- * set it, and the deployment writes a default on the slot itself.
+ * set it to something other than the default the deployment writes on the
+ * slot itself.
  */
 export function canResetToServerDefault(slot: SlotView): boolean {
-  return slotEditable(slot) && slot.assignment !== undefined && slot.serverDefault !== undefined;
+  return (
+    slotEditable(slot) &&
+    slot.assignment !== undefined &&
+    slot.serverDefault !== undefined &&
+    !sameAssignment(slot.assignment, slot.serverDefault)
+  );
+}
+
+/**
+ * Whether dropping a slot's own assignment brings back the server default on
+ * it: the deployment writes one there and the workspace sets nothing above
+ * the slot (a choice up the tree beats the default). Otherwise the default
+ * has to be written as the slot's own assignment to use it.
+ */
+export function clearingRestoresDefault(view: ModelSettingsView, slot: SlotView): boolean {
+  if (slot.serverDefault === undefined) return false;
+  const slots = new Map<string, SlotView>(view.slots.map((entry) => [entry.slot, entry]));
+  for (let parent = slot.parent; parent; parent = slots.get(parent)?.parent ?? null) {
+    if (slots.get(parent)?.assignment !== undefined) return false;
+  }
+  return true;
 }

@@ -5,6 +5,8 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { modelSettingsView } from '@/lib/server/model-config/settings';
 import {
   canAddService,
+  narrationVoicesManageable,
+  tokenPlanListed,
   canChangeDefaultModel,
   canResetToServerDefault,
   capabilityEditable,
@@ -184,5 +186,84 @@ describe('canChangeDefaultModel', () => {
       canChangeDefaultModel(viewFor({ providers: { tts: { preset: 'qwen-tts', apiKey: 'k' } } })),
     ).toBe(false);
     expect(canChangeDefaultModel(viewFor({}))).toBe(false);
+  });
+});
+
+describe('narration voices', () => {
+  const qwen = { preset: 'qwen-tts', apiKey: 'sk-operator-secret-0003' };
+
+  it('keeps the Text-to-Speech tab for user voices in every shape', () => {
+    for (const extra of [{ allowUserKeys: false }, { lock: 'all' as const }]) {
+      const view = viewFor({
+        providers: { ...providers, qwen },
+        slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
+        ...extra,
+      });
+      expect(narrationVoicesManageable(view)).toBe(true);
+      expect(settingsSections(view).modelServices).toEqual(['tts']);
+    }
+  });
+
+  it('does not for narration without user voices', () => {
+    const view = viewFor({
+      providers,
+      slots: { llm: 'operator:deepseek-v4-pro', tts: 'voice:speech-2.8-turbo' },
+      lock: 'all',
+    });
+    expect(narrationVoicesManageable(view)).toBe(false);
+    expect(settingsSections(view).modelServices).toEqual([]);
+  });
+});
+
+describe('connected token plans', () => {
+  it('stay listed to manage or disconnect when their slots are locked', () => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: { providers, slots: { llm: 'operator:deepseek-v4-pro' }, lock: 'all' },
+      },
+      legacy: false,
+      notices: [],
+    });
+    const connected = modelSettingsView({
+      config: { providers: { tokendance: { preset: 'tokendance', apiKey: 'sk-plan-key-0001' } } },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    expect(tokenPlanListed(connected, plan(connected, 'tokendance'))).toBe(true);
+    expect(tokenPlanListed(connected, plan(connected, 'minimax'))).toBe(false);
+    expect(settingsSections(connected).tokenPlan).toBe(true);
+    expect(settingsSections(modelSettingsView(null)).tokenPlan).toBe(false);
+  });
+});
+
+describe('reset to server default', () => {
+  it('is not offered when the workspace value says the same as the default', () => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers,
+          slots: { llm: { model: 'operator:deepseek-v4-pro', thinking: { enabled: false } } },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    const same = modelSettingsView({
+      config: {
+        slots: { llm: { thinking: { enabled: false }, model: 'operator:deepseek-v4-pro' } },
+      },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    expect(canResetToServerDefault(slot(same, 'llm'))).toBe(false);
+    const different = modelSettingsView({
+      config: { slots: { llm: 'operator:deepseek-v4-pro' } },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    // Same model, but the default turns thinking off: a difference.
+    expect(canResetToServerDefault(slot(different, 'llm'))).toBe(true);
   });
 });

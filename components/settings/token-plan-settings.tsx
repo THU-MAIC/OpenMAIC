@@ -57,7 +57,7 @@ import { tokenPlanPresetId } from '@/lib/config/preset-ids';
 import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
 import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
 import { planProvider } from '@/lib/model-settings/services';
-import { tokenPlanCanChange } from '@/lib/model-settings/shape';
+import { tokenPlanListed } from '@/lib/model-settings/shape';
 import {
   connectConflicts,
   connectTokenPlan,
@@ -182,10 +182,11 @@ export function TokenPlanSettings({
 }) {
   const { t } = useI18n();
 
-  // Only the plans whose connecting can still fill a slot (see tokenPlanCanChange).
+  // The plans connecting can still change something with, and the ones
+  // already connected (to manage or disconnect); see tokenPlanListed.
   const plans = TOKEN_PLAN_PRESETS.filter((plan) => {
     const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
-    return !!preset && tokenPlanCanChange(view, preset);
+    return !!preset && tokenPlanListed(view, preset);
   });
   const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
