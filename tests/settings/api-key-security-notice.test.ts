@@ -9,14 +9,10 @@ const cases = [
     'components/settings/tts-settings.tsx',
     '!isVoxCPM && <ApiKeySecurityNotice />',
   ],
-  ['image / ComfyUI', 'components/settings/image-settings.tsx', '<ApiKeySecurityNotice />'],
+  ['image / ComfyUI', 'components/settings/media-service-panel.tsx', '<ApiKeySecurityNotice />'],
   ['ASR / Lemonade', 'components/settings/asr-settings.tsx', '<ApiKeySecurityNotice />'],
-  [
-    'PDF / AliDocMind',
-    'components/settings/pdf-settings.tsx',
-    '(isCloud || isAliDocMind) && <ApiKeySecurityNotice />',
-  ],
-  ['video', 'components/settings/video-settings.tsx', '<ApiKeySecurityNotice />'],
+  ['PDF / AliDocMind', 'components/settings/pdf-settings.tsx', '<ApiKeySecurityNotice />'],
+  ['video', 'components/settings/media-service-panel.tsx', '<ApiKeySecurityNotice />'],
 ] as const;
 
 describe('credential security notices', () => {

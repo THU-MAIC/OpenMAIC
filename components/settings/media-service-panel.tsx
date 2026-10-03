@@ -9,6 +9,7 @@ import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { cn } from '@/lib/utils';
 import {
   ApiKeyField,
+  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -98,6 +99,7 @@ export function MediaServicePanel({
 
       {editable && (
         <>
+          <ApiKeySecurityNotice />
           {/* API Key + Test inline */}
           <div className="space-y-2">
             <Label>API Key</Label>
