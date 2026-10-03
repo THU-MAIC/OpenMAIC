@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { clearNarrationAllocations } from '@/lib/audio/narration-allocations';
 import {
@@ -19,6 +19,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useStageStore } from '@/lib/store';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
+import { shouldResumeClassroomGeneration } from '@/lib/classroom/progressive-load-policy';
 
 type ClassroomSurfaceVariant = 'page' | 'pane';
 
@@ -26,6 +27,9 @@ interface ClassroomSessionOptions {
   readonly classroomId: string;
   readonly variant: ClassroomSurfaceVariant;
   readonly stopGeneration: () => void;
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly resumeGeneration: () => void;
 }
 
 interface ClassroomSession {
@@ -41,8 +45,12 @@ export function useClassroomSession({
   classroomId,
   variant,
   stopGeneration,
+  loading,
+  error,
+  resumeGeneration,
 }: ClassroomSessionOptions): ClassroomSession {
   const mayGenerate = useMayGenerateForStage(classroomId);
+  const generationStartedRef = useRef(false);
 
   const refreshOwnership = useCallback(
     (isCurrent: () => boolean) => {
@@ -85,6 +93,7 @@ export function useClassroomSession({
     // A course must earn its own ownership answer. It must not inherit one
     // from a prior mount of the same surface.
     noteStageGenerationOwnership(classroomId, 'unresolved');
+    generationStartedRef.current = false;
 
     const mediaStore = useMediaGenerationStore.getState();
     mediaStore.revokeObjectUrls();
@@ -96,6 +105,23 @@ export function useClassroomSession({
 
     return () => stopGeneration();
   }, [classroomId, stopGeneration]);
+
+  useEffect(() => {
+    if (
+      !shouldResumeClassroomGeneration({
+        loading,
+        error,
+        transportPersistenceFenced: false,
+        generationStarted: generationStartedRef.current,
+        mayGenerate,
+      })
+    ) {
+      return;
+    }
+
+    generationStartedRef.current = true;
+    resumeGeneration();
+  }, [loading, error, mayGenerate, resumeGeneration]);
 
   return { mayGenerate, refreshOwnership };
 }
