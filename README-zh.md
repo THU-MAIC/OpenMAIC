@@ -127,7 +127,7 @@ slots:
   video: null                      # 关闭某项能力
 ```
 
-写进文件的槽位会被锁定；没写的槽位沿用父槽位，可以在 Web 端的模型设置里选择，用户也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。槽位说明、预设、回退模型和策略见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
+写进文件的槽位是服务端默认值：用户可以在 Web 端的模型设置里修改，也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。没写的槽位沿用父槽位。要对所有人固定某些槽位，把它们列在 `lock` 下（`lock: all` 固定所有槽位）；`allowUserKeys: false` 让用户不能自行添加服务商。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。槽位说明、预设、回退模型、锁定和 `allowUserKeys` 见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
 
 支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
 
