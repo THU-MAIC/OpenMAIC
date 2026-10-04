@@ -96,6 +96,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
+import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
@@ -1784,11 +1785,9 @@ function ClassroomCard({
             viewportSize={slide.viewportSize ?? 1000}
             viewportRatio={slide.viewportRatio ?? 0.5625}
           />
-        ) : slide === undefined && requestThumbnail ? (
-          <div
-            className="absolute inset-0 animate-pulse bg-slate-200/70 dark:bg-slate-700/50"
-            data-thumbnail-state="loading"
-          />
+        ) : slide || (slide === undefined && requestThumbnail) ? (
+          // Still loading, or loaded and waiting for the card's width.
+          <ThumbnailSkeleton />
         ) : !slide ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="size-12 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center">

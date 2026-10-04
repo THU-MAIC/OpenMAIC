@@ -2,6 +2,8 @@
 
 import { useI18n } from '@/lib/hooks/use-i18n';
 
+import { ThumbnailSkeleton } from './thumbnail-skeleton';
+
 /** Tiles in the skeleton: two rows of the widest grid. */
 const SKELETON_FOLDERS = 2;
 const SKELETON_COURSES = 6;
@@ -42,7 +44,7 @@ function SkeletonTile({ folder = false }: { folder?: boolean }) {
             <div className={`size-14 rounded-2xl ${PULSE}`} />
           </div>
         ) : (
-          <div className={`absolute inset-0 ${PULSE}`} />
+          <ThumbnailSkeleton />
         )}
       </div>
       <div className="mt-2.5 px-1 flex items-center gap-2">
