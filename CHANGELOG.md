@@ -6,11 +6,89 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [1.2.0-rc.1] - 2026-10-03
+## [1.2.0-rc.1] - 2026-10-04
 
-The release candidate for 1.2.0, "server-first". The server becomes the only home for courses and media, identity, model configuration and course generation; the browser is a client. Classic generation runs as a server-side generation run that keeps going after the page is closed, survives restarts and is shared by the web UI and the headless API. Models are configured on the server (`openmaic.yml` and the model settings) as capability slots with server defaults and explicit locks. Deployment needs a long-running Node process and PostgreSQL; serverless hosts (Vercel) are supported up to 1.1.x. Read **Breaking Changes** and the deployment guide's "Upgrading from 1.1.x" before upgrading. Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (release) and [#1701](https://github.com/THU-MAIC/OpenMAIC/discussions/1701) (model configuration).
+The release candidate for 1.2.0, **server-first**.
+
+Up to 1.1.x the browser drove course generation one request per step and kept the courses, the provider keys and the model settings itself. Closing the tab stopped a course halfway, every browser had to be set up on its own, a deployment could offer providers but not fix which models its users get, and the headless API ran a separate pipeline that drifted from the web app. 1.2.0 moves all of this to the server: courses and media, identity, model configuration and course generation live there, and the browser is a client. Generation becomes a server-side run shared by the web app and the API, and models are configured once per deployment. The cost is the deployment shape: a long-running Node process and PostgreSQL instead of a serverless host.
+
+Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (release) and [#1701](https://github.com/THU-MAIC/OpenMAIC/discussions/1701) (model configuration). Read **Breaking Changes** and **Before you upgrade** first.
+
+### Highlights
+
+- **Generation runs on the server.** Classic generation is a server-side run that keeps going when the page is closed, resumes from its last checkpoint after a restart or a crashed worker, streams progress to every open tab, and pauses at a failed step so that Retry re-runs only that step. Images and videos are generated alongside the scenes, and a single failed item can be retried. The web app and the headless API share one pipeline. [#1756](https://github.com/THU-MAIC/OpenMAIC/pull/1756) [#1759](https://github.com/THU-MAIC/OpenMAIC/pull/1759) [#1761](https://github.com/THU-MAIC/OpenMAIC/pull/1761)
+- **Models are configured on the server.** `openmaic.yml` declares providers and capability slots: `llm` with `course.*`, `classroom` and `agent`, plus `tts`, `asr`, `image`, `video`, `webSearch` and `document`.
+  - `slots` are server defaults that users may change.
+  - `lock` fixes slots (or `all`) for everyone.
+  - `allowUserKeys: false` keeps users from adding their own providers.
+  - The settings take the matching shape: *set it up yourself*, *choose a model* or *configured by the administrator*.
+  - Keys are stored encrypted on the server and never leave it. [#1727](https://github.com/THU-MAIC/OpenMAIC/pull/1727) [#1733](https://github.com/THU-MAIC/OpenMAIC/pull/1733) [#1767](https://github.com/THU-MAIC/OpenMAIC/pull/1767) [#1793](https://github.com/THU-MAIC/OpenMAIC/pull/1793)
+- **Materials are parsed as soon as they are attached.** The composer uploads and parses each file in place and shows progress, Ready, or Failed with Retry. Generate waits until every file is ready, and the preview then opens without a material-analysis step. Re-uploading the same file reuses the earlier parse. [#1796](https://github.com/THU-MAIC/OpenMAIC/pull/1796)
+- **Identity.** There are three modes:
+  - single-user for personal installations (the Docker Compose default);
+  - anonymous visitors, whose cookie now lasts 400 days and is renewed while in use;
+  - accounts, through host auth methods.
+  
+  Anonymous work can be claimed into an account with `POST /api/identity/claim`.
+- **Custom agents are stored on the server** (`/api/agents`). [#1758](https://github.com/THU-MAIC/OpenMAIC/pull/1758)
+- **The database schema is versioned** (`openmaic_schema_migrations`). [#1757](https://github.com/THU-MAIC/OpenMAIC/pull/1757)
+- **Upgrades carry browser data to the server.** The first load after the upgrade moves the browser's courses, chat, progress, folders, media, custom agents and model settings to the server, once per browser.
 
 ### Breaking Changes
+
+- **PostgreSQL and a long-running server are required.** `DATABASE_URL` is mandatory.
+  - Deploy with Docker (`docker compose up` now includes PostgreSQL and runs single-user, on `127.0.0.1`) or with `pnpm start`.
+  - Serverless hosts, Vercel included, stay on 1.1.x; the README explains how to deploy it.
+  - `NEXT_PUBLIC_PERSISTENCE` and `vercel.json` are removed.
+- **`MODEL_ROUTES` without `openmaic.yml` stops the server at startup.** Deployments running the Pro agent must write `openmaic.yml` before upgrading. The route-to-slot table is under "Migrating from the legacy configuration" in the configuration docs. Without `openmaic.yml`, the provider variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` keep working, but are deprecated.
+- **The browser no longer sends provider settings.** The `x-api-key`, `x-model`, `x-base-url`, `x-model-routes`, `x-image-*` and `x-video-*` headers, and the matching body fields, are deprecated.
+  - They are honoured only for a slot with nothing assigned.
+  - They are never honoured under `allowUserKeys: false`.
+- **Headless API.** `POST /api/generate-classroom` takes `{ requirement, materialIds? }`.
+  - Upload documents first with `POST /api/materials`; `pdfContent` is refused.
+  - Job ids are run ids, so job ids from earlier builds answer `404`.
+  - The `enable*`, `agentMode` and web-search request fields are ignored. Every capability the server configures runs, and `GET /api/generate-classroom/capabilities` reports which ones.
+  - Submissions are checked up front (`400 MISSING_MODEL`, `MISSING_API_KEY`, …) and limited per owner (`429 ACTIVE_RUN_LIMIT`).
+  - In anonymous-cookie mode, keep one cookie jar for the upload, the submission and the polls.
+- **Routes removed:**
+  - `/api/generate/{scene-outlines-stream,agent-profiles,scene-content,scene-actions}`
+  - `/api/extract-document`
+  - `/api/web-search`
+  - `GET` / `POST /api/classroom`
+  
+  Use `/api/generation-runs` instead.
+- **A course is read-only while it is being generated.** Other writers get `409 COURSE_GENERATING` until its run completes or ends. Deleting the course and moving it between folders stay allowed.
+- **Runtime sessions are keyed by the resolved owner.** `PERSISTENCE_DEV_TOKEN`, `NEXT_PUBLIC_PERSISTENCE_TOKEN` and `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` are removed.
+  - If the token was your only access gate, put the deployment behind `ACCESS_CODE`, a gateway or owner auth methods first.
+  - Earlier runtime sessions are not migrated.
+- **Assets belong to an owner.** `ASSET_QUOTA_BYTES` is a per-owner limit.
+- **Interrupted courses are not resumed.** Courses interrupted in the browser before 1.2.0 show their remaining scenes as interrupted.
+- **Embedders.** `@openmaic/storage` 0.32–0.37 changes:
+  - document ownership moves to the `documentOwnership` relation;
+  - the browser storage seams have no IndexedDB fallback;
+  - `ServerPersistenceProvider.documentStore` is removed.
+
+### Before you upgrade
+
+- **Back up the database.** The first start runs the schema migrations. On a large `document_stages` table, it builds an index under a write lock; you can build that index concurrently beforehand (see the full notes).
+- **Rolling back to 1.1.x** needs either the ownership copy-back SQL (under Breaking Changes in the full notes) or that backup.
+- **Set `OPENMAIC_SECRET_KEY`** when several replicas share the database, when `data/` does not survive a restart, or when the working directory is read-only. Otherwise back up `data/instance-secret.key` together with the database.
+- **Choose an identity mode:** single-user, a shared team owner, anonymous, or host auth.
+- **Keep `data/classrooms`.** Classrooms stored there are imported once, in the background.
+- **Check which capabilities will run.** With the legacy configuration, the first configured provider of each kind becomes the server default. Course research then runs whenever web search is configured, and headless jobs use every configured capability. To turn one off for everybody, set its slot to `null` and list it in `lock`.
+- **Connect PostgreSQL directly or through a session pool.** A transaction-mode pooler (PgBouncer `pool_mode = transaction`) is not supported.
+- **Follow the guide.** The deployment guide's "Upgrading from 1.1.x" table lists every step.
+
+### Known issues
+
+- Web-search services in Settings → Model Services have no **Test connection** button.
+- A token plan connected with an invalid key shows as connected; the error appears only when a course is generated.
+- A very short requirement can drift off topic or ignore an explicit slide count.
+
+<details>
+<summary><strong>Full change notes</strong></summary>
+
+#### Breaking Changes
 
 - Server-backed persistence is always on. Courses, folders and folder membership, chat history and learner runtime, and generated media are stored on the server through `/api/persistence`; the browser has no storage backend of its own any more. The build-time `NEXT_PUBLIC_PERSISTENCE` switch is removed (from the client, the Dockerfile and `docker-compose.yml`) and ignored. The server now requires `DATABASE_URL` and exits at startup without it (`[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...`); `pnpm db:up` / `pnpm db:down` start and stop a separate development database (the Compose `postgres` service definition under its own project and volume, `openmaic-dev-db`), published on `127.0.0.1` (`OPENMAIC_DB_PORT`, default `5432`), for local development; other deployments point `DATABASE_URL` at a PostgreSQL database they run. Only device-local state stays in the browser (settings, playback position, the editor's current scene and undo history, a local cache of media the server already stores, and browser voice profiles), in a new `maic-device-cache` IndexedDB database; **Settings → Clear Local Cache** clears exactly that. Courses an earlier browser-only build stored in the browser are not deleted; the one-way importer below moves them to the server.
 - Docker Compose: `docker compose up` now starts PostgreSQL (no profile) and a server-backed app (`DATABASE_URL` set from `PERSISTENCE_POSTGRES_PASSWORD`) that waits for PostgreSQL to be healthy, in single-user mode (`docker-compose.defaults.env`, read before `.env.local` so it can be overridden there). The app port is published on `127.0.0.1` only; start with `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` to serve other machines, and set `ACCESS_CODE` then: every visitor is the same single owner. `OPENMAIC_PORT` changes the host port. `--profile server-persistence` is still accepted and does nothing. A `DATABASE_URL` in `.env.local` still wins over the bundled default. Courses an earlier browser-only deployment stored in the browser are not deleted; the one-way importer in this release moves them to the server. Anonymous libraries from an earlier server-backed deployment are not merged into the single owner automatically; claim them explicitly. A `.env.local` that sets `PERSISTENCE_SHARED_OWNER_ID` must also set `OWNER_SINGLE_USER=false`.
@@ -45,11 +123,11 @@ The release candidate for 1.2.0, "server-first". The server becomes the only hom
 - Courses interrupted in the browser before 1.2.0 are not resumed; their remaining scenes show as interrupted ("Generation was interrupted", with no Retry). The scenes they have keep working, and images and videos of those courses that were never generated are offered as Retry rather than generated on open.
 - Embedders: the browser storage seams (`configureDocumentStorage`, `configureRuntimeStorage`, `configureAssetPoolStorage`) have no IndexedDB fallback any more. The browser bootstrap configures the HTTP stores; code outside the browser must configure a `store`, and resolving an unconfigured seam throws. [#1710](https://github.com/THU-MAIC/OpenMAIC/pull/1710)
 
-### Deprecated
+#### Deprecated
 
 - `document_stages.owner_id`: the document store no longer reads or writes it (only the boot backfill reads it, and a claim mirrors the new owner into it while it exists, so a rollback still finds consistent ownership). Existing installations keep the column (made nullable, its default removed) for this release so a rollback still finds it; it will be dropped in the next release.
 
-### Upgrade notes
+#### Upgrade notes
 
 - Anonymous identities: existing 30-day `anonymous_id` cookies are renewed to 400 days on their next API request, and every response of an owner-scoped route that resolves to an anonymous cookie now carries a `Set-Cookie` renewing it. A browser that loses the cookie (a manual clear, or 400 days without use) gets a new owner, and cannot reach the earlier anonymous library, or a pending legacy import bound to it, from that browser: anonymous identity has no other key. Use single-user mode (the Compose default) for a personal installation, or accounts (owner auth methods) for many users.
 - Schema versions: every start now records which schema version each store of the database is at, in a new `openmaic_schema_migrations` table, and applies only what is missing, in order, under the existing bootstrap lock (waited on for at most five minutes, then the start fails naming the lock). One-time steps (the `stage_meta` ownership adoption, the `document_stages.owner_id` retirement, the owner-material `asset_id` drop, the agent-session owner-event constraint swap) run once per database instead of on every start. The first start on an existing database (1.1.x or a development build) runs every store's baseline statement by statement, outside a transaction, exactly as earlier starts ran it (the same locks, released as each statement finishes), and records it afterwards; a start interrupted part-way runs it again. A migration that fails is reported with its store, version and name and retried on the next request. The server exits at startup (`[boot] Server startup failed ... SchemaVersionAheadError`) if the database records a version of any store, including those of features not in use, that is newer than the release knows: it was upgraded by a newer release, so run that release or a later one, or restore a backup taken before it. Releases before 1.2.0 do not read the table; rolling back to one still requires the ownership copy-back above (courses 1.2.0 creates have no `document_stages.owner_id`), otherwise restore a backup taken before the upgrade. A changed checksum of an applied migration only logs a warning in production (and stops a development or test server). Schema bootstrap needs a direct or session-pooled PostgreSQL connection; a pooler in transaction mode (PgBouncer `pool_mode = transaction`) is not supported.
@@ -62,7 +140,7 @@ The release candidate for 1.2.0, "server-first". The server becomes the only hom
 - Settings stored in a browser by an earlier version (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once, never replacing a workspace setting or a slot in a subtree `openmaic.yml` locks. Not carried over, to set up again: per-stage models, thinking settings, custom speech and transcription providers, AliDocMind's key pair, the VoxCPM backend and Baidu search sub-sources (the custom providers and the key pair stay in the browser with their keys, listed in Settings → Model Services). Speech input switched off becomes `asr: null`, and narration, images or video switched off while a usable provider for them was set up become `tts: null`, `image: null` or `video: null`. The research switch is not carried over (it only stopped course research; chat and the agent kept searching), nor is a switch that was off only by default: each capability now runs whenever its slot resolves.
 - Keys saved in the model settings are encrypted under `OPENMAIC_SECRET_KEY`, or, when it is unset, under a secret generated on first use in `data/instance-secret.key`. Set `OPENMAIC_SECRET_KEY` when several replicas share the database, when `data/` does not survive a restart (a container without a volume) and when the working directory is read-only (saving a key fails there otherwise); back up the secret file with the database otherwise. Keys sealed under a lost or different secret cannot be read (the settings mark them) and have to be entered again. [#1733](https://github.com/THU-MAIC/OpenMAIC/pull/1733) [#1783](https://github.com/THU-MAIC/OpenMAIC/pull/1783) The server warns at startup when `OPENMAIC_SECRET_KEY` is unset and the data directory is not writable, and when stored keys were sealed under a different secret than the current one; it still starts.
 
-### Features
+#### Features
 
 - One-way import of browser data from earlier builds (temporary). On the first load after the upgrade, once the page is idle, the client moves what an earlier build kept in the browser to the server, for the owner the server resolves: courses from the browser document store and the original tables with their chat, learner runtime, playback position, agent roster, folders and membership, pre-runtime quiz state and media; media bytes of server courses from earlier opt-in server builds that only the old browser tables hold; and device-only rows (generation failure records, bytes a full store refused, auto-voice reference clips) into the device cache. It runs once per browser: the server binds the browser's random id to the first owner that asks (the new `legacy_import_bindings` table and `POST /api/identity/legacy-import-binding`, an atomic insert that answers only whether the requesting owner holds the browser), a claim carries the binding to the account (a new claim participant), and owner resolution refuses every importer request (`X-OpenMAIC-Legacy-Import`) of an owner that does not hold the binding with `409 LEGACY_IMPORT_NOT_BOUND`; any other owner later using the same browser gets nothing imported. It is automatic and silent (problems are logged under `[legacy-browser-import]`), never writes to the old browser storage, keeps one ledger per browser (a random browser id and no owner information) so it resumes after an interruption and never imports twice (Clear Local Cache keeps it, and keeps the pre-runtime quiz keys until the import is complete), and serializes tabs with Web Locks. A course the owner already has on the server stays as the server has it; one whose id another owner holds is imported under a new id derived from the browser id; one deleted on the server stays deleted. Transient failures and 401s are retried on later loads with backoff; when the asset store is full the course is imported anyway and its media waits where the app's own retry finds it; media the server refuses for good shows the ordinary failed-media state (without Retry when nothing could regenerate it). A course the old browser storage cannot read holds up only what it could affect, and settles after five failing runs over a day (the older table copy when there is one, otherwise skipped with the reason). A browser whose data another owner holds asks the server again only every ten minutes, and opens the old databases only once it is bound. The module (`lib/legacy-browser-import/`) will be removed a few releases later; its README lists the steps.
 
@@ -85,8 +163,9 @@ The release candidate for 1.2.0, "server-first". The server becomes the only hom
 - Generation runs: a media lane generates the images and videos the outline asks for once the course exists, alongside the scenes and one item at a time, with a checkpoint per item: stored bytes commit with their checkpoint, a takeover places them instead of paying again, and a video takeover resumes the provider task it recorded. A slot that is off or unassigned skips its kind; a media failure never pauses the run and carries the route's code (`CONTENT_SENSITIVE`, `GENERATION_DISABLED`, `MISSING_MODEL`, `ASSET_QUOTA_EXCEEDED`, `MEDIA_PLACEMENT_FAILED`, `MEDIA_ELEMENT_REMOVED`). `POST …/retry` with `{ commandId, media: { elementId } }` runs one failed or skipped item again, also after completion, when its result is written into the current course without touching the author's other edits. The run snapshot includes `media`, and `media` events report each item. Images found in uploaded materials are stored as assets of the course and can be placed on slides. [#1761](https://github.com/THU-MAIC/OpenMAIC/pull/1761)
 - Course materials are extracted when they are uploaded ([#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754), E): `POST /api/materials` starts the extraction in the background (`?extract=false` defers it), and `GET /api/materials/<id>` (and the owner's list, `GET /api/materials` without `sessionId`) reports its `extraction`: `extracting`, `ready` (with `textChars`, `pageCount`, `imageCount` and what a course leaves out, `truncated`), or `failed` with the extractor's `error`; `POST /api/materials/<id>/extraction` extracts a failed one again. A background extractor in every server process holds each extraction under a lease (a restart resumes it; `OPENMAIC_MATERIAL_EXTRACTION_CONCURRENCY`, default 2), lets owners take turns (`OPENMAIC_MATERIAL_EXTRACTION_PER_OWNER`, default 2 running per owner), and stops the extractor's requests and commands when the material is deleted or the extraction runs out of time. The same file uploaded again by the same owner reuses its finished extraction when it would be extracted the same way (same type and services). The stored result counts against the owner's byte quota (checked when it is published; over it fails with `MATERIAL_QUOTA_EXCEEDED`) and is capped (`OPENMAIC_MATERIAL_EXTRACTION_MAX_RESULT_MB`, default 100; larger fails with `EXTRACTION_RESULT_TOO_LARGE`). Uploads no run or agent session uses are deleted once unread for `OPENMAIC_UNUSED_MATERIAL_TTL_HOURS` (default 24); an open composer reads its materials back to keep them, and the same sweep removes result files no attempt published. A run reads the stored extraction, waits for one still running, and fails with a failed one's error (Retry extracts it again). The composer uploads a file as soon as it is attached and shows its progress, parsing (or transcribing), ready or failed with Retry on the material; Generate waits until every material is ready, and the preview then opens without a material analysis. What a course leaves out of a long material is shown on the material instead of in the preview.
 
-### Bug Fixes
+#### Bug Fixes
 
+- Settings: Model Services scrolls its list to the selected service (by default the one in use, such as a connected token plan's provider further down the list), and the selected row no longer looks like the promoted first row, so the list always highlights the service the panel shows.
 - Owner identity: a browser's first load establishes one anonymous owner. The page response now sets the `anonymous_id` cookie (same value format and attributes as before) when the request carries no valid one and neither `OWNER_SINGLE_USER` nor `PERSISTENCE_SHARED_OWNER_ID` is set, so the page's concurrent first API requests no longer each mint an owner and overwrite one another's cookie; a valid cookie is never replaced. `POST /api/identity/legacy-import-binding` binds only an owner the browser already presented (a request that minted its owner answers `409 OWNER_NOT_ESTABLISHED` and the importer retries on a later load), so the legacy import can no longer be bound to an owner whose cookie a later response replaced and then stall with `409 LEGACY_IMPORT_NOT_BOUND`. `OWNER_ANONYMOUS_PREMINT=false` turns page minting off (default on; a malformed value fails startup). Set it only when registered owner auth methods set `anonymousFallback: false`, and the server warns at startup when such a registration leaves it on; hosts that keep anonymous visitors keep it and skip it per request in `middleware.ts` for requests their methods authenticate (see "Registering methods" in the README).
 - Owner identity: the anonymous identity lasts 400 days (the longest browsers keep a cookie) instead of 30, and is renewed while in use: every route handler and Server Action response that resolves to a valid anonymous cookie re-sends the same value with a fresh `Max-Age`, so an active visitor no longer loses the whole library 30 days after the first visit. Page responses do not renew it, so pages stay cacheable, and a response that clears the cookie (a claim, a retired owner) never renews it.
 - Server persistence: the course library and folders work without the agent runtime. `/api/stages/**` (list, create, read, save, delete, manifest, scenes, freshness, status, generation-complete, publish, unpublish) and `/api/folders/**` now gate on `DATABASE_URL` alone instead of also requiring `OPENMAIC_AGENT_RUNTIME_ENABLED`, so a deployment with server persistence and the runtime off no longer answers `404` there and shows an empty, unavailable library. Agent routes (`/api/agent/**`, `/api/skills/**`) and the session-scoped material reads (`GET /api/materials`, `GET /api/materials/<id>`) still require the runtime, while uploading to and deleting from the owner's material library (`POST /api/materials`, `DELETE /api/materials/<id>`) needs only `DATABASE_URL`, and without a `DATABASE_URL` everything answers `404` as before. `GET /api/agent/runtime` also reports `persistence`.
@@ -94,11 +173,13 @@ The release candidate for 1.2.0, "server-first". The server becomes the only hom
 - Server persistence: two concurrent creates of one new course id by the same owner no longer refuse the second as `reserved-document`: creates of one id take turns, and the second saves as an update without running the create hooks again.
 - Server persistence: instances starting at the same time against one database no longer fail schema setup on a catalog race (`duplicate key value violates unique constraint "pg_class_relname_nsp_index"` / `pg_type_typname_nsp_index`, `tuple concurrently updated`), which made an instance's first request answer `500`. Every schema bootstrap (documents, `stage_meta` and its ownership backfill, owner materials, assets, runtime, agent sessions, session materials, user skills, and the asset collector's) now runs under one PostgreSQL advisory lock held on a dedicated connection.
 
-### Security
+#### Security
 
 - Server persistence: operations on one owner-bound document store no longer share mutable state, so concurrent calls on a store an agent run shares with its tools each gate their own stage; `create_stage` also runs sequentially within a tool batch.
 - Server persistence: runtime data of a deleted course reads as absent and takes no new writes, however the request path is spelled.
 - `@openmaic/storage` 0.32.0: `PgDocumentStore` takes `assetReferencePrincipals` (and `AssetCollector` a matching per-owner function) so a document write can no longer commit or pin another principal's asset entry; a store can refuse `createSession` with `RuntimeStageNotFoundError` (`404 STAGE_NOT_FOUND`); and a session create over a taken id answers `409 SESSION_ALREADY_EXISTS` whoever holds it, instead of `403` for another learner's session.
+
+</details>
 
 ## [1.1.2] - 2026-09-28
 
