@@ -151,6 +151,7 @@ export function GenerationToolbar({
   // The extractor is the document slot: the workspace's document services
   // (and the built-in ones, which need no key) are offered.
   const documentSlot = view ? findSlot(view, 'document') : undefined;
+  const documentEditable = slotEditable(documentSlot);
   const documentTarget = effectiveTarget(view, 'document');
   const documentProviderId = (documentTarget?.registryId ?? 'unpdf') as PDFProviderId;
   const documentEntries = useMemo(
@@ -325,7 +326,7 @@ export function GenerationToolbar({
               </span>
             </button>
           ) : (
-            <button className={pillMuted}>
+            <button className={pillMuted} data-testid="course-material-button">
               <Paperclip className="size-3.5" />
             </button>
           )}
@@ -334,44 +335,47 @@ export function GenerationToolbar({
           align="start"
           className="max-h-[calc(var(--radix-popover-content-available-height)-8px)] w-72 overflow-y-auto p-0"
         >
-          {/* Extractor selector: the workspace's document slot */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t('toolbar.documentExtractor')}
-            </span>
-            <Select
-              value={documentTarget?.providerId ?? ''}
-              onValueChange={(v) => void selectExtractor(v)}
-              disabled={materialsLocked || !documentSlot || documentSlot.locked}
-            >
-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                <SelectValue placeholder={PDF_PROVIDERS.unpdf?.name ?? 'unpdf'} />
-              </SelectTrigger>
-              <SelectContent>
-                {documentEntries.map((entry) => {
-                  const provider = PDF_PROVIDERS[entry.registryId as PDFProviderId];
-                  return (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      <div className="flex items-center gap-1.5">
-                        {provider?.icon && (
-                          <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
-                        )}
-                        {provider?.name ?? entry.id}
-                        {entry.state === 'deployment' && (
-                          <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                            {t('settings.serverConfigured')}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Extractor selector: the workspace's document slot, shown only
+              where the user may change it (not when the deployment locks it). */}
+          {documentEditable && (
+            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+              <span className="text-xs font-medium text-muted-foreground shrink-0">
+                {t('toolbar.documentExtractor')}
+              </span>
+              <Select
+                value={documentTarget?.providerId ?? ''}
+                onValueChange={(v) => void selectExtractor(v)}
+                disabled={materialsLocked}
+              >
+                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                  <SelectValue placeholder={PDF_PROVIDERS.unpdf?.name ?? 'unpdf'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {documentEntries.map((entry) => {
+                    const provider = PDF_PROVIDERS[entry.registryId as PDFProviderId];
+                    return (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        <div className="flex items-center gap-1.5">
+                          {provider?.icon && (
+                            <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
+                          )}
+                          {provider?.name ?? entry.id}
+                          {entry.state === 'deployment' && (
+                            <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                              {t('settings.serverConfigured')}
+                            </span>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Upload area / file info */}
-          <div className="px-3 pb-3">
+          <div className={cn('px-3 pb-3', !documentEditable && 'pt-3')}>
             <input
               type="file"
               ref={fileInputRef}

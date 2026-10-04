@@ -405,6 +405,47 @@ describe('the course model map', () => {
   });
 });
 
+describe('the course material extractor picker', () => {
+  const openMaterials = async () => {
+    mount(
+      createElement(GenerationToolbar, {
+        courseMaterials: [],
+        onCourseMaterialsAdd: () => {},
+        onCourseMaterialRemove: () => {},
+        onPdfError: () => {},
+        onSettingsOpen: () => {},
+      }),
+    );
+    click(document.body.querySelector<HTMLElement>('[data-testid="course-material-button"]')!);
+    await flush();
+  };
+
+  it('offers the extractor while the document slot can be set', async () => {
+    modelSettingsClient.adopt(viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' } }));
+    await openMaterials();
+    expect(document.body.textContent).toContain('toolbar.documentExtractor');
+  });
+
+  for (const lock of [['document'], 'all'] as const) {
+    it(`hides it when the administrator fixed ${lock === 'all' ? 'everything' : 'the document slot'}`, async () => {
+      modelSettingsClient.adopt(
+        viewFor({
+          providers: {
+            ...providers,
+            docs: { preset: 'mineru-cloud', apiKey: 'sk-operator-secret-0009' },
+          },
+          slots: { llm: 'operator:deepseek-v4-pro', document: 'docs' },
+          lock: lock === 'all' ? 'all' : [...lock],
+        }),
+      );
+      await openMaterials();
+      expect(document.body.textContent).not.toContain('toolbar.documentExtractor');
+      // Uploading stays available.
+      expect(document.body.textContent).toContain('toolbar.courseMaterialUpload');
+    });
+  }
+});
+
 describe('the home toolbar model picker', () => {
   const toolbar = () =>
     createElement(GenerationToolbar, {
