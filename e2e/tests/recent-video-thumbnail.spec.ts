@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
 import { defaultTheme } from '../fixtures/test-data/slide-theme';
+import { TINY_MP4_BASE64 } from '../fixtures/test-data/tiny-video';
 import { seedServerAsset, seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 
 const POSTER_BASE64 =
@@ -15,11 +16,17 @@ const VIDEO_BYTES = new Uint8Array([
  * are in the owner's asset pool, and the slide holds the allocated ids, exactly
  * as generation leaves it.
  */
-async function seedVideoThumbnailStage(page: Page, courseName: string): Promise<string> {
+async function seedVideoThumbnailStage(
+  page: Page,
+  courseName: string,
+  video: { bytes: Uint8Array; withPoster: boolean } = { bytes: VIDEO_BYTES, withPoster: true },
+): Promise<string> {
   await page.goto('/', { waitUntil: 'networkidle' });
   const stageId = uniqueStageId('e2e-video-thumbnail-stage');
-  const videoId = await seedServerAsset(page, VIDEO_BYTES, 'video/mp4');
-  const posterId = await seedServerAsset(page, Buffer.from(POSTER_BASE64, 'base64'), 'image/png');
+  const videoId = await seedServerAsset(page, video.bytes, 'video/mp4');
+  const posterId = video.withPoster
+    ? await seedServerAsset(page, Buffer.from(POSTER_BASE64, 'base64'), 'image/png')
+    : undefined;
   const now = Date.now();
   await seedServerDocument(page, {
     stage: {
@@ -51,7 +58,7 @@ async function seedVideoThumbnailStage(page: Page, courseName: string): Promise<
                 type: 'video',
                 src: videoId,
                 mediaRef: videoId,
-                poster: posterId,
+                ...(posterId ? { poster: posterId } : {}),
                 left: 0,
                 top: 0,
                 width: 1000,
@@ -81,12 +88,12 @@ test.describe('Home recent video thumbnails', () => {
     const card = page.locator('.group.cursor-pointer').filter({
       hasText: 'Video Thumbnail Course',
     });
-    const video = card.locator('[data-video-element] video');
+    const poster = card.locator('[data-video-element] [data-thumbnail-video-poster]');
 
-    await expect(video).toBeVisible({ timeout: 10_000 });
-    await expect(video).toHaveAttribute('src', /^blob:/);
-    await expect(video).toHaveAttribute('poster', /^blob:/);
-    await expect(video).not.toHaveAttribute('controls', '');
+    // The thumbnail draws the video by its poster and never loads the video.
+    await expect(poster).toBeVisible({ timeout: 10_000 });
+    await expect(poster).toHaveAttribute('src', /^blob:/);
+    await expect(card.locator('video')).toHaveCount(0);
     await expect(card.locator('[data-testid="thumbnail-video-indicator"]')).toBeVisible();
 
     await card.click({ position: { x: 24, y: 24 } });
@@ -96,5 +103,50 @@ test.describe('Home recent video thumbnails', () => {
     await expect(classroomVideo).toHaveCount(1);
     await expect(classroomVideo).toBeVisible({ timeout: 10_000 });
     await expect(classroomVideo).toHaveAttribute('src', /^blob:/);
+  });
+
+  test('draws video thumbnails without loading the videos, so the page has no failed requests', async ({
+    page,
+  }) => {
+    const prefix = `No Abort ${crypto.randomUUID().slice(0, 6)}`;
+    const decodable = new Uint8Array(Buffer.from(TINY_MP4_BASE64, 'base64'));
+    await seedVideoThumbnailStage(page, `${prefix} poster`, { bytes: decodable, withPoster: true });
+    // Generated videos usually come without a poster: the opening frame stands in.
+    await seedVideoThumbnailStage(page, `${prefix} frame`, { bytes: decodable, withPoster: false });
+
+    const failed: string[] = [];
+    const mediaLoads: string[] = [];
+    page.on('requestfailed', (request) => {
+      // Next.js may release an RSC prefetch stream it has fully received before
+      // the browser sees its end, which the browser reports as aborted.
+      if (new URL(request.url()).searchParams.has('_rsc')) return;
+      failed.push(`${request.resourceType()} ${request.url()} ${request.failure()?.errorText}`);
+    });
+    page.on('request', (request) => {
+      if (request.resourceType() === 'media') mediaLoads.push(request.url());
+    });
+
+    const cards = page.locator('.group.cursor-pointer').filter({ hasText: prefix });
+    const posters = cards.locator('[data-video-element] [data-thumbnail-video-poster]');
+    const shown = async () => {
+      await expect(cards).toHaveCount(2);
+      await expect(posters).toHaveCount(2, { timeout: 15_000 });
+      for (const poster of await posters.all()) {
+        await expect(poster).toHaveAttribute('src', /^blob:/);
+        await expect
+          .poll(() => poster.evaluate((img: HTMLImageElement) => img.naturalWidth))
+          .toBeGreaterThan(0);
+      }
+      await expect(cards.locator('video')).toHaveCount(0);
+    };
+
+    await page.goto('/');
+    await shown();
+    // And from the device cache.
+    await page.reload();
+    await shown();
+
+    expect(mediaLoads).toEqual([]);
+    expect(failed).toEqual([]);
   });
 });

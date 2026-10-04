@@ -117,6 +117,11 @@ export interface CourseThumbnailRecord {
   stageId: string;
   /** The course's `updatedAt` the thumbnail was derived from. */
   version: number;
+  /**
+   * How the thumbnail was derived (`COURSE_THUMBNAIL_FORMAT`); an entry of
+   * another format (or none: written before formats) is read as a miss.
+   */
+  format?: number;
   /** The first slide with its media slots that held bytes emptied, or null: the course has none. */
   slide: Slide | null;
   /** The bytes of those media slots, by slot index (`slideMediaReferenceSlots` order). */

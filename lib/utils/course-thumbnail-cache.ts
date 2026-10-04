@@ -36,6 +36,14 @@ const log = createLogger('CourseThumbnailCache');
 export const MAX_THUMBNAIL_CACHE_ENTRIES = 300;
 export const MAX_THUMBNAIL_CACHE_BYTES = 64 * 1024 * 1024;
 
+/**
+ * The derivation the cached entries follow. Bump it when a thumbnail would be
+ * derived differently, so entries derived the old way are loaded again.
+ *
+ * 2: a video without a poster carries its opening frame as one.
+ */
+export const COURSE_THUMBNAIL_FORMAT = 2;
+
 /** How long after a write the bounds are enforced (writes come in bursts). */
 const EVICTION_DELAY_MS = 1000;
 
@@ -68,7 +76,9 @@ export async function readCachedCourseThumbnail(
   version: number,
 ): Promise<Slide | null | undefined> {
   const record = await db.courseThumbnails.get([ownerKey, stageId]);
-  if (!record || record.version !== version) return undefined;
+  if (!record || record.version !== version || record.format !== COURSE_THUMBNAIL_FORMAT) {
+    return undefined;
+  }
   void db.courseThumbnails
     .update([ownerKey, stageId], { usedAt: Date.now() })
     .catch((error: unknown) => log.warn('Could not touch a cached thumbnail:', error));
@@ -116,6 +126,7 @@ export async function writeCachedCourseThumbnail(
     ownerKey,
     stageId,
     version,
+    format: COURSE_THUMBNAIL_FORMAT,
     slide: stored,
     media,
     bytes,

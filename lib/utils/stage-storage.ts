@@ -47,6 +47,7 @@ import {
 } from '@/lib/media/resolve-media-ref';
 import { withAssetUrl } from '@/lib/media/use-asset-url';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
+import { captureVideoFirstFrame } from '@/lib/media/video-first-frame';
 import {
   currentModelCapabilities,
   mediaGenerationDisabled,
@@ -795,8 +796,31 @@ export async function resolveThumbnailMediaValue(
   signal?: AbortSignal,
   onPoolReadError?: () => void,
 ): Promise<string | undefined> {
+  return (
+    await resolveThumbnailMedia(
+      ref,
+      task,
+      storedBlob,
+      mimeType,
+      mediaGenerationDisabled,
+      signal,
+      onPoolReadError,
+    )
+  ).value;
+}
+
+/** {@link resolveThumbnailMediaValue}, also returning the bytes behind an object URL it minted. */
+async function resolveThumbnailMedia(
+  ref: string,
+  task: MediaTaskState | undefined,
+  storedBlob: Blob | undefined,
+  mimeType: string,
+  mediaGenerationDisabled = false,
+  signal?: AbortSignal,
+  onPoolReadError?: () => void,
+): Promise<{ value: string | undefined; blob?: Blob }> {
   if (isConcreteMediaAddress(ref)) {
-    return renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE));
+    return { value: renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE)) };
   }
   let blob: Blob | undefined;
   try {
@@ -819,14 +843,20 @@ export async function resolveThumbnailMediaValue(
   }
   blob ??= storedBlob && storedBlob.size > 0 ? blobWithType(storedBlob, mimeType) : undefined;
   if (blob) {
-    const url = URL.createObjectURL(blobWithType(blob, mimeType));
-    return renderableMediaUrl(
-      resolveMediaRef(ref, task, { status: 'resolved', url }, mediaGenerationDisabled),
-    );
+    const typed = blobWithType(blob, mimeType);
+    const url = URL.createObjectURL(typed);
+    return {
+      value: renderableMediaUrl(
+        resolveMediaRef(ref, task, { status: 'resolved', url }, mediaGenerationDisabled),
+      ),
+      blob: typed,
+    };
   }
-  return renderableMediaUrl(
-    resolveMediaRef(ref, task, MISSING_ASSET_LEASE, mediaGenerationDisabled),
-  );
+  return {
+    value: renderableMediaUrl(
+      resolveMediaRef(ref, task, MISSING_ASSET_LEASE, mediaGenerationDisabled),
+    ),
+  };
 }
 
 function revokeObjectUrl(url: string | undefined) {
@@ -982,16 +1012,16 @@ export async function loadFirstSlideThumbnail(
             onPoolReadError,
           )) ?? '';
       } else if (el.type === 'video') {
-        el.src =
-          (await resolveThumbnailMediaValue(
-            mediaRef,
-            task,
-            record?.type === 'video' ? record.blob : undefined,
-            record?.mimeType || 'video/mp4',
-            videoDisabled,
-            signal,
-            onPoolReadError,
-          )) ?? '';
+        const video = await resolveThumbnailMedia(
+          mediaRef,
+          task,
+          record?.type === 'video' ? record.blob : undefined,
+          record?.mimeType || 'video/mp4',
+          videoDisabled,
+          signal,
+          onPoolReadError,
+        );
+        el.src = video.value ?? '';
         const posterRef = videoBinding?.posterRef;
         const posterRecord =
           posterRef && isResolvableThumbnailMediaRef(posterRef)
@@ -1022,6 +1052,14 @@ export async function loadFirstSlideThumbnail(
           );
         } else if (posterBlob) {
           el.poster = URL.createObjectURL(posterBlob);
+        }
+        // A thumbnail shows a video by its poster (SlideThumbnail): a <video>
+        // that loads its bytes leaves aborted requests behind on every page
+        // load. Generated videos usually come without one, so the opening
+        // frame stands in, and is cached with the rest of the thumbnail.
+        if (!el.poster && el.src && video.blob) {
+          const frame = await captureVideoFirstFrame(video.blob, signal);
+          if (frame) el.poster = URL.createObjectURL(frame);
         }
       }
     }

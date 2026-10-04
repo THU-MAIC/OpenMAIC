@@ -23,6 +23,7 @@ vi.mock('@/lib/media/pending-media-allocations', () => ({
 import { clearLocalCache } from '@/lib/device-storage/clear-local-cache';
 import { db } from '@/lib/device-storage/database';
 import {
+  COURSE_THUMBNAIL_FORMAT,
   __resetCourseThumbnailOwnerKeyForTesting,
   evictCourseThumbnails,
   loadCourseThumbnail,
@@ -108,6 +109,25 @@ describe('course thumbnail cache', () => {
     expect(imageSrc(second, 0)).not.toBe(imageSrc(first, 0));
     expect(await bytesAt(imageSrc(second, 0))).toBe('server-bytes');
     expect(imageSrc(second, 1)).toBe('https://cdn.example/remote.png');
+  });
+
+  it('reads a course again when its entry was derived the old way', async () => {
+    await loadCourseThumbnail('stage-1', 10, signal());
+    await cached('stage-1', 10);
+    // An entry from before this derivation, e.g. one that kept a video
+    // without a poster, which the page would load as a <video>.
+    const [record] = await db.courseThumbnails.toArray();
+    await db.courseThumbnails.put({ ...record, format: undefined });
+
+    await loadCourseThumbnail('stage-1', 10, signal());
+
+    expect(mocks.loadFirstSlideThumbnail).toHaveBeenCalledTimes(2);
+    await vi.waitFor(async () => {
+      const [rewritten] = await db.courseThumbnails.toArray();
+      expect(rewritten.format).toBe(COURSE_THUMBNAIL_FORMAT);
+    });
+    await loadCourseThumbnail('stage-1', 10, signal());
+    expect(mocks.loadFirstSlideThumbnail).toHaveBeenCalledTimes(2);
   });
 
   it('caches a course without a slide too', async () => {
