@@ -43,6 +43,12 @@ vi.mock('@/lib/server/agent-runtime/curriculum-tools', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/server/agent-runtime/curriculum-tools')>();
   return { ...actual, probeStageAccess: vi.fn(async () => ({ kind: 'missing' })) };
 });
+// ...and no generation run is producing it.
+vi.mock('@/lib/server/agent-runtime/course-generation', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/course-generation')>();
+  return { ...actual, listCourseGenerations: vi.fn(async () => new Map()) };
+});
 vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
   resolveAgentDriverModel: mocks.resolveAgentDriverModel,
 }));

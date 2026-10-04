@@ -151,6 +151,12 @@ import {
   type RailTab,
 } from '@/lib/workbench/workspace-rail-tab';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
+import {
+  CourseRunStatusIcon,
+  courseRunStatusText,
+} from '@/components/generation/course-run-status-label';
+import { courseRunHref, courseRunStatus } from '@/lib/generation-run-client/course-card';
+import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { PaneFoldButton } from './PaneFoldButton';
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
 import { apiRenameStage, StageRenameError, STAGE_NAME_MAX_LENGTH } from '@/lib/live/server-api';
@@ -181,6 +187,7 @@ const SESSION_ROW_LIMIT = 12;
 
 export function WorkspaceRail({
   courses,
+  courseRuns,
   sessions,
   sessionState,
   onReloadSessions,
@@ -199,6 +206,13 @@ export function WorkspaceRail({
   resizeHandle,
 }: {
   readonly courses: Discovery;
+  /**
+   * The runs producing courses, by course id (the owner's active runs). A
+   * course in here is read-only until its run completes: its row shows the
+   * run's progress and is neither opened, dragged, renamed nor deleted from
+   * here. A paused run's row opens the classroom where its Retry lives.
+   */
+  readonly courseRuns?: ReadonlyMap<string, RunSnapshot>;
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
   readonly onReloadSessions: () => void;
@@ -702,6 +716,32 @@ export function WorkspaceRail({
 
   const renderCourseRow = (course: StageListItem, siblings: readonly string[]) => {
     const label = course.name || t('workspace.untitledCourse');
+    const run = courseRuns?.get(course.id);
+    const runStatus = run ? courseRunStatus(run) : null;
+    if (run && runStatus) {
+      const paused = runStatus.kind === 'paused';
+      return (
+        <RailRow
+          key={course.id}
+          testId={`pro-nav-course-${course.id}`}
+          label={label}
+          labelClassName="ws-course-name"
+          course
+          generating
+          hint={paused ? t('workspace.openToRetry') : t('workspace.courseGeneratingRowHint')}
+          active={course.id === activeCourseId}
+          meta={courseRunStatusText(runStatus, t)}
+          metaTestId={`pro-nav-course-meta-${course.id}`}
+          trailingMark={
+            <CourseRunStatusIcon
+              status={runStatus}
+              className={cn('ws-row-run-icon', paused && 'ws-row-run-icon-paused')}
+            />
+          }
+          onClick={paused ? () => window.open(courseRunHref(run), '_blank', 'noopener') : undefined}
+        />
+      );
+    }
     // Being renamed: the row IS the input, in place, at the row's own height.
     // Not a dialog — the thing being edited is the row you are looking at.
     if (course.id === renamingCourseId) {
@@ -1920,6 +1960,8 @@ function RailRow({
   rowClassName,
   labelClassName,
   active = false,
+  generating = false,
+  hint,
   onClick,
   dragProps,
   dragging = false,
@@ -1939,7 +1981,12 @@ function RailRow({
   readonly rowClassName?: string;
   readonly labelClassName?: string;
   readonly active?: boolean;
-  readonly onClick: () => void;
+  /** A course a generation run is still producing (see `courseRuns`). */
+  readonly generating?: boolean;
+  /** Said after the label in the tooltip — why the row does what it does. */
+  readonly hint?: string;
+  /** Absent: the row is shown but cannot be acted on (`aria-disabled`). */
+  readonly onClick?: () => void;
   /** `useTreeDrag`'s row hooks — data attributes plus the pointer-down. */
   readonly dragProps?: Record<string, unknown>;
   readonly dragging?: boolean;
@@ -1980,8 +2027,10 @@ function RailRow({
           onMove(event.key === 'ArrowUp' ? -1 : 1);
         }}
         data-testid={testId}
-        title={label}
+        data-generating={generating || undefined}
+        title={hint ? `${label} · ${hint}` : label}
         aria-current={active ? 'page' : undefined}
+        aria-disabled={onClick ? undefined : true}
         className={cn(
           'ws-row flex min-w-0 flex-1 items-center px-2 text-left',
           // NO flex gap, on either row kind: the leading slot's own width is the
@@ -1990,6 +2039,7 @@ function RailRow({
           // chat's name lands in the same column as a course's.
           'ws-tree-row',
           course && 'ws-course',
+          generating && 'ws-course-generating',
           rowClassName,
           active && 'ws-row-active',
         )}

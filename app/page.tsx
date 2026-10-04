@@ -27,7 +27,6 @@ import {
   X,
   Presentation,
   Loader2,
-  AlertCircle,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -66,6 +65,7 @@ import {
   type CourseRunStatus,
 } from '@/lib/generation-run-client/course-card';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
+import { CourseRunStatusLabel } from '@/components/generation/course-run-status-label';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -1624,38 +1624,6 @@ function pendingRunListItem(run: RunSnapshot): StageListItem {
   };
 }
 
-function RunStatusLabel({ status }: { status: CourseRunStatus }) {
-  const { t } = useI18n();
-  const label =
-    status.kind === 'outlining'
-      ? t('classroom.runOutlining')
-      : status.kind === 'awaiting-confirmation'
-        ? t('classroom.runAwaitingConfirmation')
-        : status.kind === 'generating'
-          ? t('classroom.runGenerating', { completed: status.completed, total: status.total })
-          : t('classroom.runPaused');
-  return (
-    <span
-      className={cn(
-        'shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
-        status.kind === 'paused'
-          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-          : 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400',
-      )}
-      data-testid="course-run-status"
-    >
-      {status.kind === 'paused' ? (
-        <AlertCircle className="size-3" />
-      ) : status.kind === 'awaiting-confirmation' ? (
-        <Clock className="size-3" />
-      ) : (
-        <Loader2 className="size-3 animate-spin" />
-      )}
-      {label}
-    </span>
-  );
-}
-
 function ClassroomCard({
   classroom,
   slide,
@@ -1876,7 +1844,7 @@ function ClassroomCard({
       {/* Info — outside the thumbnail */}
       <div className="mt-2.5 px-1 flex items-center gap-2">
         {runStatus ? (
-          <RunStatusLabel status={runStatus} />
+          <CourseRunStatusLabel status={runStatus} />
         ) : (
           <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
             {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}

@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  ownerRuns: { runs: [] as readonly unknown[], forget: () => {} },
   store: {
     playbackOn: false,
     sessionId: null as string | null,
@@ -198,6 +199,11 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
   },
 }));
 vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
+// The owner's generation runs (the rail's generating courses) are a separate
+// stream with nothing to say about the session and pane wiring under test.
+vi.mock('@/lib/generation-run-client/use-owner-runs', () => ({
+  useOwnerRuns: () => mocks.ownerRuns,
+}));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;
@@ -296,6 +302,7 @@ beforeEach(() => {
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.ownerRuns = { runs: [], forget: () => {} };
   mocks.searchParams = new URLSearchParams('course=stage-1');
   mocks.sessionRows = [];
   mocks.sessionListState = 'ready';
@@ -814,6 +821,34 @@ describe('a new conversation is a live composer, not a loading pane', () => {
  *
  * `navigation.openCourse` is the whole interaction, so it is what these drive.
  */
+describe('a course a generation run is still producing', () => {
+  it('reaches the rail as generating, and the @ picker never offers it', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-1&course=stage-1');
+    mocks.store.sessionId = 'session-1';
+    mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+    mocks.courses = { ...mocks.courses!, classrooms: [classroom('stage-1'), classroom('stage-2')] };
+    const run = {
+      id: 'run-1',
+      state: 'generating',
+      stageId: 'stage-2',
+      progress: { scenesCompleted: 2, scenesTotal: 8 },
+    };
+    mocks.ownerRuns = { runs: [run, { ...run, id: 'run-2', stageId: null }], forget: () => {} };
+    await render();
+    await act(async () => {});
+
+    const courseRuns = mocks.railProps?.courseRuns as ReadonlyMap<string, unknown>;
+    expect([...courseRuns.keys()]).toEqual(['stage-2']);
+    expect(courseRuns.get('stage-2')).toBe(run);
+    const navigation = mocks.chatPaneProps?.navigation as {
+      courseOptions: ReadonlyArray<{ id: string }>;
+      generatingCourseIds: ReadonlySet<string>;
+    };
+    expect(navigation.courseOptions.map((option) => option.id)).toEqual(['stage-1']);
+    expect([...navigation.generatingCourseIds]).toEqual(['stage-2']);
+  });
+});
+
 describe('opening a course from a card in the conversation', () => {
   /** The capability the shell hands the chat pane — what a card calls. */
   const navigation = () =>

@@ -46,6 +46,7 @@ import {
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
+import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
 
 const log = createLogger('Classroom');
 
@@ -348,6 +349,15 @@ export function ClassroomSurface({
                 </button>
               </div>
             </div>
+          ) : variant === 'pane' && runCourse.generation ? (
+            // The pane is edit-locked and a course being generated is
+            // read-only until its run completes: say so rather than show an
+            // edit chrome that cannot resolve. The run completing clears
+            // `generation` and the course mounts here by itself.
+            <CourseGeneratingPlaceholder
+              status={runCourse.generation.status}
+              href={runCourse.generation.href}
+            />
           ) : (
             <Stage
               classroomId={classroomId}

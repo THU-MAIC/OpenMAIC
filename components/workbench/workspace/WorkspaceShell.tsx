@@ -111,6 +111,8 @@ import type { CourseRef } from '@/lib/workbench/course-refs';
 import { useStageFreshnessSync, useWorkbenchStream } from '@/lib/workbench/use-workbench-session';
 import { useGeneratedCourseDiscoverySync } from '@/lib/workbench/course-discovery-sync';
 import { useStageStore } from '@/lib/store/stage';
+import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
+import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { WorkspaceRail } from './WorkspaceRail';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
@@ -174,6 +176,25 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   // Discover-only: course management lives in the navigation tree.
   const courses = useHomeDiscovery({ mode: 'discover-only' });
+  /*
+   * Courses a classic generation run is still producing, live through the
+   * owner's run stream — the source the home page's cards read. Such a course
+   * is read-only until its run completes, so the rail shows its progress and
+   * does not open it, and the `@` picker does not offer it. A run that gains
+   * its course or finishes reads the course list again, so the row turns into
+   * an ordinary one (with its final page count) without a reload.
+   */
+  const { runs: ownerRuns } = useOwnerRuns({ onCourseChanged: () => void courses.reload() });
+  const courseRuns = useMemo(
+    () =>
+      new Map(
+        ownerRuns.flatMap(
+          (run): Array<[string, RunSnapshot]> => (run.stageId ? [[run.stageId, run]] : []),
+        ),
+      ),
+    [ownerRuns],
+  );
+  const generatingCourseIds = useMemo(() => new Set(courseRuns.keys()), [courseRuns]);
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
   /**
    * The latest list, readable from queued callbacks without waiting for React
@@ -950,10 +971,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const courseOptions = useMemo(
     () =>
-      [...courses.classrooms]
+      courses.classrooms
+        .filter((course) => !generatingCourseIds.has(course.id))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map((course) => ({ id: course.id, name: course.name })),
-    [courses.classrooms],
+    [courses.classrooms, generatingCourseIds],
   );
 
   const courseTabItems = useMemo(
@@ -981,8 +1003,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       activeCourseId: panes.courseId,
       lookupCourse,
       courseOptions,
+      generatingCourseIds,
     }),
-    [courseOptions, lookupCourse, openCourse, panes.courseId],
+    [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
   );
 
   return (
@@ -1002,6 +1025,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {classroomOpen && playbackOn ? null : (
         <WorkspaceRail
           courses={courses}
+          courseRuns={courseRuns}
           sessions={visibleSessions}
           sessionState={sessionState}
           onReloadSessions={() => {

@@ -29,6 +29,7 @@ import { courseFenced, mergeServerScenes, RunCourseSceneSync } from './run-cours
 import { isFinishedRunState, type RunView } from './types';
 import { useGenerationRun } from './use-generation-run';
 import { runIdOfCourse } from './run-id';
+import { courseRunHref, courseRunStatus, type CourseRunStatus } from './course-card';
 
 const log = createLogger('RunCourse');
 
@@ -75,6 +76,12 @@ function sceneHoldingElement(elementId: string): string | null {
 export function useRunCourse(input: { classroomId: string; ready: boolean }): {
   /** The run producing this course, while the classroom follows it. */
   runId: string | null;
+  /**
+   * While the run is not over (the course is read-only until it is): its
+   * state, and where its progress is followed (the standalone classroom, or
+   * the run's preview while its outline waits). Null otherwise.
+   */
+  generation: { status: CourseRunStatus; href: string } | null;
   /** Retry the failed scene of a paused run. */
   retryOutline: (outlineId: string) => Promise<void>;
 } {
@@ -244,5 +251,16 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
     [refresh],
   );
 
-  return { runId: view ? runId : null, retryOutline };
+  const runStatus = view && !finished ? courseRunStatus(view) : null;
+  return {
+    runId: view ? runId : null,
+    generation:
+      view && runStatus
+        ? {
+            status: runStatus,
+            href: courseRunHref({ id: view.runId, state: view.state, stageId: input.classroomId }),
+          }
+        : null,
+    retryOutline,
+  };
 }

@@ -348,6 +348,7 @@ export function WorkbenchChat({
             activeCourseId: navigation?.activeCourseId ?? null,
             courses: navigation?.courseOptions ?? [],
             referencedIds: courseRefs.map((ref) => ref.stageId),
+            excludedIds: navigation?.generatingCourseIds,
             untitled: untitledCourse,
           }),
     [
@@ -356,6 +357,7 @@ export function WorkbenchChat({
       mentionQuery,
       navigation?.activeCourseId,
       navigation?.courseOptions,
+      navigation?.generatingCourseIds,
       untitledCourse,
     ],
   );

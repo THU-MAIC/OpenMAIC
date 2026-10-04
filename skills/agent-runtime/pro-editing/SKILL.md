@@ -24,6 +24,9 @@ any edit:
 3. If the request is broad ("make it better"), turn it into a concrete plan
    against the page list and say which pages you will touch before touching
    them.
+4. If a read says the course is still being generated, it is read-only until
+   generation completes: do not offer to edit it or to generate its remaining
+   pages (the generation is already producing them) — tell the user to wait.
 
 ## Read before every change
 
