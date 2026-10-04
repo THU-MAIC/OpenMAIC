@@ -938,12 +938,20 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
       return `${where}: choice question has no options`;
     }
 
+    const optionValues = new Set<string>();
+
     for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
       const value = options[optionIndex]?.value;
       if (typeof value !== 'string' || !QUIZ_OPTION_VALUE.test(value)) {
         const shown = JSON.stringify(value);
         return `${where}: option ${optionIndex + 1} value ${shown} is not a single letter A-Z`;
       }
+
+      if (optionValues.has(value)) {
+        return `${where}: option ${optionIndex + 1} repeats value ${JSON.stringify(value)}`;
+      }
+
+      optionValues.add(value);
     }
 
     const answer = question.answer;
@@ -951,9 +959,8 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
       return `${where}: answer key does not reference an option value`;
     }
 
-    const values = new Set(options.map((option) => option.value));
     for (const entry of answer) {
-      if (!values.has(entry)) {
+      if (!optionValues.has(entry)) {
         return `${where}: answer ${JSON.stringify(entry)} does not match an option value`;
       }
     }
