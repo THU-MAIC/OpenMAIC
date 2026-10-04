@@ -6,9 +6,13 @@ import {
   Bot,
   Check,
   FileAudio,
+  FileImage,
+  FileSpreadsheet,
   FileText,
+  FileVideo,
   Loader2,
   Paperclip,
+  Presentation,
   RotateCw,
   X,
 } from 'lucide-react';
@@ -408,23 +412,23 @@ export function GenerationToolbar({
               >
                 <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
                 <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5 text-center">
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5 text-center">
                   {t('upload.courseMaterialFormats', {
                     formats: courseMaterialFormatList(t, activeDocumentProviderIds),
                     size: MAX_COURSE_MATERIAL_SIZE_MB,
                   })}
                 </p>
-                <p className="text-[10px] text-muted-foreground/60 text-center">
+                <p className="text-[10px] text-muted-foreground/70 text-center">
                   {t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES })}
                 </p>
               </div>
 
               {courseMaterials.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   <p className="text-[10px] text-muted-foreground/70">
                     {t('toolbar.courseMaterialMergeOrder')}
                   </p>
-                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                  <div className="max-h-60 space-y-1.5 overflow-y-auto">
                     {[...courseMaterials]
                       .sort((a, b) => a.order - b.order)
                       .map((file) => (
@@ -481,6 +485,34 @@ function materialMessageText(t: Translate, message: CourseMaterialMessage | unde
   return message.text ?? (message.key ? t(message.key, message.values) : '');
 }
 
+/** A file-type icon for a material, by its kind, MIME type and extension. */
+function MaterialTypeIcon({ material }: { material: CourseMaterialEntry }) {
+  const mime = material.mime ?? material.type;
+  const extension = material.name.split('.').pop()?.toLowerCase() ?? '';
+  const className = 'size-3.5';
+  if (material.mediaKind === 'media') {
+    return mime.startsWith('video/') ? (
+      <FileVideo className={className} />
+    ) : (
+      <FileAudio className={className} />
+    );
+  }
+  if (mime.startsWith('image/')) return <FileImage className={className} />;
+  if (['ppt', 'pptx', 'key', 'odp'].includes(extension)) {
+    return <Presentation className={className} />;
+  }
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(extension)) {
+    return <FileSpreadsheet className={className} />;
+  }
+  return <FileText className={className} />;
+}
+
+/** A file size as the material row shows it (one decimal in MB; KB below 1 MB). */
+function materialSizeText(bytes: number): string {
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
 /** One attached material: its upload, its extraction, and what generation leaves out of it. */
 export function CourseMaterialChip({
   material,
@@ -495,99 +527,123 @@ export function CourseMaterialChip({
 }) {
   const { t } = useI18n();
   const media = material.mediaKind === 'media';
-  const Icon = media ? FileAudio : FileText;
+  const failed = material.status === 'failed';
+  const percent = Math.round(material.progress * 100);
+  const failureText = failed ? materialMessageText(t, material.failure) : '';
   const notices =
     material.status === 'ready' && material.extraction?.truncated
       ? truncationNotices(t, material.extraction.truncated)
       : [];
+  const iconButton = cn(
+    'size-6 shrink-0 rounded-md inline-flex items-center justify-center text-muted-foreground/70 transition-colors',
+    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary',
+    locked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted hover:text-foreground',
+  );
   return (
     <div
-      className="rounded-lg border border-border/50 px-2 py-2"
+      className={cn(
+        'relative overflow-hidden rounded-lg border bg-background/60 px-2 py-1.5',
+        failed ? 'border-destructive/30' : 'border-border/60',
+      )}
       data-testid="course-material-chip"
       data-status={material.status}
     >
       <div className="flex items-center gap-2">
-        <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-          <Icon className="size-4 text-violet-600 dark:text-violet-400" />
-        </div>
+        <span
+          className={cn(
+            'size-6 shrink-0 rounded-md flex items-center justify-center',
+            failed
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-violet-100/70 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300',
+          )}
+        >
+          <MaterialTypeIcon material={material} />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium truncate">
-            {material.order}. {material.name}
+          <p className="truncate text-xs font-medium leading-tight" title={material.name}>
+            <span className="text-muted-foreground tabular-nums">{material.order}.</span>{' '}
+            {material.name}
           </p>
-          <p className="flex items-center gap-1 text-xs text-muted-foreground">
-            {media && (
-              <span className="shrink-0 rounded border px-1 text-[9px]">
-                {t('toolbar.materialMediaLabel')}
-              </span>
-            )}
-            {material.status === 'uploading' && (
-              <span>
-                {t('toolbar.materialUploading', { percent: Math.round(material.progress * 100) })}
-              </span>
-            )}
-            {material.status === 'extracting' && (
-              <>
-                <Loader2 className="size-3 shrink-0 animate-spin" />
-                <span>{t(media ? 'toolbar.materialTranscribing' : 'toolbar.materialParsing')}</span>
-              </>
-            )}
-            {material.status === 'ready' && (
-              <>
-                <Check className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <span>{t('toolbar.materialReady')}</span>
-                <span className="text-muted-foreground/60">
-                  · {(material.size / 1024 / 1024).toFixed(2)} MB
+          {failed ? (
+            <p
+              className="mt-0.5 line-clamp-2 break-words text-[10px] leading-snug text-destructive"
+              title={failureText || undefined}
+            >
+              {t('toolbar.materialFailed')}
+              {failureText && failureText !== t('toolbar.materialFailed') && ` · ${failureText}`}
+            </p>
+          ) : (
+            <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] leading-tight text-muted-foreground">
+              {media && (
+                <span className="shrink-0 rounded-sm border border-border/70 px-1 text-[9px] leading-[13px]">
+                  {t('toolbar.materialMediaLabel')}
                 </span>
-              </>
-            )}
-            {material.status === 'failed' && (
-              <span className="text-destructive">{t('toolbar.materialFailed')}</span>
-            )}
-          </p>
+              )}
+              {material.status === 'uploading' && (
+                <span className="tabular-nums">{t('toolbar.materialUploading', { percent })}</span>
+              )}
+              {material.status === 'extracting' && (
+                <>
+                  <Loader2 className="size-2.5 shrink-0 animate-spin" />
+                  <span>
+                    {t(media ? 'toolbar.materialTranscribing' : 'toolbar.materialParsing')}
+                  </span>
+                </>
+              )}
+              {material.status === 'ready' && (
+                <>
+                  <Check className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>{t('toolbar.materialReady')}</span>
+                  <span className="text-muted-foreground/70 tabular-nums">
+                    · {materialSizeText(material.size)}
+                  </span>
+                </>
+              )}
+            </p>
+          )}
         </div>
-        {material.status === 'failed' && (
+        {failed && (
           <button
+            type="button"
             onClick={onRetry}
             disabled={locked}
-            className={cn(
-              'h-6 rounded-full px-2 inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors',
-              locked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted hover:text-foreground',
-            )}
+            className={iconButton}
+            aria-label={t('toolbar.materialRetry')}
+            title={t('toolbar.materialRetry')}
           >
-            <RotateCw className="size-3" />
-            {t('toolbar.materialRetry')}
+            <RotateCw className="size-3.5" />
           </button>
         )}
         <button
+          type="button"
           onClick={onRemove}
           disabled={locked}
-          className={cn(
-            'size-6 rounded-full inline-flex items-center justify-center text-muted-foreground transition-colors',
-            locked ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted',
-          )}
+          className={iconButton}
           aria-label={t('toolbar.removeCourseMaterial')}
+          title={t('toolbar.removeCourseMaterial')}
         >
           <X className="size-3.5" />
         </button>
       </div>
-      {material.status === 'uploading' && (
-        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-violet-500 transition-[width]"
-            style={{ width: `${Math.round(material.progress * 100)}%` }}
-          />
-        </div>
-      )}
-      {material.status === 'failed' && material.failure && (
-        <p className="mt-1 text-[11px] leading-snug text-destructive break-words">
-          {materialMessageText(t, material.failure)}
-        </p>
-      )}
       {notices.map((notice) => (
-        <p key={notice} className="mt-1 text-[10px] text-amber-600 dark:text-amber-400">
+        <p
+          key={notice}
+          className="mt-1 pl-8 text-[10px] leading-snug text-amber-600/90 dark:text-amber-400/90"
+        >
           {notice}
         </p>
       ))}
+      {material.status === 'uploading' && (
+        <div className="absolute inset-x-0 bottom-0 h-0.5 bg-violet-500/10">
+          <div
+            className="h-full bg-violet-500 transition-[width]"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
+      {material.status === 'extracting' && (
+        <div className="absolute inset-x-0 bottom-0 h-0.5 animate-pulse bg-violet-500/40" />
+      )}
     </div>
   );
 }

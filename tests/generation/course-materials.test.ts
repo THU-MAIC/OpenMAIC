@@ -92,20 +92,43 @@ const chip = (material: CourseMaterialEntry) =>
   );
 
 describe('the material chip', () => {
-  it('shows the upload progress', () => {
+  it('shows the upload progress as a bar along its edge', () => {
     const markup = chip(entry({ status: 'uploading', progress: 0.42 }));
     expect(markup).toContain('Uploading 42%');
     expect(markup).toContain('width:42%');
+    expect(markup).toContain('data-status="uploading"');
+    expect(markup).not.toContain('Retry');
   });
 
   it('says parsing for a document and transcribing for audio or video', () => {
-    expect(chip(entry({ status: 'extracting' }))).toContain('Parsing…');
-    const media = chip(entry({ status: 'extracting', mediaKind: 'media' }));
+    const document = chip(entry({ status: 'extracting' }));
+    expect(document).toContain('Parsing…');
+    expect(document).toContain('lucide-file-text');
+    const media = chip(
+      entry({
+        status: 'extracting',
+        mediaKind: 'media',
+        name: 'talk.mp4',
+        type: 'video/mp4',
+      }),
+    );
     expect(media).toContain('Transcribing…');
     expect(media).toContain('Audio/video');
+    expect(media).toContain('lucide-file-play');
   });
 
-  it('shows ready with what a course leaves out of the material', () => {
+  it('shows ready with the size, and the type of file by its icon', () => {
+    const markup = chip(entry());
+    expect(markup).toContain('Ready');
+    expect(markup).toContain('2.0 MB');
+    expect(markup).not.toContain('width:');
+    expect(chip(entry({ name: 'deck.pptx', size: 300 * 1024 }))).toContain('lucide-presentation');
+    expect(chip(entry({ name: 'deck.pptx', size: 300 * 1024 }))).toContain('300 KB');
+    expect(chip(entry({ name: 'sheet.xlsx' }))).toContain('lucide-file-spreadsheet');
+    expect(chip(entry({ name: 'photo.png', type: 'image/png' }))).toContain('lucide-file-image');
+  });
+
+  it('shows what a course leaves out of a ready material', () => {
     const markup = chip(
       entry({
         extraction: {
@@ -119,16 +142,38 @@ describe('the material chip', () => {
     expect(markup).toContain('30 images found');
   });
 
-  it('shows a failure with its reason and Retry', () => {
+  it('shows a failure with its reason, Retry and Remove', () => {
     const markup = chip(
       entry({
         status: 'failed',
         failure: { stage: 'extraction', text: 'document extraction failed (unpdf: no text)' },
       }),
     );
-    expect(markup).toContain('Failed');
-    expect(markup).toContain('document extraction failed (unpdf: no text)');
-    expect(markup).toContain('Retry');
+    expect(markup).toContain('Failed · document extraction failed (unpdf: no text)');
+    expect(markup).toContain('text-destructive');
+    expect(markup).toContain('aria-label="Retry"');
+    expect(markup).toContain('aria-label="Remove file"');
+    // A failure without a reason of its own just says it failed.
+    expect(
+      chip(
+        entry({
+          status: 'failed',
+          failure: { stage: 'extraction', key: 'toolbar.materialFailed' },
+        }),
+      ),
+    ).not.toContain('Failed · ');
+  });
+
+  it('disables Retry and Remove while the materials are locked', () => {
+    const markup = renderToStaticMarkup(
+      createElement(CourseMaterialChip, {
+        material: entry({ status: 'failed', failure: { stage: 'upload', text: 'x' } }),
+        locked: true,
+        onRemove: () => {},
+        onRetry: () => {},
+      }),
+    );
+    expect(markup.match(/disabled=""/g)).toHaveLength(2);
   });
 });
 
