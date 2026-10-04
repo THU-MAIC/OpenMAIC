@@ -74,8 +74,6 @@ import {
   listStages,
   deleteStageData,
   renameStage,
-  getFirstSlideByStages,
-  revokeThumbnailSlideMediaUrls,
   listFolders,
   createFolder,
   renameFolder,
@@ -96,6 +94,8 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
+import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
+import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import {
@@ -240,7 +240,10 @@ function HomePage() {
   // the run is always started from a set that cannot change under it.
   const [preparingGenerate, setPreparingGenerate] = useState(false);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
-  const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
+  // First-slide thumbnails load lazily, per card near the viewport: the list
+  // renders as soon as /api/stages answers, never behind every course's
+  // document and media.
+  const { thumbnails, requestThumbnail, retainThumbnails } = useCourseThumbnails();
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -263,14 +266,6 @@ function HomePage() {
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const thumbnailsRef = useRef<Record<string, Slide>>({});
-
-  const replaceThumbnails = (slides: Record<string, Slide>) => {
-    const previous = thumbnailsRef.current;
-    thumbnailsRef.current = slides;
-    setThumbnails(slides);
-    window.setTimeout(() => revokeThumbnailSlideMediaUrls(previous), 0);
-  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -288,13 +283,7 @@ function HomePage() {
     try {
       const list = await listStages();
       setClassrooms(list);
-      // Load first slide thumbnails
-      if (list.length > 0) {
-        const slides = await getFirstSlideByStages(list.map((c) => c.id));
-        replaceThumbnails(slides);
-      } else {
-        replaceThumbnails({});
-      }
+      retainThumbnails(new Set(list.map((c) => c.id)));
     } catch (err) {
       log.error('Failed to load classrooms:', err);
       toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
@@ -369,8 +358,6 @@ function HomePage() {
 
     return () => {
       window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
-      revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
-      thumbnailsRef.current = {};
     };
   }, []);
 
@@ -522,16 +509,21 @@ function HomePage() {
   }, [classrooms]);
   // Up to 3 member course covers (first-slide thumbnails) per folder, for the
   // folder tile's cover stack. Members are ordered by updatedAt desc so the
-  // frontmost cover is the most recently touched course.
-  const coverSlidesByFolder = useMemo(() => {
-    const byFolder = new Map<string, Slide[]>();
+  // frontmost cover is the most recently touched course. The members that
+  // fill (or, not loaded yet, may fill) those 3 slots are the tile's cover
+  // candidates: it loads their thumbnails while it is near the viewport, and a
+  // member without a slide gives its slot to the next one.
+  const folderCovers = useMemo(() => {
+    const byFolder = new Map<string, { slides: Slide[]; candidates: StageListItem[] }>();
     for (const c of [...classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!c.folderId) continue;
+      const covers = byFolder.get(c.folderId) ?? { slides: [], candidates: [] };
+      byFolder.set(c.folderId, covers);
+      if (covers.candidates.length >= 3) continue;
       const slide = thumbnails[c.id];
-      if (!slide) continue;
-      const list = byFolder.get(c.folderId) ?? [];
-      if (list.length < 3) list.push(slide);
-      byFolder.set(c.folderId, list);
+      if (slide === null) continue;
+      covers.candidates.push(c);
+      if (slide) covers.slides.push(slide);
     }
     return byFolder;
   }, [classrooms, thumbnails]);
@@ -1236,7 +1228,9 @@ function HomePage() {
                               <FolderCard
                                 folder={folder}
                                 courseCount={courseCountByFolder.get(folder.id) ?? 0}
-                                coverSlides={coverSlidesByFolder.get(folder.id) ?? []}
+                                coverSlides={folderCovers.get(folder.id)?.slides ?? []}
+                                coverCandidates={folderCovers.get(folder.id)?.candidates ?? []}
+                                requestThumbnail={requestThumbnail}
                                 onOpen={() => setCurrentFolderId(folder.id)}
                                 onRename={handleRenameFolder(folder)}
                                 onDelete={(mode) => confirmDeleteFolder(folder, mode)}
@@ -1280,6 +1274,7 @@ function HomePage() {
                             <ClassroomCard
                               classroom={classroom}
                               slide={thumbnails[classroom.id]}
+                              requestThumbnail={requestThumbnail}
                               formatDate={formatDate}
                               runStatus={(() => {
                                 const run = runByStageId.get(classroom.id);
@@ -1680,6 +1675,7 @@ function RunStatusLabel({ status }: { status: CourseRunStatus }) {
 function ClassroomCard({
   classroom,
   slide,
+  requestThumbnail,
   formatDate,
   runStatus = null,
   pendingCourse = false,
@@ -1692,7 +1688,10 @@ function ClassroomCard({
   onClick,
 }: {
   classroom: StageListItem;
-  slide?: Slide;
+  /** The first slide; null when the course has none, undefined until loaded. */
+  slide?: Slide | null;
+  /** Loads the thumbnail while the card is near the viewport (absent: nothing to load). */
+  requestThumbnail?: (stageId: string, version: number) => () => void;
   formatDate: (ts: number) => string;
   /** The state of the run generating this course, while it runs. */
   runStatus?: CourseRunStatus | null;
@@ -1713,6 +1712,12 @@ function ClassroomCard({
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const nearViewport = useNearViewport(thumbRef);
+
+  useEffect(() => {
+    if (!nearViewport || !requestThumbnail) return;
+    return requestThumbnail(classroom.id, classroom.updatedAt);
+  }, [nearViewport, requestThumbnail, classroom.id, classroom.updatedAt]);
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -1774,6 +1779,11 @@ function ClassroomCard({
             size={thumbWidth}
             viewportSize={slide.viewportSize ?? 1000}
             viewportRatio={slide.viewportRatio ?? 0.5625}
+          />
+        ) : slide === undefined && requestThumbnail ? (
+          <div
+            className="absolute inset-0 animate-pulse bg-slate-200/70 dark:bg-slate-700/50"
+            data-thumbnail-state="loading"
           />
         ) : !slide ? (
           <div className="absolute inset-0 flex items-center justify-center">

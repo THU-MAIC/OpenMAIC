@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, Folder, Pencil, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -15,7 +16,7 @@ import {
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import type { Slide } from '@openmaic/dsl';
 import type { FolderRecord } from '@/lib/types/folder';
-import type { DeleteFolderMode } from '@/lib/utils/stage-storage';
+import type { DeleteFolderMode, StageListItem } from '@/lib/utils/stage-storage';
 
 /** Maximum number of course covers stacked on a folder tile. */
 const MAX_COVERS = 3;
@@ -33,6 +34,8 @@ export function FolderCard({
   folder,
   courseCount,
   coverSlides,
+  coverCandidates = [],
+  requestThumbnail,
   onOpen,
   onRename,
   onDelete,
@@ -42,6 +45,10 @@ export function FolderCard({
   courseCount: number;
   /** Up to {@link MAX_COVERS} first-slide thumbnails of the member courses. */
   coverSlides: Slide[];
+  /** The member courses whose thumbnails fill (or may fill) the cover slots. */
+  coverCandidates?: readonly StageListItem[];
+  /** Loads a member's thumbnail; called for the candidates while the tile is near the viewport. */
+  requestThumbnail?: (stageId: string, version: number) => () => void;
   onOpen: () => void;
   onRename: (newName: string) => Promise<string | null>;
   /** Delete the folder with the chosen mode. */
@@ -60,6 +67,18 @@ export function FolderCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
+  const nearViewport = useNearViewport(thumbRef);
+  // A stable key, so a re-render with the same candidates does not re-request.
+  const candidateKey = coverCandidates.map((c) => `${c.id}@${c.updatedAt}`).join('|');
+
+  useEffect(() => {
+    if (!nearViewport || !requestThumbnail || !candidateKey) return;
+    const withdraws = candidateKey.split('|').map((key) => {
+      const at = key.lastIndexOf('@');
+      return requestThumbnail(key.slice(0, at), Number(key.slice(at + 1)));
+    });
+    return () => withdraws.forEach((withdraw) => withdraw());
+  }, [nearViewport, requestThumbnail, candidateKey]);
 
   // Clear lingering drop highlight when a course drag ends (covers Escape-
   // cancelled drags that may not fire dragleave on every target).

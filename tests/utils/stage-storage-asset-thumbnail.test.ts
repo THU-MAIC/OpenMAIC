@@ -43,7 +43,7 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   preparePBLScenesForDocumentPersistence: vi.fn(),
 }));
 
-import { getFirstSlideByStages, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
+import { getFirstSlideForStage, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
 
 describe('stage thumbnail allocated assets', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -104,10 +104,10 @@ describe('stage thumbnail allocated assets', () => {
   });
 
   it('resolves an allocated ref through its same-key Dexie compatibility row', async () => {
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
     expect(mocks.mediaToArray).toHaveBeenCalledOnce();
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
     });
   });
@@ -153,10 +153,10 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].background?.image?.src).toBe('blob:thumbnail-asset');
-    revokeThumbnailSlideMediaUrls(slides);
+    expect(slide.background?.image?.src).toBe('blob:thumbnail-asset');
+    revokeThumbnailSlideMediaUrls(slide);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumbnail-asset');
   });
 
@@ -169,9 +169,9 @@ describe('stage thumbnail allocated assets', () => {
       vi.fn(async () => new Response(new Blob(['pool-new'], { type: 'image/png' }))),
     );
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    expect(slide.elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
     const hydrated = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
     expect(await hydrated.text()).toBe('pool-new');
   });
@@ -239,9 +239,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-1',
       poster: 'blob:thumbnail-2',
     });
@@ -299,9 +299,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
       poster: 'blob:thumbnail-asset',
       mediaRef: 'gen_vid_1',
@@ -359,9 +359,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements).toMatchObject([
+    expect(slide.elements).toMatchObject([
       { src: '', mediaRef: 'gen_vid_1' },
       { src: '', mediaRef: 'gen_vid_2' },
     ]);
@@ -428,9 +428,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: '',
       mediaRef: 'gen_vid_1',
     });

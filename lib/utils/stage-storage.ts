@@ -792,6 +792,7 @@ export async function resolveThumbnailMediaValue(
   storedBlob: Blob | undefined,
   mimeType: string,
   mediaGenerationDisabled = false,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   if (isConcreteMediaAddress(ref)) {
     return renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE));
@@ -803,7 +804,7 @@ export async function resolveThumbnailMediaValue(
     blob = mayNameAPoolAsset(ref)
       ? await withAssetUrl(ref, async (url) => {
           if (!url) return undefined;
-          const response = await fetch(url);
+          const response = await fetch(url, { signal });
           const fetched = response.ok ? await response.blob() : undefined;
           // Zero-byte pool answers are not usable bytes: fall back to the
           // stored row (or no thumbnail) rather than minting an empty image.
@@ -831,185 +832,178 @@ function revokeObjectUrl(url: string | undefined) {
   }
 }
 
-export function revokeThumbnailSlideMediaUrls(slides: Record<string, ThumbnailSlide>) {
-  for (const slide of Object.values(slides)) {
-    for (const slot of slideMediaReferenceSlots(slide)) {
-      if (slot.kind !== 'video-media-ref') revokeObjectUrl(slot.read());
-    }
+/** Release the object URLs a {@link getFirstSlideForStage} thumbnail minted. */
+export function revokeThumbnailSlideMediaUrls(slide: ThumbnailSlide) {
+  for (const slot of slideMediaReferenceSlots(slide)) {
+    if (slot.kind !== 'video-media-ref') revokeObjectUrl(slot.read());
   }
 }
 
 /**
- * Get first slide scene's canvas data for each stage (for thumbnail preview).
- * Also resolves generated image/video refs from mediaFiles so thumbnails show real media.
- * Returns a map of stageId -> Slide (canvas data with resolved media)
+ * Get one stage's first slide canvas (for its home-page thumbnail), or null
+ * when the course has no slide scene. Also resolves generated image/video refs
+ * from mediaFiles so the thumbnail shows real media; the caller owns the
+ * returned object URLs ({@link revokeThumbnailSlideMediaUrls}).
+ *
+ * `signal` cancels the media byte fetches. An aborted load still settles
+ * (with whatever it resolved); the caller discards and revokes it.
  */
-export async function getFirstSlideByStages(
-  stageIds: string[],
-): Promise<Record<string, ThumbnailSlide>> {
-  const result: Record<string, ThumbnailSlide> = {};
-  try {
-    await Promise.all(
-      stageIds.map(async (stageId) => {
-        const document = (await accessDocument(stageId)).document;
-        const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
-        if (firstSlide && firstSlide.content.type === 'slide') {
-          const slide = structuredClone(firstSlide.content.canvas);
+export async function getFirstSlideForStage(
+  stageId: string,
+  signal?: AbortSignal,
+): Promise<ThumbnailSlide | null> {
+  const document = (await accessDocument(stageId)).document;
+  signal?.throwIfAborted();
+  const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
+  if (!firstSlide || firstSlide.content.type !== 'slide') return null;
+  const slide = structuredClone(firstSlide.content.canvas);
 
-          const mediaSlots = [...slideMediaReferenceSlots(slide)];
-          const mediaElements = new Set<ThumbnailMediaElement>();
-          for (const slot of mediaSlots) {
-            if (
-              slot.element &&
-              (slot.element.type === 'video' ||
-                !!getThumbnailMediaRef(slot.element as ThumbnailMediaElement))
-            ) {
-              mediaElements.add(slot.element as ThumbnailMediaElement);
-            }
-          }
-          const backgroundSlot = mediaSlots.find((slot) => slot.kind === 'background-image');
-          const backgroundRef = backgroundSlot?.read();
-          if (
-            mediaElements.size > 0 ||
-            (backgroundRef && isResolvableThumbnailMediaRef(backgroundRef))
-          ) {
-            const capabilities = currentModelCapabilities();
-            const imageDisabled = mediaGenerationDisabled(capabilities, 'image');
-            const videoDisabled = mediaGenerationDisabled(capabilities, 'video');
-            const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-            const mediaMap = new Map(
-              mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
-            );
-            type ThumbnailTaskEntry = MediaTaskLookupEntry & {
-              readonly record: (typeof mediaRecords)[number];
-            };
-            const taskEntries = Object.fromEntries(
-              mediaRecords.map((record) => [
-                getMediaRecordElementId(record.id),
-                {
-                  stageId: record.stageId,
-                  type: record.type,
-                  status: record.error ? 'failed' : 'done',
-                  placeholderRef: record.placeholderRef,
-                  poster: record.poster ? `${record.id}:poster` : undefined,
-                  record,
-                } satisfies ThumbnailTaskEntry,
-              ]),
-            );
-            const documentElements = collectDocumentMediaElements(
-              document?.stage,
-              document?.scenes ?? [],
-            );
-
-            if (backgroundSlot && backgroundRef && isResolvableThumbnailMediaRef(backgroundRef)) {
-              const selectedRecord = mediaMap.get(backgroundRef);
-              const task = selectedRecord?.error
-                ? ({
-                    status: 'failed',
-                    errorCode: selectedRecord.errorCode,
-                    retryCount: 0,
-                  } satisfies MediaTaskState)
-                : undefined;
-              const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
-              backgroundSlot.write(
-                (await resolveThumbnailMediaValue(
-                  backgroundRef,
-                  task,
-                  record?.type === 'image' ? record.blob : undefined,
-                  record?.mimeType || 'image/png',
-                  imageDisabled,
-                )) ?? '',
-              );
-            }
-
-            for (const el of mediaElements) {
-              const videoBinding =
-                el.type === 'video'
-                  ? resolveVideoMediaForElement(
-                      taskEntries,
-                      el as import('@openmaic/dsl').PPTVideoElement,
-                      stageId,
-                      documentElements,
-                    )
-                  : undefined;
-              const mediaRef = videoBinding?.sourceRef ?? getThumbnailMediaRef(el);
-              if (!mediaRef) continue;
-              const selected =
-                el.type === 'video'
-                  ? videoBinding?.task
-                  : resolveMediaTaskForElement(
-                      taskEntries,
-                      el as import('@openmaic/dsl').PPTElement,
-                      stageId,
-                    );
-              const selectedRecord = selected?.record;
-              const task = selectedRecord?.error
-                ? ({
-                    status: 'failed',
-                    errorCode: selectedRecord.errorCode,
-                    retryCount: 0,
-                  } satisfies MediaTaskState)
-                : undefined;
-              const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
-
-              if (el.type === 'image') {
-                el.src =
-                  (await resolveThumbnailMediaValue(
-                    mediaRef,
-                    task,
-                    record?.type === 'image' ? record.blob : undefined,
-                    record?.mimeType || 'image/png',
-                    imageDisabled,
-                  )) ?? '';
-              } else if (el.type === 'video') {
-                el.src =
-                  (await resolveThumbnailMediaValue(
-                    mediaRef,
-                    task,
-                    record?.type === 'video' ? record.blob : undefined,
-                    record?.mimeType || 'video/mp4',
-                    videoDisabled,
-                  )) ?? '';
-                const posterRef = videoBinding?.posterRef;
-                const posterRecord =
-                  posterRef && isResolvableThumbnailMediaRef(posterRef)
-                    ? mediaMap.get(posterRef)
-                    : undefined;
-                const posterBlob =
-                  posterRecord && !posterRecord.error && posterRecord.type === 'image'
-                    ? blobWithType(posterRecord.blob, posterRecord.mimeType)
-                    : record?.poster
-                      ? blobWithType(record.poster, 'image/jpeg')
-                      : undefined;
-                if (posterRef) {
-                  const posterTask = posterRecord?.error
-                    ? ({
-                        status: 'failed',
-                        errorCode: posterRecord.errorCode,
-                        retryCount: 0,
-                      } satisfies MediaTaskState)
-                    : undefined;
-                  el.poster = await resolveThumbnailMediaValue(
-                    posterRef,
-                    posterTask,
-                    posterBlob,
-                    posterRecord?.mimeType || 'image/jpeg',
-                  );
-                } else if (posterBlob) {
-                  el.poster = URL.createObjectURL(posterBlob);
-                }
-              }
-            }
-          }
-
-          result[stageId] = slide;
-        }
-      }),
-    );
-  } catch (error) {
-    log.error('Failed to load thumbnails:', error);
+  const mediaSlots = [...slideMediaReferenceSlots(slide)];
+  const mediaElements = new Set<ThumbnailMediaElement>();
+  for (const slot of mediaSlots) {
+    if (
+      slot.element &&
+      (slot.element.type === 'video' ||
+        !!getThumbnailMediaRef(slot.element as ThumbnailMediaElement))
+    ) {
+      mediaElements.add(slot.element as ThumbnailMediaElement);
+    }
   }
-  return result;
+  const backgroundSlot = mediaSlots.find((slot) => slot.kind === 'background-image');
+  const backgroundRef = backgroundSlot?.read();
+  if (mediaElements.size > 0 || (backgroundRef && isResolvableThumbnailMediaRef(backgroundRef))) {
+    const capabilities = currentModelCapabilities();
+    const imageDisabled = mediaGenerationDisabled(capabilities, 'image');
+    const videoDisabled = mediaGenerationDisabled(capabilities, 'video');
+    const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+    const mediaMap = new Map(
+      mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
+    );
+    type ThumbnailTaskEntry = MediaTaskLookupEntry & {
+      readonly record: (typeof mediaRecords)[number];
+    };
+    const taskEntries = Object.fromEntries(
+      mediaRecords.map((record) => [
+        getMediaRecordElementId(record.id),
+        {
+          stageId: record.stageId,
+          type: record.type,
+          status: record.error ? 'failed' : 'done',
+          placeholderRef: record.placeholderRef,
+          poster: record.poster ? `${record.id}:poster` : undefined,
+          record,
+        } satisfies ThumbnailTaskEntry,
+      ]),
+    );
+    const documentElements = collectDocumentMediaElements(document?.stage, document?.scenes ?? []);
+
+    if (backgroundSlot && backgroundRef && isResolvableThumbnailMediaRef(backgroundRef)) {
+      const selectedRecord = mediaMap.get(backgroundRef);
+      const task = selectedRecord?.error
+        ? ({
+            status: 'failed',
+            errorCode: selectedRecord.errorCode,
+            retryCount: 0,
+          } satisfies MediaTaskState)
+        : undefined;
+      const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
+      backgroundSlot.write(
+        (await resolveThumbnailMediaValue(
+          backgroundRef,
+          task,
+          record?.type === 'image' ? record.blob : undefined,
+          record?.mimeType || 'image/png',
+          imageDisabled,
+          signal,
+        )) ?? '',
+      );
+    }
+
+    for (const el of mediaElements) {
+      const videoBinding =
+        el.type === 'video'
+          ? resolveVideoMediaForElement(
+              taskEntries,
+              el as import('@openmaic/dsl').PPTVideoElement,
+              stageId,
+              documentElements,
+            )
+          : undefined;
+      const mediaRef = videoBinding?.sourceRef ?? getThumbnailMediaRef(el);
+      if (!mediaRef) continue;
+      const selected =
+        el.type === 'video'
+          ? videoBinding?.task
+          : resolveMediaTaskForElement(
+              taskEntries,
+              el as import('@openmaic/dsl').PPTElement,
+              stageId,
+            );
+      const selectedRecord = selected?.record;
+      const task = selectedRecord?.error
+        ? ({
+            status: 'failed',
+            errorCode: selectedRecord.errorCode,
+            retryCount: 0,
+          } satisfies MediaTaskState)
+        : undefined;
+      const record = selectedRecord && !selectedRecord.error ? selectedRecord : undefined;
+
+      if (el.type === 'image') {
+        el.src =
+          (await resolveThumbnailMediaValue(
+            mediaRef,
+            task,
+            record?.type === 'image' ? record.blob : undefined,
+            record?.mimeType || 'image/png',
+            imageDisabled,
+            signal,
+          )) ?? '';
+      } else if (el.type === 'video') {
+        el.src =
+          (await resolveThumbnailMediaValue(
+            mediaRef,
+            task,
+            record?.type === 'video' ? record.blob : undefined,
+            record?.mimeType || 'video/mp4',
+            videoDisabled,
+            signal,
+          )) ?? '';
+        const posterRef = videoBinding?.posterRef;
+        const posterRecord =
+          posterRef && isResolvableThumbnailMediaRef(posterRef)
+            ? mediaMap.get(posterRef)
+            : undefined;
+        const posterBlob =
+          posterRecord && !posterRecord.error && posterRecord.type === 'image'
+            ? blobWithType(posterRecord.blob, posterRecord.mimeType)
+            : record?.poster
+              ? blobWithType(record.poster, 'image/jpeg')
+              : undefined;
+        if (posterRef) {
+          const posterTask = posterRecord?.error
+            ? ({
+                status: 'failed',
+                errorCode: posterRecord.errorCode,
+                retryCount: 0,
+              } satisfies MediaTaskState)
+            : undefined;
+          el.poster = await resolveThumbnailMediaValue(
+            posterRef,
+            posterTask,
+            posterBlob,
+            posterRecord?.mimeType || 'image/jpeg',
+            undefined,
+            signal,
+          );
+        } else if (posterBlob) {
+          el.poster = URL.createObjectURL(posterBlob);
+        }
+      }
+    }
+  }
+
+  return slide;
 }
 
 /**
