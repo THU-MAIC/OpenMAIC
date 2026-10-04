@@ -61,6 +61,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver;
+  Element.prototype.scrollIntoView ??= function () {};
 });
 
 const roots: Root[] = [];
