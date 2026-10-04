@@ -1069,6 +1069,51 @@ describe('whiteboard RuntimeStore service', () => {
     expect(await merged.listSessions('stage-1', 'new-learner')).toHaveLength(1);
   });
 
+  it('hydrates from the partition listing alone and fails loud on a hidden id collision at write', async () => {
+    const backing = runtimeStore();
+    const getSession = vi.fn(backing.getSession.bind(backing));
+    const observed: RuntimeStore = {
+      ...backing,
+      createSession: backing.createSession.bind(backing),
+      getSession,
+      listSessions: backing.listSessions.bind(backing),
+      setSessionStatus: backing.setSessionStatus.bind(backing),
+      deleteSession: backing.deleteSession.bind(backing),
+      appendRecord: backing.appendRecord.bind(backing),
+      listRecords: backing.listRecords.bind(backing),
+      mergeLearner: backing.mergeLearner.bind(backing),
+      deleteLearnerRuntime: backing.deleteLearnerRuntime.bind(backing),
+      deleteStageRuntime: backing.deleteStageRuntime.bind(backing),
+      deleteAllRuntime: backing.deleteAllRuntime.bind(backing),
+    };
+    await expect(service(observed).read('stage-1')).resolves.toEqual({
+      sessionId: null,
+      whiteboard: null,
+      lastSeq: null,
+    });
+    expect(getSession).not.toHaveBeenCalled();
+
+    // A merge re-keys the old learner's deterministic id into another
+    // partition. Reading the old partition sees nothing; writing to it
+    // collides with that id and the create-race re-read rejects it.
+    await service(observed, 'old-learner').append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: payload(),
+    });
+    await backing.mergeLearner('old-learner', 'new-learner');
+    await expect(service(observed, 'old-learner').read('stage-1')).resolves.toMatchObject({
+      sessionId: null,
+    });
+    await expect(
+      service(observed, 'old-learner').append({
+        stageId: 'stage-1',
+        expectedLastSeq: null,
+        payload: payload('operation-2'),
+      }),
+    ).rejects.toBeInstanceOf(WhiteboardRuntimeSessionInvariantError);
+  });
+
   it('successful same-ID cleanup yields empty state while failed cleanup retains state', async () => {
     const store = runtimeStore();
     const runtime = service(store);
