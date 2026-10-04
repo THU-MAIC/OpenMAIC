@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
-    "analyzingCourseMaterial": "Analisando documentos",
-    "analyzingCourseMaterialDesc": "Extraindo estrutura e conteúdo do documento...",
     "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",
     "courseMaterialParseFailed": "Falha ao analisar o material do curso",
     "streamNotReadable": "Não foi possível ler o fluxo de geração",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Falha na pesquisa na web",
     "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
     "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título",
-    "analyzingMediaMaterial": "Analisando áudio/vídeo",
     "modelSettingsUnavailable": "Não foi possível ler as configurações de modelos, então a geração parou. Tente novamente.",
     "activeRunLimit": "Você já tem o número máximo de cursos sendo gerados. Aguarde um terminar e tente novamente.",
     "outlineConfirmedElsewhere": "Este roteiro já foi confirmado em outro lugar; suas edições aqui não foram aplicadas.",

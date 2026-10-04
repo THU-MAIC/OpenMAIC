@@ -156,31 +156,4 @@ describe('run view reducer', () => {
     );
     expect(view.generatedAgents).toHaveLength(1);
   });
-
-  it('knows the material kinds, when they are analyzed, and what was cut', () => {
-    const preparing = snapshot({
-      state: 'preparing',
-      step: 'material-analysis',
-      seq: 3,
-      input: { ...snapshot().input, materialIds: ['mat_1'] },
-    });
-    let view = followFrom(preparing).view;
-    expect(view.materialsAnalyzed).toBe(false);
-    view = applyRunEvent(view, event(4, 'material_kinds', { kinds: ['media'] }));
-    expect(view.materialKinds).toEqual(['media']);
-    view = applyRunEvent(view, event(5, 'step_completed', { step: 'material-analysis' }));
-    view = applyRunEvent(
-      view,
-      event(6, 'material_truncated', { textChars: 50000, images: { total: 30, max: 20 } }),
-    );
-    expect(view.materialsAnalyzed).toBe(true);
-    expect(view.materialTruncated).toEqual({ textChars: 50000, images: { total: 30, max: 20 } });
-    // A snapshot past the analysis knows it is done.
-    expect(
-      viewFromSnapshot(snapshot({ state: 'outlining', step: 'outline' })).materialsAnalyzed,
-    ).toBe(true);
-    expect(
-      viewFromSnapshot(snapshot({ state: 'preparing', step: 'research' })).materialsAnalyzed,
-    ).toBe(true);
-  });
 });

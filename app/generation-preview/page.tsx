@@ -33,14 +33,10 @@ import {
   type PreviewPhase,
   wasRunStartedHere,
 } from '@/lib/generation-run-client/outline-review';
-import {
-  previewStepIds,
-  previewStepIndex,
-  showsMaterialAnalysis,
-} from '@/lib/generation-run-client/preview-steps';
+import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
 import { useGenerationRun } from '@/lib/generation-run-client/use-generation-run';
-import { ALL_STEPS, getGenerationStepText } from './types';
+import { ALL_STEPS } from './types';
 import { StepVisualizer } from './components/visualizers';
 
 const log = createLogger('GenerationPreview');
@@ -114,8 +110,6 @@ function GenerationPreviewContent() {
   const steps = useMemo(() => {
     if (!view) return [];
     const ids = previewStepIds({
-      // What a course leaves out of the materials is said where they were attached.
-      hasMaterials: showsMaterialAnalysis(view),
       webSearch: !!capabilities.webSearch,
       autoAgents: view.input.agents.mode === 'auto',
     });
@@ -367,11 +361,6 @@ function GenerationPreviewContent() {
 
   const activeStep =
     steps.length > 0 ? steps[Math.min(currentStepIndex, steps.length - 1)] : ALL_STEPS[0];
-  // Audio or video is "Analyzing audio/video", by the first material, as before.
-  const activeStepText = getGenerationStepText(
-    activeStep,
-    view.materialKinds?.[0] === 'media' ? { documentMimeType: 'audio/' } : null,
-  );
 
   if (isReviewingOutlines) {
     const outlineStepIndex = Math.max(
@@ -549,12 +538,10 @@ function GenerationPreviewContent() {
                     className="space-y-2"
                   >
                     <h2 className="text-2xl font-bold tracking-tight">
-                      {error
-                        ? t('generation.generationFailed')
-                        : t(activeStepText.title, activeStepText.titleValues)}
+                      {error ? t('generation.generationFailed') : t(activeStep.title)}
                     </h2>
                     <p className="text-muted-foreground text-base">
-                      {error ? error : statusMessage || t(activeStepText.description)}
+                      {error ? error : statusMessage || t(activeStep.description)}
                     </p>
                   </motion.div>
                 </AnimatePresence>

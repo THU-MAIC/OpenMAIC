@@ -1043,8 +1043,6 @@
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
     "pdfParseFailed": "PDF 解析失敗",
-    "analyzingCourseMaterial": "解析文件",
-    "analyzingCourseMaterialDesc": "正在擷取文件結構和內容...",
     "courseMaterialLoadFailed": "無法載入課程材料，請重試",
     "courseMaterialParseFailed": "課程材料解析失敗",
     "streamNotReadable": "無法讀取生成資料流",
@@ -1150,7 +1148,6 @@
     "webSearchFailed": "網路搜尋失敗",
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
     "jumpToBlankTitle": "跳至待補充標題的章節",
-    "analyzingMediaMaterial": "解析音影片內容",
     "modelSettingsUnavailable": "無法讀取模型設定，已停止生成。請重試。",
     "activeRunLimit": "同時生成的課程已達上限，請等待其中一門完成後再試。",
     "outlineConfirmedElsewhere": "此大綱已在其他地方確認，此處的修改未生效。",

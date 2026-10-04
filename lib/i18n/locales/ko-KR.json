@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
-    "analyzingCourseMaterial": "문서 분석 중",
-    "analyzingCourseMaterialDesc": "문서 구조와 내용을 추출하고 있어요...",
     "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
     "courseMaterialParseFailed": "강의 자료 파싱에 실패했습니다",
     "streamNotReadable": "생성 스트림을 읽을 수 없습니다",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "웹 검색에 실패했습니다",
     "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
     "jumpToBlankTitle": "제목이 필요한 섹션으로 이동",
-    "analyzingMediaMaterial": "오디오/비디오 분석 중",
     "modelSettingsUnavailable": "모델 설정을 읽을 수 없어 생성을 중단했습니다. 다시 시도해 주세요.",
     "activeRunLimit": "동시에 생성할 수 있는 강의 수에 도달했습니다. 하나가 끝난 후 다시 시도하세요.",
     "outlineConfirmedElsewhere": "이 개요는 이미 다른 곳에서 확인되었습니다. 여기서 수정한 내용은 적용되지 않았습니다.",

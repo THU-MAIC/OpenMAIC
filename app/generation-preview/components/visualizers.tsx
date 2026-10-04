@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  ScanLine,
   Search,
   Globe,
   MousePointer2,
@@ -32,8 +31,6 @@ export function StepVisualizer({
   onExpandOutline?: () => void;
 }) {
   switch (stepId) {
-    case 'pdf-analysis':
-      return <PdfScanVisualizer />;
     case 'web-search':
       return <WebSearchVisualizer sources={webSearchSources || []} />;
     case 'outline':
@@ -47,45 +44,6 @@ export function StepVisualizer({
     default:
       return null;
   }
-}
-
-// PDF: Document with scanning laser line
-function PdfScanVisualizer() {
-  return (
-    <div className="size-32 relative flex items-center justify-center">
-      <motion.div
-        className="absolute inset-2 bg-cyan-500/5 rounded-2xl blur-lg"
-        animate={{ opacity: [0.3, 0.6, 0.3] }}
-        transition={{ duration: 2, repeat: Infinity }}
-      />
-      <div className="w-20 h-28 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl relative overflow-hidden">
-        <div className="p-3 space-y-2 mt-1">
-          {[80, 60, 90, 45, 70].map((w, i) => (
-            <motion.div
-              key={i}
-              className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded"
-              style={{ width: `${w}%` }}
-              animate={{ opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
-            />
-          ))}
-        </div>
-        {/* Scanning laser */}
-        <motion.div
-          className="absolute inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_rgba(34,211,238,0.6)]"
-          animate={{ top: ['5%', '90%', '5%'] }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-        />
-      </div>
-      <motion.div
-        className="absolute -top-1 -right-1"
-        animate={{ rotate: [0, 10, -10, 0] }}
-        transition={{ duration: 3, repeat: Infinity }}
-      >
-        <ScanLine className="size-6 text-cyan-500/70" />
-      </motion.div>
-    </div>
-  );
 }
 
 // Web Search: Miniature search engine results page with animated query + result rows

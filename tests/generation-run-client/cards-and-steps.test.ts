@@ -76,16 +76,10 @@ describe('course cards of runs', () => {
 });
 
 describe('preview steps of a run', () => {
-  const steps = previewStepIds({ hasMaterials: true, webSearch: false, autoAgents: true });
+  const steps = previewStepIds({ webSearch: false, autoAgents: true });
   it('list the classic steps the run takes', () => {
-    expect(steps).toEqual([
-      'pdf-analysis',
-      'outline',
-      'agent-generation',
-      'slide-content',
-      'actions',
-    ]);
-    expect(previewStepIds({ hasMaterials: false, webSearch: true, autoAgents: false })).toEqual([
+    expect(steps).toEqual(['outline', 'agent-generation', 'slide-content', 'actions']);
+    expect(previewStepIds({ webSearch: true, autoAgents: false })).toEqual([
       'web-search',
       'outline',
       'slide-content',
@@ -96,7 +90,14 @@ describe('preview steps of a run', () => {
   it('map run steps onto them', () => {
     const at = (state: string, step: string | null) =>
       steps[previewStepIndex({ state: state as never, step }, steps)];
-    expect(at('preparing', 'material-analysis')).toBe('pdf-analysis');
+    // The material analysis is not a step of its own: it shows as the one after it.
+    expect(at('preparing', 'material-analysis')).toBe('outline');
+    expect(at('paused', 'material-analysis')).toBe('outline');
+    expect(at('preparing', null)).toBe('outline');
+    const withSearch = previewStepIds({ webSearch: true, autoAgents: true });
+    expect(
+      withSearch[previewStepIndex({ state: 'preparing', step: 'material-analysis' }, withSearch)],
+    ).toBe('web-search');
     // Research without a web-search step shows as the outline.
     expect(at('preparing', 'research')).toBe('outline');
     expect(at('outlining', 'outline')).toBe('outline');

@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Không nạp được tệp PDF, vui lòng thử lại",
     "pdfParseFailed": "Đọc PDF không thành công",
-    "analyzingCourseMaterial": "Đang phân tích tài liệu",
-    "analyzingCourseMaterialDesc": "Đang bóc tách cấu trúc và nội dung tài liệu…",
     "courseMaterialLoadFailed": "Không nạp được tài liệu bài học, vui lòng thử lại",
     "courseMaterialParseFailed": "Đọc tài liệu bài học không thành công",
     "streamNotReadable": "Không đọc được luồng dữ liệu tạo bài",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Tìm trên web không thành công",
     "outlinesReadyCount": "{{ready}} / {{total}} phần đã xong",
     "jumpToBlankTitle": "Nhảy tới phần còn thiếu tên",
-    "analyzingMediaMaterial": "Đang phân tích âm thanh/video",
     "modelSettingsUnavailable": "Không đọc được cài đặt mô hình nên quá trình tạo đã dừng. Vui lòng thử lại.",
     "activeRunLimit": "Bạn đã đạt số khóa học được tạo cùng lúc tối đa. Hãy chờ một khóa hoàn tất rồi thử lại.",
     "outlineConfirmedElsewhere": "Dàn ý này đã được xác nhận ở nơi khác; các chỉnh sửa của bạn ở đây chưa được áp dụng.",

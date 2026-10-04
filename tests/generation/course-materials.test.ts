@@ -4,7 +4,7 @@
  * extracted before Generate (the chip shows uploading, parsing or
  * transcribing, ready, or failed with its reason and Retry), Generate waits
  * for every one, and what a course leaves out of a material is said on its
- * chip instead of in the preview.
+ * chip (the preview lists no material step: see preview-material-step).
  */
 import { act, createElement, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -36,8 +36,6 @@ vi.mock('@/lib/generation-run-client/api', async (importOriginal) => ({
 
 import { CourseMaterialChip } from '@/components/generation/generation-toolbar';
 import { RunApiError, type MaterialPolicy } from '@/lib/generation-run-client/api';
-import { previewStepIds, showsMaterialAnalysis } from '@/lib/generation-run-client/preview-steps';
-import { applyRunEvent, viewFromSnapshot } from '@/lib/generation-run-client/reducer';
 import {
   combinedTruncation,
   policyRefusal,
@@ -45,7 +43,6 @@ import {
   type CourseMaterialEntry,
   type CourseMaterials,
 } from '@/lib/generation-run-client/use-course-materials';
-import type { RunSnapshot } from '@/lib/generation-run-client/types';
 
 const POLICY: MaterialPolicy = {
   formats: [{ mime: 'application/pdf' }, { mime: 'text/plain' }, { mime: 'audio/mpeg' }],
@@ -473,54 +470,5 @@ describe('the composer materials', () => {
     // A real unload releases what is left.
     await act(async () => void window.dispatchEvent(page('pagehide', false)));
     expect(api.deleteMaterial).toHaveBeenCalledWith('mat_5', { keepalive: true });
-  });
-});
-
-describe('the preview of a run started from ready materials', () => {
-  const snapshot: RunSnapshot = {
-    id: 'run-1',
-    state: 'preparing',
-    step: null,
-    seq: 0,
-    input: { materialIds: ['mat_1'], agents: { mode: 'preset', agentIds: [] } },
-    outline: null,
-    agents: null,
-    stageId: null,
-    progress: { scenesTotal: 0, scenesCompleted: 0 },
-    error: null,
-    createdAt: '',
-    updatedAt: '',
-  } as unknown as RunSnapshot;
-  const steps = (view: ReturnType<typeof viewFromSnapshot>) =>
-    previewStepIds({
-      hasMaterials: showsMaterialAnalysis(view),
-      webSearch: false,
-      autoAgents: false,
-    });
-
-  it('has no analysis step when the run waited for nothing', () => {
-    let view = viewFromSnapshot(snapshot);
-    view = applyRunEvent(view, {
-      seq: 1,
-      type: 'step_started',
-      data: { step: 'material-analysis' },
-    } as never);
-    expect(steps(view)).not.toContain('pdf-analysis');
-  });
-
-  it('keeps it while the run waits for an extraction', () => {
-    let view = viewFromSnapshot(snapshot);
-    view = applyRunEvent(view, {
-      seq: 1,
-      type: 'material_kinds',
-      data: { kinds: ['document'] },
-    } as never);
-    expect(steps(view)).toContain('pdf-analysis');
-    view = applyRunEvent(view, {
-      seq: 2,
-      type: 'step_completed',
-      data: { step: 'material-analysis' },
-    } as never);
-    expect(steps(view)).not.toContain('pdf-analysis');
   });
 });

@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",
-    "analyzingCourseMaterial": "Analyse des documents",
-    "analyzingCourseMaterialDesc": "Extraction de la structure et du contenu des documents…",
     "courseMaterialLoadFailed": "Échec du chargement du support de cours, veuillez réessayer",
     "courseMaterialParseFailed": "Échec de l’analyse du support de cours",
     "streamNotReadable": "Impossible de lire le flux de génération",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Échec de la recherche web",
     "outlinesReadyCount": "{{ready}} / {{total}} sections prêtes",
     "jumpToBlankTitle": "Aller à une section dont le titre manque encore",
-    "analyzingMediaMaterial": "Analyse de l’audio et de la vidéo",
     "modelSettingsUnavailable": "Les réglages des modèles n'ont pas pu être lus : la génération s'est arrêtée. Réessayez.",
     "activeRunLimit": "Le nombre maximal de cours en cours de génération est atteint. Attendez qu'un cours se termine, puis réessayez.",
     "outlineConfirmedElsewhere": "Ce plan a déjà été confirmé ailleurs ; vos modifications ici n'ont pas été appliquées.",

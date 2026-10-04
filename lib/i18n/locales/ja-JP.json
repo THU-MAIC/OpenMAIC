@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
     "pdfParseFailed": "PDFの解析に失敗しました",
-    "analyzingCourseMaterial": "ドキュメントを分析中",
-    "analyzingCourseMaterialDesc": "ドキュメントの構造と内容を抽出しています...",
     "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",
     "courseMaterialParseFailed": "教材の解析に失敗しました",
     "streamNotReadable": "生成ストリームを読み取れません",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "ウェブ検索に失敗しました",
     "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
     "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
-    "analyzingMediaMaterial": "音声・動画を解析中",
     "modelSettingsUnavailable": "モデル設定を読み込めなかったため、生成を停止しました。もう一度お試しください。",
     "activeRunLimit": "同時に生成できるコースの上限に達しています。いずれかが完了してから再度お試しください。",
     "outlineConfirmedElsewhere": "このアウトラインは別の場所で確認済みです。ここでの編集は反映されていません。",

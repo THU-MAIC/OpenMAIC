@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
-    "analyzingCourseMaterial": "Analyzing documents",
-    "analyzingCourseMaterialDesc": "Extracting document structure and content...",
     "courseMaterialLoadFailed": "Failed to load course material, please try again",
     "courseMaterialParseFailed": "Course material parsing failed",
     "streamNotReadable": "Unable to read generation stream",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
     "jumpToBlankTitle": "Jump to a section that still needs a title",
-    "analyzingMediaMaterial": "Analyzing audio/video",
     "modelSettingsUnavailable": "The model settings could not be read, so generation stopped. Please try again.",
     "activeRunLimit": "You already have the maximum number of courses generating. Wait for one to finish and try again.",
     "outlineConfirmedElsewhere": "This outline was already confirmed elsewhere; your edits here were not applied.",

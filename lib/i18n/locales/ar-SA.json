@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
     "pdfParseFailed": "فشل تحليل PDF",
-    "analyzingCourseMaterial": "تحليل المستندات",
-    "analyzingCourseMaterialDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
     "courseMaterialLoadFailed": "فشل تحميل مادة المقرر، يرجى المحاولة مرة أخرى",
     "courseMaterialParseFailed": "فشل تحليل مادة المقرر",
     "streamNotReadable": "تعذرت قراءة تدفق التوليد",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
-    "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
     "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى.",
     "activeRunLimit": "لديك بالفعل الحد الأقصى من المقررات قيد التوليد. انتظر حتى ينتهي أحدها ثم حاول مرة أخرى.",
     "outlineConfirmedElsewhere": "تم تأكيد هذا المخطط في مكان آخر؛ لم تُطبَّق تعديلاتك هنا.",

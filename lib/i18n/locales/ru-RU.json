@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
     "pdfParseFailed": "Ошибка обработки PDF",
-    "analyzingCourseMaterial": "Анализ документов",
-    "analyzingCourseMaterialDesc": "Извлечение структуры и содержимого документа...",
     "courseMaterialLoadFailed": "Не удалось загрузить материал курса, попробуйте снова",
     "courseMaterialParseFailed": "Ошибка обработки материала курса",
     "streamNotReadable": "Не удалось прочитать поток генерации",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
     "jumpToBlankTitle": "Перейти к разделу без заголовка",
-    "analyzingMediaMaterial": "Анализ аудио/видео",
     "modelSettingsUnavailable": "Не удалось прочитать настройки моделей, поэтому создание остановлено. Попробуйте ещё раз.",
     "activeRunLimit": "Уже создаётся максимальное число курсов. Дождитесь завершения одного из них и повторите попытку.",
     "outlineConfirmedElsewhere": "Этот план уже подтверждён в другом месте; ваши правки здесь не применены.",

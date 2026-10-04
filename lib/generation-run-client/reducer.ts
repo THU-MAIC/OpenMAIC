@@ -32,11 +32,6 @@ export function viewFromSnapshot(snapshot: RunSnapshot): RunView {
     outlineRetrying: false,
     outline: snapshot.outline,
     researchSources: [],
-    materialKinds: snapshot.materialKinds ?? null,
-    materialsAnalyzed:
-      snapshot.state !== 'preparing' ||
-      (snapshot.step !== null && snapshot.step !== 'material-analysis'),
-    materialTruncated: snapshot.materialTruncated ?? null,
     generatedAgents: generated && generated.length > 0 ? generated : null,
     stageId: snapshot.stageId,
     progress: snapshot.progress,
@@ -65,7 +60,7 @@ export function followFrom(snapshot: RunSnapshot): { view: RunView; after: numbe
   const view = viewFromSnapshot(snapshot);
   if (snapshot.state === 'preparing' || snapshot.state === 'outlining') {
     return {
-      view: { ...view, seq: 0, streamingOutlines: [], outline: null, materialsAnalyzed: false },
+      view: { ...view, seq: 0, streamingOutlines: [], outline: null },
       after: 0,
     };
   }
@@ -121,22 +116,6 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
       next.failedSeq = event.seq;
       return next;
     }
-    case 'step_completed':
-      if (data.step === 'material-analysis') next.materialsAnalyzed = true;
-      return next;
-    case 'material_kinds':
-      next.materialKinds = Array.isArray(data.kinds)
-        ? data.kinds.map((kind) => (kind === 'media' ? 'media' : 'document'))
-        : null;
-      return next;
-    case 'material_truncated':
-      next.materialTruncated = {
-        ...(typeof data.textChars === 'number' ? { textChars: data.textChars } : {}),
-        ...(data.images && typeof data.images === 'object'
-          ? { images: data.images as { total: number; max: number } }
-          : {}),
-      };
-      return next;
     case 'research_sources': {
       const sources = Array.isArray(data.sources) ? data.sources : [];
       next.researchSources = sources.flatMap((source) => {

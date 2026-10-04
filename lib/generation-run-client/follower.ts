@@ -88,9 +88,6 @@ export function mergeSnapshotView(current: RunView | null, snapshot: RunSnapshot
   return {
     ...next,
     researchSources: current.researchSources,
-    materialKinds: next.materialKinds ?? current.materialKinds,
-    materialTruncated: next.materialTruncated ?? current.materialTruncated,
-    materialsAnalyzed: next.materialsAnalyzed || current.materialsAnalyzed,
     readyScenes: current.readyScenes,
     skippedScenes: current.skippedScenes,
     generatedAgents: next.generatedAgents ?? current.generatedAgents,

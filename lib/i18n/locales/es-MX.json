@@ -1058,8 +1058,6 @@
   "generation": {
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
-    "analyzingCourseMaterial": "Analizando documentos",
-    "analyzingCourseMaterialDesc": "Extrayendo la estructura y el contenido de los documentos...",
     "courseMaterialLoadFailed": "Error al cargar el material del curso, inténtalo de nuevo",
     "courseMaterialParseFailed": "Error al procesar el material del curso",
     "streamNotReadable": "No se puede leer el stream de generación",
@@ -1165,7 +1163,6 @@
     "webSearchFailed": "Falló la búsqueda web",
     "outlinesReadyCount": "{{ready}} / {{total}} secciones listas",
     "jumpToBlankTitle": "Ir a una sección que aún necesita título",
-    "analyzingMediaMaterial": "Analizando audio/video",
     "modelSettingsUnavailable": "No se pudo leer la configuración de modelos, así que la generación se detuvo. Inténtalo de nuevo.",
     "activeRunLimit": "Ya tienes el número máximo de cursos generándose. Espera a que termine uno e inténtalo de nuevo.",
     "outlineConfirmedElsewhere": "Este esquema ya se confirmó en otro lugar; tus cambios aquí no se aplicaron.",
