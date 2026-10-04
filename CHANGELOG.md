@@ -165,6 +165,9 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 #### Bug Fixes
 
+- Composer: the document extractor picker in the course-material popover is hidden when the deployment locks the `document` slot (`lock: [document]` or `lock: all`); uploading stays available.
+- Token Plan: connecting TokenDance also assigns the Pro agent (`agent`) to `deepseek-v4.1-flash`; the default model stays the plan's own.
+- Classroom: the page no longer logs a `404` for `/api/persistence/runtime/sessions/whiteboard:…` on every load and whiteboard open before anything was drawn; the learner whiteboard loads from the session listing.
 - Pro workspace: a course generated on the server no longer shows a "Read-only" badge to its owner; only a course saved from Discover, or one still being generated, is shown read-only.
 - Settings: with every slot locked (`lock: all`), Token Plan and Model Services are hidden, including a plan the workspace connected earlier and the Text-to-Speech tab for user voices; only the read-only course model map remains.
 - Generation preview: no "document parsing" step any more. Materials are extracted when they are attached, so the run's material step is not shown; a failure there still pauses the run with Retry.
