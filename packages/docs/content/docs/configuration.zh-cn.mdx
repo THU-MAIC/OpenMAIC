@@ -1,192 +1,401 @@
 ---
 title: 配置说明
-description: LLM 提供方、媒体生成、文档解析、TTS、ASR、访问控制和功能开关。
+description: 模型与服务商（openmaic.yml 和模型设置）、访问控制、功能开关及其他服务端选项。
 ---
 
-OpenMAIC 在服务器启动时读取环境变量。所有项都是可选的——按需启用。环境变量示例见仓库里的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。内置模型 ID 请见[支持模型](./supported-models.mdx)。
+OpenMAIC 有三个配置来源，各自只负责一件事：
 
-除环境变量外，也可以使用项目根目录下的 `server-providers.yml` 配置代码中已注册的服务端 provider。环境变量会逐字段覆盖 YAML 中的同名配置；自定义 OpenAI 兼容 provider 只能在设置中添加，不能通过任意环境变量前缀或未知 YAML provider ID 注册。
+| 来源 | 由谁编写 | 内容 | 何时生效 |
+| --- | --- | --- | --- |
+| `openmaic.yml` | 运维人员 | AI 模型的服务商、槽位分配和策略 | 启动时（修改后需重启） |
+| Web 端的模型设置 | 工作区的用户 | `openmaic.yml` 没有写死的服务商和分配，保存在数据库中 | 立即生效 |
+| 环境变量（`.env.local`、容器 Secret） | 运维人员 | `openmaic.yml` 引用的密钥，以及其他所有服务端选项 | 启动时 |
 
-## LLM 提供方
+除 `DATABASE_URL` 外，所有环境变量都是可选的（见[部署](./deployment.mdx)）。全部环境变量见 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以从 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 开始编写模型配置，预设和模型 ID 见[支持的模型](./supported-models.mdx)。
 
-云端提供方通常使用以下三个环境变量：API key、base URL 和 model 列表。其中 API key 通常是必填的，base URL 和 model 列表可选；Azure OpenAI 需要配置资源 endpoint，Ollama 和 Lemonade 不需要 API key。
+早期版本只能通过服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 配置模型。除 `MODEL_ROUTES` 外，这些方式目前仍然可用，但已弃用，见[从旧配置迁移](#从旧配置迁移)。
+
+## 模型与服务商
+
+### 基本概念
+
+- **服务商（provider）**：服务端可以调用的一个账号，例如一个 OpenAI key、一个 MiniMax Token Plan 或一个自托管的 OpenAI 兼容服务。每个服务商有一个你自己起的 ID，以及一个**预设（preset）**，说明它是哪家厂商、覆盖哪些能力。
+- **槽位（slot）**：产品里用到 AI 的一处地方，例如课程大纲、幻灯片内容、语音合成或联网搜索。每种能力的槽位构成一棵树；没有分配的槽位沿用父槽位。
+- **分配（assignment）**：槽位使用哪个服务商的哪个模型（`provider:model`），可以附带调用参数和回退模型；也可以写 `null` 关闭该槽位。
+
+一项能力是否可用，只取决于它的槽位能否解析到一个分配，没有单独的开关。
+
+### openmaic.yml
+
+服务端从启动目录（仓库根目录；Docker 镜像中为 `/app`）读取 `openmaic.yml`。设置 `OPENMAIC_CONFIG` 可以改用其他路径；相对路径同样相对于启动目录解析，且此时文件必须存在。没有该文件时，服务端使用 Web 端的设置，以及仍在设置中的[旧版变量](#从旧配置迁移)。
+
+该文件只在启动时读取一次，修改后需要重启服务。服务启动前会完整校验文件：未设置的 `${VAR}`、未知的预设或槽位、引用了未声明的服务商，或服务商不提供槽位所需的能力，都会让服务拒绝启动，并逐条列出问题所在的位置：
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+不要把密钥直接写进文件：用 `${VAR}` 引用，并在环境变量中设置。来自环境变量的值不会出现在这些错误信息里。
+
+### 完整示例
+
+```yaml title="openmaic.yml"
+providers:
+  # <服务商 ID>：小写字母、数字和连字符
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # 启动时从环境变量读取
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # 同一个 key，用于图像生成
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # Token Plan：对话、图像、视频、TTS、搜索
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # 任意 OpenAI 兼容服务
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # 下面所有对话槽位的默认值
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # 遇到可重试的失败时换用一次
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # 模型 ID 里可以有冒号
+  agent:
+    model: openai:gpt-5.5          # 需要支持工具调用
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # 只写服务商：使用它的默认模型
+  video: null                      # 关闭，并锁定为关闭
+
+policy:
+  allowWorkspaceProviders: false   # 用户不能自行添加服务商
+```
+
+使用这份文件时，列出的每个槽位对所有用户都是固定的。文件没写的对话槽位（例如 `course.agents`）沿用父槽位（`llm`）；没写的能力根槽位（例如 `asr` 或 `document`）保持未配置。用户可以在模型设置里为这两类槽位分配模型，但只能从已声明的服务商中选择。
+
+### 服务商
+
+`providers` 下的每一项声明一个服务商。键名就是它的 ID，供槽位引用：1 到 63 个小写字母、数字和连字符，以字母或数字开头。
+
+| 字段 | 是否必填 | 含义 |
+| --- | --- | --- |
+| `preset` | 是 | 使用哪个内置预设，见[支持的模型 → 预设](./supported-models.mdx#预设)。 |
+| `apiKey` | 通常需要 | API key。不需要 key 的服务（本地服务、Brave、SearXNG、unpdf）可以省略。 |
+| `baseUrl` | 部分预设需要 | 替代预设自带端点的地址。`openai-compatible`、`azure`、`searxng` 和 `mineru` 必填。 |
+| `models` | 否 | 该服务商提供的对话模型 ID，即模型设置里列出的选项。对 `openai-compatible` 来说这是模型设置唯一的列表来源。它不限制 `slots` 里能写哪些模型。 |
+| `proxy` | 否 | 该服务商请求使用的 HTTP 代理地址。 |
+| `credentials` | 部分预设需要 | 不使用单个 key 的服务所需的密钥对。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
+| `options` | 否 | 非机密的、服务商特有的设置，例如 `voxcpm-tts` 的 `backend`。名称由字母、数字、`_` 和 `-` 组成；值为字符串、数字或布尔值（不能嵌套映射或列表），可以使用 `${VAR}`。模型设置会显示 options，因此绝不要在其中放 key。仅限部署：模型设置无法设置它们。 |
+
+大多数预设只覆盖一种能力，与内置 registry 一一对应：`openai` 预设只有对话，OpenAI 的图像、语音合成和语音识别分别是 `openai-image`、`openai-tts` 和 `openai-whisper` 预设。每种能力声明一个服务商；同一个 key 覆盖多种能力时，引用同一个 `${VAR}` 即可。**Token Plan 预设**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一个 key 覆盖多种能力，每种能力使用该套餐自己的端点。服务商上的 `baseUrl` 会替换它覆盖的所有能力的端点，因此只有当 Token Plan 的全部能力都一起迁移时，才给它设置 `baseUrl`。
+
+Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境变量、profile 或 role）签名请求，区域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；`apiKey` 是可选的 bearer token。
+
+### 槽位
+
+| 槽位 | 能力 | 父槽位 | 作用 |
+| --- | --- | --- | --- |
+| `llm` | chat | — | 默认对话模型：下面任何槽位都不覆盖的对话调用，包括无浏览器 `/api/generate-classroom` API 中没有专属槽位的步骤 |
+| `course.research` | chat | `llm` | 课程调研时改写联网搜索查询 |
+| `course.outline` | chat | `llm` | 场景大纲 |
+| `course.agents` | chat | `llm` | 老师和同学智能体的人设 |
+| `course.content` | chat | `llm` | 场景内容（没有专属槽位的场景类型） |
+| `course.content.slide` | chat | `course.content` | 幻灯片场景 |
+| `course.content.quiz` | chat | `course.content` | 测验场景 |
+| `course.content.interactive` | chat | `course.content` | 互动场景 |
+| `course.content.pbl` | chat | `course.content` | 项目式学习（PBL）场景 |
+| `course.actions` | chat | `llm` | 场景动作（智能体在每个场景里说什么、做什么） |
+| `classroom` | chat | `llm` | 课堂对话、测验评分和 PBL 运行时 |
+| `agent` | chat | `llm` | Pro 工作台智能体。**需要工具调用能力。** 还支持 `api` 和 `contextWindow` |
+| `agent.title` | chat | `agent` | Pro 会话标题。只能在 `openmaic.yml` 中配置，模型设置里不显示 |
+| `tts` | tts | — | 语音合成 |
+| `asr` | asr | — | 语音识别（语音输入、音视频转写） |
+| `image` | image | — | 图像生成 |
+| `video` | video | — | 视频生成 |
+| `webSearch` | webSearch | — | 联网搜索 |
+| `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind）。内置的 PDF 文本提取不需要服务 |
+
+槽位的解析方式：
+
+- 从调用所在的槽位开始，逐级向上直到能力根槽位，遇到的第一个分配生效。因此父槽位的分配就是整棵子树的默认值；修改父槽位，会同时改变所有没有自己分配的子槽位。
+- 在每个槽位上，先看 `openmaic.yml`，再看工作区的模型设置。
+- `null` 会停止向上查找：该槽位，以及它下面所有没有自己分配的槽位，都会被关闭。
+- 一直到根槽位都没有分配时，该能力处于未配置状态。调用会报错并指出槽位名，不会回退到任何厂商。
+- 要求（requirement）属于声明它的槽位，按该槽位最终解析到的模型检查，无论是自己分配的还是继承的。`agent` 要求支持工具调用；如果内置模型目录表明它的模型不支持，智能体会拒绝运行，而不是勉强凑合。目录里没有的模型允许使用。`agent.title` 没有要求，因此可以用更小的模型。
+
+### 分配
+
+分配有四种写法：
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # 服务商:模型
+  webSearch: tavily              # 只写服务商：使用它的默认模型
+  course.outline:                # 带参数的对象
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # 关闭
+```
+
+对象写法支持以下字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `model` | 必填。`服务商:模型`；对话以外的槽位也可以只写 `服务商`。 |
+| `fallback` | 换用一次的回退模型，写法同上。仅适用于语言模型槽位，见[回退模型](#回退模型)。 |
+| `thinking` | 对话模型的推理参数：`enabled`（true/false）、`mode`（`default`、`disabled`、`enabled`、`auto`）、`effort`（`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）、`level`（`minimal`、`low`、`medium`、`high`）、`budgetTokens`、`excludeReasoningOutput`。各服务商适配器只应用其 API 支持的部分。 |
+| `api` | 仅 `agent`：传输协议，`openai-completions`（默认）或 `openai-responses`。 |
+| `contextWindow` | 仅 `agent`：压缩上下文时假定的窗口大小，用于比模型目录中的值更小的情况。 |
+
+`agent` 槽位不能设置 `thinking.effort`：它的工具调用传输无法同时使用推理强度和函数工具。
+
+### 只写服务商 ID 的引用
+
+不带 `:model` 的引用表示该服务商的默认模型：Token Plan 为该能力推荐的模型，否则是内置 registry 的默认模型。搜索和文档服务大多没有可选的模型，所以通常写成 `webSearch: tavily` 或 `document: mineru-cloud`。对话槽位必须写明模型，`llm: openai` 会在启动时被拒绝。
+
+### 回退模型
+
+回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
+
+当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、额度用尽（429）、容量不足（503）或输出为空。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
+
+回退模型属于分配，随分配一起被继承：没有自己分配的 `course.content.slide` 会使用 `course.content` 的模型及其回退模型。有要求的槽位不会换用不满足要求的回退模型。
+
+### 关闭某项能力
+
+在它的槽位上写 `null`。`video: null` 会对所有工作区关闭视频生成，并锁定为关闭；`course.content.pbl: null` 只关闭 PBL 场景生成，`course.content` 的其余部分照常工作。对已关闭槽位的调用会立即失败，媒体相关接口返回 `403`，而不是换用其他厂商。
+
+### 锁定与模型设置
+
+`openmaic.yml` 中 `slots` 下写出的内容都会被**锁定**：模型设置会标注为 **Set by the server**（由服务端设置），且无法修改。只有写出的槽位会被锁定。工作区仍然可以给被锁定槽位的子槽位分配模型，从而覆盖该子树的值。要固定整棵子树，需要把其中每个槽位都写出来。
+
+Web 端的模型设置读写当前工作区的同一棵树：
+
+- **Token Plan**：接入套餐会用该 key 添加套餐的服务商，并为套餐推荐、且仍未分配的槽位填入模型。解除接入会删除该服务商，原本使用它的槽位重新跟随父槽位。
+- **模型服务**：每种能力一个标签页（语言模型、图像、视频、语音合成、语音识别、文档解析、联网搜索），列出各自的服务。来自 `openmaic.yml` 的服务商以只读方式显示，不显示任何关于 key 的信息。工作区配置的服务会成为工作区服务商：key 只能写入，只显示类似 `…abcd` 的掩码；自定义地址仅限语言模型（Azure 语音服务使用其官方区域地址，例如 `https://<region>.tts.speech.microsoft.com`）；自托管服务与密钥对需在 `openmaic.yml` 中配置。测试按钮在服务端检查已保存的服务商。
+- **课程模型配置**：主线模型就是 `llm` 槽位，管线的每个环节对应自己的槽位（跟随主线即该环节没有自己的分配）；图像、视频、语音、搜索和转写的开关会把对应槽位设为 `null`。`openmaic.yml` 中写出的槽位在这里只展示、不可修改。
+
+早期版本保存在浏览器中的服务商设置（服务商及其 key 和 Base URL、所选模型、Token Plan 接入状态，以及每种能力的选择）会一次性导入工作区。导入不会替换工作区已有的设置或 `openmaic.yml` 锁定的槽位，并会跳过被策略或校验拒绝的条目。收到 2xx 响应后，只有工作区已持有的内容会从浏览器中删除：服务端跳过的每个条目（媒体服务的自定义地址、工作区不可使用的预设、与部署声明重名的服务商 id 等）都会连同 key 保留在此浏览器中，不会再次发送，提示一次，并在「设置 → 模型服务」中连同原因列出，直到重新设置或被丢弃。带官方区域地址的 Azure 语音服务商会被导入。收到 400 时整份导入内容被拒绝：不会再次发送，其中各条目会连同 key 保留在此浏览器中，并与被跳过的条目一起列出；导入内容无法读取时会被丢弃。只有在 401、404、409、5xx 或网络错误时，导入内容才会保留在浏览器中，供之后重试。明确关闭过的语音输入会变为 `asr: null`；在已有可用服务商时关闭的语音讲解、图像或视频会变为 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 锁定的槽位保持不变）。以下内容需要手动重新设置：按阶段设置的模型（在课程模型配置中，或在 `openmaic.yml` 的 `slots` 中）、推理设置（槽位上的 `thinking`）、自定义语音合成与语音识别服务商以及 AliDocMind 的密钥对（在 `openmaic.yml` 中；它们会保留在浏览器中，与被跳过的条目一起列出）、VoxCPM 后端（`options.backend`），以及百度搜索子来源（使用服务端默认值）。关闭的调研开关不会迁移（它只停止课程调研，对话和智能体仍会搜索），仅因默认值而处于关闭的开关也不会迁移：每项能力只要其槽位能解析就会运行。
+
+工作区即[持久化文档](./deployment.mdx)中所说的所有者（owner）：默认的 Docker Compose 部署（单用户模式）只有一个工作区；多用户部署中，每个已登录账号各有一个工作区。
+
+### 策略
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+`allowWorkspaceProviders`（默认 `true`）决定工作区能否添加自己的服务商。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为文件没有写死的槽位选择模型；请求自带的模型、密钥或端点（已弃用的 `x-model`、`x-api-key`、`x-base-url` 请求头以及媒体接口的服务商字段）也会被忽略，服务商测试按钮的请求头形式会被拒绝。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
+
+### 密钥与 OPENMAIC_SECRET_KEY
+
+- `openmaic.yml` 中的 key 通过 `${VAR}` 来自环境变量，不会写入数据库，也不会发送到浏览器。
+- 工作区在模型设置中填写的 key 保存在数据库中，使用实例密钥 `OPENMAIC_SECRET_KEY` 以 AES-256-GCM 加密。
+- 未设置 `OPENMAIC_SECRET_KEY` 时，服务端会在首次使用时于 `data/instance-secret.key`（Docker Compose 中位于 `openmaic-data` 数据卷内）生成一个随机密钥，之后一直使用它。
+
+请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或在没有持久化数据目录的平台（例如 Vercel）上，请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
+
+不设置它时，如果数据目录不能跨重启保留（没有挂载卷的容器、临时磁盘），每次启动都会生成新密钥；多个副本也会各自生成一个；工作目录只读时则无法创建密钥，在模型设置中保存 key 会失败。启动时，若 `OPENMAIC_SECRET_KEY` 未设置且数据目录不可写，或数据库中已有 key 是用与当前不同的密钥加密的（例如 `data/instance-secret.key` 丢失），服务端会记录警告，但仍会正常启动。
+
+```bash
+OPENMAIC_SECRET_KEY=...        # 模型设置中保存的 key 所用的实例密钥
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他路径
+```
+
+### 工作区可以添加什么
+
+`openmaic.yml` 中的服务商可以是 schema 允许的任何内容。工作区在模型设置中添加的服务商限制更多，因为其端点和 key 由 Web 端的用户填写：
+
+- 不提供 Amazon Bedrock：它会使用服务端自己的 AWS 凭证签名。
+- 不能设置 `proxy`，也不能使用密钥对（`credentials`）：AliDocMind 等使用密钥对认证的预设只能由部署配置。
+- 只有提供对话能力的预设才能设置自定义 `baseUrl`，且带自定义端点的服务商只能用于对话槽位。URL 不能包含凭证、查询字符串或片段，并且必须解析到公网地址，除非服务端设置了 `ALLOW_LOCAL_NETWORKS=true`。对它的请求不会跟随重定向。
+- 本地模型服务（Ollama、Lemonade）必须填写自己的端点，不能使用预设默认的 `localhost`。
+- 自托管的媒体、搜索和文档服务（VoxCPM2、FunASR、Lemonade 语音与图像、ComfyUI、SearXNG、自托管 MinerU）运行在服务端自己的网络中，只能由部署配置。
+- 运维人员用旧版 `<CAP>_<VENDOR>_ENABLED=false` 变量关闭的服务商不会提供。
+- 工作区不能声明 `openmaic.yml` 已经声明过的服务商 ID。
+
+如果希望用户访问内网服务，请在 `openmaic.yml` 中声明这些服务商。
+
+### API 调用方与已弃用的请求字段
+
+生成请求不再需要携带 key 或模型选择：`/api/generate-classroom` 等无浏览器 API 调用会按调用方所在的工作区，通过与 Web 端相同的槽位解析模型。
+
+旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位在 `openmaic.yml` 和工作区中都没有分配时才会生效；槽位一旦有分配，以配置为准；设为 `null` 的槽位无论请求写了什么都会拒绝。在 `policy.allowWorkspaceProviders: false` 下，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
+
+### 从旧配置迁移
+
+没有 `openmaic.yml` 时，服务端会在启动时转换旧配置，记录一条弃用提示，并为每个无法转换的条目各记录一条提示：
+
+| 旧配置 | 转换结果 |
+| --- | --- |
+| 服务商变量（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` 等）和 `server-providers.yml` | 部署服务商（在模型设置中只读）。服务商 ID 就是预设 ID，与旧的 provider ID 相同，只有联网搜索的 MiniMax（`minimax-search`）、联网搜索的豆包（`doubao-search`）和 Lemonade 图像（`lemonade-image`）例外 |
+| `<PREFIX>_MODELS` | 服务商的 `models` |
+| `DEFAULT_MODEL` | `llm` 的分配，作为工作区可以覆盖的默认值（不锁定）。`agent` 槽位和以前一样保持关闭 |
+| `MODEL_FALLBACK` | `DEFAULT_MODEL` 的回退模型。没有 `DEFAULT_MODEL` 时会被丢弃并给出提示 |
+| 第一个配置的 TTS、ASR、图像、视频和文档服务商，以及按旧优先级选出的联网搜索服务商 | 该能力的默认分配（图像服务商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
+| `MODEL_ROUTES` | **不转换。** 服务拒绝启动（见下文） |
+| `<CAP>_<VENDOR>_ENABLED=false` | 仍然生效：无论谁分配，该服务商都保持关闭 |
+
+存在 `openmaic.yml` 时，服务商变量、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK` 和 `MODEL_ROUTES` 都不再参与模型解析，并会给出提示。`<CAP>_<VENDOR>_ENABLED=false` 仍然生效；要关闭某项能力，请改为把它的槽位设为 `null`。
+
+**环境变量。** 迁移前：
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # 可选的 base URL 覆盖
-OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
 ```
 
-支持的 provider 前缀：
+迁移后（key 仍留在环境变量中）：
 
-| 前缀               | 提供方                               |
-| ------------------ | ------------------------------------ |
-| `OPENAI_`          | OpenAI                               |
-| `AZURE_OPENAI_`    | Azure OpenAI                         |
-| `ANTHROPIC_`       | Anthropic                            |
-| `GOOGLE_`          | Google Gemini                        |
-| `DEEPSEEK_`        | DeepSeek                             |
-| `QWEN_`            | 阿里 Qwen                            |
-| `KIMI_`            | Moonshot Kimi                        |
-| `MINIMAX_`         | MiniMax（默认用 Anthropic 兼容端点） |
-| `GLM_`             | 智谱 GLM                             |
-| `SILICONFLOW_`     | SiliconFlow                          |
-| `DOUBAO_`          | 豆包（字节跳动）                     |
-| `OPENROUTER_`      | OpenRouter                           |
-| `GROK_`            | xAI Grok                             |
-| `TENCENT_`         | 腾讯混元                             |
-| `TENCENT_HUNYUAN_` | 腾讯混元（别名）                     |
-| `XIAOMI_`          | 小米 MiMo                            |
-| `MIMO_`            | 小米 MiMo（别名）                    |
-| `OLLAMA_`          | Ollama（本地）                       |
-| `LEMONADE_`        | Lemonade（本地）                     |
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
 
-Azure OpenAI 使用 deployment name 作为模型 ID：
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。与转换得到的 `DEFAULT_MODEL` 不同，这里写出的 `llm` 是锁定的；如果希望工作区自行选择，就不要把它写进 `slots`。另外，与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
+
+**server-providers.yml。** 迁移前：
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+迁移后：
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+`server-providers.yml` 的每个分组都对应使用相应预设的服务商（`providers` → 对话预设，`tts`、`asr`、`pdf` → 文档，`image`、`video`、`web-search`），`accessKeyId`/`accessKeySecret` 移到 `credentials` 下。
+
+**MODEL_ROUTES。** 设置了 `MODEL_ROUTES` 但没有 `openmaic.yml` 的服务不会启动：
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+按阶段的路由与槽位并非一一对应，因此不会自动转换。请把每条路由改写成该阶段所属的槽位：
+
+| `MODEL_ROUTES` 阶段 | 槽位 |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide`、`:quiz`、`:interactive`、`:pbl` | `course.content.slide`、`.quiz`、`.interactive`、`.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter`、`quiz-grade`、`pbl-v2-runtime` 及其 `:instructor`、`:open-task`、`:evaluate`、`:simulator` 变体 | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+多个阶段共用一个槽位时，为该槽位指定它们应当共同使用的那个模型。路由里的 `thinking` 移到槽位的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 槽位。迁移前：
 
 ```bash
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=your-deployment-name
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
-如需连接其他 OpenAI 兼容的 LLM 服务，请在 **设置 → 模型提供方** 中添加自定义 provider，并选择对应的协议类型。
+迁移后：
 
-## 本地模型（Ollama 和 Lemonade）
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
 
-Ollama 和 Lemonade 不需要 API key；本地服务的 base URL 应写在服务端配置中，以通过 SSRF 校验：
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434/v1
-# LEMONADE_BASE_URL=http://localhost:13305/v1
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
 ```
 
-如需限制可用模型，可使用 `OLLAMA_MODELS` 或 `LEMONADE_MODELS` 指定模型白名单。
+然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
-## TTS 提供方
+**Docker。** 把文件挂载到应用旁边，key 仍放在 `.env.local` 中：
 
-服务端 TTS 提供方使用 `TTS_<PROVIDER>_API_KEY`，可选 `TTS_<PROVIDER>_BASE_URL`。
-
-```bash
-# 豆包 TTS（火山引擎 Seed-TTS，原生 MP3）
-TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # 可选覆盖
-
-# Qwen TTS
-TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # 可选覆盖
-
-# 任何 OpenAI 兼容的 TTS 端点
-TTS_OPENAI_API_KEY=
-TTS_OPENAI_BASE_URL=
-
-# VoxCPM2（自托管 TTS，支持声音克隆，详见 VoxCPM2 单独页）
-TTS_VOXCPM_BASE_URL=http://localhost:8000
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
-
-支持的 TTS 前缀包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本地 Lemonade TTS 和 VoxCPM2 不需要 API key。浏览器原生 TTS 不需要服务端配置。
-
-管理员可以使用 `TTS_<PROVIDER>_ENABLED=false` 在服务端强制关闭某个 TTS 提供方。VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
-
-也可以在设置中添加自定义 OpenAI 兼容 TTS provider，填写 Base URL、模型和音色。这类自定义 provider 保存在客户端设置中，不通过任意 `TTS_*` 环境变量或 YAML provider ID 注册。
-
-## ASR（语音转文字）
-
-```bash
-# OpenAI Whisper
-ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # 可选覆盖
-
-# Qwen ASR
-ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # 可选覆盖
-
-# Azure ASR
-ASR_AZURE_API_KEY=
-ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
-
-# FunASR（本地，不需要 key）
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
-
-# Lemonade ASR（本地，不需要 key）
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-使用 `funasr-server --device cuda` 启动 OpenAI 兼容服务。它在 `/v1/audio/transcriptions` 接收 WAV，并可在模型选择器中使用 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano。
-
-浏览器原生 ASR 不需要服务端配置。
-
-也可以在设置中添加自定义 OpenAI 兼容 ASR provider，填写 Base URL、模型和支持语言；该配置保存在客户端设置中。
-
-## 图像生成提供方
-
-图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。支持的前缀包括：
-
-`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
-
-Lemonade 是本地服务，不需要 key：
-
-```bash
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-ComfyUI Image 不需要 API key，默认连接 `http://localhost:8188`。在设置中填写 ComfyUI Base URL，并把以 API 格式导出的 workflow JSON 放入 OpenMAIC 的 `public/` 目录；文件名使用 `comfyui-*.json` 或包含 `workflow`，设置页会自动发现这些文件并将其作为可选 workflow。Docker 部署时还需要在构建镜像前加入 workflow，或把单个 workflow 文件挂载到容器的 `/app/public/` 目录。由于 `comfyui-image` 不是服务端托管 provider，生产环境连接宿主机 ComfyUI 时还需要设置 `ALLOW_LOCAL_NETWORKS=true`。
-
-## 视频生成提供方
-
-视频生成提供方使用 `VIDEO_<PROVIDER>_API_KEY`，可选 `VIDEO_<PROVIDER>_BASE_URL`。支持的前缀包括：
-
-`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
-
-## 文档和媒体解析
-
-课程材料的具体格式取决于所选解析器。当前支持文本、PDF、Office 文档、图片以及部分音视频格式；不同 provider 支持的格式和能力不同。
-
-```bash
-# MinerU 自托管
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU 自托管的可选后端
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
-# AliDocMind（使用阿里云 AccessKey，而不是单独的 API key）
-ALIDOCMIND_ACCESS_KEY_ID=
-ALIDOCMIND_ACCESS_KEY_SECRET=
-ALIDOCMIND_BASE_URL=       # 可选覆盖
-```
-
-`unpdf` 内置于 OpenMAIC，可用于基础 PDF 解析。Office 文档、图片和需要 OCR、表格、公式或版面分析的材料，应选择兼容的 MinerU 或 AliDocMind provider。
-
-AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。当前音视频材料仅支持通过 AliDocMind 解析：视频格式为 MP4、MOV、AVI、MKV、WMV，音频格式为 MP3、WAV、AAC；不支持 M4A。
-
-## 联网搜索
-
-配置 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # 可选覆盖
-
-EXA_API_KEY=
-EXA_BASE_URL=https://api.exa.ai  # 可选覆盖
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # 可选覆盖
-
-BAIDU_API_KEY=
-BAIDU_BASE_URL=https://qianfan.baidubce.com  # 可选覆盖
-
-# 自托管 SearXNG，不需要 API key
-SEARXNG_BASE_URL=
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 可选覆盖
-```
-
-Brave 和 SearXNG 不需要 API key；前端可以在每次生成时选择是否启用搜索。Grok 的联网搜索通过 Grok LLM 的搜索工具提供，不是独立的联网搜索 provider。
 
 ## ACCESS_CODE —— 站点级访问密码
 
@@ -197,16 +406,6 @@ ACCESS_CODE=your-secret-code
 ```
 
 请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有在受信任的反向代理之后设置 `TRUST_PROXY_HEADERS=true`（由代理覆盖 `x-forwarded-for` / `x-real-ip`）时才会限流：按客户端限流（每个客户端 60 秒内 10 次），验证成功会清空该客户端的计数；没有可信代理时应用无法把请求归因到具体客户端，因此完全不限流，保护依赖密码的长度和随机性。留空则关闭。
-
-## 默认模型和模型路由
-
-服务端 API 没有收到客户端模型时，需要通过 `DEFAULT_MODEL` 指定默认模型。模型写法是 `provider:model-id`，例如：
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-可以使用 `MODEL_ROUTES` 为不同生成阶段指定模型；未配置的阶段继续按客户端模型和 `DEFAULT_MODEL` 解析。它是一个 JSON 对象，键为生成阶段，值可以是模型字符串，也可以是包含 `model` 和 `thinking` 的对象。完整的阶段列表和示例见仓库里的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。
 
 ## 功能开关
 
@@ -265,7 +464,217 @@ LOG_FORMAT=pretty
 LLM_THINKING_DISABLED=false
 ```
 
-## 用 YAML 配置文件
+## 旧版服务商环境变量
+
+这些变量和 `server-providers.yml` 是早期版本的配置方式。在没有 `openmaic.yml` 时它们仍然有效（见[从旧配置迁移](#从旧配置迁移)），但已弃用，将在模型设置发布两个次版本后移除。使用 `openmaic.yml` 时，它们只作为 `${VAR}` 引用的来源。`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 见迁移一节；`MODEL_ROUTES` 已不再读取。
+
+### LLM 提供方
+
+云端提供方通常使用以下三个环境变量：API key、base URL 和 model 列表。其中 API key 通常是必填的，base URL 和 model 列表可选；Azure OpenAI 需要配置资源 endpoint，Ollama 和 Lemonade 不需要 API key。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 可选的 base URL 覆盖
+OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
+```
+
+支持的 provider 前缀：
+
+| 前缀               | 提供方                               |
+| ------------------ | ------------------------------------ |
+| `OPENAI_`          | OpenAI                               |
+| `AZURE_OPENAI_`    | Azure OpenAI                         |
+| `ANTHROPIC_`       | Anthropic                            |
+| `GOOGLE_`          | Google Gemini                        |
+| `DEEPSEEK_`        | DeepSeek                             |
+| `QWEN_`            | 阿里 Qwen                            |
+| `KIMI_`            | Moonshot Kimi                        |
+| `MINIMAX_`         | MiniMax（默认用 Anthropic 兼容端点） |
+| `GLM_`             | 智谱 GLM                             |
+| `SILICONFLOW_`     | SiliconFlow                          |
+| `DOUBAO_`          | 豆包（字节跳动）                     |
+| `OPENROUTER_`      | OpenRouter                           |
+| `GROK_`            | xAI Grok                             |
+| `TENCENT_`         | 腾讯混元                             |
+| `TENCENT_HUNYUAN_` | 腾讯混元（别名）                     |
+| `XIAOMI_`          | 小米 MiMo                            |
+| `MIMO_`            | 小米 MiMo（别名）                    |
+| `OLLAMA_`          | Ollama（本地）                       |
+| `LEMONADE_`        | Lemonade（本地）                     |
+
+Azure OpenAI 使用 deployment name 作为模型 ID：
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+如需连接其他 OpenAI 兼容的 LLM 服务，请在 `openmaic.yml` 中声明一个带 `baseUrl` 和 `models` 的 `openai-compatible` 服务商，或在 **设置 → 模型服务 → 语言模型** 中用 **添加服务商** 添加。
+
+### 本地模型（Ollama 和 Lemonade）
+
+Ollama 和 Lemonade 不需要 API key；本地服务的 base URL 应写在服务端配置中，以通过 SSRF 校验：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+如需限制可用模型，可使用 `OLLAMA_MODELS` 或 `LEMONADE_MODELS` 指定模型白名单。
+
+### TTS 提供方
+
+服务端 TTS 提供方使用 `TTS_<PROVIDER>_API_KEY`，可选 `TTS_<PROVIDER>_BASE_URL`。
+
+```bash
+# 豆包 TTS（火山引擎 Seed-TTS，原生 MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 可选覆盖
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 可选覆盖
+
+# 任何 OpenAI 兼容的 TTS 端点
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（自托管 TTS，支持声音克隆，详见 VoxCPM2 单独页）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+支持的 TTS 前缀包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本地 Lemonade TTS 和 VoxCPM2 不需要 API key。浏览器原生 TTS 不需要服务端配置。
+
+管理员可以使用 `TTS_<PROVIDER>_ENABLED=false` 在服务端强制关闭某个 TTS 提供方。VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
+
+如需使用其他 OpenAI 兼容的 TTS 端点，请在 `openmaic.yml` 中声明一个带该 `baseUrl` 的 `openai-tts` 服务商，并把 `tts` 槽位分配给它。工作区不能在模型设置中添加自定义 TTS 端点。
+
+### ASR（语音转文字）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 可选覆盖
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 可选覆盖
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR（本地，不需要 key）
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR（本地，不需要 key）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+使用 `funasr-server --device cuda` 启动 OpenAI 兼容服务。它在 `/v1/audio/transcriptions` 接收 WAV，并可在模型选择器中使用 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano。
+
+浏览器原生 ASR 不需要服务端配置。
+
+如需使用其他 OpenAI 兼容的 ASR 端点，请在 `openmaic.yml` 中以 `openai-whisper` 预设和它的 `baseUrl` 声明该服务，并把 `asr` 槽位分配给它。工作区不能在模型设置中添加自定义 ASR 端点：
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
+
+### 图像生成提供方
+
+图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。支持的前缀包括：
+
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
+
+Lemonade 是本地服务，不需要 key：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image 不需要 API key。它运行在你自己的网络中，因此由部署配置：在 `openmaic.yml` 中用 ComfyUI 服务的地址声明它，并把 `image` 槽位分配给它。
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+把以 API 格式导出的工作流 JSON 放到 OpenMAIC 的 `public/` 目录中，文件名需匹配 `comfyui-*.json` 或包含 `workflow`；OpenMAIC 会自动发现这些文件并作为工作流提供。使用 Docker 时，请在构建镜像前加入工作流，或把单个工作流文件挂载到容器内的 `/app/public/`。由于该服务商由部署声明，运行在宿主机或内网中的 ComfyUI 不需要 `ALLOW_LOCAL_NETWORKS`。
+
+### 视频生成提供方
+
+视频生成提供方使用 `VIDEO_<PROVIDER>_API_KEY`，可选 `VIDEO_<PROVIDER>_BASE_URL`。支持的前缀包括：
+
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
+
+### 文档和媒体解析
+
+课程材料的具体格式取决于所选解析器。当前支持文本、PDF、Office 文档、图片以及部分音视频格式；不同 provider 支持的格式和能力不同。
+
+```bash
+# MinerU 自托管
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU 自托管的可选后端
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind（使用阿里云 AccessKey，而不是单独的 API key）
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # 可选覆盖
+```
+
+`unpdf` 内置于 OpenMAIC，可用于基础 PDF 解析。Office 文档、图片和需要 OCR、表格、公式或版面分析的材料，应选择兼容的 MinerU 或 AliDocMind provider。
+
+AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。当前音视频材料仅支持通过 AliDocMind 解析：视频格式为 MP4、MOV、AVI、MKV、WMV，音频格式为 MP3、WAV、AAC；不支持 M4A。
+
+### 联网搜索
+
+配置 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 可选覆盖
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # 可选覆盖
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 可选覆盖
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # 可选覆盖
+
+# 自托管 SearXNG，不需要 API key
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 可选覆盖
+```
+
+Brave 和 SearXNG 不需要 API key。联网搜索没有逐次生成的开关：只要工作区的 `webSearch` 槽位能解析就会运行；关闭它（在 `openmaic.yml` 中写 `webSearch: null`，或在 **设置 → 课程模型配置** 中关闭搜索开关）会影响该工作区之后的生成。Grok 的联网搜索通过 Grok LLM 的搜索工具提供，不是独立的联网搜索 provider。
+
+### server-providers.yml
+
+已被 `openmaic.yml` 取代。两者同时存在时，只有 `openmaic.yml` 用于配置模型。
 
 除了环境变量，你也可以把代码中已注册 provider 的配置放在项目根目录下的 `server-providers.yml` 文件里。服务端启动时加载，结构与环境变量分类对应：
 

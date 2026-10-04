@@ -44,10 +44,10 @@
  *
  * In-memory only, on purpose: newly created stages mint fresh nanoids, so a
  * deleted id never collides with a NEW document, and after a reload this tab
- * has no surviving in-flight work to fence off. Explicit (re)creation paths
- * lift the deleted flag via `unmarkStageDeleted` (see
- * `applyClassroomStageAndScenes` and `importDatabase`); an in-flight flush
- * must never lift it — dropping exactly those writes is the fence's job.
+ * has no surviving in-flight work to fence off. Only a deletion that failed
+ * before removing the document lifts the flag (`unmarkStageDeleted`, in
+ * `performStageDeletion`); an in-flight flush must never lift it — dropping
+ * exactly those writes is the fence's job.
  *
  * Known limit: the state is per-tab. A sibling tab editing the same stage
  * keeps its own scheduler and never sees this tab's deletion state, so its

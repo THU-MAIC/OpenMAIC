@@ -30,6 +30,7 @@
  * |   600 | `runtime`         | `runtime_sessions` (records follow their session)      |
  * |   700 | `assets`          | `asset_entries.principal`                              |
  * |   800 | `legacy-import-bindings` | `legacy_import_bindings` (which owner a browser's pre-server data belongs to) |
+ * |   900 | `workspace-model-config` | `workspace_model_config` (moved unless the account has its own) |
  *
  * Why this order. Every core write path takes the identity lock first, so none
  * of them can be holding a row a claim wants while it waits for the claim: for
@@ -93,6 +94,7 @@ import { resolveClaimLockWaitMs } from './owner-lock-waits';
 import { ownerMaterialQuotaLockKey } from './owner-materials';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from './server-provider';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
+import { rekeyWorkspaceModelConfig } from './workspace-model-config';
 
 export interface ClaimParticipant {
   /** Unique; also the key of this participant's count in the claim result. */
@@ -128,6 +130,7 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'runtime',
   'assets',
   'legacy-import-bindings',
+  'workspace-model-config',
 ] as const;
 
 /**
@@ -326,6 +329,12 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       name: 'legacy-import-bindings',
       order: 800,
       rekey: async (tx, from, to) => rekeyLegacyImportBindings(tx, from, to),
+    },
+    {
+      // Model settings: the account keeps its own when it has them.
+      name: 'workspace-model-config',
+      order: 900,
+      rekey: async (tx, from, to) => rekeyWorkspaceModelConfig(tx, from, to),
     },
   ];
 }

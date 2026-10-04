@@ -15,7 +15,7 @@ If you only need one default voice, the built-in **Doubao** or **OpenAI-compatib
 
 ## 1. Run a VoxCPM backend
 
-OpenMAIC supports three deployment modes. All three use the same OpenMAIC adapter; select the corresponding backend type in Settings.
+OpenMAIC supports three deployment modes. All three use the same OpenMAIC adapter; choose the one you run with `options.backend` on the provider in `openmaic.yml` (step 2).
 
 | Backend        | Endpoint           | Best for                                      |
 | -------------- | ------------------ | --------------------------------------------- |
@@ -34,27 +34,33 @@ python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
 
 ## 2. Point OpenMAIC at it
 
-Choose one of the following methods.
+VoxCPM2 runs on your own network, so its endpoint is configured by the deployment; workspaces cannot add it in **Settings → Model Services**. Declare it in `openmaic.yml`, choose the backend with `options.backend`, and assign it to the `tts` slot. No API key is required:
 
-### A. Per-user (Settings UI, no server change)
+```yaml title="openmaic.yml"
+providers:
+  voxcpm:
+    preset: voxcpm-tts
+    baseUrl: http://localhost:8000/v1
+    options:
+      backend: vllm-omni          # vllm-omni (default) | python-api | nano-vllm
 
-Open **Settings → Text to speech → VoxCPM2**, choose the backend type, and paste the Base URL. The Request URL preview below shows the actual address OpenMAIC will call.
+slots:
+  tts: voxcpm
+```
 
-This is suitable for personal testing and per-browser overrides, and does not affect other users.
+The provider's `options.backend` applies to every request on the `tts` slot. Voice registration is available only on the `vllm-omni` backend; with `python-api` and `nano-vllm`, the voice prompt is sent with each request.
 
-### B. Server default (environment variable, shared by everyone)
-
-Add the following line to `.env.local` or the YAML configuration. No API key is required.
+Without `openmaic.yml`, the legacy variable configures the endpoint but cannot choose a backend, so use `openmaic.yml` for `python-api` or `nano-vllm`:
 
 ```bash
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 ```
 
-Server configuration is sent to users. If the provider is server-managed, clients cannot override these settings.
+Because the provider is server-managed, its endpoint may be on a private network without `ALLOW_LOCAL_NETWORKS`, and users cannot override it.
 
 ## 3. Voice management
 
-VoxCPM2 has three voice modes under **Settings → Text to speech → VoxCPM2 → VoxCPM voices**.
+Assign VoxCPM2 to the `tts` slot (step 2), then open **Settings → Model Services → Text-to-Speech → VoxCPM2**. The VoxCPM voice manager appears only when the `tts` slot resolves to a `voxcpm-tts` provider, and it has three voice modes.
 
 ### Auto Voice (default)
 
@@ -74,7 +80,7 @@ Upload a short reference audio clip (≤ 60 seconds, ≤ 10 MB), or record one d
 
 | Symptom                         | Likely cause                                                               |
 | ------------------------------- | -------------------------------------------------------------------------- |
-| Request URL preview returns 404 | The wrong backend type is selected; compare it with the endpoint table in step 1. |
+| Requests fail with 404          | `options.backend` does not match the backend you run; compare it with the endpoint table in step 1. |
 | First clone request takes ~30s  | The backend is cold-starting; later clones reuse the warm runtime.         |
 | Audio stops partway through     | The backend output token limit is too low; increase `--max-tokens` or the corresponding VoxCPM setting. |
 | 401 / 403                       | `TTS_VOXCPM_API_KEY` was set for a backend that does not require a key; leave it empty. |

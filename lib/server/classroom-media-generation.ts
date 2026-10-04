@@ -1,38 +1,31 @@
 /**
  * Server-side media and TTS generation for classrooms.
  *
- * Generates image/video files and TTS audio for a classroom,
- * writes them to disk, and returns serving URL mappings.
+ * Generates images, videos and TTS audio for a classroom and stores the bytes
+ * in the asset pool for the classroom's owner. The scenes then name the
+ * allocated ids, exactly like a course generated in the browser; the document
+ * write that saves them commits the allocations
+ * (`lib/server/store-generated-asset.ts`).
  */
 
-import { promises as fs } from 'fs';
 import path from 'path';
 import { createLogger } from '@/lib/logger';
-import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
+import { classroomMediaMimeType } from '@/lib/server/classroom-storage';
+import { storeGeneratedAsset, type GeneratedAssetKind } from '@/lib/server/store-generated-asset';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import {
   managedMediaDownloadFetch,
   managedMediaProviderFetch,
+  mediaDownloadFetch,
+  mediaProviderFetch,
 } from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import {
-  getServerImageProviders,
-  getServerVideoProviders,
-  getServerTTSProviders,
-  isServerConfiguredProvider,
-  resolveImageApiKey,
-  resolveImageBaseUrl,
-  resolveImageModel,
-  resolveVideoApiKey,
-  resolveVideoBaseUrl,
-  resolveVideoModel,
-  resolveTTSApiKey,
-  resolveTTSBaseUrl,
-} from '@/lib/server/provider-config';
+import { adapterOptions } from '@/lib/server/model-config/adapter-options';
+import { serverMediaConnection } from '@/lib/server/model-config/media';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
@@ -40,49 +33,31 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
-import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+import { rewriteSceneMediaReference } from '@/lib/media/generated-media-references';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { decodeDataUrl, fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
 
 const log = createLogger('ClassroomMedia');
 
-/**
- * The classroom JSON payload is a pre-conversion transport, not a persisted
- * DSL document. `audioUrl` is gone from the `SpeechAction` contract, but the
- * file-based classroom store has no asset registry to allocate from, so the
- * server still hands the client the serving URL beside the derived `audioId`.
- * The app-side reference converter ingests the URL's bytes and rewrites the
- * pair to one allocated asset id when the classroom is first fetched, before
- * the document is persisted client-side; the URL never enters a stored
- * document.
- */
-type ServerTransportSpeechAction = SpeechAction & { audioUrl?: string };
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
-}
 
 const DOWNLOAD_TIMEOUT_MS = 120_000; // 2 minutes
 export const DOWNLOAD_MAX_SIZE = 100 * 1024 * 1024; // 100 MB
 
 /**
- * File extension for the image types this path writes.
- *
- * It names the bytes on disk, so it has to follow the type the adapter reported
- * rather than a constant: a JPEG saved as `.png` is served back as the wrong
- * type. Anything unlisted keeps `png`, the extension this path used to write
- * for every inline image.
+ * The image types this path stores. The type rides the asset entry and is
+ * what the bytes are served back as, so it has to follow what the adapter
+ * reported rather than a constant. Anything unlisted is stored as `image/png`,
+ * the type this path always assumed for inline images.
  */
-const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-};
+const STORED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
+function storedImageType(mime: string | undefined): string {
+  return mime && STORED_IMAGE_TYPES.has(mime) ? mime : 'image/png';
+}
 
 export async function downloadToBuffer(url: string): Promise<Buffer> {
   if (url.startsWith('data:')) {
@@ -132,68 +107,99 @@ export async function downloadToBuffer(url: string): Promise<Buffer> {
   }
 }
 
-function mediaServingUrl(baseUrl: string, classroomId: string, subPath: string): string {
-  return `${baseUrl}/api/classroom-media/${classroomId}/${subPath}`;
+/**
+ * Store generated bytes for the classroom's owner and answer the allocated id,
+ * or `null` when the pool has no room. A caller that gets `null` stops its
+ * phase (images, video or narration): later items of that kind would most
+ * likely be refused too, after a paid provider call. The other phases go on,
+ * because their items may be small enough to fit.
+ */
+async function storeClassroomAsset(
+  ownerId: string,
+  classroomId: string,
+  bytes: Uint8Array,
+  mimeType: string,
+  kind: GeneratedAssetKind,
+  label: string,
+): Promise<string | null> {
+  const stored = await storeGeneratedAsset({
+    ownerId,
+    stageId: classroomId,
+    bytes,
+    mimeType,
+    kind,
+  });
+  if (stored.status === 'refused') {
+    log.warn(`Asset storage is full; ${label} was not stored and the phase stops`);
+    return null;
+  }
+  return stored.assetId;
 }
 
 // ---------------------------------------------------------------------------
 // Image / Video generation
 // ---------------------------------------------------------------------------
 
+export interface ClassroomMediaResult {
+  /** Placeholder -> allocated asset id, for each media item stored. */
+  assets: Record<string, string>;
+  /**
+   * The phases the asset store refused for room. Each stopped at its first
+   * refusal, and every item of it not yet stored keeps its placeholder.
+   */
+  storageFull: { images: boolean; video: boolean };
+}
+
+/** Generate the media the outlines request and store it for the owner. */
 export async function generateMediaForClassroom(
   outlines: SceneOutline[],
   classroomId: string,
-  baseUrl: string,
-): Promise<Record<string, string>> {
-  const mediaDir = path.join(CLASSROOMS_DIR, classroomId, 'media');
-  await ensureDir(mediaDir);
-
+  ownerId: string,
+): Promise<ClassroomMediaResult> {
   // Collect all media generation requests from outlines
   const requests = outlines.flatMap((o) => o.mediaGenerations ?? []);
-  if (requests.length === 0) return {};
+  if (requests.length === 0) return { assets: {}, storageFull: { images: false, video: false } };
 
-  // Resolve providers, excluding operator force-disabled ones (server
-  // precedence, #665 — mirror the TTS listing's disabled flag).
-  const imageProviderIds = Object.entries(getServerImageProviders())
-    .filter(([, info]) => !info.disabled)
-    .map(([id]) => id);
-  const videoProviderIds = Object.entries(getServerVideoProviders())
-    .filter(([, info]) => !info.disabled)
-    .map(([id]) => id);
+  // The image and video slots for this job's owner; a slot turned off or
+  // unassigned generates nothing of its kind.
+  const [imageSlot, videoSlot] = await Promise.all([
+    serverMediaConnection('image', ownerId),
+    serverMediaConnection('video', ownerId),
+  ]);
+  const image = imageSlot && imageSlot !== 'off' ? imageSlot : undefined;
+  const video = videoSlot && videoSlot !== 'off' ? videoSlot : undefined;
 
   const mediaMap: Record<string, string> = {};
+  const storageFull = { images: false, video: false };
 
   // Separate image and video requests, generate each type sequentially
   // but run the two types in parallel (providers often have limited concurrency).
-  const imageRequests = requests.filter((r) => r.type === 'image' && imageProviderIds.length > 0);
-  const videoRequests = requests.filter((r) => r.type === 'video' && videoProviderIds.length > 0);
+  const imageRequests = image ? requests.filter((r) => r.type === 'image') : [];
+  const videoRequests = video ? requests.filter((r) => r.type === 'video') : [];
 
   const generateImages = async () => {
     for (const req of imageRequests) {
       try {
-        const providerId = imageProviderIds[0] as ImageProviderId;
-        const apiKey = resolveImageApiKey(providerId);
+        const providerId = image!.providerId as ImageProviderId;
+        const apiKey = image!.apiKey ?? '';
         const providerConfig = IMAGE_PROVIDERS[providerId];
         if (providerConfig?.requiresApiKey && !apiKey) {
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        // No client model here — the server-side `IMAGE_<PREFIX>_MODELS` pin
-        // (first entry) is authoritative when set; otherwise fall back to the
-        // first catalog model so key-only deployments keep generating. This
-        // path is internal (no HTTP response to fail loud with), so the
-        // adapter's requireModel must stay a backstop, never the primary
-        // failure mode.
-        const model = resolveImageModel(providerId) ?? providerConfig?.models?.[0]?.id;
+        // The slot's model, else the first catalog model so a provider-only
+        // assignment keeps generating. This path is internal (no HTTP response
+        // to fail loud with), so the adapter's requireModel must stay a
+        // backstop, never the primary failure mode.
+        const model = image!.modelId ?? providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
           {
             providerId,
             apiKey,
-            baseUrl: resolveImageBaseUrl(providerId),
+            baseUrl: image!.baseUrl,
             model,
-            // Server-configured provider: its base URL is operator configuration.
-            fetchImpl: managedMediaProviderFetch,
+            fetchImpl: image!.managed ? managedMediaProviderFetch : mediaProviderFetch,
           },
           resolveImageSize(
             { prompt: req.prompt, aspectRatio: req.aspectRatio || '16:9' },
@@ -202,36 +208,45 @@ export async function generateMediaForClassroom(
         );
 
         let buf: Buffer;
-        let ext: string;
+        let mimeType: string;
         if (result.base64) {
           buf = Buffer.from(result.base64, 'base64');
           // The adapter that received these bytes reports their type; the URL
-          // branch below reads it off the response, and this branch has only
-          // the adapter's word for it.
-          ext = IMAGE_EXTENSION_BY_MIME[result.mimeType ?? ''] ?? 'png';
+          // branch below reads it off the URL, and this branch has only the
+          // adapter's word for it.
+          mimeType = storedImageType(result.mimeType);
         } else if (result.url) {
           buf = await downloadToBuffer(result.url);
-          let urlExt = '';
           if (result.url.startsWith('data:')) {
-            const mime = result.url.slice(5).split(';')[0]?.toLowerCase();
-            urlExt = IMAGE_EXTENSION_BY_MIME[mime] ?? '';
+            mimeType = storedImageType(result.url.slice(5).split(';')[0]?.toLowerCase());
           } else {
+            let urlExt = '';
             try {
-              urlExt = path.extname(new URL(result.url).pathname).replace('.', '');
+              urlExt = path.extname(new URL(result.url).pathname);
             } catch {
               urlExt = '';
             }
+            mimeType = storedImageType(classroomMediaMimeType(urlExt));
           }
-          ext = ['png', 'jpg', 'jpeg', 'webp'].includes(urlExt) ? urlExt : 'png';
         } else {
           log.warn(`Image generation returned no data for ${req.elementId}`);
           continue;
         }
 
-        const filename = `${req.elementId}.${ext}`;
-        await fs.writeFile(path.join(mediaDir, filename), buf);
-        mediaMap[req.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
-        log.info(`Generated image: ${filename}`);
+        const assetId = await storeClassroomAsset(
+          ownerId,
+          classroomId,
+          buf,
+          mimeType,
+          'image',
+          `image ${req.elementId}`,
+        );
+        if (!assetId) {
+          storageFull.images = true;
+          break;
+        }
+        mediaMap[req.elementId] = assetId;
+        log.info(`Generated image: ${req.elementId} -> ${assetId}`);
       } catch (err) {
         log.warn(`Image generation failed for ${req.elementId}:`, err);
       }
@@ -241,20 +256,15 @@ export async function generateMediaForClassroom(
   const generateVideos = async () => {
     for (const req of videoRequests) {
       try {
-        const providerId = videoProviderIds[0] as VideoProviderId;
-        const apiKey = resolveVideoApiKey(providerId);
+        const providerId = video!.providerId as VideoProviderId;
+        const apiKey = video!.apiKey ?? '';
         if (!apiKey) {
           log.warn(`No API key for video provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        // No client model here — the server-side `VIDEO_<PREFIX>_MODELS` pin
-        // (first entry) is authoritative when set; otherwise fall back to the
-        // first catalog model so key-only deployments keep generating. This
-        // path is internal (no HTTP response to fail loud with), so the
-        // adapter's requireModel must stay a backstop, never the primary
-        // failure mode.
+        // The slot's model, else the first catalog model (see images above).
         const providerConfig = VIDEO_PROVIDERS[providerId];
-        const model = resolveVideoModel(providerId) ?? providerConfig?.models?.[0]?.id;
+        const model = video!.modelId ?? providerConfig?.models?.[0]?.id;
 
         const normalized = normalizeVideoOptions(providerId, {
           prompt: req.prompt,
@@ -265,20 +275,29 @@ export async function generateMediaForClassroom(
           {
             providerId,
             apiKey,
-            baseUrl: resolveVideoBaseUrl(providerId),
+            baseUrl: video!.baseUrl,
             model,
-            // Server-configured provider: its base URL is operator configuration.
-            fetchImpl: managedMediaProviderFetch,
-            downloadFetchImpl: managedMediaDownloadFetch,
+            fetchImpl: video!.managed ? managedMediaProviderFetch : mediaProviderFetch,
+            downloadFetchImpl: video!.managed ? managedMediaDownloadFetch : mediaDownloadFetch,
           },
           normalized,
         );
 
         const buf = await downloadToBuffer(result.url);
-        const filename = `${req.elementId}.mp4`;
-        await fs.writeFile(path.join(mediaDir, filename), buf);
-        mediaMap[req.elementId] = mediaServingUrl(baseUrl, classroomId, `media/${filename}`);
-        log.info(`Generated video: ${filename}`);
+        const assetId = await storeClassroomAsset(
+          ownerId,
+          classroomId,
+          buf,
+          'video/mp4',
+          'video',
+          `video ${req.elementId}`,
+        );
+        if (!assetId) {
+          storageFull.video = true;
+          break;
+        }
+        mediaMap[req.elementId] = assetId;
+        log.info(`Generated video: ${req.elementId} -> ${assetId}`);
       } catch (err) {
         log.warn(`Video generation failed for ${req.elementId}:`, err);
       }
@@ -287,45 +306,28 @@ export async function generateMediaForClassroom(
 
   await Promise.all([generateImages(), generateVideos()]);
 
-  return mediaMap;
+  if (storageFull.images || storageFull.video) {
+    log.warn(
+      `Asset storage is full: ${requests.length - Object.keys(mediaMap).length} media item(s) keep their placeholder`,
+    );
+  }
+  return { assets: mediaMap, storageFull };
 }
 
 // ---------------------------------------------------------------------------
 // Placeholder replacement in scene content
 // ---------------------------------------------------------------------------
 
+/**
+ * Point every slot that holds a generated placeholder at the asset allocated
+ * for it, in place. A video repeats its placeholder across `src` and
+ * `mediaRef`, and both move together: `mediaRef` is what playback resolves a
+ * video through, so leaving it on the placeholder would hide the stored video.
+ */
 export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<string, string>): void {
-  if (Object.keys(mediaMap).length === 0) return;
-
-  for (const scene of scenes) {
-    if (scene.type !== 'slide') continue;
-    const canvas = (
-      scene.content as {
-        canvas?: {
-          elements?: Array<{ id: string; src?: string; mediaRef?: string; type?: string }>;
-        };
-      }
-    )?.canvas;
-    if (!canvas?.elements) continue;
-
-    for (const el of canvas.elements) {
-      if (
-        el.type === 'video' &&
-        typeof el.mediaRef === 'string' &&
-        mediaMap[el.mediaRef] &&
-        (!el.src || /^gen_vid_[\w-]+$/i.test(el.src))
-      ) {
-        el.src = mediaMap[el.mediaRef];
-        continue;
-      }
-      if (
-        (el.type === 'image' || el.type === 'video') &&
-        typeof el.src === 'string' &&
-        isGeneratedMediaPlaceholder(el.src) &&
-        mediaMap[el.src]
-      ) {
-        el.src = mediaMap[el.src];
-      }
+  for (const [placeholderRef, assetId] of Object.entries(mediaMap)) {
+    for (const scene of scenes) {
+      rewriteSceneMediaReference(scene, { placeholderRef, assetId });
     }
   }
 }
@@ -449,6 +451,11 @@ export interface ClassroomTtsCoverage {
   total: number;
 }
 
+/** A TTS run's coverage, and whether it stopped because the asset store was full. */
+export interface ClassroomTtsResult extends ClassroomTtsCoverage {
+  storageFull?: true;
+}
+
 /** Loud one-line summary for a classroom TTS run. */
 export function classroomTtsSummary(written: number, total: number): string {
   const silent = total - written;
@@ -471,24 +478,18 @@ export interface ClassroomTtsProgress {
 export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
-  baseUrl: string,
+  ownerId: string,
   signal?: AbortSignal,
   onProgress?: (progress: ClassroomTtsProgress) => void | Promise<void>,
-): Promise<ClassroomTtsCoverage> {
-  const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
-  await ensureDir(audioDir);
-
-  // Resolve TTS provider (exclude browser-native-tts and operator force-disabled
-  // providers — server precedence, #665).
-  const ttsProviderIds = Object.entries(getServerTTSProviders())
-    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
-    .map(([id]) => id);
-  if (ttsProviderIds.length === 0) {
+): Promise<ClassroomTtsResult> {
+  // The tts slot for this job's owner; browser-native speech is the client's.
+  const tts = await serverMediaConnection('tts', ownerId);
+  if (!tts || tts === 'off' || tts.providerId === 'browser-native-tts') {
     return skippedTtsCoverage(scenes, 'No server TTS provider configured, skipping TTS generation');
   }
 
-  const providerId = ttsProviderIds[0] as TTSProviderId;
-  const apiKey = resolveTTSApiKey(providerId);
+  const providerId = tts.providerId as TTSProviderId;
+  const apiKey = tts.apiKey ?? '';
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (ttsProvider?.requiresApiKey && !apiKey) {
     return skippedTtsCoverage(
@@ -497,8 +498,8 @@ export async function generateTTSForClassroom(
       providerId,
     );
   }
-  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
-  const ttsManaged = isServerConfiguredProvider('tts', providerId);
+  const ttsBaseUrl = tts.baseUrl || ttsProvider?.defaultBaseUrl;
+  const ttsManaged = tts.managed;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
@@ -519,6 +520,7 @@ export async function generateTTSForClassroom(
   let backoffSpentMs = 0;
   const backoffBudgetMs = readTtsBackoffBudgetMs();
   let budgetExhausted = false;
+  let storageFull = false;
   let written = 0;
   const total = countNarratableSpeechActions(scenes, providerId);
 
@@ -544,13 +546,14 @@ export async function generateTTSForClassroom(
     for (const action of scene.actions) {
       signal?.throwIfAborted();
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-      const speechAction = action as ServerTransportSpeechAction;
-      // Server transport emits the derived id plus the serving URL; the
-      // client-side converter collapses the pair into one pool asset on
-      // first load. Browser generation allocates pool ids directly.
+      const speechAction = action as SpeechAction;
+      // A label for the logs only: the action is stored with the id the pool
+      // allocates, the same shape browser generation writes.
       const audioId = `tts_s${sceneOrder}_${action.id}`;
-      if (budgetExhausted) {
-        log.warn(`TTS back-off budget exhausted; leaving ${audioId} silent`);
+      if (budgetExhausted || storageFull) {
+        log.warn(
+          `${storageFull ? 'Asset storage is full' : 'TTS back-off budget exhausted'}; leaving ${audioId} silent`,
+        );
         await emitTtsProgress();
         continue;
       }
@@ -562,26 +565,40 @@ export async function generateTTSForClassroom(
           const result = await generateTTS(
             {
               providerId,
-              modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+              modelId:
+                tts.modelId ??
+                (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || ''),
               apiKey,
               baseUrl: ttsBaseUrl,
               managed: ttsManaged,
+              publicOnly: tts.userEndpoint,
               voice,
               speed: speechAction.speed,
+              // The provider's own options (a VoxCPM backend, say).
+              providerOptions: adapterOptions(tts),
               signal,
             },
             speechAction.text,
           );
 
-          const filename = `${audioId}.${result.format || format}`;
-          await fs.writeFile(path.join(audioDir, filename), result.audio);
+          const assetId = await storeClassroomAsset(
+            ownerId,
+            classroomId,
+            result.audio,
+            classroomMediaMimeType(`.${result.format || format}`) ?? 'application/octet-stream',
+            'audio',
+            `narration ${audioId}`,
+          );
+          if (!assetId) {
+            storageFull = true;
+            break;
+          }
 
-          speechAction.audioId = audioId;
-          speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
+          speechAction.audioId = assetId;
           written += 1;
           consecutiveSuccesses += 1;
           spacingMs = decayTtsSpacing(spacingMs, baseSpacingMs, consecutiveSuccesses);
-          log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
+          log.info(`Generated TTS: ${audioId} -> ${assetId} (${result.audio.length} bytes)`);
           break;
         } catch (err) {
           if (isAbortError(err) || signal?.aborted) {
@@ -632,5 +649,5 @@ export async function generateTTSForClassroom(
   const summary = classroomTtsSummary(written, total);
   if (written < total) log.error(summary);
   else log.info(summary);
-  return { written, total };
+  return { written, total, ...(storageFull ? { storageFull: true as const } : {}) };
 }

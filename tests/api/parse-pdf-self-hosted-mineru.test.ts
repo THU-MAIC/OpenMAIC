@@ -261,4 +261,33 @@ describe('POST /api/parse-pdf with self-hosted MinerU', () => {
       expect(internal.requests()).toBe(0);
     },
   );
+
+  it('parses locally when the request asks for it, whatever service the slot names', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    const mineru = await startLoopback((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(MINERU_OK);
+    });
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { mu: { preset: 'mineru', baseUrl: mineru.origin } },
+          slots: { document: 'mu' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
+    try {
+      await postParsePdf({ providerId: 'unpdf', apiKey: 'client-key' });
+      expect(mineru.requests()).toBe(0);
+      // Without the choice the slot's service parses it.
+      expect((await postParsePdf({})).status).toBe(200);
+      expect(mineru.requests()).toBe(1);
+    } finally {
+      runtime.setDeploymentConfigForTests();
+    }
+  });
 });

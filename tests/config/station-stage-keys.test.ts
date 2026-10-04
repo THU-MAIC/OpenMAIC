@@ -26,7 +26,6 @@ const interactionRoute: UserStageRoute = { model: 'minimax-m2.7' };
 const STAGES_WITHOUT_A_STATION = [
   'conversation-title',
   'generate-classroom',
-  'maic-agent',
   'maic-agent-driver',
 ] as const;
 
@@ -78,7 +77,6 @@ describe('classroom interaction override reaches every runtime stage (review P0)
   it.each([
     'chat-adapter',
     'quiz-grade',
-    'pbl-chat',
     'pbl-v2-runtime',
     'pbl-v2-runtime:instructor',
     'pbl-v2-runtime:open-task',

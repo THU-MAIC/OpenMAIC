@@ -13,6 +13,7 @@
  *   { type: 'error', error: string }
  */
 
+import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
 import {
@@ -42,6 +43,8 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVisionImagesForPrompt } from '@/lib/persistence/resolve-vision-images';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
@@ -408,8 +411,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Build media snippet conditions based on enabled flags.
-    const imageGenerationEnabled = req.headers.get('x-image-generation-enabled') === 'true';
-    const videoGenerationEnabled = req.headers.get('x-video-generation-enabled') === 'true';
+    // The workspace's image and video slots decide whether the outline may
+    // plan media (the same facts the generation pipeline and the capabilities
+    // endpoint read). An API client may still opt out with an explicit
+    // `false` header; `true` never turns on what the slots do not offer.
+    const capabilities = await resolveServerGenerationCapabilities(await requestWorkspaceId(req));
+    const imageGenerationEnabled =
+      capabilities.imageGeneration && req.headers.get('x-image-generation-enabled') !== 'false';
+    const videoGenerationEnabled =
+      capabilities.videoGeneration && req.headers.get('x-video-generation-enabled') !== 'false';
     const mediaGenerationEnabled = imageGenerationEnabled || videoGenerationEnabled;
     const hasSourceImages = (pdfImages?.length ?? 0) > 0;
 
@@ -529,7 +539,9 @@ export async function POST(req: NextRequest) {
           if (!shouldFallbackFor(error, text)) return false;
           let fallback: Awaited<ReturnType<typeof resolveFallbackModel>>;
           try {
-            fallback = await resolveFallbackModel('scene-outlines-stream');
+            // The slot's own fallback when the model came from a slot.
+            const attached = attachedModelFallback(languageModel);
+            fallback = attached ? await attached() : await resolveFallbackModel();
           } catch {
             // Misconfigured fallback provider — keep the real error instead of
             // surfacing e.g. "API key required for provider: …" to the client.
@@ -582,11 +594,10 @@ export async function POST(req: NextRequest) {
               // fallback path.
               let streamError: unknown = undefined;
               let finishReason: string | undefined = undefined;
-              const fullStream = streamLLM(
-                streamParams,
-                'scene-outlines-stream',
-                thinkingConfig,
-              ).fullStream;
+              // This route retries and falls back itself (maybeFallback).
+              const fullStream = streamLLM(streamParams, 'scene-outlines-stream', thinkingConfig, {
+                enabled: false,
+              }).fullStream;
 
               for await (const part of fullStream) {
                 // Stop doing work the moment the client goes away — otherwise

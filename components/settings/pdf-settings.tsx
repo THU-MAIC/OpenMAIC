@@ -2,16 +2,22 @@
 
 import { useState } from 'react';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useSettingsStore } from '@/lib/store/settings';
-import { PDF_PROVIDERS } from '@/lib/pdf/constants';
+import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { getFormatLabelsForProviders } from '@/lib/document/mime';
-import { CheckCircle2, Eye, EyeOff, Loader2, Zap, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  ApiKeyField,
+  EndpointServerOnlyHint,
+  ServerConfiguredNotice,
+  ServerOnlyNotice,
+  saveServiceProvider,
+  type ServicePanelProps,
+} from './server-settings';
 
 /**
  * Get display label for feature
@@ -28,67 +34,34 @@ function getFeatureLabel(feature: string, t: (key: string) => string): string {
   return labels[feature] || feature;
 }
 
-interface PDFSettingsProps {
-  selectedProviderId: PDFProviderId;
-}
-
-export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
+/**
+ * A document parsing service. MinerU Cloud takes a key; AliDocMind's key pair
+ * and a self-hosted MinerU are the server's to configure; the built-in
+ * parsers need nothing.
+ */
+export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
   const { t } = useI18n();
-  const [showApiKey, setShowApiKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
 
-  const pdfProvidersConfig = useSettingsStore((state) => state.pdfProvidersConfig);
-  const setPDFProviderConfig = useSettingsStore((state) => state.setPDFProviderConfig);
-
-  const pdfProvider = PDF_PROVIDERS[selectedProviderId];
-  const isServerConfigured = !!pdfProvidersConfig[selectedProviderId]?.isServerConfigured;
-  const providerConfig = pdfProvidersConfig[selectedProviderId];
-  const hasApiKey = !!providerConfig?.apiKey;
-  const hasBaseUrl = !!providerConfig?.baseUrl;
-
-  const isCloud = selectedProviderId === 'mineru-cloud';
-  const isSelfHosted = selectedProviderId === 'mineru';
-  const isAliDocMind = selectedProviderId === 'alidocmind';
-  const hasAccessKeys = !!providerConfig?.accessKeyId && !!providerConfig?.accessKeySecret;
-  const needsRemoteConfig = isSelfHosted || isCloud || isAliDocMind;
-
-  // For cloud: test requires API key (user-entered or server-configured);
-  // for AliDocMind: requires AK + SK; for self-hosted: requires base URL.
-  const canTest = isAliDocMind
-    ? hasAccessKeys || isServerConfigured
-    : isCloud
-      ? hasApiKey || isServerConfigured
-      : hasBaseUrl || isServerConfigured;
-
-  // Reset state when provider changes
-  const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
-  if (selectedProviderId !== prevSelectedProviderId) {
-    setPrevSelectedProviderId(selectedProviderId);
-    setShowApiKey(false);
-    setTestStatus('idle');
-    setTestMessage('');
-  }
+  const providerId = entry.registryId as PDFProviderId;
+  const pdfProvider = PDF_PROVIDERS[providerId];
+  const provider = entry.provider;
+  const isCloud = providerId === 'mineru-cloud';
+  const needsRemoteConfig = !!pdfProvider?.requiresApiKey || !!pdfProvider?.requiresCredentials;
+  const editable =
+    (entry.state === 'workspace' || entry.state === 'available') && needsRemoteConfig;
 
   const handleTestConnection = async () => {
     setTestStatus('testing');
     setTestMessage('');
-
     try {
       const response = await fetch('/api/verify-pdf-provider', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          providerId: selectedProviderId,
-          apiKey: providerConfig?.apiKey || '',
-          baseUrl: providerConfig?.baseUrl || '',
-          accessKeyId: providerConfig?.accessKeyId || '',
-          accessKeySecret: providerConfig?.accessKeySecret || '',
-        }),
+        body: JSON.stringify({ provider: entry.id }),
       });
-
       const data = await response.json();
-
       if (data.success) {
         setTestStatus('success');
         setTestMessage(t('settings.connectionSuccess'));
@@ -105,217 +78,52 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Server-configured notice */}
-      {isServerConfigured && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
-          {t('settings.serverConfiguredNotice')}
-        </div>
+      {entry.state === 'deployment' && <ServerConfiguredNotice />}
+      {entry.state === 'server-only' && (
+        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
       )}
 
-      {/* Configuration section — hidden for managed providers, which are
-          admin-owned and not overridable from the client. */}
-      {!isServerConfigured && needsRemoteConfig && (
+      {editable && (
         <>
-          <div className="grid grid-cols-2 gap-4">
-            {/* API Key — shown first for cloud, second for self-hosted */}
-            {isCloud && (
-              <div className="space-y-2">
-                <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      name={`pdf-api-key-${selectedProviderId}`}
-                      type={showApiKey ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      placeholder={t('settings.mineruCloudApiKeyPlaceholder')}
-                      value={providerConfig?.apiKey || ''}
-                      onChange={(e) =>
-                        setPDFProviderConfig(selectedProviderId, { apiKey: e.target.value })
-                      }
-                      className="font-mono text-sm pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleTestConnection}
-                    disabled={testStatus === 'testing' || !canTest}
-                    className="gap-1.5 shrink-0"
-                  >
-                    {testStatus === 'testing' ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <>
-                        <Zap className="h-3.5 w-3.5" />
-                        {t('settings.testConnection')}
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* AliDocMind uses Aliyun AccessKey ID + Secret (not a single apiKey). */}
-            {isAliDocMind && (
-              <>
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.alidocmindAccessKeyId')}</Label>
-                  <Input
-                    name={`pdf-ak-id-${selectedProviderId}`}
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder="LTAI..."
-                    value={providerConfig?.accessKeyId || ''}
-                    onChange={(e) =>
-                      setPDFProviderConfig(selectedProviderId, { accessKeyId: e.target.value })
-                    }
-                    className="font-mono text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.alidocmindAccessKeySecret')}</Label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Input
-                        name={`pdf-ak-secret-${selectedProviderId}`}
-                        type={showApiKey ? 'text' : 'password'}
-                        autoComplete="new-password"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        placeholder={t('settings.enterApiKey')}
-                        value={providerConfig?.accessKeySecret || ''}
-                        onChange={(e) =>
-                          setPDFProviderConfig(selectedProviderId, {
-                            accessKeySecret: e.target.value,
-                          })
-                        }
-                        className="font-mono text-sm pr-10"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleTestConnection}
-                      disabled={testStatus === 'testing' || !canTest}
-                      className="gap-1.5 shrink-0"
-                    >
-                      {testStatus === 'testing' ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <>
-                          <Zap className="h-3.5 w-3.5" />
-                          {t('settings.testConnection')}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Base URL */}
-            {(isSelfHosted || isCloud) && (
-              <div className="space-y-2">
-                <Label className="text-sm">
-                  {t('settings.pdfBaseUrl')}
-                  {isCloud && (
-                    <span className="text-muted-foreground ml-1 font-normal">
-                      ({t('settings.optional')})
-                    </span>
-                  )}
-                </Label>
-                <div className="flex gap-2">
-                  <Input
-                    name={`pdf-base-url-${selectedProviderId}`}
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder={isCloud ? 'https://mineru.net/api/v4' : 'http://localhost:8080'}
-                    value={providerConfig?.baseUrl || ''}
-                    onChange={(e) =>
-                      setPDFProviderConfig(selectedProviderId, { baseUrl: e.target.value })
-                    }
-                    className="text-sm"
-                  />
-                  {/* Test button for self-hosted (next to base URL) */}
-                  {isSelfHosted && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleTestConnection}
-                      disabled={testStatus === 'testing' || !canTest}
-                      className="gap-1.5 shrink-0"
-                    >
-                      {testStatus === 'testing' ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <>
-                          <Zap className="h-3.5 w-3.5" />
-                          {t('settings.testConnection')}
-                        </>
-                      )}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* API Key for self-hosted (optional, second column) */}
-            {isSelfHosted && (
-              <div className="space-y-2">
-                <Label className="text-sm">
-                  {t('settings.pdfApiKey')}
-                  <span className="text-muted-foreground ml-1 font-normal">
-                    ({t('settings.optional')})
-                  </span>
-                </Label>
-                <div className="relative">
-                  <Input
-                    name={`pdf-api-key-${selectedProviderId}`}
-                    type={showApiKey ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder={t('settings.enterApiKey')}
-                    value={providerConfig?.apiKey || ''}
-                    onChange={(e) =>
-                      setPDFProviderConfig(selectedProviderId, { apiKey: e.target.value })
-                    }
-                    className="font-mono text-sm pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
+            <ApiKeyField
+              name={`pdf-api-key-${entry.id}`}
+              provider={provider}
+              placeholder={isCloud ? t('settings.mineruCloudApiKeyPlaceholder') : undefined}
+              inputClassName="font-mono text-sm"
+              onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
+              onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleTestConnection()}
+                disabled={testStatus === 'testing' || !provider}
+                className="gap-1.5 shrink-0"
+              >
+                {testStatus === 'testing' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Zap className="h-3.5 w-3.5" />
+                    {t('settings.testConnection')}
+                  </>
+                )}
+              </Button>
+            </ApiKeyField>
           </div>
+
+          {/* Base URL: the service's own; another endpoint is the server's to set. */}
+          {isCloud && (
+            <div className="space-y-2">
+              <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
+              <p className="text-xs text-muted-foreground break-all">
+                {t('settings.requestUrl')}: {MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch
+              </p>
+              <EndpointServerOnlyHint />
+            </div>
+          )}
 
           {/* Test result message */}
           {testMessage && (
@@ -335,33 +143,6 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
               </div>
             </div>
           )}
-
-          {/* Request URL Preview */}
-          {(() => {
-            if (isAliDocMind) {
-              const base = providerConfig?.baseUrl || 'docmind-api.cn-hangzhou.aliyuncs.com';
-              return (
-                <p className="text-xs text-muted-foreground break-all">
-                  {t('settings.requestUrl')}: {base.replace(/^https?:\/\//, '')}
-                </p>
-              );
-            }
-            if (isCloud) {
-              const base = providerConfig?.baseUrl || 'https://mineru.net/api/v4';
-              return (
-                <p className="text-xs text-muted-foreground break-all">
-                  {t('settings.requestUrl')}: {base}/file-urls/batch
-                </p>
-              );
-            }
-            const effectiveBaseUrl = providerConfig?.baseUrl || '';
-            if (!effectiveBaseUrl) return null;
-            return (
-              <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {effectiveBaseUrl}/file_parse
-              </p>
-            );
-          })()}
         </>
       )}
 
@@ -369,7 +150,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
       <div className="space-y-2">
         <Label className="text-sm">{t('settings.supportedFormats')}</Label>
         <div className="flex flex-wrap gap-2">
-          {getFormatLabelsForProviders([selectedProviderId]).map((format) => (
+          {getFormatLabelsForProviders([providerId]).map((format) => (
             <Badge key={format} variant="secondary" className="font-normal">
               <CheckCircle2 className="h-3 w-3 mr-1" />
               {format}
@@ -378,23 +159,25 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
         </div>
         {/* Self-hosted MinerU can under-deliver on PDF/image formats when the
             server lacks the pipeline/core extras — warn against over-promising. */}
-        {isSelfHosted && (
+        {providerId === 'mineru' && (
           <p className="text-xs text-muted-foreground">{t('settings.mineruSelfHostFormatsNote')}</p>
         )}
       </div>
 
       {/* Features List */}
-      <div className="space-y-2">
-        <Label className="text-sm">{t('settings.pdfFeatures')}</Label>
-        <div className="flex flex-wrap gap-2">
-          {pdfProvider.features.map((feature) => (
-            <Badge key={feature} variant="secondary" className="font-normal">
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              {getFeatureLabel(feature, t)}
-            </Badge>
-          ))}
+      {pdfProvider && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.pdfFeatures')}</Label>
+          <div className="flex flex-wrap gap-2">
+            {pdfProvider.features.map((feature) => (
+              <Badge key={feature} variant="secondary" className="font-normal">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                {getFeatureLabel(feature, t)}
+              </Badge>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

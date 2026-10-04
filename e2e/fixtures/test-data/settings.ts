@@ -9,22 +9,19 @@
  */
 export const SETTINGS_KV_KEY = 'maic:account:settings-storage';
 
-/** Default settings-storage value for e2e tests (Zustand persist v4 format) */
+/**
+ * Default settings-storage value for e2e tests (Zustand persist v5 format):
+ * the user's own preferences. Models and providers are the workspace's,
+ * answered by `/api/model-config` (see ./model-settings.ts).
+ */
 export function createSettingsStorage(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
     state: {
-      modelId: 'gpt-4o',
-      providerId: 'openai',
-      providersConfig: {
-        openai: { apiKey: 'test-key' },
-      },
       agentMode: 'preset',
       selectedAgentIds: [],
-      ttsEnabled: false,
       reviewOutlineEnabled: false,
-      autoConfigApplied: true,
       ...overrides,
     },
-    version: 2,
+    version: 5,
   });
 }

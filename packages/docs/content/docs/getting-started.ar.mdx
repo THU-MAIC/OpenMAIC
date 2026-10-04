@@ -31,15 +31,30 @@ pnpm install
 cp .env.example .env.local
 ```
 
-افتح `.env.local` واملأ بيانات المزود الذي لديك مفتاح له. مثال:
+ثم اضبط نموذجًا. أبسط طريقة بالملفات هي وضع `openmaic.yml` مختصر بجوار `.env.local`، مع كتابة المفتاح في `.env.local`:
 
 ```bash title=".env.local"
 OPENAI_API_KEY=sk-...
-# أو
-ANTHROPIC_API_KEY=sk-ant-...
-# أو Ollama محلي (لا يحتاج إلى مفتاح)
-OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
+
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+
+slots:
+  llm: openai:gpt-5.5
+```
+
+الملف `openmaic.example.yml` هو نقطة البداية نفسها، مع مزودين وخانات اختيارية معلّقة في تعليقات. بدون الملف ما زالت متغيرات المزودين القديمة تعمل ما دام `DEFAULT_MODEL` يسمّي النموذج:
+
+```bash title=".env.local"
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=anthropic:claude-sonnet-4-6
+```
+
+للاستغناء عن الاثنين، شغّل التطبيق وأدخل مفتاح خطة في **الإعدادات ← Token Plan** أو مفتاح خدمة في **الإعدادات ← خدمات النماذج**. بدون `openmaic.yml` أو `DEFAULT_MODEL` أو خدمة معدّة هناك لا يكون أي نموذج مُعدًا ويفشل التوليد.
 
 للحصول على إعدادات كاملة لمزودات الخدمة، وتوليد الصور/الفيديو، وتحويل النص إلى كلام (TTS)، والتعرف على الكلام (ASR)، وتحليل المستندات، والبحث عبر الإنترنت، والتحكم في الوصول، وعلامات الميزات، راجع [تعليمات الإعداد](./configuration.mdx).
 

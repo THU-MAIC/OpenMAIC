@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  applyClassroomStageAndScenes,
   commitMigratedAgentConfigsToStore,
   discardRestoredMediaTasks,
   mergeLegacyAgentFallbacks,
@@ -13,14 +12,12 @@ import {
   clearStoreForDeletedStage,
   discardPendingStageChanges,
   flushStageSave,
-  isCurrentStageSceneLoadToken,
   restorePendingStageChanges,
   snapshotPendingStageChangesForDeletion,
   useStageStore,
 } from '@/lib/store/stage';
 import {
   beginStageDeletionCascade,
-  isStageDeleted,
   markStageDeleted,
   settleStageDeletionCascade,
   unmarkStageDeleted,
@@ -36,12 +33,6 @@ vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageDataIncremental: vi.fn().mockResolvedValue({ failedChanges: [] }),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
-
-// The loader must never delete pool assets itself: conversion ownership
-// transfers to the committed document at fetch time. Mock the pool so a
-// regression that reintroduces loader-side rollback is caught.
-const { removeAssetMock } = vi.hoisted(() => ({ removeAssetMock: vi.fn() }));
-vi.mock('@/lib/media/asset-pool', () => ({ removeAsset: removeAssetMock }));
 
 // Omitting `generatedAgentConfigs` models a document written before roster
 // persistence existed (field absent) — distinct from an explicit `[]`, which
@@ -104,6 +95,11 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** Put a classroom in the stage store, as a completed load leaves it. */
+function seedStage(stage: Stage, scenes: Scene[]) {
+  useStageStore.setState({ stage, scenes, currentSceneId: scenes[0]?.id ?? null });
+}
+
 function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {}) {
   let current = true;
   let stage: Stage | null = null;
@@ -121,8 +117,6 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     isCurrent: () => current,
     loadFromStorage: vi.fn().mockResolvedValue(undefined),
     getCurrentStage: () => stage,
-    fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'absent' }),
-    applyFallbackScenes: vi.fn().mockResolvedValue(false),
     loadRestoredMediaTasks: vi.fn().mockResolvedValue({}),
     applyRestoredMediaTasks: vi.fn(),
     discardRestoredMediaTasks: vi.fn(),
@@ -159,176 +153,58 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
 // The fruitless-probe memo is session-scoped module state; isolate tests.
 beforeEach(() => {
   resetLegacyAgentFallbackProbes();
-  removeAssetMock.mockClear();
 });
 
 describe('runClassroomLoad', () => {
-  it('keeps the current load token valid when fallback scenes are committed', () => {
+  it('discards the warm ghost of a deleted classroom and reports it absent (back-button path)', async () => {
+    // Open classroom -> navigate home -> delete -> browser Back. The warm
+    // store must not short-circuit the load: the ghost is discarded, the cold
+    // load finds nothing on the server, and the load is a positive absence.
     useStageStore.getState().clearStore();
-    const loadToken = claimStageSceneLoadToken();
-    const stage = makeStage('stage-a');
-    const scene = makeScene('scene-a', 'stage-a');
-
-    applyClassroomStageAndScenes(stage, [scene], { persist: false });
-
-    expect(isCurrentStageSceneLoadToken(loadToken)).toBe(true);
-    expect(useStageStore.getState().stage?.id).toBe('stage-a');
-    expect(useStageStore.getState().scenes).toEqual([scene]);
-    expect(useStageStore.getState().currentSceneId).toBe('scene-a');
-    useStageStore.getState().clearStore();
-  });
-
-  it('lifts a same-session deletion tombstone on explicit server-copy restore, and edits persist again', async () => {
-    // Deletion only removes client-side data; revisiting the classroom URL
-    // restores the server copy under the SAME id. Without lifting the
-    // tombstone, every edit of the restored classroom would be silently
-    // dropped until a reload.
-    useStageStore.getState().clearStore();
-    vi.mocked(saveStageDataIncremental).mockClear();
-    markStageDeleted('stage-revived');
-    try {
-      applyClassroomStageAndScenes(
-        makeStage('stage-revived'),
-        [makeScene('scene-r', 'stage-revived')],
-        { persist: false },
-      );
-      expect(isStageDeleted('stage-revived')).toBe(false);
-
-      // An edit after the restore reaches storage again.
-      useStageStore.getState().setCurrentSceneId('scene-r');
-      await flushStageSave();
-      expect(saveStageDataIncremental).toHaveBeenCalledWith(
-        'stage-revived',
-        expect.arrayContaining([{ kind: 'currentScene' }]),
-        expect.anything(),
-        expect.any(Number),
-      );
-    } finally {
-      unmarkStageDeleted('stage-revived');
-      useStageStore.getState().clearStore();
-    }
-  });
-
-  it('restores a deleted classroom whose ghost is still warm in the store (back-button path)', async () => {
-    // Round-2 pinned the restore with a direct applyClassroomStageAndScenes
-    // call — the cold-store cell. The natural path is warmer: open classroom →
-    // navigate home → delete → browser Back. loadFromStorage used to
-    // short-circuit on the warm store, so the server-fallback restore (the
-    // only unmark point) never ran and the classroom rendered editable while
-    // every edit was silently dropped. This drives the REAL loadFromStorage.
-    useStageStore.getState().clearStore();
-    vi.mocked(saveStageDataIncremental).mockClear();
-    const warmStage = makeStage('stage-warm-ghost');
-    applyClassroomStageAndScenes(warmStage, [makeScene('scene-w', 'stage-warm-ghost')], {
-      persist: false,
-    });
-    // Home-page delete: deletion marked while the store stays warm (the
-    // deletion path also evicts the store; a partially failed cascade can
-    // leave the ghost, which this path must still heal).
+    vi.mocked(loadStageData).mockClear();
+    seedStage(makeStage('stage-warm-ghost'), [makeScene('scene-w', 'stage-warm-ghost')]);
     markStageDeleted('stage-warm-ghost');
     try {
-      const serverStage = makeStage('stage-warm-ghost');
-      const serverScene = makeScene('scene-server', 'stage-warm-ghost');
       const { deps } = makeDeps({
         classroomId: 'stage-warm-ghost',
         loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({
-          outcome: 'found',
-          classroom: { stage: serverStage, scenes: [serverScene] },
-        }),
-        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
-          applyClassroomStageAndScenes(stage, scenes, { persist: false });
-          return true;
-        }),
       });
 
-      await runClassroomLoad(deps);
+      await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'absent' });
 
-      // The warm ghost did not starve the restore: the server fallback ran,
-      // the restored classroom is live, and the deletion was lifted.
-      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
-        'stage-warm-ghost',
-        deps.isCurrent,
-      );
-      expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
-      expect(useStageStore.getState().stage?.id).toBe('stage-warm-ghost');
-      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
-      expect(isStageDeleted('stage-warm-ghost')).toBe(false);
-
-      // …and edits persist again end-to-end through the scheduler.
-      useStageStore.getState().setCurrentSceneId('scene-server');
-      await flushStageSave();
-      expect(saveStageDataIncremental).toHaveBeenCalledWith(
-        'stage-warm-ghost',
-        expect.arrayContaining([{ kind: 'currentScene' }]),
-        expect.anything(),
-        expect.any(Number),
-      );
+      expect(loadStageData).toHaveBeenCalledWith('stage-warm-ghost');
+      expect(useStageStore.getState().stage).toBeNull();
     } finally {
       unmarkStageDeleted('stage-warm-ghost');
       useStageStore.getState().clearStore();
     }
   });
-
-  it('restores a deleted classroom whose warm ghost has ZERO scenes (identity, not scene count, gates the ghost handling)', async () => {
-    // The ghost handling must key on stage identity alone: a scene-less
-    // classroom (its cascade failed AFTER removing the document, so the
-    // eviction never ran) leaves a warm ghost with zero scenes. Gating the
-    // deleted-warm handling on `scenes.length > 0` would skip the discard,
-    // the cold load would find nothing and leave the ghost in the store, and
-    // the server-fallback gate (`!getCurrentStage()`) would never run — a
-    // fully editable classroom whose every edit is silently dropped.
+  it('discards a deleted classroom whose warm ghost has ZERO scenes (identity, not scene count, gates the ghost handling)', async () => {
+    // A scene-less classroom whose cascade failed after removing the document
+    // leaves a warm ghost with zero scenes. Gating the deleted-warm handling
+    // on `scenes.length > 0` would leave the ghost in the store as a fully
+    // editable classroom whose every edit is silently dropped.
     useStageStore.getState().clearStore();
-    vi.mocked(saveStageDataIncremental).mockClear();
-    applyClassroomStageAndScenes(makeStage('stage-zero-ghost'), [], { persist: false });
-    // Settled-deleted world with the ghost left warm (eviction skipped by the
-    // post-removal cascade failure).
+    vi.mocked(loadStageData).mockClear();
+    seedStage(makeStage('stage-zero-ghost'), []);
     markStageDeleted('stage-zero-ghost');
     try {
-      const serverStage = makeStage('stage-zero-ghost');
-      const serverScene = makeScene('scene-server', 'stage-zero-ghost');
       const { deps } = makeDeps({
         classroomId: 'stage-zero-ghost',
         loadFromStorage: (id, token) => useStageStore.getState().loadFromStorage(id, token),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({
-          outcome: 'found',
-          classroom: { stage: serverStage, scenes: [serverScene] },
-        }),
-        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
-          applyClassroomStageAndScenes(stage, scenes, { persist: false });
-          return true;
-        }),
       });
 
-      await runClassroomLoad(deps);
+      await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'absent' });
 
-      // The zero-scene ghost was discarded and the server restore ran.
-      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
-        'stage-zero-ghost',
-        deps.isCurrent,
-      );
-      expect(deps.applyFallbackScenes).toHaveBeenCalledOnce();
-      expect(useStageStore.getState().stage?.id).toBe('stage-zero-ghost');
-      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
-      expect(isStageDeleted('stage-zero-ghost')).toBe(false);
-
-      // …and edits persist again end-to-end through the scheduler.
-      useStageStore.getState().setCurrentSceneId('scene-server');
-      await flushStageSave();
-      expect(saveStageDataIncremental).toHaveBeenCalledWith(
-        'stage-zero-ghost',
-        expect.arrayContaining([{ kind: 'currentScene' }]),
-        expect.anything(),
-        expect.any(Number),
-      );
+      expect(loadStageData).toHaveBeenCalledWith('stage-zero-ghost');
+      expect(useStageStore.getState().stage).toBeNull();
     } finally {
       unmarkStageDeleted('stage-zero-ghost');
       useStageStore.getState().clearStore();
     }
   });
-
   it('parks a mid-cascade Back until the deletion settles; a failed delete keeps the warm classroom editable', async () => {
     // Browser Back lands while the home-page delete is still mid-cascade. The
     // warm state (plus the deletion path's dirt snapshot) is the only copy of
@@ -339,11 +215,7 @@ describe('runClassroomLoad', () => {
     useStageStore.getState().clearStore();
     vi.mocked(saveStageDataIncremental).mockClear();
     vi.mocked(loadStageData).mockClear();
-    applyClassroomStageAndScenes(
-      makeStage('stage-mid-delete'),
-      [makeScene('scene-m', 'stage-mid-delete')],
-      { persist: false },
-    );
+    seedStage(makeStage('stage-mid-delete'), [makeScene('scene-m', 'stage-mid-delete')]);
     // A pre-delete edit sitting in the debounce window.
     useStageStore.getState().setCurrentSceneId('scene-m');
     try {
@@ -396,44 +268,29 @@ describe('runClassroomLoad', () => {
     }
   });
 
-  it('completes a mid-cascade Back with a cold server restore when the deletion succeeds', async () => {
-    // Back during delete → the deletion succeeds. The parked load must
+  it('completes a mid-cascade Back as absent when the deletion succeeds', async () => {
+    // Back during delete -> the deletion succeeds. The parked load must
     // observe the settled outcome, let the settlement eviction stand, and run
-    // the full cold load so the server-restore path recovers the route —
-    // instead of leaving the user on a blanked classroom nothing reloads.
+    // the full cold load, which finds the course gone.
     useStageStore.getState().clearStore();
     vi.mocked(loadStageData).mockClear();
-    applyClassroomStageAndScenes(
-      makeStage('stage-del-success'),
-      [makeScene('scene-s', 'stage-del-success')],
-      { persist: false },
-    );
+    seedStage(makeStage('stage-del-success'), [makeScene('scene-s', 'stage-del-success')]);
     markStageDeleted('stage-del-success');
     beginStageDeletionCascade('stage-del-success');
     try {
-      const serverStage = makeStage('stage-del-success');
-      const serverScene = makeScene('scene-server', 'stage-del-success');
       const token = claimStageSceneLoadToken();
       const { deps } = makeDeps({
         classroomId: 'stage-del-success',
         loadToken: token,
         loadFromStorage: (id, t) => useStageStore.getState().loadFromStorage(id, t),
         getCurrentStage: () => useStageStore.getState().stage,
-        fetchClassroom: vi.fn().mockResolvedValue({
-          outcome: 'found',
-          classroom: { stage: serverStage, scenes: [serverScene] },
-        }),
-        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
-          applyClassroomStageAndScenes(stage, scenes, { persist: false });
-          return true;
-        }),
       });
 
       const loading = runClassroomLoad(deps);
       await Promise.resolve();
       await Promise.resolve();
       // Parked: the classroom is not handed over mid-window.
-      expect(deps.fetchClassroom).not.toHaveBeenCalled();
+      expect(loadStageData).not.toHaveBeenCalled();
       expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
 
       // The cascade completes: deleteStageData settles, then evicts — same
@@ -442,18 +299,9 @@ describe('runClassroomLoad', () => {
       clearStoreForDeletedStage('stage-del-success');
       expect(useStageStore.getState().stage).toBeNull();
 
-      await loading;
-
-      // The parked load fell through to a cold load (finding no local data)
-      // and the server fallback restored the classroom, lifting the deletion.
+      await expect(loading).resolves.toEqual({ outcome: 'absent' });
       expect(loadStageData).toHaveBeenCalledWith('stage-del-success');
-      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith(
-        'stage-del-success',
-        deps.isCurrent,
-      );
-      expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
-      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
-      expect(isStageDeleted('stage-del-success')).toBe(false);
+      expect(useStageStore.getState().stage).toBeNull();
       expect(deps.setLoading).toHaveBeenCalledWith(false);
     } finally {
       settleStageDeletionCascade('stage-del-success');
@@ -461,7 +309,6 @@ describe('runClassroomLoad', () => {
       useStageStore.getState().clearStore();
     }
   });
-
   it('does not land the parked load when navigation moves on during deletion settlement', async () => {
     // The user hits Back mid-cascade (load parks on settlement), then
     // navigates to another classroom before the deletion settles. When the
@@ -469,11 +316,7 @@ describe('runClassroomLoad', () => {
     // touching the store the newer navigation now owns.
     useStageStore.getState().clearStore();
     vi.mocked(loadStageData).mockClear();
-    applyClassroomStageAndScenes(
-      makeStage('stage-await-nav'),
-      [makeScene('scene-n', 'stage-await-nav')],
-      { persist: false },
-    );
+    seedStage(makeStage('stage-await-nav'), [makeScene('scene-n', 'stage-await-nav')]);
     markStageDeleted('stage-await-nav');
     beginStageDeletionCascade('stage-await-nav');
     try {
@@ -482,11 +325,7 @@ describe('runClassroomLoad', () => {
 
       // A newer navigation claims the token and owns the store.
       claimStageSceneLoadToken();
-      applyClassroomStageAndScenes(
-        makeStage('stage-other'),
-        [makeScene('scene-o', 'stage-other')],
-        { persist: false },
-      );
+      seedStage(makeStage('stage-other'), [makeScene('scene-o', 'stage-other')]);
 
       // The deletion settles successfully (flag kept) — releasing the parked
       // load, which must now be a no-op.
@@ -505,8 +344,8 @@ describe('runClassroomLoad', () => {
 
   it('cold-loads after a failed delete when the store was replaced during the park (no false keep-warm)', async () => {
     // Back parks on stage A's deletion settlement; while parked, a tokenless
-    // store writer (a database import applying another classroom through
-    // applyClassroomStageAndScenes) replaces the store contents WITHOUT
+    // store writer (another classroom applied to the store directly) replaces
+    // the store contents WITHOUT
     // claiming the load token. When the deletion then FAILS, there is no warm
     // state of A left to keep — the keep-warm branch must re-verify store
     // identity (mirroring the success path) and fall through to the cold
@@ -515,7 +354,7 @@ describe('runClassroomLoad', () => {
     vi.mocked(loadStageData).mockClear();
     const localStage = makeStage('stage-park-replaced');
     const localScene = makeScene('scene-p', 'stage-park-replaced');
-    applyClassroomStageAndScenes(localStage, [localScene], { persist: false });
+    seedStage(localStage, [localScene]);
     markStageDeleted('stage-park-replaced');
     beginStageDeletionCascade('stage-park-replaced');
     try {
@@ -534,11 +373,7 @@ describe('runClassroomLoad', () => {
       expect(loadStageData).not.toHaveBeenCalled();
 
       // An import applies ANOTHER stage mid-park, leaving the token untouched.
-      applyClassroomStageAndScenes(
-        makeStage('stage-imported'),
-        [makeScene('scene-i', 'stage-imported')],
-        { persist: false },
-      );
+      seedStage(makeStage('stage-imported'), [makeScene('scene-i', 'stage-imported')]);
 
       // The deletion fails before removing the document: flag lifted, settled.
       unmarkStageDeleted('stage-park-replaced');
@@ -565,12 +400,8 @@ describe('runClassroomLoad', () => {
     useStageStore.getState().clearStore();
     markStageDeleted('stage-tail-restore');
     try {
-      applyClassroomStageAndScenes(
-        makeStage('stage-tail-restore'),
-        [makeScene('scene-t', 'stage-tail-restore')],
-        { persist: false },
-      );
-      expect(isStageDeleted('stage-tail-restore')).toBe(false);
+      unmarkStageDeleted('stage-tail-restore');
+      seedStage(makeStage('stage-tail-restore'), [makeScene('scene-t', 'stage-tail-restore')]);
 
       clearStoreForDeletedStage('stage-tail-restore');
 
@@ -584,13 +415,7 @@ describe('runClassroomLoad', () => {
   it('keeps dropping in-flight writes for a deleted classroom that was NOT restored', async () => {
     useStageStore.getState().clearStore();
     vi.mocked(saveStageDataIncremental).mockClear();
-    applyClassroomStageAndScenes(
-      makeStage('stage-doomed'),
-      [makeScene('scene-d', 'stage-doomed')],
-      {
-        persist: false,
-      },
-    );
+    seedStage(makeStage('stage-doomed'), [makeScene('scene-d', 'stage-doomed')]);
     try {
       markStageDeleted('stage-doomed');
       useStageStore.getState().setCurrentSceneId('scene-d');
@@ -600,48 +425,6 @@ describe('runClassroomLoad', () => {
       unmarkStageDeleted('stage-doomed');
       useStageStore.getState().clearStore();
     }
-  });
-
-  it('resets caller-bound chat authority when fallback replaces the classroom', () => {
-    useStageStore.setState({
-      stage: makeStage('stage-old'),
-      chats: [],
-      chatSnapshot: { sessions: [], restoreMarker: 'chat-restore-marker:stage-old:marker' },
-    });
-
-    applyClassroomStageAndScenes(makeStage('stage-new'), [], { persist: false });
-
-    expect(useStageStore.getState().chatSnapshot).toEqual({
-      sessions: [],
-      restoreMarker: null,
-    });
-    useStageStore.getState().clearStore();
-  });
-
-  it('commits runtime chats hydrated for a server fallback', () => {
-    const hydratedChat = {
-      id: 'runtime-chat',
-      type: 'qa' as const,
-      title: 'Runtime chat',
-      status: 'completed' as const,
-      messages: [],
-      config: { agentIds: [] },
-      toolCalls: [],
-      pendingToolCalls: [],
-      createdAt: 1_000,
-      updatedAt: 2_000,
-    };
-    const chatSnapshot = { sessions: [hydratedChat], restoreMarker: null };
-
-    applyClassroomStageAndScenes(makeStage('stage-runtime-chat'), [], {
-      persist: false,
-      chats: [hydratedChat],
-      chatSnapshot,
-    });
-
-    expect(useStageStore.getState().chats).toEqual([hydratedChat]);
-    expect(useStageStore.getState().chatSnapshot).toEqual(chatSnapshot);
-    useStageStore.getState().clearStore();
   });
 
   it('does not run stale restore phases after a newer navigation wins', async () => {
@@ -658,86 +441,9 @@ describe('runClassroomLoad', () => {
     loadStorage.resolve();
     await loading;
 
-    expect(deps.fetchClassroom).not.toHaveBeenCalled();
-    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
     expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
-  });
-
-  it('stops after fetch when the load is superseded', async () => {
-    const fetched = deferred<import('@/lib/classroom/load-classroom').ClassroomFetchResult>();
-    const { deps, setCurrent } = makeDeps({
-      fetchClassroom: vi.fn().mockReturnValue(fetched.promise),
-    });
-
-    const loading = runClassroomLoad(deps);
-    await vi.waitFor(() => expect(deps.fetchClassroom).toHaveBeenCalled());
-
-    setCurrent(false);
-    fetched.resolve({
-      outcome: 'found',
-      classroom: { stage: makeStage('stage-a'), scenes: [makeScene('scene-a', 'stage-a')] },
-    });
-    await loading;
-
-    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
-    expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
-    expect(deps.setLoading).not.toHaveBeenCalled();
-  });
-
-  it('stops after fallback apply when the load is superseded', async () => {
-    const applied = deferred<boolean>();
-    const { deps, setCurrent } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({
-        outcome: 'found',
-        classroom: {
-          stage: makeStage('stage-a', [makeAgentConfig('agent-a')]),
-          scenes: [makeScene('scene-a', 'stage-a')],
-        },
-      }),
-      applyFallbackScenes: vi.fn().mockReturnValue(applied.promise),
-    });
-
-    const loading = runClassroomLoad(deps);
-    await vi.waitFor(() => expect(deps.applyFallbackScenes).toHaveBeenCalled());
-
-    setCurrent(false);
-    applied.resolve(true);
-    await loading;
-
-    expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
-    expect(deps.setLoading).not.toHaveBeenCalled();
-  });
-
-  it('does not delete committed assets when superseded after the fallback applied (ownership stays with the document)', async () => {
-    // The fetch path commits the converted document -- and with it every
-    // allocation -- under the per-stage lock BEFORE this loader applies the
-    // fallback. A supersession in the apply window must therefore never roll
-    // the allocations back: the in-flight fallback save still references
-    // them. The loader itself must not touch the asset pool at all.
-    const applied = deferred<boolean>();
-    const { deps, setCurrent } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({
-        outcome: 'found',
-        classroom: {
-          stage: makeStage('stage-a'),
-          scenes: [makeScene('scene-a', 'stage-a')],
-        },
-      }),
-      applyFallbackScenes: vi.fn().mockReturnValue(applied.promise),
-    });
-
-    const loading = runClassroomLoad(deps);
-    await vi.waitFor(() => expect(deps.applyFallbackScenes).toHaveBeenCalled());
-
-    setCurrent(false);
-    applied.resolve(true);
-    await loading;
-
-    expect(removeAssetMock).not.toHaveBeenCalled();
   });
 
   it('does not apply media tasks when superseded after the media read', async () => {
@@ -963,12 +669,8 @@ describe('runClassroomLoad', () => {
 
   it('runs all phases and clears loading for the current navigation', async () => {
     const stage = makeStage('stage-a', [makeAgentConfig('agent-a')]);
-    const scene = makeScene('scene-a', 'stage-a');
     const mediaTasks = { image: { elementId: 'image' } };
     const { deps, settings, setStage } = makeDeps({
-      fetchClassroom: vi
-        .fn()
-        .mockResolvedValue({ outcome: 'found', classroom: { stage, scenes: [scene] } }),
       loadRestoredMediaTasks: vi.fn().mockResolvedValue(mediaTasks),
       applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
       restoreAgentSelection: vi.fn().mockReturnValue({
@@ -976,21 +678,14 @@ describe('runClassroomLoad', () => {
         isUserSet: false,
       }),
     });
-    const applyFallbackScenes = vi.fn().mockImplementation(async () => {
-      // A committed fallback puts the fetched stage into the store.
+    deps.loadFromStorage = vi.fn().mockImplementation(async () => {
+      // A completed storage load puts the course into the store.
       setStage(stage);
-      return true;
     });
-    deps.applyFallbackScenes = applyFallbackScenes;
 
-    await runClassroomLoad(deps);
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'ready' });
 
     expect(deps.loadFromStorage).toHaveBeenCalledWith('stage-a', 1);
-    expect(applyFallbackScenes).toHaveBeenCalledWith({
-      loadToken: 1,
-      stage,
-      scenes: [scene],
-    });
     expect(deps.applyRestoredMediaTasks).toHaveBeenCalledWith(mediaTasks);
     expect(deps.applyGeneratedAgents).toHaveBeenCalledWith('stage-a', stage.generatedAgentConfigs);
     expect(settings.setSelectedAgentIds).toHaveBeenCalledWith(['agent-a']);
@@ -1016,24 +711,21 @@ describe('runClassroomLoad', () => {
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 
-  it('returns unavailable without applying when the classroom fetch is an outage (#1450)', async () => {
-    const { deps } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'unavailable', status: 503 }),
-    });
+  it('returns absent when storage has no course under the id', async () => {
+    const { deps } = makeDeps();
 
-    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'unavailable' });
-    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'absent' });
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
     expect(deps.setError).not.toHaveBeenCalled();
   });
 
-  it('returns absent when the classroom fetch is a positive miss', async () => {
+  it('fails, not absent, when the storage load throws', async () => {
     const { deps } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({ outcome: 'absent' }),
+      loadFromStorage: vi.fn().mockRejectedValue(new Error('HTTP 503')),
     });
 
-    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'absent' });
-    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'failed' });
+    expect(deps.setError).toHaveBeenCalledWith('HTTP 503');
   });
 });
 

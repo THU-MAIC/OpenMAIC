@@ -7,6 +7,7 @@ import {
   isQwenVoiceCloneModel,
   resolveTTSModelForVoice,
   TTS_PROVIDERS,
+  voiceServesModel,
 } from '@/lib/audio/constants';
 import {
   BROWSER_NATIVE_TTS_PROVIDER_ID,
@@ -36,7 +37,7 @@ export interface AgentVoiceOverride {
 /** Persisted per-agent voice picks, keyed by agent id (settings store). */
 export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
 
-type ProviderConfigMap = Record<string, TTSEnablementConfig | undefined>;
+type ProviderConfigMap = Record<string, (TTSEnablementConfig & { modelId?: string }) | undefined>;
 
 /** Prefer a persisted narrator binding, retaining the global fallback when it is unusable. */
 export function resolveNarratorVoiceBinding(
@@ -47,7 +48,13 @@ export function resolveNarratorVoiceBinding(
   if (
     bound &&
     bound.voiceId.trim() &&
-    isTTSProviderEnabled(bound.providerId, providerConfigs[bound.providerId])
+    isTTSProviderEnabled(bound.providerId, providerConfigs[bound.providerId]) &&
+    // A voice the provider's model in use cannot speak is not usable.
+    voiceServesModel(
+      bound.providerId,
+      bound.voiceId,
+      providerConfigs[bound.providerId]?.modelId || bound.modelId,
+    )
   ) {
     // Qwen clone IDs are account-scoped but self-contained: local IndexedDB is
     // not an authority. Catalog voices remain validated against the catalog.
@@ -135,7 +142,10 @@ export function resolveAgentVoice(
     const modelCompatible =
       matchingModelGroup?.voices.some((voice) => voice.id === choice.voiceId) ??
       staleModelCanUseDefault;
-    if (allVoiceIds.has(choice.voiceId) && modelCompatible) {
+    // The provider's list holds only the voices its model in use can speak.
+    const offered =
+      !declaredVoice || fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
+    if (allVoiceIds.has(choice.voiceId) && modelCompatible && offered) {
       return {
         providerId: choice.providerId,
         ...(matchingModelGroup ? { modelId: choice.modelId } : {}),
@@ -190,6 +200,7 @@ export function resolveNarratorVoiceForGeneration(
   const trimmed = voiceId?.trim();
   if (!providerId || !trimmed) return undefined;
   if (!isTTSProviderEnabled(providerId, providerConfig)) return undefined;
+  if (!voiceServesModel(providerId, trimmed, providerConfig?.modelId)) return undefined;
   const modelId =
     providerId === 'qwen-tts' && isQwenCloneVoice(trimmed)
       ? resolveTTSModelForVoice(providerId, trimmed, providerConfig?.modelId)
@@ -333,6 +344,29 @@ export function getEnabledProvidersWithVoices(
           modelName: config.name,
           voices: allVoices,
         });
+      }
+
+      // A provider used with one model (the tts slot's) offers only the
+      // voices that model can speak, under that model.
+      const inUse = providerConfig?.modelId;
+      if (inUse) {
+        const speaks = (voice: { id: string }) => voiceServesModel(providerId, voice.id, inUse);
+        const voices = allVoices.filter(speaks);
+        const own = modelGroups.filter(
+          (group) =>
+            group.modelId === inUse ||
+            // Qwen clones switch to the clone model whatever the slot's model.
+            (providerId === 'qwen-tts' && isQwenVoiceCloneModel(group.modelId)),
+        );
+        result.push({
+          providerId,
+          providerName: config.name,
+          voices,
+          modelGroups: own.length
+            ? own.map((group) => ({ ...group, voices: group.voices.filter(speaks) }))
+            : [{ modelId: inUse, modelName: inUse, voices }],
+        });
+        continue;
       }
 
       result.push({

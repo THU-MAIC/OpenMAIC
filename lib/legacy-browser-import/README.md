@@ -121,12 +121,158 @@ afresh: a course under its own id is still not duplicated, but a course imported
 under a fresh id would be imported again and a half-copied runtime session is not
 completed.
 
+## Model settings
+
+Earlier builds also kept the model settings in the browser, in the persisted
+settings store (`maic:account:settings-storage`): providers with their API keys
+and base URLs, the chosen model, token plan enrollment and the selection of
+each capability (speech, transcription, images, video, web search, document
+extraction). Model settings now live on the server (`/api/model-config`), and
+`model-settings.ts` with `model-settings-import.ts` carry them over once:
+
+1. The settings store's migration to version 5 (`migrateSettingsToV5` in
+   `lib/store/settings.ts`) first brings older shapes to the version 4 one
+   (`normalizeLegacyModelSettings`: the version 0 default model, the single
+   TTS model setting, global TTS/ASR model ids, a TTS provider's `model`, the
+   flat web search key), builds a proposal (`buildModelSettingsProposal`, pure)
+   and keeps it under `maic:legacy-import:model-settings`, only when it holds
+   something: a key, a custom endpoint, a model choice or speech input turned
+   off. What holds a key or an endpoint but cannot be proposed (see "Kept in
+   the browser" below) is kept under `maic:legacy-import:model-settings-unimported`
+   at the same time. The store then drops those fields; it keeps only the user's
+   preferences, with the narration voice tied to the provider it was picked
+   for. **Keys are never dropped before they are staged**: when the proposal
+   (or what cannot be proposed) cannot be written (a full storage, an unreadable proposal already waiting),
+   the old fields stay in the store (`legacyModelSettings`) and every load
+   tries again, writing the store back without them once staging succeeds.
+2. Once the store has hydrated, `components/model-settings-init.tsx` runs the
+   import. The proposal holds this browser's keys, so like the course import
+   it goes only to the owner the browser is bound to: it asks for the binding
+   (`POST /api/identity/legacy-import-binding` with the ledger's browser id)
+   and sends the import with `X-OpenMAIC-Legacy-Import`, so owner resolution
+   refuses it (409 `LEGACY_IMPORT_NOT_BOUND`) for any other owner. The import
+   route is one of `FENCED_ENDPOINTS`. `POST /api/model-config/import` merges
+   the proposal item by item and never replaces an existing setting (a
+   provider id already declared, a slot the workspace already sets or the
+   deployment locks).
+
+| Answer                                   | Handling                                                                                     |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Binding held by another owner, or not asked for yet | Nothing is sent; the proposal stays for a later load.                            |
+| 2xx                                      | Every item the answer does not show the workspace holding is kept in the browser first (see below), then the proposal is removed. An item the answer contradicts itself about (imported and skipped, or skipped with different codes) is kept as `unconfirmed`. Kept item ids are logged. If they cannot be kept, the proposal stays and a later load answers it again. |
+| 400                                      | The whole proposal is refused, so sending it again cannot succeed: every item is kept in the browser first, keys included, as `refused` with the server's message, then the proposal is removed. If they cannot be kept, the proposal stays. |
+| An unreadable proposal                   | The proposal is dropped.                                                                     |
+| 401, 404, 409 (including `LEGACY_IMPORT_NOT_BOUND`), 5xx, network error | The proposal stays; a later load (or unlocking the access code) tries again. |
+
+Its completion is its own: the proposal's key is removed once the server
+answered it (or refused it for good); the ledger's course state is not involved. Nothing
+it logs quotes the proposal or an error message (only fixed text, item ids
+and error names), since either could contain a key.
+
+What the proposal holds:
+
+| Browser state                                                   | Proposed as                                                                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| A built-in chat provider with a key or its own base URL         | a provider of preset `presetIdFor('chat', id)`; models the user added (not in the catalogue) are listed with the catalogue's |
+| A custom chat provider (OpenAI-compatible)                      | a provider of preset `openai-compatible` with its base URL and model ids (Anthropic / Google custom providers keep their own preset) |
+| An enrolled token plan                                          | one provider of preset `tokenPlanPresetId(plan)` with the plan's key (and, when the user added models, the plan's models with them); the services the plan filled with the same key are that provider |
+| A speech, transcription, image, video, web search or document provider with a key | a provider of preset `presetIdFor(capability, id)`                              |
+| The chosen model                                                | `slots.llm` = `provider:model`; a server-configured provider is named by its preset id, as the server names translated legacy providers |
+| An enabled selection whose provider is proposed or server-configured | the capability's root slot (`tts`, `asr`, `image`, `video`, `webSearch`, `document`), with the selected model; a server-configured provider by its preset id, without credentials |
+| Browser speech synthesis or recognition, when selected          | a `browser-native-tts` / `browser-native` provider and its root slot                              |
+| A keyless search service (Brave) selected with research switched on | a provider of its preset (no key) and `slots.webSearch`; a self-hosted one (SearXNG) needs an endpoint only the deployment may set and is not proposed |
+| The model picked for Claude web search | `slots.webSearch` = `claude:<model>` |
+| Speech input turned off (`asrEnabled` stored as false)             | `slots.asr = null` (off): without an `asr` slot the browser's own speech recognition would take over |
+| Narration, images or video turned off (`ttsEnabled`, `imageGenerationEnabled`, `videoGenerationEnabled` stored as false) while a usable provider for it was there | `slots.tts` / `slots.image` / `slots.video` = `null` (off): without the slot the deployment's defaults would turn it back on. These defaulted to off and earlier builds switched them on by themselves once a provider was usable (a server provider on the first load, a key the user entered), so `false` with a usable provider (server-configured and not switched off by the operator, or with the user's key; the browser's own speech synthesis does not count) is the user's choice, and `false` without one is the default, which is not carried over. A server that gained the provider after the browser's first load (earlier builds did not switch the capability on then) cannot be told apart and is read as off: visible in the settings and free, where reading it as on could start paid generation the user refused. A slot the deployment locks is skipped as always |
+
+Not carried over:
+
+- per-stage routes (`llmStageRoutes`), which do not map one to one onto
+  slots: set per-stage models in Settings → Course Model Config (or `slots` in
+  `openmaic.yml`);
+- research switched off (`webSearchEnabled` stored as false): switching it off only
+  stopped course research, while chat and the agent kept searching through
+  the same provider, which the `webSearch` slot now serves; and an image,
+  video or narration switch that was off only by default (see above). Each
+  capability now runs whenever its slot resolves, and turning one off is
+  setting its slot off;
+- Baidu search sub-sources (`baiduSubSources`): the server's defaults apply;
+- thinking settings (`thinkingConfigs`, per-route `thinking`): set `thinking`
+  on a slot assignment instead;
+- the VoxCPM backend (`providerOptions.backend`): set `options.backend` on the
+  provider in `openmaic.yml`;
+- custom speech and transcription providers, AliDocMind's key pair (a
+  workspace provider holds one key), and custom chat providers without an
+  endpoint or of a type other than OpenAI, Anthropic or Google: these are
+  kept in the browser (below).
+
+### Kept in the browser
+
+The version 5 migration drops the old fields once they are staged, so
+whatever does not reach the workspace would otherwise be lost with its keys.
+`model-settings-unimported.ts` keeps it under
+`maic:legacy-import:model-settings-unimported`, exactly as staged (keys and
+endpoints included), with the reason:
+
+| Kept                                                                 | Reason             |
+| -------------------------------------------------------------------- | ------------------ |
+| A custom speech or transcription provider with a key or an endpoint  | `custom-service`   |
+| A key pair (AliDocMind)                                              | `key-pair`         |
+| A custom chat provider without an endpoint, or of another type       | `unsupported`      |
+| A proposed item the server skipped as invalid (a custom endpoint for a media, search or document service, a preset a workspace may not use, a self-hosted service, a slot naming a skipped provider, ...) | `refused`, with the server's reason |
+| A proposed provider whose id the deployment declares (`PROVIDER_RESERVED`) | `reserved`   |
+| Anything a 2xx answer that cannot be read does not confirm           | `unconfirmed`      |
+
+Not kept: items the server imported, and skips that leave nothing behind:
+for a provider, `EXISTS_SAME` (the workspace already holds that provider with
+the same preset, key, endpoint and models; a repeated import finds its own
+items there), and for a slot, `EXISTS` (the workspace already sets it) and
+`SLOT_LOCKED`. A provider id the workspace already uses with other settings,
+or with a key this instance cannot open, is `EXISTS_DIFFERENT` and kept as
+`refused`: the server compares the keys and answers only whether they are
+equal. The answer names each item's kind (`{ kind: 'provider' | 'slot', id }`),
+since a provider may share its id with a slot (`tts`); kept items are told
+apart the same way.
+
+An Azure Speech provider (TTS and STT) carries its regional endpoint
+(`https://<region>.tts.speech.microsoft.com`, `https://<region>.api.cognitive.microsoft.com`
+or `https://<region>.stt.speech.microsoft.com`), which the server accepts for
+a workspace provider (`lib/config/official-endpoints.ts`), so it is imported;
+any other host is refused and kept here.
+
+What is kept is never sent anywhere and the import does not run again for it.
+After the import the user is told once, in a toast
+(`components/model-settings-init.tsx`); Settings → Model Services lists the
+kept items with their reason and a button to copy the key
+(`components/settings/unimported-settings-notice.tsx`) until the user discards
+them. An item without a key leaves the list by itself once it is set up
+again: the slot set in the workspace, or a new workspace provider of its
+preset. An item that holds a key (or a key pair) never leaves by itself, since
+nothing the browser sees confirms the workspace holds that key: it stays, with
+its copy button, until the user discards it. Clearing the local cache keeps
+them.
+
+A base URL a workspace may not set (any service but chat) makes the server
+skip that provider, with the reason in the server's answer. Provider ids are
+derived to match `^[a-z0-9][a-z0-9-]{0,62}$` and made unique within the
+proposal.
+
+Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
+else.
+
 ## Removal
 
 When the maintainers decide enough releases have passed:
 
 1. Delete `lib/legacy-browser-import/` and its tests (`tests/legacy-browser-import/`,
-   `e2e/tests/legacy-browser-import.spec.ts`). `lib/device-storage/clear-local-cache.ts`
+   `e2e/tests/legacy-browser-import.spec.ts`), with `components/model-settings-init.tsx`
+   (and its uses in `app/layout.tsx` and `components/access-code-guard.tsx`), the
+   proposal saving and `legacyModelSettings` in `lib/store/settings.ts` (the
+   fields are still dropped) and its cases in
+   `tests/store/settings-model-settings-migration.test.ts`, and the model
+   settings import route in the handler table of
+   `tests/server/identity/legacy-import-binding-route.test.ts`;
+   `lib/device-storage/clear-local-cache.ts` keeps `MODEL_SETTINGS_IMPORT_KEY`: drop it. `lib/device-storage/clear-local-cache.ts`
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
    with its cases in `tests/settings/general-settings.test.ts`.

@@ -7,11 +7,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
-  getServerTTSProviders: mocks.providers,
-  isServerConfiguredProvider: vi.fn(() => true),
-  resolveTTSApiKey: vi.fn(() => ''),
-  resolveTTSBaseUrl: vi.fn(() => undefined),
   resolveTTSModel: vi.fn(() => ''),
+  slotTTSModel: vi.fn(() => ''),
+}));
+vi.mock('@/lib/server/model-config/media', () => ({
+  serverMediaConnection: (...args: unknown[]) => mocks.providers(...args),
 }));
 
 vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.generate }));
@@ -36,19 +36,26 @@ const scene = {
 describe('scene TTS capability routing', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('honors the server capability force-off before synthesis', async () => {
-    mocks.providers.mockReturnValue({ 'configured-tts': { disabled: true } });
+  it('synthesizes nothing when the tts slot is turned off', async () => {
+    mocks.providers.mockResolvedValue('off');
     const summary = await synthesizeSceneNarration({
       scene: structuredClone(scene),
       force: false,
+      ownerId: 'user:alice',
     });
+    expect(mocks.providers).toHaveBeenCalledWith('tts', 'user:alice');
     expect(summary).toMatchObject({ available: false, changed: false });
     expect(mocks.generate).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 
   it('stores generated narration bytes in classroom media', async () => {
-    mocks.providers.mockReturnValue({ 'configured-tts': {} });
+    mocks.providers.mockResolvedValue({
+      providerId: 'configured-tts',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration',
+    });
     mocks.generate.mockResolvedValue({ audio: new Uint8Array([1, 2]), format: 'mp3' });
     mocks.persist.mockResolvedValue('/api/classroom-media/stage-a/media/tts-speech-a-abc123.mp3');
     const target = structuredClone(scene);

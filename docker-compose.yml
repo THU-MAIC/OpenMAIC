@@ -54,7 +54,10 @@ services:
       - default # outbound internet (LLM/media provider APIs, etc.)
       - render # reach the render service over the isolated network
     volumes:
-      # Optional: mount server-providers.yml for provider config
+      # Optional: the model configuration (copy openmaic.example.yml to
+      # openmaic.yml first; a missing file would be mounted as a directory).
+      # - ./openmaic.yml:/app/openmaic.yml:ro
+      # Legacy, read only when there is no openmaic.yml:
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped

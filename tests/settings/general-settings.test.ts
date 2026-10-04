@@ -53,11 +53,12 @@ describe('general settings: clear local cache', () => {
     expect(clearPersistedStores).not.toHaveBeenCalled();
   });
 
-  it('keeps the pre-server learner key, the import ledger and, while the import is pending, the pre-runtime quiz keys', () => {
+  it('keeps the pre-server learner key, the import ledger, model settings waiting for import and, while the import is pending, the pre-runtime quiz keys', () => {
     const storage = new Map<string, string>([
       ['maic:device:runtime.learnerKey', '"anon:legacy-device"'],
       ['maic:device:playback-cursor:stage-1', '{}'],
       ['maic:legacy-import:v3', '{"version":3}'],
+      ['maic:legacy-import:model-settings', '{"slots":{}}'],
       ['maic:legacy-import:v1:anon:owner-a', '{"version":1}'],
       ['settings-storage', '{}'],
       ['quizDraft:scene-1', '{}'],
@@ -71,6 +72,7 @@ describe('general settings: clear local cache', () => {
     expect([...storage.entries()]).toEqual([
       ['maic:device:runtime.learnerKey', '"anon:legacy-device"'],
       ['maic:legacy-import:v3', '{"version":3}'],
+      ['maic:legacy-import:model-settings', '{"slots":{}}'],
       ['quizDraft:scene-1', '{}'],
       ['quizAnswers:scene-1', '{}'],
       ['quizResults:scene-1', '[]'],

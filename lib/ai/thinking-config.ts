@@ -211,3 +211,36 @@ export function getThinkingDisplayValue(
   if (thinking.control === 'mode') return normalized.mode;
   return normalized.mode === 'disabled' ? 'off' : 'on';
 }
+
+/**
+ * A thinking config with its reasoning effort taken out, for a call that may
+ * not carry one. An effort of `none` meant "thinking off", so that intent is
+ * kept as `mode: 'disabled'` when nothing else states the mode. Undefined when
+ * nothing is left.
+ */
+export function withoutThinkingEffort(config?: ThinkingConfig): ThinkingConfig | undefined {
+  if (!config) return undefined;
+  const { effort, ...rest } = config;
+  const next: ThinkingConfig =
+    effort === 'none' && getThinkingMode(rest) === undefined ? { ...rest, mode: 'disabled' } : rest;
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+/**
+ * The thinking control to offer where no reasoning effort may be set: an
+ * effort-controlled model whose efforts include `none` becomes an on/off
+ * toggle, one that cannot be turned off has nothing left to set (undefined),
+ * and every other control is unchanged.
+ */
+export function thinkingCapabilityWithoutEffort(
+  thinking?: ThinkingCapability,
+): ThinkingCapability | undefined {
+  if (thinking?.control !== 'effort') return thinking;
+  if (!thinking.effortValues?.includes('none')) return undefined;
+  const { effortValues: _values, defaultEffort, ...rest } = thinking;
+  return {
+    ...rest,
+    control: 'toggle',
+    defaultMode: defaultEffort === 'none' ? 'disabled' : (thinking.defaultMode ?? 'enabled'),
+  };
+}

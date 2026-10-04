@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 // Regression for the classroom-interaction override gap: /api/chat resolves the
@@ -62,13 +62,20 @@ function makeRequest(model: string, modelRoutes?: string): NextRequest {
 }
 
 describe('POST /api/chat — per-stage user routes (classroom interaction)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     mocks.getModelCalls.length = 0;
     statelessGenerate.mockReset();
     statelessGenerate.mockImplementation(async function* () {});
-    delete process.env.MODEL_ROUTES;
-    delete process.env.DEFAULT_MODEL;
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: null,
+      defaults: null,
+      notices: [],
+    });
+  });
+
+  afterEach(async () => {
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests();
   });
 
   it('resolves chat-adapter from the user route over the body model', async () => {
@@ -94,8 +101,18 @@ describe('POST /api/chat — per-stage user routes (classroom interaction)', () 
     );
   });
 
-  it('keeps the operator MODEL_ROUTES route over the user route', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({ 'chat-adapter': 'openai:gpt-5.4' });
+  it('lets a configured classroom slot win over the user route', async () => {
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
+          slots: { classroom: 'openai:gpt-5.4' },
+        },
+      },
+      defaults: null,
+      notices: [],
+    });
     const { POST } = await import('@/app/api/chat/route');
     const response = await POST(
       makeRequest(
@@ -109,6 +126,7 @@ describe('POST /api/chat — per-stage user routes (classroom interaction)', () 
     expect(mocks.getModelCalls.at(-1)).toMatchObject({
       providerId: 'openai',
       modelId: 'gpt-5.4',
+      apiKey: 'sk-operator',
     });
   });
 

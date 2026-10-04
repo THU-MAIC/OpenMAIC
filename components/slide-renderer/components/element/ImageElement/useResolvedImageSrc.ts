@@ -12,7 +12,8 @@ import {
 } from '@/lib/media/resolve-media-ref';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
-import { useSettingsStore } from '@/lib/store/settings';
+import { mediaGenerationDisabled as isMediaGenerationDisabled } from '@/lib/model-settings/capabilities';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { resolveMediaTaskForElement } from '@/lib/media/media-task-resolution';
 
 export interface ResolvedImageSrc {
@@ -84,7 +85,7 @@ export function resolveImageSrc(
  */
 export function useResolvedImageSrc(elementInfo: PPTImageElement): ResolvedImageSrc {
   const stageId = useMediaStageId();
-  const mediaGenerationDisabled = useSettingsStore((state) => !state.imageGenerationEnabled);
+  const mediaGenerationDisabled = isMediaGenerationDisabled(useModelCapabilities(), 'image');
   const task = useMediaGenerationStore((state) =>
     resolveMediaTaskForElement(state.tasks, elementInfo, stageId),
   );

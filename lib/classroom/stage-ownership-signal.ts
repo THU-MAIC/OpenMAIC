@@ -49,18 +49,6 @@ export function getStageAccessSignal(stageId: string): StageAccessSignal | null 
   return recorded?.resolved ? recorded.access : null;
 }
 
-/**
- * Access defaults for a classroom load. This branch has no live-mode session
- * model and the classroom serves local-only courses without a sidecar row, so
- * the fallback keeps the upstream single-user default (`isOwner: true`) when
- * the sidecar had no answer — a course that was never probed stays editable,
- * and the server's owner-scoped writes remain the authority that actually
- * enforces ownership.
- */
-export function resolveStageFallbackAccess(stageId: string): StageAccessSignal {
-  return getStageAccessSignal(stageId) ?? { isOwner: true };
-}
-
 /** Test hook: forget every recorded outcome. */
 export function resetStageOwnershipSignals(): void {
   stageOwnership.clear();

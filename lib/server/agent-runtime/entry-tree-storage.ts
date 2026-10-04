@@ -7,9 +7,11 @@ import {
   type SessionTreeEntry,
 } from '@earendil-works/pi-agent-core';
 import {
+  AGENT_SESSION_LIFECYCLE,
   AgentSessionEntryTreeError,
   AgentSessionLeaseLostError,
   type AgentSessionEntry,
+  type AgentSessionEventLog,
   type AgentSessionEntryTreeHandle,
   type AgentSessionMeta,
 } from '@openmaic/storage';
@@ -34,22 +36,83 @@ export interface SessionEntryHistory {
   contextEntryIds: string[];
   /** Raw append-only messages, unaffected by compaction, for delivery cursors. */
   cursorMessages: AgentMessage[];
+  /**
+   * For an empty tree that earlier runs left empty: the event sequence of the
+   * first of those runs. A durable user message posted after it is a
+   * follow-up, never the session's opening message.
+   */
+  firstRunSeq?: number;
+}
+
+/** What the event log says about the runs before this one. */
+export interface PriorRunRecord {
+  /** Event sequence of the first run's lifecycle frame; null when no run ever started. */
+  firstRunSeq: number | null;
+  /**
+   * Whether a run completed a message. The runner appends every completed
+   * message to the tree right after its event, so the tree must then hold it.
+   */
+  completedMessages: boolean;
+}
+
+/** Lifecycle frames that only a run (or its settlement) writes. */
+const RUN_LIFECYCLE_TYPES: ReadonlySet<string> = new Set([
+  AGENT_SESSION_LIFECYCLE.sessionStart,
+  AGENT_SESSION_LIFECYCLE.sessionResumed,
+  AGENT_SESSION_LIFECYCLE.sessionInterrupted,
+  AGENT_SESSION_LIFECYCLE.sessionEnd,
+]);
+const PRIOR_RUN_SCAN_PAGE = 500;
+
+/**
+ * Read the prior runs from the event log, stopping at the first completed
+ * message. Only consulted for an empty tree, whose log is short unless the
+ * tree was lost, and then the scan stops at that run's first message.
+ */
+export async function readPriorRunRecord(
+  log: Pick<AgentSessionEventLog, 'readEventsAfter'>,
+  sessionId: string,
+): Promise<PriorRunRecord> {
+  let firstRunSeq: number | null = null;
+  let after = 0;
+  for (;;) {
+    const page = await log.readEventsAfter(sessionId, after, PRIOR_RUN_SCAN_PAGE);
+    for (const event of page) {
+      if (event.type === 'message_end') return { firstRunSeq, completedMessages: true };
+      if (firstRunSeq === null && RUN_LIFECYCLE_TYPES.has(event.type)) firstRunSeq = event.id;
+    }
+    if (page.length < PRIOR_RUN_SCAN_PAGE) return { firstRunSeq, completedMessages: false };
+    after = page[page.length - 1]!.id;
+  }
 }
 
 /**
  * Load and validate the one terminal entry-tree architecture understood by the
- * runner. An empty tree is legal only before a session has ever started.
+ * runner. An empty tree is legal before a session has ever started, and after
+ * runs that ended before completing any message (a run that failed while
+ * starting writes nothing). It is refused once the event log shows a completed
+ * message the tree should hold: that tree lost history.
  */
 export async function loadSessionEntryHistory(
   session: Session,
-  options: { sessionId: string; hasPriorRun: boolean },
+  options: { sessionId: string; priorRuns: () => Promise<PriorRunRecord> },
 ): Promise<SessionEntryHistory> {
   const entries = await session.getEntries();
   if (entries.length === 0) {
-    if (options.hasPriorRun) {
-      throw new SessionEntryHistoryError(options.sessionId, 'tree is empty after a prior run');
+    const prior = await options.priorRuns();
+    if (prior.completedMessages) {
+      throw new SessionEntryHistoryError(
+        options.sessionId,
+        'tree is empty although a prior run completed messages',
+      );
     }
-    return { branch: [], messages: [], contextEntryIds: [], cursorMessages: [] };
+    return {
+      branch: [],
+      messages: [],
+      contextEntryIds: [],
+      cursorMessages: [],
+      ...(prior.firstRunSeq !== null ? { firstRunSeq: prior.firstRunSeq } : {}),
+    };
   }
 
   let branch: SessionTreeEntry[];

@@ -36,6 +36,12 @@ const mocks = vi.hoisted(() => ({
   callbackLookup: vi.fn(),
 }));
 
+// No openmaic.yml policy here: requests may still name their own provider.
+vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
+  requestProvidersAllowed: () => true,
+}));
+
 vi.mock('@/lib/server/provider-config', () => ({
   isServerConfiguredProvider: () => mocks.serverManaged,
   resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
@@ -253,12 +259,19 @@ describe('resolveModel with a client-supplied base URL', () => {
   });
 
   it('keeps an operator-selected default model on the operator transport', async () => {
-    process.env.DEFAULT_MODEL = 'ollama:llama3.3';
-
-    const resolved = await resolveModel({});
-
-    expect(resolved.providerId).toBe('ollama');
-    expect(mocks.promisesLookup).not.toHaveBeenCalled();
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests({
+      layer: { source: 'deployment', config: { providers: { ollama: { preset: 'ollama' } } } },
+      defaults: { source: 'default', config: { slots: { llm: 'ollama:llama3.3' } } },
+      notices: [],
+    });
+    try {
+      const resolved = await resolveModel({ stage: 'quiz-grade' });
+      expect(resolved.providerId).toBe('ollama');
+      expect(mocks.promisesLookup).not.toHaveBeenCalled();
+    } finally {
+      runtime.setDeploymentConfigForTests();
+    }
   });
 
   it('reports a refused connection without errno or address detail', async () => {

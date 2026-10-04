@@ -1,192 +1,401 @@
 ---
 title: 設定說明
-description: LLM 供應商、媒體生成、文件解析、TTS、ASR、存取控制和功能開關。
+description: 模型與供應商（openmaic.yml 和模型設定）、存取控制、功能開關及其他伺服器端選項。
 ---
 
-OpenMAIC 會在伺服器啟動時讀取環境變數。所有項目都是選填，依需求啟用即可。環境變數範例請見儲存庫中的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。內建模型 ID 請見[支援模型](./supported-models.mdx)。
+OpenMAIC 有三個設定來源，各自只負責一件事：
 
-除環境變數外，也可以使用專案根目錄下的 `server-providers.yml` 設定程式碼中已註冊的伺服器端 provider。環境變數會逐欄位覆蓋 YAML 中的同名設定；自訂 OpenAI 相容 provider 只能在設定中新增，不能透過任意環境變數字首或未知 YAML provider ID 註冊。
+| 來源 | 由誰撰寫 | 內容 | 何時生效 |
+| --- | --- | --- | --- |
+| `openmaic.yml` | 維運人員 | AI 模型的供應商、插槽指派和政策 | 啟動時（修改後需重新啟動） |
+| Web 端的模型設定 | 工作區的使用者 | `openmaic.yml` 沒有寫死的供應商和指派，儲存在資料庫中 | 立即生效 |
+| 環境變數（`.env.local`、容器 Secret） | 維運人員 | `openmaic.yml` 引用的金鑰，以及其他所有伺服器端選項 | 啟動時 |
 
-## LLM 供應商
+除了 `DATABASE_URL`，所有環境變數都是選填（見[部署](./deployment.mdx)）。全部環境變數請見 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以從 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 開始撰寫模型設定，範本和模型 ID 請見[支援的模型](./supported-models.mdx)。
 
-雲端供應商通常使用三個環境變數：API key、base URL 和 model 清單。API key 通常為必填，base URL 和 model 清單則為選填；Azure OpenAI 需要設定資源 endpoint，Ollama 和 Lemonade 不需要 API key。
+早期版本只能透過供應商環境變數、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 設定模型。除了 `MODEL_ROUTES`，這些方式目前仍可使用，但已棄用，請見[從舊設定遷移](#從舊設定遷移)。
+
+## 模型與供應商
+
+### 基本概念
+
+- **供應商（provider）**：伺服器端可以呼叫的一個帳號，例如一把 OpenAI key、一個 MiniMax Token Plan 或一個自架的 OpenAI 相容服務。每個供應商有一個你自訂的 ID，以及一個**範本（preset）**，說明它是哪家廠商、涵蓋哪些能力。
+- **插槽（slot）**：產品中用到 AI 的一處地方，例如課程大綱、投影片內容、語音合成或網路搜尋。每種能力的插槽構成一棵樹；沒有指派的插槽沿用父插槽。
+- **指派（assignment）**：插槽使用哪個供應商的哪個模型（`provider:model`），可以附帶呼叫參數和備援模型；也可以寫 `null` 關閉該插槽。
+
+一項能力是否可用，只取決於它的插槽能否解析到一個指派，沒有另外的開關。
+
+### openmaic.yml
+
+伺服器端從啟動目錄（儲存庫根目錄；Docker 映像檔中為 `/app`）讀取 `openmaic.yml`。設定 `OPENMAIC_CONFIG` 可以改用其他路徑；相對路徑同樣以啟動目錄為基準解析，而且此時檔案必須存在。沒有該檔案時，伺服器端會使用 Web 端的設定，以及仍在設定中的[舊版變數](#從舊設定遷移)。
+
+該檔案只在啟動時讀取一次，修改後需要重新啟動服務。服務啟動前會完整驗證檔案：未設定的 `${VAR}`、未知的範本或插槽、引用了未宣告的供應商，或供應商不提供插槽所需的能力，都會讓服務拒絕啟動，並逐條列出問題所在的位置：
+
+```text
+[boot] Invalid server configuration; the server will not start: Invalid model configuration in /app/openmaic.yml:
+  - providers.openai.apiKey: environment variable OPENAI_API_KEY is not set
+  - slots.course.outlines: unknown slot
+```
+
+不要把金鑰直接寫進檔案：用 `${VAR}` 引用，並在環境變數中設定。來自環境變數的值不會出現在這些錯誤訊息中。
+
+### 完整範例
+
+```yaml title="openmaic.yml"
+providers:
+  # <供應商 ID>：小寫字母、數字和連字號
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}      # 啟動時從環境變數讀取
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:                    # 同一把 key，用於圖像生成
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+  minimax:                         # Token Plan：對話、圖像、影片、TTS、搜尋
+    preset: minimax
+    apiKey: ${MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
+  local:                           # 任何 OpenAI 相容服務
+    preset: openai-compatible
+    baseUrl: http://ollama:11434/v1
+    models: [qwen3:8b]
+
+slots:
+  llm: openai:gpt-5.5              # 下方所有對話插槽的預設值
+  course.outline:
+    model: anthropic:claude-sonnet-4-6
+    fallback: openai:gpt-5.4-mini  # 遇到可重試的失敗時改用一次
+  course.content.slide:
+    model: minimax:MiniMax-M3
+    thinking: { enabled: false }
+    fallback: minimax:MiniMax-M2.7
+  classroom: local:qwen3:8b        # 模型 ID 可以包含冒號
+  agent:
+    model: openai:gpt-5.5          # 需要支援工具呼叫
+    api: openai-completions
+  tts: minimax:speech-2.8-turbo
+  image: openai-image:gpt-image-2
+  webSearch: tavily                # 只寫供應商：使用它的預設模型
+  video: null                      # 關閉，並鎖定為關閉
+
+policy:
+  allowWorkspaceProviders: false   # 使用者不能自行新增供應商
+```
+
+使用這份檔案時，列出的每個插槽對所有使用者都是固定的。檔案沒寫的對話插槽（例如 `course.agents`）沿用父插槽（`llm`）；沒寫的能力根插槽（例如 `asr` 或 `document`）維持未設定。使用者可以在模型設定中為這兩類插槽指派模型，但只能從已宣告的供應商中選擇。
+
+### 供應商
+
+`providers` 下的每一項宣告一個供應商。鍵名就是它的 ID，供插槽引用：1 到 63 個小寫字母、數字和連字號，以字母或數字開頭。
+
+| 欄位 | 是否必填 | 意義 |
+| --- | --- | --- |
+| `preset` | 是 | 使用哪個內建範本，請見[支援的模型 → 範本](./supported-models.mdx#範本)。 |
+| `apiKey` | 通常需要 | API key。不需要 key 的服務（本機服務、Brave、SearXNG、unpdf）可以省略。 |
+| `baseUrl` | 部分範本需要 | 取代範本內建端點的位址。`openai-compatible`、`azure`、`searxng` 和 `mineru` 必填。 |
+| `models` | 否 | 該供應商提供的對話模型 ID，也就是模型設定中列出的選項。對 `openai-compatible` 來說，這是模型設定唯一的清單來源。它不會限制 `slots` 能寫哪些模型。 |
+| `proxy` | 否 | 該供應商請求使用的 HTTP 代理位址。 |
+| `credentials` | 部分範本需要 | 不使用單一 key 的服務所需的金鑰對。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
+| `options` | 否 | 非機密、供應商特有的設定，例如 `voxcpm-tts` 的 `backend`。名稱由字母、數字、`_` 和 `-` 組成；值為字串、數字或布林值（不能巢狀對應或清單），可以使用 `${VAR}`。模型設定會顯示 options，因此絕對不要在其中放 key。僅限部署：模型設定無法設定它們。 |
+
+大多數範本只涵蓋一種能力，與內建 registry 一一對應：`openai` 範本只有對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper` 範本。每種能力宣告一個供應商；同一把 key 涵蓋多種能力時，引用同一個 `${VAR}` 即可。**Token Plan 範本**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。供應商上的 `baseUrl` 會取代它涵蓋的所有能力的端點，因此只有當 Token Plan 的全部能力都一起搬移時，才為它設定 `baseUrl`。
+
+Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環境變數、profile 或 role）簽署請求，區域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；`apiKey` 是選填的 bearer token。
+
+### 插槽
+
+| 插槽 | 能力 | 父插槽 | 作用 |
+| --- | --- | --- | --- |
+| `llm` | chat | — | 預設對話模型：下方任何插槽都不涵蓋的對話呼叫，包括無瀏覽器 `/api/generate-classroom` API 中沒有專屬插槽的步驟 |
+| `course.research` | chat | `llm` | 課程研究時改寫網路搜尋查詢 |
+| `course.outline` | chat | `llm` | 場景大綱 |
+| `course.agents` | chat | `llm` | 老師和同學智慧體的人設 |
+| `course.content` | chat | `llm` | 場景內容（沒有專屬插槽的場景類型） |
+| `course.content.slide` | chat | `course.content` | 投影片場景 |
+| `course.content.quiz` | chat | `course.content` | 測驗場景 |
+| `course.content.interactive` | chat | `course.content` | 互動場景 |
+| `course.content.pbl` | chat | `course.content` | 專題式學習（PBL）場景 |
+| `course.actions` | chat | `llm` | 場景動作（智慧體在每個場景說什麼、做什麼） |
+| `classroom` | chat | `llm` | 課堂對話、測驗評分和 PBL 執行階段 |
+| `agent` | chat | `llm` | Pro 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
+| `agent.title` | chat | `agent` | Pro 工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
+| `tts` | tts | — | 語音合成 |
+| `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
+| `image` | image | — | 圖像生成 |
+| `video` | video | — | 影片生成 |
+| `webSearch` | webSearch | — | 網路搜尋 |
+| `document` | document | — | 文件解析服務（MinerU、MinerU Cloud、AliDocMind）。內建的 PDF 文字擷取不需要服務 |
+
+插槽的解析方式：
+
+- 從呼叫所在的插槽開始，逐層往上直到能力根插槽，遇到的第一個指派生效。因此父插槽的指派就是整棵子樹的預設值；修改父插槽，會同時改變所有沒有自己指派的子插槽。
+- 在每個插槽上，先看 `openmaic.yml`，再看工作區的模型設定。
+- `null` 會停止往上查找：該插槽，以及其下所有沒有自己指派的插槽，都會被關閉。
+- 一直到根插槽都沒有指派時，該能力處於未設定狀態。呼叫會報錯並指出插槽名稱，不會退回任何廠商。
+- 需求（requirement）屬於宣告它的插槽，依該插槽最終解析到的模型檢查，無論是自己指派還是繼承而來。`agent` 需要支援工具呼叫；若內建模型目錄表明它的模型不支援，智慧體會拒絕執行，而不是勉強湊合。目錄中沒有的模型允許使用。`agent.title` 沒有需求，因此可以使用較小的模型。
+
+### 指派
+
+指派有四種寫法：
+
+```yaml
+slots:
+  llm: openai:gpt-5.5            # 供應商:模型
+  webSearch: tavily              # 只寫供應商：使用它的預設模型
+  course.outline:                # 帶參數的物件
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+    thinking: { effort: low }
+  video: null                    # 關閉
+```
+
+物件寫法支援以下欄位：
+
+| 欄位 | 意義 |
+| --- | --- |
+| `model` | 必填。`供應商:模型`；對話以外的插槽也可以只寫 `供應商`。 |
+| `fallback` | 改用一次的備援模型，寫法同上。僅適用於語言模型插槽，請見[備援模型](#備援模型)。 |
+| `thinking` | 對話模型的推理參數：`enabled`（true/false）、`mode`（`default`、`disabled`、`enabled`、`auto`）、`effort`（`none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`）、`level`（`minimal`、`low`、`medium`、`high`）、`budgetTokens`、`excludeReasoningOutput`。各供應商轉接器只套用其 API 支援的部分。 |
+| `api` | 僅 `agent`：傳輸協定，`openai-completions`（預設）或 `openai-responses`。 |
+| `contextWindow` | 僅 `agent`：壓縮上下文時假定的視窗大小，用於比模型目錄中的值更小的情況。 |
+
+`agent` 插槽不能設定 `thinking.effort`：它的工具呼叫傳輸無法同時使用推理強度和函式工具。
+
+### 只寫供應商 ID 的引用
+
+不帶 `:model` 的引用代表該供應商的預設模型：Token Plan 為該能力推薦的模型，否則是內建 registry 的預設模型。搜尋和文件服務大多沒有可選的模型，所以通常寫成 `webSearch: tavily` 或 `document: mineru-cloud`。對話插槽必須寫明模型，`llm: openai` 會在啟動時被拒絕。
+
+### 備援模型
+
+備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
+
+當主模型的呼叫在自身重試之後仍以可重試的方式失敗時，會改用插槽的 `fallback` 再試一次。可重試的失敗包括：SDK 判定的暫時性錯誤、逾時、網路錯誤、額度用盡（429）、容量不足（503）或輸出為空。內容安全拒絕和其他 4xx 錯誤不會觸發備援。備援對一般呼叫和串流呼叫都有效，並沿用插槽的 `thinking` 參數。
+
+備援模型屬於指派，隨指派一起被繼承：沒有自己指派的 `course.content.slide` 會使用 `course.content` 的模型及其備援模型。有需求的插槽不會改用不符合需求的備援模型。
+
+### 關閉某項能力
+
+在它的插槽上寫 `null`。`video: null` 會對所有工作區關閉影片生成，並鎖定為關閉；`course.content.pbl: null` 只關閉 PBL 場景生成，`course.content` 的其他部分照常運作。對已關閉插槽的呼叫會立即失敗，媒體相關介面回傳 `403`，而不是改用其他廠商。
+
+### 鎖定與模型設定
+
+`openmaic.yml` 中 `slots` 下寫出的內容都會被**鎖定**：模型設定會標示為 **Set by the server**（由伺服器設定），且無法修改。只有寫出的插槽會被鎖定。工作區仍可為被鎖定插槽的子插槽指派模型，從而覆寫該子樹的值。要固定整棵子樹，需要把其中每個插槽都寫出來。
+
+Web 端的模型設定讀寫目前工作區的同一棵樹：
+
+- **Token Plan**：連接方案會用該 key 新增方案的供應商，並為方案推薦、且仍未指派的插槽填入模型。解除連接會刪除該供應商，原本使用它的插槽重新跟隨父插槽。
+- **模型服務**：每種能力一個分頁（語言模型、圖像、影片、語音合成、語音辨識、文件解析、網路搜尋），列出各自的服務。來自 `openmaic.yml` 的供應商以唯讀方式顯示，不顯示任何關於 key 的資訊。工作區設定的服務會成為工作區供應商：key 只能寫入，只顯示類似 `…abcd` 的遮罩；自訂位址僅限語言模型（Azure 語音服務使用其官方區域位址，例如 `https://<region>.tts.speech.microsoft.com`）；自架服務與金鑰對需在 `openmaic.yml` 中設定。測試按鈕在伺服器端檢查已儲存的供應商。
+- **課程模型設定**：主線模型就是 `llm` 插槽，管線的每個環節對應自己的插槽（跟隨主線即該環節沒有自己的指派）；圖像、影片、語音、搜尋和轉寫的開關會把對應插槽設為 `null`。`openmaic.yml` 中寫出的插槽在這裡只顯示、不可修改。
+
+早期版本儲存在瀏覽器中的供應商設定（供應商及其 key 和 Base URL、所選模型、Token Plan 連接狀態，以及每種能力的選擇）會一次性匯入工作區。匯入不會取代工作區既有的設定或 `openmaic.yml` 鎖定的插槽，並會略過被政策或驗證拒絕的項目。收到 2xx 回應後，只有工作區已持有的內容會從瀏覽器中刪除：伺服器略過的每個項目（媒體服務的自訂位址、工作區不可使用的預設、與部署宣告重名的供應商 id 等）都會連同 key 保留在此瀏覽器中，不會再次傳送，提示一次，並在「設定 → 模型服務」中連同原因列出，直到重新設定或被捨棄。帶官方區域位址的 Azure 語音供應商會被匯入。收到 400 時整份匯入內容被拒絕：不會再次傳送，其中各項目會連同 key 保留在此瀏覽器中，並與被略過的項目一起列出；匯入內容無法讀取時會被捨棄。只有在 401、404、409、5xx 或網路錯誤時，匯入內容才會保留在瀏覽器中，供之後重試。明確關閉過的語音輸入會變為 `asr: null`；在已有可用供應商時關閉的語音講解、圖像或影片會變為 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 鎖定的插槽保持不變）。以下內容需要手動重新設定：依階段設定的模型（在課程模型設定中，或在 `openmaic.yml` 的 `slots` 中）、推理設定（插槽上的 `thinking`）、自訂語音合成與語音辨識供應商以及 AliDocMind 的金鑰對（在 `openmaic.yml` 中；它們會保留在瀏覽器中，與被略過的項目一起列出）、VoxCPM 後端（`options.backend`），以及百度搜尋子來源（使用伺服器端預設值）。關閉的研究開關不會遷移（它只停止課程研究，對話和智慧體仍會搜尋），僅因預設值而處於關閉的開關也不會遷移：每項能力只要其插槽能解析就會執行。
+
+工作區即[持久化文件](./deployment.mdx)中所說的擁有者（owner）：預設的 Docker Compose 部署（單使用者模式）只有一個工作區；多使用者部署中，每個已登入帳號各有一個工作區。
+
+### 政策
+
+```yaml
+policy:
+  allowWorkspaceProviders: false
+```
+
+`allowWorkspaceProviders`（預設 `true`）決定工作區能否新增自己的供應商。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為檔案沒有寫死的插槽選擇模型；請求自帶的模型、金鑰或端點（已棄用的 `x-model`、`x-api-key`、`x-base-url` 請求標頭以及媒體介面的供應商欄位）也會被忽略，供應商測試按鈕的請求標頭形式會被拒絕。由部署方負擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
+
+### 金鑰與 OPENMAIC_SECRET_KEY
+
+- `openmaic.yml` 中的 key 透過 `${VAR}` 來自環境變數，不會寫入資料庫，也不會傳送到瀏覽器。
+- 工作區在模型設定中填寫的 key 儲存在資料庫中，使用實例金鑰 `OPENMAIC_SECRET_KEY` 以 AES-256-GCM 加密。
+- 未設定 `OPENMAIC_SECRET_KEY` 時，伺服器端會在首次使用時於 `data/instance-secret.key`（Docker Compose 中位於 `openmaic-data` 資料卷內）產生一把隨機金鑰，之後持續使用它。
+
+請把這把金鑰和資料庫備份放在一起：金鑰遺失或更換後，先前儲存的 key 無法讀取，需要重新填寫（模型設定會標示這些 key）。多個實例共用同一個資料庫時，或在沒有持久化資料目錄的平台（例如 Vercel）上，請明確設定 `OPENMAIC_SECRET_KEY`；任何字串都可以，例如 `openssl rand -base64 32` 的輸出。
+
+不設定它時，若資料目錄無法跨重新啟動保留（沒有掛載磁碟區的容器、暫存磁碟），每次啟動都會產生新金鑰；多個副本也會各自產生一把；工作目錄唯讀時則無法建立金鑰，在模型設定中儲存 key 會失敗。啟動時，若 `OPENMAIC_SECRET_KEY` 未設定且資料目錄不可寫入，或資料庫中已有 key 是以與目前不同的金鑰加密（例如 `data/instance-secret.key` 遺失），伺服器端會記錄警告，但仍會正常啟動。
+
+```bash
+OPENMAIC_SECRET_KEY=...        # 模型設定中儲存的 key 所使用的實例金鑰
+OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他路徑
+```
+
+### 工作區可以新增什麼
+
+`openmaic.yml` 中的供應商可以是 schema 允許的任何內容。工作區在模型設定中新增的供應商限制較多，因為其端點和 key 由 Web 端的使用者填寫：
+
+- 不提供 Amazon Bedrock：它會使用伺服器端自己的 AWS 憑證簽署。
+- 不能設定 `proxy`，也不能使用金鑰對（`credentials`）：AliDocMind 等使用金鑰對驗證的範本只能由部署設定。
+- 只有提供對話能力的範本才能設定自訂 `baseUrl`，而且帶自訂端點的供應商只能用於對話插槽。URL 不能包含憑證、查詢字串或片段，而且必須解析到公網位址，除非伺服器端設定了 `ALLOW_LOCAL_NETWORKS=true`。對它的請求不會跟隨重新導向。
+- 本機模型服務（Ollama、Lemonade）必須填寫自己的端點，不能使用範本預設的 `localhost`。
+- 自架的媒體、搜尋和文件服務（VoxCPM2、FunASR、Lemonade 語音與圖像、ComfyUI、SearXNG、自架 MinerU）執行在伺服器端自己的網路中，只能由部署設定。
+- 維運人員用舊版 `<CAP>_<VENDOR>_ENABLED=false` 變數關閉的供應商不會提供。
+- 工作區不能宣告 `openmaic.yml` 已宣告過的供應商 ID。
+
+如果希望使用者存取內網服務，請在 `openmaic.yml` 中宣告這些供應商。
+
+### API 呼叫端與已棄用的請求欄位
+
+生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
+
+舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽在 `openmaic.yml` 和工作區中都沒有指派時才會生效；插槽一旦有指派，以設定為準；設為 `null` 的插槽無論請求寫了什麼都會拒絕。在 `policy.allowWorkspaceProviders: false` 下，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
+
+### 從舊設定遷移
+
+沒有 `openmaic.yml` 時，伺服器端會在啟動時轉換舊設定，記錄一則棄用提示，並為每個無法轉換的項目各記錄一則提示：
+
+| 舊設定 | 轉換結果 |
+| --- | --- |
+| 供應商變數（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` 等）和 `server-providers.yml` | 部署供應商（在模型設定中唯讀）。供應商 ID 就是範本 ID，與舊的 provider ID 相同，只有網路搜尋的 MiniMax（`minimax-search`）、網路搜尋的豆包（`doubao-search`）和 Lemonade 圖像（`lemonade-image`）例外 |
+| `<PREFIX>_MODELS` | 供應商的 `models` |
+| `DEFAULT_MODEL` | `llm` 的指派，作為工作區可以覆寫的預設值（不鎖定）。`agent` 插槽和以前一樣維持關閉 |
+| `MODEL_FALLBACK` | `DEFAULT_MODEL` 的備援模型。沒有 `DEFAULT_MODEL` 時會被捨棄並給出提示 |
+| 第一個設定的 TTS、ASR、圖像、影片和文件供應商，以及依舊優先順序選出的網路搜尋供應商 | 該能力的預設指派（圖像供應商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
+| `MODEL_ROUTES` | **不轉換。** 服務拒絕啟動（見下文） |
+| `<CAP>_<VENDOR>_ENABLED=false` | 仍然有效：無論誰指派，該供應商都維持關閉 |
+
+存在 `openmaic.yml` 時，供應商變數、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK` 和 `MODEL_ROUTES` 都不再參與模型解析，並會給出提示。`<CAP>_<VENDOR>_ENABLED=false` 仍然有效；要關閉某項能力，請改為把它的插槽設為 `null`。
+
+**環境變數。** 遷移前：
 
 ```bash
 OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=                # 選填的 base URL 覆寫值
-OPENAI_MODELS=                  # 選填的模型白名單（以逗號分隔）
+ANTHROPIC_API_KEY=sk-ant-...
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+TTS_MINIMAX_API_KEY=...
+TAVILY_API_KEY=tvly-...
 ```
 
-支援的 provider 字首：
+遷移後（key 仍留在環境變數中）：
 
-| 字首               | 供應商                               |
-| ------------------ | ------------------------------------ |
-| `OPENAI_`          | OpenAI                               |
-| `AZURE_OPENAI_`    | Azure OpenAI                         |
-| `ANTHROPIC_`       | Anthropic                            |
-| `GOOGLE_`          | Google Gemini                        |
-| `DEEPSEEK_`        | DeepSeek                             |
-| `QWEN_`            | Alibaba Qwen                         |
-| `KIMI_`            | Moonshot Kimi                        |
-| `MINIMAX_`         | MiniMax（預設用 Anthropic 相容端點） |
-| `GLM_`             | Zhipu GLM                            |
-| `SILICONFLOW_`     | SiliconFlow                          |
-| `DOUBAO_`          | Doubao（ByteDance）                  |
-| `OPENROUTER_`      | OpenRouter                           |
-| `GROK_`            | xAI Grok                             |
-| `TENCENT_`         | Tencent Hunyuan                      |
-| `TENCENT_HUNYUAN_` | Tencent Hunyuan（別名）              |
-| `XIAOMI_`          | Xiaomi MiMo                          |
-| `MIMO_`            | Xiaomi MiMo（別名）                  |
-| `OLLAMA_`          | Ollama（本機）                       |
-| `LEMONADE_`        | Lemonade（本機）                     |
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
+  minimax-tts:
+    preset: minimax-tts
+    apiKey: ${TTS_MINIMAX_API_KEY}
+  tavily:
+    preset: tavily
+    apiKey: ${TAVILY_API_KEY}
 
-Azure OpenAI 使用 deployment name 作為模型 ID：
+slots:
+  llm:
+    model: openai:gpt-5.5
+    fallback: anthropic:claude-sonnet-4-6
+  tts: minimax-tts
+  webSearch: tavily
+```
+
+之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。與轉換得到的 `DEFAULT_MODEL` 不同，這裡寫出的 `llm` 是鎖定的；如果希望工作區自行選擇，就不要把它寫進 `slots`。另外，與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持 Pro 智慧體關閉，請寫 `agent: null`。
+
+**server-providers.yml。** 遷移前：
+
+```yaml title="server-providers.yml"
+providers:
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+pdf:
+  alidocmind:
+    accessKeyId: ...
+    accessKeySecret: ...
+web-search:
+  searxng:
+    baseUrl: http://searxng:8080
+```
+
+遷移後：
+
+```yaml title="openmaic.yml"
+providers:
+  azure:
+    preset: azure
+    apiKey: ${AZURE_OPENAI_API_KEY}
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models: [my-deployment]
+  alidocmind:
+    preset: alidocmind
+    credentials:
+      accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
+      accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  searxng:
+    preset: searxng
+    baseUrl: http://searxng:8080
+
+slots:
+  llm: azure:my-deployment
+  document: alidocmind
+  webSearch: searxng
+```
+
+`server-providers.yml` 的每個區段都對應使用相應範本的供應商（`providers` → 對話範本，`tts`、`asr`、`pdf` → 文件，`image`、`video`、`web-search`），`accessKeyId`/`accessKeySecret` 移到 `credentials` 之下。
+
+**MODEL_ROUTES。** 設定了 `MODEL_ROUTES` 但沒有 `openmaic.yml` 的服務不會啟動：
+
+```text
+MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
+```
+
+依階段的路由與插槽並非一一對應，因此不會自動轉換。請把每條路由改寫成該階段所屬的插槽：
+
+| `MODEL_ROUTES` 階段 | 插槽 |
+| --- | --- |
+| `web-search-query-rewrite` | `course.research` |
+| `scene-outlines-stream` | `course.outline` |
+| `agent-profiles` | `course.agents` |
+| `scene-content` | `course.content` |
+| `scene-content:slide`、`:quiz`、`:interactive`、`:pbl` | `course.content.slide`、`.quiz`、`.interactive`、`.pbl` |
+| `scene-actions` | `course.actions` |
+| `chat-adapter`、`quiz-grade`、`pbl-v2-runtime` 及其 `:instructor`、`:open-task`、`:evaluate`、`:simulator` 變體 | `classroom` |
+| `generate-classroom` | `llm` |
+| `maic-agent-driver` | `agent` |
+| `conversation-title` | `agent.title` |
+
+多個階段共用一個插槽時，為該插槽指定它們應共同使用的那個模型。路由中的 `thinking` 移到插槽的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 插槽。遷移前：
 
 ```bash
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
-AZURE_OPENAI_MODELS=your-deployment-name
+DEFAULT_MODEL=openai:gpt-5.5
+MODEL_ROUTES='{"scene-outlines-stream":"anthropic:claude-sonnet-4-6","scene-content:slide":{"model":"openai:gpt-5.4","thinking":{"effort":"low"}},"maic-agent-driver":{"model":"openai:gpt-5.5","api":"openai-completions"}}'
 ```
 
-如需連線其他 OpenAI 相容的 LLM 服務，請在 **設定 → 模型供應商** 中新增自訂 provider，並選擇對應的協議類型。
+遷移後：
 
-## 本機模型（Ollama 和 Lemonade）
+```yaml title="openmaic.yml"
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+  anthropic:
+    preset: anthropic
+    apiKey: ${ANTHROPIC_API_KEY}
 
-Ollama 和 Lemonade 不需要 API key；本機服務的 base URL 應寫在伺服器端設定中，以通過 SSRF 驗證：
-
-```bash
-OLLAMA_BASE_URL=http://localhost:11434/v1
-# LEMONADE_BASE_URL=http://localhost:13305/v1
+slots:
+  llm: openai:gpt-5.5
+  course.outline: anthropic:claude-sonnet-4-6
+  course.content.slide:
+    model: openai:gpt-5.4
+    thinking: { effort: low }
+  agent:
+    model: openai:gpt-5.5
+    api: openai-completions
 ```
 
-如需限制可用模型，可使用 `OLLAMA_MODELS` 或 `LEMONADE_MODELS` 指定模型白名單。
+然後刪除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
-## TTS 供應商
+**Docker。** 把檔案掛載到應用程式旁邊，key 仍放在 `.env.local` 中：
 
-伺服器端 TTS 供應商使用 `TTS_<PROVIDER>_API_KEY`，並可選擇設定 `TTS_<PROVIDER>_BASE_URL`。
-
-```bash
-# Doubao TTS（Volcengine Seed-TTS，原生 MP3）
-TTS_DOUBAO_API_KEY=appId:accessKey
-TTS_DOUBAO_BASE_URL=       # 選填覆寫值
-
-# Qwen TTS
-TTS_QWEN_API_KEY=
-TTS_QWEN_BASE_URL=         # 選填覆寫值
-
-# 任何 OpenAI 相容的 TTS 端點
-TTS_OPENAI_API_KEY=
-TTS_OPENAI_BASE_URL=
-
-# VoxCPM2（自託管 TTS，支援聲音複製，詳見 VoxCPM2 獨立頁面）
-TTS_VOXCPM_BASE_URL=http://localhost:8000
+```yaml
+services:
+  openmaic:
+    volumes:
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
-
-支援的 TTS 字首包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本機 Lemonade TTS 和 VoxCPM2 不需要 API key。瀏覽器原生 TTS 不需要伺服器端設定。
-
-管理員可以使用 `TTS_<PROVIDER>_ENABLED=false` 在伺服器端強制關閉某個 TTS 供應商。VoxCPM2（自託管 TTS + 聲音複製）請見獨立的 [VoxCPM2](./voxcpm.mdx) 章節。
-
-也可以在設定中新增自訂 OpenAI 相容 TTS provider，填寫 Base URL、模型和音色。這類自訂 provider 儲存在用戶端設定中，不透過任意 `TTS_*` 環境變數或 YAML provider ID 註冊。
-
-## ASR（語音轉文字）
-
-```bash
-# OpenAI Whisper
-ASR_OPENAI_API_KEY=
-ASR_OPENAI_BASE_URL=       # 選填覆寫值
-
-# Qwen ASR
-ASR_QWEN_API_KEY=
-ASR_QWEN_BASE_URL=         # 選填覆寫值
-
-# Azure ASR
-ASR_AZURE_API_KEY=
-ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
-
-# FunASR（本機，不需要 key）
-ASR_FUNASR_BASE_URL=http://localhost:8000/v1
-
-# Lemonade ASR（本機，不需要 key）
-ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-使用 `funasr-server --device cuda` 啟動 OpenAI 相容服務。它在 `/v1/audio/transcriptions` 接收 WAV，並可在模型選擇器中使用 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano。
-
-瀏覽器原生 ASR 不需要伺服器端設定。
-
-也可以在設定中新增自訂 OpenAI 相容 ASR provider，填寫 Base URL、模型和支援語言；此設定會儲存在用戶端設定中。
-
-## 圖像生成供應商
-
-圖像生成供應商使用 `IMAGE_<PROVIDER>_API_KEY`，可選 `IMAGE_<PROVIDER>_BASE_URL`。支援的字首包括：
-
-`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
-
-Lemonade 是本機服務，不需要 key：
-
-```bash
-IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
-```
-
-ComfyUI Image 不需要 API key，預設連線至 `http://localhost:8188`。在設定中填寫 ComfyUI Base URL，並將以 API 格式匯出的 workflow JSON 放入 OpenMAIC 的 `public/` 目錄；檔名使用 `comfyui-*.json` 或包含 `workflow`，設定頁會自動偵測這些檔案，並將其列為可選的 workflow。使用 Docker 部署時，還需要在建置映像前加入 workflow，或將單一 workflow 檔案掛載至容器的 `/app/public/` 目錄。由於 `comfyui-image` 不是伺服器端託管 provider，正式環境連線至主機上的 ComfyUI 時還需要設定 `ALLOW_LOCAL_NETWORKS=true`。
-
-## 影片生成供應商
-
-影片生成供應商使用 `VIDEO_<PROVIDER>_API_KEY`，可選 `VIDEO_<PROVIDER>_BASE_URL`。支援的字首包括：
-
-`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
-
-## 文件和媒體解析
-
-課程材料的實際格式取決於所選解析器。目前支援文字、PDF、Office 文件、圖片以及部分音訊與影片格式；不同 provider 支援的格式和功能各不相同。
-
-```bash
-# MinerU 自託管
-PDF_MINERU_BASE_URL=http://localhost:8888
-
-# MinerU 自託管的可選後端
-PDF_MINERU_BACKEND=pipeline
-
-# MinerU Cloud
-PDF_MINERU_CLOUD_API_KEY=
-PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
-
-# AliDocMind（使用 Alibaba Cloud AccessKey，而不是獨立的 API key）
-ALIDOCMIND_ACCESS_KEY_ID=
-ALIDOCMIND_ACCESS_KEY_SECRET=
-ALIDOCMIND_BASE_URL=       # 選填覆寫值
-```
-
-`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇相容的 MinerU 或 AliDocMind provider。
-
-AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。目前音訊與影片材料僅支援透過 AliDocMind 解析：影片格式為 MP4、MOV、AVI、MKV、WMV，音訊格式為 MP3、WAV、AAC；不支援 M4A。
-
-## 聯網搜尋
-
-設定 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
-
-```bash
-TAVILY_API_KEY=
-TAVILY_BASE_URL=           # 選填覆寫值
-
-EXA_API_KEY=
-EXA_BASE_URL=https://api.exa.ai  # 選填覆寫值
-
-BOCHA_API_KEY=
-BOCHA_BASE_URL=            # 選填覆寫值
-
-BAIDU_API_KEY=
-BAIDU_BASE_URL=https://qianfan.baidubce.com  # 選填覆寫值
-
-# 自託管 SearXNG，不需要 API key
-SEARXNG_BASE_URL=
-
-WEB_SEARCH_MINIMAX_API_KEY=
-WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 選填覆寫值
-```
-
-Brave 和 SearXNG 不需要 API key；前端可以在每次生成時選擇是否啟用搜尋。Grok 的聯網搜尋透過 Grok LLM 的搜尋工具提供，不是獨立的聯網搜尋 provider。
 
 ## ACCESS_CODE —— 全站存取密碼
 
@@ -197,16 +406,6 @@ ACCESS_CODE=your-secret-code
 ```
 
 請使用足夠長的隨機值（至少 16 個字元），因為該密碼是保護部署的唯一金鑰。驗證通過後會在 HTTP-only cookie 中儲存一個簽名權杖，有效期 7 天，由伺服器端強制檢查，過期後需要重新驗證。只有在受信任的反向代理後設定 `TRUST_PROXY_HEADERS=true`（由代理覆寫 `x-forwarded-for` / `x-real-ip`）時才會限制驗證速率：依用戶端限制（每個用戶端 60 秒內 10 次），驗證成功會清除該用戶端的計數；沒有可信代理時應用程式無法將請求歸因到特定用戶端，因此完全不限流，保護取決於密碼的長度與隨機性。留空即可關閉此功能。
-
-## 預設模型和模型路由
-
-伺服器端 API 沒有收到用戶端模型時，需要透過 `DEFAULT_MODEL` 指定預設模型。模型寫法是 `provider:model-id`，例如：
-
-```bash
-DEFAULT_MODEL=openai:gpt-5.5
-```
-
-可以使用 `MODEL_ROUTES` 為不同生成階段指定模型；未設定的階段仍依用戶端模型和 `DEFAULT_MODEL` 解析。它是一個 JSON 物件，鍵為生成階段，值可以是模型字串，也可以是包含 `model` 和 `thinking` 的物件。完整的階段清單和範例請見儲存庫中的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。
 
 ## 功能開關
 
@@ -265,7 +464,217 @@ LOG_FORMAT=pretty
 LLM_THINKING_DISABLED=false
 ```
 
-## 使用 YAML 設定檔
+## 舊版供應商環境變數
+
+這些變數和 `server-providers.yml` 是早期版本的設定方式。在沒有 `openmaic.yml` 時它們仍然有效（見[從舊設定遷移](#從舊設定遷移)），但已棄用，將在模型設定發布兩個次要版本後移除。使用 `openmaic.yml` 時，它們只作為 `${VAR}` 引用的來源。`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 請見遷移一節；`MODEL_ROUTES` 已不再讀取。
+
+### LLM 供應商
+
+雲端供應商通常使用三個環境變數：API key、base URL 和 model 清單。API key 通常為必填，base URL 和 model 清單則為選填；Azure OpenAI 需要設定資源 endpoint，Ollama 和 Lemonade 不需要 API key。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 選填的 base URL 覆寫值
+OPENAI_MODELS=                  # 選填的模型白名單（以逗號分隔）
+```
+
+支援的 provider 字首：
+
+| 字首               | 供應商                               |
+| ------------------ | ------------------------------------ |
+| `OPENAI_`          | OpenAI                               |
+| `AZURE_OPENAI_`    | Azure OpenAI                         |
+| `ANTHROPIC_`       | Anthropic                            |
+| `GOOGLE_`          | Google Gemini                        |
+| `DEEPSEEK_`        | DeepSeek                             |
+| `QWEN_`            | Alibaba Qwen                         |
+| `KIMI_`            | Moonshot Kimi                        |
+| `MINIMAX_`         | MiniMax（預設用 Anthropic 相容端點） |
+| `GLM_`             | Zhipu GLM                            |
+| `SILICONFLOW_`     | SiliconFlow                          |
+| `DOUBAO_`          | Doubao（ByteDance）                  |
+| `OPENROUTER_`      | OpenRouter                           |
+| `GROK_`            | xAI Grok                             |
+| `TENCENT_`         | Tencent Hunyuan                      |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan（別名）              |
+| `XIAOMI_`          | Xiaomi MiMo                          |
+| `MIMO_`            | Xiaomi MiMo（別名）                  |
+| `OLLAMA_`          | Ollama（本機）                       |
+| `LEMONADE_`        | Lemonade（本機）                     |
+
+Azure OpenAI 使用 deployment name 作為模型 ID：
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=your-deployment-name
+```
+
+如需連接其他 OpenAI 相容的 LLM 服務，請在 `openmaic.yml` 中宣告一個帶 `baseUrl` 和 `models` 的 `openai-compatible` 供應商，或在 **設定 → 模型服務 → 語言模型** 中用 **新增供應商** 新增。
+
+### 本機模型（Ollama 和 Lemonade）
+
+Ollama 和 Lemonade 不需要 API key；本機服務的 base URL 應寫在伺服器端設定中，以通過 SSRF 驗證：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+# LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+如需限制可用模型，可使用 `OLLAMA_MODELS` 或 `LEMONADE_MODELS` 指定模型白名單。
+
+### TTS 供應商
+
+伺服器端 TTS 供應商使用 `TTS_<PROVIDER>_API_KEY`，並可選擇設定 `TTS_<PROVIDER>_BASE_URL`。
+
+```bash
+# Doubao TTS（Volcengine Seed-TTS，原生 MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 選填覆寫值
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 選填覆寫值
+
+# 任何 OpenAI 相容的 TTS 端點
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（自託管 TTS，支援聲音複製，詳見 VoxCPM2 獨立頁面）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+支援的 TTS 字首包括 `TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_ELEVENLABS_`、`TTS_GOOGLE_`、`TTS_VOXCPM_` 和 `TTS_LEMONADE_`。本機 Lemonade TTS 和 VoxCPM2 不需要 API key。瀏覽器原生 TTS 不需要伺服器端設定。
+
+管理員可以使用 `TTS_<PROVIDER>_ENABLED=false` 在伺服器端強制關閉某個 TTS 供應商。VoxCPM2（自託管 TTS + 聲音複製）請見獨立的 [VoxCPM2](./voxcpm.mdx) 章節。
+
+如需使用其他 OpenAI 相容的 TTS 端點，請在 `openmaic.yml` 中宣告一個帶該 `baseUrl` 的 `openai-tts` 供應商，並把 `tts` 插槽指派給它。工作區不能在模型設定中新增自訂 TTS 端點。
+
+### ASR（語音轉文字）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 選填覆寫值
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 選填覆寫值
+
+# Azure ASR
+ASR_AZURE_API_KEY=
+ASR_AZURE_BASE_URL=https://{region}.api.cognitive.microsoft.com
+
+# FunASR（本機，不需要 key）
+ASR_FUNASR_BASE_URL=http://localhost:8000/v1
+
+# Lemonade ASR（本機，不需要 key）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+使用 `funasr-server --device cuda` 啟動 OpenAI 相容服務。它在 `/v1/audio/transcriptions` 接收 WAV，並可在模型選擇器中使用 SenseVoiceSmall、Paraformer 和 Fun-ASR-Nano。
+
+瀏覽器原生 ASR 不需要伺服器端設定。
+
+如需使用其他 OpenAI 相容的 ASR 端點，請在 `openmaic.yml` 中以 `openai-whisper` 範本和它的 `baseUrl` 宣告該服務，並把 `asr` 插槽指派給它。工作區不能在模型設定中新增自訂 ASR 端點：
+
+```yaml title="openmaic.yml"
+providers:
+  my-asr:
+    preset: openai-whisper
+    apiKey: ${MY_ASR_API_KEY}
+    baseUrl: https://asr.example.com/v1
+
+slots:
+  asr: my-asr:whisper-1
+```
+
+### 圖像生成供應商
+
+圖像生成供應商使用 `IMAGE_<PROVIDER>_API_KEY`，可選 `IMAGE_<PROVIDER>_BASE_URL`。支援的字首包括：
+
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
+
+Lemonade 是本機服務，不需要 key：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+ComfyUI Image 不需要 API key。它執行在你自己的網路中，因此由部署設定：在 `openmaic.yml` 中用 ComfyUI 服務的位址宣告它，並把 `image` 插槽指派給它。
+
+```yaml title="openmaic.yml"
+providers:
+  comfyui:
+    preset: comfyui-image
+    baseUrl: http://host.docker.internal:8188
+
+slots:
+  image: comfyui
+```
+
+把以 API 格式匯出的工作流程 JSON 放到 OpenMAIC 的 `public/` 目錄中，檔名需符合 `comfyui-*.json` 或包含 `workflow`；OpenMAIC 會自動偵測這些檔案並作為工作流程提供。使用 Docker 時，請在建置映像檔前加入工作流程，或把單一工作流程檔案掛載到容器內的 `/app/public/`。由於該供應商由部署宣告，執行在主機或內網中的 ComfyUI 不需要 `ALLOW_LOCAL_NETWORKS`。
+
+### 影片生成供應商
+
+影片生成供應商使用 `VIDEO_<PROVIDER>_API_KEY`，可選 `VIDEO_<PROVIDER>_BASE_URL`。支援的字首包括：
+
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
+
+### 文件和媒體解析
+
+課程材料的實際格式取決於所選解析器。目前支援文字、PDF、Office 文件、圖片以及部分音訊與影片格式；不同 provider 支援的格式和功能各不相同。
+
+```bash
+# MinerU 自託管
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU 自託管的可選後端
+PDF_MINERU_BACKEND=pipeline
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+
+# AliDocMind（使用 Alibaba Cloud AccessKey，而不是獨立的 API key）
+ALIDOCMIND_ACCESS_KEY_ID=
+ALIDOCMIND_ACCESS_KEY_SECRET=
+ALIDOCMIND_BASE_URL=       # 選填覆寫值
+```
+
+`unpdf` 內建於 OpenMAIC，可用於基礎 PDF 解析。Office 文件、圖片和需要 OCR、表格、公式或版面分析的材料，應選擇相容的 MinerU 或 AliDocMind provider。
+
+AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPEG、BMP、GIF。目前音訊與影片材料僅支援透過 AliDocMind 解析：影片格式為 MP4、MOV、AVI、MKV、WMV，音訊格式為 MP3、WAV、AAC；不支援 M4A。
+
+### 聯網搜尋
+
+設定 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 選填覆寫值
+
+EXA_API_KEY=
+EXA_BASE_URL=https://api.exa.ai  # 選填覆寫值
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 選填覆寫值
+
+BAIDU_API_KEY=
+BAIDU_BASE_URL=https://qianfan.baidubce.com  # 選填覆寫值
+
+# 自託管 SearXNG，不需要 API key
+SEARXNG_BASE_URL=
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 選填覆寫值
+```
+
+Brave 和 SearXNG 不需要 API key。網路搜尋沒有逐次生成的開關：只要工作區的 `webSearch` 插槽能解析就會執行；關閉它（在 `openmaic.yml` 中寫 `webSearch: null`，或在 **設定 → 課程模型設定** 中關閉搜尋開關）會影響該工作區之後的生成。Grok 的聯網搜尋透過 Grok LLM 的搜尋工具提供，不是獨立的聯網搜尋 provider。
+
+### server-providers.yml
+
+已由 `openmaic.yml` 取代。兩者同時存在時，只有 `openmaic.yml` 用於設定模型。
 
 除了環境變數，也可以將程式碼中已註冊 provider 的設定放在專案根目錄下的 `server-providers.yml` 檔案中。伺服器啟動時會載入此檔案，其結構與環境變數分類相對應：
 

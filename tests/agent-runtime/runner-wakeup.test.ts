@@ -40,7 +40,19 @@ const mocks = vi.hoisted(() => {
           }
         : null,
     ),
-    hasSessionRunHistory: vi.fn(async () => false),
+    // The event log as the runner reads it: the user messages listUserMessages
+    // models, as `user_message` events, and no earlier run.
+    readEventsAfter: vi.fn(async (sessionId: string, afterSeq: number) =>
+      afterSeq > 0
+        ? []
+        : (await store.listUserMessages(sessionId)).map((message) => ({
+            id: message.seq,
+            ts: message.ts,
+            attempt: 1,
+            type: 'user_message',
+            data: { text: message.text, delivery: message.delivery, materials: message.materials },
+          })),
+    ),
     heartbeat: vi.fn(async () => true),
     markUserMessageDelivered: vi.fn(async (_id, _worker, _attempt, messageSeq: number) => {
       deliveredUserMessageSeq = Math.max(deliveredUserMessageSeq, messageSeq);
@@ -49,7 +61,9 @@ const mocks = vi.hoisted(() => {
     getCancelRequestedAt: vi.fn(async () => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(
-      async (): Promise<
+      async (
+        _sessionId?: string,
+      ): Promise<
         Array<{ seq: number; ts: number; text: string; delivery: string; materials: unknown[] }>
       > => [],
     ),

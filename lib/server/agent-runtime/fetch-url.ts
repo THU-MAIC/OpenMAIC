@@ -41,10 +41,11 @@ import {
   type DocumentExtractorProvider,
 } from '@/lib/document';
 import {
-  getServerPDFProviders,
-  resolvePDFApiKey,
-  resolvePDFBaseUrl,
-} from '@/lib/server/provider-config';
+  extractorConfigFor,
+  resolveExtractionServices,
+  type ExtractionServices,
+} from '@/lib/server/material-extraction/services';
+import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
 import { createPinnedAgent } from '@/lib/server/pinned-dispatcher';
 import type { AgentSessionMaterial } from '@openmaic/storage';
@@ -104,6 +105,8 @@ export interface ExtractedWebPage {
 type FetchImplementation = (input: string | URL, init?: UndiciRequestInit) => Promise<Response>;
 
 export interface FetchUrlOptions {
+  /** The document service a fetched PDF may use; the deployment's by default. */
+  extractionServices?: ExtractionServices;
   fetchImpl?: FetchImplementation;
   dispatcher?: Dispatcher;
   maxBytes?: number;
@@ -276,16 +279,12 @@ export function extractHtmlToMarkdown(
  * fallback. Product-specific gateways and accounting wrappers are omitted;
  * `provider.extract` is called directly.
  */
-function pdfExtractionCandidates(): Array<{
+function pdfExtractionCandidates(services: ExtractionServices): Array<{
   provider: DocumentExtractorProvider;
   config: DocumentExtractorConfig;
 }> {
-  const configured = getServerPDFProviders();
-  const ids: string[] = [];
-  if (configured.mineru) ids.push('mineru');
-  if (configured['mineru-cloud']) ids.push('mineru-cloud');
-  if (configured.alidocmind) ids.push('alidocmind');
-  ids.push('unpdf');
+  // The document slot's service first, then the local unpdf.
+  const ids = [...(services.document ? [services.document.providerId] : []), 'unpdf'];
   return ids
     .map((id) => {
       const provider = getDocumentExtractorProvider(id);
@@ -293,11 +292,7 @@ function pdfExtractionCandidates(): Array<{
       return {
         provider,
         config: {
-          providerId: id,
-          apiKey: resolvePDFApiKey(id) || undefined,
-          baseUrl: resolvePDFBaseUrl(id),
-          allowEnvFallback: true,
-          managed: true,
+          ...extractorConfigFor(id, services),
           // fetch_url persists and returns text only. Avoid materializing
           // attacker-controlled PDF rasters in the application process.
           textOnly: true,
@@ -310,9 +305,10 @@ function pdfExtractionCandidates(): Array<{
 
 async function extractPdfToMarkdown(
   bytes: Buffer,
+  services: ExtractionServices,
 ): Promise<{ title: string; markdown: string; truncated: boolean }> {
   const failures: string[] = [];
-  for (const { provider, config } of pdfExtractionCandidates()) {
+  for (const { provider, config } of pdfExtractionCandidates(services)) {
     try {
       const artifact = await provider.extract({
         buffer: bytes,
@@ -488,7 +484,10 @@ export async function fetchAndExtractUrl(
         extracted = extractHtmlToMarkdown(downloaded.bytes.toString('utf8'), current.href);
       } else if (contentType === 'application/pdf') {
         const prepared = await truncatePdfPages(downloaded.bytes);
-        extracted = await extractPdfToMarkdown(prepared.bytes);
+        extracted = await extractPdfToMarkdown(
+          prepared.bytes,
+          options.extractionServices ?? (await resolveExtractionServices()),
+        );
         downloaded.truncated ||= prepared.truncated || extracted.truncated === true;
       } else {
         extracted = { title: '', markdown: cleanMarkdown(downloaded.bytes.toString('utf8')) };
@@ -558,6 +557,8 @@ const FETCH_URL_SCHEMA = Type.Object({
 
 export interface FetchUrlToolDependencies {
   sessionId: string;
+  /** The run's owner, whose document slot a fetched PDF uses. */
+  ownerId?: string;
   /** Test seam; defaults to the session-urls trust gate. */
   isUrlAllowed?: (sessionId: string, url: string) => Promise<boolean>;
   /** Test seam; defaults to the pinned-DNS strict fetch. */
@@ -603,6 +604,9 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
       }
       throwIfAborted(signal);
       const page = await fetchUrl(params.url, {
+        extractionServices: await resolveExtractionServices(
+          deps.ownerId ? await backgroundWorkspaceId(deps.ownerId) : undefined,
+        ),
         signal,
         isUrlAllowed: (url) => urlAllowed(deps.sessionId, url),
       });

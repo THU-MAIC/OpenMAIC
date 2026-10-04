@@ -1433,6 +1433,117 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     });
   });
 
+  describe('releasing an allocation no document claimed', () => {
+    const entryExists = async (id: string): Promise<boolean> => {
+      const rows = await pool.query('SELECT 1 FROM asset_entries WHERE id = $1', [id]);
+      return rows.rows.length === 1;
+    };
+
+    const blobStamp = async (id: string): Promise<Date | null | undefined> => {
+      const rows = await pool.query<{ unreferenced_at: Date | null }>(
+        `SELECT blobs.unreferenced_at
+           FROM asset_entries AS entries
+           JOIN asset_blobs AS blobs ON blobs.content_hash = entries.content_hash
+          WHERE entries.id = $1`,
+        [id],
+      );
+      return rows.rows[0]?.unreferenced_at;
+    };
+    const hashOf = async (id: string): Promise<string> => {
+      const rows = await pool.query<{ content_hash: string }>(
+        'SELECT content_hash FROM asset_entries WHERE id = $1',
+        [id],
+      );
+      return rows.rows[0]!.content_hash;
+    };
+    const blobStampByHash = async (hash: string): Promise<Date | null | undefined> => {
+      const rows = await pool.query<{ unreferenced_at: Date | null }>(
+        'SELECT unreferenced_at FROM asset_blobs WHERE content_hash = $1',
+        [hash],
+      );
+      return rows.rows[0]?.unreferenced_at;
+    };
+
+    test('deletes a pending, unreferenced entry and stamps its blob like remove()', async () => {
+      const released = await assets.put(principal, new Blob(['never claimed']));
+      const removed = await assets.put(principal, new Blob(['removed instead']));
+      const releasedHash = await hashOf(released);
+      const removedHash = await hashOf(removed);
+      expect(await blobStamp(released)).toBeNull();
+
+      await expect(assets.releasePending(principal, released)).resolves.toBe(true);
+      await assets.remove(principal, removed);
+
+      expect(await entryExists(released)).toBe(false);
+      // Both paths leave the bytes stamped for the blob pass, and nothing else.
+      expect(await blobStampByHash(releasedHash)).toBeInstanceOf(Date);
+      expect(await blobStampByHash(removedHash)).toBeInstanceOf(Date);
+      await expect(assets.releasePending(principal, released)).resolves.toBe(false);
+    });
+
+    test('does not stamp a blob another entry still names', async () => {
+      const bytes = 'shared by two entries';
+      const released = await assets.put(principal, new Blob([bytes]));
+      const kept = await assets.put(principal, new Blob([bytes]));
+
+      await expect(assets.releasePending(principal, released)).resolves.toBe(true);
+
+      expect(await blobStamp(kept)).toBeNull();
+    });
+
+    test('keeps an entry whose reference a reference-only writer commits meanwhile', async () => {
+      // The backfill's shape: insert a reference row (KEY SHARE on the entry),
+      // never update the entry. A release that folds its reference check into
+      // the locking or deleting statement waits on that lock, keeps its stale
+      // "no reference" answer, and cascades the committed row away.
+      const id = await assets.put(principal, new Blob(['backfilled meanwhile']));
+      const backfill = await pool.connect();
+      try {
+        await backfill.query('BEGIN');
+        await backfill.query(
+          `INSERT INTO document_asset_refs (stage_id, scope, scene_id, asset_id)
+           VALUES ('backfill-stage', 'scene', 'backfill-scene', $1)`,
+          [id],
+        );
+        const releasing = assets.releasePending(principal, id);
+        await waitForLockWaiter(pool);
+        await backfill.query('COMMIT');
+
+        await expect(releasing).resolves.toBe(false);
+      } finally {
+        backfill.release();
+      }
+
+      expect(await entryExists(id)).toBe(true);
+      const refs = await pool.query('SELECT 1 FROM document_asset_refs WHERE asset_id = $1', [id]);
+      expect(refs.rows).toHaveLength(1);
+    });
+
+    test('leaves an entry a document committed and references', async () => {
+      const id = await assets.put(principal, new Blob(['claimed by a course']));
+      await documents.saveDocument(stageWithImage('release-stage', 'release-scene', id));
+
+      await expect(assets.releasePending(principal, id)).resolves.toBe(false);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('leaves a committed entry whose references were withdrawn', async () => {
+      const id = await assets.put(principal, new Blob(['committed then withdrawn']));
+      await documents.saveDocument(stageWithImage('released-stage', 'released-scene', id));
+      await documents.withdrawAssetReferences('released-stage');
+
+      await expect(assets.releasePending(principal, id)).resolves.toBe(false);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('leaves another principal s pending entry', async () => {
+      const id = await assets.put(principal, new Blob(['someone else s']));
+
+      await expect(assets.releasePending({ key: 'someone-else' }, id)).resolves.toBe(false);
+      expect(await entryExists(id)).toBe(true);
+    });
+  });
+
   describe('withdrawing references from a tombstoned document', () => {
     const refsOf = async (stageId: string): Promise<string[]> => {
       const rows = await pool.query<{ asset_id: string }>(

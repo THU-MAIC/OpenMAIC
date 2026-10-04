@@ -1,17 +1,17 @@
 import { test, expect } from '../fixtures/base';
 import { HomePage } from '../pages/home.page';
-import { createSettingsStorage } from '../fixtures/test-data/settings';
 
 /**
  * #580 — "usable provider ⇒ a concrete model is always selected".
  *
- * State A: no usable provider (keyless ollama/lemonade no longer count until
- *          the user sets an explicit baseUrl) → generate button disabled, the
- *          toolbar shows the single "Set up model" affordance. NO
+ * The course model is the workspace's `llm` slot, read from the server
+ * (`/api/model-config`); the browser keeps no provider state.
+ *
+ * State A: the workspace has no language model → generate button disabled,
+ *          the toolbar shows the single "Set up model" affordance. NO
  *          modelNotConfigured toast, NO forced settings dialog.
- * State B: a server-configured provider → a concrete model is auto-resolved,
- *          the toolbar shows provider / model (never "Select Model"), and
- *          generation is enabled.
+ * State B: the llm slot names a model → the toolbar shows provider / model
+ *          (never "Select Model"), and generation is enabled.
  *
  * The Playwright Chromium locale is en-US, so UI strings are English
  * ("Set up model" = settings.configureProvider, "Enter Classroom").
@@ -20,50 +20,17 @@ import { createSettingsStorage } from '../fixtures/test-data/settings';
 const SCREENSHOT_DIR = 'e2e/screenshots';
 const SETUP_CTA = 'Set up model';
 
-// fetchServerProviders reads data.tts/asr/pdf/image/video/webSearch via
-// Object.keys(); omitting them throws and is silently swallowed by its
-// try/catch, so the mock must return the full shape (like the unit helper).
-function serverProvidersBody(providers: Record<string, { models?: string[] }>) {
-  return JSON.stringify({
-    providers,
-    tts: {},
-    asr: {},
-    pdf: {},
-    image: {},
-    video: {},
-    webSearch: {},
-  });
-}
-
-// Run serially with one worker: a single shared dev server + async
-// server-provider reconcile makes parallel runs flaky.
 test.describe.configure({ mode: 'serial' });
 
 test.describe('#580 model-selection invariant', () => {
-  test('State A: no usable provider → disabled generate + single Set-up affordance, no toast', async ({
+  test('State A: no language model → disabled generate + single Set-up affordance, no toast', async ({
     page,
+    mockApi,
   }) => {
-    await page.route('**/api/server-providers', (route) =>
-      route.fulfill({
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: serverProvidersBody({}),
-      }),
-    );
-    await page.addInitScript(
-      (settings) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-      },
-      createSettingsStorage({
-        modelId: '',
-        providerId: 'openai',
-        providersConfig: { openai: { apiKey: '' } },
-        autoConfigApplied: true,
-      }),
-    );
+    await mockApi.mockModelSettings({ providers: {} });
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/model-config'), home.goto()]);
     await expect(home.textarea).toBeVisible();
 
     // Single affordance is the toolbar "Set up model" CTA.
@@ -71,8 +38,8 @@ test.describe('#580 model-selection invariant', () => {
     // No model pill (its aria-label would contain " / ").
     await expect(page.locator('button[aria-label*=" / "]')).toHaveCount(0);
 
-    // Even with a requirement typed, generation stays disabled (gate is
-    // hasUsableProvider, not modelId) — and crucially NO toast / forced dialog.
+    // Even with a requirement typed, generation stays disabled — and
+    // crucially NO toast / forced dialog.
     await home.fillRequirement('Explain how photosynthesis works');
     await expect(home.enterButton).toBeDisabled();
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
@@ -86,34 +53,20 @@ test.describe('#580 model-selection invariant', () => {
     });
   });
 
-  test('State B: server-configured provider → concrete model auto-selected, generation enabled', async ({
+  test('State B: the llm slot names a model → model pill, generation enabled', async ({
     page,
+    mockApi,
   }) => {
-    await page.route('**/api/server-providers', (route) =>
-      route.fulfill({
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: serverProvidersBody({ openai: { models: ['gpt-4o', 'gpt-4o-mini'] } }),
-      }),
-    );
-    await page.addInitScript(
-      (settings) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-      },
-      createSettingsStorage({
-        modelId: '',
-        providerId: 'openai',
-        providersConfig: { openai: { apiKey: '' } },
-        autoConfigApplied: true,
-      }),
-    );
+    await mockApi.mockModelSettings({
+      providers: { openai: ['gpt-4o', 'gpt-4o-mini'] },
+      llm: 'openai:gpt-4o',
+    });
 
     const home = new HomePage(page);
-    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
+    await Promise.all([page.waitForResponse('**/api/model-config'), home.goto()]);
     await expect(home.textarea).toBeVisible();
 
-    // Reconcile resolves (openai, '' → first server model 'gpt-4o'); the
-    // toolbar shows the model pill, never "Set up model"/"Select Model".
+    // The toolbar shows the model pill, never "Set up model"/"Select Model".
     const modelPill = page.locator('button[aria-label^="OpenAI / "]');
     await expect(modelPill).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(SETUP_CTA, { exact: true })).toHaveCount(0);

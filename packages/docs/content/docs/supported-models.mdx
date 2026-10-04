@@ -3,11 +3,42 @@ title: Supported Models
 description: Built-in model and provider lists for the open-source OpenMAIC edition.
 ---
 
-This page lists the provider registry built into the open-source OpenMAIC edition. Built-in providers can be configured through Settings, environment variables, or `server-providers.yml`; add custom OpenAI-compatible providers in Settings. Availability also depends on the provider account, region, and server configuration, and hosted instances may hide some built-in models with an allowlist.
+This page lists the providers and models built into the open-source OpenMAIC edition. In [`openmaic.yml`](./configuration.mdx) a provider names one of these as its `preset`, and the model settings of the web app offer the same catalogue. Availability also depends on the provider account, region and server configuration, and a provider's `models` list can narrow what the model settings offer.
+
+## Presets
+
+A preset is a built-in provider template: which vendor, which endpoint, and which capabilities one account covers. Every provider in `openmaic.yml` or in the model settings names a preset.
+
+**Single-capability presets** have the provider IDs of the tables below, one per capability: `openai` is OpenAI chat, while OpenAI images, speech and transcription are `openai-image`, `openai-tts` and `openai-whisper`. Three IDs differ from the registry ID because another preset already uses it: MiniMax web search is `minimax-search`, Doubao web search is `doubao-search`, and Lemonade image generation is `lemonade-image`.
+
+**Token plan presets** cover several capabilities with one key, each at the plan's own endpoint. Connecting one in **Settings → Token Plan** also fills the slots the plan recommends models for that are still unassigned.
+
+| Preset | Plan | Covers |
+| --- | --- | --- |
+| `minimax` | MiniMax | Chat, image, video, TTS, web search |
+| `tokendance` | TokenDance | Chat, image, video, TTS, web search |
+| `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
+| `kimi-coding-plan` | Kimi coding plan | Chat |
+
+`openai-compatible` connects any OpenAI-compatible chat server: it needs a `baseUrl`, and its `models` list is what the model settings offer.
+
+All preset IDs:
+
+| Capability | Presets |
+| --- | --- |
+| Chat | `openai`, `azure`, `atlascloud`, `anthropic`, `bedrock`, `google`, `glm`, `qwen`, `deepseek`, `kimi`, `siliconflow`, `doubao`, `openrouter`, `grok`, `tencent-hunyuan`, `xiaomi`, `ollama`, `lemonade`, `openai-compatible`, and the token plans |
+| TTS | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts`, `voxcpm-tts`, `doubao-tts`, `elevenlabs-tts`, `google-tts`, `browser-native-tts`, `lemonade-tts` |
+| ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
+| Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
+| Video | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
+| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
+| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+
+`azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
 
 ## LLM models
 
-Use `provider:model-id` for models in `DEFAULT_MODEL` or YAML, for example `openai:gpt-5.6`, `qwen:qwen3.7-plus`, or `ollama:llama3.3`.
+In `openmaic.yml` a chat slot names `<provider id>:<model id>`, where the provider id is the one you declared under `providers`, for example `openai:gpt-5.6`, `qwen:qwen3.7-plus` or `ollama:llama3.3` when the provider ids match the preset ids.
 
 | Provider        | Provider ID       | Built-in models                                                                                                                                                                                                                                                                                                                                                                                                            |
 | --------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -69,6 +100,7 @@ This table lists model selectors and self-hosted backends. It does not enumerate
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Doubao TTS 2.0     | `doubao-tts`         | No model selector. Uses Doubao TTS 2.0 voice IDs.                                                                                                                                                                                      |
 | ElevenLabs TTS     | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
+| Google Gemini TTS  | `google-tts`         | Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | Browser Native TTS | `browser-native-tts` | No model selector. Uses the browser and operating system voice catalog.                                                                                                                                                                |
 
 ## ASR models
@@ -93,7 +125,7 @@ This table lists model selectors and self-hosted backends. It does not enumerate
 
 ## Web Search providers
 
-Web Search providers have no model selector. SearXNG supports server-managed configuration only; configure an API key or Base URL for other providers as required.
+Most web search providers have no model selector, so slots usually name them by provider id alone (`webSearch: tavily`). SearXNG can only be configured in `openmaic.yml`; the other providers need an API key or a base URL as listed. The preset IDs of MiniMax and Doubao web search are `minimax-search` and `doubao-search`.
 
 | Provider     | Provider ID |
 | ------------ | ----------- |

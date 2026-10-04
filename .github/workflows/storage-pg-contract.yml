@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
+    branches:
+      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/provider-config]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}
@@ -86,8 +87,13 @@ jobs:
             tests/persistence/owner-claims.pg.test.ts \
             tests/persistence/owner-assets-legacy-race.pg.test.ts \
             tests/persistence/owner-materials.pg.test.ts \
+            tests/persistence/workspace-model-config.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \
             tests/agent-runtime/event-notify.pg.test.ts \
             tests/agent-runtime/park-attempt-budget.pg.test.ts \
             tests/agent-runtime/session-events-live.pg.test.ts \
-            tests/legacy-browser-import/import-routes.pg.test.ts
+            tests/legacy-browser-import/import-routes.pg.test.ts \
+            tests/server/classroom-generation-jobs.pg.test.ts \
+            tests/server/classroom-generation-persistence.pg.test.ts \
+            tests/server/legacy-classroom-import.pg.test.ts \
+            tests/persistence/exclusive-create-invariant.pg.test.ts

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // db is browser-only (Dexie); stub it so the client module loads in node.
@@ -10,7 +11,14 @@ vi.mock('@/lib/device-storage/database', () => ({
   },
 }));
 
-import { ensureRegisteredVoice } from '@/lib/audio/voice-registration-client';
+import {
+  deleteRegisteredVoice,
+  ensureRegisteredVoice,
+  registerVoiceFromReference,
+} from '@/lib/audio/voice-registration-client';
+
+import { modelSettingsViewFor, setModelSettingsViewForTests } from '../helpers/model-settings-view';
+import { modelSettingsClient } from '@/lib/model-settings/client';
 
 function okFetch() {
   const f = vi.fn(
@@ -21,27 +29,57 @@ function okFetch() {
 }
 
 describe('ensureRegisteredVoice memoization', () => {
-  beforeEach(() => vi.unstubAllGlobals());
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    setModelSettingsViewForTests(null);
+  });
 
-  it('re-registers when the backend base URL changes (memo keyed by backend, not voiceId alone)', async () => {
+  it('registers again when the tts slot moves to another backend serving the same model', async () => {
     const f = okFetch();
-    // Distinct descriptor per test so the module-level memo from other tests can't collide.
     const voiceDesign = { identity: 'backend-switch teacher', texture: 'warm', delivery: 'calm' };
+    const request = { ttsModelId: 'voxcpm-model' };
 
-    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsBaseUrl: 'https://a.test/v1' });
-    // Same backend again → memoized, no second round-trip.
-    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsBaseUrl: 'https://a.test/v1' });
+    setModelSettingsViewForTests({ tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-a' } });
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
     expect(f).toHaveBeenCalledTimes(1);
 
-    // Different backend → must NOT be skipped by the memo; re-register there.
-    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsBaseUrl: 'https://b.test/v1' });
+    // Another backend (another provider of the same preset), same model.
+    setModelSettingsViewForTests({ tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-b' } });
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(2);
+
+    // The same provider after an edit to the settings (a new revision).
+    const edited = modelSettingsViewFor({
+      tts: { registryId: 'voxcpm-tts', providerId: 'voxcpm-b' },
+    });
+    edited.revision = 7;
+    modelSettingsClient.adopt(edited);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(3);
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, request);
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('registers a voice once per session and again for another model', async () => {
+    const f = okFetch();
+    // Distinct descriptor per test so the module-level memo from other tests can't collide.
+    const voiceDesign = { identity: 'model-switch teacher', texture: 'warm', delivery: 'calm' };
+
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsModelId: 'model-a' });
+    // Same model again → memoized, no second round-trip.
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsModelId: 'model-a' });
+    expect(f).toHaveBeenCalledTimes(1);
+
+    // Another model → must NOT be skipped by the memo.
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsModelId: 'model-b' });
     expect(f).toHaveBeenCalledTimes(2);
   });
 
-  it('coalesces concurrent calls for the same (voiceId, backend) into one request', async () => {
+  it('coalesces concurrent calls for the same voice into one request', async () => {
     const f = okFetch();
     const voiceDesign = { identity: 'concurrent teacher', texture: 'warm', delivery: 'calm' };
-    const req = { ttsBaseUrl: 'https://c.test/v1' };
+    const req = { ttsModelId: 'model-c' };
 
     await Promise.all([
       ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, req),
@@ -51,32 +89,31 @@ describe('ensureRegisteredVoice memoization', () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
-  it('re-registers when the API key changes on the same base URL (auth-scoped)', async () => {
+  it('sends no provider, model, key or endpoint: the server uses the tts slot', async () => {
     const f = okFetch();
-    const voiceDesign = {
-      identity: 'credential-switch teacher',
-      texture: 'warm',
-      delivery: 'calm',
-    };
-    const base = 'https://d.test/v1';
+    const voiceDesign = { identity: 'slot teacher', texture: 'warm', delivery: 'calm' };
 
-    await ensureRegisteredVoice(
-      'voxcpm-tts',
-      { voiceDesign },
-      { ttsBaseUrl: base, ttsApiKey: 'k1' },
-    );
-    await ensureRegisteredVoice(
-      'voxcpm-tts',
-      { voiceDesign },
-      { ttsBaseUrl: base, ttsApiKey: 'k1' },
-    );
-    expect(f).toHaveBeenCalledTimes(1); // same creds → memoized
+    await ensureRegisteredVoice('voxcpm-tts', { voiceDesign }, { ttsModelId: 'model-d' });
+    const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    for (const field of ['providerId', 'ttsModelId', 'ttsApiKey', 'ttsBaseUrl']) {
+      expect(body).not.toHaveProperty(field);
+    }
+  });
 
-    await ensureRegisteredVoice(
-      'voxcpm-tts',
-      { voiceDesign },
-      { ttsBaseUrl: base, ttsApiKey: 'k2' },
-    );
-    expect(f).toHaveBeenCalledTimes(2); // different creds → re-validate
+  it('registers and deletes a user voice without routing fields', async () => {
+    const f = okFetch();
+    await registerVoiceFromReference('qwen-tts', {
+      name: 'My voice',
+      referenceAudio: new Blob(['wav'], { type: 'audio/wav' }),
+      refText: 'Hello',
+    });
+    await deleteRegisteredVoice('qwen-tts', 'x');
+    for (const call of f.mock.calls as unknown as [string, RequestInit][]) {
+      const body = JSON.parse(String(call[1].body));
+      expect(body).not.toHaveProperty('providerId');
+      expect(body).not.toHaveProperty('ttsModelId');
+    }
+    expect(f).toHaveBeenCalledTimes(2);
   });
 });

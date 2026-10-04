@@ -11,8 +11,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
@@ -22,10 +23,6 @@ const mocks = vi.hoisted(() => ({
   mutateDocument: vi.fn(),
   saveStageDataIncremental: vi.fn(),
   saveStageData: vi.fn(),
-}));
-
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 
 vi.mock('@/lib/device-storage/database', () => ({
@@ -130,15 +127,10 @@ describe('media that finishes before its scene exists', () => {
       );
     mocks.saveStageDataIncremental.mockReset().mockResolvedValue({ failedChanges: [] });
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'image-provider',
-      imageModelId: 'image-model',
-      imageProvidersConfig: {},
-      videoProviderId: 'video-provider',
-      videoModelId: 'video-model',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({ tasks: {} });
     useStageStore.setState({

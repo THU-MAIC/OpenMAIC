@@ -4,6 +4,18 @@
 
 import type { BaiduSubSources, WebSearchProviderId, WebSearchProviderConfig } from './types';
 
+/** The provider a search that names none means when the server configures none. */
+export const DEFAULT_WEB_SEARCH_PROVIDER_ID: WebSearchProviderId = 'tavily';
+
+/** Curated model list offered in the Claude web-search settings. */
+export const CLAUDE_WEB_SEARCH_MODELS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'claude-opus-5', name: 'Claude Opus 5' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+];
+
 /**
  * Web Search Provider Registry
  */
@@ -54,6 +66,7 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     endpointPath: '/messages',
     icon: '/logos/claude.svg',
+    models: CLAUDE_WEB_SEARCH_MODELS,
   },
   minimax: {
     id: 'minimax',
@@ -84,15 +97,6 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
 
 /** Default model for Claude web search (Sonnet tier: balanced speed/cost for search + summarize). */
 export const CLAUDE_WEB_SEARCH_DEFAULT_MODEL = 'claude-sonnet-5';
-
-/** Curated model list offered in the Claude web-search settings. */
-export const CLAUDE_WEB_SEARCH_MODELS: ReadonlyArray<{ id: string; name: string }> = [
-  { id: 'claude-opus-5', name: 'Claude Opus 5' },
-  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
-  { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
-  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
-  { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
-];
 
 export function isWebSearchProviderConfigured(
   provider: WebSearchProviderConfig,

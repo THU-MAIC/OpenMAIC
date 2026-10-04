@@ -1,9 +1,6 @@
 'use client';
 
-import { useState } from 'react';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -12,153 +9,102 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { useSettingsStore } from '@/lib/store/settings';
 import {
-  BAIDU_SUB_SOURCES,
   CLAUDE_WEB_SEARCH_DEFAULT_MODEL,
   CLAUDE_WEB_SEARCH_MODELS,
   WEB_SEARCH_PROVIDERS,
 } from '@/lib/web-search/constants';
-import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
-import { ExternalLink, Eye, EyeOff } from 'lucide-react';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
+import { modelChange, modelRef } from '@/lib/model-settings/edit';
+import {
+  ApiKeyField,
+  EndpointServerOnlyHint,
+  ServerConfiguredNotice,
+  ServerOnlyNotice,
+  reportApply,
+  rootUse,
+  saveServiceProvider,
+  type ServicePanelProps,
+} from './server-settings';
 
-interface WebSearchSettingsProps {
-  selectedProviderId: WebSearchProviderId;
-}
-
-export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps) {
+/**
+ * A web search service: its key (write-only) and, for Claude, the model that
+ * searches, which is the workspace's search model while Claude is in use.
+ */
+export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
   const { t } = useI18n();
-  const [showApiKey, setShowApiKey] = useState(false);
-
-  const webSearchProvidersConfig = useSettingsStore((state) => state.webSearchProvidersConfig);
-  const setWebSearchProviderConfig = useSettingsStore((state) => state.setWebSearchProviderConfig);
-  const baiduSubSources = useSettingsStore((state) => state.baiduSubSources);
-  const setBaiduSubSources = useSettingsStore((state) => state.setBaiduSubSources);
-
-  const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
-  const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
-  const isOperatorManagedBaseUrl = selectedProviderId === 'searxng';
-  // Managed providers are admin-owned: hide the key/base-URL override inputs.
-  const showCredentialFields = !isServerConfigured && !isOperatorManagedBaseUrl;
+  const provider = WEB_SEARCH_PROVIDERS[entry.registryId as WebSearchProviderId];
+  const editable = entry.state === 'workspace' || entry.state === 'available';
+  const use = rootUse(view, 'webSearch', entry.id);
 
   const buildRequestUrl = (baseUrl: string) => {
     const trimmed = baseUrl.replace(/\/$/, '');
-    if (!provider.endpointPath) return trimmed;
+    if (!provider?.endpointPath) return trimmed;
     if (trimmed.endsWith(provider.endpointPath)) return trimmed;
     return `${trimmed}${provider.endpointPath}`;
   };
 
-  // Reset showApiKey when provider changes (derived state pattern)
-  const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
-  if (selectedProviderId !== prevSelectedProviderId) {
-    setPrevSelectedProviderId(selectedProviderId);
-    setShowApiKey(false);
-  }
-
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Server-configured notice */}
-      {isServerConfigured && (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
-          {t('settings.serverConfiguredNotice')}
-        </div>
-      )}
+      {entry.state === 'deployment' && <ServerConfiguredNotice />}
+      {entry.state === 'server-only' &&
+        (entry.registryId === 'searxng' && view.policy.allowWorkspaceProviders ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+            {t('settings.searxngServerOnlyNotice')}
+          </div>
+        ) : (
+          <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
+        ))}
 
-      {isOperatorManagedBaseUrl && !isServerConfigured && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
-          {t('settings.searxngServerOnlyNotice')}
-        </div>
-      )}
-
-      {!provider.requiresApiKey && !isServerConfigured && !isOperatorManagedBaseUrl && (
+      {editable && provider && !provider.requiresApiKey && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
           {t('settings.webSearchApiKeyOptional')}
         </div>
       )}
 
-      {/* API Key + Base URL Configuration */}
-      {showCredentialFields && (
-        <>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
-              <div className="relative">
-                <Input
-                  name={`web-search-api-key-${selectedProviderId}`}
-                  type={showApiKey ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder={
-                    !provider.requiresApiKey
-                      ? t('settings.optionalOverride')
-                      : t('settings.enterApiKey')
-                  }
-                  value={webSearchProvidersConfig[selectedProviderId]?.apiKey || ''}
-                  onChange={(e) =>
-                    setWebSearchProviderConfig(selectedProviderId, {
-                      apiKey: e.target.value,
-                    })
-                  }
-                  className="font-mono text-sm pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground">{t('settings.webSearchApiKeyHint')}</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.webSearchBaseUrl')}</Label>
-              <Input
-                name={`web-search-base-url-${selectedProviderId}`}
-                autoComplete="off"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder={provider.defaultBaseUrl || ''}
-                value={webSearchProvidersConfig[selectedProviderId]?.baseUrl || ''}
-                onChange={(e) =>
-                  setWebSearchProviderConfig(selectedProviderId, {
-                    baseUrl: e.target.value,
-                  })
-                }
-                className="text-sm"
-              />
-            </div>
+      {/* API Key + Base URL */}
+      {editable && provider && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
+            <ApiKeyField
+              name={`web-search-api-key-${entry.id}`}
+              provider={entry.provider}
+              placeholder={
+                !provider.requiresApiKey
+                  ? t('settings.optionalOverride')
+                  : t('settings.enterApiKey')
+              }
+              inputClassName="font-mono text-sm"
+              onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
+              onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
+            />
+            <p className="text-xs text-muted-foreground">{t('settings.webSearchApiKeyHint')}</p>
           </div>
 
-          {/* Request URL Preview */}
-          {(() => {
-            const effectiveBaseUrl =
-              webSearchProvidersConfig[selectedProviderId]?.baseUrl ||
-              provider.defaultBaseUrl ||
-              '';
-            if (!effectiveBaseUrl) return null;
-            const fullUrl = buildRequestUrl(effectiveBaseUrl);
-            return (
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.webSearchBaseUrl')}</Label>
+            {provider.defaultBaseUrl && (
               <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {fullUrl}
+                {t('settings.requestUrl')}: {buildRequestUrl(provider.defaultBaseUrl)}
               </p>
-            );
-          })()}
-        </>
+            )}
+            <EndpointServerOnlyHint />
+          </div>
+        </div>
       )}
 
-      {/* Claude search model — hidden for managed providers, where the
-          operator pins the model via WEB_SEARCH_CLAUDE_MODELS */}
-      {selectedProviderId === 'claude' && !isServerConfigured && (
+      {/* Claude search model: the workspace's search model while Claude searches. */}
+      {entry.registryId === 'claude' && entry.state !== 'server-only' && (
         <div className="space-y-2">
           <Label className="text-sm">{t('settings.claudeSearchModel')}</Label>
           <Select
-            value={webSearchProvidersConfig.claude?.modelId || CLAUDE_WEB_SEARCH_DEFAULT_MODEL}
-            onValueChange={(value) => setWebSearchProviderConfig('claude', { modelId: value })}
+            value={use.modelId || CLAUDE_WEB_SEARCH_DEFAULT_MODEL}
+            disabled={!use.inUse || !use.slot || use.slot.locked}
+            onValueChange={async (value) => {
+              if (!use.slot) return;
+              reportApply(await apply(modelChange(use.slot, modelRef(entry.id, value)), view), t);
+            }}
           >
             <SelectTrigger>
               <SelectValue />
@@ -171,57 +117,11 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">{t('settings.claudeSearchModelHint')}</p>
-        </div>
-      )}
-
-      {selectedProviderId === 'baidu' && (
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label className="text-sm">{t('settings.baiduSubSources')}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t('settings.baiduSubSourcesDescription')}
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            {(
-              Object.entries(BAIDU_SUB_SOURCES) as Array<
-                [keyof BaiduSubSources, (typeof BAIDU_SUB_SOURCES)[keyof typeof BAIDU_SUB_SOURCES]]
-              >
-            ).map(([key, meta]) => {
-              const enabled = baiduSubSources[key];
-              return (
-                <div
-                  key={key}
-                  className="flex items-center justify-between gap-4 rounded-md border px-3 py-2"
-                >
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="text-sm font-medium">{t(meta.labelKey)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {t(meta.descriptionKey)}
-                      {meta.docsUrl && (
-                        <a
-                          href={meta.docsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-0.5 ml-1.5 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
-                        >
-                          {t('settings.viewDocs')}
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={enabled}
-                    onCheckedChange={(checked) => setBaiduSubSources({ [key]: checked })}
-                    aria-label={t(meta.labelKey)}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          <p className="text-xs text-muted-foreground">
+            {use.inUse
+              ? t('settings.claudeSearchModelHint')
+              : t('settings.serverConfig.modelWhenInUse')}
+          </p>
         </div>
       )}
     </div>

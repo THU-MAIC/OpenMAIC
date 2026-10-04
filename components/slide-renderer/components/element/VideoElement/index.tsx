@@ -5,7 +5,8 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
 import { mediaResolutionCanRetry } from '@/lib/media/resolve-media-ref';
-import { useSettingsStore } from '@/lib/store/settings';
+import { mediaGenerationDisabled as isMediaGenerationDisabled } from '@/lib/model-settings/capabilities';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { RotateCcw, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSceneData } from '@/lib/contexts/scene-context';
@@ -27,7 +28,7 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
   const { t } = useI18n();
   const { sceneId, sceneData } = useSceneData<SlideContent>();
   const stageId = useMediaStageId();
-  const mediaGenerationDisabled = useSettingsStore((state) => !state.videoGenerationEnabled);
+  const mediaGenerationDisabled = isMediaGenerationDisabled(useModelCapabilities(), 'video');
   const tasks = useMediaGenerationStore((state) => state.tasks);
   const { mediaRef, resolution, resolvedSrc, resolvedPoster, task } = useResolvedVideoMedia(
     elementInfo,

@@ -12,6 +12,7 @@
  * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
  * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
  * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+ * - Google Gemini TTS: https://ai.google.dev/gemini-api/docs/speech-generation
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -94,7 +95,12 @@
 
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
-import { isQwenCloneVoice, resolveTTSModelForVoice, TTS_PROVIDERS } from './constants';
+import {
+  isQwenCloneVoice,
+  resolveTTSModelForVoice,
+  TTS_PROVIDERS,
+  DEFAULT_TTS_VOICES,
+} from './constants';
 import { downloadAudio, QwenVoiceCloneError, synthesizeQwenVoiceClone } from './qwen-voice-clone';
 import { evictQwenVoiceRegistrationMemo } from './qwen-voice-clone-registration';
 import { splitConcatenatedJsonObjects } from './json-stream';
@@ -111,6 +117,7 @@ import {
   type AudioEndpointTarget,
 } from '@/lib/server/audio-provider-fetch';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { pcmS16leMonoToWav } from './pcm-wav';
 
 const log = createLogger('TTSProviders');
 
@@ -315,6 +322,9 @@ export async function generateTTS(
         return await generateDoubaoTTS(config, text, signal);
       case 'elevenlabs-tts':
         return await generateElevenLabsTTS(config, text, signal);
+
+      case 'google-tts':
+        return await generateGoogleTTS(config, text, signal);
 
       case 'lemonade-tts':
         return await generateLemonadeTTS(config, text, signal);
@@ -807,7 +817,10 @@ async function readTTSApiError(response: Response): Promise<string> {
   const text = await response.text().catch(() => response.statusText);
   if (!text) return response.statusText;
   try {
-    const json = JSON.parse(text) as { detail?: unknown; error?: { message?: string } | string };
+    const json = JSON.parse(text) as {
+      detail?: unknown;
+      error?: { message?: string } | string;
+    };
     if (typeof json.detail === 'string') return json.detail;
     if (typeof json.error === 'string') return json.error;
     if (json.error?.message) return json.error.message;
@@ -1136,6 +1149,97 @@ async function generateMiniMaxTTS(
 }
 
 /**
+ * Google Gemini TTS via the Interactions API.
+ * Response audio is raw 24 kHz mono s16le PCM; wrap as WAV for classroom playback.
+ */
+async function generateGoogleTTS(
+  config: TTSModelConfig,
+  text: string,
+  signal: AbortSignal,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['google-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const modelId = config.modelId || TTS_PROVIDERS['google-tts'].defaultModelId;
+  const voice = config.voice || DEFAULT_TTS_VOICES['google-tts'] || 'Kore';
+
+  const response = await ttsFetch(config, `${baseUrl}/interactions`, {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': config.apiKey!,
+      'Content-Type': 'application/json; charset=utf-8',
+      ...appAttributionHeaders(baseUrl),
+    },
+    body: JSON.stringify({
+      model: modelId,
+      input: text,
+      response_format: { type: 'audio' },
+      generation_config: {
+        speech_config: [{ voice }],
+      },
+    }),
+    signal,
+  });
+
+  if (!response.ok) {
+    throwIfTtsRateLimited('Google', response.status, response.headers?.get('retry-after'));
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Google Gemini TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+  const audio = extractGoogleInteractionsAudio(payload);
+  if (!audio) {
+    throw new Error('Google Gemini TTS API error: response missing audio data');
+  }
+
+  const pcm = new Uint8Array(Buffer.from(audio.data, 'base64'));
+  if (pcm.byteLength === 0) {
+    throw new Error('Google Gemini TTS API error: empty audio payload');
+  }
+
+  return {
+    audio: pcmS16leMonoToWav(pcm, audio.sampleRate),
+    format: 'wav',
+  };
+}
+
+/**
+ * Interactions REST responses put audio on `steps[].content[]`, not on the
+ * SDK convenience field `output_audio`. See speech-generation single-speaker docs.
+ */
+function extractGoogleInteractionsAudio(
+  payload: Record<string, unknown> | null,
+): { data: string; sampleRate: number } | null {
+  if (!payload || !Array.isArray(payload.steps)) return null;
+
+  for (const step of payload.steps) {
+    if (!step || typeof step !== 'object') continue;
+    const content = (step as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== 'object') continue;
+      const block = part as { type?: unknown; data?: unknown; mime_type?: unknown };
+      if (block.type !== 'audio' || typeof block.data !== 'string' || block.data.length === 0) {
+        continue;
+      }
+      return { data: block.data, sampleRate: sampleRateFromL16Mime(block.mime_type) };
+    }
+  }
+
+  return null;
+}
+
+/** `audio/l16;rate=24000` → 24000. Missing or unparseable rate stays at 24 kHz. */
+function sampleRateFromL16Mime(mime: unknown): number {
+  if (typeof mime !== 'string') return 24_000;
+  const match = /(?:^|[;\s])rate=(\d+)/i.exec(mime);
+  const rate = match ? Number(match[1]) : NaN;
+  return Number.isFinite(rate) && rate > 0 ? rate : 24_000;
+}
+
+/**
  * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
  */
 async function generateElevenLabsTTS(
@@ -1185,34 +1289,6 @@ async function generateElevenLabsTTS(
   }
 
   return await validateTTSAudioResponse(response, 'ElevenLabs', requestedFormat);
-}
-
-/**
- * Get current TTS configuration from settings store
- * Note: This function should only be called in browser context
- */
-export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
-  if (typeof window === 'undefined') {
-    throw new Error('getCurrentTTSConfig() can only be called in browser context');
-  }
-
-  // Lazy import to avoid circular dependency
-  const { useSettingsStore } = await import('@/lib/store/settings');
-  const { ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig } = useSettingsStore.getState();
-
-  const providerConfig = ttsProvidersConfig?.[ttsProviderId];
-
-  return {
-    providerId: ttsProviderId,
-    modelId:
-      providerConfig?.modelId ||
-      TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS]?.defaultModelId ||
-      '',
-    apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
-    voice: ttsVoice,
-    speed: ttsSpeed,
-  };
 }
 
 // Re-export from constants for convenience
@@ -1277,7 +1353,11 @@ async function generateDoubaoTTS(
       req_params: {
         text,
         speaker: config.voice,
-        audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: speechRate },
+        audio_params: {
+          format: 'mp3',
+          sample_rate: 24000,
+          speech_rate: speechRate,
+        },
       },
     }),
     signal,

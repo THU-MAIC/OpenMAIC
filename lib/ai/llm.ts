@@ -4,12 +4,23 @@
  * All LLM interactions should go through callLLM / streamLLM.
  */
 
-import { generateText, streamText } from 'ai';
-import type { GenerateTextResult, JSONValue, LanguageModel, StreamTextResult } from 'ai';
+import { APICallError, generateText, streamText, wrapLanguageModel } from 'ai';
+import type {
+  GenerateTextResult,
+  JSONValue,
+  LanguageModel,
+  LanguageModelMiddleware,
+  StreamTextResult,
+} from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import {
+  attachedModelFallback,
+  type FallbackLoader,
+  type FallbackModel,
+} from '@/lib/ai/model-fallbacks';
 import { getModelMetadataKey } from './model-metadata';
 import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -345,15 +356,23 @@ export async function callLLM<T extends GenerateTextParams>(
   // to burn the operator's fallback key, so an absent stamp means NOT armed.
   // verify-model additionally probes the exact primary model, so it never
   // falls back either.
+  // A model resolved through a slot carries its slot's fallback, which is
+  // server configuration by construction: that is authorization enough. The
+  // serverManaged stamp gates only MODEL_FALLBACK on the request path.
+  const attached = attachedModelFallback(params.model);
   const allowFallback =
     fallbackOptions?.enabled !== false &&
-    fallbackOptions?.serverManaged === true &&
+    (attached !== undefined || fallbackOptions?.serverManaged === true) &&
     source !== 'verify-model';
   // Resolve the fallback once up front. The empty-output safety net below only
   // arms when a fallback model is actually configured; without this gate an
   // empty result would flip from success to failure for operators who never
-  // set MODEL_FALLBACK or a MODEL_ROUTES fallback.
-  const fallback = allowFallback ? await resolveFallbackModelSafe(source) : null;
+  // configured one. A model resolved through a slot brings its slot's
+  // fallback (possibly none); only a model from the older request path falls
+  // back to MODEL_FALLBACK.
+  const fallback = allowFallback
+    ? await (attached ? loadFallbackSafe(attached, source) : resolveFallbackModelSafe(source))
+    : null;
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
@@ -483,17 +502,215 @@ export async function callLLM<T extends GenerateTextParams>(
   throw lastError;
 }
 
+/** Load a slot's fallback model; never throws (fallback is best-effort). */
+async function loadFallbackSafe(
+  load: FallbackLoader,
+  source: string,
+): Promise<FallbackModel | null> {
+  try {
+    return await load();
+  } catch (err) {
+    log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
+    return null;
+  }
+}
+
 /** Lazily resolve the fallback model; never throws (fallback is best-effort). */
 async function resolveFallbackModelSafe(
   source: string,
 ): Promise<{ model: LanguageModel; modelString: string } | null> {
   try {
     const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
-    return await resolveFallbackModel(source);
+    return await resolveFallbackModel();
   } catch (err) {
     log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
     return null;
   }
+}
+
+type ModelV3 = Parameters<typeof wrapLanguageModel>[0]['model'];
+type StreamResultV3 = Awaited<ReturnType<ModelV3['doStream']>>;
+type StreamPartV3 = StreamResultV3['stream'] extends ReadableStream<infer P> ? P : never;
+
+/** Parts a stream may send before its first content (or error). */
+const PREAMBLE_PARTS = new Set(['stream-start', 'response-metadata']);
+
+/**
+ * Read a stream up to its first content or error part, and hand back that part
+ * with a stream that replays everything read so far and then the rest.
+ */
+async function peekFirstPart(
+  stream: ReadableStream<StreamPartV3>,
+): Promise<{ first: StreamPartV3 | undefined; stream: ReadableStream<StreamPartV3> }> {
+  const reader = stream.getReader();
+  const read: StreamPartV3[] = [];
+  let first: StreamPartV3 | undefined;
+  let done = false;
+  while (!first) {
+    const next = await reader.read();
+    if (next.done) {
+      done = true;
+      break;
+    }
+    read.push(next.value);
+    if (!PREAMBLE_PARTS.has(next.value.type)) first = next.value;
+  }
+  const replay = new ReadableStream<StreamPartV3>({
+    async pull(controller) {
+      const buffered = read.shift();
+      if (buffered) return controller.enqueue(buffered);
+      if (done) return controller.close();
+      const next = await reader.read();
+      if (next.done) controller.close();
+      else controller.enqueue(next.value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return { first, stream: replay };
+}
+
+/**
+ * Status codes for the transient error types providers send as a stream's
+ * error part (an SSE `error` event), which arrive as plain `{ type, message }`
+ * payloads rather than errors; an authentication or request error keeps its
+ * own type and is not retried.
+ */
+const TRANSIENT_STREAM_ERROR_STATUS: Record<string, number> = {
+  overloaded_error: 529,
+  api_error: 500,
+  rate_limit_error: 429,
+  server_error: 500,
+};
+
+/** A stream's error part as an error the fallback classifier understands. */
+function streamPartError(error: unknown): unknown {
+  if (error instanceof Error || !error || typeof error !== 'object') return error;
+  const payload = ((error as { error?: unknown }).error ?? error) as {
+    type?: unknown;
+    message?: unknown;
+  };
+  const type = typeof payload?.type === 'string' ? payload.type : undefined;
+  const statusCode = type ? TRANSIENT_STREAM_ERROR_STATUS[type] : undefined;
+  if (!statusCode) return error;
+  const message = typeof payload.message === 'string' ? payload.message : type!;
+  return Object.assign(new Error(message), { statusCode, cause: error });
+}
+
+/** What one streamLLM call has seen, across its steps and the SDK's retries. */
+interface StreamFallbackState {
+  /** A content part (text, reasoning, a tool call, ...) reached the caller. */
+  contentStarted: boolean;
+  /** Primary attempts for the current step (the SDK retries a step itself). */
+  primaryAttempts: number;
+  /** The fallback, once it took over: later steps stay on it. */
+  fallback?: FallbackModel;
+  /** The fallback's own failure: never retried, never called again. */
+  fallbackFailure?: { error: unknown };
+  /** The model that served each started step, in order, for usage. */
+  servedBy: ModelV3[];
+}
+
+/** Parts that carry no content (or signal a failure). */
+const NON_CONTENT_PARTS = new Set([...PREAMBLE_PARTS, 'error', 'finish', 'raw']);
+
+/**
+ * The model with its slot's fallback for streaming. The fallback is the last
+ * attempt of a call that has not streamed any content yet: the primary's own
+ * retries (the SDK's `maxRetries`) come first, then the fallback runs once,
+ * with the thinking options built for it. A failure after content has reached
+ * the caller in any step is the caller's, as before: what was sent cannot be
+ * taken back, and a tool that ran must not run again on another model. Once
+ * the fallback took over, the call's later steps stay on it.
+ */
+function withStreamFallback(
+  model: ModelV3,
+  options: {
+    load: FallbackLoader;
+    source: string;
+    /** The SDK retries of each step (streamText's `maxRetries`, 2 by default). */
+    maxRetries: number;
+    /** The provider options to call the fallback with (thinking built for it). */
+    providerOptionsFor: (fallback: FallbackModel) => unknown;
+    state: StreamFallbackState;
+  },
+): ModelV3 {
+  const { load, source, maxRetries, providerOptionsFor, state } = options;
+
+  /** Mark content as it passes and remember which model served the step. */
+  const track = (result: StreamResultV3, served: ModelV3): StreamResultV3 => {
+    state.servedBy.push(served);
+    const marker = new TransformStream<StreamPartV3, StreamPartV3>({
+      transform(part, controller) {
+        if (!NON_CONTENT_PARTS.has(part.type)) state.contentStarted = true;
+        controller.enqueue(part);
+      },
+    });
+    return { ...result, stream: result.stream.pipeThrough(marker) };
+  };
+
+  const serveFallback = async (
+    fallback: FallbackModel,
+    params: Parameters<ModelV3['doStream']>[0],
+  ): Promise<StreamResultV3> => {
+    if (state.fallbackFailure) throw state.fallbackFailure.error;
+    const served = fallback.model as ModelV3;
+    try {
+      const result = await served.doStream({
+        ...params,
+        providerOptions: providerOptionsFor(fallback) as typeof params.providerOptions,
+      });
+      return track(result, served);
+    } catch (error) {
+      state.fallbackFailure = { error };
+      throw error;
+    }
+  };
+
+  const middleware: LanguageModelMiddleware = {
+    specificationVersion: 'v3',
+    wrapStream: async ({ doStream, params }) => {
+      if (state.fallback) return serveFallback(state.fallback, params);
+      let failure: unknown;
+      try {
+        const result = await doStream();
+        const peeked = await peekFirstPart(result.stream);
+        const firstError =
+          peeked.first?.type === 'error' ? streamPartError(peeked.first.error) : undefined;
+        if (
+          state.contentStarted ||
+          firstError === undefined ||
+          !shouldFallbackFor(firstError, undefined)
+        ) {
+          state.primaryAttempts = 0;
+          return track({ ...result, stream: peeked.stream }, model);
+        }
+        await peeked.stream.cancel().catch(() => undefined);
+        failure = firstError;
+      } catch (error) {
+        if (state.contentStarted || !shouldFallbackFor(error, undefined)) throw error;
+        // The SDK retries a retryable refusal of the primary itself: the
+        // fallback is its last attempt.
+        state.primaryAttempts += 1;
+        if (APICallError.isInstance(error) && error.isRetryable) {
+          if (state.primaryAttempts <= maxRetries) throw error;
+        }
+        failure = error;
+      }
+      const fallback = await loadFallbackSafe(load, source);
+      if (!fallback || typeof fallback.model !== 'object') throw failure;
+      logFallbackFired(
+        source,
+        'retryable failure',
+        `${model.provider}:${model.modelId}`,
+        fallback.modelString,
+      );
+      state.fallback = fallback;
+      return serveFallback(fallback, params);
+    },
+  };
+  return wrapLanguageModel({ model, middleware });
 }
 
 /**
@@ -509,6 +726,7 @@ export function streamLLM<T extends StreamTextParams>(
   params: T,
   source: string,
   thinking?: ThinkingConfig,
+  fallbackOptions?: { enabled?: boolean },
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): StreamTextResult<any, any> {
   // Resolve effective thinking config and wrap in thinkingContext
@@ -520,13 +738,52 @@ export function streamLLM<T extends StreamTextParams>(
   const callerOnFinish = (params as Record<string, unknown>).onFinish as
     | ((event: { totalUsage?: unknown; usage?: unknown }) => void | Promise<void>)
     | undefined;
-  const wrappedParams = {
-    ...params,
-    onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
-      recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
-      if (callerOnFinish) await callerOnFinish(event);
-    },
-  } as T;
+  const callerOnStepFinish = (params as Record<string, unknown>).onStepFinish as
+    | ((event: { usage?: unknown }) => void | Promise<void>)
+    | undefined;
+
+  // A model resolved through a slot streams with its slot's fallback (see
+  // withStreamFallback); a caller with its own fallback handling opts out.
+  // Its usage is recorded per step, against the model that served the step.
+  const attached =
+    fallbackOptions?.enabled === false ? undefined : attachedModelFallback(params.model);
+  const state: StreamFallbackState = { contentStarted: false, primaryAttempts: 0, servedBy: [] };
+  const streamsWithFallback = attached !== undefined && typeof params.model === 'object';
+  const original = params;
+  let wrappedParams: T;
+  if (streamsWithFallback) {
+    wrappedParams = {
+      ...params,
+      model: withStreamFallback(params.model as ModelV3, {
+        load: attached,
+        source,
+        maxRetries: (params as { maxRetries?: number }).maxRetries ?? 2,
+        providerOptionsFor: (fallback) =>
+          (
+            injectProviderOptions({ ...original, model: fallback.model }, effectiveThinking) as {
+              providerOptions?: unknown;
+            }
+          ).providerOptions,
+        state,
+      }),
+      onStepFinish: async (event: { usage?: unknown }) => {
+        const served = state.servedBy.shift();
+        recordUsageSafe(
+          event.usage,
+          served ? buildUsageMeta({ ...original, model: served }, source) : usageMeta,
+        );
+        if (callerOnStepFinish) await callerOnStepFinish(event);
+      },
+    } as T;
+  } else {
+    wrappedParams = {
+      ...params,
+      onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
+        recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
+        if (callerOnFinish) await callerOnFinish(event);
+      },
+    } as T;
+  }
 
   const injectedParams = injectProviderOptions(wrappedParams, effectiveThinking);
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));

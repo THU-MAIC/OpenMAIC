@@ -6,17 +6,12 @@ export const SCENE_ID = 'scene-interactive-state';
 export const IFRAME_TITLE = `Interactive Scene ${SCENE_ID}`;
 const SETTINGS_STORAGE = JSON.stringify({
   state: {
-    modelId: 'gpt-4o',
-    providerId: 'openai',
-    providersConfig: { openai: { apiKey: 'mock-only' } },
     agentMode: 'preset',
     selectedAgentIds: [],
-    ttsEnabled: false,
     reviewOutlineEnabled: false,
-    autoConfigApplied: true,
     sidebarCollapsed: false,
   },
-  version: 2,
+  version: 5,
 });
 
 const INTERACTIVE_HTML = `<!doctype html><html><body><main id="experiment"><h1>Current-state activity</h1><input id="value" type="range" min="0" max="10" value="1"><label><input id="pause" type="checkbox">Pause render</label><button id="draw">Draw</button><p id="result"></p></main><script>

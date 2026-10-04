@@ -24,7 +24,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
  */
 
 /** Which slot of a generated element these bytes are for. Recorded on the entry. */
-export type GeneratedAssetKind = 'image' | 'video' | 'poster';
+export type GeneratedAssetKind = 'image' | 'video' | 'poster' | 'audio';
 
 export interface StoreGeneratedAssetInput {
   /**

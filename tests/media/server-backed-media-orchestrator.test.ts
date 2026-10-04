@@ -9,8 +9,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaPut: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
@@ -24,10 +25,6 @@ const mocks = vi.hoisted(() => ({
   takeAllocations: vi.fn(),
   mediaWhere: vi.fn(),
   placeAllocations: vi.fn(),
-}));
-
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 
 vi.mock('@/lib/store/stage', () => ({
@@ -196,15 +193,10 @@ describe('server-backed classic media orchestrator', () => {
       scenes: [sceneWithImage(1, imageRef)],
       generationComplete: false,
     });
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'image-provider',
-      imageModelId: 'image-model',
-      imageProvidersConfig: {},
-      videoProviderId: 'video-provider',
-      videoModelId: 'video-model',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({ tasks: {} });
 
@@ -1352,31 +1344,41 @@ describe('server-backed classic media orchestrator', () => {
     const commitInFlight = new Promise<void>((resolve) => {
       releaseCommit = resolve;
     });
+    let commitEntered: (() => void) | undefined;
+    const firstCommitEntered = new Promise<void>((resolve) => {
+      commitEntered = resolve;
+    });
     let overlapping: Promise<void> | undefined;
     let callsWhenOverlappingStarted = 0;
     // The retry path re-enters generation while the first pass is mid-commit.
     mocks.putAsset.mockImplementation(async () => {
       if (!overlapping) {
         // Captured BEFORE the second pass is launched: without serialization its
-        // collection loop is synchronous and would have fired by the time the
-        // call returns.
+        // collection loop would call the provider as soon as it has read the
+        // workspace's capabilities.
         callsWhenOverlappingStarted = providerCallCount();
         overlapping = generateMediaForOutlines(outlines, stageId);
+        commitEntered?.();
         await commitInFlight;
       }
       return 'ast_generated';
     });
 
     const first = generateMediaForOutlines(outlines, stageId);
-    // Give the second pass every chance to run: if it were not waiting, its
-    // collection loop is synchronous and element two is only `pending`, so it
-    // would have called the provider by now.
-    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
-    expect(providerCallCount()).toBe(callsWhenOverlappingStarted);
-
-    releaseCommit?.();
-    await first;
-    await overlapping;
+    try {
+      // The first pass is mid-commit and the second has been launched.
+      await firstCommitEntered;
+      // Give the second pass every chance to run (every pending microtask,
+      // however many awaits it takes): if it were not waiting, it would have
+      // called the provider for element two by now.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(providerCallCount()).toBe(callsWhenOverlappingStarted);
+    } finally {
+      releaseCommit?.();
+      await first.catch(() => undefined);
+      await firstCommitEntered;
+      await overlapping?.catch(() => undefined);
+    }
   });
 
   // The handoff the retry path actually performs: abort the live pass and start

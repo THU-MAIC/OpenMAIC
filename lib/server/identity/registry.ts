@@ -345,6 +345,20 @@ export function validateOwnerIdentityConfiguration(): OwnerIdentityMode {
 }
 
 /**
+ * The one owner every request resolves to, when the validated configuration
+ * has one (`sharedTeam` or `singleUser` from the environment); `undefined` when
+ * each visitor is an owner of their own (anonymous cookies) or a host
+ * registration decides. For work with no request behind it that must pick the
+ * deployment's owner, such as the import of file-stored classrooms.
+ */
+export function resolveFixedOwnerId(): string | undefined {
+  const mode = validateOwnerIdentityConfiguration();
+  if (mode === 'sharedTeam') return resolveSharedOwnerId();
+  if (mode === 'singleUser') return resolveSingleUserOwnerId();
+  return undefined;
+}
+
+/**
  * Startup warnings about the validated owner identity configuration, called
  * from `instrumentation.ts` after {@link validateOwnerIdentityConfiguration}:
  * single-user mode in effect (from the environment, or registered by a host)

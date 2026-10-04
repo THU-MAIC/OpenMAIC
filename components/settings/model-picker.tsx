@@ -6,7 +6,7 @@
 // groups，不传 thinking 回调，即为「仅搜索」的纯模型选择。
 
 import { useMemo, useState } from 'react';
-import { Bot, Brain, Check, CornerDownRight, Search } from 'lucide-react';
+import { Bot, Box, Brain, Check, CornerDownRight, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -43,6 +43,42 @@ export interface ModelPickerGroup {
   models: PickerModel[];
   /** Token Plan 套餐播种的目录：置顶展示并带标识 */
   isTokenPlan?: boolean;
+  /**
+   * The provider's logo. `null` draws the generic service icon (a custom
+   * endpoint); undefined draws none.
+   */
+  icon?: string | null;
+  /** A single-colour logo that is inverted on a dark background. */
+  invertIcon?: boolean;
+}
+
+/** A group's logo: its image, the generic service icon, or nothing. */
+export function ProviderLogo({
+  group,
+  className,
+}: {
+  group: Pick<ModelPickerGroup, 'icon' | 'invertIcon' | 'name'>;
+  className?: string;
+}) {
+  if (group.icon === undefined) return null;
+  if (group.icon === null) {
+    return <Box className={cn('shrink-0 text-muted-foreground', className)} aria-hidden="true" />;
+  }
+  return (
+    <img
+      src={group.icon}
+      alt=""
+      aria-hidden="true"
+      className={cn(
+        'shrink-0 rounded-sm object-contain',
+        group.invertIcon && 'dark:invert',
+        className,
+      )}
+      onError={(e) => {
+        (e.target as HTMLImageElement).style.display = 'none';
+      }}
+    />
+  );
 }
 
 function formatThinkingValue(value: string, t: (key: string) => string) {
@@ -63,7 +99,7 @@ function formatCompactThinkingValue(value: string | undefined) {
 }
 
 /** 行内思考强度控制（开/关/自动、档位、effort、budget） */
-function InlineThinkingControl({
+export function InlineThinkingControl({
   capability,
   config,
   onChange,
@@ -287,6 +323,8 @@ export function ModelPicker({
   size = 'sm',
   className,
   ariaLabel,
+  valuePrefix,
+  note,
   t,
 }: {
   groups: ModelPickerGroup[];
@@ -305,6 +343,10 @@ export function ModelPicker({
   className?: string;
   /** 触发器的可及名。首页工具栏传 `Provider / Model`，e2e 与读屏都依赖它。 */
   ariaLabel?: string;
+  /** A short word before the selected model on the trigger (the home toolbar's "Default"). */
+  valuePrefix?: string;
+  /** One muted line at the top of the dropdown, saying what picking here changes. */
+  note?: string;
   t: (key: string) => string;
 }) {
   const [open, setOpen] = useState(false);
@@ -374,6 +416,14 @@ export function ModelPicker({
         >
           {value ? (
             <>
+              {selectedEntry && <ProviderLogo group={selectedEntry.group} className="size-4" />}
+              {/* Hidden on phones, where the toolbar leaves room for the model name only. */}
+              {valuePrefix && (
+                <span className="hidden shrink-0 text-muted-foreground sm:inline">
+                  {valuePrefix}
+                  <span aria-hidden="true"> ·</span>
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate text-left font-mono">{selectedLabel}</span>
               {thinkingBadge && (
                 <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold leading-none text-violet-700 dark:bg-violet-900/40 dark:text-violet-200">
@@ -411,6 +461,9 @@ export function ModelPicker({
         onWheelCapture={(e) => e.stopPropagation()}
       >
         <div className="border-b p-2">
+          {note && (
+            <p className="px-0.5 pb-2 text-[11px] leading-snug text-muted-foreground">{note}</p>
+          )}
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -425,7 +478,14 @@ export function ModelPicker({
         {/* 列表高度跟随 Radix 给出的可用高度自适应收缩（减去搜索区 ~64px）：
             trigger 靠近视口底部时弹层变矮而不是向上翻转溢出视口——否则顶部
             的搜索框会被裁到屏幕外（如第一行站点的检查器）。 */}
-        <div className="max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))] min-h-0 overflow-y-auto p-1.5">
+        <div
+          className={cn(
+            'min-h-0 overflow-y-auto p-1.5',
+            note
+              ? 'max-h-[min(320px,calc(var(--radix-popover-content-available-height)-96px))]'
+              : 'max-h-[min(320px,calc(var(--radix-popover-content-available-height)-64px))]',
+          )}
+        >
           {followLabel && onFollow && (
             <button
               onClick={() => {
@@ -463,6 +523,7 @@ export function ModelPicker({
               <div key={group.id}>
                 {groups.length > 1 && (
                   <p className="flex items-center gap-1.5 px-2.5 pb-1 pt-2 text-[10px] font-medium text-muted-foreground">
+                    <ProviderLogo group={group} className="size-3.5" />
                     {group.name}
                     {group.isTokenPlan && (
                       <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold leading-tight text-primary">
@@ -496,6 +557,7 @@ export function ModelPicker({
                           : 'hover:bg-muted/60',
                       )}
                     >
+                      <ProviderLogo group={group} className="size-4" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-mono text-xs font-medium">{model.name}</div>
                         {model.id !== model.name && (

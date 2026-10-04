@@ -22,7 +22,7 @@ const log = createLogger('ServerProviderConfig');
 // Types
 // ---------------------------------------------------------------------------
 
-interface ServerProviderEntry {
+export interface ServerProviderEntry {
   apiKey: string;
   baseUrl?: string;
   models?: string[];
@@ -39,7 +39,7 @@ interface ServerProviderEntry {
   enabled?: boolean;
 }
 
-interface ServerConfig {
+export interface ServerConfig {
   providers: Record<string, ServerProviderEntry>;
   tts: Record<string, ServerProviderEntry>;
   asr: Record<string, ServerProviderEntry>;
@@ -94,6 +94,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
+  TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
 
@@ -641,6 +642,15 @@ function resolveSectionBaseUrl(
 // ---------------------------------------------------------------------------
 
 /**
+ * The resolved server provider configuration (YAML plus environment, with the
+ * operator's force-off switches), for translating it into the model
+ * configuration of RFC #1701. Read-only: callers must not mutate it.
+ */
+export function getServerProviderConfig(): Readonly<ServerConfig> {
+  return getConfig();
+}
+
+/**
  * Returns server-configured LLM providers. Exposes only the allowed model list
  * and the "managed" flag (presence in this map) — never the API key or the
  * base URL, which can reveal internal gateway/proxy infrastructure.
@@ -731,6 +741,20 @@ export class TTSModelNotAllowedError extends Error {
 }
 
 /**
+ * The TTS model of a configured slot: its own model, with only the voice
+ * compatibility rules of `resolveTTSModel` applied (a cloned voice speaks
+ * through the clone model, a catalog voice never does). Legacy server pins do
+ * not apply.
+ */
+export function slotTTSModel(
+  providerId: string,
+  modelId: string | undefined,
+  voiceId?: string,
+): string | undefined {
+  return ttsModelFor(providerId, [], modelId, voiceId);
+}
+
+/**
  * Resolve the TTS model. A managed provider may pin its model server-side
  * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
  * the managed-provider UI does not expose a model field. Otherwise the client
@@ -741,9 +765,16 @@ export function resolveTTSModel(
   clientModel?: string,
   voiceId?: string,
 ): string | undefined {
-  const entry = serverEntry('tts', providerId);
-  const pinnedModels = entry?.models?.filter(Boolean) ?? [];
+  const pinnedModels = serverEntry('tts', providerId)?.models?.filter(Boolean) ?? [];
+  return ttsModelFor(providerId, pinnedModels, clientModel, voiceId);
+}
 
+function ttsModelFor(
+  providerId: string,
+  pinnedModels: string[],
+  clientModel?: string,
+  voiceId?: string,
+): string | undefined {
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
     const requestedIsVCSentinel = !!clientModel && isQwenVoiceCloneModel(clientModel, vcModel);
