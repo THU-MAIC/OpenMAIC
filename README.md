@@ -41,36 +41,44 @@
   <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#funasr-local-asr">FunASR</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-agent-workbench-integration">OpenClaw</a>
 </p>
 
-## 🎉 OpenMAIC v1.0.0 — Build courses with an agent
+## 🎉 OpenMAIC 1.2.0 — Server-first (release candidate)
 
-**One prompt in, a whole course out — and now you can steer.** Released August 27, 2026, OpenMAIC v1.0.0 adds a **Pro workbench** alongside the classic one-click generator: chat with an agent that plans your curriculum, builds and revises every page, and works straight from your materials.
+**Course generation now runs on your server.** Close the tab and the course keeps building; a restart picks up where it stopped; the web app and the headless API share one pipeline. 1.2.0-rc.1 is out for testing. Read the [changelog](CHANGELOG.md) before upgrading.
 
-- 🤖 **Agent workbench** — a chat-first workspace that plans, builds, and revises whole courses
-- 💾 **Durable sessions** — server-backed runs survive restarts; cancel, resume, and steer anytime
-- 📎 **Session materials** — upload documents, audio, and video, or pull from web search; the agent builds from them
-- 🧰 **Course tools + 24 built-in skills** — slides, quizzes, interactives, PBL, images, video, voices, `.pptx` import
-- 🔌 **Neutral by design** — bring your own models, media, search providers, and storage backend
+- 🖥️ **Generation runs on the server** — survives closed tabs and restarts; retry one failed step or one image
+- ⚙️ **Models configured on the server** — `openmaic.yml` sets defaults, locks slots, and decides whether users bring their own keys
+- 📎 **Materials parse on attach** — uploads finish parsing in the composer, so generation starts right away
+- 👤 **Single user, anonymous, or accounts** — anonymous work can be claimed into an account later
+- 🤖 **Since v1.0.0** — the Pro agent workbench plans, builds, and revises whole courses ([setup](#optional-agent-workbench-and-runtime))
 
-Take the full tour in [Features](#-features), then set it up with [Agent workbench and runtime](#optional-agent-workbench-and-runtime).
-
+Needs PostgreSQL and a long-running server (Docker or `pnpm start`); Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x).
 
 ## 🗞️ News
 
-- **2026-09-28** — [v1.1.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2) Security release. When a provider is not configured on the server, the routes that accept a caller-supplied base URL (PDF parsing and connectivity checks, the Azure voice list, model listing, image and video providers, LLM calls) now connect only to addresses that passed validation and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)); classroom media downloads use the same transport. Read the **Behavior Changes** section of the changelog before upgrading. See [changelog](CHANGELOG.md).
-- **2026-09-27** — [v1.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1) Security release. MinerU Cloud document parsing now holds the presigned upload and result URLs returned by the provider to the same strict public-address policy, validates every redirect hop, and bounds what it reads and decompresses ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)). See [changelog](CHANGELOG.md).
-- **2026-09-24** — [v1.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0) Classroom chat now runs on an agent loop: reference a slide element, an interactive component or a whiteboard drawing from the playback bar and ask about it, and the teacher can read the lesson, check an experiment's live state and search the web before answering. Settings are rebuilt around the course workflow with a model choice per generation step, plus first-class Token Plan connections. Read the **Behavior Changes** section before upgrading — Pi is the default chat runtime. See [changelog](CHANGELOG.md).
-- **2026-09-15** — [v1.0.3 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.3) Security release. Access-code verification tokens now expire and verification is rate-limited ([GHSA-qpmr-534w-hhpg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-qpmr-534w-hhpg)); the render service applies a network policy to the untrusted HTML it renders ([GHSA-vqq3-22q7-289w](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-vqq3-22q7-289w)); audio provider requests validate redirects and pin their connections ([GHSA-9p8q-rcmg-pmjw](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-9p8q-rcmg-pmjw)); and Next.js is upgraded to patch a critical RCE. See [changelog](CHANGELOG.md).
-- **2026-09-14** — [v1.0.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.2) Security release. Closes a cloud-metadata SSRF gap, a DNS-rebinding bypass on media proxying and a classroom overwrite, and tightens two request paths. Read the **Breaking Changes** section before upgrading. See [changelog](CHANGELOG.md).
-- **2026-09-06** — [v1.0.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.1) Security and stability release; everyone on 1.0.0 should upgrade, as it tightens two defaults. See [changelog](CHANGELOG.md).
-- **2026-08-27** — **OpenMAIC v1.0.0:** an agent workbench, durable course-building sessions, reusable skills, session materials, provider-neutral server capabilities, and a pluggable persistence stack.
-- **2026-08-14** — [v0.3.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2) Video export hardening (deterministic Quiz/PBL covers, fidelity polish, interactive HTML capture, CPU resource profiles); server-backed persistence completed (full document cutover, one-command Postgres stack, incremental saves) plus the asset registry; the `@openmaic/generation` package; four new locales; Amazon Bedrock, Atlas Cloud, and Claude search providers; FunASR ASR. See [changelog](CHANGELOG.md).
-- **2026-07-21** — [v0.3.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1) One-click MP4 video export; server-backed runtime storage with a Postgres reference server; direct slide manipulation in the editor (drag, resize, rotate, multi-select); smarter "Edit with AI" (validated JSON Patch edits, multi-session history); expanded Document Parsing (multi-format upload, audio/video extraction, AliDocMind, MinerU); new providers (Azure OpenAI, SearXNG, ComfyUI) and the GPT-5.6 model family; action-level playback navigation; SSRF hardening. See [changelog](CHANGELOG.md).
-- **2026-06-28** — [v0.3.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) Project-Based Learning (PBL) v2 with classroom UI; "Edit with AI" Pro-mode editor agent; the `@openmaic/*` SDK family (DSL/renderer/importer) published to npm; optional per-stage model routing; new models (GLM-5.2, Kimi K2.7 Code, Qwen3.7 Plus/Max); a vocational-learning task engine; Korean (ko-KR) locale; and relicensing from AGPL-3.0 to MIT. See [changelog](CHANGELOG.md).
-- **2026-06-02** — [v0.2.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor (v0) Pro Mode for editing generated slides; editable outline before generation; offline-ready classroom export; new search providers (Brave/Baidu/Bocha/MiniMax) and Azure STT; new models (Claude Opus 4.8, MiniMax M3, Gemini 3.5 Flash); Traditional Chinese (zh-TW) and Brazilian Portuguese (pt-BR) locales. See [changelog](CHANGELOG.md).
-- **2026-04-26** — [v0.2.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) Integrated [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS with voice cloning and on-the-fly auto-generated voices; added per-model thinking config; added end-of-course completion page with persistent quiz state; added latest released models including DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / Xiaomi MiMo / Hy3. See [changelog](CHANGELOG.md).
-- **2026-04-20** — **v0.2.0 released!** Deep Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.
-- **2026-04-14** — [v0.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) Automatic language inference, ACCESS_CODE authentication, classroom ZIP export/import, custom TTS/ASR providers, Ollama support, and more. See [changelog](CHANGELOG.md).
-- **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
+- **2026-10-03** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1) (pre-release): server-first — server-side generation runs, model configuration on the server, materials parsed on attach.
+- **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2): security — provider requests connect only to validated addresses and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)).
+- **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1): security — hardened MinerU Cloud parsing ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)).
+- **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0): agentic classroom chat (ask about any slide element, interactive, or whiteboard drawing); settings rebuilt around the course workflow; Token Plan connections.
+- **2026-09-15** — [v1.0.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.3): security — access-code tokens expire, render-service network policy, pinned audio connections, Next.js RCE patch.
+- **2026-09-14** — [v1.0.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.2): security — SSRF and DNS-rebinding fixes, classroom overwrite fix.
+- **2026-09-06** — [v1.0.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.0.1): security and stability; tightens two defaults.
+- **2026-08-27** — **v1.0.0**: agent workbench, durable sessions, reusable skills, session materials, provider-neutral capabilities.
+
+<details>
+<summary>Earlier releases</summary>
+
+- **2026-08-14** — [v0.3.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.2): video export hardening, server-backed persistence and asset registry, `@openmaic/generation`, four new locales, FunASR.
+- **2026-07-21** — [v0.3.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.1): one-click MP4 export, direct slide editing, smarter "Edit with AI", expanded document parsing.
+- **2026-06-28** — [v0.3.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0): PBL v2, "Edit with AI" editor agent, `@openmaic/*` SDKs on npm, relicensed to MIT.
+- **2026-06-02** — [v0.2.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2): MAIC Editor Pro Mode, editable outlines, offline classroom export.
+- **2026-04-26** — [v0.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1): VoxCPM2 TTS with voice cloning, per-model thinking config, course completion page.
+- **2026-04-20** — **v0.2.0**: Deep Interactive Mode — 3D, simulations, games, mind maps, online programming.
+- **2026-04-14** — [v0.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1): language inference, ACCESS_CODE, classroom ZIP export/import, Ollama.
+- **2026-03-26** — [v0.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0): discussion TTS, immersive mode, keyboard shortcuts.
+
+</details>
+
+Full history in the [changelog](CHANGELOG.md).
 
 ## 📖 Overview
 
