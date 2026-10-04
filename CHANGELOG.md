@@ -165,7 +165,7 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 #### Bug Fixes
 
-- Classic generation no longer stalls at the outline when the page is left: unless "Always review outlines before generation" is on, the run confirms its own outline on the server (`outlineReview: "auto"`) and continues with no page open; with it on, the run waits for the learner's confirmation in any tab, with no auto-continue countdown.
+- Classic generation no longer stalls at the outline when the preview is closed: the short pause before an outline continues now runs on the server (`outlineReview: "countdown"`, generation-runs migration 4), so the run continues with no page open, while opening the review mid-stream or during the pause holds it (`POST /api/generation-runs/<id>/hold-outline`) for editing as before; with "Always review outlines before generation" on, the run waits for the learner's confirmation in any tab.
 - Home: the composer no longer keeps the last requirement as a draft; Generate creates the course card at once.
 - Home: video thumbnails no longer leave failed requests in the browser's network panel on every load; each video is drawn from its poster, or from its opening frame (decoded once and cached) when it has none.
 - Home: the course list shows as soon as the library loads, instead of waiting for every course's content and first-slide media; thumbnails load as cards come into view, a few at a time.
