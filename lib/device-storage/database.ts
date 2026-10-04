@@ -14,14 +14,19 @@
  * - `snapshots`: the editor's undo/redo history;
  * - `voiceProfiles`: TTS voice profiles registered from this browser (a
  *   provider setting, like the rest of the settings kept in localStorage);
- * - `autoVoiceCache`: reference clips for re-registering auto voices.
+ * - `autoVoiceCache`: reference clips for re-registering auto voices;
+ * - `courseThumbnails`: the home library's derived course thumbnails (a
+ *   course's first slide and its media bytes), so a reload shows them without
+ *   reading the course again (see `lib/utils/course-thumbnail-cache.ts`).
  *
  * This is a database of its own (`maic-device-cache`), separate from the
  * pre-server browser database (`MAIC-Database`), which is read-only and kept
  * only for the one-way importer (see `lib/legacy-browser-storage`). Clearing
  * the local cache deletes this database and nothing else.
  */
-import Dexie, { type EntityTable } from 'dexie';
+import Dexie, { type EntityTable, type Table } from 'dexie';
+
+import type { Slide } from '@openmaic/dsl';
 
 import type { Scene } from '@/lib/types/stage';
 
@@ -101,6 +106,27 @@ export interface AutoVoiceCacheRecord {
   updatedAt: number;
 }
 
+/**
+ * A course's home-library thumbnail, derived from the course's first slide.
+ * Keyed by the owner it was read as and the course; valid only for the
+ * course version (`updatedAt`) it was derived from.
+ */
+export interface CourseThumbnailRecord {
+  /** One-way digest of the owner the thumbnail was read as (never the owner id itself). */
+  ownerKey: string;
+  stageId: string;
+  /** The course's `updatedAt` the thumbnail was derived from. */
+  version: number;
+  /** The first slide with its media slots that held bytes emptied, or null: the course has none. */
+  slide: Slide | null;
+  /** The bytes of those media slots, by slot index (`slideMediaReferenceSlots` order). */
+  media: Array<{ slot: number; blob: Blob }>;
+  /** Total media bytes, for the cache's size bound. */
+  bytes: number;
+  /** Last time the thumbnail was stored or shown, for eviction. */
+  usedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -126,6 +152,7 @@ class DeviceDatabase extends Dexie {
   snapshots!: EntityTable<Snapshot, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
+  courseThumbnails!: Table<CourseThumbnailRecord, [string, string]>;
   meta!: EntityTable<DeviceMetaRecord, 'key'>;
 
   constructor() {
@@ -143,6 +170,8 @@ class DeviceDatabase extends Dexie {
     // upload and a generation the browser ran. Runs read uploaded materials on
     // the server; the upgrade deletes the table with whatever it still held.
     this.version(2).stores({ imageFiles: null });
+    // Version 3 adds the home library's course thumbnails.
+    this.version(3).stores({ courseThumbnails: '[ownerKey+stageId], usedAt' });
     // Runs before the first query of every open (sticky), so no reader sees
     // the table before the carry-over. Queries inside must go through the VIP
     // handle Dexie passes in; the regular one waits for this very handler.

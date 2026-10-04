@@ -5,11 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 
 const mocks = vi.hoisted(() => ({
-  getFirstSlideForStage: vi.fn(),
+  loadCourseThumbnail: vi.fn(),
   revokeThumbnailSlideMediaUrls: vi.fn(),
 }));
 
-vi.mock('@/lib/utils/stage-storage', () => mocks);
+vi.mock('@/lib/utils/course-thumbnail-cache', () => ({
+  loadCourseThumbnail: mocks.loadCourseThumbnail,
+}));
+vi.mock('@/lib/utils/stage-storage', () => ({
+  revokeThumbnailSlideMediaUrls: mocks.revokeThumbnailSlideMediaUrls,
+}));
 
 import {
   COURSE_THUMBNAIL_CONCURRENCY,
@@ -65,10 +70,10 @@ function mount(stageIds: readonly string[]): Root {
 beforeEach(() => {
   pending = [];
   latest = undefined;
-  mocks.getFirstSlideForStage
+  mocks.loadCourseThumbnail
     .mockReset()
     .mockImplementation(
-      (stageId: string, signal: AbortSignal) =>
+      (stageId: string, _version: number, signal: AbortSignal) =>
         new Promise<Slide | null>((resolve) => pending.push({ stageId, signal, resolve })),
     );
   mocks.revokeThumbnailSlideMediaUrls.mockReset();
@@ -84,14 +89,14 @@ describe('useCourseThumbnails', () => {
     const ids = Array.from({ length: 10 }, (_, i) => `stage-${i}`);
     const root = mount(ids);
 
-    expect(mocks.getFirstSlideForStage).toHaveBeenCalledTimes(COURSE_THUMBNAIL_CONCURRENCY);
+    expect(mocks.loadCourseThumbnail).toHaveBeenCalledTimes(COURSE_THUMBNAIL_CONCURRENCY);
     expect(latest?.thumbnails).toEqual({});
 
     const first = { id: 'slide-0', elements: [] } as unknown as Slide;
     await act(async () => pending.shift()!.resolve(first));
 
     expect(latest?.thumbnails).toEqual({ 'stage-0': first });
-    expect(mocks.getFirstSlideForStage).toHaveBeenCalledTimes(COURSE_THUMBNAIL_CONCURRENCY + 1);
+    expect(mocks.loadCourseThumbnail).toHaveBeenCalledTimes(COURSE_THUMBNAIL_CONCURRENCY + 1);
     act(() => root.unmount());
   });
 

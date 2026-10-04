@@ -20,7 +20,7 @@ function harness(concurrency = 2) {
   const onChange = vi.fn();
   const onError = vi.fn();
   const load = vi.fn(
-    (stageId: string, signal: AbortSignal) =>
+    (stageId: string, _version: number, signal: AbortSignal) =>
       new Promise<Slide | null>((resolve, reject) => {
         pending.push({ stageId, signal, resolve, reject });
       }),
@@ -99,6 +99,11 @@ describe('CourseThumbnailLoader', () => {
 
     h.loader.request('a', 2);
     expect(h.load).toHaveBeenCalledTimes(2);
+    // Each load is told the version it is for.
+    expect(h.load.mock.calls.map(([id, version]) => [id, version])).toEqual([
+      ['a', 1],
+      ['a', 2],
+    ]);
     expect(h.loader.snapshot()).toEqual({ a: slide('a1') });
     expect(h.released).toEqual([]);
 

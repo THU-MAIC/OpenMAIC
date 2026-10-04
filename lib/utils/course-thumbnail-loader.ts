@@ -16,8 +16,8 @@ import type { Slide } from '@openmaic/dsl';
  */
 
 export interface CourseThumbnailLoaderOptions {
-  /** Resolve a course's first slide, or null when it has none. */
-  readonly load: (stageId: string, signal: AbortSignal) => Promise<Slide | null>;
+  /** Resolve a course's first slide at `version`, or null when it has none. */
+  readonly load: (stageId: string, version: number, signal: AbortSignal) => Promise<Slide | null>;
   /** Release what a loaded thumbnail holds (its object URLs). */
   readonly release: (slide: Slide) => void;
   /** Maximum loads in flight at once. */
@@ -134,7 +134,7 @@ export class CourseThumbnailLoader {
     let slide: Slide | null = null;
     let failed = false;
     try {
-      slide = await this.options.load(job.stageId, controller.signal);
+      slide = await this.options.load(job.stageId, job.version, controller.signal);
     } catch (error) {
       failed = true;
       if (!controller.signal.aborted) this.options.onError?.(job.stageId, error);

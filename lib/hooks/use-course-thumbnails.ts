@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Slide } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
+import { loadCourseThumbnail } from '@/lib/utils/course-thumbnail-cache';
 import { CourseThumbnailLoader } from '@/lib/utils/course-thumbnail-loader';
-import { getFirstSlideForStage, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
+import { revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
 
 const log = createLogger('CourseThumbnails');
 
-/** Thumbnail loads in flight at once (each is a document read plus its media). */
+/** Thumbnail loads in flight at once (each is a cache read, or a document read plus its media). */
 export const COURSE_THUMBNAIL_CONCURRENCY = 4;
 
 export interface CourseThumbnails {
@@ -24,8 +25,9 @@ export interface CourseThumbnails {
 /**
  * The home library's lazily loaded course thumbnails (see
  * {@link CourseThumbnailLoader}). Cards request their own thumbnail while near
- * the viewport; unmounting the page aborts what is still loading and releases
- * every thumbnail's object URLs.
+ * the viewport; it comes from the device cache when that holds the course's
+ * current version (`lib/utils/course-thumbnail-cache.ts`). Unmounting the
+ * page aborts what is still loading and releases every thumbnail's object URLs.
  */
 export function useCourseThumbnails(): CourseThumbnails {
   const [thumbnails, setThumbnails] = useState<Record<string, Slide | null>>({});
@@ -34,7 +36,7 @@ export function useCourseThumbnails(): CourseThumbnails {
   const loader = useCallback((): CourseThumbnailLoader => {
     if (loaderRef.current) return loaderRef.current;
     const created: CourseThumbnailLoader = new CourseThumbnailLoader({
-      load: getFirstSlideForStage,
+      load: loadCourseThumbnail,
       // Deferred so the card re-renders with its replacement before the old
       // object URLs are revoked.
       release: (slide) => window.setTimeout(() => revokeThumbnailSlideMediaUrls(slide), 0),

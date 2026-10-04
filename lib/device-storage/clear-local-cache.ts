@@ -19,7 +19,7 @@ import { clearDeviceStorage } from './database';
 
 /**
  * Clear what this browser keeps for itself: the device-local database (media
- * and narration cache, staged images, undo history, voice profiles) and the
+ * and narration cache, course thumbnails, undo history, voice profiles) and the
  * in-memory asset client. Courses, chat history, learner progress and media on
  * the server are durable user data and are not touched; neither is the
  * pre-server browser database, which the one-way importer still has to read.

@@ -43,7 +43,11 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   preparePBLScenesForDocumentPersistence: vi.fn(),
 }));
 
-import { getFirstSlideForStage, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
+import {
+  getFirstSlideForStage,
+  loadFirstSlideThumbnail,
+  revokeThumbnailSlideMediaUrls,
+} from '@/lib/utils/stage-storage';
 
 describe('stage thumbnail allocated assets', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -110,6 +114,25 @@ describe('stage thumbnail allocated assets', () => {
     expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
     });
+  });
+
+  it('reports a thumbnail whose media all resolved as complete', async () => {
+    const { slide, complete } = await loadFirstSlideThumbnail('stage-1');
+
+    expect(slide?.elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    expect(complete).toBe(true);
+  });
+
+  it('reports a thumbnail as incomplete when reading a media asset failed', async () => {
+    mocks.withAssetUrl.mockImplementationOnce(async () => {
+      throw new Error('network down');
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([]);
+
+    const { slide, complete } = await loadFirstSlideThumbnail('stage-1');
+
+    expect(slide).not.toBeNull();
+    expect(complete).toBe(false);
   });
 
   it('hydrates and revokes an allocated image background', async () => {

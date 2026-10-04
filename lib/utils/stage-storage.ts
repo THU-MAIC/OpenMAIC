@@ -793,6 +793,7 @@ export async function resolveThumbnailMediaValue(
   mimeType: string,
   mediaGenerationDisabled = false,
   signal?: AbortSignal,
+  onPoolReadError?: () => void,
 ): Promise<string | undefined> {
   if (isConcreteMediaAddress(ref)) {
     return renderableMediaUrl(resolveMediaRef(ref, undefined, MISSING_ASSET_LEASE));
@@ -812,7 +813,9 @@ export async function resolveThumbnailMediaValue(
         })
       : undefined;
   } catch {
-    // Pool access is optional for the home-page compatibility thumbnail.
+    // Pool access is optional for the home-page compatibility thumbnail, but
+    // the caller learns the media may be incomplete only for now.
+    onPoolReadError?.();
   }
   blob ??= storedBlob && storedBlob.size > 0 ? blobWithType(storedBlob, mimeType) : undefined;
   if (blob) {
@@ -852,11 +855,28 @@ export async function getFirstSlideForStage(
   stageId: string,
   signal?: AbortSignal,
 ): Promise<ThumbnailSlide | null> {
+  return (await loadFirstSlideThumbnail(stageId, signal)).slide;
+}
+
+/**
+ * {@link getFirstSlideForStage}, also telling whether the thumbnail is
+ * complete: `false` when reading a media asset failed (a transient error, not
+ * a missing asset), so the thumbnail shows less than the course holds and must
+ * not be kept beyond this page.
+ */
+export async function loadFirstSlideThumbnail(
+  stageId: string,
+  signal?: AbortSignal,
+): Promise<{ slide: ThumbnailSlide | null; complete: boolean }> {
   const document = (await accessDocument(stageId)).document;
   signal?.throwIfAborted();
   const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
-  if (!firstSlide || firstSlide.content.type !== 'slide') return null;
+  if (!firstSlide || firstSlide.content.type !== 'slide') return { slide: null, complete: true };
   const slide = structuredClone(firstSlide.content.canvas);
+  let complete = true;
+  const onPoolReadError = () => {
+    complete = false;
+  };
 
   const mediaSlots = [...slideMediaReferenceSlots(slide)];
   const mediaElements = new Set<ThumbnailMediaElement>();
@@ -915,6 +935,7 @@ export async function getFirstSlideForStage(
           record?.mimeType || 'image/png',
           imageDisabled,
           signal,
+          onPoolReadError,
         )) ?? '',
       );
     }
@@ -958,6 +979,7 @@ export async function getFirstSlideForStage(
             record?.mimeType || 'image/png',
             imageDisabled,
             signal,
+            onPoolReadError,
           )) ?? '';
       } else if (el.type === 'video') {
         el.src =
@@ -968,6 +990,7 @@ export async function getFirstSlideForStage(
             record?.mimeType || 'video/mp4',
             videoDisabled,
             signal,
+            onPoolReadError,
           )) ?? '';
         const posterRef = videoBinding?.posterRef;
         const posterRecord =
@@ -995,6 +1018,7 @@ export async function getFirstSlideForStage(
             posterRecord?.mimeType || 'image/jpeg',
             undefined,
             signal,
+            onPoolReadError,
           );
         } else if (posterBlob) {
           el.poster = URL.createObjectURL(posterBlob);
@@ -1003,7 +1027,7 @@ export async function getFirstSlideForStage(
     }
   }
 
-  return slide;
+  return { slide, complete };
 }
 
 /**
