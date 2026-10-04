@@ -59,7 +59,6 @@ import {
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
-import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 import { createOwnerAgent } from '@/lib/server/agents/store';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
@@ -2145,7 +2144,9 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       await documentStore(OWNER).putScene(stageId, document.scenes[2]!);
 
       failImage = false;
-      // The author's markup, which the generation path's sanitizer would not keep.
+      // The author's own formatting, distinct from anything generation writes. The
+      // store keeps slide HTML within the renderer's vocabulary, so it is written in
+      // the form the sanitizer serializes and must come back byte for byte.
       const authorText = {
         id: 'el-author',
         type: 'text',
@@ -2154,7 +2155,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         width: 300,
         height: 40,
         rotate: 0,
-        content: '<p data-author-note="1">Author note</p>',
+        content: '<p style="color:#123456"><em>Author note</em></p>',
         defaultFontName: 'Inter',
         defaultColor: '#000',
       };
@@ -2163,7 +2164,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           (await documentStore(OWNER).loadDocument(stageId))!.scenes[0]!,
         );
         (current.content as { canvas: { elements: unknown[] } }).canvas.elements.push(authorText);
-        expect(JSON.stringify(sanitizeSceneContent(current))).not.toContain('data-author-note');
         await documentStore(OWNER).putScene(stageId, { ...current, title: 'Edited during retry' });
       };
       const contentCalls = calls.sceneContent.length;

@@ -25,6 +25,7 @@ import type {
   DocumentActor,
   PersistenceHooks,
 } from '@/lib/server/persistence-hooks/types';
+import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 
 import { assetReferencePrincipalsForOwner } from './owner-assets';
 import { fenceOwnerWrite } from './owner-merges';
@@ -119,6 +120,27 @@ async function runCreateHooks(
     }
   }
   if (hooks.onCreate) await hooks.onCreate(queryable, actor, stageId);
+}
+
+/**
+ * A document with its slide HTML restricted to the renderer's vocabulary.
+ *
+ * Slide text, shape text, table cells and LaTeX snapshots are HTML that the
+ * classroom renders with `dangerouslySetInnerHTML`, and document reads are
+ * capability-by-id: a course link is enough to load any owner's course. So
+ * every document this store writes or returns passes through the same policy
+ * `/api/classroom` applies. Writes keep new rows clean; reads cover rows
+ * stored before this was enforced. Same scope as that route: the stage and
+ * the scenes, never the outline.
+ */
+function sanitizedDocument<TScene extends SceneLike, TStage extends Stage>(
+  doc: MaicDocument<TScene, TStage>,
+): MaicDocument<TScene, TStage> {
+  return {
+    ...doc,
+    stage: sanitizeSceneContent(doc.stage),
+    scenes: sanitizeSceneContent(doc.scenes),
+  };
 }
 
 type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
@@ -269,7 +291,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         content: true,
         completesGeneration: outlineCompletesGeneration(doc.outline),
       },
-      () => this.inner.saveDocument(doc),
+      () => this.inner.saveDocument(sanitizedDocument(doc)),
     );
   }
 
@@ -287,20 +309,20 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         content: true,
         completesGeneration: outlineCompletesGeneration(doc.outline),
       },
-      () => this.inner.saveDocument(doc),
+      () => this.inner.saveDocument(sanitizedDocument(doc)),
     );
   }
 
   putStage(stageId: string, stage: TStage): Promise<void> {
     return this.tagged({ stageId, mode: 'mutate', content: true }, () =>
-      this.inner.putStage(stageId, stage),
+      this.inner.putStage(stageId, sanitizeSceneContent(stage)),
     );
   }
 
   putScene(stageId: string, scene: TScene, options: MutationOptions = {}): Promise<void> {
     return this.tagged(
       { stageId, mode: 'mutate', inTransaction: options.inTransaction, content: true },
-      () => this.inner.putScene(stageId, scene),
+      () => this.inner.putScene(stageId, sanitizeSceneContent(scene)),
     );
   }
 
@@ -323,8 +345,9 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
         // Pinned to this transaction, as in `deleteDocument`: a package call
         // that opened its own would wait on the ownership row this one holds.
         const pinned = this.pinnedToTransaction(queryable);
-        const next = mutate(await pinned.getScene(stageId, sceneId));
-        if (next) await pinned.putScene(stageId, next);
+        const current = await pinned.getScene(stageId, sceneId);
+        const next = mutate(current && sanitizeSceneContent(current));
+        if (next) await pinned.putScene(stageId, sanitizeSceneContent(next));
         await after?.(queryable, next !== null);
         return next !== null;
       }),
@@ -412,11 +435,13 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
   }
 
   async loadDocument(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
-    return this.readGated(stageId, () => this.inner.loadDocument(stageId));
+    const doc = await this.readGated(stageId, () => this.inner.loadDocument(stageId));
+    return doc && sanitizedDocument(doc);
   }
 
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {
-    return this.readGated(stageId, () => this.inner.getScene(stageId, sceneId));
+    const scene = await this.readGated(stageId, () => this.inner.getScene(stageId, sceneId));
+    return scene && sanitizeSceneContent(scene);
   }
 
   /** The trigger-maintained freshness manifest is a read: capability-by-id. */
