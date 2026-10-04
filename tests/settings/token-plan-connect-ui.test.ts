@@ -136,6 +136,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
           llm: 'tokendance:cogevol-base',
           'course.content.slide': 'tokendance:cogevol-slide-0828',
           'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+          agent: 'tokendance:deepseek-v4.1-flash',
           tts: 'tokendance:minimax-speech-2.8-turbo',
           image: 'tokendance:seedream-5.0-lite',
           video: 'tokendance:minimax-h3',

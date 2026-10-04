@@ -576,6 +576,7 @@ describe('applyModelSettingsChange', () => {
       llm: planLlm,
       'course.content.slide': 'tokendance:cogevol-slide-0828',
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      agent: 'tokendance:deepseek-v4.1-flash',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
       webSearch: 'tokendance',
@@ -597,6 +598,7 @@ describe('applyModelSettingsChange', () => {
         model: 'tokendance:cogevol-interactive-0828',
         fallback: 'operator:deepseek-v4-pro',
       },
+      agent: 'tokendance:deepseek-v4.1-flash',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
       webSearch: 'tokendance',
@@ -622,6 +624,7 @@ describe('applyModelSettingsChange', () => {
     // Keeping the current setup fills only the slots with no choice of their
     // own: the server's default llm stays.
     expect(tokenPlanAssignments(view, recommendation, 'keep')).toEqual({
+      agent: 'tokendance:deepseek-v4.1-flash',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       image: 'tokendance:seedream-5.0-lite',
     });

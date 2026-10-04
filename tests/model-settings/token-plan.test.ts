@@ -79,6 +79,7 @@ describe('token plan recommendation', () => {
       llm: 'tokendance:cogevol-base',
       'course.content.slide': 'tokendance:cogevol-slide-0828',
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      agent: 'tokendance:deepseek-v4.1-flash',
       image: 'tokendance:seedream-5.0-lite',
       video: 'tokendance:minimax-h3',
       tts: 'tokendance:minimax-speech-2.8-turbo',
@@ -205,6 +206,7 @@ describe('token plan assignments', () => {
     const keep = tokenPlanAssignments(view, recommendation, 'keep');
     expect(keep).toEqual({
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      agent: 'tokendance:deepseek-v4.1-flash',
       video: 'tokendance:minimax-h3',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       webSearch: 'tokendance',
