@@ -41,21 +41,9 @@
   <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#lemonade-local-ai">Lemonade</a> · <a href="#funasr-local-asr">FunASR</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-agent-workbench-integration">OpenClaw</a>
 </p>
 
-## 🎉 OpenMAIC 1.2.0 — Server-first (release candidate)
-
-**Course generation now runs on your server.** Close the tab and the course keeps building; a restart picks up where it stopped; the web app and the headless API share one pipeline. 1.2.0-rc.1 is out for testing. Read the [changelog](CHANGELOG.md) before upgrading.
-
-- 🖥️ **Generation runs on the server** — survives closed tabs and restarts; retry one failed step or one image
-- ⚙️ **Models configured on the server** — `openmaic.yml` sets defaults, locks slots, and decides whether users bring their own keys
-- 📎 **Materials parse on attach** — uploads finish parsing in the composer, so generation starts right away
-- 👤 **Single user, anonymous, or accounts** — anonymous work can be claimed into an account later
-- 🤖 **Since v1.0.0** — the Pro agent workbench plans, builds, and revises whole courses ([setup](#optional-agent-workbench-and-runtime))
-
-Needs PostgreSQL and a long-running server (Docker or `pnpm start`); Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x).
-
 ## 🗞️ News
 
-- **2026-10-03** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1) (pre-release): server-first — server-side generation runs, model configuration on the server, materials parsed on attach.
+- **2026-10-04** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1) (pre-release): **server-first.** Until 1.1.x, the browser drove course generation step by step and kept courses, keys and model settings itself, so closing the tab stopped a course halfway, every browser had to be configured on its own, and the headless API ran a separate pipeline. In 1.2.0 the server owns all of it: generation runs on the server and survives closed tabs and restarts, models are configured once in `openmaic.yml` (with defaults, locks and an option to forbid user keys), materials are parsed as soon as they are attached, and the web app and the API share one pipeline. It needs PostgreSQL and a long-running server; Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x). Read the [changelog](CHANGELOG.md) before upgrading.
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2): security — provider requests connect only to validated addresses and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)).
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1): security — hardened MinerU Cloud parsing ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)).
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0): agentic classroom chat (ask about any slide element, interactive, or whiteboard drawing); settings rebuilt around the course workflow; Token Plan connections.

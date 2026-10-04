@@ -42,21 +42,9 @@
 </p>
 
 
-## 🎉 OpenMAIC 1.2.0 — 服务端优先（预发布）
-
-**课程生成改在你的服务器上运行。** 关掉页面课程照样继续生成，服务重启后从断点接着跑，网页端和无头 API 共用同一条流水线。1.2.0-rc.1 现已开放测试，升级前请先阅读[更新日志](CHANGELOG.md)。
-
-- 🖥️ **服务端生成任务** — 关页面、重启都不中断；失败的单个步骤或单张图片可单独重试
-- ⚙️ **模型在服务端配置** — `openmaic.yml` 设定默认值、锁定环节，并决定用户能否自带密钥
-- 📎 **资料添加即解析** — 上传和解析在输入框工具栏完成，点生成即可开始
-- 👤 **单用户、匿名或账号** — 匿名期间的内容之后可认领到账号
-- 🤖 **v1.0.0 起** — Pro Agent 工作台：规划、搭建、修改整门课程
-
-需要 PostgreSQL 和常驻的 Node 服务（Docker 或 `pnpm start`）；Vercel 部署请继续使用 1.1.x。
-
 ## 🗞️ 动态
 
-- **2026-10-03** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1)（预发布）：服务端优先——服务端生成任务、服务端模型配置、资料添加即解析。
+- **2026-10-04** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1)（预发布）：**服务端优先。** 1.1.x 及以前，课程生成由浏览器一步步驱动，课程、密钥和模型设置也都存在浏览器里：关掉页面课程就停在半路，每个浏览器都要单独配置，无头 API 还是另一套流水线。1.2.0 把这些都交给服务端：生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[更新日志](CHANGELOG.md)。
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2)：安全更新——provider 请求只连接已校验地址并拒绝重定向（[GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)）。
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1)：安全更新——加固 MinerU Cloud 文档解析（[GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)）。
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0)：课堂对话改为 Agent 循环（可针对幻灯片元素、交互组件、白板内容提问）；设置按课程流程重构；Token Plan 一键接入。
