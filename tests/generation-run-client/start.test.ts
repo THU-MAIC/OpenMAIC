@@ -1,8 +1,8 @@
 /**
  * A classic run is started with the outline review the learner chose: a
  * learner who asked to always review outlines confirms each one (`wait`);
- * any other run confirms its own outline on the server (`auto`) and goes on
- * whether or not a page is open.
+ * any other run confirms its own outline on the server after a short pause
+ * (`countdown`) and goes on whether or not a page is open.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,11 +41,11 @@ afterEach(() => {
 });
 
 describe('the outline review a classic run is started with', () => {
-  it('lets the run confirm its own outline when the learner does not review outlines', async () => {
+  it('lets the run confirm its own outline after a countdown when the learner does not review outlines', async () => {
     useSettingsStore.setState({ reviewOutlineEnabled: false });
     await start();
     expect(started.inputs).toHaveLength(1);
-    expect(started.inputs[0]).toMatchObject({ outlineReview: 'auto' });
+    expect(started.inputs[0]).toMatchObject({ outlineReview: 'countdown' });
   });
 
   it('waits for the learner when they asked to always review outlines', async () => {
@@ -59,6 +59,6 @@ describe('the outline review a classic run is started with', () => {
     await start();
     useSettingsStore.setState({ reviewOutlineEnabled: false });
     await start();
-    expect(started.inputs.map((input) => input.outlineReview)).toEqual(['wait', 'auto']);
+    expect(started.inputs.map((input) => input.outlineReview)).toEqual(['wait', 'countdown']);
   });
 });

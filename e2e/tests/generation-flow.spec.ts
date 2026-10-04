@@ -23,34 +23,93 @@ test.describe('Generation Flow', () => {
     }, SETTINGS_STORAGE);
   });
 
-  test('starts a run that confirms its own outline and follows it to the classroom', async ({
+  test('starts a run that confirms its own outline after the countdown and follows it to the classroom', async ({
     page,
     mockApi,
   }) => {
     const run = await mockApi.setupGenerationMocks();
     await startFromHome(page);
-    expect(run.input.outlineReview).toBe('auto');
+    expect(run.input.outlineReview).toBe('countdown');
 
     const preview = new GenerationPreviewPage(page);
-    await expect(preview.stepTitle).toBeVisible();
-    // The outline streams read-only: there is nothing to review.
-    await expect(preview.alwaysReviewCheckbox).toBeVisible();
-    await expect(preview.reviewOutlineButton).toHaveCount(0);
-
+    await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
+    // The run confirms its outline itself; the page never does.
     await preview.waitForRedirectToClassroom();
     expect(page.url()).toContain(`/classroom/${run.stageId}`);
     expect(run.confirmations).toHaveLength(0);
+    expect(run.holds).toHaveLength(0);
+    expect(run.autoConfirmations).toBe(1);
   });
 
-  test('persists always review preference from the preview, for the next runs', async ({
+  test('a run left at once goes on to completion with no page open', async ({ page, mockApi }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    await new GenerationPreviewPage(page).backButton.first().click();
+    await page.waitForURL((url) => url.pathname === '/');
+    await expect.poll(() => run.snapshot().state, { timeout: 20_000 }).toBe('completed');
+    expect(run.autoConfirmations).toBe(1);
+    expect(run.confirmations).toHaveLength(0);
+  });
+
+  test('opens the review on the outline-ready card, which holds the run, and confirms the edit', async ({
     page,
     mockApi,
   }) => {
-    // Slow enough to toggle the setting while the outline streams.
+    // A countdown long enough to open the review on the card.
+    const run = await mockApi.setupGenerationMocks({ countdownMs: 10_000 });
+    await startFromHome(page);
+
+    const preview = new GenerationPreviewPage(page);
+    await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
+    await preview.openOutlineReview();
+    await expect.poll(() => run.holds.length).toBe(1);
+    // Held: the countdown no longer confirms it.
+    await page.waitForTimeout(11_000);
+    expect(run.autoConfirmations).toBe(0);
+    expect(run.confirmations).toHaveLength(0);
+
+    const title = page.locator('textarea').first();
+    await title.fill('Edited during the countdown');
+    await preview.confirmOutlines();
+    await preview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+    expect((run.confirmations[0]!.outlines as Array<{ title: string }>)[0]!.title).toBe(
+      'Edited during the countdown',
+    );
+  });
+
+  test('opens the review while the outline streams, which holds the run, and resumes generation', async ({
+    page,
+    mockApi,
+  }) => {
+    // Slow enough to open the review while the outline streams.
     const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
+    await preview.waitForReviewOpportunity();
+    await preview.openOutlineReview();
+    await expect(preview.editorTitle).toBeVisible();
+    await expect.poll(() => run.holds.length).toBe(1);
+    // The review holds the run: nothing is confirmed until the learner does.
+    await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    await page.waitForTimeout(3_000);
+    expect(run.confirmations).toHaveLength(0);
+    expect(run.autoConfirmations).toBe(0);
+
+    await preview.confirmOutlines();
+    await preview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+  });
+
+  test('persists always review preference from the outline editor', async ({ page, mockApi }) => {
+    // Slow enough to open the review while the outline streams.
+    await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    await startFromHome(page);
+
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForReviewOpportunity();
+    await preview.openOutlineReview();
     await preview.enableAlwaysReview();
 
     // The persist write goes through the KVStore and is asynchronous, so poll
@@ -64,9 +123,8 @@ test.describe('Generation Flow', () => {
       )
       .toBe(true);
 
-    // This run was started without the review: it goes on by itself.
+    await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
-    expect(run.confirmations).toHaveLength(0);
   });
 });
 

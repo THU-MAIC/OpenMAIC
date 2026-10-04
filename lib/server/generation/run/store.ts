@@ -41,6 +41,7 @@ import {
   ACTIVE_RUN_STATES,
   EXECUTABLE_RUN_STATES,
   LIMITED_RUN_STATES,
+  OUTLINE_AUTO_CONFIRM_MS,
   type GenerationRunAgentsResult,
   type GenerationRunEvent,
   type GenerationRunFailure,
@@ -142,14 +143,15 @@ interface RunRow extends Record<string, unknown> {
   media_pending: boolean;
   narration_unvoiced: number;
   media_summary: RunMediaSummary | null;
+  outline_auto_confirm_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
 
 const RUN_COLUMNS = `id, owner_id, input, state, step, outline, outline_revision, agents, stage_id,
   scenes_total, scenes_completed, error, seq, lease_worker_id, lease_heartbeat_at,
-  lease_generation, takeovers, media_pending, narration_unvoiced, media_summary, created_at,
-  updated_at`;
+  lease_generation, takeovers, media_pending, narration_unvoiced, media_summary,
+  outline_auto_confirm_at, created_at, updated_at`;
 
 function isoTimestamp(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
@@ -171,6 +173,9 @@ function storedRun(row: RunRow): StoredRun {
     stageId: row.stage_id,
     progress: { scenesTotal: row.scenes_total, scenesCompleted: row.scenes_completed },
     error: row.error,
+    ...(row.outline_auto_confirm_at
+      ? { outlineAutoConfirmAt: isoTimestamp(row.outline_auto_confirm_at) }
+      : {}),
     createdAt: isoTimestamp(row.created_at),
     updatedAt: isoTimestamp(row.updated_at),
     leaseWorkerId: row.lease_worker_id,
@@ -193,6 +198,7 @@ export function runSnapshot(run: StoredRun): GenerationRunSnapshot {
     stageId: run.stageId,
     progress: run.progress,
     error: run.error,
+    ...(run.outlineAutoConfirmAt ? { outlineAutoConfirmAt: run.outlineAutoConfirmAt } : {}),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   };
@@ -222,6 +228,12 @@ export interface RunPatch {
   narrationUnvoiced?: number;
   /** Release the lease with this commit (the run waits, pauses or ends). */
   releaseLease?: boolean;
+  /**
+   * The outline waits for confirmation: a run that is a `countdown` one at
+   * this commit gets its auto-confirm deadline. Any other state change
+   * clears the deadline.
+   */
+  outlineAutoConfirm?: boolean;
 }
 
 export interface StepCommit {
@@ -451,6 +463,16 @@ async function applyPatch(
   };
   if (patch.state !== undefined) set('state', patch.state);
   const stateParam = params.length;
+  if (patch.outlineAutoConfirm) {
+    params.push(OUTLINE_AUTO_CONFIRM_MS);
+    sets.push(
+      `outline_auto_confirm_at = CASE WHEN input->>'outlineReview' = 'countdown'
+         THEN now() + make_interval(secs => $${params.length}::double precision / 1000)
+         ELSE NULL END`,
+    );
+  } else if (patch.state !== undefined) {
+    sets.push('outline_auto_confirm_at = NULL');
+  }
   if (patch.step !== undefined) set('step', patch.step);
   if (patch.outline !== undefined) set('outline', encodeJson(patch.outline, 'outline'), '::jsonb');
   if (patch.outlineRevision !== undefined) set('outline_revision', patch.outlineRevision);
@@ -969,9 +991,19 @@ export async function commitGenerationRunIn(
   let row = await applyPatch(tx, lease.runId, commit.patch ?? {}, {
     resetTakeovers: checkpoints.length > 0,
   });
-  if (commit.events?.length) {
-    await insertEvents(tx, lease.runId, commit.events);
-    row = { ...row, seq: Number(row.seq) + commit.events.length };
+  const events = [...(commit.events ?? [])];
+  if (commit.patch?.outlineAutoConfirm && row.outline_auto_confirm_at) {
+    events.push({
+      type: 'outline_review',
+      data: {
+        outlineReview: 'countdown',
+        autoConfirmAt: isoTimestamp(row.outline_auto_confirm_at),
+      },
+    });
+  }
+  if (events.length) {
+    await insertEvents(tx, lease.runId, events);
+    row = { ...row, seq: Number(row.seq) + events.length };
   }
   if (
     (commit.patch?.state === 'completed' || commit.patch?.state === 'ended') &&
@@ -1250,7 +1282,7 @@ async function runCommand(
   runId: string,
   ownerId: string,
   commandId: string,
-  type: 'confirm-outline' | 'retry' | 'discard',
+  type: 'confirm-outline' | 'hold-outline' | 'retry' | 'discard',
   apply: (tx: Queryable, run: RunRow, refusal: unknown) => Promise<CommandResult>,
   /** Runs first in the transaction, before the run row is locked. */
   before?: (tx: Queryable) => Promise<void>,
@@ -1359,6 +1391,88 @@ export async function confirmGenerationRunOutline(
     },
     limit,
   );
+}
+
+/**
+ * Hold a `countdown` run's outline for the owner's review: the run becomes a
+ * `wait` one, so it waits for `confirm-outline` instead of confirming its
+ * outline itself. Valid until the outline is confirmed: while the outline is
+ * being generated (the run then waits once it is ready) and while it waits
+ * for its deadline. A `wait` run is held already. Null for a run the owner
+ * cannot see.
+ */
+export async function holdGenerationRunOutline(
+  runId: string,
+  ownerId: string,
+  command: { commandId: string },
+): Promise<CommandResult | null> {
+  return runCommand(runId, ownerId, command.commandId, 'hold-outline', async (tx, run) => {
+    const before =
+      run.state === 'awaiting_outline_confirmation' ||
+      (!run.outline && ['preparing', 'outlining', 'paused'].includes(run.state));
+    if (!before) {
+      throw new RunCommandConflictError(
+        'state',
+        `The run is ${run.state.replaceAll('_', ' ')}: its outline was already confirmed`,
+      );
+    }
+    if (run.input.outlineReview === 'auto') {
+      throw new RunCommandConflictError('state', 'The run confirms its own outline');
+    }
+    if (run.input.outlineReview === 'wait') {
+      return { state: run.state, seq: Number(run.seq) };
+    }
+    const updated = await tx.query<RunRow>(
+      `UPDATE generation_runs
+          SET input = jsonb_set(input, '{outlineReview}', '"wait"'),
+              outline_auto_confirm_at = NULL, updated_at = now()
+        WHERE id = $1 RETURNING ${RUN_COLUMNS}`,
+      [runId],
+    );
+    const seq = await insertEvents(tx, runId, [
+      { type: 'outline_review', data: { outlineReview: 'wait', autoConfirmAt: null } },
+    ]);
+    return { state: updated.rows[0]!.state, seq };
+  });
+}
+
+/**
+ * Confirm the outlines of the `countdown` runs whose deadline passed, as the
+ * run itself (the same commit an `auto` run's outline makes). Any process's
+ * runner does it, so a deadline outlives the process that set it. The run
+ * was in progress up to its outline, so the per-owner limit does not refuse
+ * it. Answers how many it confirmed.
+ */
+export async function confirmDueGenerationRunOutlines(limit = 10): Promise<number> {
+  const { withTransaction } = await provider();
+  return withTransaction(async (tx) => {
+    const due = await tx.query<RunRow>(
+      `SELECT ${RUN_COLUMNS} FROM generation_runs
+        WHERE state = 'awaiting_outline_confirmation'
+          AND outline_auto_confirm_at IS NOT NULL AND outline_auto_confirm_at <= now()
+        ORDER BY outline_auto_confirm_at
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED`,
+      [limit],
+    );
+    for (const run of due.rows) {
+      await applyPatch(
+        tx,
+        run.id,
+        { state: 'generating', step: null, releaseLease: true },
+        { resetTakeovers: true },
+      );
+      await insertEvents(tx, run.id, [
+        {
+          type: 'outline_confirmed',
+          data: { revision: run.outline_revision, edited: false, automatic: true },
+        },
+        { type: 'state', data: { state: 'generating', step: null } },
+      ]);
+      await notifyOwner(tx, run.owner_id);
+    }
+    return due.rows.length;
+  });
 }
 
 /**

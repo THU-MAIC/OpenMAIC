@@ -6,7 +6,7 @@
  * failure), so a repeated click or a resend after a lost answer carries the
  * same id and the server answers what the first one did.
  */
-import { confirmRunOutline, newCommandId, retryRun } from './api';
+import { confirmRunOutline, holdRunOutline, newCommandId, retryRun } from './api';
 import type { RunView } from './types';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -40,6 +40,14 @@ export function confirmOutline(
     outlineRevision: revision,
     ...(editedOutlines ? { outlines: editedOutlines } : {}),
   });
+}
+
+/**
+ * Hold a `countdown` run's outline for the learner's review: the run then
+ * waits for {@link confirmOutline} instead of confirming the outline itself.
+ */
+export async function holdOutline(view: Pick<RunView, 'runId'>): Promise<void> {
+  await holdRunOutline(view.runId, { commandId: commandIdFor(`${view.runId}:hold`, 'hold') });
 }
 
 /** Re-run the step a paused run stopped at. Answers the seq of the command's commit. */

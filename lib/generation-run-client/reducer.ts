@@ -31,6 +31,7 @@ export function viewFromSnapshot(snapshot: RunSnapshot): RunView {
     streamingOutlines: snapshot.outline?.outlines ?? [],
     outlineRetrying: false,
     outline: snapshot.outline,
+    outlineAutoConfirmAt: snapshot.outlineAutoConfirmAt ?? null,
     researchSources: [],
     generatedAgents: generated && generated.length > 0 ? generated : null,
     stageId: snapshot.stageId,
@@ -89,6 +90,7 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
       next.state = data.state as GenerationRunState;
       next.step = (data.step as string | null | undefined) ?? null;
       if (next.state !== 'paused') next.error = null;
+      if (next.state !== 'awaiting_outline_confirmation') next.outlineAutoConfirmAt = null;
       return next;
     }
     case 'step_started': {
@@ -157,6 +159,17 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
       // An edited outline's items are in the snapshot, not in the event: the
       // caller reads the snapshot for them.
       if (next.outline) next.outline = { ...next.outline, revision: Number(data.revision) };
+      next.outlineAutoConfirmAt = null;
+      return next;
+    }
+    case 'outline_review': {
+      // A countdown started, or a hold turned the run into one that waits.
+      const mode = data.outlineReview;
+      if (mode === 'wait' || mode === 'countdown' || mode === 'auto') {
+        next.input = { ...next.input, outlineReview: mode };
+      }
+      next.outlineAutoConfirmAt =
+        typeof data.autoConfirmAt === 'string' ? data.autoConfirmAt : null;
       return next;
     }
     case 'agents': {

@@ -105,12 +105,22 @@ const RUN_REPORT = `
 ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS narration_unvoiced INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS media_summary JSONB`;
 
+// When a waiting `countdown` run confirms its own outline; any process's
+// runner confirms the runs that are due.
+const OUTLINE_AUTO_CONFIRM = `
+ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS outline_auto_confirm_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS generation_runs_outline_auto_confirm_idx
+  ON generation_runs (outline_auto_confirm_at)
+  WHERE state = 'awaiting_outline_confirmation' AND outline_auto_confirm_at IS NOT NULL`;
+
 export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
   store: 'generation-runs',
   migrations: [
     { version: 1, name: 'baseline', up: SCHEMA, transaction: false },
     { version: 2, name: 'media_pending', up: MEDIA_PENDING },
     { version: 3, name: 'run_report', up: RUN_REPORT },
+    { version: 4, name: 'outline_auto_confirm', up: OUTLINE_AUTO_CONFIRM },
   ],
 };
 

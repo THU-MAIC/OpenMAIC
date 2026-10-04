@@ -21,6 +21,7 @@ import { defaultRunStepServices, type RunStepServices } from './services';
 import {
   claimNextGenerationRun,
   compactFinishedGenerationRuns,
+  confirmDueGenerationRunOutlines,
   heartbeatGenerationRun,
   keepGenerationRunAssetsAlive,
   readGenerationRunState,
@@ -119,6 +120,11 @@ export function startGenerationRunner(
       do {
         rescan = false;
         const config = { ...generationRunConfig(), ...options.config };
+        // Outlines whose countdown ran out are confirmed first, so this scan
+        // claims those runs too.
+        await confirmDueGenerationRunOutlines().catch((error) =>
+          log.warn('confirming due outlines failed', error),
+        );
         while (running.size < config.maxConcurrent && !stopping) {
           const claim = await claimNextGenerationRun(workerId, {
             leaseTtlMs: config.leaseTtlMs,

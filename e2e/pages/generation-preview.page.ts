@@ -8,6 +8,7 @@ export class GenerationPreviewPage {
   readonly editorTitle: Locator;
   readonly alwaysReviewCheckbox: Locator;
   readonly confirmOutlinesButton: Locator;
+  readonly outlineReadyMessage: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -28,6 +29,10 @@ export class GenerationPreviewPage {
     this.confirmOutlinesButton = page.getByRole('button', {
       name: /confirm and generate course|确认并生成课程|確認並生成課程|確認してコースを生成|подтвердить и сгенерировать курс|تأكيد وتوليد المقرر/i,
     });
+    // `generation.reviewOutlineAutoContinue`: the run counts down to its own confirmation.
+    this.outlineReadyMessage = page.getByText(
+      /continue automatically unless you review the outline|如不审阅，大纲生成后会自动继续生成课程内容/i,
+    );
   }
 
   async goto(runId?: string) {

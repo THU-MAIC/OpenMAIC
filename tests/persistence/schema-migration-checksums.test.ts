@@ -172,6 +172,13 @@ const SHIPPED: readonly (readonly [
     true,
     '0280652b73aa1ec86924e6ef495705bb980f48781b851914571e10a60038de75',
   ],
+  [
+    'generation-runs',
+    4,
+    'outline_auto_confirm',
+    true,
+    '253db00a6eee8dfb35dc8aa435132be86e9e6039fde63eb07e66282a1d5f2866',
+  ],
 ];
 
 /**

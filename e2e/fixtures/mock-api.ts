@@ -133,6 +133,8 @@ export interface MockRunOptions {
   atRunLimit?: boolean;
   /** How long the run takes between its scripted steps (ms). */
   stepMs?: number;
+  /** How long a `countdown` run's outline waits before the run confirms it (ms). */
+  countdownMs?: number;
 }
 
 /** The body of the start request a run was created from. */
@@ -154,6 +156,9 @@ export class MockGenerationRun {
   started = false;
   confirmations: Array<Record<string, unknown>> = [];
   retries: Array<Record<string, unknown>> = [];
+  holds: Array<Record<string, unknown>> = [];
+  private autoConfirmAt: string | null = null;
+  private autoConfirmTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly answered = new Map<string, { status: number; body: unknown }>();
   private events: RunEventFrame[] = [];
   private state = 'preparing';
@@ -202,6 +207,41 @@ export class MockGenerationRun {
     });
   }
 
+  /** The run confirms its outline itself at the deadline, unless held first. */
+  private startCountdown() {
+    const delay = this.options.countdownMs ?? 2500;
+    this.autoConfirmAt = new Date(Date.now() + delay).toISOString();
+    this.push('outline_review', { outlineReview: 'countdown', autoConfirmAt: this.autoConfirmAt });
+    this.autoConfirmTimer = setTimeout(() => {
+      this.autoConfirmTimer = null;
+      if (this.page.isClosed() || this.state !== 'awaiting_outline_confirmation') return;
+      this.autoConfirmAt = null;
+      this.autoConfirmations += 1;
+      this.push('outline_confirmed', { revision: this.revision, edited: false, automatic: true });
+      this.generate();
+    }, delay);
+  }
+
+  /** Confirmations the run made itself. */
+  autoConfirmations = 0;
+
+  private hold(body: Record<string, unknown>) {
+    this.holds.push(body);
+    const before =
+      this.state === 'awaiting_outline_confirmation' ||
+      (!this.outline && ['preparing', 'outlining'].includes(this.state));
+    if (!before)
+      return this.conflict(`The run is ${this.state}: its outline was already confirmed`);
+    if (this.input.outlineReview === 'countdown') {
+      this.input = { ...this.input, outlineReview: 'wait' };
+      if (this.autoConfirmTimer) clearTimeout(this.autoConfirmTimer);
+      this.autoConfirmTimer = null;
+      this.autoConfirmAt = null;
+      this.push('outline_review', { outlineReview: 'wait', autoConfirmAt: null });
+    }
+    return { status: 200, body: { success: true, state: this.state, seq: this.events.length } };
+  }
+
   /** Move the outline to a new revision, as an edit confirmed in another tab would. */
   confirmElsewhere() {
     this.revision += 1;
@@ -224,6 +264,7 @@ export class MockGenerationRun {
         scenesCompleted: this.scenesDone,
       },
       error: this.error,
+      ...(this.autoConfirmAt ? { outlineAutoConfirmAt: this.autoConfirmAt } : {}),
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
       media: {},
@@ -294,13 +335,8 @@ export class MockGenerationRun {
           };
           this.push('step_completed', { step: 'outline' });
           this.push('outline_ready', { revision: 1, outline: { ...this.outline, revision: 1 } });
-          if (this.input.outlineReview === 'auto') {
-            // The run confirms its own outline, in the same commit.
-            this.push('outline_confirmed', { revision: 1, edited: false, automatic: true });
-            this.generate();
-          } else {
-            this.push('state', { state: 'awaiting_outline_confirmation', step: null });
-          }
+          this.push('state', { state: 'awaiting_outline_confirmation', step: null });
+          if (this.input.outlineReview === 'countdown') this.startCountdown();
         },
       ]);
       return json({ success: true, run: this.snapshot() }, 202);
@@ -339,9 +375,11 @@ export class MockGenerationRun {
       if (repeated) return json(repeated.body, repeated.status);
       const answer = path.endsWith('/confirm-outline')
         ? await this.confirm(body)
-        : path.endsWith('/retry')
-          ? this.retry(body)
-          : { status: 404, body: 'Not found' };
+        : path.endsWith('/hold-outline')
+          ? this.hold(body)
+          : path.endsWith('/retry')
+            ? this.retry(body)
+            : { status: 404, body: 'Not found' };
       this.answered.set(commandId, answer);
       return json(answer.body, answer.status);
     }
@@ -367,6 +405,9 @@ export class MockGenerationRun {
     const outlines = (body.outlines as typeof mockOutlines | undefined) ?? this.outlines;
     if (body.outlines) this.revision += 1;
     this.outline = { ...this.outline!, outlines };
+    if (this.autoConfirmTimer) clearTimeout(this.autoConfirmTimer);
+    this.autoConfirmTimer = null;
+    this.autoConfirmAt = null;
     this.push('outline_confirmed', { revision: this.revision, edited: !!body.outlines });
     this.generate();
     return {

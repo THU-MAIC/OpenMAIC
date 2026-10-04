@@ -7,7 +7,10 @@
  *     models: the owner's capability slots decide. 202 with the run's
  *     snapshot; 429 `ACTIVE_RUN_LIMIT` when the owner already has the
  *     configured number of runs in progress, or of runs waiting for their
- *     outline to be confirmed.
+ *     outline to be confirmed. `outlineReview` is `wait` (the default: the
+ *     run waits for `confirm-outline`), `countdown` (the run confirms its
+ *     outline itself after a short pause, unless `hold-outline` turned it
+ *     into a `wait` run first) or `auto` (the outline is confirmed at once).
  *
  *   GET /api/generation-runs?active=1
  *     The owner's active runs (every state but completed and ended), for

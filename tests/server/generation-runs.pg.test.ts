@@ -42,10 +42,12 @@ import {
   claimNextGenerationRun,
   compactFinishedGenerationRuns,
   commitGenerationRun,
+  confirmDueGenerationRunOutlines,
   confirmGenerationRunOutline,
   createGenerationRun,
   discardGenerationRun,
   GenerationRunLeaseLostError,
+  holdGenerationRunOutline,
   keepGenerationRunAssetsAlive,
   listActiveGenerationRuns,
   readGenerationRun,
@@ -577,6 +579,167 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     const after = (await readGenerationRun(edited.id, OWNER))!;
     expect(after.outline).toMatchObject({ revision: 2, outlines: [OUTLINES[2]] });
     expect(after.progress).toEqual({ scenesTotal: 1, scenesCompleted: 1 });
+  });
+
+  describe('a countdown outline', () => {
+    async function due(runId: string) {
+      await pool.query(
+        `UPDATE generation_runs SET outline_auto_confirm_at = now() - interval '1 millisecond'
+          WHERE id = $1`,
+        [runId],
+      );
+    }
+
+    it('waits holding no worker, and the run confirms it itself at its deadline', async () => {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'countdown' }));
+      expect(await drive(run.id, services)).toBe('waiting');
+      const waiting = (await readGenerationRun(run.id, OWNER))!;
+      expect(waiting).toMatchObject({
+        state: 'awaiting_outline_confirmation',
+        leaseWorkerId: null,
+      });
+      const deadline = Date.parse(waiting.outlineAutoConfirmAt!);
+      expect(deadline - Date.parse(waiting.updatedAt)).toBeGreaterThan(2000);
+      expect(deadline - Date.parse(waiting.updatedAt)).toBeLessThanOrEqual(2600);
+      const events = await readGenerationRunEvents(run.id, 0);
+      expect(events.at(-1)).toMatchObject({
+        type: 'outline_review',
+        data: { outlineReview: 'countdown', autoConfirmAt: waiting.outlineAutoConfirmAt },
+      });
+
+      // Not before its deadline.
+      expect(await confirmDueGenerationRunOutlines()).toBe(0);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, deadline - Date.now()) + 50));
+      expect(await confirmDueGenerationRunOutlines()).toBe(1);
+      const confirmed = (await readGenerationRun(run.id, OWNER))!;
+      expect(confirmed.state).toBe('generating');
+      expect(confirmed.outlineAutoConfirmAt).toBeUndefined();
+      expect((await readGenerationRunEvents(run.id, waiting.seq)).map((e) => e.type)).toEqual([
+        'outline_confirmed',
+        'state',
+      ]);
+      expect((await readGenerationRunEvents(run.id, waiting.seq))[0]!.data).toEqual({
+        revision: 1,
+        edited: false,
+        automatic: true,
+      });
+      expect(await drive(run.id, services)).toBe('completed');
+    });
+
+    it('waits for the owner when held while the outline streams', async () => {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'countdown' }));
+      const held: RunStepServices = {
+        ...services,
+        outline: async (...args) => {
+          expect(
+            await holdGenerationRunOutline(run.id, OWNER, { commandId: 'hold-1' }),
+          ).toMatchObject({
+            state: 'outlining',
+          });
+          return services.outline(...args);
+        },
+      };
+      expect(await drive(run.id, held)).toBe('waiting');
+      const waiting = (await readGenerationRun(run.id, OWNER))!;
+      expect(waiting.input.outlineReview).toBe('wait');
+      expect(waiting.outlineAutoConfirmAt).toBeUndefined();
+      const types = (await readGenerationRunEvents(run.id, 0)).map((event) => event.type);
+      expect(types.filter((type) => type === 'outline_review')).toHaveLength(1);
+      // No deadline: no runner confirms it.
+      expect(await confirmDueGenerationRunOutlines()).toBe(0);
+      // A repeated hold answers what the first one did.
+      expect(await holdGenerationRunOutline(run.id, OWNER, { commandId: 'hold-1' })).toMatchObject({
+        state: 'outlining',
+      });
+      await confirm(run.id, OWNER, {
+        commandId: 'c',
+        outlineRevision: 1,
+        outlines: [OUTLINES[1]!],
+      });
+      expect(await drive(run.id, services)).toBe('completed');
+      expect((await readGenerationRun(run.id, OWNER))!.progress).toEqual({
+        scenesTotal: 1,
+        scenesCompleted: 1,
+      });
+    });
+
+    it('waits for the owner when held during the countdown', async () => {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'countdown' }));
+      expect(await drive(run.id, services)).toBe('waiting');
+      const result = await holdGenerationRunOutline(run.id, OWNER, { commandId: 'hold' });
+      expect(result).toMatchObject({ state: 'awaiting_outline_confirmation' });
+      const held = (await readGenerationRun(run.id, OWNER))!;
+      expect(held.input.outlineReview).toBe('wait');
+      expect(held.outlineAutoConfirmAt).toBeUndefined();
+      expect((await readGenerationRunEvents(run.id, 0)).at(-1)).toMatchObject({
+        type: 'outline_review',
+        data: { outlineReview: 'wait', autoConfirmAt: null },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2600));
+      expect(await confirmDueGenerationRunOutlines()).toBe(0);
+      expect((await readGenerationRun(run.id, OWNER))!.state).toBe('awaiting_outline_confirmation');
+      // Another tab's hold answers as the run is.
+      expect(await holdGenerationRunOutline(run.id, OWNER, { commandId: 'hold-2' })).toMatchObject({
+        state: 'awaiting_outline_confirmation',
+      });
+    });
+
+    it('refuses a hold once the outline was confirmed, and for a run that confirms at once', async () => {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'countdown' }));
+      expect(await drive(run.id, services)).toBe('waiting');
+      await due(run.id);
+      expect(await confirmDueGenerationRunOutlines()).toBe(1);
+      await expect(
+        holdGenerationRunOutline(run.id, OWNER, { commandId: 'late' }),
+      ).rejects.toBeInstanceOf(RunCommandConflictError);
+      // Nor after it completed.
+      expect(await drive(run.id, services)).toBe('completed');
+      await expect(
+        holdGenerationRunOutline(run.id, OWNER, { commandId: 'later' }),
+      ).rejects.toBeInstanceOf(RunCommandConflictError);
+      const auto = await start(runInput({ outlineReview: 'auto' }));
+      await expect(
+        holdGenerationRunOutline(auto.id, OWNER, { commandId: 'auto' }),
+      ).rejects.toBeInstanceOf(RunCommandConflictError);
+      // Another owner's run answers as an unknown one.
+      expect(
+        await holdGenerationRunOutline(auto.id, 'anon:someone-else', { commandId: 'x' }),
+      ).toBeNull();
+    });
+
+    it('is confirmed by another process once the one that set it is gone', async () => {
+      const { services } = fakeServices({ research: async () => null });
+      const run = await start(runInput({ outlineReview: 'countdown' }));
+      // The worker that generated the outline stops with it (a restart).
+      expect(await drive(run.id, services, 'worker-gone')).toBe('waiting');
+      const runner = startGenerationRunner({
+        services,
+        workerId: 'runner-after-restart',
+        config: {
+          scanIntervalMs: 50,
+          heartbeatIntervalMs: 200,
+          leaseTtlMs: 60_000,
+          maxConcurrent: 1,
+        },
+      });
+      try {
+        const until = Date.now() + 20_000;
+        while ((await readGenerationRun(run.id, OWNER))!.state !== 'completed') {
+          if (Date.now() > until) throw new Error('the run did not complete');
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+      } finally {
+        await runner.stop({ timeoutMs: 5_000 });
+      }
+      const events = await readGenerationRunEvents(run.id, 0);
+      expect(events.find((event) => event.type === 'outline_confirmed')!.data).toMatchObject({
+        automatic: true,
+      });
+    }, 30_000);
   });
 
   it('names the material kinds while analyzing, and what the outline will not see in full', async () => {

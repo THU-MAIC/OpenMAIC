@@ -122,6 +122,17 @@ export function confirmRunOutline(
   );
 }
 
+export function holdRunOutline(
+  runId: string,
+  command: { commandId: string },
+): Promise<{ state: string }> {
+  return postJson(
+    `/api/generation-runs/${encodeURIComponent(runId)}/hold-outline`,
+    command,
+    'generation.outlineGenerateFailed',
+  );
+}
+
 export function retryRun(
   runId: string,
   command: { commandId: string; media?: { elementId: string } },

@@ -7,6 +7,8 @@
  *     carries `failureSeq`, the seq of the event that reported it: its
  *     identity, which a Retry command's id is derived from. `materialKinds`
  *     and `materialTruncated` repeat what the material analysis reported.
+ *     A `countdown` run waiting for its outline carries `outlineAutoConfirmAt`
+ *     (ISO), when the run confirms the outline itself unless held.
  *
  *   DELETE /api/generation-runs/:id
  *     Discard a run that has no course yet (its course card is the pending

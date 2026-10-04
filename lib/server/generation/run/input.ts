@@ -172,8 +172,8 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   if (!releaseMaterials.ok) return releaseMaterials;
 
   const outlineReview = body.outlineReview ?? 'wait';
-  if (outlineReview !== 'wait' && outlineReview !== 'auto') {
-    return { ok: false, message: 'outlineReview must be "wait" or "auto"' };
+  if (outlineReview !== 'wait' && outlineReview !== 'countdown' && outlineReview !== 'auto') {
+    return { ok: false, message: 'outlineReview must be "wait", "countdown" or "auto"' };
   }
 
   let voice: GenerationRunInput['voice'];
@@ -265,6 +265,14 @@ export function parseConfirmOutline(raw: unknown): Parsed<ConfirmOutlineCommand>
     ok: true,
     value: { commandId: commandId.value, outlineRevision: revision, outlines: outlines.value },
   };
+}
+
+export function parseHoldOutline(raw: unknown): Parsed<{ commandId: string }> {
+  const body = record(raw);
+  if (!body) return { ok: false, message: 'The body must be a JSON object' };
+  const commandId = parseCommandId(body.commandId);
+  if (!commandId.ok) return commandId;
+  return { ok: true, value: { commandId: commandId.value } };
 }
 
 export interface RetryCommand {

@@ -15,6 +15,7 @@ const waiting: PreviewPhaseInput = {
   reviewIntent: false,
   confirmConflict: false,
 };
+const countdown: PreviewPhaseInput = { ...waiting, outlineReview: 'countdown' };
 
 describe('the outline review of a run that waits for it', () => {
   it('shows the review once the outline is ready, on any page that attaches', () => {
@@ -24,12 +25,7 @@ describe('the outline review of a run that waits for it', () => {
   });
 
   it('shows the streaming card mid-stream, and the review when the learner opened it', () => {
-    const streaming = {
-      ...waiting,
-      state: 'outlining',
-      outlineStreaming: true,
-      hasOutline: false,
-    };
+    const streaming = { ...waiting, state: 'outlining', outlineStreaming: true, hasOutline: false };
     expect(nextPreviewPhase(streaming)).toBe('progress');
     // A reload while the learner had the review open mid-stream.
     expect(nextPreviewPhase({ ...streaming, firstAttach: true, reviewIntent: true })).toBe(
@@ -48,20 +44,23 @@ describe('the outline review of a run that waits for it', () => {
   });
 });
 
-describe('the outline of a run that confirms it itself', () => {
-  it('never shows the review', () => {
-    const auto = { ...waiting, outlineReview: 'auto' as const };
-    expect(nextPreviewPhase(auto)).toBe('progress');
-    expect(
-      nextPreviewPhase({
-        ...auto,
-        state: 'outlining',
-        outlineStreaming: true,
-        hasOutline: false,
-        firstAttach: true,
-        reviewIntent: true,
-      }),
-    ).toBe('progress');
-    expect(nextPreviewPhase({ ...auto, state: 'generating', phase: 'review' })).toBe('progress');
+describe('the outline of a run that confirms it after a countdown', () => {
+  it('shows the outline-ready card while the run counts down, on any page', () => {
+    expect(nextPreviewPhase(countdown)).toBe('outline-ready');
+    expect(nextPreviewPhase({ ...countdown, firstAttach: true })).toBe('outline-ready');
+  });
+
+  it('keeps the review the learner opened (the run is held)', () => {
+    expect(nextPreviewPhase({ ...countdown, phase: 'review' })).toBe('review');
+    // Held: the run is a waiting one now.
+    expect(nextPreviewPhase({ ...waiting, phase: 'review' })).toBe('review');
+  });
+
+  it('moves on once the run confirmed its outline', () => {
+    const generating = { ...countdown, state: 'generating' };
+    expect(nextPreviewPhase({ ...generating, phase: 'outline-ready' })).toBe('progress');
+    expect(nextPreviewPhase({ ...generating, phase: 'review', confirmConflict: true })).toBe(
+      'review',
+    );
   });
 });

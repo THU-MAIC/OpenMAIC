@@ -34,6 +34,8 @@ export interface RunSnapshot {
   stageId: string | null;
   progress: GenerationRunProgress;
   error: GenerationRunFailure | null;
+  /** A `countdown` run waiting for its outline: when the run confirms it itself (ISO). */
+  outlineAutoConfirmAt?: string;
   createdAt: string;
   updatedAt: string;
   media?: Record<string, GenerationRunMediaState>;
@@ -67,6 +69,8 @@ export interface RunView {
   outlineRetrying: boolean;
   /** The outline the run waits on or generates, with its revision. */
   outline: (GenerationRunOutline & { revision: number }) | null;
+  /** When the run confirms the outline it waits on itself (ISO), unless held. */
+  outlineAutoConfirmAt: string | null;
   researchSources: Array<{ title: string; url: string }>;
   /** The generated roster (auto agents), for the agent cards. */
   generatedAgents: GeneratedAgentConfig[] | null;

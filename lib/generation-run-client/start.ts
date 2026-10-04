@@ -97,9 +97,10 @@ export async function startClassicRun(input: {
     // Uploaded for this run only: released when it completes or ends.
     ...(materialIds.length > 0 ? { releaseMaterials: true } : {}),
     // The learner who asked to always review outlines confirms each one; any
-    // other run confirms its own outline on the server and goes on whether or
-    // not a page is open.
-    outlineReview: settings.reviewOutlineEnabled ? 'wait' : 'auto',
+    // other run confirms its own outline on the server after a short pause
+    // (unless the learner opens the review in it), whether or not a page is
+    // open.
+    outlineReview: settings.reviewOutlineEnabled ? 'wait' : 'countdown',
   });
 }
 

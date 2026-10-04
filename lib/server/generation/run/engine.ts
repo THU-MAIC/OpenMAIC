@@ -10,7 +10,8 @@
  * - research runs when the webSearch slot resolves, and the outline's
  *   requirements carry that decision as `webSearch`;
  * - the outline streams its items, then waits for confirmation (or is
- *   confirmed in its own commit, for `outlineReview: "auto"`);
+ *   confirmed in its own commit, for `outlineReview: "auto"`; a `countdown`
+ *   run waits until its deadline, when any runner confirms it);
  * - agents: generated (`auto`, falling back to the learner's selected presets
  *   when that fails) or the preset ids; the stage is named after the course
  *   title;
@@ -778,7 +779,9 @@ export async function executeGenerationRun(
       taskEngineMode: result.taskEngineMode,
     };
     // The run waits for confirmation holding no worker, unless its caller
-    // asked for the outline to be confirmed with it.
+    // asked for the outline to be confirmed with it. A `countdown` run (as the
+    // row says at this commit: a hold may have turned it into a `wait` one
+    // while the outline streamed) waits until its deadline.
     const automatic = input.outlineReview === 'auto';
     const next = automatic ? 'generating' : 'awaiting_outline_confirmation';
     return {
@@ -789,7 +792,7 @@ export async function executeGenerationRun(
         outline: confirmed,
         outlineRevision: 1,
         scenesTotal: result.outlines.length,
-        ...(automatic ? {} : { releaseLease: true }),
+        ...(automatic ? {} : { releaseLease: true, outlineAutoConfirm: true }),
       },
       events: [
         { type: 'step_completed', data: { step: stepId } },

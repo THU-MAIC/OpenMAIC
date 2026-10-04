@@ -22,7 +22,8 @@ const locales = {
 const outlineReviewKeys = [
   'generation.reviewOutlineTitle',
   'generation.reviewOutlineDesc',
-  'generation.outlineReadyContinuing',
+  'generation.reviewOutlineAutoContinue',
+  'generation.outlineAlreadyContinued',
   'generation.outlineEditorTitle',
   'generation.outlineEditorSummary',
   'generation.addFirstScene',

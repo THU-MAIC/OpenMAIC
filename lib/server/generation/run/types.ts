@@ -52,6 +52,12 @@ export const ACTIVE_RUN_STATES = [
  */
 export const LIMITED_RUN_STATES = ['preparing', 'outlining', 'generating'] as const;
 
+/**
+ * How long a `countdown` run's outline waits for a `hold-outline` before the
+ * run confirms it itself (the pause 1.1.x's preview gave the learner).
+ */
+export const OUTLINE_AUTO_CONFIRM_MS = 2500;
+
 /** Which agents teach the course. */
 export type GenerationRunAgents =
   /**
@@ -78,8 +84,15 @@ export interface GenerationRunInput {
   taskEngine: boolean;
   agents: GenerationRunAgents;
   learnerProfile?: { nickname?: string; bio?: string };
-  /** `wait` holds the run for a `confirm-outline` command; `auto` confirms the outline itself. */
-  outlineReview: 'wait' | 'auto';
+  /**
+   * How the outline is confirmed:
+   * - `wait` holds the run for a `confirm-outline` command;
+   * - `countdown` holds it for {@link OUTLINE_AUTO_CONFIRM_MS}, then the run
+   *   confirms the outline itself unless a `hold-outline` command turned the
+   *   run into a `wait` one first (any time before the outline is confirmed);
+   * - `auto` confirms the outline in its own commit.
+   */
+  outlineReview: 'wait' | 'countdown' | 'auto';
   /**
    * The learner's narrator voice for the tts slot's provider (a voice is a
    * preference, not a model); the provider's default voice otherwise.
@@ -237,6 +250,8 @@ export interface GenerationRunSnapshot {
   stageId: string | null;
   progress: GenerationRunProgress;
   error: GenerationRunFailure | null;
+  /** A `countdown` run waiting for its outline: when the run confirms it itself (ISO). */
+  outlineAutoConfirmAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -281,8 +296,14 @@ export const GENERATION_RUN_EVENT_TYPES = [
   'outline_item',
   /** `{ revision, outline }`: the outline waits for confirmation. */
   'outline_ready',
-  /** `{ revision, edited }`: the outline was confirmed. */
+  /** `{ revision, edited, automatic? }`: the outline was confirmed (`automatic`: by the run itself). */
   'outline_confirmed',
+  /**
+   * `{ outlineReview, autoConfirmAt }`: how the outline is confirmed changed:
+   * a `countdown` run's outline is confirmed by the run at `autoConfirmAt`
+   * (ISO) unless held; a held run waits for `confirm-outline` (`wait`, null).
+   */
+  'outline_review',
   /** `{ agents }`: the agents the course teaches with. */
   'agents',
   /** `{ stageId }`: the course document exists (its first scene is ready). */
