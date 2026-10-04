@@ -165,6 +165,7 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 #### Bug Fixes
 
+- Settings: with every slot locked (`lock: all`), Token Plan and Model Services are hidden, including a plan the workspace connected earlier and the Text-to-Speech tab for user voices; only the read-only course model map remains.
 - Generation preview: no "document parsing" step any more. Materials are extracted when they are attached, so the run's material step is not shown; a failure there still pauses the run with Retry.
 - Composer: the course-material popover lists materials as compact rows on the popover's type scale, with file-type icons, a thin progress bar and icon buttons for Retry and Remove.
 - Editor: slide elements can be dragged, resized and rotated in Safari; the Pro-mode editor no longer throws on mouse-down where the `TouchEvent` API is missing (desktop Safari).
