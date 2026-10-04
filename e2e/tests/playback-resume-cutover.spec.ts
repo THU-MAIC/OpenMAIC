@@ -69,7 +69,7 @@ test('playback cursor persists to device KV and survives a fresh page', async ({
     (settings) => {
       localStorage.setItem('maic:account:settings-storage', settings);
     },
-    createSettingsStorage({ autoPlayLecture: true, ttsEnabled: false }),
+    createSettingsStorage({ autoPlayLecture: true }),
   );
   const stageId = await seedStage(page);
 

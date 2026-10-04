@@ -40,6 +40,7 @@ const TTS_ENV_PREFIXES = [
   'TTS_VOXCPM',
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
+  'TTS_GOOGLE',
   'TTS_MINIMAX',
   'TTS_LEMONADE',
   'TTS_BROWSER_NATIVE',
@@ -112,6 +113,17 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
     expect(res.status).toBe(200);
     expect(mocks.generateTTS).toHaveBeenCalledWith(
       expect.objectContaining({ providerId: 'openai-tts', apiKey: 'sk-server' }),
+      'Hello',
+    );
+  });
+
+  it("keeps the request's voice on the server's provider when it names no provider", async () => {
+    yamlOverride = 'tts:\n  openai-tts:\n    apiKey: sk-server\n';
+    const { POST } = await import('@/app/api/generate/tts/route');
+
+    expect((await POST(ttsRequest({ ttsVoice: 'nova' }))).status).toBe(200);
+    expect(mocks.generateTTS).toHaveBeenLastCalledWith(
+      expect.objectContaining({ providerId: 'openai-tts', voice: 'nova' }),
       'Hello',
     );
   });

@@ -31,12 +31,9 @@ import { FolderNameError } from '@/lib/utils/folder-name-validation';
 
 import type { OwnedStage } from './course';
 import type { FolderApi } from './folders';
+import { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER } from './protocol';
 
-/** The request header an importer request carries its browser id in. */
-export const LEGACY_IMPORT_HEADER = 'x-openmaic-legacy-import';
-
-/** Where the binding is asked for (without the header). */
-export const BINDING_ENDPOINT = '/api/identity/legacy-import-binding';
+export { BINDING_ENDPOINT, LEGACY_IMPORT_HEADER };
 
 /**
  * Every route the importer's fenced clients reach, with the route module that
@@ -119,6 +116,12 @@ export const FENCED_ENDPOINTS = [
   { method: 'GET', path: '/api/folders', route: 'app/api/folders/route.ts' },
   { method: 'POST', path: '/api/folders', route: 'app/api/folders/route.ts' },
   { method: 'POST', path: '/api/folders/members', route: 'app/api/folders/members/route.ts' },
+  // The model settings import (./model-settings-import.ts).
+  {
+    method: 'POST',
+    path: '/api/model-config/import',
+    route: 'app/api/model-config/import/route.ts',
+  },
 ] as const;
 
 /** What the importer needs from the server, all of it bound to one browser id. */

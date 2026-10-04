@@ -3,12 +3,14 @@
 // The "Token Plan" section: a two-column panel with a service tablist on the
 // left (logo, display-name mapping, status row, keyboard navigation) and a
 // one-line header on the right (status / update key / manage-account link / ⋯
-// menu disconnect). Saving the key connects the plan by applying or removing a
-// local settings-store preset — there is no server-side connection, OAuth, or
-// quota consent. The "capabilities offered" block below stays a segmented tab
-// list of models.
+// menu disconnect). A plan is a provider of the workspace's model settings on
+// the server: saving its key adds that provider (or replaces its key) and
+// applies the plan's recommended configuration to the slots. When that would
+// replace models the workspace picked, the user is asked first: the plan's
+// setup, or keep theirs and fill only the empty slots. Disconnecting removes
+// the provider. A plan the server configures is shown as connected, read-only.
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -45,23 +47,24 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useSettingsStore } from '@/lib/store/settings';
 import {
   TOKEN_PLAN_PRESETS,
   MODALITY_ORDER,
   type TokenPlanPreset,
   type TokenPlanModality,
 } from '@/lib/config/token-plan-presets';
+import { tokenPlanPresetId } from '@/lib/config/preset-ids';
+import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
+import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
+import { planProvider } from '@/lib/model-settings/services';
 import {
-  applyTokenPlan,
-  isTokenPlanActive,
-  isTokenPlanUsable,
-  removeTokenPlan,
-  restoreSharedProviderCredentials,
-  setTokenPlanAuthorization,
-} from '@/lib/config/apply-token-plan';
+  connectConflicts,
+  connectTokenPlan,
+  type PlanApplyMode,
+  type PlanConflict,
+} from '@/lib/model-settings/token-plan';
+import { applyErrorText, reportApply, ServerOnlyNotice } from './server-settings';
+import { MS, slotName } from './models/slot-meta';
 
 const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   llm: 'settings.providers',
@@ -169,49 +172,39 @@ function modalityModels(preset: TokenPlanPreset, m: TokenPlanModality): string[]
   return [target.providerId];
 }
 
-export function TokenPlanSettings() {
+export function TokenPlanSettings({
+  view,
+  apply,
+}: {
+  view: ModelSettingsView;
+  apply: ApplyChange;
+}) {
   const { t } = useI18n();
-  const setProviderConfig = useSettingsStore((s) => s.setProviderConfig);
-  const setImageProviderConfig = useSettingsStore((s) => s.setImageProviderConfig);
-  const setVideoProviderConfig = useSettingsStore((s) => s.setVideoProviderConfig);
-  const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
-  const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
-  const setImageProvider = useSettingsStore((s) => s.setImageProvider);
-  const setImageModelId = useSettingsStore((s) => s.setImageModelId);
-  const setVideoProvider = useSettingsStore((s) => s.setVideoProvider);
-  const setVideoModelId = useSettingsStore((s) => s.setVideoModelId);
-  const setModel = useSettingsStore((s) => s.setModel);
-  const setStageRoute = useSettingsStore((s) => s.setStageRoute);
-  const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
-  const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
-  // Read provider configs so the page can reflect already-persisted state
-  // (other settings panels read the store directly; this page must too).
-  const providersConfig = useSettingsStore((s) => s.providersConfig);
-  const tokenPlanEnrollments = useSettingsStore((s) => s.tokenPlanEnrollments);
-  const tokenPlanDisabled = useSettingsStore((s) => s.tokenPlanDisabled);
 
   const [selectedId, setSelectedId] = useState<string>(TOKEN_PLAN_PRESETS[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  /** A connect waiting for the user to choose how to treat the slots it would replace. */
+  const [pending, setPending] = useState<{
+    plan: TokenPlanPreset;
+    key: string;
+    conflicts: PlanConflict[];
+  } | null>(null);
   const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const selected =
     TOKEN_PLAN_PRESETS.find((p) => p.id === selectedId) ?? TOKEN_PLAN_PRESETS[0] ?? null;
 
-  // A plan is connected only when it was enrolled through the Token Plan UI
-  // (explicit marker) and its LLM credentials are still present — never merely
-  // because the provider has a key: minimax/tokendance/doubao double as
-  // ordinary direct providers, and a personal key is not a plan connection.
-  const isPresetEnabled = (preset: TokenPlanPreset): boolean =>
-    isTokenPlanActive(preset, { tokenPlanEnrollments, providersConfig });
-
-  // 授权层：已连接且未被「启用此套餐」关闭。左列状态行与课程模型配置的
-  // 候选口径都看这个，避免「已连接但不参与配置」被误读成已在生效。
-  const isPresetUsable = (preset: TokenPlanPreset): boolean =>
-    isTokenPlanUsable(preset, { tokenPlanEnrollments, providersConfig, tokenPlanDisabled });
+  /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
+  const presetOf = (preset: TokenPlanPreset) =>
+    view.presets.find((entry) => entry.id === tokenPlanPresetId(preset.id));
+  /** The plan's provider in the workspace's settings: connected when there is one. */
+  const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
+  const isPresetEnabled = (preset: TokenPlanPreset): boolean => !!providerOf(preset);
 
   // The modalities a preset declares, in display order — drives the tab bar.
   const presetModalities = (preset: TokenPlanPreset): TokenPlanModality[] =>
@@ -225,143 +218,81 @@ export function TokenPlanSettings() {
     setDisconnectOpen(false);
   };
 
-  const disablePreset = (preset: TokenPlanPreset) => {
-    removeTokenPlan(preset, {
-      setProviderConfig,
-      setImageProviderConfig,
-      setVideoProviderConfig,
-      setTTSProviderConfig,
-      setWebSearchProviderConfig,
-      setStageRoute,
-      getStageRoutes: () => useSettingsStore.getState().llmStageRoutes,
-      setTokenPlanEnrolled: (presetId, llmProviderId) =>
-        useSettingsStore.getState().setTokenPlanEnrolled(presetId, llmProviderId),
-      setTokenPlanEnabled: (presetId, enabled) =>
-        useSettingsStore.getState().setTokenPlanEnabled(presetId, enabled),
-      setTokenPlanSeedVersion: (presetId, fingerprint) =>
-        useSettingsStore.getState().setTokenPlanSeedVersion(presetId, fingerprint),
-      getTokenPlanEnrollments: () => useSettingsStore.getState().tokenPlanEnrollments,
-      // 共享槽位交还需要完整状态（enrollments + providersConfig + 授权开关）。
-      getTokenPlanPriorityState: () => {
-        const s = useSettingsStore.getState();
-        return {
-          tokenPlanEnrollments: s.tokenPlanEnrollments,
-          providersConfig: s.providersConfig,
-          tokenPlanDisabled: s.tokenPlanDisabled,
-        };
-      },
-    });
-  };
-
-  const disconnect = (preset: TokenPlanPreset) => {
-    disablePreset(preset);
+  // Disconnect = remove the plan's provider; the stages that used it follow
+  // the ones above them again.
+  const disconnect = async (preset: TokenPlanPreset) => {
+    const provider = providerOf(preset);
     setDisconnectOpen(false);
     setApiKey('');
     setEditingKey(false);
-    toast.success(t('settings.tokenPlan.saved'));
-  };
-
-  // Authorization toggle: record the flag and cascade it to each modality
-  // provider's `enabled`, so Course Model Config candidates, stage-route
-  // pruning, and media guards reuse the existing authorization layer.
-  const toggleAuthorization = (preset: TokenPlanPreset, checked: boolean) => {
-    const store = useSettingsStore.getState();
-    store.setTokenPlanEnabled(preset.id, checked);
-    // 级联读的是「写入标志位之后」的状态：这样共享 provider 的避让判定
-    // 看到的是本次切换后的真实生效集合。
-    const next = useSettingsStore.getState();
-    const nextState = {
-      tokenPlanEnrollments: next.tokenPlanEnrollments,
-      providersConfig: next.providersConfig,
-      tokenPlanDisabled: next.tokenPlanDisabled,
-    };
-    const writeActions = {
-      setProviderConfig,
-      setImageProviderConfig,
-      setVideoProviderConfig,
-      setTTSProviderConfig,
-      setWebSearchProviderConfig,
-    };
-    setTokenPlanAuthorization(preset, checked, writeActions, nextState);
-    // 共享槽位归属再解析（review P0-03）：关闭时排除本套餐（槽位交给剩余
-    // 生效套餐）；重新开启时必须**纳入**本套餐——它是此刻最高优先级的候选
-    // owner，排除自己会让刚启用的套餐抢不回槽位（regression #1）。
-    restoreSharedProviderCredentials(preset.id, writeActions, nextState, {
-      excludeConcerned: !checked,
-    });
-
-    // 重新开启时补种：关闭期间 stage route 会被授权层清理掉（provider 的
-    // enabled=false），仅把开关拨回去并不会让它们回来。清掉指纹让
-    // reconcile 重新播种，并由 priorityState 决定此刻能占到哪些槽位。
-    if (checked) {
-      useSettingsStore.getState().setTokenPlanSeedVersion(preset.id, null);
-      useSettingsStore.getState().reconcileTokenPlanSeeds();
+    if (!provider || provider.source !== 'workspace') return;
+    if (reportApply(await apply({ kind: 'remove-provider', id: provider.id }, view), t)) {
+      toast.success(t('settings.tokenPlan.saved'));
     }
   };
 
-  // Save = connect: seed every declared modality's config + the plan's model
-  // defaults, then we're done. No probing — the models a plan offers are
-  // listed as-is, and the user picks/toggles on the generation bar.
-  const handleApply = useCallback(
-    (key: string) => {
-      const trimmedKey = key.trim();
-      if (!selected || !trimmedKey) return;
-      applyTokenPlan(selected, trimmedKey, {
-        setProviderConfig,
-        setImageProviderConfig,
-        setVideoProviderConfig,
-        setTTSProviderConfig,
-        setWebSearchProviderConfig,
-        setImageProvider,
-        setImageModelId,
-        setVideoProvider,
-        setVideoModelId,
-        setModel,
-        setStageRoute,
-        setTTSProvider,
-        setWebSearchProvider,
-        // Enrollment + seed-fingerprint bookkeeping happen inside applyTokenPlan
-        // so they stay in lockstep with what actually got written.
-        setTokenPlanEnrolled: (presetId, llmProviderId) =>
-          useSettingsStore.getState().setTokenPlanEnrolled(presetId, llmProviderId),
-        setTokenPlanEnabled: (presetId, enabled) =>
-          useSettingsStore.getState().setTokenPlanEnabled(presetId, enabled),
-        setTokenPlanSeedVersion: (presetId, fingerprint) =>
-          useSettingsStore.getState().setTokenPlanSeedVersion(presetId, fingerprint),
-        getTokenPlanEnrollments: () => useSettingsStore.getState().tokenPlanEnrollments,
-        // 独占槽位按套餐列表顺序仲裁：新连一个靠后的套餐不抢占靠前套餐
-        // 已声明的主线模型 / stage route / 各模态选中项。
-        getTokenPlanPriorityState: () => {
-          const s = useSettingsStore.getState();
-          return {
-            tokenPlanEnrollments: s.tokenPlanEnrollments,
-            providersConfig: s.providersConfig,
-            tokenPlanDisabled: s.tokenPlanDisabled,
-          };
-        },
-      });
+  // Connect (or save a new key): add the plan's provider, or replace its key,
+  // then apply the plan's recommended configuration to the slots.
+  const connect = async (plan: TokenPlanPreset, key: string, mode: PlanApplyMode) => {
+    const preset = presetOf(plan);
+    if (!preset) return;
+    setSaving(true);
+    try {
+      const result = await connectTokenPlan(apply, view, preset, key, mode);
+      if (result.status === 'failed') {
+        toast.error(applyErrorText(result, t));
+        return;
+      }
+      if (result.status === 'partial' && result.message) {
+        toast.warning(applyErrorText({ reason: result.reason ?? '', message: result.message }, t));
+      }
       setApiKey('');
       setEditingKey(false);
       toast.success(t('settings.tokenPlan.saved'));
-    },
-    [
-      selected,
-      setProviderConfig,
-      setImageProviderConfig,
-      setVideoProviderConfig,
-      setTTSProviderConfig,
-      setWebSearchProviderConfig,
-      setImageProvider,
-      setImageModelId,
-      setVideoProvider,
-      setVideoModelId,
-      setModel,
-      setStageRoute,
-      setTTSProvider,
-      setWebSearchProvider,
-      t,
-    ],
-  );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Save = connect. When the plan's recommendation would replace models the
+  // workspace picked, ask first; otherwise apply it straight away.
+  const handleApply = async (key: string) => {
+    const trimmedKey = key.trim();
+    if (!selected || !trimmedKey) return;
+    const preset = presetOf(selected);
+    if (!preset) return;
+    const conflicts = connectConflicts(view, preset);
+    if (conflicts.length) {
+      setPending({ plan: selected, key: trimmedKey, conflicts });
+      return;
+    }
+    await connect(selected, trimmedKey, 'overwrite');
+  };
+
+  const choose = (mode: PlanApplyMode) => {
+    const chosen = pending;
+    setPending(null);
+    if (chosen) void connect(chosen.plan, chosen.key, mode);
+  };
+
+  /** How a slot's assignment reads in the confirmation: its model (and provider), or off. */
+  const assignmentLabel = (
+    conflict: PlanConflict,
+    ref: string | null,
+    preset: PresetView | undefined,
+  ): string => {
+    if (ref === null) return t(`${MS}.card.off`);
+    const capability = conflict.slot.capability;
+    const { providerId, modelId } = splitRef(ref);
+    const known = view.providers.some((provider) => provider.id === providerId);
+    const provider = known ? providerLabel(view, providerId) : (preset?.name ?? providerId);
+    if (!modelId) return provider;
+    const model = known
+      ? modelName(view, capability, providerId, modelId)
+      : (preset?.capabilities[capability]?.models.find((entry) => entry.id === modelId)?.name ??
+        modelId);
+    return `${model} · ${provider}`;
+  };
 
   const tp = 'settings.tokenPlan';
 
@@ -382,7 +313,6 @@ export function TokenPlanSettings() {
         >
           {TOKEN_PLAN_PRESETS.map((preset, index) => {
             const enabled = isPresetEnabled(preset);
-            const usable = isPresetUsable(preset);
             const active = selected?.id === preset.id;
             return (
               <button
@@ -429,14 +359,8 @@ export function TokenPlanSettings() {
                     {presetDisplayName(preset)}
                   </span>
                   <span className="flex items-center justify-center gap-1 text-xs leading-5 text-muted-foreground sm:justify-start">
-                    {usable && <Check className="size-3 shrink-0" />}
-                    {t(
-                      !enabled
-                        ? `${tp}.statusNotConnected`
-                        : usable
-                          ? `${tp}.statusConnected`
-                          : `${tp}.statusDisabled`,
-                    )}
+                    {enabled && <Check className="size-3 shrink-0" />}
+                    {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
                   </span>
                 </span>
               </button>
@@ -452,7 +376,10 @@ export function TokenPlanSettings() {
           >
             {(() => {
               const enabled = isPresetEnabled(selected);
-              const usable = isPresetUsable(selected);
+              const provider = providerOf(selected);
+              // Only the workspace's own plan can have its key updated or be disconnected.
+              const own = provider?.source === 'workspace';
+              const canConnect = !provider && !!presetOf(selected);
               return (
                 <>
                   {/* 头部一行：身份 + 状态 + 服务级动作（更新密钥 / 管理账号 / 更多） */}
@@ -463,15 +390,15 @@ export function TokenPlanSettings() {
                       </h4>
                       <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
                         <span>
-                          {t(
-                            !enabled
-                              ? `${tp}.statusNotConnected`
-                              : usable
-                                ? `${tp}.statusConnected`
-                                : `${tp}.statusDisabled`,
-                          )}
+                          {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
                         </span>
-                        {enabled && (
+                        {provider?.source === 'deployment' && (
+                          <span>{t('settings.serverConfig.planServer')}</span>
+                        )}
+                        {own && provider?.key?.mask && (
+                          <span className="font-mono">{provider.key.mask}</span>
+                        )}
+                        {own && (
                           <button
                             type="button"
                             onClick={() => {
@@ -540,27 +467,7 @@ export function TokenPlanSettings() {
                             <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
                           </a>
                         ))}
-                      {/* 授权层开关：关闭后此套餐不再出现在课程模型配置中
-                          （凭证与连接保留）。未连接时不可开启。 */}
-                      <Tooltip>
-                        {/* 垫一层 span：TooltipTrigger asChild 会把自己的
-                            data-state 合并到子元素上，直接套 Switch 会覆盖其
-                            checked/unchecked 状态，导致选中配色失效。 */}
-                        <TooltipTrigger asChild>
-                          <span className="inline-flex">
-                            <Switch
-                              checked={usable}
-                              disabled={!enabled}
-                              onCheckedChange={(checked) => toggleAuthorization(selected, checked)}
-                              aria-label={t(`${tp}.enableThisPlan`)}
-                            />
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="text-xs">
-                          {t(`${tp}.enableThisPlanHint`)}
-                        </TooltipContent>
-                      </Tooltip>
-                      {enabled && (
+                      {own && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -584,12 +491,15 @@ export function TokenPlanSettings() {
                   </div>
 
                   {/* 密钥表单：未连接或更新密钥时显示；保存即连接 */}
-                  {(!enabled || editingKey) && (
+                  {!enabled && !canConnect && (
+                    <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
+                  )}
+                  {(canConnect || (own && editingKey)) && (
                     <form
                       className="space-y-2"
                       onSubmit={(event) => {
                         event.preventDefault();
-                        handleApply(apiKey);
+                        void handleApply(apiKey);
                       }}
                     >
                       {/* Field and its commit share one row; the button never owns a line. */}
@@ -618,7 +528,7 @@ export function TokenPlanSettings() {
                           type="submit"
                           size="sm"
                           className="ml-auto shrink-0"
-                          disabled={!apiKey.trim()}
+                          disabled={!apiKey.trim() || saving}
                         >
                           {t(editingKey ? `${tp}.updateKey` : `${tp}.saveKey`)}
                         </Button>
@@ -732,6 +642,56 @@ export function TokenPlanSettings() {
         )}
       </div>
 
+      {/* Connecting would replace models the workspace picked: ask first. */}
+      {pending && (
+        <AlertDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setPending(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(`${tp}.applyTitle`)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(`${tp}.applyBody`, { name: presetDisplayName(pending.plan) })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <ul className="max-h-60 space-y-1.5 overflow-y-auto text-xs leading-5">
+              {pending.conflicts.map((conflict) => {
+                const preset = presetOf(pending.plan);
+                const current =
+                  conflict.current === null
+                    ? null
+                    : typeof conflict.current === 'string'
+                      ? conflict.current
+                      : conflict.current.model;
+                return (
+                  <li key={conflict.slot.slot} className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium">{slotName(t, conflict.slot.slot)}</span>
+                    <span className="min-w-0 break-all text-muted-foreground">
+                      {assignmentLabel(conflict, current, preset)}
+                      {' → '}
+                      <span className="text-foreground">
+                        {assignmentLabel(conflict, conflict.recommended, preset)}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <AlertDialogFooter>
+              <AlertDialogAction variant="outline" onClick={() => choose('keep')}>
+                {t(`${tp}.applyKeep`)}
+              </AlertDialogAction>
+              <AlertDialogAction onClick={() => choose('overwrite')}>
+                {t(`${tp}.applyRecommended`)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
       {/* 解除连接确认 */}
       {selected && (
         <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
@@ -742,7 +702,7 @@ export function TokenPlanSettings() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-              <AlertDialogAction onClick={() => disconnect(selected)}>
+              <AlertDialogAction onClick={() => void disconnect(selected)}>
                 {t(`${tp}.disconnect`)}
               </AlertDialogAction>
             </AlertDialogFooter>

@@ -114,6 +114,50 @@ type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
 interface PendingOperation {
   stageId?: string;
   mode: OwnershipMode;
+  /** A create that must insert: any existing course under the id refuses it. */
+  exclusive?: CreateDocumentOptions;
+}
+
+/** What {@link CreateOnlyDocumentStore.createDocument} may add to its transaction. */
+export interface CreateDocumentOptions {
+  /**
+   * Runs on the create's transaction after the course, its ownership row and
+   * the host create hooks, before COMMIT: whatever it writes commits or rolls
+   * back with the course.
+   */
+  inTransaction?: (queryable: Queryable) => Promise<void>;
+}
+
+/**
+ * A create was refused because a course already holds the id: live or
+ * deleted, this owner's or another's. Nothing was written.
+ */
+export class StageIdTakenError extends Error {
+  readonly code = 'STAGE_ID_TAKEN' as const;
+
+  constructor(readonly stageId: string) {
+    super(`a course with the id ${JSON.stringify(stageId)} already exists`);
+    this.name = 'StageIdTakenError';
+  }
+}
+
+export function isStageIdTakenError(error: unknown): error is StageIdTakenError {
+  return (
+    error instanceof StageIdTakenError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: unknown }).code === 'STAGE_ID_TAKEN')
+  );
+}
+
+/**
+ * The create-only write, for server flows that mint a course and must never
+ * replace one: `saveDocument` treats a save of an id this owner already holds
+ * as an update, which a concurrent create of the same id (another tab, an
+ * import) would silently lose to.
+ */
+export interface CreateOnlyDocumentStore<TScene extends SceneLike, TStage extends Stage> {
+  createDocument(doc: MaicDocument<TScene, TStage>, options?: CreateDocumentOptions): Promise<void>;
 }
 
 interface RawOwnershipRow extends Record<string, unknown> {
@@ -131,7 +175,10 @@ function queryableFor(connection: Pick<PoolClientLike, 'query'>): Queryable {
 }
 
 class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
-  implements DocumentStore<TScene, TStage>, DocumentFolderStore
+  implements
+    DocumentStore<TScene, TStage>,
+    DocumentFolderStore,
+    CreateOnlyDocumentStore<TScene, TStage>
 {
   constructor(
     private readonly inner: PgDocumentStore<TScene, TStage>,
@@ -158,6 +205,17 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 
   saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
     return this.tagged({ stageId: doc.stage.id, mode: 'create' }, () =>
+      this.inner.saveDocument(doc),
+    );
+  }
+
+  /**
+   * {@link saveDocument}, refused with {@link StageIdTakenError} when any
+   * course holds the id. Decided inside the create's transaction, under the
+   * per-id create lock, so two creates of one id cannot both land.
+   */
+  createDocument(doc: MaicDocument<TScene, TStage>, options: CreateDocumentOptions = {}) {
+    return this.tagged({ stageId: doc.stage.id, mode: 'create', exclusive: options }, () =>
       this.inner.saveDocument(doc),
     );
   }
@@ -309,7 +367,9 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 export function createOwnerBoundDocumentStore<
   TScene extends SceneLike = Scene,
   TStage extends Stage = Stage,
->(options: OwnerBoundDocumentStoreOptions): DocumentStore<TScene, TStage> & DocumentFolderStore {
+>(
+  options: OwnerBoundDocumentStoreOptions,
+): DocumentStore<TScene, TStage> & DocumentFolderStore & CreateOnlyDocumentStore<TScene, TStage> {
   const operations = new AsyncLocalStorage<PendingOperation>();
   if (options.principal && options.principal.ownerId !== options.ownerId) {
     throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
@@ -357,6 +417,9 @@ export function createOwnerBoundDocumentStore<
             [operation.stageId],
           );
           const row = result.rows[0];
+          if (row && operation.exclusive) {
+            throw new StageIdTakenError(operation.stageId);
+          }
           if (row) {
             if (operation.mode !== 'read' && row.owner_id !== options.ownerId) {
               throw new StageAccessError(operation.stageId, options.ownerId, 'foreign');
@@ -370,6 +433,7 @@ export function createOwnerBoundDocumentStore<
               [operation.stageId],
             );
             if (occupied.rows[0]?.exists) {
+              if (operation.exclusive) throw new StageIdTakenError(operation.stageId);
               throw new StageAccessError(operation.stageId, options.ownerId, 'reserved-document');
             }
           } else {
@@ -388,6 +452,14 @@ export function createOwnerBoundDocumentStore<
           // together with anything the hooks wrote.
           const created = await claimStageMeta(queryable, operation.stageId!, options.ownerId);
           if (created) await runCreateHooks(createHooks, queryable, actor, operation.stageId!);
+          if (operation.exclusive) {
+            // An exclusive create found no row above and holds the create lock,
+            // so it must be the transaction that created the course. Anything
+            // else is a broken invariant: refuse rather than commit without
+            // the rows `inTransaction` owes.
+            if (!created) throw new StageIdTakenError(operation.stageId!);
+            await operation.exclusive.inTransaction?.(queryable);
+          }
         }
         if (operation && operation.mode !== 'read') await options.mutationFence?.(queryable);
         await client.query('COMMIT');

@@ -428,14 +428,16 @@ describe('generate_image tool', () => {
     );
   });
 
-  it('does not select a force-disabled provider via DEFAULT_IMAGE_PROVIDER', async () => {
+  it('does not select a force-disabled provider, whatever DEFAULT_IMAGE_PROVIDER names', async () => {
+    // DEFAULT_IMAGE_PROVIDER now only shapes the translated image slot
+    // (legacy-config); the tool itself never reads it.
     vi.stubEnv('DEFAULT_IMAGE_PROVIDER', 'openai-image');
     const generateConfiguredImage = vi.fn();
     const tool = buildGenerateImageTool({
       sessionId: 'session-owner',
       ownerId: 'user:test-owner',
-      // openai-image is configured but force-disabled; the env default names it,
-      // so the call must fail instead of using the disabled provider (#665).
+      // openai-image is configured but force-disabled: the call must fail
+      // instead of using the disabled provider (#665).
       getConfiguredProviders: () => ({ 'openai-image': { disabled: true } }),
       generateConfiguredImage,
     });
@@ -447,7 +449,7 @@ describe('generate_image tool', () => {
     )) as { isError?: boolean; content: { text: string }[]; details: Record<string, unknown> };
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('server default image provider is not available');
+    expect(result.content[0].text).toContain('no server image provider is available');
     expect(result.details.reason).toBe('no-provider');
     expect(generateConfiguredImage).not.toHaveBeenCalled();
   });

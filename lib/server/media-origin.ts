@@ -1,6 +1,6 @@
 /**
- * One resolver for the base origin used to build classroom media serving
- * URLs (`mediaServingUrl` in `classroom-media-generation.ts`).
+ * One resolver for the base origin used to build absolute classroom media
+ * serving URLs.
  *
  * Providers that hand back a hosted URL are stored directly and never touch
  * this resolver. It exists for the BYTE-FALLBACK branch only: byte-only

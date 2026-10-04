@@ -362,10 +362,7 @@ export function useQwenVoiceProfiles() {
   }, [refresh]);
 
   const addCloneVoice = useCallback(
-    async (
-      input: { name: string; referenceAudio: File; refText: string },
-      request: VoiceRegistrationRequestConfig,
-    ) => {
+    async (input: { name: string; referenceAudio: File; refText: string }) => {
       const normalized = await normalizeQwenReferenceAudio(
         input.referenceAudio,
         input.referenceAudio.name,
@@ -373,15 +370,11 @@ export function useQwenVoiceProfiles() {
       const referenceAudio = new File([normalized.blob], normalized.name, {
         type: normalized.mimeType,
       });
-      const voiceId = await registerVoiceFromReference(
-        'qwen-tts',
-        {
-          name: input.name,
-          referenceAudio,
-          refText: input.refText,
-        },
-        request,
-      );
+      const voiceId = await registerVoiceFromReference('qwen-tts', {
+        name: input.name,
+        referenceAudio,
+        refText: input.refText,
+      });
       const now = Date.now();
       await db.voiceProfiles.put({
         id: voiceId,
@@ -403,8 +396,8 @@ export function useQwenVoiceProfiles() {
   );
 
   const deleteVoice = useCallback(
-    async (id: string, request: VoiceRegistrationRequestConfig) => {
-      const vendorDeleted = await deleteRegisteredVoice('qwen-tts', id, request);
+    async (id: string) => {
+      const vendorDeleted = await deleteRegisteredVoice('qwen-tts', id);
       if (!vendorDeleted) {
         console.warn('[QwenVoiceProfiles] Provider deletion failed; removing local profile');
       }

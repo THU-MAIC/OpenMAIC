@@ -6,14 +6,11 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
+
 const mocks = vi.hoisted(() => ({
-  settings: vi.fn(),
   mediaDelete: vi.fn(),
   mediaGet: vi.fn(),
-}));
-
-vi.mock('@/lib/store/settings', () => ({
-  useSettingsStore: { getState: mocks.settings },
 }));
 
 vi.mock('@/lib/device-storage/database', () => ({
@@ -94,15 +91,10 @@ describe('retryMediaTask honours the same permission', () => {
     resetGenerationPermissionsForTests();
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
     mocks.mediaGet.mockReset().mockResolvedValue(undefined);
-    mocks.settings.mockReset().mockReturnValue({
-      imageGenerationEnabled: true,
-      videoGenerationEnabled: true,
-      imageProviderId: 'p',
-      imageModelId: 'm',
-      imageProvidersConfig: {},
-      videoProviderId: 'p',
-      videoModelId: 'm',
-      videoProvidersConfig: {},
+    // The workspace's image and video slots resolve to a provider.
+    setModelSettingsViewForTests({
+      image: { registryId: 'seedream' },
+      video: { registryId: 'seedance' },
     });
     useMediaGenerationStore.setState({
       tasks: {
@@ -136,6 +128,25 @@ describe('retryMediaTask honours the same permission', () => {
 
     expect(mocks.mediaDelete).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves the task alone when the model settings cannot be read', async () => {
+    noteStageGenerationOwnership(stageId, 'owner');
+    // Nothing read yet, and every read fails.
+    setModelSettingsViewForTests(null);
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await retryMediaTask('gen_img_x');
+
+    // Not marked "generation disabled": unknown settings are no refusal.
+    expect(useMediaGenerationStore.getState().tasks.gen_img_x).toMatchObject({
+      status: 'failed',
+      error: 'transient',
+    });
+    expect(mocks.mediaDelete).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.every(([url]) => url === '/api/model-config')).toBe(true);
     vi.unstubAllGlobals();
   });
 });

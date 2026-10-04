@@ -40,10 +40,29 @@ const WORKBENCH_MATERIAL_FORMAT_IDS = [
  */
 const WORKBENCH_EXTRA_MEDIA_MIMES = ['audio/webm'] as const;
 
-export const WORKBENCH_MATERIAL_MIME_TYPES: readonly string[] = [
-  ...WORKBENCH_MATERIAL_FORMAT_IDS.map((id) => DOCUMENT_MIME_TYPES[id]),
-  ...WORKBENCH_EXTRA_MEDIA_MIMES,
+export interface WorkbenchMaterialFormat {
+  /** Registry format id, or the MIME itself for an extra MIME with no format. */
+  id: string;
+  mime: string;
+  /** Accepted file extensions (leading dot); empty for an extension-less MIME. */
+  extensions: readonly string[];
+}
+
+/** Every accepted format, as advertised to API callers. */
+export const WORKBENCH_MATERIAL_FORMATS: readonly WorkbenchMaterialFormat[] = [
+  ...WORKBENCH_MATERIAL_FORMAT_IDS.map((id) => ({
+    id,
+    mime: DOCUMENT_MIME_TYPES[id],
+    extensions: getExtensionsForMimes([DOCUMENT_MIME_TYPES[id]]).map(
+      (extension) => `.${extension}`,
+    ),
+  })),
+  ...WORKBENCH_EXTRA_MEDIA_MIMES.map((mime) => ({ id: mime, mime, extensions: [] })),
 ];
+
+export const WORKBENCH_MATERIAL_MIME_TYPES: readonly string[] = WORKBENCH_MATERIAL_FORMATS.map(
+  (format) => format.mime,
+);
 
 export const WORKBENCH_MATERIAL_EXTENSIONS: readonly string[] = getExtensionsForMimes(
   WORKBENCH_MATERIAL_MIME_TYPES,

@@ -44,6 +44,19 @@ export async function register(): Promise<void> {
     warnIfAccessCodeIsUnset(process.env.ACCESS_CODE);
   }
 
+  // Warn-only: the instance secret that seals keys saved in the model settings
+  // (lib/server/instance-secret-check.ts), checked against the keys already
+  // stored with one query in the background. It never stops the server.
+  const { warnAboutInstanceSecret } = await import('@/lib/server/instance-secret-check');
+  void warnAboutInstanceSecret();
+
+  // The one-time import of classrooms earlier versions stored as files
+  // (lib/server/legacy-classroom-import.ts). It reads the disk and the
+  // database, so it runs in the background, retrying with backoff until it
+  // completes: `register` must not wait on it.
+  const { startLegacyClassroomImport } = await import('@/lib/server/legacy-classroom-import');
+  const legacyClassroomImport = startLegacyClassroomImport();
+
   // Imported dynamically so the Edge bundle never pulls in `pg`.
   const { startAssetCollectorSchedule } =
     await import('@/lib/persistence/asset-collector-schedule');
@@ -104,6 +117,11 @@ export async function register(): Promise<void> {
         console.error('[instrumentation] Agent event notify bus drain failed', error);
       }
       try {
+        await legacyClassroomImport.stop();
+      } catch (error) {
+        console.error('[instrumentation] Legacy classroom import drain failed', error);
+      }
+      try {
         await assetSchedule?.stop();
       } catch (error) {
         console.error('[instrumentation] Asset collector drain failed', error);
@@ -145,6 +163,15 @@ async function validateBootConfiguration(): Promise<void> {
   // `docker compose up` for a deployment).
   const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
   runConfigurationCheck(() => requireDatabaseUrl());
+
+  // The deployment's model configuration: openmaic.yml (or the file named by
+  // OPENMAIC_CONFIG), else the legacy provider variables translated. A
+  // malformed file, an unset `${VAR}` or a slot pointing at an undeclared
+  // provider is refused here with every problem listed, and so is a
+  // MODEL_ROUTES left without openmaic.yml, rather than discovered by the
+  // first generation. Loaded once; the notices are printed here.
+  const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
+  runConfigurationCheck(deploymentConfig);
 
   // The asset quota, read here rather than at the first persistence request.
   // The provider that consumes it is lazy and memoised, so a malformed ceiling

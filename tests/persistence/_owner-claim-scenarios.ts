@@ -253,6 +253,7 @@ export async function rowsUnder(pool: ClaimScenarioPool, owner: string) {
     runtime: await count('runtime_sessions WHERE learner_key = $1'),
     assets: await count('asset_entries WHERE principal = $1', assetPrincipalForOwner(owner).key),
     legacyImportBindings: await count('legacy_import_bindings WHERE owner_id = $1'),
+    workspaceModelConfig: await count('workspace_model_config WHERE owner_id = $1'),
     // The retired ownership column, where an installation still has it.
     legacyDocumentOwners: (await hasLegacyOwnerColumn(pool))
       ? await count('document_stages WHERE owner_id = $1')
@@ -287,6 +288,7 @@ const NOTHING = {
   runtime: 0,
   assets: 0,
   legacyImportBindings: 0,
+  workspaceModelConfig: 0,
   legacyDocumentOwners: 0,
 };
 
@@ -307,6 +309,12 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
   await h.pool.query(
     `UPDATE document_stages AS d SET owner_id = m.owner_id FROM stage_meta AS m
       WHERE m.stage_id = d.id`,
+  );
+  // Model settings made while anonymous; the account has none, so they move.
+  await h.pool.query(
+    `INSERT INTO workspace_model_config (owner_id, config, revision)
+     VALUES ($1, '{"slots":{"video":null}}'::jsonb, 1)`,
+    [ANON],
   );
   // A runtime session written by a newer version: it no longer validates here,
   // and must not stop the claim.
@@ -349,9 +357,11 @@ export async function fullClaimScenario(h: ClaimHarness): Promise<void> {
       runtime: 2,
       assets: 1,
       'legacy-import-bindings': 1,
+      'workspace-model-config': 1,
     },
   });
   expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+  expect((await rowsUnder(h.pool, ACCOUNT)).workspaceModelConfig).toBe(1);
   expect(await merges(h.pool)).toEqual([[ANON, ACCOUNT]]);
 
   // Courses, listed under the account, filed per the folder rules.

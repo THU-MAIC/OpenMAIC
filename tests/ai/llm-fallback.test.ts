@@ -34,6 +34,7 @@ vi.mock('@/lib/server/usage-storage', () => ({
 vi.mock('@/lib/server/llm-fallback', () => fallbackMock);
 
 import { callLLM } from '@/lib/ai/llm';
+import { attachModelFallback } from '@/lib/ai/model-fallbacks';
 import type { GenerateTextResult } from 'ai';
 
 function okResult(): GenerateTextResult<never, never> {
@@ -49,6 +50,71 @@ describe('callLLM retryable-failure fallback', () => {
     fallbackMock.logFallbackFired.mockReset();
     fallbackMock.isEmptyLlmOutput.mockClear();
     aiMock.generateText.mockResolvedValue(okResult());
+  });
+
+  it("retries on the model's attached slot fallback, never MODEL_FALLBACK", async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'global-fallback' as never,
+      modelString: 'openai:global',
+    });
+    const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
+    attachModelFallback(primary, async () => ({
+      model: 'slot-fallback' as never,
+      modelString: 'deepseek:deepseek-v4-flash',
+    }));
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    await callLLM(
+      { model: primary, prompt: 'hi' } as never,
+      'scene-content',
+      undefined,
+      undefined,
+      {
+        serverManaged: true,
+      },
+    );
+    expect(aiMock.generateText).toHaveBeenCalledTimes(2);
+    expect(aiMock.generateText.mock.calls[1]?.[0]?.model).toBe('slot-fallback');
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+  });
+
+  it('arms a slot fallback without the serverManaged stamp (PBL callers pass none)', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
+    attachModelFallback(primary, async () => ({
+      model: 'slot-fallback' as never,
+      modelString: 'deepseek:deepseek-v4-flash',
+    }));
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    await callLLM({ model: primary, prompt: 'hi' } as never, 'pbl-v2-runtime');
+    expect(aiMock.generateText.mock.calls[1]?.[0]?.model).toBe('slot-fallback');
+  });
+
+  it('does not retry a slot model whose slot has no fallback, even with MODEL_FALLBACK', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'global-fallback' as never,
+      modelString: 'openai:global',
+    });
+    const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
+    attachModelFallback(primary, async () => null);
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('quota exceeded'), { statusCode: 429 }),
+    );
+
+    await expect(
+      callLLM({ model: primary, prompt: 'hi' } as never, 'scene-content', undefined, undefined, {
+        serverManaged: true,
+      }),
+    ).rejects.toMatchObject({ statusCode: 429 });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
   });
 
   it('does not fall back when resolveFallbackModel returns null', async () => {

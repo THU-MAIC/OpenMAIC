@@ -5,9 +5,9 @@ const ttsMocks = vi.hoisted(() => ({
   generateTTS: vi.fn(),
 }));
 
-const fsMocks = vi.hoisted(() => ({
-  mkdir: vi.fn(async () => undefined),
-  writeFile: vi.fn(async (_filePath: string, _data: Uint8Array) => undefined),
+// Narration goes to the asset pool; each clip is answered with the next id.
+const storeMocks = vi.hoisted(() => ({
+  storeGeneratedAsset: vi.fn(),
 }));
 
 vi.mock('@/lib/audio/tts-providers', async (importOriginal) => {
@@ -18,17 +18,9 @@ vi.mock('@/lib/audio/tts-providers', async (importOriginal) => {
   };
 });
 
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs')>();
-  return {
-    ...actual,
-    promises: {
-      ...actual.promises,
-      mkdir: fsMocks.mkdir,
-      writeFile: fsMocks.writeFile,
-    },
-  };
-});
+vi.mock('@/lib/server/store-generated-asset', () => ({
+  storeGeneratedAsset: (...args: unknown[]) => storeMocks.storeGeneratedAsset(...args),
+}));
 
 const TTS_PREFIXES = [
   'TTS_OPENAI',
@@ -38,6 +30,7 @@ const TTS_PREFIXES = [
   'TTS_VOXCPM',
   'TTS_DOUBAO',
   'TTS_ELEVENLABS',
+  'TTS_GOOGLE',
   'TTS_LEMONADE',
   'TTS_MINIMAX',
 ] as const;
@@ -70,6 +63,10 @@ function speechAction(scene: Scene, id: string) {
   return action as { id: string; audioId?: string; audioUrl?: string } | undefined;
 }
 
+function storedClip(call: number) {
+  return `ast_clip_${call}`;
+}
+
 async function loadClassroomTts() {
   const media = await import('@/lib/server/classroom-media-generation');
   const tts = await import('@/lib/audio/tts-providers');
@@ -85,13 +82,7 @@ async function runClassroomTts(
   onProgress?: (progress: { written: number; total: number }) => void,
 ) {
   const { generateTTSForClassroom } = await loadClassroomTts();
-  const pending = generateTTSForClassroom(
-    scenes,
-    'cls-tts',
-    'http://localhost',
-    signal,
-    onProgress,
-  );
+  const pending = generateTTSForClassroom(scenes, 'cls-tts', 'owner-1', signal, onProgress);
   await vi.runAllTimersAsync();
   return pending;
 }
@@ -103,8 +94,11 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     vi.resetModules();
     vi.useFakeTimers();
     ttsMocks.generateTTS.mockReset();
-    fsMocks.mkdir.mockClear();
-    fsMocks.writeFile.mockClear();
+    storeMocks.storeGeneratedAsset.mockReset();
+    storeMocks.storeGeneratedAsset.mockImplementation(async () => ({
+      status: 'stored',
+      assetId: storedClip(storeMocks.storeGeneratedAsset.mock.calls.length),
+    }));
     logLines.length = 0;
 
     for (const prefix of TTS_PREFIXES) {
@@ -148,14 +142,16 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     expect(coverage).toEqual({ written: 2, total: 2 });
     expect(startedAt).toHaveLength(2);
     expect(startedAt[1]! - startedAt[0]!).toBe(1000);
-    expect(speechAction(scene, 'action_0')).toMatchObject({
-      audioId: 'tts_s2_action_0',
-      audioUrl: 'http://localhost/api/classroom-media/cls-tts/audio/tts_s2_action_0.mp3',
+    expect(speechAction(scene, 'action_0')?.audioId).toBe(storedClip(1));
+    expect(speechAction(scene, 'action_0')).not.toHaveProperty('audioUrl');
+    expect(storeMocks.storeGeneratedAsset).toHaveBeenCalledTimes(2);
+    expect(storeMocks.storeGeneratedAsset.mock.calls[0]![0]).toEqual({
+      ownerId: 'owner-1',
+      stageId: 'cls-tts',
+      bytes: CLIP,
+      mimeType: 'audio/mpeg',
+      kind: 'audio',
     });
-    expect(fsMocks.writeFile).toHaveBeenCalledTimes(2);
-    const [filePath, bytes] = fsMocks.writeFile.mock.calls[0]!;
-    expect(String(filePath)).toMatch(/tts_s2_action_0\.mp3$/);
-    expect(bytes).toEqual(CLIP);
     expect(logLines.some((line) => line.includes('TTS generation complete: 2 clips written'))).toBe(
       true,
     );
@@ -340,7 +336,7 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     const pending = generateTTSForClassroom(
       [speechScene([{ id: 'action_0', text: 'cancel me' }])],
       'cls-tts',
-      'http://localhost',
+      'owner-1',
       controller.signal,
     );
     const settled = pending.then(
@@ -377,7 +373,7 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     expect(coverage).toEqual({ written: 1, total: 1 });
     expect(startedAt).toHaveLength(2);
     expect(startedAt[1]! - startedAt[0]!).toBe(2000);
-    expect(speechAction(scene, 'action_0')?.audioId).toBe('tts_s2_action_0');
+    expect(speechAction(scene, 'action_0')?.audioId).toBe(storedClip(1));
     expect(
       logLines.some((line) =>
         line.includes(
@@ -494,7 +490,7 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     expect(startedAt[1]! - startedAt[0]!).toBe(2000);
     expect(coverage).toEqual({ written: 1, total: 2 });
     expect(speechAction(scene, 'action_0')?.audioId).toBeUndefined();
-    expect(speechAction(scene, 'action_1')?.audioId).toBe('tts_s2_action_1');
+    expect(speechAction(scene, 'action_1')?.audioId).toBe(storedClip(1));
     expect(ttsMocks.generateTTS).toHaveBeenCalledTimes(2);
     expect(
       logLines.some((line) =>
@@ -530,8 +526,8 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     ).toEqual([0, 2000, 4000, 8000, 15000, 15000, 15000]);
     expect(coverage).toEqual({ written: 1, total: 2 });
     expect(speechAction(scene, 'action_0')?.audioId).toBeUndefined();
-    expect(speechAction(scene, 'action_1')?.audioId).toBe('tts_s2_action_1');
-    expect(fsMocks.writeFile).toHaveBeenCalledTimes(1);
+    expect(speechAction(scene, 'action_1')?.audioId).toBe(storedClip(1));
+    expect(storeMocks.storeGeneratedAsset).toHaveBeenCalledTimes(1);
     expect(
       logLines.some((line) =>
         line.includes('TTS generation INCOMPLETE: 1 written, 1 speech actions left silent'),
@@ -570,6 +566,24 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     ).toBe(true);
   });
 
+  it('stops synthesizing once the asset store has no room', async () => {
+    ttsMocks.generateTTS.mockResolvedValue({ audio: CLIP, format: 'mp3' });
+    storeMocks.storeGeneratedAsset.mockResolvedValueOnce({
+      status: 'refused',
+      reason: 'storage-full',
+    });
+    const scene = speechScene([
+      { id: 'action_0', text: 'refused' },
+      { id: 'action_1', text: 'never synthesized' },
+    ]);
+
+    const result = await runClassroomTts([scene]);
+
+    expect(result).toEqual({ written: 0, total: 2, storageFull: true });
+    expect(ttsMocks.generateTTS).toHaveBeenCalledTimes(1);
+    expect(speechAction(scene, 'action_1')?.audioId).toBeUndefined();
+  });
+
   it('reports zero coverage when TTS is enabled but no server provider is configured', async () => {
     vi.stubEnv('TTS_MINIMAX_API_KEY', '');
     vi.stubEnv('TTS_MINIMAX_ENABLED', 'false');
@@ -579,7 +593,7 @@ describe('generateTTSForClassroom pacing and coverage', () => {
 
     expect(coverage).toEqual({ written: 0, total: 1 });
     expect(ttsMocks.generateTTS).not.toHaveBeenCalled();
-    expect(fsMocks.writeFile).not.toHaveBeenCalled();
+    expect(storeMocks.storeGeneratedAsset).not.toHaveBeenCalled();
     expect(logLines.some((line) => line.includes('TTS generation complete'))).toBe(false);
     expect(
       logLines.some((line) =>
@@ -617,8 +631,15 @@ describe('generateTTSForClassroom pacing and coverage', () => {
     vi.stubEnv('TTS_GLM_API_KEY', 'test-glm-key');
     vi.stubEnv('TTS_GLM_ENABLED', 'true');
     vi.resetModules();
-    const providerConfig = await import('@/lib/server/provider-config');
-    vi.spyOn(providerConfig, 'resolveTTSApiKey').mockReturnValue('');
+    // The tts slot resolves to GLM, whose key did not come through.
+    const media = await import('@/lib/server/model-config/media');
+    vi.spyOn(media, 'serverMediaConnection').mockResolvedValue({
+      providerId: 'glm-tts',
+      apiKey: '',
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration',
+    });
     const long = '句子。'.repeat(400);
     const scene = speechScene([{ id: 'action_0', text: long }]);
     const { splitLongSpeechActions } = await import('@/lib/audio/tts-utils');

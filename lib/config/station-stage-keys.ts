@@ -18,5 +18,5 @@ export const STATION_STAGE_KEYS: Record<string, readonly string[]> = {
   agents: ['agent-profiles'],
   'scene-content': ['scene-content'],
   'scene-actions': ['scene-actions'],
-  interaction: ['chat-adapter', 'quiz-grade', 'pbl-chat', 'pbl-v2-runtime'],
+  interaction: ['chat-adapter', 'quiz-grade', 'pbl-v2-runtime'],
 };

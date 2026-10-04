@@ -1,6 +1,7 @@
 import type { DocumentStore } from '@openmaic/storage';
 
 import type { AppScene } from '@/lib/types/stage';
+import type { CreateOnlyDocumentStore } from '@/lib/persistence/owner-bound-document-store';
 import { omitUndefinedObjectMembers } from '@/lib/persistence/plain-json';
 
 import type { AppStage } from './persistence-types';
@@ -50,6 +51,17 @@ export function withPlainJsonDocumentWrites<TStore extends DocumentStore<AppScen
       return store.deleteScene(stageId, sceneId);
     },
   };
+  // The create-only write of the owner-bound store, when the store has one.
+  const createOnly = store as Partial<CreateOnlyDocumentStore<AppScene, AppStage>>;
+  if (typeof createOnly.createDocument === 'function') {
+    const createDocument = createOnly.createDocument.bind(store);
+    Object.assign(methods, {
+      createDocument: (
+        document: Parameters<typeof createDocument>[0],
+        options?: Parameters<typeof createDocument>[1],
+      ) => createDocument(omitUndefinedObjectMembers(document), options),
+    });
+  }
   const facade = Object.create(Object.getPrototypeOf(store)) as TStore;
   Object.defineProperties(facade, Object.getOwnPropertyDescriptors(methods));
   const wrapper = new Proxy(facade, {

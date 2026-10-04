@@ -52,6 +52,10 @@ const EXEMPT: Record<string, string> = {
   // cookies. Renewal there is left to the owner-scoped routes the same page
   // calls (the library, persistence), which every session uses.
   [join('lib', 'persistence', 'resolve-vision-images.ts')]: 'prompt helper, no response',
+  // Picks the workspace whose model settings a generation call uses, and
+  // returns no response of its own; the same generation routes as above. An
+  // owner minted by the request gets no workspace, so nothing depends on it.
+  [join('lib', 'server', 'model-config', 'runtime.ts')]: 'model settings lookup, no response',
 };
 
 describe('owner resolution cookies are forwarded', () => {

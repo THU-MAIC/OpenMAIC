@@ -17,6 +17,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({ resolveModel: mocks.resolveModel }));
+// Model settings are the resolver's business (tests/server/model-config); the
+// persistence assertions below are about the whiteboard inventory alone.
+vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
+  requestWorkspaceId: async () => null,
+}));
 vi.mock('@/lib/ai/llm', () => ({ streamLLM: mocks.streamLLM }));
 vi.mock('@/lib/web-search', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/web-search')>();

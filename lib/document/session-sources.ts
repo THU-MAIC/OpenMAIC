@@ -16,7 +16,6 @@ export interface LegacySessionSourceFields {
   pdfStorageKey?: string;
   pdfFileName?: string;
   documentMimeType?: string;
-  pdfProviderId?: string;
 }
 
 export function resolveSessionDocumentSources(
@@ -32,7 +31,6 @@ export function resolveSessionDocumentSources(
       mimeType: session.documentMimeType || 'application/pdf',
       order: 1,
       storageKey: session.pdfStorageKey,
-      providerId: session.pdfProviderId,
     },
   ];
 }

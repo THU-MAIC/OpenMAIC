@@ -3,23 +3,26 @@
 import { Box, ExternalLink, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { ProviderId, ProviderConfig } from '@/lib/ai/providers';
 import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import { PINNED_PROVIDER_ID, PROVIDER_SIGNUP_LINKS, pickRegionalLink } from './provider-links';
 
-interface ProviderWithServerInfo extends ProviderConfig {
-  isServerConfigured?: boolean;
-  apiKey?: string;
+export interface ProviderListItem {
+  id: string;
+  name: string;
+  icon?: string;
+  /** The registry entry, for the logo's dark-mode treatment and signup links. */
+  registryId: string;
+  configured: boolean;
 }
 
 interface ProviderListProps {
-  providers: ProviderWithServerInfo[];
-  selectedProviderId: ProviderId;
-  onSelect: (providerId: ProviderId) => void;
-  onAddProvider: () => void;
+  providers: ProviderListItem[];
+  selectedProviderId: string;
+  onSelect: (providerId: string) => void;
+  onAddProvider?: () => void;
 }
 
-// 「模型服务」分区内的语言模型服务列表：样式对齐原型
+// 「模型服务」分区内的服务列表：样式对齐原型
 // model-services-panel（头像 + 名称 + 配置状态点，选中为描边卡片）。
 export function ProviderList({
   providers,
@@ -29,36 +32,26 @@ export function ProviderList({
 }: ProviderListProps) {
   const { t, locale } = useI18n();
 
-  // Helper function to get translated provider name
-  const getProviderDisplayName = (provider: ProviderConfig) => {
-    const translationKey = `settings.providerNames.${provider.id}`;
-    const translated = t(translationKey);
-    // If translation exists (not equal to key), use it; otherwise fallback to provider.name
-    return translated !== translationKey ? translated : provider.name;
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex-1 space-y-1 overflow-y-auto p-1">
         {providers.map((provider) => {
-          const configured =
-            !!provider.isServerConfigured || !!provider.apiKey || provider.requiresApiKey === false;
+          const configured = provider.configured;
           const active = selectedProviderId === provider.id;
           // 推广位（如 Kimi）：常驻主色描边强调（选中态沿用更深的选中描边），
           // 行尾附获取 API key 的跳转（按界面语言分流国内/海外）。
           const promoted = provider.id === PINNED_PROVIDER_ID;
-          const signupLinks = PROVIDER_SIGNUP_LINKS[provider.id];
+          const signupLinks = configured ? undefined : PROVIDER_SIGNUP_LINKS[provider.id];
           return (
             // 外链必须是 button 的兄弟节点（交互元素不可嵌套）：绝对定位覆盖在
             // 行右端，点击不会透传到选择按钮；有链接的行给按钮留出右侧空间。
             <div key={provider.id} className="relative">
               <button
                 onClick={() => onSelect(provider.id)}
+                aria-pressed={active}
                 className={cn(
                   'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
                   signupLinks && 'pr-8',
-                  // 选中态与其他服务列（ProviderListColumn）完全一致；
-                  // 推广强调只作用于未选中时，选中后回归标准样式。
                   active
                     ? 'bg-background shadow-sm ring-1 ring-border/70'
                     : cn(
@@ -76,10 +69,10 @@ export function ProviderList({
                   {provider.icon ? (
                     <img
                       src={provider.icon}
-                      alt={getProviderDisplayName(provider)}
+                      alt={provider.name}
                       className={cn(
                         'size-4 object-contain',
-                        MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
+                        MONO_LOGO_PROVIDERS.has(provider.registryId) && 'dark:invert',
                       )}
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -96,7 +89,7 @@ export function ProviderList({
                       active ? 'font-medium text-foreground' : 'text-muted-foreground',
                     )}
                   >
-                    {getProviderDisplayName(provider)}
+                    {provider.name}
                   </span>
                   <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                     <span
@@ -127,13 +120,15 @@ export function ProviderList({
         })}
 
         {/* Add Provider（列表尾部的幽灵行） */}
-        <button
-          onClick={onAddProvider}
-          className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-background/60 hover:text-foreground"
-        >
-          <Plus className="size-3.5" />
-          {t('settings.addProviderButton')}
-        </button>
+        {onAddProvider && (
+          <button
+            onClick={onAddProvider}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-background/60 hover:text-foreground"
+          >
+            <Plus className="size-3.5" />
+            {t('settings.addProviderButton')}
+          </button>
+        )}
       </div>
     </div>
   );

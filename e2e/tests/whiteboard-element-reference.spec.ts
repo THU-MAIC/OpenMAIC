@@ -26,8 +26,8 @@ test('selects a panned/zoomed whiteboard element, sends its identity, and retain
     }
     if (path.includes('/chat') || path.includes('/generate') || path.includes('/tts'))
       return route.abort();
-    if (path === '/api/server-providers')
-      return route.fulfill({ json: { providers: {}, mediaProviders: {}, defaultModel: null } });
+    // The model settings are the fixture's (a course model is set up).
+    if (path.startsWith('/api/model-config')) return route.fallback();
     if (path === '/api/comfyui-workflows') return route.fulfill({ json: { workflows: [] } });
     await route.continue();
   });

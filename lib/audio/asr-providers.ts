@@ -625,32 +625,5 @@ async function transcribeAzureASR(
   return { text: combinedText || phraseText || '' };
 }
 
-/**
- * Get current ASR configuration from settings store
- * Note: This function should only be called in browser context
- */
-export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
-  if (typeof window === 'undefined') {
-    throw new Error('getCurrentASRConfig() can only be called in browser context');
-  }
-
-  // Lazy import to avoid circular dependency
-  const { useSettingsStore } = await import('@/lib/store/settings');
-  const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
-
-  const providerConfig = asrProvidersConfig?.[asrProviderId];
-
-  return {
-    providerId: asrProviderId,
-    modelId:
-      providerConfig?.modelId ||
-      ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
-      '',
-    apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
-    language: asrLanguage,
-  };
-}
-
 // Re-export from constants for convenience
 export { getAllASRProviders, getASRProvider, getASRSupportedLanguages } from './constants';

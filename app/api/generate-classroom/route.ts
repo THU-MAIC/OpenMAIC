@@ -1,98 +1,138 @@
 import { after, type NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
+import {
+  ClassroomMaterialsRejectedError,
+  MAX_CLASSROOM_MATERIALS,
+  resolveClassroomMaterials,
+} from '@/lib/server/classroom-materials';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { isMaterialId } from '@/lib/server/materials/material-id';
+import { ownerApiError, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
+import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
 
 export const maxDuration = 30;
 
-type PdfContent = NonNullable<GenerateClassroomInput['pdfContent']>;
+const PDF_CONTENT_REMOVED_MESSAGE =
+  'pdfContent is no longer accepted: upload the document with POST /api/materials and pass the returned materialId in materialIds';
 
-function isValidPdfContent(value: unknown): value is PdfContent {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
+const INVALID_MATERIAL_IDS_MESSAGE = `materialIds must be an array of at most ${MAX_CLASSROOM_MATERIALS} material ids`;
+
+type ParsedBody =
+  | { ok: true; input: GenerateClassroomInput }
+  | { ok: false; code: 'INVALID_REQUEST' | 'MISSING_REQUIRED_FIELD'; message: string };
+
+/**
+ * The request body is `{ requirement, materialIds? }`. Optional capabilities
+ * are not request fields (they follow the server's provider configuration),
+ * and other unknown fields are ignored. The one removed field that is refused
+ * rather than ignored is `pdfContent`: ignoring it would silently generate
+ * without the caller's document.
+ */
+function parseBody(raw: unknown): ParsedBody {
+  const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+  if (body.pdfContent !== undefined) {
+    return { ok: false, code: 'INVALID_REQUEST', message: PDF_CONTENT_REMOVED_MESSAGE };
   }
 
-  const { text, images } = value as { text?: unknown; images?: unknown };
-  return (
-    typeof text === 'string' &&
-    Array.isArray(images) &&
-    images.every((item) => typeof item === 'string')
-  );
+  const requirement = body.requirement;
+  if (typeof requirement !== 'string' || !requirement) {
+    return {
+      ok: false,
+      code: 'MISSING_REQUIRED_FIELD',
+      message: 'Missing required field: requirement',
+    };
+  }
+
+  if (body.materialIds === undefined) return { ok: true, input: { requirement } };
+  if (
+    !Array.isArray(body.materialIds) ||
+    body.materialIds.some((id) => typeof id !== 'string' || !isMaterialId(id.trim()))
+  ) {
+    return { ok: false, code: 'INVALID_REQUEST', message: INVALID_MATERIAL_IDS_MESSAGE };
+  }
+  const materialIds = [...new Set((body.materialIds as string[]).map((id) => id.trim()))];
+  if (materialIds.length > MAX_CLASSROOM_MATERIALS) {
+    return { ok: false, code: 'INVALID_REQUEST', message: INVALID_MATERIAL_IDS_MESSAGE };
+  }
+  return {
+    ok: true,
+    input: { requirement, ...(materialIds.length ? { materialIds } : {}) },
+  };
 }
 
 export async function POST(req: NextRequest) {
-  let requirementSnippet: string | undefined;
-  try {
-    const rawBody = (await req.json()) as Partial<GenerateClassroomInput>;
-    requirementSnippet = rawBody.requirement?.substring(0, 60);
-    const pdfContent = rawBody.pdfContent;
+  // Materials are owner-scoped, so generation runs as the request owner: the
+  // same owner that uploaded them. The owner is resolved before anything else
+  // so every response, including a 400, carries its cookies (see
+  // `withRequestOwner`).
+  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
+    let raw: unknown;
+    try {
+      raw = await req.json();
+    } catch {
+      return ownerApiError('INVALID_REQUEST', 400, 'Invalid JSON body', responseHeaders);
+    }
+    const parsed = parseBody(raw);
+    if (!parsed.ok) return ownerApiError(parsed.code, 400, parsed.message, responseHeaders);
+    const body = parsed.input;
 
-    if (pdfContent !== undefined && !isValidPdfContent(pdfContent)) {
-      return apiError(
-        'INVALID_REQUEST',
-        400,
-        'Invalid pdfContent: expected { text: string; images: string[] }',
+    try {
+      if (body.materialIds) {
+        try {
+          await resolveClassroomMaterials(ownerId, body.materialIds, { forward: false });
+        } catch (error) {
+          if (error instanceof ClassroomMaterialsRejectedError) {
+            return ownerApiError('INVALID_REQUEST', 400, error.message, responseHeaders);
+          }
+          // A document or speech service this workspace may not use.
+          if (error instanceof WorkspaceEndpointError) {
+            return ownerApiError('INVALID_URL', 403, error.message, responseHeaders);
+          }
+          throw error;
+        }
+      }
+
+      const baseUrl = buildRequestOrigin(req);
+      const jobId = nanoid(10);
+      const job = await createClassroomGenerationJob(jobId, body, { ownerId });
+      const pollUrl = `${baseUrl}/api/generate-classroom/${jobId}`;
+
+      after(() => runClassroomGenerationJob(jobId, body, baseUrl, { ownerId }));
+
+      return withOwnerResponseHeaders(
+        apiSuccess(
+          {
+            jobId,
+            status: job.status,
+            step: job.step,
+            message: job.message,
+            pollUrl,
+            pollIntervalMs: 5000,
+          },
+          202,
+        ),
+        responseHeaders,
+      );
+    } catch (error) {
+      log.error(
+        `Classroom generation job creation failed [requirement="${body.requirement.substring(0, 60)}..."]:`,
+        error,
+      );
+      // The error is logged above; its text (a database error, say) stays off the wire.
+      return ownerApiError(
+        'INTERNAL_ERROR',
+        500,
+        'Failed to create classroom generation job',
+        responseHeaders,
       );
     }
-
-    const body: GenerateClassroomInput = {
-      requirement: rawBody.requirement || '',
-      ...(pdfContent !== undefined ? { pdfContent } : {}),
-
-      ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
-      ...(rawBody.webSearchProviderId ? { webSearchProviderId: rawBody.webSearchProviderId } : {}),
-      ...(rawBody.webSearchApiKey ? { webSearchApiKey: rawBody.webSearchApiKey } : {}),
-      ...(rawBody.webSearchModelId ? { webSearchModelId: rawBody.webSearchModelId } : {}),
-      ...(rawBody.baiduSubSources ? { baiduSubSources: rawBody.baiduSubSources } : {}),
-      ...(rawBody.enableImageGeneration != null
-        ? { enableImageGeneration: rawBody.enableImageGeneration }
-        : {}),
-      ...(rawBody.enableVideoGeneration != null
-        ? { enableVideoGeneration: rawBody.enableVideoGeneration }
-        : {}),
-      ...(rawBody.enableTTS != null ? { enableTTS: rawBody.enableTTS } : {}),
-      ...(rawBody.agentMode ? { agentMode: rawBody.agentMode } : {}),
-    };
-    const { requirement } = body;
-
-    if (!requirement) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
-    }
-
-    const baseUrl = buildRequestOrigin(req);
-    const jobId = nanoid(10);
-    const job = await createClassroomGenerationJob(jobId, body);
-    const pollUrl = `${baseUrl}/api/generate-classroom/${jobId}`;
-
-    after(() => runClassroomGenerationJob(jobId, body, baseUrl));
-
-    return apiSuccess(
-      {
-        jobId,
-        status: job.status,
-        step: job.step,
-        message: job.message,
-        pollUrl,
-        pollIntervalMs: 5000,
-      },
-      202,
-    );
-  } catch (error) {
-    log.error(
-      `Classroom generation job creation failed [requirement="${requirementSnippet ?? 'unknown'}..."]:`,
-      error,
-    );
-    return apiError(
-      'INTERNAL_ERROR',
-      500,
-      'Failed to create classroom generation job',
-      error instanceof Error ? error.message : 'Unknown error',
-    );
-  }
+  });
 }

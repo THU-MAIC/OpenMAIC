@@ -1,9 +1,8 @@
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
-import { getStageRoute } from '@/lib/server/model-routes';
-import { resolveModel } from '@/lib/server/resolve-model';
+import { slotLanguageModel } from '@/lib/server/model-config/llm';
+import { lookupSlot } from '@/lib/server/model-config/runtime';
 import { sanitizeSessionTitleText } from '@/lib/workbench/session-title';
-import { resolveAgentDriverModel } from './agent-driver-model';
 
 const log = createLogger('conversation-title');
 const STAGE = 'conversation-title' as const;
@@ -49,16 +48,25 @@ function normalizeTitle(output: unknown): string | null {
  * Creates a best-effort concise title from visible user text only.
  * This server-only helper never writes session state and failures stay nonblocking.
  */
-export async function generateConversationTitle(visibleUserText: string): Promise<string | null> {
+export async function generateConversationTitle(
+  visibleUserText: string,
+  workspaceId: string | null = null,
+): Promise<string | null> {
   const input = capUnicode(visibleUserText.trim(), MAX_INPUT_CHARACTERS);
   if (!input) return null;
 
   try {
-    const route = getStageRoute(STAGE);
-    const connection = route
-      ? await resolveModel({ stage: STAGE })
-      : (await resolveAgentDriverModel()).connection;
-    const thinking = route?.thinking ?? DISABLED_THINKING;
+    // agent.title follows the agent by default; titles only think when the
+    // title slot itself says so.
+    const lookup = await lookupSlot('agent.title', workspaceId);
+    const resolution =
+      lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured;
+    if (resolution.status !== 'assigned') return null;
+    const connection = await slotLanguageModel(resolution);
+    const thinking =
+      resolution.resolvedAt === 'agent.title'
+        ? (resolution.thinking ?? DISABLED_THINKING)
+        : DISABLED_THINKING;
     const result = await callLLM(
       {
         model: connection.model,

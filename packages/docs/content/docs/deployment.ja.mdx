@@ -9,7 +9,7 @@ OpenMAIC は標準的な Next.js アプリケーションであり、Next.js が
 
 最速の方法です。[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC) にある Deploy ボタンをクリックし、リポジトリをフォークして、案内に従い少なくとも 1 つの LLM API キーを入力してください。
 
-Vercel は各コミットごとに Next.js アプリを再ビルド・再デプロイします。デプロイ時にはプロジェクト設定で少なくとも 1 つの LLM プロバイダーを設定する必要があります。
+Vercel はコミットのたびに Next.js アプリを再ビルドしてデプロイします。初回デプロイ後、アプリを開いてモデル設定でモデルサービスを接続するか、プロジェクト設定の環境変数でプロバイダーを設定してください（[旧来の変数](./configuration.mdx#旧設定からの移行)も引き続き使えます）。Vercel には永続的なデータディレクトリがないため、モデル設定でキーを保存する前に、プロジェクト設定で `OPENMAIC_SECRET_KEY` を設定してください。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key)を参照してください。
 
 Vercel は OpenMAIC をサーバーレス関数として実行するため、データベースを同梱できません。プロジェクト設定で `DATABASE_URL` を外部の PostgreSQL データベース（マネージドサービス。接続プールのエンドポイントがあればそちらを推奨）に向けてください。未設定の場合、サーバーは起動を拒否します。
 
@@ -27,11 +27,19 @@ docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-hos
 
 ```bash
 cp .env.example .env.local
-# .env.local を編集し、少なくとも 1 つの LLM プロバイダーの設定を入力したら：
+# .env.local（キーとサーバーオプション）を編集してから：
 docker compose up --build
 ```
 
 デフォルトの Compose デプロイは OpenMAIC アプリと PostgreSQL の 2 つのコンテナを起動し、両者の間の `DATABASE_URL` を設定して、`openmaic-data` と `openmaic-postgres` ボリュームをマウントします。その他のプロバイダーや機能は必要に応じて設定してください。詳細は[設定説明](./configuration.mdx)を参照してください。
+
+モデルの設定方法は 2 通りあります。個人利用のインストールでは、スタックを起動してアプリを開き、モデル設定でモデルサービスを接続します。設定はデータベースに保存されます。ファイルで管理するデプロイでは、`openmaic.example.yml` を `openmaic.yml` にコピーし、キーを `.env.local` に置いてファイルをマウントします（後述）。[設定説明](./configuration.mdx#モデルとプロバイダー)を参照してください。
+
+イメージはボリュームのデータディレクトリを実行ユーザーの所有で作成するため、新しいボリュームではそのまま授業と利用記録が保存されます。古いイメージが作成したボリュームは root 所有の場合があり、その場合アプリは通常どおり動作しているのに、サーバー側の保存がすべて `EACCES` で失敗します（授業は気づかれないままディスクに書き込まれず、ログに `Failed to record usage ... EACCES: permission denied` が出ます）。このようなボリュームは一度修復してから、アプリを再起動してください。
+
+```bash
+docker exec -u root <container> chown -R 1001:1001 /app/data
+```
 
 `NEXT_PUBLIC_*` の機能フラグは Docker ビルド時に注入されるため、実行時の `.env.local` に書くだけでは反映されません。例えば動画エクスポートと実験的な PPTX インポートを有効にする場合：
 
@@ -43,16 +51,18 @@ docker compose --profile video-export up --build
 
 他のクライアント機能フラグも同様に渡せます。`docker build` を使う場合は対応する `--build-arg` を利用してください。
 
-サーバー側プロバイダー設定を使う場合は、設定ファイルをコンテナ内の固定パスにマウントします：
+`openmaic.yml` を使うには、アプリの作業ディレクトリにマウントするか、別の場所にマウントして `OPENMAIC_CONFIG` でそのパスを指定します。
 
 ```yaml
 services:
   openmaic:
     volumes:
-      - ./server-providers.yml:/app/server-providers.yml:ro
+      - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は `host.docker.internal` を使ってください。例：`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188`。Linux の Docker では通常、`openmaic` サービスに対して `extra_hosts: ["host.docker.internal:host-gateway"]` の追加が必要です。ComfyUI は現状サーバー管理型プロバイダーではないため、本番環境では `ALLOW_LOCAL_NETWORKS=true` を設定しないと SSRF 保護によりアクセスが拒否されます。
+ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` は `.dockerignore` に含まれているため、リポジトリからビルドしたイメージに焼き込まれることはありません。実行時にマウントしてください。`openmaic.yml` がない場合は、旧来の `server-providers.yml` が引き続き `/app/server-providers.yml` から読み込まれます。
+
+Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は、`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188` のように `host.docker.internal` を使ってください。Linux の Docker では通常、`openmaic` サービスに `extra_hosts: ["host.docker.internal:host-gateway"]` も必要です。`openmaic.yml`（または旧来の変数）で宣言したプロバイダーはサーバー管理なので、そのエンドポイントは `ALLOW_LOCAL_NETWORKS` なしでホストやプライベートネットワーク上に置けます。この変数が関係するのはユーザーが入力するエンドポイント、つまり **設定 → モデルサービス** で追加したチャットの Base URL と、非推奨のリクエストフィールドだけです。
 
 ## 自前の仮想マシンでのセルフホスト
 
@@ -80,6 +90,8 @@ DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
 
 PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されます。`PERSISTENCE_POSTGRES_PASSWORD` はデータベースディレクトリ初回初期化時にのみパスワードを設定し、その後の環境変数変更では既存ユーザーのパスワードは自動的に変更されません。
 
+`OPENMAIC_SECRET_KEY` を設定していない場合、`openmaic-data` ボリュームには `instance-secret.key` も保存されます。これは自動生成されたインスタンスシークレットで、モデル設定に保存されたプロバイダーのキーを暗号化します。データベースと一緒にバックアップしてください。これがないと、保存済みのキーを再入力する必要があります。複数のレプリカで動かす場合や、永続ボリュームがない・ファイルシステムが読み取り専用の場合は、代わりに `OPENMAIC_SECRET_KEY` を設定してください（全レプリカで同じ値）。[シークレットと OPENMAIC_SECRET_KEY](./configuration.mdx#シークレットと-openmaic_secret_key) を参照してください。
+
 以前のリリースでは授業をブラウザ（IndexedDB）に保存できました。このモードは廃止され、`NEXT_PUBLIC_PERSISTENCE` ビルド変数は無視されます。その方法でブラウザに保存された授業は、そのブラウザでアップグレード後のアプリを初めて開いたときに自動的にサーバーへ移されます。一方向のインポーターが、それらを（チャット、学習の進捗、フォルダー、メディアとともに）サーバーがそのブラウザについて解決した所有者にコピーし、ブラウザ内の元のデータには手を加えません。インポートはブラウザごとに一度だけです。サーバーはそのブラウザを、アップグレード後のアプリを最初に読み込んだ所有者に紐付け、統合（サインイン時に匿名の所有者がアカウントに統合されること）によって紐付けはアカウントに移ります。サーバーはそれ以外の所有者のためのインポーターの要求を拒否します。それ以外に同じブラウザを後から使う所有者には何もインポートされません。操作は不要で、UI も表示されません。問題があればブラウザのコンソールに `[legacy-browser-import]` という接頭辞で記録されます。
 
 ## オプション：MP4 動画エクスポート
@@ -96,7 +108,7 @@ Compose は `RENDER_SERVICE_URL` を通じて OpenMAIC とレンダリングサ�
 
 ## 環境変数
 
-完全な環境変数とプロバイダー設定は[設定説明](./configuration.mdx)を参照してください。最低でも 1 つの LLM プロバイダーのキーを設定する必要があります。
+モデルの設定（`openmaic.yml` とモデル設定）とすべての環境変数は[設定説明](./configuration.mdx)を参照してください。コースを生成するには、少なくとも 1 つのチャットモデルを設定する必要があります。
 
 ## アクセス制御
 
