@@ -64,6 +64,7 @@ import { resolveCourseChatBootstrap } from '@/lib/workbench/course-chat-bootstra
 import { startConversationWithFirstMessage } from '@/lib/workbench/first-message-session';
 import { startProSwap } from '@/lib/workbench/pro-swap';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
+import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
 import {
   clampRailWidth,
   parseRailWidth,
@@ -911,22 +912,17 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }, [panes.courseId, playbackOn, setPlaybackOn]);
 
   // ── Read-only ─────────────────────────────────────────────────────────
-  // The tree already knows: a course saved from Discover carries
-  // `isOwner === false`. The stage store's own answer arrives after the load
-  // and is authoritative once it does; before that the tree's flag keeps the
-  // header from claiming an edit deck it is about to lose. The real store
-  // carries that answer as `outlineProducer` (the reference's `isOwner` was
-  // not ported): a course whose document a server job produced is server-owned,
-  // not client-authored, and therefore not the current user's own to edit.
-  const storeIsOwner = useStageStore((s) => s.outlineProducer) !== 'server-job';
+  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
+  // saved from Discover) and a generation run still producing the course.
   const courseIsOwner = useMemo(
     () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
     [courses.classrooms, panes.courseId],
   );
-  // A course its generation run is still producing is read-only until the run
-  // completes.
   const courseGenerating = useStageStore((s) => s.courseGenerating);
-  const readOnlyCourse = courseIsOwner === false || storeIsOwner === false || courseGenerating;
+  const readOnlyCourse = isCourseReadOnly({
+    isOwner: courseIsOwner,
+    generating: courseGenerating,
+  });
 
   /* ── What a course is CALLED ───────────────────────────────────────────
      Tabs and in-chat links both need a name and a page count for an id, and
