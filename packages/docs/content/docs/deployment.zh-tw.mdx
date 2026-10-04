@@ -85,7 +85,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | 資料目錄 | 掛載在 `/app/data` 的 `openmaic-data` 卷 | 工作目錄下持久化的 `data/` 目錄，所有實例共用 |
 | 模型 | `openmaic.yml` 或 **設定 → 模型** | 同左 |
 
-**身分模式**決定課程歸誰所有。未設定時，每個瀏覽器都是獨立的匿名擁有者，換一個瀏覽器看到的是空的課程庫。個人安裝請設定 `OWNER_SINGLE_USER=true`；一個團隊共用一個課程庫時，設定 `PERSISTENCE_SHARED_OWNER_ID` 並搭配 `ACCESS_CODE`；需要真實帳號時，註冊擁有者驗證方法。詳見 README 的 [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) 和 `.env.example`。
+**身分模式**決定課程歸誰所有。未設定時，每個瀏覽器都是獨立的匿名擁有者，換一個瀏覽器看到的是空的課程庫。個人安裝請設定 `OWNER_SINGLE_USER=true`；一個團隊共用一個課程庫時，設定 `PERSISTENCE_SHARED_OWNER_ID` 並搭配 `ACCESS_CODE`；需要真實帳號時，註冊擁有者驗證方法。詳見 [Owner identity](./hosting.mdx#owner-identity) 和 `.env.example`。
 
 匿名模式下，擁有者 cookie 在正式環境中帶有 `Secure` 標記，`ACCESS_CODE` 的 cookie 也是如此。瀏覽器只在 HTTPS 或 `http://localhost` 上儲存 `Secure` cookie（Safari 連 localhost 也不儲存），因此透過純 HTTP 提供服務的部署必須設定 `COOKIE_SECURE=0`（必須正好是 `0`）：否則每個請求都會成為新的擁有者，寫入以 `403` 失敗，存取碼也會被反覆要求輸入。沒有 TLS 時 cookie 以明文傳輸，只應在可信任的網路中這樣做。
 

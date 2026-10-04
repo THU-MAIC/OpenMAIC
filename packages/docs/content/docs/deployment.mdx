@@ -85,7 +85,7 @@ Run it under a process manager (systemd, pm2, a container) that keeps it running
 | Data directory | the `openmaic-data` volume at `/app/data` | a persistent `data/` directory in the working directory, shared by every instance |
 | Models | `openmaic.yml` or **Settings → Models** | the same |
 
-**Identity mode** decides who owns a course. Without one, every browser is its own anonymous owner and a second browser sees an empty library. Set `OWNER_SINGLE_USER=true` for a personal installation, `PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE` for one team sharing one library, or register owner auth methods for real accounts; see [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) in the README and `.env.example`.
+**Identity mode** decides who owns a course. Without one, every browser is its own anonymous owner and a second browser sees an empty library. Set `OWNER_SINGLE_USER=true` for a personal installation, `PERSISTENCE_SHARED_OWNER_ID` together with `ACCESS_CODE` for one team sharing one library, or register owner auth methods for real accounts; see [Owner identity](./hosting.mdx#owner-identity) and `.env.example`.
 
 In anonymous mode the owner cookie carries `Secure` in production, and so does the `ACCESS_CODE` cookie. Browsers keep a `Secure` cookie only over HTTPS or on `http://localhost` (Safari not even there), so a deployment served over plain HTTP must set `COOKIE_SECURE=0` (exactly `0`): otherwise every request becomes a new owner, writes fail with `403`, and the access code is asked for again. Without TLS the cookies travel in the clear, so do this only on a trusted network.
 

@@ -85,7 +85,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | データディレクトリ | `/app/data` にマウントした `openmaic-data` ボリューム | 作業ディレクトリの永続的な `data/` ディレクトリ。すべてのインスタンスで共有 |
 | モデル | `openmaic.yml` または **設定 → モデル** | 同左 |
 
-**ID モード**は授業の所有者を決めます。未設定の場合、ブラウザごとに別々の匿名オーナーとなり、別のブラウザでは空のライブラリが表示されます。個人利用では `OWNER_SINGLE_USER=true`、1 つのチームで 1 つのライブラリを共有する場合は `ACCESS_CODE` とあわせて `PERSISTENCE_SHARED_OWNER_ID` を設定し、実際のアカウントが必要な場合はオーナー認証メソッドを登録してください。詳しくは README の [Owner identity](https://github.com/THU-MAIC/OpenMAIC#owner-identity) と `.env.example` を参照してください。
+**ID モード**は授業の所有者を決めます。未設定の場合、ブラウザごとに別々の匿名オーナーとなり、別のブラウザでは空のライブラリが表示されます。個人利用では `OWNER_SINGLE_USER=true`、1 つのチームで 1 つのライブラリを共有する場合は `ACCESS_CODE` とあわせて `PERSISTENCE_SHARED_OWNER_ID` を設定し、実際のアカウントが必要な場合はオーナー認証メソッドを登録してください。詳しくは [Owner identity](./hosting.mdx#owner-identity) と `.env.example` を参照してください。
 
 匿名モードでは、オーナー cookie は本番環境で `Secure` 属性付きになり、`ACCESS_CODE` の cookie も同様です。ブラウザが `Secure` cookie を保存するのは HTTPS か `http://localhost` の場合だけです（Safari は localhost でも保存しません）。そのため、プレーンな HTTP で提供するデプロイでは `COOKIE_SECURE=0`（値は正確に `0`）を設定する必要があります。設定しないと、リクエストごとに新しいオーナーになって書き込みが `403` で失敗し、アクセスコードも繰り返し求められます。TLS がない場合 cookie は平文で送られるため、信頼できるネットワークでのみ行ってください。
 
