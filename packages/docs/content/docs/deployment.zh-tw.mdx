@@ -105,7 +105,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 每個擁有者在單一行程上可同時開啟的產生事件串流數。 |
 | `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 已結束的產生保留完整事件紀錄的時長（小時），之後會被壓縮。 |
 
-產生任務與 agent 執行階段共用租約時間設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，見 `.env.example`）。停止服務時，其中的產生會被暫存，由另一個實例或重新啟動的同一實例繼續。
+產生任務與 agent 執行階段共用租約時間設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，見 `.env.example`）。服務停止或重新啟動時（包括滾動更新），其中的產生會由另一個實例或重新啟動的同一實例從最後完成的步驟繼續：進度會暫停約一個租約有效期（預設 10 秒），進行中的步驟會重新產生。一個產生連續被中斷 `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 次（預設 5 次）且期間沒有完成任何步驟時，會在該步驟暫停並提供重試；如果多實例滾動更新會達到這個次數，請調大它。
 
 ## 伺服器端持久化（PostgreSQL）
 

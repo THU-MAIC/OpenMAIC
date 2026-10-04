@@ -105,7 +105,7 @@ Every server process runs a generation worker; it does not depend on `OPENMAIC_A
 | `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | Run event streams one owner may hold open on one process. |
 | `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | How long a finished run keeps its full event log before it is compacted. |
 
-Runs share the agent runtime's lease timing (`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`, `_HEARTBEAT_MS`, `_LEASE_TTL_MS`, `_MAX_ATTEMPTS`; see `.env.example`). Stopping the server parks its runs; another instance, or the same one when it starts again, continues them.
+Runs share the agent runtime's lease timing (`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`, `_HEARTBEAT_MS`, `_LEASE_TTL_MS`, `_MAX_ATTEMPTS`; see `.env.example`). When a server stops or restarts, a rolling update included, its runs continue on another instance, or on the same one when it starts again, from their last finished step: progress pauses for about the lease TTL (10 seconds by default) and the step that was in progress is generated again. A run interrupted `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` times in a row (5 by default) without finishing a step pauses at that step with Retry; raise it if rolling updates over many instances reach it.
 
 ## Server-side persistence (PostgreSQL)
 

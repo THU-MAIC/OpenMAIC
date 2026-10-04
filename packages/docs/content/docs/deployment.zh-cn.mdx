@@ -105,7 +105,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 每个所有者在单个进程上可同时打开的生成事件流数。 |
 | `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 已结束的生成保留完整事件日志的时长（小时），之后会被压缩。 |
 
-生成任务与 agent 运行时共用租约时间配置（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，见 `.env.example`）。停止服务时，其中的生成会被暂存，由另一个实例或重新启动的同一实例继续。
+生成任务与 agent 运行时共用租约时间配置（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，见 `.env.example`）。服务停止或重启时（包括滚动更新），其中的生成会由另一个实例或重新启动的同一实例从最后完成的步骤继续：进度会暂停约一个租约有效期（默认 10 秒），进行中的步骤会重新生成。一个生成连续被中断 `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 次（默认 5 次）且期间没有完成任何步骤时，会在该步骤暂停并提供重试；如果多实例滚动更新会达到这个次数，请调大它。
 
 ## 服务端持久化（PostgreSQL）
 

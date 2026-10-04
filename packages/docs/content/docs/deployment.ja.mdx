@@ -105,7 +105,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 1 人のオーナーが 1 つのプロセスで同時に開ける生成イベントストリームの数。 |
 | `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 終了した生成が完全なイベントログを保持する時間（時間単位）。その後は圧縮されます。 |
 
-生成はエージェントランタイムのリース設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`。`.env.example` を参照）を共有します。サーバーを停止すると実行中の生成は退避され、別のインスタンスか、再起動した同じインスタンスが続きを実行します。
+生成はエージェントランタイムのリース設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`。`.env.example` を参照）を共有します。サーバーの停止や再起動（ローリングアップデートを含む）の際は、実行中の生成を別のインスタンスか再起動した同じインスタンスが、最後に完了したステップから続けます。進行はリースの有効期間（既定 10 秒）ほど止まり、実行中だったステップはもう一度生成されます。ステップを完了しないまま `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 回（既定 5 回）続けて中断された生成は、そのステップで一時停止し再試行できる状態になります。多数のインスタンスのローリングアップデートでこの回数に達する場合は値を大きくしてください。
 
 ## サーバー側永続化（PostgreSQL）
 
