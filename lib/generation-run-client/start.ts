@@ -84,6 +84,7 @@ export async function startClassicRun(input: {
         }
       : undefined;
   const voice = selectedRunVoice(input.capabilities);
+  const settings = useSettingsStore.getState();
 
   return startGenerationRun({
     requirement: input.requirement,
@@ -95,7 +96,10 @@ export async function startClassicRun(input: {
     ...(voice ? { voice } : {}),
     // Uploaded for this run only: released when it completes or ends.
     ...(materialIds.length > 0 ? { releaseMaterials: true } : {}),
-    outlineReview: 'wait',
+    // The learner who asked to always review outlines confirms each one; any
+    // other run confirms its own outline on the server and goes on whether or
+    // not a page is open.
+    outlineReview: settings.reviewOutlineEnabled ? 'wait' : 'auto',
   });
 }
 

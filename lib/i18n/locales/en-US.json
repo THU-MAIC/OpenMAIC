@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "The model did not return valid scene content. Please try a different model or adjust the course requirements.",
     "reviewOutlineTitle": "Review your outline",
     "reviewOutlineDesc": "Edit, reorder, remove, or add scenes before content generation begins.",
-    "reviewOutlineAutoContinue": "Generation will continue automatically unless you review the outline.",
+    "outlineReadyContinuing": "Outline ready. Generating the course from it…",
     "outlineEditorTitle": "Scene outline",
     "outlineEditorSummary": "{{count}} scenes total. You can edit, add, remove, or reorder them before generation starts.",
     "addFirstScene": "Add first scene",

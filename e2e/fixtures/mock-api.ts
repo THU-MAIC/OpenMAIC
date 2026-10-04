@@ -294,7 +294,13 @@ export class MockGenerationRun {
           };
           this.push('step_completed', { step: 'outline' });
           this.push('outline_ready', { revision: 1, outline: { ...this.outline, revision: 1 } });
-          this.push('state', { state: 'awaiting_outline_confirmation', step: null });
+          if (this.input.outlineReview === 'auto') {
+            // The run confirms its own outline, in the same commit.
+            this.push('outline_confirmed', { revision: 1, edited: false, automatic: true });
+            this.generate();
+          } else {
+            this.push('state', { state: 'awaiting_outline_confirmation', step: null });
+          }
         },
       ]);
       return json({ success: true, run: this.snapshot() }, 202);
@@ -362,13 +368,7 @@ export class MockGenerationRun {
     if (body.outlines) this.revision += 1;
     this.outline = { ...this.outline!, outlines };
     this.push('outline_confirmed', { revision: this.revision, edited: !!body.outlines });
-    this.push('state', { state: 'generating', step: null });
-    this.push('step_started', { step: 'scene:0:content' });
-    if (this.options.failFirstScene) {
-      this.later([() => this.pause('scene:0:content')]);
-    } else {
-      this.later(this.sceneSteps());
-    }
+    this.generate();
     return {
       status: 200,
       body: {
@@ -378,6 +378,17 @@ export class MockGenerationRun {
         outlineRevision: this.revision,
       },
     };
+  }
+
+  /** The confirmed outline goes on to the scenes. */
+  private generate() {
+    this.push('state', { state: 'generating', step: null });
+    this.push('step_started', { step: 'scene:0:content' });
+    if (this.options.failFirstScene) {
+      this.later([() => this.pause('scene:0:content')]);
+    } else {
+      this.later(this.sceneSteps());
+    }
   }
 
   private pause(step: string) {

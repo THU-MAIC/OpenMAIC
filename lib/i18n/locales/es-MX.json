@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "El modelo no devolvió contenido de escena válido. Prueba con otro modelo o ajusta los requisitos del curso.",
     "reviewOutlineTitle": "Revisa tu esquema",
     "reviewOutlineDesc": "Edita, reordena, elimina o agrega escenas antes de que comience la generación de contenido.",
-    "reviewOutlineAutoContinue": "La generación continuará automáticamente a menos que revises el esquema.",
+    "outlineReadyContinuing": "El esquema está listo. Continuando con la generación del curso…",
     "outlineEditorTitle": "Esquema de escenas",
     "outlineEditorSummary": "{{count}} escenas en total. Puedes editar, agregar, eliminar o reordenar escenas antes de que inicie la generación.",
     "addFirstScene": "Agregar primera escena",

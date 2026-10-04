@@ -1081,7 +1081,7 @@
     "sceneGenerateInvalidResponse": "模型未傳回有效的場景內容，請更換模型或調整課程需求後重試。",
     "reviewOutlineTitle": "審閱課程大綱",
     "reviewOutlineDesc": "可在生成內容前編輯、重排、刪除或新增場景。",
-    "reviewOutlineAutoContinue": "如不審閱，大綱生成後會自動繼續生成課程內容。",
+    "outlineReadyContinuing": "大綱已就緒，正在繼續生成課程…",
     "outlineEditorTitle": "場景大綱",
     "outlineEditorSummary": "共 {{count}} 個場景，可在生成前編輯、新增、刪除或重排序",
     "addFirstScene": "新增第一個場景",

@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "Model không trả về nội dung cảnh hợp lệ. Hãy thử model khác hoặc điều chỉnh yêu cầu bài học.",
     "reviewOutlineTitle": "Xem lại đề cương",
     "reviewOutlineDesc": "Sửa, đổi thứ tự, xóa hoặc thêm cảnh trước khi bắt đầu tạo nội dung.",
-    "reviewOutlineAutoContinue": "Quá trình tạo sẽ tự tiếp tục nếu bạn không xem lại đề cương.",
+    "outlineReadyContinuing": "Đề cương đã sẵn sàng. Đang tiếp tục tạo khóa học…",
     "outlineEditorTitle": "Đề cương các cảnh",
     "outlineEditorSummary": "Tổng cộng {{count}} cảnh. Bạn có thể sửa, thêm, xóa hoặc đổi thứ tự trước khi bắt đầu tạo.",
     "addFirstScene": "Thêm cảnh đầu tiên",

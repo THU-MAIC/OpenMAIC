@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "O modelo não retornou conteúdo de cena válido. Tente outro modelo ou ajuste os requisitos do curso.",
     "reviewOutlineTitle": "Revise seu roteiro",
     "reviewOutlineDesc": "Edite, reordene, remova ou adicione cenas antes do início da geração de conteúdo.",
-    "reviewOutlineAutoContinue": "A geração continuará automaticamente, a menos que você revise o roteiro.",
+    "outlineReadyContinuing": "Roteiro pronto. Continuando a gerar o curso…",
     "outlineEditorTitle": "Roteiro das cenas",
     "outlineEditorSummary": "{{count}} cenas no total. Você pode editar, adicionar, remover ou reordenar antes do início da geração.",
     "addFirstScene": "Adicionar primeira cena",

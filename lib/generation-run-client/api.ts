@@ -71,7 +71,7 @@ async function postJson<T>(url: string, body: unknown, fallbackKey: string): Pro
 }
 
 /** The run input the browser sends: what `POST /api/generation-runs` reads. */
-export type StartRunInput = Omit<GenerationRunInput, 'outlineReview'> & { outlineReview: 'wait' };
+export type StartRunInput = GenerationRunInput;
 
 export async function startGenerationRun(input: StartRunInput): Promise<RunSnapshot> {
   const body = await postJson<{ run: RunSnapshot }>(

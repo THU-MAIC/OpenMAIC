@@ -14,6 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, AlertCircle, ArrowLeft, Bot, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -26,13 +27,7 @@ import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 import { toast } from 'sonner';
 import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
-import {
-  createAutoContinue,
-  forgetRunStartedHere,
-  nextPreviewPhase,
-  type PreviewPhase,
-  wasRunStartedHere,
-} from '@/lib/generation-run-client/outline-review';
+import { nextPreviewPhase, type PreviewPhase } from '@/lib/generation-run-client/outline-review';
 import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
 import { useGenerationRun } from '@/lib/generation-run-client/use-generation-run';
@@ -70,17 +65,11 @@ function GenerationPreviewContent() {
   const { view, status, caughtUp, refresh } = useGenerationRun(runId);
   const capabilities = useModelCapabilities();
 
-  // The 2.5 s auto-continue: it confirms the outline it was armed with.
-  const sendConfirmRef = useRef<(edits: SceneOutline[] | null) => void>(() => {});
-  const [autoContinue] = useState(() =>
-    createAutoContinue<SceneOutline[] | null>((edits) => sendConfirmRef.current(edits)),
-  );
-  // Sticky: true once the learner opens the review (mid-stream or after),
-  // until they collapse it again. Combined with `reviewOutlineEnabled` to
-  // decide whether the outline waits for them or auto-continues.
+  // Sticky: true once the learner opens the review of a run that waits for
+  // it while the outline streams, until they collapse it again (kept across a
+  // reload).
   const outlineReviewIntentRef = useRef(false);
-  // The phase the outline step is shown in: the streaming card, the
-  // outline-ready card counting down to auto-continue, or the review editor.
+  // The phase the outline step is shown in: the progress card or the review editor.
   const [phase, setPhase] = useState<PreviewPhase>('progress');
   const [editedOutlines, setEditedOutlines] = useState<SceneOutline[] | null>(null);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
@@ -100,12 +89,9 @@ function GenerationPreviewContent() {
   const reviewOutlineEnabled = useSettingsStore((s) => s.reviewOutlineEnabled);
   const setReviewOutlineEnabled = useSettingsStore((s) => s.setReviewOutlineEnabled);
 
-  const clearOutlineReviewTimer = () => autoContinue.cancel();
-
   useEffect(() => {
     if (runId) outlineReviewIntentRef.current = readReviewIntent(runId);
-    return () => autoContinue.cancel();
-  }, [runId, autoContinue]);
+  }, [runId]);
 
   const steps = useMemo(() => {
     if (!view) return [];
@@ -125,27 +111,19 @@ function GenerationPreviewContent() {
   const outlines = view ? visibleOutlines(view) : [];
   const isOutlineStreaming =
     !!view && (view.state === 'preparing' || view.state === 'outlining') && !view.outline;
-  const awaitingConfirmation = view?.state === 'awaiting_outline_confirmation';
+  // The run confirms its own outline: the preview shows it read-only.
+  const outlineConfirmedByRun = view?.input.outlineReview === 'auto';
 
   const sendConfirm = async (edits: SceneOutline[] | null) => {
     if (!view?.outline) return;
-    clearOutlineReviewTimer();
     setIsConfirmingOutlines(true);
     setCommandError(null);
     try {
       await confirmOutline(view, edits ?? undefined);
       outlineReviewIntentRef.current = false;
       writeReviewIntent(view.runId, false);
-      forgetRunStartedHere(view.runId);
       setPhase('progress');
       void refresh();
-      // The learner committed to the course: the homepage draft can go. Before
-      // this point, "back to requirements" must restore their input.
-      try {
-        localStorage.removeItem('requirementDraft');
-      } catch {
-        /* ignore */
-      }
     } catch (error) {
       log.warn('Confirming the outline failed:', error);
       if (error instanceof RunApiError && error.errorCode === 'RUN_STATE_CONFLICT') {
@@ -166,16 +144,8 @@ function GenerationPreviewContent() {
       setIsConfirmingOutlines(false);
     }
   };
-  useEffect(() => {
-    sendConfirmRef.current = (edits) => void sendConfirm(edits);
-  });
-
-  const armAutoContinue = (edits: SceneOutline[] | null) => autoContinue.arm(edits);
-
-  // The outline is ready and the run waits for it. The tab whose composer
-  // started the run keeps the classic pacing (the review when the learner
-  // asked for it, else a 2.5 s beat on the outline-ready card); any other tab
-  // shows the review.
+  // A run that waits for its outline shows the review once the outline is
+  // ready, in whichever tab or page shows it, until the learner confirms it.
   useEffect(() => {
     if (!view || !caughtUp) return;
     const firstAttach = !attachedRef.current;
@@ -183,17 +153,14 @@ function GenerationPreviewContent() {
     const next = nextPreviewPhase({
       phase,
       state: view.state,
+      outlineReview: view.input.outlineReview,
       outlineStreaming: isOutlineStreaming,
       hasOutline: !!view.outline,
       firstAttach,
-      startedHere: wasRunStartedHere(view.runId),
-      reviewOutlineEnabled: useSettingsStore.getState().reviewOutlineEnabled,
       reviewIntent: outlineReviewIntentRef.current,
       confirmConflict,
     });
-    if (next.cancelAutoContinue) clearOutlineReviewTimer();
-    if (next.phase !== phase) setPhase(next.phase);
-    if (next.armAutoContinue) armAutoContinue(null);
+    if (next !== phase) setPhase(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.state, caughtUp]);
 
@@ -245,33 +212,25 @@ function GenerationPreviewContent() {
 
   // Leaving does not stop the run: its course card goes on showing it.
   const goBackToHome = () => {
-    clearOutlineReviewTimer();
     router.push('/');
   };
 
-  // Triggered when the user clicks the streaming outline card mid-stream.
+  // Triggered when the user clicks the streaming outline card mid-stream (a
+  // run that waits for its outline only).
   const handleExpandStreamingOutline = () => {
     if (!view) return;
-    clearOutlineReviewTimer();
     outlineReviewIntentRef.current = true;
     writeReviewIntent(view.runId, true);
     setPhase('review');
   };
 
-  // Inverse of expand. Mid-stream: shrink back to the streaming preview card.
-  // Post-stream: shrink back to the small card too, then re-arm the 2.5s
-  // auto-continue timer — same pacing as the no-review path.
+  // Inverse of expand, while the outline streams: back to the streaming card.
+  // Once the outline is ready the run waits for the review, which stays open.
   const handleCollapseEditor = () => {
     if (!view) return;
     outlineReviewIntentRef.current = false;
     writeReviewIntent(view.runId, false);
-    if (isOutlineStreaming) {
-      setPhase('progress');
-      return;
-    }
-    if (!awaitingConfirmation) return;
-    setPhase('outline-ready');
-    armAutoContinue(editedOutlines);
+    setPhase('progress');
   };
 
   const handleOutlinesChange = (next: SceneOutline[]) => {
@@ -344,7 +303,12 @@ function GenerationPreviewContent() {
 
   const failureSentence = (text: FailureText) => ('key' in text ? t(text.key) : text.text);
   const isReviewingOutlines = phase === 'review';
-  const isOutlineReady = phase === 'outline-ready';
+  // The run confirmed its own outline and goes on to the course.
+  const outlineContinuing =
+    outlineConfirmedByRun &&
+    view.state === 'generating' &&
+    !!view.outline &&
+    (view.step === null || view.step === 'agents');
   const error =
     commandError ??
     (view.state === 'paused' && view.error ? failureSentence(runFailureText(view.error)) : null);
@@ -353,8 +317,8 @@ function GenerationPreviewContent() {
     ? t('generation.outlineRetrying')
     : retryQueued
       ? t('generation.retryingScene')
-      : isOutlineReady
-        ? t('generation.reviewOutlineAutoContinue')
+      : outlineContinuing
+        ? t('generation.outlineReadyContinuing')
         : '';
   const webSearchSources = view.researchSources;
   const generatedAgents = view.generatedAgents ?? [];
@@ -432,7 +396,7 @@ function GenerationPreviewContent() {
               onAlwaysReviewChange={setReviewOutlineEnabled}
               isLoading={isConfirmingOutlines}
               isStreaming={isOutlineStreaming}
-              onCollapse={handleCollapseEditor}
+              onCollapse={isOutlineStreaming ? handleCollapseEditor : undefined}
             />
           </motion.div>
         </div>
@@ -519,7 +483,9 @@ function GenerationPreviewContent() {
                         outlines={outlines}
                         webSearchSources={webSearchSources}
                         onExpandOutline={
-                          activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
+                          activeStep.id === 'outline' && !outlineConfirmedByRun
+                            ? handleExpandStreamingOutline
+                            : undefined
                         }
                       />
                     </motion.div>
@@ -575,7 +541,7 @@ function GenerationPreviewContent() {
                   {paused ? t('generation.backToHome') : t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
-            ) : !isOutlineReady ? (
+            ) : (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -593,9 +559,21 @@ function GenerationPreviewContent() {
                   </button>
                 )}
               </motion.div>
-            ) : null}
+            )}
           </AnimatePresence>
         </div>
+
+        {/* This run continues on its own; the learner may ask to review the next ones. */}
+        {outlineConfirmedByRun && activeStep.id === 'outline' && !error && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={reviewOutlineEnabled}
+              onCheckedChange={(checked) => setReviewOutlineEnabled(checked === true)}
+              aria-label={t('generation.alwaysReviewOutlines')}
+            />
+            <span>{t('generation.alwaysReviewOutlines')}</span>
+          </label>
+        )}
       </div>
 
       {/* Agent Reveal Modal */}

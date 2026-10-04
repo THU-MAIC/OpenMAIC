@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "Das Modell hat keine gültigen Szeneninhalte zurückgegeben. Probiere ein anderes Modell aus oder passe die Kursanforderungen an.",
     "reviewOutlineTitle": "Prüfe deine Gliederung",
     "reviewOutlineDesc": "Bearbeite, verschiebe, entferne oder ergänze Szenen, bevor die Inhaltserstellung beginnt.",
-    "reviewOutlineAutoContinue": "Die Generierung wird automatisch fortgesetzt, wenn du die Gliederung nicht prüfst.",
+    "outlineReadyContinuing": "Die Gliederung ist fertig. Der Kurs wird jetzt generiert…",
     "outlineEditorTitle": "Szenengliederung",
     "outlineEditorSummary": "Szenen insgesamt: {{count}}. Du kannst sie bearbeiten, hinzufügen, entfernen oder neu anordnen, bevor die Generierung beginnt.",
     "addFirstScene": "Erste Szene hinzufügen",

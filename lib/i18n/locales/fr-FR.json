@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "Le modèle n’a pas renvoyé de contenu de scène valide. Essayez un autre modèle ou ajustez vos attentes pour le cours.",
     "reviewOutlineTitle": "Vérifiez votre plan",
     "reviewOutlineDesc": "Modifiez, réordonnez, supprimez ou ajoutez des scènes avant que la génération du contenu ne commence.",
-    "reviewOutlineAutoContinue": "La génération se poursuivra automatiquement si vous ne vérifiez pas le plan.",
+    "outlineReadyContinuing": "Le plan est prêt. La génération du cours se poursuit…",
     "outlineEditorTitle": "Plan des scènes",
     "outlineEditorSummary": "{{count}} scènes au total. Vous pouvez les modifier, en ajouter, en supprimer ou les réordonner avant le lancement de la génération.",
     "addFirstScene": "Ajouter une première scène",

@@ -1096,7 +1096,7 @@
     "sceneGenerateInvalidResponse": "モデルから有効なシーン内容が返されませんでした。別のモデルを試すか、コース要件を調整してください。",
     "reviewOutlineTitle": "アウトラインを確認",
     "reviewOutlineDesc": "コンテンツ生成の前に、シーンの編集、並び替え、削除、追加ができます。",
-    "reviewOutlineAutoContinue": "確認しない場合は、自動的にコース内容の生成へ進みます。",
+    "outlineReadyContinuing": "アウトラインの準備ができました。コースの生成を続けています…",
     "outlineEditorTitle": "シーンアウトライン",
     "outlineEditorSummary": "全{{count}}シーン。生成前に編集、追加、削除、並び替えができます",
     "addFirstScene": "最初のシーンを追加",
