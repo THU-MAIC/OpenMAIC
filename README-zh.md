@@ -103,11 +103,11 @@ pnpm install
 ### 2. 配置
 
 ```bash
-cp .env.example .env.local
-cp openmaic.example.yml openmaic.yml
+cp .env.example .env.local            # API Key 与服务端选项
+cp openmaic.example.yml openmaic.yml  # 服务端使用哪些模型
 ```
 
-复制出的示例只需要在 `.env.local` 中设置 `OPENAI_API_KEY`（也可以把其中的服务商换成你有 key 的那家）；其余服务商和槽位都已注释，需要时再取消注释。`openmaic.yml` 声明服务端可以调用哪些**服务商**（账号），以及每个**槽位**（一处用到 AI 的地方：大纲、幻灯片内容、语音合成、联网搜索……）使用哪个模型。Key 留在 `.env.local` 里，通过 `${VAR}` 引用：
+复制出的示例只需要在 `.env.local` 中设置 `OPENAI_API_KEY`（也可以把其中的服务商换成你有 key 的那家）；其余内容都已注释，需要时再打开。`openmaic.yml` 声明服务端可以调用的**服务商**（账号），并为每个**槽位**（一处用到 AI 的地方：大纲、幻灯片内容、语音合成、联网搜索……）指定模型。Key 留在 `.env.local` 里，通过 `${VAR}` 引用：
 
 ```yaml
 providers:
@@ -124,11 +124,21 @@ slots:
   video: null                      # 关闭某项能力
 ```
 
-写进文件的槽位是服务端默认值：用户可以在 Web 端的模型设置里修改，也可以在那里接入自己的服务（在那里保存的 Key 用 `OPENMAIC_SECRET_KEY` 加密存储）。没写的槽位沿用父槽位。要对所有人固定某些槽位，把它们列在 `lock` 下（`lock: all` 固定所有槽位）；`allowUserKeys: false` 让用户不能自行添加服务商。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。槽位说明、预设、回退模型、锁定和 `allowUserKeys` 见[配置说明](packages/docs/content/docs/configuration.zh-cn.mdx)，预设和模型 ID 见[支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx)。
+写进文件的槽位是服务端默认值；除非用 `lock` 锁定或设置 `allowUserKeys: false`，用户可以在 Web 端的模型设置里修改它们，或接入自己的服务。服务启动时会校验该文件，出错时会指出出错的字段（YAML 语法错误则指出行号）。
 
-支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Amazon Bedrock**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**TokenDance**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）、**FunASR**（本地 ASR）以及任何兼容 OpenAI API 的服务。
+| 想了解 | 阅读 |
+| --- | --- |
+| 槽位、预设、回退模型、`lock`、`allowUserKeys`、`OPENMAIC_SECRET_KEY` | [配置说明](packages/docs/content/docs/configuration.zh-cn.mdx) |
+| 所有服务商预设与模型 ID | [支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx) |
+| 升级：没有 `openmaic.yml` 时，服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效；`MODEL_ROUTES` 需改写为槽位 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
 
-> **从旧版本升级？** 没有 `openmaic.yml` 时，服务商环境变量（`OPENAI_API_KEY`、`TTS_*`、`IMAGE_*` 等）、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效：服务启动时会自动转换，并在日志里给出弃用提示。`MODEL_ROUTES` 不再读取，在没有 `openmaic.yml` 的情况下设置它会导致服务拒绝启动。详见[从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移)。
+**支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
+
+> [!TIP]
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见下方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
+
+<details>
+<summary><b>更多示例</b>：Token Plan、小米 MiMo 与智谱 GLM、Amazon Bedrock</summary>
 
 Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
 
@@ -196,7 +206,145 @@ slots:
 
 Bedrock 使用 AWS 环境凭证或 AWS SDK 凭证链，区域取自 `BEDROCK_REGION`（例如在 `.env.local` 中设置 `BEDROCK_REGION=us-east-1`）。临时凭证可设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY` 和 `AWS_SESSION_TOKEN`，也可以使用运行环境可用的 AWS profile / role。
 
-> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见上方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
+</details>
+
+### 3. 启动数据库
+
+```bash
+pnpm db:up
+```
+
+然后取消 `.env.local` 中本地 `DATABASE_URL` 那一行的注释：
+
+```env
+DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
+```
+
+`pnpm db:up` 会在 `127.0.0.1:5432` 上启动一个开发用 PostgreSQL（可用 `OPENMAIC_DB_PORT` 换端口）。它是单独的 Compose 项目 `openmaic-dev-db`（本机所有检出共用），有自己的容器和数据卷，不会影响 `docker compose up` 栈的数据库。`pnpm db:down` 停止它并保留数据。也可以使用任何其他 PostgreSQL。
+
+### 4. 启动
+
+```bash
+pnpm dev
+```
+
+打开 **http://localhost:3000** 开始学习！未设置 `DATABASE_URL` 时服务会拒绝启动，并提示如何提供（见[服务端持久化](#服务端持久化postgresql)）。
+
+### 5. 生产环境构建
+
+```bash
+pnpm build && DATABASE_URL=postgres://... pnpm start
+```
+
+请让服务作为常驻进程运行（进程管理器或容器）：课程生成在其中进行，浏览器离开页面后仍会继续。必需配置和从 1.1.x 升级的步骤见[部署指南](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
+### Docker 部署
+
+```bash
+cp .env.example .env.local
+# 编辑 .env.local 填入你的 API Key，然后：
+docker compose up --build
+```
+
+打开 **http://localhost:3000**。整套服务是两个容器：应用和 PostgreSQL。课程、生成的媒体和运行时会话保存在命名卷 `openmaic-postgres` 与 `openmaic-data` 中，`docker compose down` 和重新构建后依然保留；`docker compose down -v` 会删除它们。如需用 `openmaic.yml` 配置模型，请从 `openmaic.example.yml` 复制出该文件，并取消 `docker-compose.yml` 中对应挂载行的注释；否则启动后在模型设置里接入模型服务即可。
+
+Compose 文件默认是**个人安装**：以[单用户模式](#服务端持久化postgresql)运行（所有浏览器看到同一个课程库），且只监听 `127.0.0.1:3000`。要让其他机器访问，请先加上保护：
+
+1. 在 `.env.local` 中设置足够长的随机 `ACCESS_CODE`（[详情](#可选access_code共享部署)）。没有它时，任何能访问该端口的人都拥有整个课程库，可以编辑甚至删除。
+2. 首次启动前，把 `PERSISTENCE_POSTGRES_PASSWORD` 设为只含字母和数字的随机值。
+3. 发布到网络地址：
+
+   ```bash
+   OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build
+   ```
+
+`OPENMAIC_PUBLISH_ADDRESS`、`OPENMAIC_PORT` 和 `PERSISTENCE_POSTGRES_PASSWORD` 来自 shell 或 `docker-compose.yml` 旁边的 `.env` 文件，而不是 `.env.local`。覆盖 Compose 默认值、轮换数据库密码以及完整的升级说明见 [Hosting and identity](packages/docs/content/docs/hosting.mdx#docker-compose-as-a-personal-installation)（英文）。
+
+> [!IMPORTANT]
+> **升级已有的 Compose 部署？** 现在总会启动 PostgreSQL，应用只发布在 `127.0.0.1` 上，所有访客都是同一个所有者。如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，请同时设置 `OWNER_SINGLE_USER=false`，否则应用拒绝启动。升级前请先阅读 [Upgrading a Compose deployment](packages/docs/content/docs/hosting.mdx#upgrading-a-compose-deployment)（英文）。
+
+<details>
+<summary><b>慢速网络 / 中国大陆构建加速</b></summary>
+
+Docker 构建支持两个可选参数。两者默认均为空，因此上面的标准命令仍会使用
+Alpine 和 npm 的上游软件源。
+
+- `ALPINE_MIRROR` 接收不带 `https://` 的 Alpine 镜像站主机名。
+- `NPM_REGISTRY` 接收完整的 npm registry URL。
+
+这些构建参数仅用于公共镜像地址。请勿在其中嵌入用户名、密码或访问令牌，因为
+Docker 可能把构建参数记录到镜像元数据或构建证明中。
+
+使用 Docker Compose：
+
+```bash
+ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+NPM_REGISTRY=https://registry.npmmirror.com \
+docker compose up --build
+```
+
+直接构建镜像：
+
+```bash
+docker build \
+  --build-arg ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  -t openmaic:local .
+```
+
+这些参数不会加速 Docker Hub 拉取，包括 Dockerfile frontend 和
+`node:22-alpine` 基础镜像。若这些步骤较慢，需要单独配置 Docker daemon 的
+registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
+store；缓存只用于提升性能，不是正确完成构建的必要条件。
+
+</details>
+
+### Vercel 部署（1.1.x 及以前）
+
+Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。在 Vercel 上部署 1.1.x：
+
+1. 在 GitHub 上 fork 本仓库，取消勾选 **Copy the `main` branch only**。
+2. 在 fork 中把默认分支设为 `release/1.1.x`（**Settings → General → Default branch**）。
+3. 在 Vercel 中 **Add New → Project** 导入这个 fork。Vercel 构建它的默认分支；按该分支的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/release/1.1.x/.env.example) 至少配置一个 LLM 服务的 key。
+
+这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址（浏览器按站点保存数据）；访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
+### 服务端持久化（PostgreSQL）
+
+OpenMAIC 把课程保存在服务端。课程文档、文件夹、对话历史、学习者会话和生成的媒体保存在 PostgreSQL 中（媒体也可放在 S3），由应用自身在 `/api/persistence` 提供服务。浏览器只保留属于该设备的数据，如设置、播放进度和缓存；**设置 → 清除本地缓存**不会动服务端的任何数据。
+
+- **必须提供 `DATABASE_URL`。** 没有它服务会输出修复方法并以退出码 `1` 退出。Compose 会自动设置；本地开发可用 [`pnpm db:up`](#3-启动数据库) 启动数据库。
+- **旧版本保存在浏览器中的课程**会在每个浏览器首次打开升级后的应用时自动导入一次，浏览器中的原始数据保持不变。
+- **配置无效时服务不会启动**，会输出一行 `[boot]` 原因，而不是留下一个对每个请求都返回 `500` 的进程。
+
+**课程归谁所有。** 每个请求都会解析为一个所有者，每个所有者有自己的课程库。请选择一种身份模式：
+
+| 模式 | 设置 | 课程库 |
+| --- | --- | --- |
+| 单用户（Compose 默认） | `OWNER_SINGLE_USER=true` | 所有能访问服务的人共用一个；请用 `ACCESS_CODE` 或回环地址保护 |
+| 共享团队 | `PERSISTENCE_SHARED_OWNER_ID=<id>`，并同时设置 `ACCESS_CODE` | 访问码背后的团队共用一个 |
+| 匿名（两者都不设置时的默认） | 无 | 每个浏览器 cookie 一个；换一个浏览器看到的是空课程库 |
+| 自有账号 | 在 `instrumentation.ts` 中注册所有者认证方法 | 每个登录账号一个 |
+
+请在首次启动 1.2.0 之前设置好身份模式：1.1.x 以文件形式保存的课堂会导入给届时配置的所有者。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
+
+为他人运行 OpenMAIC，或把它嵌入自己的产品？[Hosting and identity](packages/docs/content/docs/hosting.mdx)（英文）介绍了：
+
+- [谁能读写存储的数据](packages/docs/content/docs/hosting.mdx#who-can-read-and-write-stored-data)，以及已移除的 `PERSISTENCE_DEV_TOKEN`；
+- [资产回收、配额与 S3 出站](packages/docs/content/docs/hosting.mdx#asset-storage)（`ASSET_*`）；
+- [全部启动检查](packages/docs/content/docs/hosting.mdx#startup-checks)；
+- [所有者身份](packages/docs/content/docs/hosting.mdx#owner-identity)：[单用户模式](packages/docs/content/docs/hosting.mdx#single-user-mode)、[注册认证方法](packages/docs/content/docs/hosting.mdx#registering-owner-auth-methods)、[签名 JWT 网关示例](packages/docs/content/docs/hosting.mdx#recipe-accounts-through-an-identity-gateway-signed-jwt)和[认领匿名工作](packages/docs/content/docs/hosting.mdx#claiming-anonymous-work)；
+- [宿主扩展钩子](packages/docs/content/docs/hosting.mdx#host-extension-hooks)：课程创建、课程库、上传和资产字节存储。
+
+### 可选：ACCESS_CODE（共享部署）
+
+为部署添加站点级密码保护，在 `.env.local` 中设置：
+
+```env
+ACCESS_CODE=your-secret-code
+```
+
+请使用足够长的随机值（至少 16 个字符）：它是保护部署的唯一密钥。设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有路由（包括 API）均可访问：未配置的部署没有门禁，也没有第二道校验。验证结果以签名令牌保存在 HTTP-only cookie 中，有效期 7 天；只有在可信反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流。详见[配置说明 → ACCESS_CODE](packages/docs/content/docs/configuration.zh-cn.mdx#access_code--站点级访问密码)。
 
 <a id="lemonade-local-ai"></a>
 
@@ -259,256 +407,6 @@ slots:
 （旧版环境变量写法：`ASR_FUNASR_BASE_URL=http://localhost:8000/v1`。）
 
 纯 CPU 环境可运行 `funasr-server --device cpu --model sensevoice`。生产部署方式参见 [FunASR 部署指南](https://github.com/modelscope/FunASR#deploy)。
-
-### 3. 启动数据库
-
-```bash
-pnpm db:up
-```
-
-这会在 `127.0.0.1:5432` 上启动一个独立的开发用 PostgreSQL（可用 `OPENMAIC_DB_PORT` 换端口）。它是单独的 Compose 项目（`openmaic-dev-db`，本机所有检出共用这一个），有自己的容器和数据卷，因此不会重启或停止 `docker compose up` 栈的数据库，两者也不共享数据。然后取消 `.env.local` 中本地 `DATABASE_URL` 那一行的注释：
-
-```env
-DATABASE_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic
-```
-
-也可以使用任何其他 PostgreSQL，把 `DATABASE_URL` 指向它即可。`pnpm db:down` 会停止该容器并保留数据卷。
-
-### 4. 启动
-
-```bash
-pnpm dev
-```
-
-打开 **http://localhost:3000** 开始学习！未设置 `DATABASE_URL` 时服务会拒绝启动，并提示如何提供（见[服务端持久化](#服务端持久化postgresql)）。
-
-### 5. 生产环境构建
-
-```bash
-pnpm build && DATABASE_URL=postgres://... pnpm start
-```
-
-请让服务作为常驻进程运行（进程管理器或容器）：课程生成在其中进行，浏览器离开页面后仍会继续。必需配置和从 1.1.x 升级的步骤见[部署指南](packages/docs/content/docs/deployment.zh-cn.mdx)。
-
-### 可选：ACCESS_CODE（共享部署）
-
-为部署添加站点级密码保护，在 `.env.local` 中设置：
-
-```env
-ACCESS_CODE=your-secret-code
-```
-
-设置后，访客需要输入密码才能使用，所有 API 路由也会受到保护。未设置时（`.env.example` 的默认），`middleware.ts` 不校验任何凭证，所有匹配到的路由——包括 API——均可访问。这是 fail-open：未配置的部署没有门禁，也没有第二道校验。请使用足够长的随机值（至少 16 个字符），因为该密码是保护部署的唯一密钥。
-
-验证通过后会在 HTTP-only cookie 中保存一个签名令牌，有效期 7 天，由服务端强制校验，过期后需要重新验证。只有当应用运行在会覆盖 `x-forwarded-for` / `x-real-ip` 的反向代理之后并设置 `TRUST_PROXY_HEADERS=true` 时才会限流：按客户端限流（每个客户端 60 秒内 10 次），受信任客户端验证成功会清空自己的计数。没有可信代理时，应用无法把请求归因到具体客户端，因此完全不限流，保护完全依赖密码的长度和随机性。
-
-### Docker 部署
-
-```bash
-cp .env.example .env.local
-# 编辑 .env.local 填入你的 API Key，然后：
-docker compose up --build
-```
-
-如需用 `openmaic.yml` 配置模型，请先从 `openmaic.example.yml` 复制出该文件，再取消 `docker-compose.yml` 中对应挂载行的注释；否则启动后在模型设置里接入模型服务即可。
-
-打开 **http://localhost:3000**。整套服务是两个容器：应用和 PostgreSQL；PostgreSQL 健康检查通过后应用才会启动。课程、生成的媒体和运行时会话都[存储在服务端](#服务端持久化postgresql)的命名卷（`openmaic-postgres`、`openmaic-data`）中，`docker compose down` 和重新构建后依然保留；`docker compose down -v` 会删除它们。
-
-Compose 文件默认按**个人安装**配置：
-
-- **单一所有者。** `docker-compose.defaults.env` 开启了[单用户模式](#单用户模式)：所有请求都解析为同一个所有者，因此每个浏览器看到的都是同一个课程库，并且可以发布课程；不会生成匿名 cookie。
-- **仅本机访问。** 应用端口只发布在 `127.0.0.1:3000`，只有本机能访问；PostgreSQL 完全不对外发布。
-
-要让其他机器访问，请先加上保护：
-
-1. 在 `.env.local` 中设置足够长的随机 `ACCESS_CODE`（见 [ACCESS_CODE](#可选access_code共享部署)）。强烈建议这样做：没有访问码时，任何能访问该端口的人都是这唯一的所有者，可以共享、编辑甚至删除整个课程库。
-2. 首次启动前把 `PERSISTENCE_POSTGRES_PASSWORD` 设为只含字母和数字的随机值（已有数据卷的做法见[服务端持久化](#服务端持久化postgresql)）。
-3. 发布到网络地址：`OPENMAIC_PUBLISH_ADDRESS=0.0.0.0 docker compose up -d --build`。
-
-这些 Compose 层面的变量（`OPENMAIC_PUBLISH_ADDRESS`、宿主机端口 `OPENMAIC_PORT`、`PERSISTENCE_POSTGRES_PASSWORD`）来自 shell 或 `docker-compose.yml` 旁边的 `.env` 文件，而不是 `.env.local`。单用户模式下未设置 `ACCESS_CODE` 时，应用会在启动时输出醒目的警告；发布到回环以外却仍使用默认 PostgreSQL 密码时，应用也会警告；两者都不会阻止服务启动。之后的首次运行设置流程可能会提示设置访问码；在此之前，请自行设置 `ACCESS_CODE`。
-
-`docker-compose.defaults.env` 中的每个默认值都可以在 `.env.local` 中覆盖（Compose 会在它之后读取 `.env.local`）：例如设置 `OWNER_SINGLE_USER=false` 恢复每个浏览器一个匿名所有者（与 `pnpm dev` 相同），或改用 `PERSISTENCE_SHARED_OWNER_ID`，或设置自己的 `DATABASE_URL` 使用外部数据库。此时内置的 `postgres` 服务仍会启动（应用会等待它的健康检查），但不会被使用；如不需要，可在 Compose 文件副本中删除它。
-
-> [!IMPORTANT]
-> **升级已有的 Compose 部署。** `docker compose up` 现在会启动 PostgreSQL，应用始终把课程保存在其中；应用只发布在 `127.0.0.1` 上。
->
-> - 如果此前供其他机器访问，请以 `OPENMAIC_PUBLISH_ADDRESS=0.0.0.0` 启动，并设置 `ACCESS_CODE`：现在每位访客都是同一个所有者。
-> - `--profile server-persistence` 仍可使用，但不再有任何作用；PostgreSQL 总会启动。
-> - 此前纯浏览器部署保存在浏览器中的课程不会被删除：每个浏览器首次打开升级后的应用时，单向导入器会自动把其中的课程搬到服务端（见[服务端持久化](#服务端持久化postgresql)），浏览器中的原始数据保持不变。
-> - 此前服务端部署中以各浏览器匿名 cookie 保存的课程仍归属于这些匿名所有者：不会被自动合并到单一所有者名下。如需并入，请显式认领（见[单用户模式](#单用户模式)）。如果该部署曾由多人使用，可以考虑改设 `OWNER_SINGLE_USER=false`，让每个人保留自己的课程库。
-> - `.env.local` 中的 `DATABASE_URL` 仍然优先（外部数据库，或已轮换的密码）；未设置时应用使用内置 PostgreSQL 和 `PERSISTENCE_POSTGRES_PASSWORD`。
-> - 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，请同时在其中设置 `OWNER_SINGLE_USER=false`：两者互斥，同时设置时应用拒绝启动。
-> - 不再提供纯浏览器存储的镜像：`NEXT_PUBLIC_PERSISTENCE` 构建参数已移除并被忽略。
-
-#### 慢速网络 / 中国大陆构建加速
-
-Docker 构建支持两个可选参数。两者默认均为空，因此上面的标准命令仍会使用
-Alpine 和 npm 的上游软件源。
-
-- `ALPINE_MIRROR` 接收不带 `https://` 的 Alpine 镜像站主机名。
-- `NPM_REGISTRY` 接收完整的 npm registry URL。
-
-这些构建参数仅用于公共镜像地址。请勿在其中嵌入用户名、密码或访问令牌，因为
-Docker 可能把构建参数记录到镜像元数据或构建证明中。
-
-使用 Docker Compose：
-
-```bash
-ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
-NPM_REGISTRY=https://registry.npmmirror.com \
-docker compose up --build
-```
-
-直接构建镜像：
-
-```bash
-docker build \
-  --build-arg ALPINE_MIRROR=mirrors.tuna.tsinghua.edu.cn \
-  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
-  -t openmaic:local .
-```
-
-这些参数不会加速 Docker Hub 拉取，包括 Dockerfile frontend 和
-`node:22-alpine` 基础镜像。若这些步骤较慢，需要单独配置 Docker daemon 的
-registry mirror。同一个 BuildKit builder 会在常规缓存清理前跨构建复用 pnpm
-store；缓存只用于提升性能，不是正确完成构建的必要条件。
-
-### Vercel 部署（1.1.x 及以前）
-
-Serverless 部署支持到 OpenMAIC 1.1.x。从 1.2.0 起，课程生成在服务端一个比请求存活更久的进程中运行，因此 OpenMAIC 需要常驻的 Node.js 进程和 PostgreSQL（[Docker 部署](#docker-部署)或 `pnpm start`）；不再支持 Vercel 等 Serverless 平台，仓库中也不再提供 `vercel.json`。在 Vercel 上部署 1.1.x：
-
-1. 在 GitHub 上 fork 本仓库，取消勾选 **Copy the `main` branch only**。
-2. 在 fork 中把默认分支设为 `release/1.1.x`（**Settings → General → Default branch**）。
-3. 在 Vercel 中 **Add New → Project** 导入这个 fork。Vercel 构建它的默认分支；按该分支的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/release/1.1.x/.env.example) 至少配置一个 LLM 服务的 key。
-
-这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址（浏览器按站点保存数据）；访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。各类部署的升级步骤见[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx)。
-
-### 服务端持久化（PostgreSQL）
-
-OpenMAIC 始终把课程保存在服务端。[Docker 部署](#docker-部署)只跑两个容器：OpenMAIC 应用本体和 PostgreSQL。持久化 HTTP 服务内嵌在应用中（`/api/persistence`），没有独立的持久化服务。
-
-**必须提供 `DATABASE_URL`。** 没有它服务不会启动：会输出 `[boot] Invalid server configuration; the server will not start: DATABASE_URL is not set. ...` 及修复方法，并以退出码 `1` 退出。不使用 Compose 时，正常构建并在运行时提供 `DATABASE_URL`：
-
-```bash
-pnpm build
-DATABASE_URL=postgres://openmaic:password@localhost:5432/openmaic pnpm start
-```
-
-本地开发时，`pnpm db:up` 启动一个独立的开发数据库（以单独的项目和数据卷 `openmaic-dev-db` 运行 Compose 的 `postgres` 服务定义，本机所有检出共用）并发布到 `127.0.0.1`（端口 `OPENMAIC_DB_PORT`，默认 `5432`）；对应的 `DATABASE_URL` 已在 `.env.example` 中以注释给出，`pnpm db:down` 可将其停止。
-
-和往常一样配置模型（`openmaic.yml` 加 `.env.local` 中的 key，或 设置 → 模型服务）。课程文档、文件夹、对话历史与学习者运行时会话、生成的媒体都保存在服务端。留在浏览器里的只有属于该设备、丢失也不会丢课的数据：应用设置与界面偏好、播放进度与编辑器当前场景、编辑器撤销历史、服务端已保存的讲解与媒体的本地缓存（以及因存储已满被拒、为重试保留的字节）、生成期间暂存的 PDF 图片，以及在该浏览器注册的 TTS 音色。**设置 → 清除本地缓存**只清除这些，不会动服务端的任何数据。
-
-**从纯浏览器构建升级。** 此前纯浏览器构建保存在浏览器中的课程会自动搬到服务端，无需任何操作，也没有界面提示：该浏览器首次打开升级后的应用、页面空闲时，单向导入器会把课程连同对话、学习者运行时、播放进度、智能体阵容、文件夹及其归类、测验进度和媒体复制给服务端为该浏览器解析出的所有者（默认是匿名 cookie 所有者），课程随后出现在课程库中。每个浏览器只导入一次：服务端把该浏览器绑定给第一个请求的所有者（`POST /api/identity/legacy-import-binding`），认领会把绑定带到账号（匿名所有者登录后被认领）。导入器的每个请求都携带浏览器 id，未持有绑定的所有者的请求会被拒绝（`409 LEGACY_IMPORT_NOT_BOUND`），因此之后在同一浏览器中使用的其他所有者不会得到任何导入。浏览器中的原始数据保持不变，**设置 → 清除本地缓存**也不会删除它们。服务端已存在的同名课程以服务端为准；课程 id 已被其他所有者占用时，以新 id 导入；在服务端删除过的课程不会被重新导入。导入进度记录在浏览器中（只有一个随机浏览器 id，不含任何所有者信息），中断后下次加载时继续，且不会重复导入；问题会以 `[legacy-browser-import]` 前缀记录在浏览器控制台中。该导入器是临时的，将在之后的几个版本中移除。
-
-服务端课程库及其文件夹（`/api/stages/**`、`/api/folders/**`）无论 Agent 运行时（`OPENMAIC_AGENT_RUNTIME_ENABLED`）是否开启都可以使用。`GET /api/agent/runtime` 报告 `persistence`，与运行时自身的 `enabled`、`runtimeEnabled` 并列。
-
-`/api/persistence` 的每个请求都归属于[所有者身份](#所有者身份)机制解析出的所有者——默认为匿名 cookie（400 天，使用中续期），每个浏览器一个所有者；在 Compose 部署中则是[单用户模式](#单用户模式)的唯一所有者。持久化不再有单独的凭证：
-
-- **文档**：读取是 capability-by-id：只要 stage meta 存在且未被墓碑化，`decideDocumentAccess` 就会放行且不比对所有者（`lib/persistence/document-access.ts`），因此能访问该端点并知道 stage id 的人都可以读这门课。写入和删除按所有者校验。
-- **运行时会话**（`/runtime/*`）按学习者 key 分区，而学习者 key **就是所有者 id**。浏览器通过 `GET /api/persistence/learner-key` 获取它；请求中写入任何其他学习者 key 都会被拒绝（`403 FORBIDDEN_LEARNER`），他人的会话返回 `404`。已删除（墓碑化）课程的运行时数据视为不存在，也不再接受写入。学习者合并与管理端清空仍然拒绝。
-- **资产**按所有者分区分配，因此 `ASSET_QUOTA_BYTES` 是每个所有者的上限，只有所有者本人可以替换或删除条目。为保证课程观看者能加载媒体，读取仍是 capability-by-id：所有者可读自己的条目；他人已提交、且被**该所有者本人**某门未删除课程引用的条目，任何人都可按 id 读取。课程只会引用（并提交）其所有者自己的媒体：在自己的课程里写入他人的资产 id 不会产生任何引用，因此既无法暴露对方尚未保存的上传，也无法让对方的媒体一直保留。按所有者分区之前写入的条目（旧的共享分区）仍可被所有人按 id 读取，只有拥有所有引用它的课程的所有者才能替换或删除；课程不再引用后照旧由回收器回收。
-
-在没有宿主认证方法时，所有者的强度只等同于一个 cookie（单用户模式下则等同于 `ACCESS_CODE` 或回环绑定）：适用于 localhost、可信网络或单团队部署。有自有账号体系的部署注册所有者认证方法（见[所有者身份](#所有者身份)）后，上述所有接口都随之生效。
-
-> [!WARNING]
-> **升级服务端持久化。** `PERSISTENCE_DEV_TOKEN`、`NEXT_PUBLIC_PERSISTENCE_TOKEN` 和 `PERSISTENCE_ALLOW_INSECURE_DEV_AUTH` 已移除并被忽略，请从环境变量和构建参数中删去。此前写入的运行时会话以浏览器自生成的学习者 key 为键，而不是所有者 id，因此**将无法再访问**（课程文档和媒体不受影响）。它们不会被自动迁移，因为信任客户端提交的旧 key 会重新引入客户端自选身份。
->
-> **如果 `PERSISTENCE_DEV_TOKEN` 是你唯一的访问门槛，请在升级前处理。** 去掉它之后，端点会接受所有能访问到它的访客，每人作为各自的匿名所有者。请先用 `ACCESS_CODE` 或自己的网关保护部署，或注册基于自有账号体系的所有者认证方法（见[所有者身份](#所有者身份)）。
-
-`PERSISTENCE_POSTGRES_PASSWORD`（默认 `openmaic-dev`，仅供本地使用）只在数据目录为空时初始化 PostgreSQL 角色；`docker-compose.defaults.env` 中默认的 `DATABASE_URL` 也由同一个变量不经编码拼出，因此请只使用字母和数字（`@`、`/`、`#`、`?` 等字符会破坏 URL；这类密码请在 `.env.local` 中设置经过编码的 `DATABASE_URL`）。之后再修改不会轮换已有的 `openmaic-postgres` 卷。一次性本地库可以直接 `docker compose down -v` 后换密码重启；要保留数据则执行 `docker compose exec postgres psql -U openmaic -d openmaic -c "ALTER ROLE openmaic WITH PASSWORD 'new-password';"`，然后以 `PERSISTENCE_POSTGRES_PASSWORD=new-password` 启动（或在 `.env.local` 中设置对应的 `DATABASE_URL`）。
-
-资产的回收由离线回收器完成，不在请求路径上。**本部署默认开启回收器**，资产存储不会无限增长：每 `ASSET_COLLECTION_INTERVAL_MS`（默认 15 分钟）执行一轮，一轮分两级——先释放注册中心条目（在待定窗口内始终没有文档引用的分配，以及最后一处文档引用消失已超过 `ASSET_COLLECTION_GRACE_MS`（默认 1 小时）的条目），再按同一 grace 清理失去最后一个条目的字节。两级是依次等待的：正是释放条目这一步才让它的字节变成无引用，所以字节要等条目熬完自己的 grace 之后才开始计时。因此从「最后一个文档不再引用它」到「字节被删除」，最坏情况是两个 grace period 而不是一个。这个窗口就是用户删除的媒体实际的保留时间，调大请谨慎。设置 `ASSET_COLLECTION_ENABLED=0` 可在某个进程中关闭回收。多实例部署可以在每个实例上开启（每一行在被清理前都会加锁并复查，并发回收器会串行化而非竞争），也可以全部关闭后单独运行。
-
-这套账目完全由服务端维护，且无需任何配置——因为在这里它不是可选项：每次文档写入都会记录该文档引用了哪些资产，并提交它所引用的分配，而这正是回收器读取的数据。浏览器从不删除资产，也不会被要求这么做。
-
-删除一门课会释放它所持有的资产。课程 id 本身是被永久退休而不是被移除的——正是这一点保证已删除的 id 不会再被占用——但它持有的引用会在同一个事务里被撤回，因此它的媒体会立刻不再计入配额。如上所述，条目在一个 grace period 后被释放，字节再等一个 grace period 才被清理。grace period 就是这里的撤销窗口：在它之内资产仍然存在。
-
-`ASSET_PENDING_TTL_MS`（默认 24 小时）是一次分配处于**待定**状态的时长——字节已入库，但还没有任何文档引用它的 id。客户端先存字节、之后才把 id 写进文档，这段间隙没有任何租约，因此该窗口必须长于一整轮生成过程加上一次仍在等待所属幻灯片的回写：媒体常常在那张幻灯片存在之前就已完成。默认给一天是刻意从宽的——未被引用的字节只是占用存储，而过早过期会让一门课丢掉自己的媒体。取值不是正整数时服务端会拒绝启动，理由与 `ASSET_QUOTA_BYTES` 相同。
-
-每个所有者最多可持有 `ASSET_QUOTA_BYTES`（默认 10 GiB）的**存活**资产——待定且未过期的，或仍被某个文档引用的——超出后拒绝新的分配；该上限由存储层在写事务内强制执行，并发上传无法越过。该上限按所有者而非按部署计算：在默认的匿名 cookie 所有者下，清除 cookie 的访客会成为拥有全新配额的新所有者，如需限制总量请在别处设置。按所有者分区之前的条目仍计入旧的共享分区。设置 `ASSET_QUOTA_BYTES=0` 可完全关闭配额并在别处限制存储，零的任何写法都有效。取值不是非负整数时服务端会拒绝启动，而不是退回默认值，这样写错的上限会让进程停下，而不是悄悄跑在一个没人选择的限制上。
-
-资产字节默认直接出站（内嵌路由把字节写入响应体）。设置 `ASSET_BYTE_EGRESS=redirect` 可选择**间接出站**：字节 `GET` 会在字节层支持签名（S3 支持；PostgreSQL 字节列不支持，回退为直接返回字节）时返回一个短时效的签名 S3 URL。间接出站有两个对象存储前提：bucket 的 CORS 需允许本应用来源并在签名响应上暴露 `Content-Type`；签名身份需持有 bucket 的 `s3:ListBucket`，缺失的 key 才能以 `404 NoSuchKey` 而非 `403` 返回。相关取舍见[资产 HTTP 契约](packages/@openmaic/storage/docs/asset-http-contract.md)。
-
-内嵌端点实现了 [RuntimeStore HTTP 契约](packages/@openmaic/storage/docs/runtime-http-contract.md)和 [DocumentStore HTTP 契约](packages/@openmaic/storage/docs/document-http-contract.md)。
-
-配置无效时服务不会启动。`instrumentation.ts` 的 `register()` 遇到以下情况会拒绝启动：
-
-- 未设置 `DATABASE_URL`；
-- `ASSET_QUOTA_BYTES`、`ASSET_PENDING_TTL_MS`、`OWNER_WRITE_LOCK_WAIT_MS` 或 `OWNER_CLAIM_LOCK_WAIT_MS` 取值格式错误；
-- `OWNER_CLAIM_TRIGGER` 不是 `explicit` 或 `auto`；
-- `OWNER_ANONYMOUS_PREMINT` 不是布尔值；
-- 设置了已移除的 `OWNER_AUTHENTICATOR` / `TRUSTED_PROXY_*` 变量；
-- `PERSISTENCE_SHARED_OWNER_ID` 格式错误、未同时设置 `ACCESS_CODE`，或与未包含 `sharedTeamAuthMethod()` 的所有者认证注册同时设置；注册了 `sharedTeamAuthMethod()` 却没有设置该变量，或它不是最后一个方法；
-- `OWNER_SINGLE_USER` 不是布尔值；`OWNER_SINGLE_USER_ID` 格式错误，或在该模式关闭时设置；单用户模式与 `PERSISTENCE_SHARED_OWNER_ID` 同时设置，或与未包含 `singleUserAuthMethod()` 的注册同时设置；注册了 `singleUserAuthMethod()` 却没有打开开关，或它不是最后一个方法；
-- 注册了资产字节存储的同时设置了 `ASSET_S3_BUCKET`，或在 `ASSET_BYTE_EGRESS=redirect` 下注册的字节存储未声明 `signsReadUrls: true`。
-
-出现上述任一情况时，Node.js 服务会输出一行 `[boot] Invalid server configuration; the server will not start:` 加上原因，并以退出码 `1` 退出（`next start` 与 standalone `server.js` 均如此），使进程守护或容器运行时能看到失败，而不是留下一个仍在监听、却对每个请求都返回 `500` 的进程。启动期间的其他失败（如构建产物缺少模块，或宿主的注册调用抛错）同样以退出码 `1` 退出，输出为 `[boot] Server startup failed; the server will not start:` 并附带调用栈。警告（如未设置 `ACCESS_CODE` 的提示和模型路由检查）不会让服务停止。
-
-#### 所有者身份
-
-课程、文件夹、资料、Agent 会话与技能都按**所有者 id** 分区。服务端对每个请求只在一处（`lib/server/identity/`）解析一次所有者；所有按所有者划分的路由和 Server Action 都经由它，其他模块不读取身份 cookie 或请求头。
-
-解析时按顺序询问一组**所有者认证方法（owner auth method）**。每个方法只识别一种凭证，并且只给出以下三种回答之一：
-
-| 回答 | 含义 | 解析结果 |
-|---|---|---|
-| `authenticated` | 该方法的凭证存在且有效 | 以该 principal 为所有者，不再询问后续方法 |
-| `not-applicable` | 请求中没有该方法的凭证 | 询问下一个方法 |
-| `invalid` | 凭证存在但无效 | 立即返回 `401 INVALID_CREDENTIAL`，不再询问后续方法，也不回退到匿名 |
-
-所有方法都回答 `not-applicable` 时，由内置的**匿名回退**解析：每个浏览器一个所有者，`anon:<uuid>`，来自 `HttpOnly` 的 `anonymous_id` cookie：有效期 400 天（浏览器允许的上限），每个解析到它的路由处理器和 Server Action 响应都会以相同的值续期，因此只有连续 400 天未使用才会过期。页面响应不续期，以保持页面可缓存；清除它的响应（认领、已退役的所有者）绝不续期。丢失该 cookie（手动清除，或 400 天未使用）后，浏览器便无法再访问该所有者的课程库：匿名身份没有其他凭据，因此 Compose 部署默认使用单用户模式，多用户宿主应使用账号。浏览器首次加载时由中间件在页面响应上生成，因此页面发出的每个请求都使用同一个所有者；没有有效 cookie 就到达路由处理器的请求会以同样方式生成，有效的 cookie 绝不会被替换。匿名所有者不能发布课程。宿主可以关闭该回退，此时这类请求同样返回 `401`。被拒绝的请求绝不会被当作匿名所有者处理。
-
-默认不注册任何方法，所有请求都是匿名所有者，除非环境变量选择了以下两个内置方法之一（二者互斥）：设置 `PERSISTENCE_SHARED_OWNER_ID`（必须同时设置 `ACCESS_CODE`）时，内置的 `sharedTeam` 方法把所有请求解析为该固定 id，访问码背后的团队共用一个课程库，并可以发布课程；设置 `OWNER_SINGLE_USER=true`（Compose 默认）时，内置的 `singleUser` 方法为个人安装把所有请求解析为同一个所有者，见[单用户模式](#单用户模式)。授权只看 principal 的 `kind` 和 `roles`，不解析 id 的形状；核心角色为 `course:publish` 和 `admin`（为管理类接口保留，内置方法都不授予）。
-
-有自有账号体系的部署为每种凭证实现一个 `OwnerAuthMethod`，并在 `instrumentation.ts` 的 `register()` 中调用一次 `configureOwnerAuthentication({ methods: [...], anonymousFallback? })` 按顺序注册（示例见英文 README 的 “Registering methods” 一节）。`authenticated` 回答中的 `setCookies` 会随该请求的每个响应返回（包括错误响应）；Server Action 按同样的顺序询问同样的方法，方法有 `authenticateFromContext()` 时调用它，否则以请求头调用 `authenticate()`，且 Server Action 中的 cookie 必须通过 `next/headers` 写入，带 `setCookies` 的回答会被拒绝。`describeStoredOwner(ownerId)` 让只持有已存储 id 的工作得知所有者类型（先问匿名回退，再按顺序问各方法）；凭证存在但无法使用（格式错误、已过期）时必须回答 `invalid`，绝不能回答 `not-applicable`：只有在该方法的请求头或 cookie 根本不存在时才回答 `not-applicable`，否则请求会被悄悄交给下一个方法或匿名所有者，核心无法察觉；无法作出判断（密钥端点或会话存储不可用）时应抛错，请求以服务器错误失败。中间件运行在 Edge 运行时，看不到这里的注册：只要 `OWNER_SINGLE_USER` 和 `PERSISTENCE_SHARED_OWNER_ID` 都未设置，它就会在页面导航时生成匿名 cookie，与宿主凭证同时出现时和其他匿名 cookie 一样成为认领候选；注册中设置了 `anonymousFallback: false` 时，应设置 `OWNER_ANONYMOUS_PREMINT=false`：该 cookie 不服务任何请求，配合 `OWNER_CLAIM_TRIGGER=auto` 时每次无 cookie 的页面加载后都会被认领并清除；这种注册仍开启预生成时，服务器会在启动时发出警告。保留匿名回退（默认）时应保留预生成，否则匿名访客的首批 API 请求又会各自生成所有者；如不希望在自有凭证旁出现认领候选，只对自己方法认证的请求（例如带有自有会话 cookie 的页面请求）在 `middleware.ts` 中跳过 `anonymousOwnerForNavigation`。`issuesAnonymousOwners: true` 加 `clearCredential()` 只用于自己以 cookie 认证匿名 principal 的方法，其 `Set-Cookie` 值会随每个 `403 OWNER_RETIRED` 返回；核心在此处绝不调用其他方法的 `clearCredential()`，因此账号的会话 cookie 不会因某个匿名身份退役而被清除。principal 按请求校验：方法返回的 owner id 不是 1–256 个可打印、无空格的 ASCII 字符、`kind` / `assurance` 未知，或方法自行设置了 `pendingClaim` 时，该请求返回 `500`，不会写入存储。同一个解析出的所有者也是 `/api/persistence` 的运行时学习者 key 和资产分区。
-
-注册在启动时校验，以下任一情况都会让 `register()` 抛错、服务无法启动：重复调用；在所有者解析开始后调用；方法列表为空；方法格式错误或重名；违反 `sharedTeam` 规则。若要在宿主方法之外保留共享团队所有者，需把 `sharedTeamAuthMethod()`（同样从 `@/lib/server/identity` 导出）放在**最后**：它总会认证成功，排在它后面的方法永远不会被询问。设置了 `PERSISTENCE_SHARED_OWNER_ID` 但注册中没有包含它，或注册了 `sharedTeamAuthMethod()` 却没有设置该变量，都会导致启动失败，而不是被静默忽略。早期内置网关请求头认证器使用的 `OWNER_AUTHENTICATOR` 与 `TRUSTED_PROXY_*` 变量已不存在；只要设置了其中任何一个，启动就会失败并提示参阅本节，而不是把所有请求静默地当作匿名所有者。
-
-OpenMAIC 不内置身份网关认证器。部署在身份网关（带 `--pass-authorization-header` 的 oauth2-proxy、Cloudflare Access、Google Cloud IAP 等）之后时，可由宿主编写一个方法，用 IdP 公布的 JWKS 校验网关转发的**签名 JWT**（签名、`iss`、`aud`、`exp` / `nbf`），把 `sub` 映射为所有者 id、把组声明映射为角色：请求头不存在时回答 `not-applicable`，存在但无效时回答 `invalid`。只有令牌本身的错误才回答 `invalid`；JWKS 端点不可达、返回非 200 或无法解析的内容（`jose` 报告为通用的 `ERR_JOSE_GENERIC`）属于服务器故障，应重新抛出，而不是把所有用户当作令牌伪造而拒绝。该文件放在 `lib/server/identity/host/` 目录中：边界测试在其他任何位置（包括核心身份文件）读取网关身份请求头或传入的 `Authorization` 请求头都会失败。基于 `jose` 库的示例见英文 README 的 “Recipe: accounts through an identity gateway (signed JWT)” 一节；该示例由宿主维护，必须由宿主自行测试。
-
-##### 单用户模式
-
-`OWNER_SINGLE_USER=true` 把所有请求解析为一个固定所有者 `OWNER_SINGLE_USER_ID`（默认 `local`；1–128 个 `[A-Za-z0-9._-]` 字符，因此不可能使用保留的 `anon:` 前缀）。principal 为 `kind: 'user'` 并带有 `course:publish` 角色：这是某一个人自己的安装，因此可以发布；与 `sharedTeam`（一个访问码背后的团队，不对应某个人）不同，它会得到认领候选，见下文。不会生成匿名 cookie。
-
-**暴露。** 每个请求都会成为整个课程库的所有者，而路由处理函数无法区分本机客户端和远程客户端（看不到 TCP 对端，转发请求头由客户端设置），因此不检查请求。单用户模式有无 `ACCESS_CODE` 都会运行：
-
-- **设置了 `ACCESS_CODE`** 时，由访问码门禁放行请求，与 `sharedTeam` 相同。
-- **未设置**时，部署依赖于没有其他人能访问到服务：请把它绑定在回环地址或私有网络上（Compose 文件默认发布在 `127.0.0.1`；不使用 Compose 时例如 `pnpm start -H 127.0.0.1`）。服务在启动时输出一条醒目的警告，说明任何能访问它的人都会共享、编辑甚至删除这唯一的课程库，以及如何设置 `ACCESS_CODE`。服务不会因此拒绝启动。
-
-之后的首次运行设置流程可能会提示设置访问码；目前请在服务可被他人访问之前自行设置 `ACCESS_CODE`。
-
-**此前的匿名工作。** 此前以匿名方式使用过该部署的浏览器仍会发送其 `anonymous_id` cookie。单用户 principal 会带上指向它的 `pendingClaim`（见下文“认领匿名工作”），但不会自动移动任何数据：默认触发方式是显式的。要把这些内容并入单一所有者，请从该浏览器发送 `POST /api/identity/claim`（同源 JSON，请求体 `{}`），或在清楚后果的前提下设置 `OWNER_CLAIM_TRIGGER=auto`。
-
-> [!WARNING]
-> 认领不可撤销。设置 `OWNER_CLAIM_TRIGGER=auto` 后，**每一个**访问的浏览器都会在第一次请求时把自己的匿名课程库合并进单一所有者。如果该部署此前曾被多人匿名使用，所有人的课程库都会被合并成一个共享、可被删除的课程库。
-
-**所有者 id 是永久的。** 之后修改 `OWNER_SINGLE_USER_ID`，或从 `PERSISTENCE_SHARED_OWNER_ID` 切换过来，原所有者的课程库都会被搁置：它不是匿名所有者，无法被认领。要保留共享团队的课程库，请把 `OWNER_SINGLE_USER_ID` 设为同一个 id。
-
-注册了自有方法、又希望以单一所有者兜底的宿主，可以把 `singleUserAuthMethod()`（从 `@/lib/server/identity` 导出）放在最后，规则与 `sharedTeamAuthMethod()` 相同。
-
-##### 认领匿名工作
-
-访客先匿名使用、后登录，会同时拥有两个所有者：写入课程时的匿名所有者，以及登录后的账号。**认领（claim）**在一个数据库事务内把匿名所有者名下的全部内容转到账号，并让该匿名 id 退役。
-
-**何时会出现认领。** 认领候选由核心自动附加：宿主方法认证出非匿名 principal，且同一请求还带有有效的 `anonymous_id` cookie 时，该 principal 会带有指向该匿名所有者的 `pendingClaim`。这覆盖访客先匿名使用、后登录（匿名回退开启时），以及部署从匿名使用切换到账号而访客仍持有旧 cookie（回退开启或关闭均可）两种情况。没有有效 cookie、principal 本身是匿名的，或由内置的 `sharedTeam` 解析（它没有自己的凭证，无法判断是谁的浏览器内容）时都不会附加；方法也不能自行设置。内置的 `singleUser` 会附加：它的部署只有一个人，cookie 指向的就是此人此前的匿名内容。
-
-触发认领之前不会移动任何数据：默认由应用页面以 JSON 请求体（`{}`）显式调用 `POST /api/identity/claim`，成功返回 `200 { status: 'claimed', moved }` 或 `200 { status: 'already-claimed' }`，并通过 `Set-Cookie` 删除匿名 cookie；设置 `OWNER_CLAIM_TRIGGER=auto` 后，携带待认领身份的第一个路由请求会在处理前自动认领（显式认领路由除外，它们仍报告自己的认领结果；Server Action 不会触发）。同一浏览器可能由多人共用时建议保留显式触发，否则最先登录的人会拿走其中的匿名内容。**匿名 cookie 是持有者凭证（bearer credential）**：持有它的人可以读取、编辑这些匿名内容，并能在登录后把它们认领进自己的账号；在共用设备上，应在下一个人登录前清除它（认领会自动清除）。非同源 JSON 请求（`Sec-Fetch-Site` 不是 `same-origin`、`Origin` 不是本站，或内容类型不是 `application/json`）返回 `403 CROSS_ORIGIN_REFUSED`；匿名请求者返回 `403 TARGET_ANONYMOUS`；账号旁没有匿名 cookie 返回 `409 NO_PENDING_CLAIM`；该匿名所有者已被其他账号认领时返回 `409 ALREADY_CLAIMED_ELSEWHERE` 并删除 cookie；任一所有者正在写入、认领未能及时拿到锁时返回 `503 OWNER_BUSY` 并附 `Retry-After`，可原样重试。
-
-匿名 cookie 未签名、不与账号绑定，也是核心读取的认领候选。它只对本主机有效，但同一可注册域名下的兄弟子域名可以设置带 Domain 属性的 `anonymous_id`，浏览器可能优先发送它，因此恶意子域名可以左右已登录访客认领哪个匿名身份。请把 OpenMAIC 部署在独立的可注册域名上（或确保没有不可信方控制兄弟子域名）。对 cookie 本身的加固（HTTPS 部署使用 `__Host-` 前缀、拒绝同时携带多个 `anonymous_id` 的请求）列为后续事项。
-
-按固定顺序移动：文件夹（账号已有同名文件夹时合并进去，名称比较不区分大小写，与 `createFolder` 一致；id 已被账号的其他文件夹占用时换用新 id；其余原样移动，排在账号自己的文件夹之后，课程归档随之调整）、课程（`stage_meta`，含已删除的课程）、资料、Agent 会话及其会话列表历史、用户技能（账号已占用的名称改为双方都未占用的第一个名称，如 `my-notes-2`、`my-notes-3`……）、运行时会话（学习者 key，按存储原样改键，由新版本写入的会话不会阻止认领）、资产条目（按所有者的分区，认领后的课程对所有观看者仍能显示其媒体）、旧版浏览器导入绑定（临时，随一次性旧浏览器数据导入存在：匿名所有者持有的浏览器旧数据此后归账号，导入为账号继续）、自定义智能体（账号已使用的智能体 id 保留账号自己的智能体）。移动的内容不受配额限制：账号保留全部内容，若因此超出资产、资料、技能、智能体或文件夹上限，则在降回上限以下之前不能再新增。认领记录在 `owner_merges` 表中。
-
-规则：只能认领匿名所有者，且只能由非匿名所有者认领；重复认领同一对所有者会成功且不做任何事；已被某账号认领的匿名所有者不能再被其他账号认领；不允许链式认领（已退役的账号不能认领，已吸收过其他所有者的所有者不能被认领），因此每个退役 id 一步即可转到当前所有者。
-
-认领后该匿名 id **退役**：仍携带它的请求不会再以它写入任何内容。经 `/api/persistence` 的创建（文档、文件夹、资产、运行时会话）、文件夹、课程、资料和技能上传路由，以及 `/api/persistence` 的其他写入都返回 `403 OWNER_RETIRED`；按 id 写入已随认领移走的行（删除技能、向 Agent 会话发消息）同样返回 `403 OWNER_RETIRED`。这些响应都带有删除该退役匿名 cookie 的 `Set-Cookie`（以及声明了 `issuesAnonymousOwners` 的方法的清除值），浏览器的下一个请求会得到新的匿名所有者；退役 id 的课程库显示为空。认领之前已开始、脱离请求继续运行的工作（Agent 运行中的课程编辑、生成的媒体和新建技能）会随 id 转到账号，因此作者登录时仍在生成的课程会进入其账号；与认领并发、由请求创建的 Agent 会话会写入账号，如同在认领前创建。
-
-每个创建或修改所有者数据的写事务都以共享模式获取该所有者的 PostgreSQL advisory 锁（身份锁）作为第一条语句，认领则在修改任何行之前以独占模式获取双方的身份锁；因此受保护的写入与认领并发时，要么先提交并被移动，要么等待后被拒绝，测试中这些写入既未出现死锁，也未在退役 id 下残留数据。等待都有上限：认领获取两把身份锁最多等 `OWNER_CLAIM_LOCK_WAIT_MS`（默认 5000）毫秒（等待期间 PostgreSQL 会让双方新的写入排在它后面，因此这段等待要短）；写入获取所有者锁最多等 `OWNER_WRITE_LOCK_WAIT_MS`（默认 30000）毫秒；上传在写入字节期间持有该锁，因此认领会在上限内等待进行中的上传。超时返回 `503 OWNER_BUSY` 并附 `Retry-After`，不写入任何内容。资产回收器不获取身份锁，与认领并发处理同一批条目时 PostgreSQL 可能中止其中一方，被这样中止的认领同样返回 `OWNER_BUSY`。
-
-宿主可以在 `instrumentation.ts` 中用 `registerClaimParticipant({ name, order, rekey(tx, from, to) })` 为自有的按所有者划分的表注册参与方（在认领事务内运行，抛错则所有参与方的改动都不保留；核心参与方占用顺序 100–950，宿主建议从 1000 起），用 `claimOwner(from, to)` / `claimPendingOwner(principal)` 在宿主代码中发起认领；认领的来源必须被 `describeStoredOwner` 描述为匿名（见 `principalFromStoredOwner`）。退役 id 的转发由核心的 `owner_merges` 负责，没有宿主钩子。`owner_merges` 只记录对匿名所有者的认领，因为写入保护只对被描述为匿名的 id 强制退役：`describeStoredOwner` 对同一 id 的描述必须保持稳定，读取到退役非匿名所有者的记录时会直接报错。宿主若要合并两个已登录账号，应自行移动数据（注册自己的参与方），并在其认证方法中拒绝被合并掉的账号。`OWNER_WRITE_LOCK_WAIT_MS` 与 `OWNER_CLAIM_LOCK_WAIT_MS` 在启动时校验。示例见英文 README 的 “Claiming anonymous work” 一节。
-
-##### 宿主扩展钩子
-
-宿主可以在四个位置扩展产品行为而无需分叉路由，注册方式与所有者认证方法相同：在 `instrumentation.ts` 的 `register()` 中调用一次，首次使用后即封存（重复调用或在服务已开始使用后调用都会抛错）。未注册任何钩子时，行为与上文完全一致。`configurePersistenceHooks({ name, authorizeCreate, onCreate, library, beforeAssetAllocate })` 提供：课程创建时在同一事务内的授权与副作用（拒绝返回 `403 CREATE_REFUSED`，抛错则整个创建回滚；已存在课程的保存与编辑不会触发）；`GET /api/stages` 列出哪些课程（提供方返回 stage id，路由会剔除读取路径会拒绝的 id）；以及资产上传前的准入（新建 `POST /assets` 与替换 `PUT /assets/{id}/content` 都会经过，`req.operation` 区分二者；返回 `Response` 即拒绝，此时尚未存储任何字节、也未计入配额）。钩子的 `actor.source` 区分请求写入（附带 `principal`）与后台 Agent 运行写入（无 principal，拒绝时 Agent 只会得到固定的“已被部署拒绝”结果，不会看到宿主的 `message`）。普通对象与类实例均可注册。`configureAssetByteStore({ name, create, signsReadUrls })` 取代 `ASSET_S3_BUCKET` 开关，请求路径与资产回收器使用同一注册；在 `ASSET_BYTE_EGRESS=redirect` 下未声明 `signsReadUrls: true` 的存储会在启动时报错。示例与完整约定见英文 README 的 “Host extension hooks” 一节。
 
 ### 可选：MP4 视频导出（渲染服务）
 
