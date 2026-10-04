@@ -12,6 +12,8 @@ vi.mock('node:dns', () => ({
 
 const PRIVATE_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
+const CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE =
+  'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. Configure the provider in server-providers.yml so the endpoint is operator-managed.';
 const CLOUD_METADATA_BLOCK_MESSAGE =
   'Cloud instance metadata endpoints are never allowed as outbound targets, even with ALLOW_LOCAL_NETWORKS=true.';
 const ALLOW_LOCAL_NETWORKS_GUIDANCE = 'ALLOW_LOCAL_NETWORKS=true';
@@ -563,6 +565,86 @@ describe('validateUrlForSSRF', () => {
 
     await expect(validateUrlForSSRF('https://missing.example')).resolves.toBe(
       'Unable to verify hostname safety',
+    );
+  });
+});
+
+describe('validatePublicUrlForSSRF', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    lookupMock.mockReset();
+    delete process.env.ALLOW_LOCAL_NETWORKS;
+  });
+
+  afterEach(() => {
+    if (originalAllowLocalNetworks === undefined) {
+      delete process.env.ALLOW_LOCAL_NETWORKS;
+    } else {
+      process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocalNetworks;
+    }
+  });
+
+  it('refuses client-supplied local targets without telling the caller to set the flag', async () => {
+    const { validatePublicUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+    const urls = ['http://127.0.0.1:8000/v1', 'http://localhost:8000/v1', 'http://192.168.1.10/v1'];
+
+    for (const url of urls) {
+      const refused = await validatePublicUrlForSSRF(url);
+      expect(refused).toBe(CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
+    }
+
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    for (const url of urls) {
+      const refused = await validatePublicUrlForSSRF(url);
+      expect(refused).toBe(CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE);
+      expect(refused).not.toContain('set ALLOW_LOCAL_NETWORKS=true');
+    }
+  });
+
+  it('keeps flag guidance on validateUrlForSSRF and allows a public hostname from both helpers', async () => {
+    const { validatePublicUrlForSSRF, validateUrlForSSRF } =
+      await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://127.0.0.1:8000/v1')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    await expect(validateUrlForSSRF('http://127.0.0.1:8000/v1')).resolves.toBeNull();
+
+    delete process.env.ALLOW_LOCAL_NETWORKS;
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    await expect(validateUrlForSSRF('https://api.openai.com')).resolves.toBeNull();
+    await expect(validatePublicUrlForSSRF('https://api.openai.com')).resolves.toBeNull();
+  });
+
+  it('keeps cloud-metadata and never-allowed messages under the strict public policy', async () => {
+    const { validatePublicUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validatePublicUrlForSSRF('http://169.254.169.254/')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
+    );
+    await expect(validatePublicUrlForSSRF('http://240.0.0.1/')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+
+    lookupMock.mockResolvedValue([{ address: '192.168.1.10', family: 4 }]);
+    await expect(validatePublicUrlForSSRF('https://internal.example')).resolves.toBe(
+      CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE,
+    );
+
+    lookupMock.mockResolvedValue([
+      { address: '192.168.1.10', family: 4 },
+      { address: '240.0.0.1', family: 4 },
+    ]);
+    await expect(validatePublicUrlForSSRF('https://mixed.example')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+
+    lookupMock.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    await expect(validatePublicUrlForSSRF('https://metadata.example')).resolves.toBe(
+      CLOUD_METADATA_BLOCK_MESSAGE,
     );
   });
 });
