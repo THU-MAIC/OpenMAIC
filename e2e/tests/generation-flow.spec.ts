@@ -99,7 +99,8 @@ test.describe('Generation Flow with outline review', () => {
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks();
+    // Slow enough to open the review while the outline streams.
+    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
@@ -117,7 +118,8 @@ test.describe('Generation Flow with outline review', () => {
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks();
+    // Slow enough to open the review while the outline streams.
+    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
