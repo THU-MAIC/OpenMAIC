@@ -155,7 +155,11 @@ import {
   CourseRunStatusIcon,
   courseRunStatusText,
 } from '@/components/generation/course-run-status-label';
-import { courseRunHref, courseRunStatus } from '@/lib/generation-run-client/course-card';
+import {
+  courseRunHref,
+  courseRunStatus,
+  pendingCourseName,
+} from '@/lib/generation-run-client/course-card';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { PaneFoldButton } from './PaneFoldButton';
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
@@ -185,9 +189,13 @@ type StageListItem = Discovery['classrooms'][number];
  */
 const SESSION_ROW_LIMIT = 12;
 
+const NO_PENDING_RUNS: readonly RunSnapshot[] = [];
+
 export function WorkspaceRail({
   courses,
   courseRuns,
+  pendingRuns = NO_PENDING_RUNS,
+  onDiscardRun,
   sessions,
   sessionState,
   onReloadSessions,
@@ -213,6 +221,16 @@ export function WorkspaceRail({
    * here. A paused run's row opens the classroom where its Retry lives.
    */
   readonly courseRuns?: ReadonlyMap<string, RunSnapshot>;
+  /**
+   * The runs whose course is not listed yet, in the home page's order (see
+   * `pendingCourseRuns`). Each is a placeholder row at the top of the loose
+   * courses, where its course row appears once the course is listed — the
+   * home page's pending card, from the moment the run starts. It opens what
+   * that card opens (the run's preview, or its classroom), in a new tab.
+   */
+  readonly pendingRuns?: readonly RunSnapshot[];
+  /** Discard a pending run — the home card's delete, confirmed the same way as a row delete. */
+  readonly onDiscardRun?: (runId: string) => Promise<void> | void;
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
   readonly onReloadSessions: () => void;
@@ -791,6 +809,44 @@ export function WorkspaceRail({
     );
   };
 
+  const renderPendingRunRow = (run: RunSnapshot) => {
+    const status = courseRunStatus(run);
+    if (!status) return null;
+    const label = pendingCourseName(run) || t('workspace.untitledCourse');
+    return (
+      <RailRow
+        key={run.id}
+        testId={`pro-nav-run-${run.id}`}
+        label={label}
+        labelClassName="ws-course-name"
+        course
+        generating
+        hint={t('workspace.viewGenerationProgress')}
+        meta={courseRunStatusText(status, t)}
+        metaTestId={`pro-nav-run-meta-${run.id}`}
+        trailingMark={
+          <CourseRunStatusIcon
+            status={status}
+            className={cn('ws-row-run-icon', status.kind === 'paused' && 'ws-row-run-icon-paused')}
+          />
+        }
+        onClick={() => window.open(courseRunHref(run), '_blank', 'noopener')}
+        trailing={
+          onDiscardRun ? (
+            <WorkspaceRowMenu
+              testId={`pro-nav-run-more-${run.id}`}
+              label={label}
+              onDelete={() => onDiscardRun(run.id)}
+            />
+          ) : undefined
+        }
+      />
+    );
+  };
+
+  // The home page lists pending runs only at its top level and not in a search.
+  const renderPendingRuns = () => pendingRuns.map(renderPendingRunRow);
+
   const renderCourseList = (list: readonly StageListItem[], listId: string) => {
     // The sibling sequence the keyboard move walks: the whole sub-list, not
     // just the rows currently inside the page window.
@@ -1064,13 +1120,16 @@ export function WorkspaceRail({
           <RailList
             id="courses"
             title={t('workspace.sections.courses')}
-            count={orderedCourses.length}
+            count={orderedCourses.length + pendingRuns.length}
             state={courses.state}
             emptyLabel={t('workspace.coursesEmpty')}
             onRetry={courses.reload}
           >
             {!foldersAvailable ? (
-              renderCourseList(matchedOwned, 'unfiled')
+              <>
+                {searchingCourses ? null : renderPendingRuns()}
+                {renderCourseList(matchedOwned, 'unfiled')}
+              </>
             ) : searchingCourses ? (
               // Flattened: folders are not a filter, they are a location, and a
               // search that only looked inside the open one would lie. It stays
@@ -1199,6 +1258,7 @@ export function WorkspaceRail({
                     retired head was good for. A hair of space says "different
                     kind of row" without claiming a container. */}
                 <div className={cn('space-y-px', tree.groups.length > 0 && 'ws-loose')}>
+                  {renderPendingRuns()}
                   {renderCourseList(tree.ungrouped, 'unfiled')}
                 </div>
               </>

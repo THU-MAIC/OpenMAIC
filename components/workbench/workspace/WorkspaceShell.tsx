@@ -112,7 +112,8 @@ import { useStageFreshnessSync, useWorkbenchStream } from '@/lib/workbench/use-w
 import { useGeneratedCourseDiscoverySync } from '@/lib/workbench/course-discovery-sync';
 import { useStageStore } from '@/lib/store/stage';
 import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
-import type { RunSnapshot } from '@/lib/generation-run-client/types';
+import { discardGenerationRun } from '@/lib/generation-run-client/api';
+import { pendingCourseRuns, runsByCourse } from '@/lib/generation-run-client/course-card';
 import { WorkspaceRail } from './WorkspaceRail';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
@@ -184,17 +185,33 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * its course or finishes reads the course list again, so the row turns into
    * an ordinary one (with its final page count) without a reload.
    */
-  const { runs: ownerRuns } = useOwnerRuns({ onCourseChanged: () => void courses.reload() });
-  const courseRuns = useMemo(
-    () =>
-      new Map(
-        ownerRuns.flatMap(
-          (run): Array<[string, RunSnapshot]> => (run.stageId ? [[run.stageId, run]] : []),
-        ),
-      ),
-    [ownerRuns],
+  const { runs: ownerRuns, forget: forgetRun } = useOwnerRuns({
+    onCourseChanged: () => void courses.reload(),
+  });
+  const courseRuns = useMemo(() => runsByCourse(ownerRuns), [ownerRuns]);
+  // A run whose course is not listed yet is a row of its own, as it is a card
+  // of its own on the home page — from the moment the run starts.
+  const listedCourseIds = useMemo(
+    () => new Set(courses.classrooms.map((course) => course.id)),
+    [courses.classrooms],
+  );
+  const pendingRuns = useMemo(
+    () => pendingCourseRuns(ownerRuns, listedCourseIds),
+    [ownerRuns, listedCourseIds],
   );
   const generatingCourseIds = useMemo(() => new Set(courseRuns.keys()), [courseRuns]);
+  /** Discard a run whose course does not exist yet — the home card's delete. */
+  const discardPendingRun = useCallback(
+    async (runId: string) => {
+      try {
+        await discardGenerationRun(runId);
+        forgetRun(runId);
+      } catch {
+        toast.error(t('workspace.deleteFailed'));
+      }
+    },
+    [forgetRun, t],
+  );
   const [sessions, setSessions] = useState<ProHomeSessionItem[]>(EMPTY_SESSIONS);
   /**
    * The latest list, readable from queued callbacks without waiting for React
@@ -1026,6 +1043,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         <WorkspaceRail
           courses={courses}
           courseRuns={courseRuns}
+          pendingRuns={pendingRuns}
+          onDiscardRun={discardPendingRun}
           sessions={visibleSessions}
           sessionState={sessionState}
           onReloadSessions={() => {

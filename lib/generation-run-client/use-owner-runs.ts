@@ -7,6 +7,7 @@ import { createLogger } from '@/lib/logger';
 
 import { listActiveGenerationRuns } from './api';
 import { OwnerRunsWatcher } from './owner-runs';
+import { subscribeRunsChanged } from './runs-changed';
 import type { RunSnapshot } from './types';
 
 const log = createLogger('OwnerRuns');
@@ -46,7 +47,10 @@ export function useOwnerRuns(options: OwnerRunsOptions = {}): {
       if (document.visibilityState === 'visible') void watcher.poll('visible');
     };
     document.addEventListener('visibilitychange', onVisible);
+    // A run started (or discarded) in another tab of this browser: read now.
+    const unsubscribe = subscribeRunsChanged(() => void watcher.poll());
     return () => {
+      unsubscribe();
       document.removeEventListener('visibilitychange', onVisible);
       watcher.close();
       if (watcherRef.current === watcher) watcherRef.current = null;

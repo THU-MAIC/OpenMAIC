@@ -48,3 +48,23 @@ export function pendingCourseName(run: Pick<RunSnapshot, 'outline' | 'input'>): 
   const requirement = run.input.requirement.trim();
   return requirement.length <= 500 ? requirement : `${requirement.slice(0, 500).trim()}...`;
 }
+
+/** The run producing each course that already exists, by course id. */
+export function runsByCourse<T extends Pick<RunSnapshot, 'stageId'>>(
+  runs: readonly T[],
+): Map<string, T> {
+  return new Map(
+    runs.flatMap((run): Array<[string, T]> => (run.stageId ? [[run.stageId, run]] : [])),
+  );
+}
+
+/**
+ * The runs whose course is not in the course list yet: a list shows each as a
+ * card (or row) of its own, in the runs' order, until its course is listed.
+ */
+export function pendingCourseRuns<T extends Pick<RunSnapshot, 'stageId'>>(
+  runs: readonly T[],
+  listedStageIds: ReadonlySet<string>,
+): T[] {
+  return runs.filter((run) => !run.stageId || !listedStageIds.has(run.stageId));
+}

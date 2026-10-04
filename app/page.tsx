@@ -62,6 +62,8 @@ import {
   courseRunHref,
   courseRunStatus,
   pendingCourseName,
+  pendingCourseRuns,
+  runsByCourse,
   type CourseRunStatus,
 } from '@/lib/generation-run-client/course-card';
 import type { RunSnapshot } from '@/lib/generation-run-client/types';
@@ -519,18 +521,10 @@ function HomePage() {
   const currentFolder = folders.find((f) => f.id === currentFolderId);
 
   const listedStageIds = useMemo(() => new Set(classrooms.map((c) => c.id)), [classrooms]);
-  const runByStageId = useMemo(
-    () =>
-      new Map(
-        runs.flatMap(
-          (run): Array<[string, RunSnapshot]> => (run.stageId ? [[run.stageId, run]] : []),
-        ),
-      ),
-    [runs],
-  );
+  const runByStageId = useMemo(() => runsByCourse(runs), [runs]);
   // Runs whose course is not in the library yet are cards of their own.
   const pendingRuns = useMemo(
-    () => runs.filter((run) => !run.stageId || !listedStageIds.has(run.stageId)),
+    () => pendingCourseRuns(runs, listedStageIds),
     [runs, listedStageIds],
   );
   const showPendingRuns = !isSearching && currentFolderId === undefined;

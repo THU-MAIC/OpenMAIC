@@ -6,6 +6,7 @@
  */
 import { resolveWorkbenchMaterialMime } from '@/lib/workbench/material-upload-policy';
 
+import { announceRunsChanged } from './runs-changed';
 import type { GenerationRunInput, RunSnapshot } from './types';
 
 /**
@@ -79,6 +80,7 @@ export async function startGenerationRun(input: StartRunInput): Promise<RunSnaps
     input,
     'upload.generateFailed',
   );
+  announceRunsChanged();
   return body.run;
 }
 
@@ -152,6 +154,7 @@ export async function discardGenerationRun(runId: string): Promise<void> {
   if (!response.ok && response.status !== 404) {
     throw await failure(response, 'upload.generateFailed');
   }
+  announceRunsChanged();
 }
 
 /** What the server can generate from: the upload formats its extractors read, and the caps. */

@@ -846,6 +846,12 @@ describe('a course a generation run is still producing', () => {
     };
     expect(navigation.courseOptions.map((option) => option.id)).toEqual(['stage-1']);
     expect([...navigation.generatingCourseIds]).toEqual(['stage-2']);
+    // The run with no course yet is the rail's placeholder row — and, having
+    // no course, never a mention candidate.
+    expect((mocks.railProps?.pendingRuns as Array<{ id: string }>).map((r) => r.id)).toEqual([
+      'run-2',
+    ]);
+    expect(navigation.courseOptions.some((option) => option.id === 'run-2')).toBe(false);
   });
 });
 

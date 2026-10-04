@@ -95,21 +95,29 @@ const course = (id: string, name: string, sceneCount: number) => ({
   updatedAt: 1,
 });
 
-async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>) {
+interface RailState {
+  readonly classrooms?: ReadonlyArray<ReturnType<typeof course>>;
+  readonly pendingRuns?: readonly RunSnapshot[];
+}
+
+const DEFAULT_CLASSROOMS = [course(GENERATING, '劳动节小课', 2), course(READY, '随笔写作入门', 8)];
+
+async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>, initial: RailState = {}) {
   const { WorkspaceRail } = await import('@/components/workbench/workspace/WorkspaceRail');
   window.localStorage.setItem(RAIL_TAB_STORAGE_KEY, 'courses');
   const onOpenCourse = vi.fn();
+  const onDiscardRun = vi.fn();
   const container = document.createElement('div');
   container.className = 'ws-root';
   document.body.append(container);
   const root = createRoot(container);
   roots.push(root);
-  const render = async (runs: ReadonlyMap<string, RunSnapshot>) => {
+  const render = async (runs: ReadonlyMap<string, RunSnapshot>, state: RailState = {}) => {
     await act(async () => {
       root.render(
         createElement(WorkspaceRail, {
           courses: {
-            classrooms: [course(GENERATING, '劳动节小课', 2), course(READY, '随笔写作入门', 8)],
+            classrooms: state.classrooms ?? DEFAULT_CLASSROOMS,
             state: 'ready',
             reload: vi.fn(),
             importInput: null,
@@ -121,6 +129,8 @@ async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>) {
             deleteCourse: vi.fn(async () => true),
           } as never,
           courseRuns: runs,
+          pendingRuns: state.pendingRuns ?? [],
+          onDiscardRun,
           sessions: [],
           sessionState: 'ready',
           onReloadSessions: vi.fn(),
@@ -141,8 +151,8 @@ async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>) {
       );
     });
   };
-  await render(courseRuns);
-  return { onOpenCourse, rerender: render };
+  await render(courseRuns, initial);
+  return { onOpenCourse, onDiscardRun, rerender: render };
 }
 
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -234,5 +244,82 @@ describe('the @ picker and a course being generated', () => {
     expect(candidates).toEqual([
       { stageId: GENERATING, title: '劳动节小课', reason: 'open', alreadyReferenced: false },
     ]);
+  });
+});
+
+describe('a run whose course does not exist yet, in the course rail', () => {
+  const NEW = 'stage-new';
+  const pending = runOf(NEW, {
+    id: 'run-new',
+    stageId: null,
+    state: 'outlining',
+    input: { requirement: '劳动节放假快乐小课' } as RunSnapshot['input'],
+    progress: { scenesCompleted: 0, scenesTotal: 0 },
+  });
+  const courseRowIds = () =>
+    [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-testid^="pro-nav-course-"], [data-testid^="pro-nav-run-"]',
+      ),
+    ]
+      .map((row) => row.dataset.testid!)
+      .filter((id) => !/-(meta|more)-/.test(id));
+
+  it('is a placeholder row at the top of the courses, titled and labelled as the home card', async () => {
+    await renderRail(new Map(), { pendingRuns: [pending] });
+
+    const row = byTestId('pro-nav-run-run-new')!;
+    expect(row.textContent).toContain('劳动节放假快乐小课');
+    expect(byTestId('pro-nav-run-meta-run-new')!.textContent).toBe('classroom.runOutlining');
+    expect(row.querySelector('.animate-spin')).not.toBeNull();
+    // Not draggable, not a drop target; its one action is the home card's discard.
+    expect(row.parentElement!.hasAttribute('data-ws-drop-kind')).toBe(false);
+    expect(byTestId('pro-nav-run-more-run-new')).not.toBeNull();
+    expect(courseRowIds()).toEqual([
+      'pro-nav-run-run-new',
+      `pro-nav-course-${GENERATING}`,
+      `pro-nav-course-${READY}`,
+    ]);
+  });
+
+  it('opens what the home card opens: the run preview, in a new tab', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const { onOpenCourse } = await renderRail(new Map(), { pendingRuns: [pending] });
+    await act(async () => byTestId('pro-nav-run-run-new')!.click());
+    expect(open).toHaveBeenCalledWith('/generation-preview?run=run-new', '_blank', 'noopener');
+    expect(onOpenCourse).not.toHaveBeenCalled();
+  });
+
+  it('becomes the course row in place once the course is listed, then an ordinary one', async () => {
+    const view = await renderRail(new Map(), { pendingRuns: [pending] });
+
+    // The run gained its course, the list has not caught up: still one placeholder.
+    const withCourse = { ...pending, stageId: NEW, state: 'generating' as const };
+    await view.rerender(new Map([[NEW, withCourse]]), { pendingRuns: [withCourse] });
+    expect(courseRowIds()).toEqual([
+      'pro-nav-run-run-new',
+      `pro-nav-course-${GENERATING}`,
+      `pro-nav-course-${READY}`,
+    ]);
+
+    // The list lists it: the course row takes the placeholder's place, once.
+    const listed = [course(NEW, '劳动节放假快乐小课', 1), ...DEFAULT_CLASSROOMS];
+    await view.rerender(new Map([[NEW, withCourse]]), { classrooms: listed, pendingRuns: [] });
+    expect(courseRowIds()).toEqual([
+      `pro-nav-course-${NEW}`,
+      `pro-nav-course-${GENERATING}`,
+      `pro-nav-course-${READY}`,
+    ]);
+    expect(byTestId(`pro-nav-course-${NEW}`)!.dataset.generating).toBe('true');
+
+    // The run completed: an ordinary row.
+    await view.rerender(new Map(), { classrooms: listed, pendingRuns: [] });
+    expect(byTestId(`pro-nav-course-${NEW}`)!.dataset.generating).toBeUndefined();
+  });
+
+  it('disappears when the run ends without a course', async () => {
+    const view = await renderRail(new Map(), { pendingRuns: [pending] });
+    await view.rerender(new Map(), { pendingRuns: [] });
+    expect(byTestId('pro-nav-run-run-new')).toBeNull();
   });
 });
