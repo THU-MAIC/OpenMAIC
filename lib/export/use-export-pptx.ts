@@ -1029,7 +1029,7 @@ export async function buildPptxBlob(
           colW: el.colWidths.map((item) => (el.width * item) / ratioPx2Inch),
         };
         if (el.theme) tableOptions.fill = { color: '#ffffff' };
-        if (el.outline.width && el.outline.color) {
+        if (el.outline?.width && el.outline?.color) {
           tableOptions.border = {
             type: el.outline.style === 'solid' ? 'solid' : 'dash',
             pt: el.outline.width / ratioPx2Pt,
