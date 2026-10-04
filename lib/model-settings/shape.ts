@@ -122,18 +122,25 @@ export function settingsShape(view: ModelSettingsView): SettingsShape {
 
 export interface SettingsSections {
   shape: SettingsShape;
-  /** Token Plan: some plan can still fill a slot, or one the workspace connected is there to manage. */
+  /**
+   * Token Plan: some plan can still fill a slot, or one the workspace connected
+   * is there to manage. Never shown when everything is locked.
+   */
   tokenPlan: boolean;
   /**
    * Model Services, with the capabilities whose tab is shown: adding a service
    * there can change something, or (Text-to-Speech) the narration in use has
-   * voices of the user's own to manage.
+   * voices of the user's own to manage. Empty when everything is locked.
    */
   modelServices: readonly SlotCapability[];
 }
 
 export function settingsSections(view: ModelSettingsView): SettingsSections {
   const shape = settingsShape(view);
+  // Configured by the administrator: only the read-only course model map. A
+  // plan the workspace connected earlier no longer changes anything, and
+  // narration voices are not managed here in this shape.
+  if (shape === 'admin') return { shape, tokenPlan: false, modelServices: [] };
   const yourself = shape === 'yourself';
   return {
     shape,

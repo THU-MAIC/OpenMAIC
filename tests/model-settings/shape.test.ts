@@ -192,16 +192,24 @@ describe('canChangeDefaultModel', () => {
 describe('narration voices', () => {
   const qwen = { preset: 'qwen-tts', apiKey: 'sk-operator-secret-0003' };
 
-  it('keeps the Text-to-Speech tab for user voices in every shape', () => {
-    for (const extra of [{ allowUserKeys: false }, { lock: 'all' as const }]) {
-      const view = viewFor({
-        providers: { ...providers, qwen },
-        slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
-        ...extra,
-      });
-      expect(narrationVoicesManageable(view)).toBe(true);
-      expect(settingsSections(view).modelServices).toEqual(['tts']);
-    }
+  it('keeps the Text-to-Speech tab for user voices while a slot can be set', () => {
+    const view = viewFor({
+      providers: { ...providers, qwen },
+      slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
+      allowUserKeys: false,
+    });
+    expect(narrationVoicesManageable(view)).toBe(true);
+    expect(settingsSections(view).modelServices).toEqual(['tts']);
+  });
+
+  it('hides Model Services when everything is locked, user voices included', () => {
+    const view = viewFor({
+      providers: { ...providers, qwen },
+      slots: { llm: 'operator:deepseek-v4-pro', tts: 'qwen:qwen3-tts-flash' },
+      lock: 'all',
+    });
+    expect(narrationVoicesManageable(view)).toBe(true);
+    expect(settingsSections(view).modelServices).toEqual([]);
   });
 
   it('does not for narration without user voices', () => {
@@ -216,7 +224,7 @@ describe('narration voices', () => {
 });
 
 describe('connected token plans', () => {
-  it('stay listed to manage or disconnect when their slots are locked', () => {
+  it('stay listed to manage or disconnect when their slots are locked, but not when all is', () => {
     setDeploymentConfigForTests({
       layer: {
         source: 'deployment',
@@ -232,7 +240,8 @@ describe('connected token plans', () => {
     });
     expect(tokenPlanListed(connected, plan(connected, 'tokendance'))).toBe(true);
     expect(tokenPlanListed(connected, plan(connected, 'minimax'))).toBe(false);
-    expect(settingsSections(connected).tokenPlan).toBe(true);
+    // Everything is locked: the connected plan changes nothing, so Token Plan is hidden.
+    expect(settingsSections(connected).tokenPlan).toBe(false);
     expect(settingsSections(modelSettingsView(null)).tokenPlan).toBe(false);
   });
 });
