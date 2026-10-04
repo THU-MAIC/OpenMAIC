@@ -165,6 +165,8 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 #### Bug Fixes
 
+- Classic generation no longer stalls at the outline when the page is left: unless "Always review outlines before generation" is on, the run confirms its own outline on the server (`outlineReview: "auto"`) and continues with no page open; with it on, the run waits for the learner's confirmation in any tab, with no auto-continue countdown.
+- Home: the composer no longer keeps the last requirement as a draft; Generate creates the course card at once.
 - Home: video thumbnails no longer leave failed requests in the browser's network panel on every load; each video is drawn from its poster, or from its opening frame (decoded once and cached) when it has none.
 - Home: the course list shows as soon as the library loads, instead of waiting for every course's content and first-slide media; thumbnails load as cards come into view, a few at a time.
 - Home: while the page loads, it shows its hero and a skeleton of the course library instead of a blank grey screen (in dark mode too), and the courses take the skeleton's place without moving.
