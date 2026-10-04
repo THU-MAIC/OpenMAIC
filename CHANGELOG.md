@@ -165,6 +165,7 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 #### Bug Fixes
 
+- Pro workspace: the course list shows a placeholder for a classic generation from the moment it starts, matching the home page's card (title, state, and opening the generation preview), and turns it into the course in place once the course exists.
 - Pro workspace: a course that is still being generated shows its progress in the course list and a "being generated" placeholder in the classroom pane instead of a blank pane; it cannot be opened or @-mentioned until it completes, then opens automatically, and the agent is told it is read-only until generation completes.
 - Classic generation no longer stalls at the outline when the preview is closed: the short pause before an outline continues now runs on the server (`outlineReview: "countdown"`, generation-runs migration 4), so the run continues with no page open, while opening the review mid-stream or during the pause holds it (`POST /api/generation-runs/<id>/hold-outline`) for editing as before; with "Always review outlines before generation" on, the run waits for the learner's confirmation in any tab.
 - Home: the composer no longer keeps the last requirement as a draft; Generate creates the course card at once.
