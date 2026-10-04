@@ -166,6 +166,8 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 #### Bug Fixes
 
 - Home: the course list shows as soon as the library loads, instead of waiting for every course's content and first-slide media; thumbnails load as cards come into view, a few at a time.
+- Home: while the page loads, it shows its hero and a skeleton of the course library instead of a blank grey screen (in dark mode too), and the courses take the skeleton's place without moving.
+- Home: course thumbnails are kept in the browser's local cache, so a reload shows unchanged courses at once without downloading their content and media again; a course that changed is read again, and Settings → Clear Local Cache clears them.
 - Composer: the document extractor picker in the course-material popover is hidden when the deployment locks the `document` slot (`lock: [document]` or `lock: all`); uploading stays available.
 - Token Plan: connecting TokenDance also assigns the Pro agent (`agent`) to `deepseek-v4.1-flash`; the default model stays the plan's own.
 - Classroom: the page no longer logs a `404` for `/api/persistence/runtime/sessions/whiteboard:…` on every load and whiteboard open before anything was drawn; the learner whiteboard loads from the session listing.
