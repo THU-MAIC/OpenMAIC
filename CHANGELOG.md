@@ -197,6 +197,21 @@ Design: RFC [#1754](https://github.com/THU-MAIC/OpenMAIC/discussions/1754) (rele
 
 </details>
 
+## [1.1.3] - 2026-10-05
+
+A security release. Course documents served by `/api/persistence` now carry only the slide HTML the renderer produces, on every write and every read. Read **Behavior Changes** before upgrading.
+
+### Security
+
+- Course documents: with server persistence enabled, `/api/persistence/documents/...` stored and returned slide HTML without sanitizing it. Document reads are capability-by-id, so anyone with a course link loads that course, and the classroom renders slide text, shape text, table cells and LaTeX snapshots as HTML. A course written through this path could therefore run script in the browser of anyone who opened its link. The owner-bound document store now applies the same sanitization policy as `/api/classroom` to the stage and scenes on every write and every read, so new documents are stored clean and documents stored earlier are served clean. [GHSA-6c52-8h4v-5xvg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-6c52-8h4v-5xvg) [#1799](https://github.com/THU-MAIC/OpenMAIC/pull/1799)
+
+The same fix ships in [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1).
+
+### Behavior Changes
+
+- Slide HTML written through `/api/persistence` is reduced to the renderer's formatting vocabulary (the policy `/api/classroom` already applies): scripts, event-handler attributes, `javascript:` URLs and embedded objects are removed, and inline styles are re-serialized without spaces (`text-align: center;` becomes `text-align:center`). Formatting the editor produces is kept.
+- Documents already stored are not rewritten in the database; they are sanitized when read, and stored clean the next time they are saved.
+
 ## [1.1.2] - 2026-09-28
 
 A security release. Server-side requests to provider URLs that a caller can choose now connect only to the addresses that passed validation and refuse redirects, and error responses no longer carry provider response bodies or connection details. Read **Behavior Changes** before upgrading.
