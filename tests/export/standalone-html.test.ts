@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   accessDocument: vi.fn(),
@@ -33,9 +33,7 @@ vi.mock('@/lib/export/classroom-zip-utils', async (importOriginal) => {
 
 import {
   buildStandaloneHtmlExport,
-  resolvePublicClassroomUrl,
-  resolvePublicClassroomUrlForScenes,
-  STAGE_META_TIMEOUT_MS,
+  classroomUrlFor,
   type StandaloneHtmlExportOptions,
 } from '@/lib/export/standalone-html/build-standalone-html';
 import {
@@ -732,75 +730,17 @@ describe('assembleStandaloneHtml', () => {
   });
 });
 
-describe('resolvePublicClassroomUrl', () => {
-  const ORIGIN = 'https://maic.example';
-  const respond = (body: unknown, status = 200) =>
-    vi.fn(async () => new Response(JSON.stringify(body), { status }));
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it('returns the classroom address only for a published classroom', async () => {
-    vi.stubGlobal('fetch', respond({ isPublic: true }));
-    await expect(resolvePublicClassroomUrl('stage 1', { origin: ORIGIN })).resolves.toBe(
-      'https://maic.example/classroom/stage%201',
+describe('classroomUrlFor', () => {
+  it('addresses the classroom page on the exporting origin', () => {
+    expect(classroomUrlFor('https://maic.example', 'stage-1')).toBe(
+      'https://maic.example/classroom/stage-1',
     );
-    vi.stubGlobal('fetch', respond({ isPublic: false }));
-    await expect(resolvePublicClassroomUrl('stage-1', { origin: ORIGIN })).resolves.toBeUndefined();
-    vi.stubGlobal('fetch', respond({}, 404));
-    await expect(resolvePublicClassroomUrl('stage-1', { origin: ORIGIN })).resolves.toBeUndefined();
   });
 
-  it('gives up at the deadline and aborts a request that never resolves', async () => {
-    vi.useFakeTimers();
-    let signal: AbortSignal | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
-        signal = init?.signal ?? undefined;
-        return new Promise<Response>(() => {});
-      }),
+  it('encodes the stage id and tolerates a trailing slash on the origin', () => {
+    expect(classroomUrlFor('https://maic.example/', 'stage 1/#?')).toBe(
+      'https://maic.example/classroom/stage%201%2F%23%3F',
     );
-    const pending = resolvePublicClassroomUrl('stage-1', { origin: ORIGIN });
-    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS - 1);
-    expect(signal?.aborted).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await expect(pending).resolves.toBeUndefined();
-    expect(signal?.aborted).toBe(true);
-  });
-
-  it('gives up at the deadline when the response body never finishes', async () => {
-    vi.useFakeTimers();
-    let signal: AbortSignal | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        signal = init?.signal ?? undefined;
-        // A body reader that ignores the abort signal.
-        return { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response;
-      }),
-    );
-    const pending = resolvePublicClassroomUrl('stage-1', { origin: ORIGIN });
-    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS);
-    await expect(pending).resolves.toBeUndefined();
-    expect(signal?.aborted).toBe(true);
-  });
-
-  it('skips the lookup when no scene would link to it', async () => {
-    const fetchMeta = vi.fn(async () => ({ outcome: 'absent' as const }));
-    const scenes = standaloneFixtureScenes(STAGE_ID);
-    await expect(
-      resolvePublicClassroomUrlForScenes(
-        scenes.filter((scene) => scene.type !== 'pbl'),
-        STAGE_ID,
-        { origin: ORIGIN, fetchMeta },
-      ),
-    ).resolves.toBeUndefined();
-    expect(fetchMeta).not.toHaveBeenCalled();
-
-    await resolvePublicClassroomUrlForScenes(scenes, STAGE_ID, { origin: ORIGIN, fetchMeta });
-    expect(fetchMeta).toHaveBeenCalledTimes(1);
+    expect(classroomUrlFor('https://maic.example//', 'a')).toBe('https://maic.example/classroom/a');
   });
 });

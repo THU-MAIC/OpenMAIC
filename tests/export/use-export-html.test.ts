@@ -30,7 +30,6 @@ vi.mock('@/lib/export/standalone-html/build-standalone-html', async (importOrigi
 });
 
 import { useExportHtml } from '@/lib/export/use-export-html';
-import { STAGE_META_TIMEOUT_MS } from '@/lib/export/standalone-html/build-standalone-html';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -48,13 +47,12 @@ function Probe({ onValue }: { onValue: typeof capture }) {
 let root: Root | undefined;
 
 beforeEach(() => {
-  vi.useFakeTimers();
   vi.clearAllMocks();
   mocks.state = {
     stage: standaloneFixtureStage('stage-hook'),
     scenes: standaloneFixtureScenes('stage-hook'),
   };
-  // A stage-meta request that never settles.
+  // Would stall forever if the export ever asked for stage metadata.
   mocks.fetchStageMeta.mockImplementation(() => new Promise(() => {}));
   mocks.buildStandaloneHtmlExport.mockResolvedValue({
     html: '<!doctype html>',
@@ -68,43 +66,36 @@ beforeEach(() => {
 
 afterEach(() => {
   act(() => root?.unmount());
-  vi.useRealTimers();
 });
 
 describe('useExportHtml', () => {
-  it('finishes the export and clears the busy state when the stage-meta lookup stalls', async () => {
-    let done: Promise<void> | undefined;
-    await act(async () => {
-      done = latest!.exportStandaloneHtml();
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(latest!.exporting).toBe(true);
-    expect(mocks.saveAs).not.toHaveBeenCalled();
+  it('links PBL scenes to the classroom without any stage-meta request, then clears the busy state', async () => {
+    const fetchSpy = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      await act(async () => {
+        await latest!.exportStandaloneHtml();
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS);
-      await done;
-    });
-
-    expect(mocks.fetchStageMeta).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchStageMeta).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect(mocks.buildStandaloneHtmlExport).toHaveBeenCalledTimes(1);
     expect(mocks.buildStandaloneHtmlExport.mock.calls[0][2]).toMatchObject({
-      classroomUrl: undefined,
+      classroomUrl: `${window.location.origin}/classroom/stage-hook`,
     });
     expect(mocks.saveAs).toHaveBeenCalledTimes(1);
     expect(latest!.exporting).toBe(false);
   });
 
-  it('does not look up stage metadata for a course without PBL', async () => {
-    mocks.state = {
-      ...mocks.state,
-      scenes: standaloneFixtureScenes('stage-hook').filter((scene) => scene.type !== 'pbl'),
-    };
+  it('clears the busy state when the export fails', async () => {
+    mocks.buildStandaloneHtmlExport.mockRejectedValueOnce(new Error('boom'));
     await act(async () => {
       await latest!.exportStandaloneHtml();
     });
-    expect(mocks.fetchStageMeta).not.toHaveBeenCalled();
-    expect(mocks.saveAs).toHaveBeenCalledTimes(1);
+    expect(mocks.saveAs).not.toHaveBeenCalled();
     expect(latest!.exporting).toBe(false);
   });
 });

@@ -82,8 +82,8 @@ export type StandalonePlayerStrings = Record<StandalonePlayerStringKey, string>;
 export interface StandalonePlayerConfig {
   strings: StandalonePlayerStrings;
   /**
-   * Public URL of the online classroom. Only set when the classroom was
-   * published at export time; PBL scenes link to it for the agent workflow.
+   * Address of the online classroom, where PBL scenes link for the agent
+   * workflow. Omitted when the exporting host provides none.
    */
   classroomUrl?: string;
 }
