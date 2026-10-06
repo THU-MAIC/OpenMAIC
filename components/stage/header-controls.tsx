@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   Archive,
   Download,
+  FileCode,
   FileDown,
   Film,
   Loader2,
@@ -21,6 +22,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
+import { useExportHtml } from '@/lib/export/use-export-html';
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
@@ -94,6 +96,7 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
+  const { exporting: isExportingHtml, exportStandaloneHtml } = useExportHtml();
   const { exporting: isExportingScript, exportScriptDocx, exportScriptMd } = useExportScript();
   const videoExportEnabled = isVideoExportEnabled();
   // Video render lives in a global store so its progress ring stays on the
@@ -108,6 +111,7 @@ export function HeaderControls({
   // are text-only, but the latest review confirmed that this menu intentionally
   // stays unavailable until all media tasks have completed or failed.
   const canExport = isScriptExportReady({ scenes, generatingOutlines, failedOutlines }, mediaTasks);
+  const anyExporting = isExporting || isExportingZip || isExportingHtml || isExportingScript;
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
 
   const compact = variant === 'compact';
@@ -267,21 +271,17 @@ export function HeaderControls({
       <DropdownMenu modal={false} open={exportMenuOpen} onOpenChange={setExportMenuOpen}>
         <DropdownMenuTrigger asChild>
           <button
-            disabled={!canExport || isExporting || isExportingZip || isExportingScript}
-            title={
-              isExporting || isExportingZip || isExportingScript
-                ? t('export.exporting')
-                : exportLabel
-            }
+            disabled={!canExport || anyExporting}
+            title={anyExporting ? t('export.exporting') : exportLabel}
             className={cn(
               'shrink-0 p-2 rounded-full transition-all',
-              canExport && !isExporting && !isExportingZip && !isExportingScript
+              canExport && !anyExporting
                 ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
                 : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
             )}
             aria-label={exportLabel}
           >
-            {isExporting || isExportingZip || isExportingScript ? (
+            {anyExporting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : videoRendering ? (
               // Persistent ring: video render runs in the background; keep it
@@ -327,6 +327,20 @@ export function HeaderControls({
               <div>{t('export.classroomZip')}</div>
               <div className="text-[11px] text-gray-400 dark:text-gray-500">
                 {t('export.classroomZipDesc')}
+              </div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!canExport || isExportingHtml}
+            onSelect={exportStandaloneHtml}
+            className="cursor-pointer gap-2.5"
+            title={canExport ? undefined : t('export.mediaPending')}
+          >
+            <FileCode className="w-4 h-4 text-gray-400 shrink-0" />
+            <div>
+              <div>{t('export.html')}</div>
+              <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                {t('export.htmlDesc')}
               </div>
             </div>
           </DropdownMenuItem>
