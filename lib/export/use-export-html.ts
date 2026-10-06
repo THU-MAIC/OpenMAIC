@@ -27,12 +27,16 @@ export function useExportHtml() {
     try {
       // Loaded on demand: the export path pulls in the snapshot collectors,
       // which the header that hosts this hook should not carry.
-      const { buildStandaloneHtmlExport, resolvePublicClassroomUrl } =
+      const { buildStandaloneHtmlExport, resolvePublicClassroomUrlForScenes } =
         await import('./standalone-html/build-standalone-html');
       const strings = Object.fromEntries(
         STANDALONE_PLAYER_STRING_KEYS.map((key) => [key, t(`export.htmlPlayer.${key}`)]),
       ) as StandalonePlayerStrings;
-      const classroomUrl = await resolvePublicClassroomUrl(stage.id, window.location.origin);
+      // Bounded, and skipped without a PBL scene: the link is optional and
+      // must never hold up the download.
+      const classroomUrl = await resolvePublicClassroomUrlForScenes(scenes, stage.id, {
+        origin: window.location.origin,
+      });
 
       const { html, fileName, inlineFailures, unresolvedMedia } = await buildStandaloneHtmlExport(
         stage,

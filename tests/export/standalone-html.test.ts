@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   accessDocument: vi.fn(),
@@ -34,6 +34,8 @@ vi.mock('@/lib/export/classroom-zip-utils', async (importOriginal) => {
 import {
   buildStandaloneHtmlExport,
   resolvePublicClassroomUrl,
+  resolvePublicClassroomUrlForScenes,
+  STAGE_META_TIMEOUT_MS,
   type StandaloneHtmlExportOptions,
 } from '@/lib/export/standalone-html/build-standalone-html';
 import {
@@ -731,18 +733,74 @@ describe('assembleStandaloneHtml', () => {
 });
 
 describe('resolvePublicClassroomUrl', () => {
+  const ORIGIN = 'https://maic.example';
   const respond = (body: unknown, status = 200) =>
-    vi.fn(async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+    vi.fn(async () => new Response(JSON.stringify(body), { status }));
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it('returns the classroom address only for a published classroom', async () => {
+    vi.stubGlobal('fetch', respond({ isPublic: true }));
+    await expect(resolvePublicClassroomUrl('stage 1', { origin: ORIGIN })).resolves.toBe(
+      'https://maic.example/classroom/stage%201',
+    );
+    vi.stubGlobal('fetch', respond({ isPublic: false }));
+    await expect(resolvePublicClassroomUrl('stage-1', { origin: ORIGIN })).resolves.toBeUndefined();
+    vi.stubGlobal('fetch', respond({}, 404));
+    await expect(resolvePublicClassroomUrl('stage-1', { origin: ORIGIN })).resolves.toBeUndefined();
+  });
+
+  it('gives up at the deadline and aborts a request that never resolves', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      }),
+    );
+    const pending = resolvePublicClassroomUrl('stage-1', { origin: ORIGIN });
+    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS - 1);
+    expect(signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(pending).resolves.toBeUndefined();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('gives up at the deadline when the response body never finishes', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        // A body reader that ignores the abort signal.
+        return { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response;
+      }),
+    );
+    const pending = resolvePublicClassroomUrl('stage-1', { origin: ORIGIN });
+    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS);
+    await expect(pending).resolves.toBeUndefined();
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('skips the lookup when no scene would link to it', async () => {
+    const fetchMeta = vi.fn(async () => ({ outcome: 'absent' as const }));
+    const scenes = standaloneFixtureScenes(STAGE_ID);
     await expect(
-      resolvePublicClassroomUrl('stage 1', 'https://maic.example', respond({ isPublic: true })),
-    ).resolves.toBe('https://maic.example/classroom/stage%201');
-    await expect(
-      resolvePublicClassroomUrl('stage-1', 'https://maic.example', respond({ isPublic: false })),
+      resolvePublicClassroomUrlForScenes(
+        scenes.filter((scene) => scene.type !== 'pbl'),
+        STAGE_ID,
+        { origin: ORIGIN, fetchMeta },
+      ),
     ).resolves.toBeUndefined();
-    await expect(
-      resolvePublicClassroomUrl('stage-1', 'https://maic.example', respond({}, 404)),
-    ).resolves.toBeUndefined();
+    expect(fetchMeta).not.toHaveBeenCalled();
+
+    await resolvePublicClassroomUrlForScenes(scenes, STAGE_ID, { origin: ORIGIN, fetchMeta });
+    expect(fetchMeta).toHaveBeenCalledTimes(1);
   });
 });
