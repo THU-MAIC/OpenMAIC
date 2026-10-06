@@ -8,7 +8,6 @@ import {
 } from '@/lib/standalone-player/navigation';
 import { orderManifestScenes } from '@/lib/export/standalone-html/order-scenes';
 import { pblBriefing, safeClassroomUrl } from '@/lib/standalone-player/scenes/PblScene';
-import { legacyPBLSceneFixture } from '../fixtures/pbl-v1-scene';
 import { standaloneFixtureScenes } from '../fixtures/standalone-html-classroom';
 
 describe('standalone player scene routing', () => {
@@ -35,16 +34,16 @@ describe('standalone player scene routing', () => {
     expect(applyNavigation(0, 'previous', 3)).toBe(0);
     expect(applyNavigation(0, 'next', 3)).toBe(1);
     expect(applyNavigation(2, 'next', 3)).toBe(2);
-    expect(applyNavigation(1, 'first', 3)).toBe(0);
-    expect(applyNavigation(0, 'last', 3)).toBe(2);
     expect(clampSceneIndex(5, 0)).toBe(0);
   });
 
-  it('maps keys to navigation, except while typing or with modifiers', () => {
+  it('navigates on Left/Right only, never while typing or with modifiers', () => {
     expect(navigationActionForKey({ key: 'ArrowRight' })).toBe('next');
-    expect(navigationActionForKey({ key: 'PageUp' })).toBe('previous');
-    expect(navigationActionForKey({ key: 'Home' })).toBe('first');
-    expect(navigationActionForKey({ key: 'End' })).toBe('last');
+    expect(navigationActionForKey({ key: 'ArrowLeft' })).toBe('previous');
+    // Scrolling keys stay with long quiz and PBL scenes.
+    for (const key of ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']) {
+      expect(navigationActionForKey({ key })).toBeNull();
+    }
     expect(navigationActionForKey({ key: 'a' })).toBeNull();
     expect(
       navigationActionForKey({ key: 'ArrowRight', target: { tagName: 'TEXTAREA' } }),
@@ -73,11 +72,20 @@ describe('standalone player PBL briefing', () => {
     expect(briefing.milestones[0].tasks[0].title).toBe('List the factors');
   });
 
-  it('falls back to the legacy issue board', () => {
-    if (legacyPBLSceneFixture.content.type !== 'pbl') throw new Error('expected pbl');
-    const briefing = pblBriefing(legacyPBLSceneFixture.content, 'fallback');
-    expect(briefing.title).toBe('Community Garden Data Project');
-    expect(briefing.milestones.length).toBeGreaterThan(0);
+  it('skips missing entries instead of failing', () => {
+    const briefing = pblBriefing(
+      {
+        projectV2: {
+          title: 'Broken',
+          scenario: { setting: 'x', characters: [null, { name: 'Ana', persona: 'p' }] },
+          milestones: [null, { title: 'M', microtasks: [null] }],
+        } as never,
+      },
+      'fallback',
+    );
+    expect(briefing.characters).toEqual([{ name: 'Ana', persona: 'p' }]);
+    expect(briefing.milestones).toEqual([{ title: 'M', description: undefined, tasks: [] }]);
+    expect(pblBriefing({}, 'fallback').title).toBe('fallback');
   });
 
   it('only links to web addresses', () => {

@@ -24,6 +24,7 @@ import { InteractiveScene } from './scenes/InteractiveScene';
 import { QuizScene } from './scenes/QuizScene';
 import { PblScene } from './scenes/PblScene';
 import { UnavailableScene } from './scenes/UnavailableScene';
+import { SceneErrorBoundary } from './SceneErrorBoundary';
 
 function SceneIcon({ type, className }: { type: ManifestScene['type']; className?: string }) {
   switch (type) {
@@ -176,7 +177,9 @@ export function App({ data }: { data: PlayerData }) {
           data-scene-type={scene?.type}
         >
           {scene ? (
-            <SceneView key={index} scene={scene} data={data} />
+            <SceneErrorBoundary key={index} message={strings.unsupportedScene}>
+              <SceneView scene={scene} data={data} />
+            </SceneErrorBoundary>
           ) : (
             <UnavailableScene message={strings.emptyClassroom} />
           )}

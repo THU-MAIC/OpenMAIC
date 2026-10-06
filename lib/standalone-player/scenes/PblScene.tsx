@@ -20,53 +20,39 @@ interface Briefing {
   milestones: BriefingMilestone[];
 }
 
-type LegacyIssue = { title?: string; description?: string; index?: number };
-
-/** The static briefing of a PBL scene: current projects, or the legacy issue board. */
-export function pblBriefing(
-  content: { projectV2?: PBLProject; projectConfig?: Record<string, unknown> },
-  fallbackTitle: string,
-): Briefing {
+/**
+ * The static briefing of a PBL scene. The export already resolved the
+ * classroom's authoritative representation (upgrading legacy projects) and
+ * reduced it to these fields; entries are still read defensively.
+ */
+export function pblBriefing(content: { projectV2?: PBLProject }, fallbackTitle: string): Briefing {
   const project = content.projectV2;
-  if (project) {
-    return {
-      title: project.title || fallbackTitle,
-      description: project.description,
-      learningObjective: project.learningObjective,
-      setting: project.scenario?.setting,
-      goal: project.scenario?.goal,
-      learnerRole: project.scenario?.learnerRole,
-      characters: (project.scenario?.characters ?? []).map((character) => ({
-        name: character.name,
-        persona: character.persona,
-      })),
-      milestones: [...(project.milestones ?? [])]
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .map((milestone) => ({
-          title: milestone.title,
-          description: milestone.description,
-          tasks: [...(milestone.microtasks ?? [])]
-            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-            .map((task) => ({
-              title: task.title,
-              description: task.learnerBrief ?? task.description,
-            })),
-        })),
-    };
-  }
-  const legacy = content.projectConfig as
-    | {
-        projectInfo?: { title?: string; description?: string };
-        issueboard?: { issues?: LegacyIssue[] };
-      }
-    | undefined;
+  const present = <T,>(items: readonly (T | null | undefined)[] | undefined): T[] =>
+    (items ?? []).filter((item): item is T => item != null && typeof item === 'object');
+  const byOrder = (a: { order?: number }, b: { order?: number }) => (a.order ?? 0) - (b.order ?? 0);
   return {
-    title: legacy?.projectInfo?.title || fallbackTitle,
-    description: legacy?.projectInfo?.description,
-    characters: [],
-    milestones: [...(legacy?.issueboard?.issues ?? [])]
-      .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-      .map((issue) => ({ title: issue.title ?? '', description: issue.description, tasks: [] })),
+    title: project?.title || fallbackTitle,
+    description: project?.description,
+    learningObjective: project?.learningObjective,
+    setting: project?.scenario?.setting,
+    goal: project?.scenario?.goal,
+    learnerRole: project?.scenario?.learnerRole,
+    characters: present(project?.scenario?.characters).map((character) => ({
+      name: character.name,
+      persona: character.persona,
+    })),
+    milestones: present(project?.milestones)
+      .sort(byOrder)
+      .map((milestone) => ({
+        title: milestone.title,
+        description: milestone.description,
+        tasks: present(milestone.microtasks)
+          .sort(byOrder)
+          .map((task) => ({
+            title: task.title,
+            description: task.learnerBrief ?? task.description,
+          })),
+      })),
   };
 }
 
@@ -90,7 +76,7 @@ export function PblScene({
   classroomUrl,
   strings,
 }: {
-  content: { projectV2?: PBLProject; projectConfig?: Record<string, unknown> };
+  content: { projectV2?: PBLProject };
   sceneTitle: string;
   classroomUrl?: string;
   strings: StandalonePlayerStrings;
