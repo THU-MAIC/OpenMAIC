@@ -16,10 +16,12 @@ import {
 import { LegendComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
 import { STANDALONE_CHARTS_GLOBAL } from '@/lib/export/standalone-html/contract';
+import { initWithoutAnimation } from './chart-animation';
 
 (globalThis as Record<string, unknown>)[STANDALONE_CHARTS_GLOBAL] = {
-  // The renderer calls only `use` and `init` on the core namespace.
-  core: { init, use },
+  // The renderer calls only `use` and `init` on the core namespace. Charts
+  // render without their entry animation (see initWithoutAnimation).
+  core: { init: initWithoutAnimation(init), use },
   charts: { BarChart, LineChart, PictorialBarChart, PieChart, RadarChart, ScatterChart },
   components: { LegendComponent },
   renderers: { SVGRenderer },
