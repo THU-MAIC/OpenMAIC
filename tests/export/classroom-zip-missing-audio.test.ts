@@ -83,7 +83,23 @@ beforeEach(() => {
   });
 });
 
-describe('buildClassroomExportZip missing-audio reporting', () => {
+describe('buildClassroomExportZip', () => {
+  it('identifies the course and exact manifest export time in the download name', async () => {
+    const { stage, scenes } = fixture();
+    mocks.accessDocument.mockResolvedValue({
+      document: { stage: { ...stage, name: 'Renamed / course' } },
+    });
+    const result = await buildClassroomExportZip(stage, scenes);
+    const zip = await JSZip.loadAsync(await result.zip.arrayBuffer());
+    const manifest = JSON.parse(
+      await zip.file('manifest.json')!.async('string'),
+    ) as ClassroomManifest;
+
+    expect(manifest.stage.name).toBe('Renamed / course');
+    const stamp = manifest.exportedAt.replace(/[-:.]/g, '');
+    expect(result.fileName).toBe(`Renamed _ course_stage-1_${stamp}.maic.zip`);
+  });
+
   it('does not report an id-backed narration as missing when its legacy URL supplied bytes', async () => {
     const { stage, scenes } = fixture();
 
