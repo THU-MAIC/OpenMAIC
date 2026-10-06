@@ -14,7 +14,9 @@
  *                        the export adds it only when the classroom shows math
  *
  * The outputs are gitignored build artifacts, produced by `dev` and `build`
- * (or `pnpm build:standalone-player`). They are checked for sequences that
+ * (or `pnpm build:standalone-player`). `pnpm dev` builds them once at
+ * startup and does not watch: after editing lib/standalone-player (or the
+ * renderer), rerun `pnpm build:standalone-player` before exporting again. They are checked for sequences that
  * would end their inline <script>/<style> element, since the export embeds
  * them verbatim.
  */

@@ -57,6 +57,10 @@ pnpm dev
 `pnpm db:down` stops the development database and keeps its data. The E2E
 suite (`pnpm test:e2e`) also needs `DATABASE_URL`.
 
+`pnpm dev` also builds the standalone HTML player (`lib/standalone-player`,
+used by "Export as HTML") once at startup. It is not rebuilt on change: after
+editing the player, run `pnpm build:standalone-player` before exporting again.
+
 ## Development Workflow
 
 1. **Fork** the repository and create a branch from `main`:
