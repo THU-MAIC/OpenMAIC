@@ -1,6 +1,17 @@
 // @vitest-environment jsdom
 import katex from 'katex';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// Lets a test make the resource inventory throw, to prove it cannot affect the export.
+vi.mock('parse-srcset', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('parse-srcset')>();
+  return {
+    default: (value: string) => {
+      if (value.includes('inventory-failure')) throw new Error('inventory failure');
+      return actual.default(value);
+    },
+  };
+});
 import type { PPTElement } from '@openmaic/dsl';
 import {
   createTextDocument,
@@ -196,6 +207,61 @@ describe('standalone HTML inline formulas', () => {
       expect(out).not.toContain('example.com/lost.png');
       expect(out).not.toContain('<img');
       expect(parse(out).querySelectorAll('.katex')).toHaveLength(1);
+    }
+  });
+
+  it('decodes CSS escapes per spec instead of aborting the export', () => {
+    const html = [
+      '<style>a{background:url("\\110000.png")}',
+      'b{background:url("\\0 zero.png")}',
+      'c{background:url("\\D800 surrogate.png")}',
+      // An escaped newline continues the string.
+      'd{background:url("line\\\ncontinued.png")}</style>',
+      '<p>text</p>',
+    ].join('');
+    const { content, discarded } = sanitizeSlideRichText(slideWith(html));
+    expect(discarded).toEqual(
+      expect.arrayContaining(['�.png', '�zero.png', '�surrogate.png', 'linecontinued.png']),
+    );
+    expect(proseFields(content)[0]).toBe('<p>text</p>');
+  });
+
+  it('never lets a failing inventory abort or change sanitization', () => {
+    const html = [
+      '<p>before <img srcset="https://example.com/inventory-failure.png 1x">',
+      `<img src="x" onerror="alert(1)"> after</p>`,
+    ].join('');
+    const editor = editorHtml();
+    const { content } = sanitizeSlideRichText(slideWith(`${html}${editor}`));
+    const { content: reference } = sanitizeSlideRichText(
+      slideWith(`<p>before  after</p>${editor}`),
+    );
+    for (const [out, expected] of proseFields(content).map(
+      (field, index) => [field, proseFields(reference)[index]] as const,
+    )) {
+      expect(out).toBe(expected);
+      expect(out).not.toContain('onerror');
+    }
+  });
+
+  it('inventories and strips inside template contents, nested ones included', () => {
+    const html = [
+      '<p>start</p><template><img src="https://example.com/lost.png">',
+      '<span data-inline-math="x"><img src="https://example.com/inner.png"></span>',
+      '<template><img src="https://example.com/nested.png"></template></template>',
+    ].join('');
+    const { content, discarded } = sanitizeSlideRichText(slideWith(html));
+    expect([...new Set(discarded)].sort()).toEqual(
+      [
+        'https://example.com/inner.png',
+        'https://example.com/lost.png',
+        'https://example.com/nested.png',
+      ].sort(),
+    );
+    for (const out of proseFields(content)) {
+      expect(out).not.toContain('example.com');
+      expect(out).not.toContain('<template');
+      expect(attributeNames(out).filter((name) => name.startsWith('on'))).toEqual([]);
     }
   });
 });

@@ -42,10 +42,24 @@ const RESOURCE_ATTRIBUTES: Record<string, readonly string[]> = {
 };
 const SRCSET_TAGS = new Set(['img', 'source']);
 
-/** Decode CSS escapes (`\72`, `\(`) so an escaped `url` or URL is recognized. */
+/**
+ * Decode CSS escapes (`\72`, `\(`) so an escaped `url` or URL is recognized.
+ * Follows CSS Syntax: a hex escape is 1-6 digits plus one optional whitespace
+ * (CRLF counts as one); zero, surrogates and values above U+10FFFF become
+ * U+FFFD; an escaped newline is a line continuation and decodes to nothing.
+ */
 function decodeCssEscapes(value: string): string {
-  return value.replace(/\\(?:([0-9a-fA-F]{1,6})\s?|([\s\S]))/g, (_, hex: string, char: string) =>
-    hex ? String.fromCodePoint(Number.parseInt(hex, 16) || 0xfffd) : char,
+  return value.replace(
+    /\\(?:([0-9a-fA-F]{1,6})(?:\r\n|[ \t\n\r\f])?|(\r\n|[\n\r\f])|([\s\S])|$)/g,
+    (_, hex: string | undefined, newline: string | undefined, char: string | undefined) => {
+      if (hex) {
+        const code = Number.parseInt(hex, 16);
+        const valid = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+        return String.fromCodePoint(valid ? code : 0xfffd);
+      }
+      if (newline) return '';
+      return char ?? '';
+    },
   );
 }
 
@@ -103,22 +117,64 @@ function resourceLabel(url: string): string {
   return `${url.slice(0, comma >= 0 ? comma + 1 : 48)}…`;
 }
 
-/** Every resource the authored tree references, formula subtrees included. */
+/**
+ * The fragment and the contents of every `<template>` inside it, nested ones
+ * included: template contents live in their own fragments, which
+ * `querySelectorAll` does not descend into, yet serialize back into the HTML.
+ */
+function fragmentsOf(root: DocumentFragment): DocumentFragment[] {
+  const fragments = [root];
+  for (let index = 0; index < fragments.length; index += 1) {
+    for (const element of fragments[index].querySelectorAll('template')) {
+      fragments.push((element as HTMLTemplateElement).content);
+    }
+  }
+  return fragments;
+}
+
+/** The resources one element references. */
+function elementResources(element: Element): string[] {
+  const found: string[] = [];
+  const tag = element.localName;
+  for (const name of RESOURCE_ATTRIBUTES[tag] ?? []) {
+    const value = element.getAttribute(name)?.trim();
+    if (value) found.push(value);
+  }
+  if (SRCSET_TAGS.has(tag)) {
+    const srcset = element.getAttribute('srcset');
+    if (srcset) found.push(...parseSrcset(srcset).map((candidate) => candidate.url));
+  }
+  const style = element.getAttribute('style');
+  if (style) found.push(...cssValueResources(style));
+  if (tag === 'style') found.push(...styleSheetResources(element.textContent ?? ''));
+  return found;
+}
+
+/**
+ * Every resource the authored tree references, formula subtrees and template
+ * contents included.
+ *
+ * Best-effort, for reporting only: the result only feeds the partial-export
+ * warning. Every such resource is removed by the sanitizer and blocked by the
+ * file's CSP whether or not it is found here, so exotic CSS spellings this
+ * scan misses are under-reported, never shipped. For the same reason it is
+ * fail-safe: an element that cannot be scanned is skipped, and nothing here
+ * can abort or change the export.
+ */
 function inventoryResources(root: DocumentFragment): string[] {
   const found: string[] = [];
-  for (const element of root.querySelectorAll('*')) {
-    const tag = element.localName;
-    for (const name of RESOURCE_ATTRIBUTES[tag] ?? []) {
-      const value = element.getAttribute(name)?.trim();
-      if (value) found.push(value);
+  try {
+    for (const fragment of fragmentsOf(root)) {
+      for (const element of fragment.querySelectorAll('*')) {
+        try {
+          found.push(...elementResources(element));
+        } catch {
+          // Skip what cannot be scanned; reporting only.
+        }
+      }
     }
-    if (SRCSET_TAGS.has(tag)) {
-      const srcset = element.getAttribute('srcset');
-      if (srcset) found.push(...parseSrcset(srcset).map((candidate) => candidate.url));
-    }
-    const style = element.getAttribute('style');
-    if (style) found.push(...cssValueResources(style));
-    if (tag === 'style') found.push(...styleSheetResources(element.textContent ?? ''));
+  } catch {
+    // Reporting only: keep whatever was found.
   }
   return found.map(resourceLabel);
 }
@@ -149,14 +205,18 @@ function stripFormulas(doc: Document, html: string): { html: string; discarded: 
   const template = parseFragment(doc, html);
   const fragment = template.content;
   const discarded = inventoryResources(fragment);
-  for (const element of fragment.querySelectorAll(`[${INLINE_MATH_ATTRIBUTE}], .katex`)) {
-    // Skip descendants of a formula already replaced.
-    if (!fragment.contains(element)) continue;
-    const latex = inlineMathSource(element);
-    if (latex === null) continue;
-    const placeholder = doc.createElement('span');
-    placeholder.setAttribute(INLINE_MATH_ATTRIBUTE, latex);
-    element.replaceWith(placeholder);
+  // Formulas inside template contents too: the sanitizer drops the template
+  // tag but keeps its permitted children.
+  for (const root of fragmentsOf(fragment)) {
+    for (const element of root.querySelectorAll(`[${INLINE_MATH_ATTRIBUTE}], .katex`)) {
+      // Skip descendants of a formula already replaced.
+      if (!root.contains(element)) continue;
+      const latex = inlineMathSource(element);
+      if (latex === null) continue;
+      const placeholder = doc.createElement('span');
+      placeholder.setAttribute(INLINE_MATH_ATTRIBUTE, latex);
+      element.replaceWith(placeholder);
+    }
   }
   return { html: template.innerHTML, discarded };
 }
