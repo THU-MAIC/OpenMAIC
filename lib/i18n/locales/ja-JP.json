@@ -125,8 +125,7 @@
       "quizQuestionCount": "問題数：{{count}}",
       "openOnline": "オンラインで開く",
       "openOffline": "オフライン版を開く",
-      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します",
-      "publishHint": "このクラスルームを公開すると、学生が QR コードから開けるようになります。"
+      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します"
     }
   },
   "import": {

@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib';
 import JSZip from 'jszip';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 
@@ -20,14 +20,8 @@ import {
   planPptxDeck,
   pptxDeckScenes,
   relativeHyperlinkTarget,
-  type OnlineClassroom,
 } from '@/lib/export/pptx-scene-placeholders';
 import { qrMatrix } from '@/lib/export/qr-png';
-import {
-  resolveOnlineClassroom,
-  resolveOnlineClassroomForScenes,
-  STAGE_META_TIMEOUT_MS,
-} from '@/lib/export/classroom-online-link';
 
 const t = (key: string, options?: Record<string, unknown>) =>
   options ? `${key}:${JSON.stringify(options)}` : key;
@@ -142,10 +136,7 @@ const lesson: Scene[] = [
 
 const ratioPx2Pt = (96 / 72) * (1000 / 960);
 
-const ONLINE: OnlineClassroom = {
-  classroomUrl: 'https://example.org/classroom/stage-1',
-  isPublic: false,
-};
+const CLASSROOM_URL = 'https://example.org/classroom/stage-1';
 const sceneUrl = (sceneId: string) => `https://example.org/classroom/stage-1?scene=${sceneId}`;
 
 /** Plan and build a PPTX the way the Resource Pack hook does. */
@@ -160,7 +151,7 @@ function buildLessonPptx(scenes: Scene[]) {
     100,
     ratioPx2Pt,
     'stage-1',
-    planPptxDeck(scenes, t, { linkInteractivePages: true, online: ONLINE }),
+    planPptxDeck(scenes, t, { linkInteractivePages: true, classroomUrl: CLASSROOM_URL }),
   );
 }
 
@@ -185,7 +176,7 @@ async function readText(zip: JSZip, name: string): Promise<string> {
   return file.async('string');
 }
 
-function buildDeck(linkInteractivePages: boolean, online: OnlineClassroom | null = ONLINE) {
+function buildDeck(linkInteractivePages: boolean, classroomUrl: string | null = CLASSROOM_URL) {
   return buildPptxBlob(
     [slideA, slideB],
     [sceneA, sceneB],
@@ -194,7 +185,10 @@ function buildDeck(linkInteractivePages: boolean, online: OnlineClassroom | null
     1000 / 10,
     (96 / 72) * (1000 / 960),
     'stage-1',
-    planPptxDeck(lesson, t, { linkInteractivePages, online: online ?? undefined }),
+    planPptxDeck(lesson, t, {
+      linkInteractivePages,
+      classroomUrl: classroomUrl ?? undefined,
+    }),
   );
 }
 
@@ -276,8 +270,14 @@ describe('planPptxDeck', () => {
   });
 
   it('links interactive placeholders to the offline page only when a pack ships', () => {
-    const withPack = planPptxDeck(lesson, t, { linkInteractivePages: true, online: ONLINE });
-    const standalone = planPptxDeck(lesson, t, { linkInteractivePages: false, online: ONLINE });
+    const withPack = planPptxDeck(lesson, t, {
+      linkInteractivePages: true,
+      classroomUrl: CLASSROOM_URL,
+    });
+    const standalone = planPptxDeck(lesson, t, {
+      linkInteractivePages: false,
+      classroomUrl: CLASSROOM_URL,
+    });
     const [packEntry, standaloneEntry] = [withPack[1], standalone[1]];
     if (packEntry.kind !== 'placeholder' || standaloneEntry.kind !== 'placeholder') {
       throw new Error('expected placeholders');
@@ -289,19 +289,6 @@ describe('planPptxDeck', () => {
     // Both link to the scene in the online classroom.
     expect(packEntry.placeholder.online?.url).toBe(sceneUrl('i1'));
     expect(standaloneEntry.placeholder.online?.url).toBe(sceneUrl('i1'));
-  });
-
-  it('adds the publish hint only when the classroom is not public', () => {
-    const hint = (isPublic: boolean) =>
-      planPptxDeck(lesson, t, {
-        linkInteractivePages: false,
-        online: { ...ONLINE, isPublic },
-      }).flatMap((e) => (e.kind === 'placeholder' ? [e.placeholder.online?.publishHint] : []));
-    expect(hint(false)).toEqual([
-      'export.placeholder.publishHint',
-      'export.placeholder.publishHint',
-    ]);
-    expect(hint(true)).toEqual([undefined, undefined]);
   });
 
   it('summarizes a quiz by count and question stems', () => {
@@ -473,7 +460,6 @@ describe('online link and QR code', () => {
         const xml = await readText(zip, `ppt/slides/slide${slideNumber}.xml`);
         expect(xml).toContain('export.placeholder.openOnline');
         expect(xml).toContain(sceneUrl(sceneId));
-        expect(xml).toContain('export.placeholder.publishHint');
       }
     });
 
@@ -491,15 +477,6 @@ describe('online link and QR code', () => {
     });
   }
 
-  it('leaves the publish hint out for a public classroom', async () => {
-    const zip = await loadZip(await buildDeck(true, { ...ONLINE, isPublic: true }));
-    for (const slideNumber of [2, 3]) {
-      expect(await readText(zip, `ppt/slides/slide${slideNumber}.xml`)).not.toContain(
-        'export.placeholder.publishHint',
-      );
-    }
-  });
-
   it('draws no button or QR code without an online classroom', async () => {
     const zip = await loadZip(await buildDeck(true, null));
     expect(await slideImage(zip, 3)).toBeNull();
@@ -512,99 +489,6 @@ describe('online link and QR code', () => {
     const matrix = await qrMatrix(sceneUrl('q'));
     const edge = [...matrix[0], ...matrix[matrix.length - 1], ...matrix.map((row) => row[0])];
     expect(edge.every((dark) => !dark)).toBe(true);
-  });
-});
-
-describe('resolveOnlineClassroom', () => {
-  it('builds the classroom URL on the given origin and reads isPublic', async () => {
-    const online = await resolveOnlineClassroom('stage 1', {
-      origin: 'https://host.example/',
-      fetchMeta: async () => ({
-        outcome: 'found',
-        meta: { isOwner: true, isPublic: true, publishedAt: 1, generationComplete: true },
-      }),
-    });
-    expect(online).toEqual({
-      classroomUrl: 'https://host.example/classroom/stage%201',
-      isPublic: true,
-    });
-  });
-
-  it('treats unreadable metadata as not public', async () => {
-    const online = await resolveOnlineClassroom('s', {
-      origin: 'https://host.example',
-      fetchMeta: async () => ({ outcome: 'unavailable' }),
-    });
-    expect(online.isPublic).toBe(false);
-  });
-});
-
-describe('bounded classroom status lookup', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
-  it('gives up on a stalled request, aborts it and counts the classroom as not public', async () => {
-    vi.useFakeTimers();
-    let signal: AbortSignal | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((_input: unknown, init?: RequestInit) => {
-        signal = init?.signal ?? undefined;
-        return new Promise<Response>(() => {});
-      }),
-    );
-    let settled = false;
-    // Default reader (fetchStageMeta) over a fetch that never answers.
-    const pending = resolveOnlineClassroom('stage-1', {
-      origin: 'https://host.example',
-    }).then((online) => {
-      settled = true;
-      return online;
-    });
-
-    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS - 1);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(await pending).toEqual({
-      classroomUrl: 'https://host.example/classroom/stage-1',
-      isPublic: false,
-    });
-    expect(signal?.aborted).toBe(true);
-  });
-
-  it('times out even when the metadata reader ignores the abort signal', async () => {
-    vi.useFakeTimers();
-    const pending = resolveOnlineClassroom('stage-1', {
-      origin: 'https://host.example',
-      fetchMeta: () => new Promise(() => {}),
-      timeoutMs: 500,
-    });
-    await vi.advanceTimersByTimeAsync(500);
-    expect((await pending).isPublic).toBe(false);
-  });
-
-  it('skips the request when no placeholder slide needs the online classroom', async () => {
-    const fetchMeta = vi.fn(async () => ({ outcome: 'unavailable' as const }));
-    const options = { origin: 'https://host.example', fetchMeta };
-    expect(await resolveOnlineClassroomForScenes([sceneA, sceneB], 'stage-1', options)).toBe(
-      undefined,
-    );
-    expect(await resolveOnlineClassroomForScenes([pblScene('p')], 'stage-1', options)).toBe(
-      undefined,
-    );
-    expect(
-      await resolveOnlineClassroomForScenes([interactiveScene('i', 'I', '')], 'stage-1', options),
-    ).toBe(undefined);
-    expect(await resolveOnlineClassroomForScenes(lesson, undefined, options)).toBe(undefined);
-    expect(fetchMeta).not.toHaveBeenCalled();
-
-    expect(await resolveOnlineClassroomForScenes(lesson, 'stage-1', options)).toEqual({
-      classroomUrl: 'https://host.example/classroom/stage-1',
-      isPublic: false,
-    });
-    expect(fetchMeta).toHaveBeenCalledTimes(1);
   });
 });
 

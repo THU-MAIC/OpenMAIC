@@ -125,8 +125,7 @@
       "quizQuestionCount": "Perguntas: {{count}}",
       "openOnline": "Abrir on-line",
       "openOffline": "Abrir cópia off-line",
-      "offlineHint": "funciona se esta apresentação ficar na pasta extraída do pacote de recursos",
-      "publishHint": "Publique esta aula para que os alunos possam abri-la escaneando o código."
+      "offlineHint": "funciona se esta apresentação ficar na pasta extraída do pacote de recursos"
     }
   },
   "import": {

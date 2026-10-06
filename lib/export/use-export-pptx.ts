@@ -40,7 +40,7 @@ import {
   type PptxDeckEntry,
 } from './pptx-scene-placeholders';
 import { qrPngDataUrl } from './qr-png';
-import { resolveOnlineClassroomForScenes } from './classroom-online-link';
+import { classroomPageUrl } from '@/lib/classroom/scene-deep-link';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
@@ -1370,14 +1370,13 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   // without any of them (e.g. PBL only) has nothing to put in a PPTX.
   const hasPptxContent = pptxDeckScenes(scenes).length > 0;
 
-  // The online classroom the placeholder slides link to (button + QR code).
-  // Not requested when the lesson has no quiz or interactive placeholder.
-  const resolveOnline = useCallback(
+  // The online classroom page the placeholder slides link to (button + QR
+  // code). Anyone with the link can open a classroom, so no status lookup is
+  // needed; without a stage id there is nothing to link to.
+  const getClassroomUrl = useCallback(
     () =>
-      resolveOnlineClassroomForScenes(scenes, stage?.id, {
-        origin: classroomOrigin ?? window.location.origin,
-      }),
-    [scenes, stage?.id, classroomOrigin],
+      stage?.id ? classroomPageUrl(classroomOrigin ?? window.location.origin, stage.id) : undefined,
+    [stage?.id, classroomOrigin],
   );
 
   // Shared guard + state wrapper for export actions.
@@ -1416,7 +1415,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
       // the online classroom only (no offline copy to point at).
       const deck = planPptxDeck(scenes, t, {
         linkInteractivePages: false,
-        online: await resolveOnline(),
+        classroomUrl: getClassroomUrl(),
       });
       const blob = await buildPptxBlob(
         slides,
@@ -1433,7 +1432,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
     });
   }, [
     withExportGuard,
-    resolveOnline,
+    getClassroomUrl,
     slides,
     slideScenes,
     scenes,
@@ -1452,7 +1451,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
     withExportGuard(async () => {
       const fileName = stage?.name || 'slides';
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
-      const online = await resolveOnline();
+      const classroomUrl = getClassroomUrl();
 
       const result = await buildResourcePackZip(scenes, {
         viewportRatio,
@@ -1470,7 +1469,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
             ratioPx2Inch,
             ratioPx2Pt,
             stage?.id,
-            planPptxDeck(scenes, t, { linkInteractivePages: true, online }),
+            planPptxDeck(scenes, t, { linkInteractivePages: true, classroomUrl }),
           ),
       });
 
@@ -1503,7 +1502,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
     }, false);
   }, [
     withExportGuard,
-    resolveOnline,
+    getClassroomUrl,
     slides,
     slideScenes,
     scenes,

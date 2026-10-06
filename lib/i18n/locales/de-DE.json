@@ -125,8 +125,7 @@
       "quizQuestionCount": "Fragen: {{count}}",
       "openOnline": "Online öffnen",
       "openOffline": "Offline-Kopie öffnen",
-      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt",
-      "publishHint": "Veröffentlichen Sie diesen Kurs, damit Lernende ihn per Scan öffnen können."
+      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt"
     }
   },
   "import": {

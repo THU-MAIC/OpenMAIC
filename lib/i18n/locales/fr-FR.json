@@ -125,8 +125,7 @@
       "quizQuestionCount": "Questions : {{count}}",
       "openOnline": "Ouvrir en ligne",
       "openOffline": "Ouvrir la copie hors ligne",
-      "offlineHint": "fonctionne si cette présentation reste dans le dossier extrait du pack de ressources",
-      "publishHint": "Publiez cette classe pour que les élèves puissent l’ouvrir en scannant le code."
+      "offlineHint": "fonctionne si cette présentation reste dans le dossier extrait du pack de ressources"
     }
   },
   "import": {

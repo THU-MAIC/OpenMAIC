@@ -125,8 +125,7 @@
       "quizQuestionCount": "題目數：{{count}}",
       "openOnline": "線上開啟",
       "openOffline": "開啟離線副本",
-      "offlineHint": "需將本簡報保留在解壓縮後的教學資源包資料夾中",
-      "publishHint": "發布此課堂後，學生即可掃碼開啟。"
+      "offlineHint": "需將本簡報保留在解壓縮後的教學資源包資料夾中"
     }
   },
   "import": {

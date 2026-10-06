@@ -125,8 +125,7 @@
       "quizQuestionCount": "Questions: {{count}}",
       "openOnline": "Open online",
       "openOffline": "Open offline copy",
-      "offlineHint": "works when this deck stays in the extracted Resource Pack folder",
-      "publishHint": "Publish this classroom so students can open it by scanning."
+      "offlineHint": "works when this deck stays in the extracted Resource Pack folder"
     }
   },
   "import": {

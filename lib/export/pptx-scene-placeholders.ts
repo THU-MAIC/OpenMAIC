@@ -79,11 +79,8 @@ export interface ScenePlaceholder {
   typeLabel: string;
   title: string;
   description: string;
-  /**
-   * The scene in the online classroom: a button and a QR code of `url`.
-   * `publishHint` is set when the classroom is not public yet.
-   */
-  online?: { url: string; label: string; publishHint?: string };
+  /** The scene in the online classroom: a button and a QR code of `url`. */
+  online?: { url: string; label: string };
   /**
    * The scene's page in the Resource Pack. `target` is the URI-encoded
    * relative link; `path` is the readable pack path.
@@ -103,22 +100,17 @@ export type PptxDeckEntry =
   | { kind: 'slide'; slideIndex: number }
   | { kind: 'placeholder'; placeholder: ScenePlaceholder };
 
-/** Where the exported classroom lives online, resolved at export time. */
-export interface OnlineClassroom {
-  /** Absolute classroom page URL, without a scene parameter. */
-  classroomUrl: string;
-  /** Whether people other than the owner can open it. */
-  isPublic: boolean;
-}
-
 export interface PlanPptxDeckOptions {
   /**
    * True only when the PPTX ships inside the Resource Pack: a relative link
    * from a standalone PPTX would point at nothing.
    */
   linkInteractivePages: boolean;
-  /** Link placeholders to their scene in the online classroom. */
-  online?: OnlineClassroom;
+  /**
+   * Absolute classroom page URL (`classroomPageUrl`). When set, placeholders
+   * link to their scene in the online classroom.
+   */
+  classroomUrl?: string;
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -154,18 +146,19 @@ export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
 export function planPptxDeck(
   scenes: readonly Scene[],
   t: Translate,
-  { linkInteractivePages, online }: PlanPptxDeckOptions,
+  { linkInteractivePages, classroomUrl }: PlanPptxDeckOptions,
 ): PptxDeckEntry[] {
   const pagePaths = new Map(listInteractivePages(scenes).map((p) => [p.scene, p.path]));
   const deck: PptxDeckEntry[] = [];
   let slideIndex = 0;
 
   const onlineLink = (scene: Scene): ScenePlaceholder['online'] =>
-    online && {
-      url: classroomSceneUrl(online.classroomUrl, scene.id),
-      label: t('export.placeholder.openOnline'),
-      publishHint: online.isPublic ? undefined : t('export.placeholder.publishHint'),
-    };
+    classroomUrl
+      ? {
+          url: classroomSceneUrl(classroomUrl, scene.id),
+          label: t('export.placeholder.openOnline'),
+        }
+      : undefined;
 
   for (const scene of pptxDeckScenes(scenes)) {
     const content = scene.content;
@@ -313,7 +306,7 @@ function addLinkHotspot(
  *
  * Left column: type label, title, description, quiz summary, and at the bottom
  * the "Open online" button and the offline link. Right column (when the scene
- * has an online link): the QR code, the URL and the publish hint. The QR code
+ * has an online link): the QR code and the URL under it. The QR code
  * is always dark on white whatever the theme, so phones can scan it.
  */
 export function renderScenePlaceholder(
@@ -495,20 +488,6 @@ export function renderScenePlaceholder(
         : urlText,
       hyperlink,
     );
-    if (online.publishHint) {
-      pptxSlide.addText(online.publishHint, {
-        ...font,
-        x: inch(qrLeft),
-        y: inch((132 + QR_SIZE + 62) * u),
-        w: inch(QR_SIZE * u),
-        h: inch(56 * u),
-        fontSize: pt(13 * u),
-        bold: true,
-        align: 'center',
-        valign: 'top',
-        margin: 0,
-      });
-    }
   }
 
   if (placeholder.offline) {
