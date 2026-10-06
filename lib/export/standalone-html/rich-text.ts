@@ -5,220 +5,230 @@
  * - Inline formulas. The editor stores an inline formula as rendered KaTeX
  *   (`<span class="katex" data-inline-math="…">`, with SVG and positioned
  *   spans) inside prose HTML, which the prose policy would flatten. Each
- *   formula's LaTeX source is lifted out before sanitizing (from
- *   `data-inline-math`, else KaTeX's `application/x-tex` annotation) and a
- *   fresh KaTeX render is put back afterwards, so the embedded markup is
- *   generated from the source rather than taken from the document.
- * - Resources the policy drops. Images and CSS `url(...)` values in rich text
- *   cannot be shown offline once removed; they are inventoried first and
- *   reported as unresolved media instead of vanishing silently.
+ *   formula element is replaced by an empty `<span data-inline-math>` carrying
+ *   only its LaTeX source, the result is sanitized (with that one attribute
+ *   allowed), and the sanitized spans are then filled with a fresh KaTeX
+ *   render of the source read back from the sanitized DOM. KaTeX's generated
+ *   markup is the only markup added after sanitizing; nothing authored is
+ *   ever re-inserted, and no authored text is spliced into strings.
+ * - Resources the policy drops. Images (`src`, `srcset`, posters) and CSS
+ *   `url(...)` / `image-set(...)` / `@import` references cannot be shown
+ *   offline once removed; they are inventoried over the whole authored tree
+ *   first, formula subtrees included, and reported as unresolved media.
+ *
+ * Runs where a DOM is available (the browser export; jsdom in tests).
  */
 import katex from 'katex';
-import { parseFragment, serialize, type DefaultTreeAdapterTypes } from 'parse5';
+import parseSrcset from 'parse-srcset';
+import postcss from 'postcss';
+import valueParser from 'postcss-value-parser';
 import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
 import type { SlideContent } from '@/lib/types/stage';
 
-type ParentNode = DefaultTreeAdapterTypes.ParentNode;
-type ChildNode = DefaultTreeAdapterTypes.ChildNode;
-type Element = DefaultTreeAdapterTypes.Element;
+const INLINE_MATH_ATTRIBUTE = 'data-inline-math';
 
-/** Only markup carrying one of these needs the parse below; anything else goes straight through. */
-const NEEDS_PARSE = /katex|data-inline-math|<img|<style|url\s*\(/i;
-const CSS_URL = /url\s*\(\s*(['"]?)([^'")]*)\1\s*\)/gi;
+/** Element attributes that load a resource, per tag. */
+const RESOURCE_ATTRIBUTES: Record<string, readonly string[]> = {
+  img: ['src'],
+  video: ['src', 'poster'],
+  audio: ['src'],
+  source: ['src'],
+  track: ['src'],
+  embed: ['src'],
+  iframe: ['src'],
+  object: ['data'],
+  input: ['src'],
+  image: ['href', 'xlink:href'],
+};
+const SRCSET_TAGS = new Set(['img', 'source']);
 
-function isElement(node: ChildNode): node is Element {
-  return !node.nodeName.startsWith('#');
+/** Decode CSS escapes (`\72`, `\(`) so an escaped `url` or URL is recognized. */
+function decodeCssEscapes(value: string): string {
+  return value.replace(/\\(?:([0-9a-fA-F]{1,6})\s?|([\s\S]))/g, (_, hex: string, char: string) =>
+    hex ? String.fromCodePoint(Number.parseInt(hex, 16) || 0xfffd) : char,
+  );
 }
 
-function attr(element: Element, name: string): string | undefined {
-  return element.attrs.find((a) => a.name === name)?.value;
-}
-
-function textOf(node: ChildNode): string {
-  if (node.nodeName === '#text') return (node as DefaultTreeAdapterTypes.TextNode).value;
-  return 'childNodes' in node ? node.childNodes.map(textOf).join('') : '';
-}
-
-function findTexAnnotation(element: Element): string | undefined {
-  for (const child of element.childNodes) {
-    if (!isElement(child)) continue;
-    if (child.tagName === 'annotation' && attr(child, 'encoding') === 'application/x-tex') {
-      return textOf(child);
+/** Resource URLs referenced by one CSS value (comments ignored, strings respected). */
+function cssValueResources(value: string): string[] {
+  const found: string[] = [];
+  valueParser(value).walk((node) => {
+    if (node.type !== 'function') return;
+    const name = decodeCssEscapes(node.value).toLowerCase();
+    if (name === 'url') {
+      // A quoted URL is one string node; an unquoted one is raw text, which the
+      // parser only keeps whole for a literal `url(`, so take its source.
+      const [first] = node.nodes;
+      const raw =
+        node.nodes.length === 1 && first.type === 'string'
+          ? first.value
+          : valueParser.stringify(node.nodes);
+      found.push(decodeCssEscapes(raw).trim());
+      return false;
+    } else if (name === 'image-set' || name === '-webkit-image-set') {
+      for (const child of node.nodes) {
+        if (child.type === 'string') found.push(decodeCssEscapes(child.value).trim());
+      }
     }
-    const nested = findTexAnnotation(child);
-    if (nested !== undefined) return nested;
+  });
+  return found.filter(Boolean);
+}
+
+/** Resource URLs referenced by a style sheet: declarations and `@import`. */
+function styleSheetResources(css: string): string[] {
+  let root: postcss.Root;
+  try {
+    root = postcss.parse(css);
+  } catch {
+    // Unparseable as a sheet: still scan it as one value list.
+    return cssValueResources(css);
   }
-  return undefined;
-}
-
-/** The LaTeX source of an inline-formula element, or `undefined` for anything else. */
-function inlineMathSource(element: Element): string | undefined {
-  const source = attr(element, 'data-inline-math');
-  if (source !== undefined) return source;
-  const classes = (attr(element, 'class') ?? '').split(/\s+/);
-  return classes.includes('katex') ? findTexAnnotation(element) : undefined;
-}
-
-function cssUrls(css: string): string[] {
-  return [...css.matchAll(CSS_URL)].map((match) => match[2].trim()).filter(Boolean);
+  const found: string[] = [];
+  root.walkDecls((declaration) => {
+    found.push(...cssValueResources(declaration.value));
+  });
+  root.walkAtRules((rule) => {
+    if (rule.name.toLowerCase() !== 'import') return;
+    const [first] = valueParser(rule.params).nodes;
+    if (first?.type === 'string') found.push(decodeCssEscapes(first.value).trim());
+    else found.push(...cssValueResources(rule.params));
+  });
+  return found.filter(Boolean);
 }
 
 /** A report-friendly name for a discarded resource; data URIs are shortened. */
 function resourceLabel(url: string): string {
-  return /^data:/i.test(url) ? `${url.slice(0, url.indexOf(',') + 1 || 48)}…` : url;
+  if (!/^data:/i.test(url)) return url;
+  const comma = url.indexOf(',');
+  return `${url.slice(0, comma >= 0 ? comma + 1 : 48)}…`;
 }
 
-interface RichTextScan {
-  /** LaTeX source per formula, indexed by placeholder number. */
-  formulas: string[];
-  /** Resources the sanitizer will drop. */
-  discarded: string[];
-  marker: (index: number) => string;
-}
-
-function walk(parent: ParentNode, scan: RichTextScan) {
-  parent.childNodes = parent.childNodes.map((node) => {
-    if (!isElement(node)) return node;
-    const latex = inlineMathSource(node);
-    if (latex !== undefined) {
-      scan.formulas.push(latex);
-      const text: DefaultTreeAdapterTypes.TextNode = {
-        nodeName: '#text',
-        value: scan.marker(scan.formulas.length - 1),
-        parentNode: parent,
-      };
-      return text;
+/** Every resource the authored tree references, formula subtrees included. */
+function inventoryResources(root: DocumentFragment): string[] {
+  const found: string[] = [];
+  for (const element of root.querySelectorAll('*')) {
+    const tag = element.localName;
+    for (const name of RESOURCE_ATTRIBUTES[tag] ?? []) {
+      const value = element.getAttribute(name)?.trim();
+      if (value) found.push(value);
     }
-    if (node.tagName === 'img') {
-      const src = attr(node, 'src')?.trim();
-      if (src) scan.discarded.push(resourceLabel(src));
+    if (SRCSET_TAGS.has(tag)) {
+      const srcset = element.getAttribute('srcset');
+      if (srcset) found.push(...parseSrcset(srcset).map((candidate) => candidate.url));
     }
-    const style = attr(node, 'style');
-    if (style) scan.discarded.push(...cssUrls(style).map(resourceLabel));
-    if (node.tagName === 'style') scan.discarded.push(...cssUrls(textOf(node)).map(resourceLabel));
-    walk(node, scan);
-    return node;
-  });
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
-/** A fresh, inert KaTeX render of one inline formula, as the editor would store it. */
-function renderInlineMath(latex: string): string {
-  if (!latex.trim()) return '';
-  try {
-    const html = katex.renderToString(latex, {
-      displayMode: false,
-      output: 'html',
-      throwOnError: false,
-      trust: false,
-    });
-    return html.replace(
-      /^<span class="katex"/,
-      `<span class="katex" data-inline-math="${escapeAttribute(latex)}"`,
-    );
-  } catch {
-    return escapeAttribute(latex);
+    const style = element.getAttribute('style');
+    if (style) found.push(...cssValueResources(style));
+    if (tag === 'style') found.push(...styleSheetResources(element.textContent ?? ''));
   }
+  return found.map(resourceLabel);
+}
+
+/** The LaTeX source of an inline-formula element, or `null` for anything else. */
+function inlineMathSource(element: Element): string | null {
+  const source = element.getAttribute(INLINE_MATH_ATTRIBUTE);
+  if (source !== null) return source;
+  if (!element.classList.contains('katex')) return null;
+  const annotation = element.querySelector('annotation[encoding="application/x-tex"]');
+  return annotation ? (annotation.textContent ?? '') : null;
+}
+
+function parseFragment(doc: Document, html: string): HTMLTemplateElement {
+  // A template parses in place: leading <style>/<meta> stay in the fragment.
+  const template = doc.createElement('template');
+  template.innerHTML = html;
+  return template;
 }
 
 /**
- * Lift inline formulas out of one prose string (replacing each with a text
- * marker) and inventory the resources it will lose. Markup that needs no
- * parsing, or holds no formula, is returned unchanged.
+ * Pre-sanitize pass for one prose string: inventory resources, then replace
+ * every formula element with an empty source-only span.
  */
-function protect(html: string, scan: RichTextScan): string {
-  if (!NEEDS_PARSE.test(html)) return html;
-  const before = scan.formulas.length;
-  const fragment = parseFragment(html);
-  walk(fragment, scan);
-  return scan.formulas.length > before ? serialize(fragment) : html;
+function stripFormulas(doc: Document, html: string): { html: string; discarded: string[] } {
+  // Without markup there is no element to inventory or replace.
+  if (!html.includes('<')) return { html, discarded: [] };
+  const template = parseFragment(doc, html);
+  const fragment = template.content;
+  const discarded = inventoryResources(fragment);
+  for (const element of fragment.querySelectorAll(`[${INLINE_MATH_ATTRIBUTE}], .katex`)) {
+    // Skip descendants of a formula already replaced.
+    if (!fragment.contains(element)) continue;
+    const latex = inlineMathSource(element);
+    if (latex === null) continue;
+    const placeholder = doc.createElement('span');
+    placeholder.setAttribute(INLINE_MATH_ATTRIBUTE, latex);
+    element.replaceWith(placeholder);
+  }
+  return { html: template.innerHTML, discarded };
+}
+
+/** A fresh, inert KaTeX render of one inline formula, as an element. */
+function renderFormula(doc: Document, latex: string): Element | null {
+  if (!latex.trim()) return null;
+  const host = doc.createElement('template');
+  host.innerHTML = katex.renderToString(latex, {
+    displayMode: false,
+    output: 'html',
+    throwOnError: false,
+    trust: false,
+  });
+  return host.content.firstElementChild;
+}
+
+/** Post-sanitize pass: fill each source-only span with a generated render. */
+function renderFormulas(doc: Document, html: string): string {
+  if (!html.includes(INLINE_MATH_ATTRIBUTE)) return html;
+  const template = parseFragment(doc, html);
+  for (const span of template.content.querySelectorAll(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
+    const latex = span.getAttribute(INLINE_MATH_ATTRIBUTE) ?? '';
+    const formula = renderFormula(doc, latex);
+    if (!formula) continue;
+    // The editor's storage shape: the KaTeX root carries the source.
+    formula.setAttribute(INLINE_MATH_ATTRIBUTE, latex);
+    span.replaceWith(formula);
+  }
+  return template.innerHTML;
+}
+
+/** Apply a rewrite to every prose field the sanitizer treats as HTML. */
+function mapProse(content: SlideContent, rewrite: (html: string) => string): SlideContent {
+  const elements = (content.canvas.elements ?? []).map((element) => {
+    if (element.type === 'text' && typeof element.content === 'string') {
+      return { ...element, content: rewrite(element.content) };
+    }
+    if (element.type === 'shape' && typeof element.text?.content === 'string') {
+      return { ...element, text: { ...element.text, content: rewrite(element.text.content) } };
+    }
+    if (element.type === 'table' && Array.isArray(element.data)) {
+      return {
+        ...element,
+        data: element.data.map((row) =>
+          Array.isArray(row)
+            ? row.map((cell) =>
+                typeof cell?.text === 'string' ? { ...cell, text: rewrite(cell.text) } : cell,
+              )
+            : row,
+        ),
+      };
+    }
+    return element;
+  });
+  return { ...content, canvas: { ...content.canvas, elements } };
 }
 
 /**
  * Sanitize a slide's rich text for the player document. Returns the
- * sanitized content and the resources the sanitizer had to drop.
+ * sanitized content and the resources that cannot be shown offline.
  */
-export function sanitizeSlideRichText(content: SlideContent): {
-  content: SlideContent;
-  discarded: string[];
-} {
-  // One marker family for the whole slide, chosen so it cannot collide with
-  // authored text; markers are plain text, which the sanitizer keeps.
-  let nonce = 0;
-  const source = JSON.stringify(content.canvas);
-  while (source.includes(`openmaicmath${nonce}x`)) nonce += 1;
-  const scan: RichTextScan = {
-    formulas: [],
-    discarded: [],
-    marker: (index) => `openmaicmath${nonce}x${index}x`,
-  };
-  const guard = (html: string) => protect(html, scan);
-  const pattern = new RegExp(`openmaicmath${nonce}x(\\d+)x`, 'g');
-  const restore = (html: string) =>
-    scan.formulas.length === 0
-      ? html
-      : html.replace(pattern, (_, index: string) =>
-          renderInlineMath(scan.formulas[Number(index)] ?? ''),
-        );
-  const elements = content.canvas.elements ?? [];
-
-  // Pass 1: protect formulas in every prose field the sanitizer rewrites.
-  const guarded = elements.map((element) => {
-    if (element.type === 'text' && typeof element.content === 'string') {
-      return { ...element, content: guard(element.content) };
-    }
-    if (element.type === 'shape' && typeof element.text?.content === 'string') {
-      return { ...element, text: { ...element.text, content: guard(element.text.content) } };
-    }
-    if (element.type === 'table' && Array.isArray(element.data)) {
-      return {
-        ...element,
-        data: element.data.map((row) =>
-          Array.isArray(row)
-            ? row.map((cell) =>
-                typeof cell?.text === 'string' ? { ...cell, text: guard(cell.text) } : cell,
-              )
-            : row,
-        ),
-      };
-    }
-    return element;
+export function sanitizeSlideRichText(
+  content: SlideContent,
+  doc: Document = globalThis.document,
+): { content: SlideContent; discarded: string[] } {
+  const discarded: string[] = [];
+  const stripped = mapProse(content, (html) => {
+    const prepared = stripFormulas(doc, html);
+    discarded.push(...prepared.discarded);
+    return prepared.html;
   });
-
-  // Pass 2: sanitize with the persistence policy.
-  const sanitized = sanitizeSceneContent<SlideContent>({
-    ...content,
-    canvas: { ...content.canvas, elements: guarded },
-  });
-
-  // Pass 3: put fresh renders back where the markers survived.
-  const restored = (sanitized.canvas.elements ?? []).map((element) => {
-    if (element.type === 'text' && typeof element.content === 'string') {
-      return { ...element, content: restore(element.content) };
-    }
-    if (element.type === 'shape' && typeof element.text?.content === 'string') {
-      return { ...element, text: { ...element.text, content: restore(element.text.content) } };
-    }
-    if (element.type === 'table' && Array.isArray(element.data)) {
-      return {
-        ...element,
-        data: element.data.map((row) =>
-          Array.isArray(row)
-            ? row.map((cell) =>
-                typeof cell?.text === 'string' ? { ...cell, text: restore(cell.text) } : cell,
-              )
-            : row,
-        ),
-      };
-    }
-    return element;
-  });
-
-  return {
-    content: { ...sanitized, canvas: { ...sanitized.canvas, elements: restored } },
-    discarded: scan.discarded,
-  };
+  const sanitized = sanitizeSceneContent(stripped, { keepInlineMathSource: true });
+  return { content: mapProse(sanitized, (html) => renderFormulas(doc, html)), discarded };
 }

@@ -22,10 +22,15 @@ function editorHtml(): string {
   return html;
 }
 
-/** What a fresh KaTeX render of the formula looks like, without its wrapper attributes. */
+/** A fresh KaTeX render of the formula as the DOM serializes it, without its root tag. */
 function freshRenderBody(): string {
-  const html = katex.renderToString(LATEX, { output: 'html', throwOnError: false, trust: false });
-  return html.replace(/^<span class="katex">/, '');
+  const template = document.createElement('template');
+  template.innerHTML = katex.renderToString(LATEX, {
+    output: 'html',
+    throwOnError: false,
+    trust: false,
+  });
+  return template.content.firstElementChild!.innerHTML;
 }
 
 function slideWith(html: string): SlideContent {
@@ -109,5 +114,88 @@ describe('standalone HTML inline formulas', () => {
     const [html] = proseFields(content);
     expect(html).not.toContain('onerror');
     expect(html).toContain('data-inline-math="x"');
+  });
+
+  function parse(html: string): DocumentFragment {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    return template.content;
+  }
+
+  /** Every attribute name in the output, to catch any event handler. */
+  function attributeNames(html: string): string[] {
+    return [...parse(html).querySelectorAll('*')].flatMap((element) =>
+      [...element.attributes].map((attribute) => attribute.name),
+    );
+  }
+
+  function editorHtmlFor(latex: string, prefix = ''): string {
+    const span = document.createElement('span');
+    span.setAttribute('data-inline-math', latex);
+    return serializeTextDocument(createTextDocument(`<p>${prefix}${span.outerHTML} end</p>`));
+  }
+
+  for (const latex of [
+    'x%$& onmouseover=alert(1) a=\n',
+    'x%$` onmouseover=alert(1) a=\n',
+    "x%$' onmouseover=alert(1) a=\n",
+    'x%$1 onmouseover=alert(1) a=\n',
+    'x%$$ onmouseover=alert(1) a=\n',
+  ]) {
+    it(`treats replacement patterns in LaTeX as plain source (${JSON.stringify(latex.slice(1, 4))})`, () => {
+      const { content } = sanitizeSlideRichText(slideWith(editorHtmlFor(latex)));
+      for (const html of proseFields(content)) {
+        expect(attributeNames(html).filter((name) => name.startsWith('on'))).toEqual([]);
+        const roots = parse(html).querySelectorAll('[data-inline-math]');
+        expect(roots).toHaveLength(1);
+        expect(roots[0].getAttribute('data-inline-math')).toBe(latex);
+        expect(roots[0].classList.contains('katex')).toBe(true);
+      }
+    });
+  }
+
+  it('does not let marker-like text duplicate or inject formulas', () => {
+    const forged = [
+      'openmaicmath&#48;x0x',
+      'openmaic<foo></foo>math0x0x',
+      'openmaicmath0x0x',
+      '<a href="#" title="openmaicmath0x0x">link</a>',
+    ].join(' ');
+    const { content } = sanitizeSlideRichText(slideWith(editorHtmlFor('y^2', forged)));
+    for (const html of proseFields(content)) {
+      const fragment = parse(html);
+      expect(fragment.querySelectorAll('.katex')).toHaveLength(1);
+      expect(fragment.querySelector('a')?.getAttribute('title')).toBe('openmaicmath0x0x');
+      expect(fragment.textContent).toContain('openmaicmath0x0x');
+    }
+  });
+
+  it('reports resources inside formula wrappers and every CSS reference form', () => {
+    const html = [
+      '<p><span data-inline-math="x" style="background:url(https://example.com/wrapper.png)">',
+      '<img src="https://example.com/lost.png"></span>',
+      '<span style="background:url(&quot;https://example.com/a(1).png&quot;)">q</span>',
+      '<span style="background:u\\72l(https://example.com/escaped.png)">e</span>',
+      '<img srcset="https://example.com/s1.png 1x, https://example.com/s2.png 2x">',
+      '</p>',
+      '<style>/* url(https://example.com/comment.png) */ p { background: url(https://example.com/sheet.png) }</style>',
+    ].join('');
+    const { content, discarded } = sanitizeSlideRichText(slideWith(html));
+    expect([...new Set(discarded)].sort()).toEqual(
+      [
+        'https://example.com/a(1).png',
+        'https://example.com/escaped.png',
+        'https://example.com/lost.png',
+        'https://example.com/s1.png',
+        'https://example.com/s2.png',
+        'https://example.com/sheet.png',
+        'https://example.com/wrapper.png',
+      ].sort(),
+    );
+    for (const out of proseFields(content)) {
+      expect(out).not.toContain('example.com/lost.png');
+      expect(out).not.toContain('<img');
+      expect(parse(out).querySelectorAll('.katex')).toHaveLength(1);
+    }
   });
 });

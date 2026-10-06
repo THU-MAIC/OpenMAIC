@@ -199,6 +199,33 @@ export function sanitizeProseHtml(html: string): string {
   return sanitizeHtml(html, PROSE_OPTIONS);
 }
 
+/**
+ * Policy variants for callers outside the persistence boundary. Every option
+ * defaults to the persistence policy.
+ */
+export interface SceneContentSanitizeOptions {
+  /**
+   * Keep `data-inline-math` (an inline formula's LaTeX source) on `span`. Only
+   * for callers that empty those spans first and refill them with their own
+   * KaTeX render; the attribute value itself is inert text.
+   */
+  readonly keepInlineMathSource?: boolean;
+}
+
+const PROSE_OPTIONS_WITH_MATH_SOURCE: IOptions = {
+  ...PROSE_OPTIONS,
+  allowedAttributes: {
+    ...PROSE_ATTRIBUTES,
+    span: [...(PROSE_ATTRIBUTES.span ?? []), 'data-inline-math'],
+  },
+};
+
+function proseSanitizer(options: SceneContentSanitizeOptions): (html: string) => string {
+  return options.keepInlineMathSource
+    ? (html) => sanitizeHtml(html, PROSE_OPTIONS_WITH_MATH_SOURCE)
+    : sanitizeProseHtml;
+}
+
 // ---------------------------------------------------------------------------
 // LaTeX policy — KaTeX-rendered `html` snapshots on latex elements
 // ---------------------------------------------------------------------------
@@ -252,11 +279,11 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function sanitizeCell(row: unknown): unknown {
+function sanitizeCell(row: unknown, prose: (html: string) => string): unknown {
   if (!Array.isArray(row)) return row;
   return row.map((cell) => {
     if (!isRecord(cell) || typeof cell.text !== 'string') return cell;
-    return { ...cell, text: sanitizeProseHtml(cell.text) };
+    return { ...cell, text: prose(cell.text) };
   });
 }
 
@@ -267,25 +294,25 @@ function sanitizeCell(row: unknown): unknown {
  * latex uses the KaTeX snapshot policy. Code elements store plain text lines —
  * deliberately NOT treated as HTML, so code like `a < b` is never escaped.
  */
-function sanitizeValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeValue);
+function sanitizeValue(value: unknown, prose: (html: string) => string): unknown {
+  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item, prose));
   if (!isRecord(value)) return value;
 
   const out: JsonRecord = {};
   for (const [key, child] of Object.entries(value)) {
-    out[key] = sanitizeValue(child);
+    out[key] = sanitizeValue(child, prose);
   }
 
   if (typeof out.type !== 'string') return out;
 
   if (out.type === 'text' && typeof out.content === 'string') {
-    out.content = sanitizeProseHtml(out.content);
+    out.content = prose(out.content);
   } else if (out.type === 'shape') {
     if (isRecord(out.text) && typeof out.text.content === 'string') {
-      out.text = { ...out.text, content: sanitizeProseHtml(out.text.content) };
+      out.text = { ...out.text, content: prose(out.text.content) };
     }
   } else if (out.type === 'table' && Array.isArray(out.data)) {
-    out.data = out.data.map(sanitizeCell);
+    out.data = out.data.map((row) => sanitizeCell(row, prose));
   } else if (out.type === 'latex' && typeof out.html === 'string') {
     out.html = sanitizeLatexHtml(out.html);
   }
@@ -299,6 +326,6 @@ function sanitizeValue(value: unknown): unknown {
  * (idempotent): the read path applies it over content stored before this
  * change existed, and the write path applies it to new payloads.
  */
-export function sanitizeSceneContent<T>(payload: T): T {
-  return sanitizeValue(payload) as T;
+export function sanitizeSceneContent<T>(payload: T, options: SceneContentSanitizeOptions = {}): T {
+  return sanitizeValue(payload, proseSanitizer(options)) as T;
 }
