@@ -32,6 +32,7 @@ import { createProxiedFetch } from './proxied-fetch';
 import {
   listInteractivePages,
   placeholderStyleFor,
+  pptxDeckScenes,
   planPptxDeck,
   pptxSlideNumbers,
   renderScenePlaceholder,
@@ -554,8 +555,12 @@ export async function buildPptxBlob(
     const pptxSlide = pptx.addSlide();
 
     if (entry.kind === 'placeholder') {
-      const notes = buildSpeakerNotes(entry.placeholder.scene);
-      if (notes) pptxSlide.addNotes(notes);
+      // Quiz narration often explains the answers, so it stays out of the
+      // notes; interactive scenes keep theirs.
+      if (entry.placeholder.sceneType === 'interactive') {
+        const notes = buildSpeakerNotes(entry.placeholder.scene);
+        if (notes) pptxSlide.addNotes(notes);
+      }
       renderScenePlaceholder(
         pptxSlide,
         entry.placeholder,
@@ -1270,17 +1275,17 @@ export async function buildPptxBlob(
 // scenes make it into the ZIP, whether the PPTX builder runs — is unit-testable
 // without a React/jsdom harness. The hook stays the only runtime caller.
 //
-// `getPptxBlob` is invoked only when slide scenes exist, so an interactive-only
-// deck never touches the PPTX builder. Returns `empty: true` (and a null blob)
-// when there is nothing to ship. The HTML page paths come from
+// `getPptxBlob` is invoked whenever the lesson has a scene that gets a PPTX
+// slide (`pptxDeckScenes`): a slide, a quiz or an interactive page. Every
+// shipped HTML page has a placeholder slide, so a non-empty pack always holds
+// a PPTX. Returns `empty: true` (and a null blob) when there is nothing to
+// ship, e.g. a PBL-only lesson. The HTML page paths come from
 // `listInteractivePages`, the same list the PPTX placeholder links use.
 
 export interface ResourcePackResult {
   /** Generated ZIP blob, or null when there is nothing to ship. */
   blob: Blob | null;
-  /** True when the deck has interactive pages but no slides (PPTX skipped). */
-  skippedPptx: boolean;
-  /** True when neither slides nor interactive pages could be exported. */
+  /** True when no scene could be exported (no PPTX slide, no HTML page). */
   empty: boolean;
   /** External asset URLs that could not be inlined into the HTML pages. */
   failedAssetUrls: string[];
@@ -1288,15 +1293,13 @@ export interface ResourcePackResult {
 
 export async function buildResourcePackZip(
   scenes: Scene[],
-  slides: Slide[],
-  slideScenes: Scene[],
   opts: {
     viewportRatio: number;
     viewportSize: number;
     ratioPx2Inch: number;
     ratioPx2Pt: number;
     fileName: string;
-    /** Called only when `slides.length > 0`; produces the PPTX blob. */
+    /** Called only when the lesson has PPTX content; produces the PPTX blob. */
     getPptxBlob: () => Promise<Blob>;
     /** Passed through to `inlineHtmlAssets`; tests inject a no-op fetcher. */
     fetcher?: FetchAsset;
@@ -1306,7 +1309,12 @@ export async function buildResourcePackZip(
   const zip = new JSZip();
   const failedAssetUrls: string[] = [];
 
-  // 1. Add interactive HTML pages (independent of slides)
+  // Nothing to ship: no slide, quiz or interactive page (e.g. PBL only).
+  if (pptxDeckScenes(scenes).length === 0) {
+    return { blob: null, empty: true, failedAssetUrls };
+  }
+
+  // 1. Add interactive HTML pages
   const pages = listInteractivePages(scenes);
   for (const page of pages) {
     const { html: inlinedHtml, report } = await inlineHtmlAssets(page.html, {
@@ -1318,22 +1326,14 @@ export async function buildResourcePackZip(
     zip.file(page.path, inlinedHtml);
   }
 
-  // Nothing to ship: no slides and no interactive pages.
-  if (pages.length === 0 && slides.length === 0) {
-    return { blob: null, skippedPptx: false, empty: true, failedAssetUrls };
-  }
-
-  // 2. Generate PPTX only when slide scenes exist.
-  const skippedPptx = slides.length === 0;
-  if (!skippedPptx) {
-    const pptxBlob = await opts.getPptxBlob();
-    // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
-    // Blob (which it can't reliably round-trip outside the browser).
-    zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
-  }
+  // 2. Generate the PPTX (slides plus quiz / interactive placeholders).
+  const pptxBlob = await opts.getPptxBlob();
+  // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
+  // Blob (which it can't reliably round-trip outside the browser).
+  zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  return { blob, skippedPptx, empty: false, failedAssetUrls };
+  return { blob, empty: false, failedAssetUrls };
 }
 
 // ── Hook ──
@@ -1353,15 +1353,18 @@ export function useExportPPTX() {
 
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
+  // Slides, quizzes and interactive pages all become PPTX slides; a lesson
+  // without any of them (e.g. PBL only) has nothing to put in a PPTX.
+  const hasPptxContent = pptxDeckScenes(scenes).length > 0;
 
   // Shared guard + state wrapper for export actions.
-  // `requireSlides` controls whether the guard rejects a deck with no slide
-  // scenes (PPTX export needs them; the resource pack can ship interactive
-  // pages alone). When it rejects, callers get a toast instead of silence.
+  // `requirePptxContent` controls whether the guard rejects a lesson with
+  // nothing to put in the PPTX (the resource pack reports that itself via
+  // `result.empty`). When it rejects, callers get a toast instead of silence.
   const withExportGuard = useCallback(
-    (action: () => Promise<void>, requireSlides = true) => {
+    (action: () => Promise<void>, requirePptxContent = true) => {
       if (exportingRef.current) return;
-      if (requireSlides && slides.length === 0) {
+      if (requirePptxContent && !hasPptxContent) {
         toast.warning(t('export.noSlides'));
         return;
       }
@@ -1379,7 +1382,7 @@ export function useExportPPTX() {
         }
       }, 100);
     },
-    [slides.length, t],
+    [hasPptxContent, t],
   );
 
   // ── Export PPTX only ──
@@ -1416,14 +1419,14 @@ export function useExportPPTX() {
   ]);
 
   // ── Export Resource Pack (PPTX + interactive HTML pages as ZIP) ──
-  // `requireSlides` is false: a deck with only interactive scenes still ships
-  // its interactive pages as the resource pack (PPTX is skipped with a toast).
+  // `requirePptxContent` is false: `buildResourcePackZip` reports an empty
+  // lesson itself and the hook shows "nothing to export".
   const exportResourcePack = useCallback(() => {
     withExportGuard(async () => {
       const fileName = stage?.name || 'slides';
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
 
-      const result = await buildResourcePackZip(scenes, slides, slideScenes, {
+      const result = await buildResourcePackZip(scenes, {
         viewportRatio,
         viewportSize,
         ratioPx2Inch,
@@ -1446,9 +1449,6 @@ export function useExportPPTX() {
       if (result.empty) {
         toast.warning(t('export.nothingToExport'));
         return;
-      }
-      if (result.skippedPptx) {
-        toast.info(t('export.noSlidesSkipped'));
       }
       saveAs(result.blob!, `${fileName}.zip`);
       toast.success(t('export.exportSuccess'));

@@ -116,7 +116,6 @@
     "subtitlesEmpty": "No narration to make subtitles from",
     "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
-    "noSlidesSkipped": "No slides in this course — PPTX skipped",
     "nothingToExport": "Nothing to export",
     "placeholder": {
       "interactiveLabel": "Interactive",

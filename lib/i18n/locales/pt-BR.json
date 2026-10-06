@@ -116,7 +116,6 @@
     "subtitlesEmpty": "Nenhuma narração para gerar legendas",
     "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
-    "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
     "nothingToExport": "Nada para exportar",
     "placeholder": {
       "interactiveLabel": "Interativo",

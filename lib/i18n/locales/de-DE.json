@@ -116,7 +116,6 @@
     "subtitlesEmpty": "Keine Erzählspur zum Erstellen von Untertiteln vorhanden",
     "subtitlesFailed": "Untertitel konnten nicht heruntergeladen werden",
     "noSlides": "Keine Folien zum Exportieren",
-    "noSlidesSkipped": "Dieser Kurs enthält keine Folien — PPTX wurde übersprungen",
     "nothingToExport": "Nichts zu exportieren",
     "placeholder": {
       "interactiveLabel": "Interaktiv",

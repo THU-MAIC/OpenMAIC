@@ -116,7 +116,6 @@
     "subtitlesEmpty": "No hay narración para generar subtítulos",
     "subtitlesFailed": "Error al descargar los subtítulos",
     "noSlides": "No hay diapositivas para exportar",
-    "noSlidesSkipped": "Este curso no tiene diapositivas — se omitió el PPTX",
     "nothingToExport": "Nada que exportar",
     "placeholder": {
       "interactiveLabel": "Interactivo",

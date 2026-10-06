@@ -116,7 +116,6 @@
     "subtitlesEmpty": "沒有可產生字幕的旁白",
     "subtitlesFailed": "字幕下載失敗",
     "noSlides": "無可匯出的幻燈片",
-    "noSlidesSkipped": "此課程沒有投影片 — 已略過 PPTX",
     "nothingToExport": "沒有可匯出的內容",
     "placeholder": {
       "interactiveLabel": "互動頁面",

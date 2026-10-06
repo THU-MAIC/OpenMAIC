@@ -9,12 +9,24 @@ import type { Scene } from '@/lib/types/stage';
 const ILLEGAL_FILE_NAME_CHARS = /[\\/:*?"<>|]/g;
 
 /**
- * Path of an interactive scene's HTML page inside the Resource Pack,
- * e.g. `interactive/01_My widget.html`. `index` is 1-based.
+ * A scene title with surrounding whitespace removed; '' when the title is
+ * missing or blank. Page file names and placeholder titles both go through
+ * this, so an untitled scene never aborts the export.
  */
-export function interactivePagePath(index: number, title: string): string {
-  const safeName = title.replace(ILLEGAL_FILE_NAME_CHARS, '_');
-  return `interactive/${String(index).padStart(2, '0')}_${safeName}.html`;
+export function normalizeSceneTitle(title: unknown): string {
+  return typeof title === 'string' ? title.trim() : '';
+}
+
+/**
+ * Path of an interactive scene's HTML page inside the Resource Pack,
+ * e.g. `interactive/01_My widget.html`, or `interactive/01.html` for an
+ * untitled scene. `index` is 1-based.
+ */
+export function interactivePagePath(index: number, title: unknown): string {
+  const number = String(index).padStart(2, '0');
+  const name = normalizeSceneTitle(title);
+  if (!name) return `interactive/${number}.html`;
+  return `interactive/${number}_${name.replace(ILLEGAL_FILE_NAME_CHARS, '_')}.html`;
 }
 
 export interface InteractivePage {
@@ -96,6 +108,20 @@ function truncate(text: string, max: number): string {
 }
 
 /**
+ * The scenes that get a PPTX slide, in lesson order: slide scenes, quiz scenes
+ * and interactive scenes that ship an HTML page. Export is possible exactly
+ * when this list is non-empty; `planPptxDeck` lays out the same list.
+ */
+export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
+  return scenes.filter(
+    (scene) =>
+      scene.content.type === 'slide' ||
+      scene.content.type === 'quiz' ||
+      (scene.content.type === 'interactive' && !!scene.content.html),
+  );
+}
+
+/**
  * Lay out the PPTX in lesson order. Slide scenes map to their slide; quiz and
  * interactive scenes get a placeholder slide; PBL scenes are left out.
  * Interactive scenes without an html payload are left out too, matching the
@@ -113,8 +139,9 @@ export function planPptxDeck(
   const deck: PptxDeckEntry[] = [];
   let slideIndex = 0;
 
-  for (const scene of scenes) {
+  for (const scene of pptxDeckScenes(scenes)) {
     const content = scene.content;
+    const title = normalizeSceneTitle(scene.title);
     if (content.type === 'slide') {
       deck.push({ kind: 'slide', slideIndex: slideIndex++ });
     } else if (content.type === 'interactive') {
@@ -127,7 +154,7 @@ export function planPptxDeck(
           scene,
           sceneType: 'interactive',
           typeLabel,
-          title: scene.title || typeLabel,
+          title: title || typeLabel,
           description: linkInteractivePages
             ? t('export.placeholder.interactiveDesc')
             : t('export.placeholder.interactiveDescNoPack'),
@@ -154,7 +181,7 @@ export function planPptxDeck(
           scene,
           sceneType: 'quiz',
           typeLabel,
-          title: scene.title || typeLabel,
+          title: title || typeLabel,
           description: t('export.placeholder.quizDesc'),
           meta: t('export.placeholder.quizQuestionCount', { count: questions.length }),
           items,

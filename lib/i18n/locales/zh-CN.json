@@ -116,7 +116,6 @@
     "subtitlesEmpty": "没有可生成字幕的旁白",
     "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
-    "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
     "nothingToExport": "没有可导出的内容",
     "placeholder": {
       "interactiveLabel": "互动页面",

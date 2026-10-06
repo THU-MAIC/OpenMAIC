@@ -116,7 +116,6 @@
     "subtitlesEmpty": "Нет закадрового текста для субтитров",
     "subtitlesFailed": "Не удалось скачать субтитры",
     "noSlides": "Нет слайдов для экспорта",
-    "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
     "nothingToExport": "Нет данных для экспорта",
     "placeholder": {
       "interactiveLabel": "Интерактив",

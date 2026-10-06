@@ -116,7 +116,6 @@
     "subtitlesEmpty": "Không có lời giảng để tạo phụ đề",
     "subtitlesFailed": "Tải phụ đề không thành công",
     "noSlides": "Không có slide nào để xuất",
-    "noSlidesSkipped": "Bài học này không có slide — đã bỏ qua PPTX",
     "nothingToExport": "Không có gì để xuất",
     "placeholder": {
       "interactiveLabel": "Tương tác",

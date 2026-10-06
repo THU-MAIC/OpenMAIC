@@ -17,6 +17,7 @@ import {
   interactivePagePath,
   listInteractivePages,
   planPptxDeck,
+  pptxDeckScenes,
   relativeHyperlinkTarget,
 } from '@/lib/export/pptx-scene-placeholders';
 
@@ -50,7 +51,7 @@ function slideScene(id: string, canvas: Slide): Scene {
   } as Scene;
 }
 
-function interactiveScene(id: string, title: string, html = '<p>page</p>'): Scene {
+function interactiveScene(id: string, title: unknown, html = '<p>page</p>'): Scene {
   return {
     id,
     stageId: 'stage-1',
@@ -58,6 +59,7 @@ function interactiveScene(id: string, title: string, html = '<p>page</p>'): Scen
     title,
     order: 0,
     content: { type: 'interactive', url: '', html },
+    actions: [{ id: `${id}-speech`, type: 'speech', text: `Narration for ${id}` }],
   } as unknown as Scene;
 }
 
@@ -68,6 +70,7 @@ function quizScene(id: string, title: string): Scene {
     type: 'quiz',
     title,
     order: 0,
+    actions: [{ id: `${id}-speech`, type: 'speech', text: 'The answer is A: SECRET-NARRATION' }],
     content: {
       type: 'quiz',
       questions: [
@@ -129,6 +132,35 @@ const lesson: Scene[] = [
   sceneB,
 ];
 
+const ratioPx2Pt = (96 / 72) * (1000 / 960);
+
+/** Plan and build a PPTX the way the Resource Pack hook does. */
+function buildLessonPptx(scenes: Scene[]) {
+  const slideScenes = scenes.filter((s) => s.content.type === 'slide');
+  const slides = slideScenes.map((s) => (s.content as { canvas: Slide }).canvas);
+  return buildPptxBlob(
+    slides,
+    slideScenes,
+    0.5625,
+    1000,
+    100,
+    ratioPx2Pt,
+    'stage-1',
+    planPptxDeck(scenes, t, { linkInteractivePages: true }),
+  );
+}
+
+function buildPack(scenes: Scene[], getPptxBlob = () => buildLessonPptx(scenes)) {
+  return buildResourcePackZip(scenes, {
+    viewportRatio: 0.5625,
+    viewportSize: 1000,
+    ratioPx2Inch: 100,
+    ratioPx2Pt,
+    fileName: 'deck',
+    getPptxBlob,
+  });
+}
+
 async function loadZip(blob: Blob) {
   return JSZip.loadAsync(await blob.arrayBuffer());
 }
@@ -157,6 +189,19 @@ describe('interactive page naming', () => {
     const pages = listInteractivePages(lesson);
     expect(pages.map((p) => p.path)).toEqual(['interactive/01_Demo #1_ 50% done_.html']);
     expect(interactivePagePath(12, 'a/b')).toBe('interactive/12_a_b.html');
+  });
+
+  it('falls back to a numbered file name for a missing or blank title', () => {
+    const pages = listInteractivePages([
+      interactiveScene('u1', undefined),
+      interactiveScene('u2', '   '),
+      interactiveScene('u3', '  Spaced  '),
+    ]);
+    expect(pages.map((p) => p.path)).toEqual([
+      'interactive/01.html',
+      'interactive/02.html',
+      'interactive/03_Spaced.html',
+    ]);
   });
 
   it('percent-encodes URI-significant characters but keeps non-ASCII text', () => {
@@ -270,19 +315,80 @@ describe('buildPptxBlob with scene placeholders', () => {
 
 describe('Resource Pack with scene placeholders', () => {
   it('ships the HTML page at the path the PPTX placeholder links to', async () => {
-    const result = await buildResourcePackZip(lesson, [slideA, slideB], [sceneA, sceneB], {
-      viewportRatio: 0.5625,
-      viewportSize: 1000,
-      ratioPx2Inch: 100,
-      ratioPx2Pt: (96 / 72) * (1000 / 960),
-      fileName: 'deck',
-      getPptxBlob: () => buildDeck(true),
-    });
+    const result = await buildPack(lesson, () => buildDeck(true));
     const pack = await loadZip(result.blob!);
     const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
     const rels = await readText(pptx, 'ppt/slides/_rels/slide2.xml.rels');
     const target = rels.match(/Target="(interactive\/[^"]+)" TargetMode="External"/)?.[1];
     expect(target).toBeDefined();
     expect(pack.file(decodeURIComponent(target!))).not.toBeNull();
+  });
+});
+
+describe('speaker notes on placeholder slides', () => {
+  it('keeps interactive narration but leaves quiz narration out', async () => {
+    const zip = await loadZip(await buildDeck(true));
+    // slide2 = interactive placeholder, slide3 = quiz placeholder
+    expect(await readText(zip, 'ppt/notesSlides/notesSlide2.xml')).toContain('Narration for i1');
+    const quizNotes = await readText(zip, 'ppt/notesSlides/notesSlide3.xml');
+    expect(quizNotes).not.toContain('SECRET-NARRATION');
+    expect(quizNotes).not.toContain('The answer is');
+  });
+});
+
+describe('placeholder-only lessons', () => {
+  it('counts quiz and interactive scenes as PPTX content, but not PBL', () => {
+    expect(pptxDeckScenes([quizScene('q', 'Q')])).toHaveLength(1);
+    expect(pptxDeckScenes([interactiveScene('i', 'I')])).toHaveLength(1);
+    expect(pptxDeckScenes([interactiveScene('i', 'I', '')])).toHaveLength(0);
+    expect(pptxDeckScenes([pblScene('p')])).toHaveLength(0);
+  });
+
+  it('exports a quiz-only lesson as a one-slide PPTX with fallback styling', async () => {
+    const zip = await loadZip(await buildLessonPptx([quizScene('q', 'Only quiz')]));
+    expect(zip.file('ppt/slides/slide2.xml')).toBeNull();
+    const xml = await readText(zip, 'ppt/slides/slide1.xml');
+    expect(xml).toContain('Only quiz');
+    expect(xml).toContain('<a:srgbClr val="FFFFFF"/>');
+  });
+
+  it('ships a pack with the HTML page and the PPTX for interactive + quiz', async () => {
+    const scenes = [interactiveScene('i', 'Widget'), quizScene('q', 'Check')];
+    const result = await buildPack(scenes);
+    expect(result.empty).toBe(false);
+    const pack = await loadZip(result.blob!);
+    expect(pack.file('interactive/01_Widget.html')).not.toBeNull();
+    const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
+    expect(pptx.file('ppt/slides/slide2.xml')).not.toBeNull();
+    expect(await readText(pptx, 'ppt/slides/_rels/slide1.xml.rels')).toContain(
+      'Target="interactive/01_Widget.html" TargetMode="External"',
+    );
+  });
+
+  it('still reports a PBL-only lesson as empty', async () => {
+    const getPptxBlob = vi.fn(async () => new Blob([new Uint8Array([1])]));
+    const result = await buildPack([pblScene('p')], getPptxBlob);
+    expect(result.empty).toBe(true);
+    expect(result.blob).toBeNull();
+    expect(getPptxBlob).not.toHaveBeenCalled();
+  });
+});
+
+describe('untitled interactive scenes', () => {
+  it('exports without throwing and uses one path for the ZIP entry and the link', async () => {
+    const scenes = [interactiveScene('i', undefined), slideScene('s', slide('s'))];
+    const deck = planPptxDeck(scenes, t, { linkInteractivePages: true });
+    const first = deck[0];
+    if (first.kind !== 'placeholder') throw new Error('expected placeholder');
+    expect(first.placeholder.title).toBe('export.placeholder.interactiveLabel');
+    expect(first.placeholder.link?.path).toBe('interactive/01.html');
+
+    const result = await buildPack(scenes);
+    const pack = await loadZip(result.blob!);
+    expect(pack.file('interactive/01.html')).not.toBeNull();
+    const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
+    expect(await readText(pptx, 'ppt/slides/_rels/slide1.xml.rels')).toContain(
+      'Target="interactive/01.html" TargetMode="External"',
+    );
   });
 });

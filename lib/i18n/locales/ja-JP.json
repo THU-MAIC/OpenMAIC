@@ -116,7 +116,6 @@
     "subtitlesEmpty": "字幕にできるナレーションがありません",
     "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
-    "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
     "nothingToExport": "エクスポートできるものがありません",
     "placeholder": {
       "interactiveLabel": "インタラクティブ",
