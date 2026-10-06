@@ -148,8 +148,17 @@
     "subtitlesEmpty": "Nenhuma narração para gerar legendas",
     "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
-    "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
-    "nothingToExport": "Nada para exportar"
+    "nothingToExport": "Nada para exportar",
+    "placeholder": {
+      "interactiveLabel": "Interativo",
+      "quizLabel": "Quiz",
+      "interactiveDesc": "Página web interativa. Abra on-line ou escaneie o QR code.",
+      "quizDesc": "Cena de quiz. As respostas não estão incluídas nesta apresentação.",
+      "quizQuestionCount": "Perguntas: {{count}}",
+      "openOnline": "Abrir on-line",
+      "openOffline": "Abrir cópia off-line",
+      "offlineHint": "funciona se esta apresentação ficar na pasta extraída do pacote de recursos"
+    }
   },
   "import": {
     "classroom": "Importar Sala de Aula",

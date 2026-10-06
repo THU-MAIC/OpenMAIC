@@ -148,8 +148,17 @@
     "subtitlesEmpty": "자막으로 만들 내레이션이 없습니다",
     "subtitlesFailed": "자막 다운로드 실패",
     "noSlides": "내보낼 슬라이드가 없습니다",
-    "noSlidesSkipped": "이 코스에 슬라이드가 없어 PPTX를 건너뛰었습니다",
-    "nothingToExport": "내보낼 항목이 없습니다"
+    "nothingToExport": "내보낼 항목이 없습니다",
+    "placeholder": {
+      "interactiveLabel": "인터랙티브",
+      "quizLabel": "퀴즈",
+      "interactiveDesc": "인터랙티브 웹 페이지입니다. 온라인으로 열거나 QR 코드를 스캔하세요.",
+      "quizDesc": "퀴즈 장면입니다. 이 프레젠테이션에는 정답이 포함되어 있지 않습니다.",
+      "quizQuestionCount": "문항 수: {{count}}",
+      "openOnline": "온라인으로 열기",
+      "openOffline": "오프라인 사본 열기",
+      "offlineHint": "이 프레젠테이션이 압축 해제한 리소스 팩 폴더 안에 있을 때 작동합니다"
+    }
   },
   "import": {
     "classroom": "교실 가져오기",

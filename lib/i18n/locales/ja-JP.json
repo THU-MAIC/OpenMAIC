@@ -148,8 +148,17 @@
     "subtitlesEmpty": "字幕にできるナレーションがありません",
     "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
-    "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
-    "nothingToExport": "エクスポートできるものがありません"
+    "nothingToExport": "エクスポートできるものがありません",
+    "placeholder": {
+      "interactiveLabel": "インタラクティブ",
+      "quizLabel": "クイズ",
+      "interactiveDesc": "インタラクティブな Web ページです。オンラインで開くか、QR コードを読み取ってください。",
+      "quizDesc": "クイズシーンです。このスライドには解答は含まれません。",
+      "quizQuestionCount": "問題数：{{count}}",
+      "openOnline": "オンラインで開く",
+      "openOffline": "オフライン版を開く",
+      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します"
+    }
   },
   "import": {
     "classroom": "教室をインポート",

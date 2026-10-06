@@ -148,8 +148,17 @@
     "subtitlesEmpty": "沒有可產生字幕的旁白",
     "subtitlesFailed": "字幕下載失敗",
     "noSlides": "無可匯出的幻燈片",
-    "noSlidesSkipped": "此課程沒有投影片 — 已略過 PPTX",
-    "nothingToExport": "沒有可匯出的內容"
+    "nothingToExport": "沒有可匯出的內容",
+    "placeholder": {
+      "interactiveLabel": "互動頁面",
+      "quizLabel": "測驗",
+      "interactiveDesc": "互動網頁。點擊按鈕線上開啟，或掃描 QR 碼。",
+      "quizDesc": "測驗場景。本簡報不包含答案。",
+      "quizQuestionCount": "題目數：{{count}}",
+      "openOnline": "線上開啟",
+      "openOffline": "開啟離線副本",
+      "offlineHint": "需將本簡報保留在解壓縮後的教學資源包資料夾中"
+    }
   },
   "import": {
     "classroom": "匯入課堂",

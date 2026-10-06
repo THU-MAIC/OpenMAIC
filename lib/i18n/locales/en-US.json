@@ -148,8 +148,17 @@
     "subtitlesEmpty": "No narration to make subtitles from",
     "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
-    "noSlidesSkipped": "No slides in this course — PPTX skipped",
-    "nothingToExport": "Nothing to export"
+    "nothingToExport": "Nothing to export",
+    "placeholder": {
+      "interactiveLabel": "Interactive",
+      "quizLabel": "Quiz",
+      "interactiveDesc": "Interactive web page. Open it online or scan the QR code.",
+      "quizDesc": "Quiz scene. Answers are not included in this deck.",
+      "quizQuestionCount": "Questions: {{count}}",
+      "openOnline": "Open online",
+      "openOffline": "Open offline copy",
+      "offlineHint": "works when this deck stays in the extracted Resource Pack folder"
+    }
   },
   "import": {
     "classroom": "Import Classroom",

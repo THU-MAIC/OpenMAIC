@@ -148,8 +148,17 @@
     "subtitlesEmpty": "Keine Erzählspur zum Erstellen von Untertiteln vorhanden",
     "subtitlesFailed": "Untertitel konnten nicht heruntergeladen werden",
     "noSlides": "Keine Folien zum Exportieren",
-    "noSlidesSkipped": "Dieser Kurs enthält keine Folien — PPTX wurde übersprungen",
-    "nothingToExport": "Nichts zu exportieren"
+    "nothingToExport": "Nichts zu exportieren",
+    "placeholder": {
+      "interactiveLabel": "Interaktiv",
+      "quizLabel": "Quiz",
+      "interactiveDesc": "Interaktive Webseite. Online öffnen oder den QR-Code scannen.",
+      "quizDesc": "Quiz-Szene. Die Antworten sind in dieser Präsentation nicht enthalten.",
+      "quizQuestionCount": "Fragen: {{count}}",
+      "openOnline": "Online öffnen",
+      "openOffline": "Offline-Kopie öffnen",
+      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt"
+    }
   },
   "import": {
     "classroom": "Kurs importieren",

@@ -148,8 +148,17 @@
     "subtitlesEmpty": "没有可生成字幕的旁白",
     "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
-    "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
-    "nothingToExport": "没有可导出的内容"
+    "nothingToExport": "没有可导出的内容",
+    "placeholder": {
+      "interactiveLabel": "互动页面",
+      "quizLabel": "测验",
+      "interactiveDesc": "互动网页。点击按钮在线打开，或扫描二维码。",
+      "quizDesc": "测验场景。本 PPT 不包含答案。",
+      "quizQuestionCount": "题目数：{{count}}",
+      "openOnline": "在线打开",
+      "openOffline": "打开离线副本",
+      "offlineHint": "需将本 PPT 保留在解压后的教学资源包文件夹中"
+    }
   },
   "import": {
     "classroom": "导入课堂",

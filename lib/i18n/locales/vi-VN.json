@@ -148,8 +148,17 @@
     "subtitlesEmpty": "Không có lời giảng để tạo phụ đề",
     "subtitlesFailed": "Tải phụ đề không thành công",
     "noSlides": "Không có slide nào để xuất",
-    "noSlidesSkipped": "Bài học này không có slide — đã bỏ qua PPTX",
-    "nothingToExport": "Không có gì để xuất"
+    "nothingToExport": "Không có gì để xuất",
+    "placeholder": {
+      "interactiveLabel": "Tương tác",
+      "quizLabel": "Bài kiểm tra",
+      "interactiveDesc": "Trang web tương tác. Mở trực tuyến hoặc quét mã QR.",
+      "quizDesc": "Cảnh bài kiểm tra. Bản trình chiếu này không kèm đáp án.",
+      "quizQuestionCount": "Số câu hỏi: {{count}}",
+      "openOnline": "Mở trực tuyến",
+      "openOffline": "Mở bản ngoại tuyến",
+      "offlineHint": "hoạt động khi bản trình chiếu nằm trong thư mục gói tài nguyên đã giải nén"
+    }
   },
   "import": {
     "classroom": "Nhập lớp học",

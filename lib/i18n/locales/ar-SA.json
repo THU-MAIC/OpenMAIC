@@ -148,8 +148,17 @@
     "subtitlesEmpty": "لا يوجد سرد لإنشاء الترجمة منه",
     "subtitlesFailed": "فشل تنزيل الترجمة",
     "noSlides": "لا توجد شرائح للتصدير",
-    "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
-    "nothingToExport": "لا يوجد محتوى للتصدير"
+    "nothingToExport": "لا يوجد محتوى للتصدير",
+    "placeholder": {
+      "interactiveLabel": "تفاعلي",
+      "quizLabel": "اختبار",
+      "interactiveDesc": "صفحة ويب تفاعلية. افتحها عبر الإنترنت أو امسح رمز QR.",
+      "quizDesc": "مشهد اختبار. لا يتضمن هذا العرض الإجابات.",
+      "quizQuestionCount": "عدد الأسئلة: {{count}}",
+      "openOnline": "فتح عبر الإنترنت",
+      "openOffline": "فتح النسخة غير المتصلة",
+      "offlineHint": "تعمل عندما يبقى هذا العرض داخل مجلد حزمة الموارد بعد فك ضغطها"
+    }
   },
   "import": {
     "classroom": "استيراد فصل",
