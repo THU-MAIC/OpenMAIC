@@ -29,6 +29,15 @@ import { collectSpeechText } from './narration';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
 import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
+import {
+  listInteractivePages,
+  placeholderStyleFor,
+  planPptxDeck,
+  pptxSlideNumbers,
+  renderScenePlaceholder,
+  slidesOnlyDeck,
+  type PptxDeckEntry,
+} from './pptx-scene-placeholders';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
@@ -342,12 +351,17 @@ function getOutlineOption(outline: PPTElementOutline, ratioPx2Pt: number): pptxg
 
 // ── Link config ──
 
-function getLinkOption(link: PPTElementLink, slides: Slide[]): pptxgen.HyperlinkProps | null {
+// `slideNumbers` maps a slide id to its 1-based PPTX slide number. It is not
+// the index in `slides`: placeholder slides for non-slide scenes sit in between.
+function getLinkOption(
+  link: PPTElementLink,
+  slideNumbers: ReadonlyMap<string, number>,
+): pptxgen.HyperlinkProps | null {
   const { type, target } = link;
   if (type === 'web') return { url: target };
   if (type === 'slide') {
-    const index = slides.findIndex((slide) => slide.id === target);
-    if (index !== -1) return { slide: index + 1 };
+    const slideNumber = slideNumbers.get(target);
+    if (slideNumber !== undefined) return { slide: slideNumber };
   }
   return null;
 }
@@ -497,6 +511,10 @@ export function assertPptxMediaReferenceParity(
 // Exported for the round-trip integration test harness — the test wires its
 // own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
 // The hook below is still the only intended runtime caller.
+//
+// `deck` orders the output in lesson order and inserts placeholder slides for
+// quiz / interactive scenes (see `planPptxDeck`). Without it the PPTX holds the
+// slide scenes only.
 export async function buildPptxBlob(
   slides: Slide[],
   slideScenes: Scene[],
@@ -505,6 +523,7 @@ export async function buildPptxBlob(
   ratioPx2Inch: number,
   ratioPx2Pt: number,
   stageId?: string,
+  deck: readonly PptxDeckEntry[] = slidesOnlyDeck(slides.length),
 ): Promise<Blob> {
   const pptx = new pptxgen();
   const documentElements = slides.flatMap((slide) => slide.elements);
@@ -528,9 +547,27 @@ export async function buildPptxBlob(
   else if (viewportRatio === 0.75) pptx.layout = 'LAYOUT_4x3';
   else pptx.layout = 'LAYOUT_16x9';
 
-  for (let slideIdx = 0; slideIdx < slides.length; slideIdx++) {
-    const slide = slides[slideIdx];
+  const slideNumbers = pptxSlideNumbers(deck, slides);
+  const placeholderStyle = placeholderStyleFor(slides);
+
+  for (const entry of deck) {
     const pptxSlide = pptx.addSlide();
+
+    if (entry.kind === 'placeholder') {
+      const notes = buildSpeakerNotes(entry.placeholder.scene);
+      if (notes) pptxSlide.addNotes(notes);
+      renderScenePlaceholder(
+        pptxSlide,
+        entry.placeholder,
+        placeholderStyle,
+        { viewportSize, viewportRatio },
+        { ratioPx2Inch, ratioPx2Pt },
+      );
+      continue;
+    }
+
+    const slideIdx = entry.slideIndex;
+    const slide = slides[slideIdx];
 
     // ── Speaker Notes ──
     const scene = slideScenes[slideIdx];
@@ -660,7 +697,7 @@ export async function buildPptxBlob(
         if (el.flipV) options.flipV = el.flipV;
         if (el.rotate) options.rotate = el.rotate;
         if (el.link) {
-          const linkOption = getLinkOption(el.link, slides);
+          const linkOption = getLinkOption(el.link, slideNumbers);
           if (linkOption) options.hyperlink = linkOption;
         }
         if (el.filters?.opacity) options.transparency = 100 - parseInt(el.filters.opacity);
@@ -723,7 +760,7 @@ export async function buildPptxBlob(
           if (el.flipH) imgOptions.flipH = el.flipH;
           if (el.flipV) imgOptions.flipV = el.flipV;
           if (el.link) {
-            const linkOption = getLinkOption(el.link, slides);
+            const linkOption = getLinkOption(el.link, slideNumbers);
             if (linkOption) imgOptions.hyperlink = linkOption;
           }
           pptxSlide.addImage(imgOptions);
@@ -764,7 +801,7 @@ export async function buildPptxBlob(
           if (el.outline?.width) shapeOptions.line = getOutlineOption(el.outline, ratioPx2Pt);
           if (el.rotate) shapeOptions.rotate = el.rotate;
           if (el.link) {
-            const linkOption = getLinkOption(el.link, slides);
+            const linkOption = getLinkOption(el.link, slideNumbers);
             if (linkOption) shapeOptions.hyperlink = linkOption;
           }
 
@@ -807,7 +844,7 @@ export async function buildPptxBlob(
           if (el.flipV) patternOptions.flipV = el.flipV;
           if (el.rotate) patternOptions.rotate = el.rotate;
           if (el.link) {
-            const linkOption = getLinkOption(el.link, slides);
+            const linkOption = getLinkOption(el.link, slideNumbers);
             if (linkOption) patternOptions.hyperlink = linkOption;
           }
           pptxSlide.addImage(patternOptions);
@@ -1097,7 +1134,7 @@ export async function buildPptxBlob(
             h: el.height / ratioPx2Inch,
           };
           if (el.link) {
-            const linkOption = getLinkOption(el.link, slides);
+            const linkOption = getLinkOption(el.link, slideNumbers);
             if (linkOption) latexOptions.hyperlink = linkOption;
           }
 
@@ -1235,7 +1272,8 @@ export async function buildPptxBlob(
 //
 // `getPptxBlob` is invoked only when slide scenes exist, so an interactive-only
 // deck never touches the PPTX builder. Returns `empty: true` (and a null blob)
-// when there is nothing to ship.
+// when there is nothing to ship. The HTML page paths come from
+// `listInteractivePages`, the same list the PPTX placeholder links use.
 
 export interface ResourcePackResult {
   /** Generated ZIP blob, or null when there is nothing to ship. */
@@ -1269,24 +1307,19 @@ export async function buildResourcePackZip(
   const failedAssetUrls: string[] = [];
 
   // 1. Add interactive HTML pages (independent of slides)
-  let interactiveIndex = 0;
-  for (const scene of scenes) {
-    if (scene.content.type === 'interactive' && scene.content.html) {
-      interactiveIndex++;
-      const safeName = scene.title.replace(/[\\/:*?"<>|]/g, '_');
-      const htmlFileName = `interactive/${String(interactiveIndex).padStart(2, '0')}_${safeName}.html`;
-      const { html: inlinedHtml, report } = await inlineHtmlAssets(scene.content.html, {
-        fetcher: opts.fetcher,
-      });
-      for (const f of report.failed) {
-        if (!failedAssetUrls.includes(f.url)) failedAssetUrls.push(f.url);
-      }
-      zip.file(htmlFileName, inlinedHtml);
+  const pages = listInteractivePages(scenes);
+  for (const page of pages) {
+    const { html: inlinedHtml, report } = await inlineHtmlAssets(page.html, {
+      fetcher: opts.fetcher,
+    });
+    for (const f of report.failed) {
+      if (!failedAssetUrls.includes(f.url)) failedAssetUrls.push(f.url);
     }
+    zip.file(page.path, inlinedHtml);
   }
 
   // Nothing to ship: no slides and no interactive pages.
-  if (interactiveIndex === 0 && slides.length === 0) {
+  if (pages.length === 0 && slides.length === 0) {
     return { blob: null, skippedPptx: false, empty: true, failedAssetUrls };
   }
 
@@ -1353,6 +1386,9 @@ export function useExportPPTX() {
   const exportPPTX = useCallback(() => {
     withExportGuard(async () => {
       const fileName = stage?.name || 'slides';
+      // No Resource Pack next to a standalone PPTX, so interactive
+      // placeholders carry a hint instead of a link that would point nowhere.
+      const deck = planPptxDeck(scenes, t, { linkInteractivePages: false });
       const blob = await buildPptxBlob(
         slides,
         slideScenes,
@@ -1361,6 +1397,7 @@ export function useExportPPTX() {
         ratioPx2Inch,
         ratioPx2Pt,
         stage?.id,
+        deck,
       );
       saveAs(blob, `${fileName}.pptx`);
       toast.success(t('export.exportSuccess'));
@@ -1369,6 +1406,7 @@ export function useExportPPTX() {
     withExportGuard,
     slides,
     slideScenes,
+    scenes,
     stage,
     viewportSize,
     viewportRatio,
@@ -1401,6 +1439,7 @@ export function useExportPPTX() {
             ratioPx2Inch,
             ratioPx2Pt,
             stage?.id,
+            planPptxDeck(scenes, t, { linkInteractivePages: true }),
           ),
       });
 

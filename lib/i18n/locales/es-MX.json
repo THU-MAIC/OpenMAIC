@@ -117,7 +117,16 @@
     "subtitlesFailed": "Error al descargar los subtítulos",
     "noSlides": "No hay diapositivas para exportar",
     "noSlidesSkipped": "Este curso no tiene diapositivas — se omitió el PPTX",
-    "nothingToExport": "Nada que exportar"
+    "nothingToExport": "Nada que exportar",
+    "placeholder": {
+      "interactiveLabel": "Interactivo",
+      "quizLabel": "Cuestionario",
+      "interactiveDesc": "Página web interactiva. Mantén esta presentación en la carpeta extraída del paquete de recursos y haz clic en el botón para abrir la página en tu navegador.",
+      "interactiveDescNoPack": "Página web interactiva. Exporta el paquete de recursos para obtener esta página como archivo HTML junto a la presentación.",
+      "openInteractive": "Abrir página interactiva",
+      "quizDesc": "Escena de cuestionario. Las respuestas no se incluyen en esta presentación.",
+      "quizQuestionCount": "Preguntas: {{count}}"
+    }
   },
   "import": {
     "classroom": "Importar aula",

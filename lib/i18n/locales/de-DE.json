@@ -117,7 +117,16 @@
     "subtitlesFailed": "Untertitel konnten nicht heruntergeladen werden",
     "noSlides": "Keine Folien zum Exportieren",
     "noSlidesSkipped": "Dieser Kurs enthält keine Folien — PPTX wurde übersprungen",
-    "nothingToExport": "Nichts zu exportieren"
+    "nothingToExport": "Nichts zu exportieren",
+    "placeholder": {
+      "interactiveLabel": "Interaktiv",
+      "quizLabel": "Quiz",
+      "interactiveDesc": "Interaktive Webseite. Lassen Sie diese Präsentation im entpackten Ressourcenpaket-Ordner und klicken Sie auf die Schaltfläche, um die Seite im Browser zu öffnen.",
+      "interactiveDescNoPack": "Interaktive Webseite. Exportieren Sie das Ressourcenpaket, um diese Seite als HTML-Datei neben der Präsentation zu erhalten.",
+      "openInteractive": "Interaktive Seite öffnen",
+      "quizDesc": "Quiz-Szene. Die Antworten sind in dieser Präsentation nicht enthalten.",
+      "quizQuestionCount": "Fragen: {{count}}"
+    }
   },
   "import": {
     "classroom": "Kurs importieren",

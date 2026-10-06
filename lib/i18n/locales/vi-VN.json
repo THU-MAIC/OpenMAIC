@@ -117,7 +117,16 @@
     "subtitlesFailed": "Tải phụ đề không thành công",
     "noSlides": "Không có slide nào để xuất",
     "noSlidesSkipped": "Bài học này không có slide — đã bỏ qua PPTX",
-    "nothingToExport": "Không có gì để xuất"
+    "nothingToExport": "Không có gì để xuất",
+    "placeholder": {
+      "interactiveLabel": "Tương tác",
+      "quizLabel": "Bài kiểm tra",
+      "interactiveDesc": "Trang web tương tác. Hãy để bản trình chiếu này trong thư mục gói tài nguyên đã giải nén, rồi nhấn nút để mở trang trong trình duyệt.",
+      "interactiveDescNoPack": "Trang web tương tác. Xuất gói tài nguyên để nhận trang này dưới dạng tệp HTML bên cạnh bản trình chiếu.",
+      "openInteractive": "Mở trang tương tác",
+      "quizDesc": "Cảnh bài kiểm tra. Bản trình chiếu này không kèm đáp án.",
+      "quizQuestionCount": "Số câu hỏi: {{count}}"
+    }
   },
   "import": {
     "classroom": "Nhập lớp học",

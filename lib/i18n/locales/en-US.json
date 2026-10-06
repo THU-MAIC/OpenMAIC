@@ -117,7 +117,16 @@
     "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
     "noSlidesSkipped": "No slides in this course — PPTX skipped",
-    "nothingToExport": "Nothing to export"
+    "nothingToExport": "Nothing to export",
+    "placeholder": {
+      "interactiveLabel": "Interactive",
+      "quizLabel": "Quiz",
+      "interactiveDesc": "Interactive web page. Keep this deck in the extracted Resource Pack folder, then click the button to open the page in your browser.",
+      "interactiveDescNoPack": "Interactive web page. Export the Resource Pack to get this page as an HTML file next to the deck.",
+      "openInteractive": "Open interactive page",
+      "quizDesc": "Quiz scene. Answers are not included in this deck.",
+      "quizQuestionCount": "Questions: {{count}}"
+    }
   },
   "import": {
     "classroom": "Import Classroom",

@@ -117,7 +117,16 @@
     "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
     "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
-    "nothingToExport": "没有可导出的内容"
+    "nothingToExport": "没有可导出的内容",
+    "placeholder": {
+      "interactiveLabel": "互动页面",
+      "quizLabel": "测验",
+      "interactiveDesc": "互动网页。请将本 PPT 保留在解压后的教学资源包文件夹中，然后点击按钮在浏览器中打开该页面。",
+      "interactiveDescNoPack": "互动网页。导出教学资源包即可在 PPT 旁获得该页面的 HTML 文件。",
+      "openInteractive": "打开互动页面",
+      "quizDesc": "测验场景。本 PPT 不包含答案。",
+      "quizQuestionCount": "题目数：{{count}}"
+    }
   },
   "import": {
     "classroom": "导入课堂",
