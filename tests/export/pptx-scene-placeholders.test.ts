@@ -1,6 +1,6 @@
 import { inflateSync } from 'node:zlib';
 import JSZip from 'jszip';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 
@@ -23,7 +23,11 @@ import {
   type OnlineClassroom,
 } from '@/lib/export/pptx-scene-placeholders';
 import { qrMatrix } from '@/lib/export/qr-png';
-import { resolveOnlineClassroom } from '@/lib/export/classroom-online-link';
+import {
+  resolveOnlineClassroom,
+  resolveOnlineClassroomForScenes,
+  STAGE_META_TIMEOUT_MS,
+} from '@/lib/export/classroom-online-link';
 
 const t = (key: string, options?: Record<string, unknown>) =>
   options ? `${key}:${JSON.stringify(options)}` : key;
@@ -532,5 +536,74 @@ describe('resolveOnlineClassroom', () => {
       fetchMeta: async () => ({ outcome: 'unavailable' }),
     });
     expect(online.isPublic).toBe(false);
+  });
+});
+
+describe('bounded classroom status lookup', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('gives up on a stalled request, aborts it and counts the classroom as not public', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: unknown, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      }),
+    );
+    let settled = false;
+    // Default reader (fetchStageMeta) over a fetch that never answers.
+    const pending = resolveOnlineClassroom('stage-1', {
+      origin: 'https://host.example',
+    }).then((online) => {
+      settled = true;
+      return online;
+    });
+
+    await vi.advanceTimersByTimeAsync(STAGE_META_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await pending).toEqual({
+      classroomUrl: 'https://host.example/classroom/stage-1',
+      isPublic: false,
+    });
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('times out even when the metadata reader ignores the abort signal', async () => {
+    vi.useFakeTimers();
+    const pending = resolveOnlineClassroom('stage-1', {
+      origin: 'https://host.example',
+      fetchMeta: () => new Promise(() => {}),
+      timeoutMs: 500,
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await pending).isPublic).toBe(false);
+  });
+
+  it('skips the request when no placeholder slide needs the online classroom', async () => {
+    const fetchMeta = vi.fn(async () => ({ outcome: 'unavailable' as const }));
+    const options = { origin: 'https://host.example', fetchMeta };
+    expect(await resolveOnlineClassroomForScenes([sceneA, sceneB], 'stage-1', options)).toBe(
+      undefined,
+    );
+    expect(await resolveOnlineClassroomForScenes([pblScene('p')], 'stage-1', options)).toBe(
+      undefined,
+    );
+    expect(
+      await resolveOnlineClassroomForScenes([interactiveScene('i', 'I', '')], 'stage-1', options),
+    ).toBe(undefined);
+    expect(await resolveOnlineClassroomForScenes(lesson, undefined, options)).toBe(undefined);
+    expect(fetchMeta).not.toHaveBeenCalled();
+
+    expect(await resolveOnlineClassroomForScenes(lesson, 'stage-1', options)).toEqual({
+      classroomUrl: 'https://host.example/classroom/stage-1',
+      isPublic: false,
+    });
+    expect(fetchMeta).toHaveBeenCalledTimes(1);
   });
 });

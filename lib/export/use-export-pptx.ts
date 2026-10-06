@@ -40,7 +40,7 @@ import {
   type PptxDeckEntry,
 } from './pptx-scene-placeholders';
 import { qrPngDataUrl } from './qr-png';
-import { resolveOnlineClassroom } from './classroom-online-link';
+import { resolveOnlineClassroomForScenes } from './classroom-online-link';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
@@ -1371,12 +1371,14 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   const hasPptxContent = pptxDeckScenes(scenes).length > 0;
 
   // The online classroom the placeholder slides link to (button + QR code).
-  const resolveOnline = useCallback(async () => {
-    if (!stage?.id) return undefined;
-    return resolveOnlineClassroom(stage.id, {
-      origin: classroomOrigin ?? window.location.origin,
-    });
-  }, [stage?.id, classroomOrigin]);
+  // Not requested when the lesson has no quiz or interactive placeholder.
+  const resolveOnline = useCallback(
+    () =>
+      resolveOnlineClassroomForScenes(scenes, stage?.id, {
+        origin: classroomOrigin ?? window.location.origin,
+      }),
+    [scenes, stage?.id, classroomOrigin],
+  );
 
   // Shared guard + state wrapper for export actions.
   // `requirePptxContent` controls whether the guard rejects a lesson with
