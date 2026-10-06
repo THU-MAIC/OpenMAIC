@@ -467,7 +467,14 @@ describe('standalone HTML export content safety', () => {
         series: [{ pointImages: { '0': `data:image/png;base64,${FIXTURE_PNG_BASE64}` } }],
       },
     });
-    expect(unresolvedMedia).toEqual([deadPoint]);
+    // Resources the sanitizer drops are reported, not lost silently.
+    expect(unresolvedMedia.sort()).toEqual(
+      [
+        'https://images.example.com/bg.png',
+        'https://images.example.com/inline.png',
+        deadPoint,
+      ].sort(),
+    );
     const rich = slideOf(manifest).elements.find((e) => e.id === 'rich');
     expect(rich).toMatchObject({ content: '<p style="color:red">Hi </p>' });
   });

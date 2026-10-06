@@ -8,7 +8,8 @@
  * - slide rich text (text, shape text, table cells, LaTeX snapshots) is run
  *   through the persistence sanitizer: the renderer injects it into the
  *   player's own document, and the export reads working state that has not
- *   crossed the persistence boundary yet;
+ *   crossed the persistence boundary yet. Inline formulas are re-rendered from
+ *   their source and dropped resources are reported (see `rich-text.ts`);
  * - every slide image, background, shape pattern, chart point image and video
  *   poster is replaced by a `data:` URI (or dropped when its bytes could not
  *   be resolved), so the player never names a network address;
@@ -24,7 +25,7 @@
  */
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
-import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
+import { sanitizeSlideRichText } from './rich-text';
 import { resolvePBLContent, upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
 import type { PBLContent, SlideContent } from '@/lib/types/stage';
 import type { ClassroomManifest, ManifestScene } from '../classroom-zip-types';
@@ -242,7 +243,8 @@ function prepareScene(
   };
   const content = scene.content;
   if (content.type === 'slide') {
-    const sanitized = sanitizeSceneContent<SlideContent>(content);
+    const { content: sanitized, discarded } = sanitizeSlideRichText(content as SlideContent);
+    for (const resource of discarded) resolver.markUnresolved(resource);
     return {
       ...rest,
       content: { ...sanitized, canvas: prepareSlide(sanitized.canvas, media, resolver) },
