@@ -1,0 +1,33 @@
+/*
+ * Style entry of the standalone player bundle, compiled once at build time by
+ * `scripts/build-standalone-player.mjs` (Tailwind 4). The renderer emits
+ * Tailwind classes, so its built output is scanned alongside the player;
+ * automatic source detection is off so the rest of the app is not.
+ */
+@import 'tailwindcss' source(none);
+
+@source '../../node_modules/@openmaic/renderer/dist/**/*.js';
+@source './**/*.{ts,tsx}';
+
+html,
+body,
+#openmaic-player {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    'Noto Sans',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    sans-serif;
+}

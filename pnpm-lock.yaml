@@ -453,6 +453,9 @@ importers:
       '@types/tinycolor2':
         specifier: ^1.4.6
         version: 1.4.6
+      esbuild:
+        specifier: 0.27.7
+        version: 0.27.7
       eslint:
         specifier: ^9
         version: 9.39.4(jiti@2.6.1)
