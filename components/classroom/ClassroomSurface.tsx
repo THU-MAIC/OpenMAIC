@@ -45,6 +45,7 @@ import {
   resolveClassroomSurfaceView,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
 
@@ -94,7 +95,16 @@ export function ClassroomSurface({
           classroomId,
           loadToken,
           isCurrent,
-          loadFromStorage,
+          loadFromStorage: async (id, token) => {
+            await loadFromStorage(id, token);
+            // `?scene=<id>` opens the page at that scene (links from exported
+            // decks). Applied before the rest of the load so the opening
+            // scene's media is the one hydrated first. The pane lives inside
+            // the workspace URL, so only the standalone page reads it.
+            if (variant === 'page' && isCurrent()) {
+              applySceneDeepLink(window.location.search, id, useStageStore);
+            }
+          },
           getCurrentStage: () => useStageStore.getState().stage,
           loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
           applyRestoredMediaTasks: (restored) =>
