@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "Interactif",
       "quizLabel": "Quiz",
-      "interactiveDesc": "Page web interactive. Laissez cette présentation dans le dossier extrait du pack de ressources, puis cliquez sur le bouton pour ouvrir la page dans votre navigateur.",
-      "interactiveDescNoPack": "Page web interactive. Exportez le pack de ressources pour obtenir cette page sous forme de fichier HTML à côté de la présentation.",
-      "openInteractive": "Ouvrir la page interactive",
+      "interactiveDesc": "Page web interactive. Ouvrez-la en ligne ou scannez le QR code.",
       "quizDesc": "Scène de quiz. Les réponses ne figurent pas dans cette présentation.",
-      "quizQuestionCount": "Questions : {{count}}"
+      "quizQuestionCount": "Questions : {{count}}",
+      "openOnline": "Ouvrir en ligne",
+      "openOffline": "Ouvrir la copie hors ligne",
+      "offlineHint": "fonctionne si cette présentation reste dans le dossier extrait du pack de ressources",
+      "publishHint": "Publiez cette classe pour que les élèves puissent l’ouvrir en scannant le code."
     }
   },
   "import": {

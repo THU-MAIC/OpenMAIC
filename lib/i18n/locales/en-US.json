@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "Interactive",
       "quizLabel": "Quiz",
-      "interactiveDesc": "Interactive web page. Keep this deck in the extracted Resource Pack folder, then click the button to open the page in your browser.",
-      "interactiveDescNoPack": "Interactive web page. Export the Resource Pack to get this page as an HTML file next to the deck.",
-      "openInteractive": "Open interactive page",
+      "interactiveDesc": "Interactive web page. Open it online or scan the QR code.",
       "quizDesc": "Quiz scene. Answers are not included in this deck.",
-      "quizQuestionCount": "Questions: {{count}}"
+      "quizQuestionCount": "Questions: {{count}}",
+      "openOnline": "Open online",
+      "openOffline": "Open offline copy",
+      "offlineHint": "works when this deck stays in the extracted Resource Pack folder",
+      "publishHint": "Publish this classroom so students can open it by scanning."
     }
   },
   "import": {

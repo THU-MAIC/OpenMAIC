@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "Interactivo",
       "quizLabel": "Cuestionario",
-      "interactiveDesc": "Página web interactiva. Mantén esta presentación en la carpeta extraída del paquete de recursos y haz clic en el botón para abrir la página en tu navegador.",
-      "interactiveDescNoPack": "Página web interactiva. Exporta el paquete de recursos para obtener esta página como archivo HTML junto a la presentación.",
-      "openInteractive": "Abrir página interactiva",
+      "interactiveDesc": "Página web interactiva. Ábrela en línea o escanea el código QR.",
       "quizDesc": "Escena de cuestionario. Las respuestas no se incluyen en esta presentación.",
-      "quizQuestionCount": "Preguntas: {{count}}"
+      "quizQuestionCount": "Preguntas: {{count}}",
+      "openOnline": "Abrir en línea",
+      "openOffline": "Abrir copia sin conexión",
+      "offlineHint": "funciona si esta presentación permanece en la carpeta extraída del paquete de recursos",
+      "publishHint": "Publica esta clase para que los estudiantes puedan abrirla escaneando el código."
     }
   },
   "import": {

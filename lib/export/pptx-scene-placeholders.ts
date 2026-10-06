@@ -2,6 +2,7 @@ import type pptxgen from 'pptxgenjs';
 import tinycolor from 'tinycolor2';
 import type { Slide } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
+import { classroomSceneUrl } from '@/lib/classroom/scene-deep-link';
 
 // ── Interactive page naming (shared by the Resource Pack ZIP and PPTX links) ──
 
@@ -79,10 +80,15 @@ export interface ScenePlaceholder {
   title: string;
   description: string;
   /**
-   * Button that opens the scene's page from the Resource Pack. `target` is the
-   * URI-encoded relative link; `path` is the readable pack path.
+   * The scene in the online classroom: a button and a QR code of `url`.
+   * `publishHint` is set when the classroom is not public yet.
    */
-  link?: { label: string; target: string; path: string };
+  online?: { url: string; label: string; publishHint?: string };
+  /**
+   * The scene's page in the Resource Pack. `target` is the URI-encoded
+   * relative link; `path` is the readable pack path.
+   */
+  offline?: { label: string; hint: string; target: string; path: string };
   /** Extra summary line, e.g. the quiz question count. */
   meta?: string;
   /** Plain-text list items, e.g. quiz question stems (never answers). */
@@ -97,10 +103,28 @@ export type PptxDeckEntry =
   | { kind: 'slide'; slideIndex: number }
   | { kind: 'placeholder'; placeholder: ScenePlaceholder };
 
+/** Where the exported classroom lives online, resolved at export time. */
+export interface OnlineClassroom {
+  /** Absolute classroom page URL, without a scene parameter. */
+  classroomUrl: string;
+  /** Whether people other than the owner can open it. */
+  isPublic: boolean;
+}
+
+export interface PlanPptxDeckOptions {
+  /**
+   * True only when the PPTX ships inside the Resource Pack: a relative link
+   * from a standalone PPTX would point at nothing.
+   */
+  linkInteractivePages: boolean;
+  /** Link placeholders to their scene in the online classroom. */
+  online?: OnlineClassroom;
+}
+
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-const MAX_QUIZ_ITEMS = 6;
-const MAX_QUIZ_ITEM_LENGTH = 100;
+const MAX_QUIZ_ITEMS = 4;
+const MAX_QUIZ_ITEM_LENGTH = 90;
 
 function truncate(text: string, max: number): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
@@ -126,18 +150,22 @@ export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
  * interactive scenes get a placeholder slide; PBL scenes are left out.
  * Interactive scenes without an html payload are left out too, matching the
  * Resource Pack, which has no page for them.
- *
- * `linkInteractivePages` is true only when the PPTX ships inside the Resource
- * Pack: a relative link from a standalone PPTX would point at nothing.
  */
 export function planPptxDeck(
   scenes: readonly Scene[],
   t: Translate,
-  { linkInteractivePages }: { linkInteractivePages: boolean },
+  { linkInteractivePages, online }: PlanPptxDeckOptions,
 ): PptxDeckEntry[] {
   const pagePaths = new Map(listInteractivePages(scenes).map((p) => [p.scene, p.path]));
   const deck: PptxDeckEntry[] = [];
   let slideIndex = 0;
+
+  const onlineLink = (scene: Scene): ScenePlaceholder['online'] =>
+    online && {
+      url: classroomSceneUrl(online.classroomUrl, scene.id),
+      label: t('export.placeholder.openOnline'),
+      publishHint: online.isPublic ? undefined : t('export.placeholder.publishHint'),
+    };
 
   for (const scene of pptxDeckScenes(scenes)) {
     const content = scene.content;
@@ -155,12 +183,12 @@ export function planPptxDeck(
           sceneType: 'interactive',
           typeLabel,
           title: title || typeLabel,
-          description: linkInteractivePages
-            ? t('export.placeholder.interactiveDesc')
-            : t('export.placeholder.interactiveDescNoPack'),
-          link: linkInteractivePages
+          description: t('export.placeholder.interactiveDesc'),
+          online: onlineLink(scene),
+          offline: linkInteractivePages
             ? {
-                label: t('export.placeholder.openInteractive'),
+                label: t('export.placeholder.openOffline'),
+                hint: t('export.placeholder.offlineHint'),
                 target: relativeHyperlinkTarget(path),
                 path,
               }
@@ -183,6 +211,7 @@ export function planPptxDeck(
           typeLabel,
           title: title || typeLabel,
           description: t('export.placeholder.quizDesc'),
+          online: onlineLink(scene),
           meta: t('export.placeholder.quizQuestionCount', { count: questions.length }),
           items,
         },
@@ -251,9 +280,17 @@ export function placeholderStyleFor(slides: readonly Slide[]): PlaceholderStyle 
   };
 }
 
+/** QR code edge length on the 1000px design canvas (about a fifth of the width). */
+const QR_SIZE = 210;
+
 /**
  * Draw a placeholder card on an empty PPTX slide. Coordinates are designed on
  * a 1000px-wide canvas and scaled to the deck's viewport, like slide elements.
+ *
+ * Left column: type label, title, description, quiz summary, and at the bottom
+ * the "Open online" button and the offline link. Right column (when the scene
+ * has an online link): the QR code, the URL and the publish hint. The QR code
+ * is always dark on white whatever the theme, so phones can scan it.
  */
 export function renderScenePlaceholder(
   pptxSlide: pptxgen.Slide,
@@ -261,6 +298,7 @@ export function renderScenePlaceholder(
   style: PlaceholderStyle,
   viewport: { viewportSize: number; viewportRatio: number },
   ratios: { ratioPx2Inch: number; ratioPx2Pt: number },
+  qrDataUrl?: string,
 ): void {
   const { viewportSize, viewportRatio } = viewport;
   const { ratioPx2Inch, ratioPx2Pt } = ratios;
@@ -269,7 +307,10 @@ export function renderScenePlaceholder(
   const inch = (px: number) => px / ratioPx2Inch;
   const pt = (px: number) => px / ratioPx2Pt;
   const left = 80 * u;
-  const width = viewportSize - 160 * u;
+  const online = placeholder.online;
+  const qrLeft = viewportSize - (80 + QR_SIZE) * u;
+  const width = online ? qrLeft - left - 40 * u : viewportSize - 160 * u;
+  const actionsTop = height - 130 * u;
   const font = { fontFace: style.fontName, color: style.fontColor };
 
   pptxSlide.background = { color: style.backgroundColor };
@@ -302,7 +343,7 @@ export function renderScenePlaceholder(
     y: inch(132 * u),
     w: inch(width),
     h: inch(96 * u),
-    fontSize: pt(40 * u),
+    fontSize: pt(36 * u),
     bold: true,
     margin: 0,
     valign: 'top',
@@ -314,61 +355,27 @@ export function renderScenePlaceholder(
     x: inch(left),
     y: inch(238 * u),
     w: inch(width),
-    h: inch(64 * u),
-    fontSize: pt(20 * u),
+    h: inch(56 * u),
+    fontSize: pt(18 * u),
     margin: 0,
     valign: 'top',
     transparency: 20,
   });
 
-  if (placeholder.link) {
-    const button = {
-      x: inch(left),
-      y: inch(322 * u),
-      w: inch(340 * u),
-      h: inch(64 * u),
-    };
-    const hyperlink = { url: placeholder.link.target, tooltip: placeholder.link.path };
-    // The shape carries the link so the whole button is clickable; the text
-    // run repeats it because the text box sits on top of the shape.
-    pptxSlide.addShape('roundRect' as pptxgen.ShapeType, {
-      ...button,
-      fill: { color: style.accent },
-      line: { type: 'none' },
-      rectRadius: inch(12 * u),
-      hyperlink,
-    });
-    pptxSlide.addText(
-      [
-        {
-          text: placeholder.link.label,
-          options: {
-            hyperlink,
-            color: '#ffffff',
-            bold: true,
-            underline: { style: 'none' },
-            fontFace: style.fontName,
-          },
-        },
-      ],
-      { ...button, fontSize: pt(22 * u), align: 'center', valign: 'middle', margin: 0 },
-    );
-  }
-
-  let y = 322 * u;
+  let y = 300 * u;
   if (placeholder.meta) {
     pptxSlide.addText(placeholder.meta, {
       ...font,
       x: inch(left),
       y: inch(y),
       w: inch(width),
-      h: inch(34 * u),
-      fontSize: pt(20 * u),
+      h: inch(30 * u),
+      fontSize: pt(18 * u),
       bold: true,
       margin: 0,
       valign: 'middle',
     });
-    y += 44 * u;
+    y += 38 * u;
   }
 
   if (placeholder.items?.length) {
@@ -385,12 +392,104 @@ export function renderScenePlaceholder(
         x: inch(left),
         y: inch(y),
         w: inch(width),
-        h: inch(Math.max(height - y - 40 * u, 40 * u)),
-        fontSize: pt(18 * u),
+        h: inch(Math.max(actionsTop - y - 12 * u, 30 * u)),
+        fontSize: pt(16 * u),
         margin: 0,
         valign: 'top',
-        paraSpaceBefore: pt(6 * u),
+        paraSpaceBefore: pt(4 * u),
         fit: 'shrink',
+      },
+    );
+  }
+
+  if (online) {
+    const button = { x: inch(left), y: inch(actionsTop), w: inch(260 * u), h: inch(52 * u) };
+    const hyperlink = { url: online.url, tooltip: online.url };
+    // The shape carries the link so the whole button is clickable; the text
+    // run repeats it because the text box sits on top of the shape.
+    pptxSlide.addShape('roundRect' as pptxgen.ShapeType, {
+      ...button,
+      fill: { color: style.accent },
+      line: { type: 'none' },
+      rectRadius: inch(10 * u),
+      hyperlink,
+    });
+    pptxSlide.addText(
+      [
+        {
+          text: online.label,
+          options: {
+            hyperlink,
+            color: '#ffffff',
+            bold: true,
+            underline: { style: 'none' },
+            fontFace: style.fontName,
+          },
+        },
+      ],
+      { ...button, fontSize: pt(20 * u), align: 'center', valign: 'middle', margin: 0 },
+    );
+
+    if (qrDataUrl) {
+      // No hyperlink on the image: pptxgenjs does not XML-escape image link
+      // targets, and the button already carries the link.
+      pptxSlide.addImage({
+        data: qrDataUrl,
+        x: inch(qrLeft),
+        y: inch(132 * u),
+        w: inch(QR_SIZE * u),
+        h: inch(QR_SIZE * u),
+      });
+    }
+    pptxSlide.addText([{ text: online.url, options: { hyperlink, color: style.fontColor } }], {
+      fontFace: style.fontName,
+      x: inch(qrLeft),
+      y: inch((132 + QR_SIZE + 8) * u),
+      w: inch(QR_SIZE * u),
+      h: inch(48 * u),
+      fontSize: pt(10 * u),
+      // Left-aligned: the URL is one long word, which some renderers centre
+      // as if it were unbroken and so push off to the left.
+      align: 'left',
+      valign: 'top',
+      margin: 0,
+    });
+    if (online.publishHint) {
+      pptxSlide.addText(online.publishHint, {
+        ...font,
+        x: inch(qrLeft),
+        y: inch((132 + QR_SIZE + 62) * u),
+        w: inch(QR_SIZE * u),
+        h: inch(56 * u),
+        fontSize: pt(13 * u),
+        bold: true,
+        align: 'center',
+        valign: 'top',
+        margin: 0,
+      });
+    }
+  }
+
+  if (placeholder.offline) {
+    const offline = placeholder.offline;
+    const hyperlink = { url: offline.target, tooltip: offline.path };
+    pptxSlide.addText(
+      [
+        {
+          text: offline.label,
+          options: { hyperlink, color: style.accent, bold: true, fontFace: style.fontName },
+        },
+        { text: ` · ${offline.hint}`, options: { color: style.fontColor } },
+      ],
+      {
+        fontFace: style.fontName,
+        x: inch(left),
+        y: inch(online ? actionsTop + 62 * u : actionsTop),
+        w: inch(width),
+        h: inch(28 * u),
+        fontSize: pt(14 * u),
+        margin: 0,
+        valign: 'middle',
       },
     );
   }

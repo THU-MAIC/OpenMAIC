@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "互动页面",
       "quizLabel": "测验",
-      "interactiveDesc": "互动网页。请将本 PPT 保留在解压后的教学资源包文件夹中，然后点击按钮在浏览器中打开该页面。",
-      "interactiveDescNoPack": "互动网页。导出教学资源包即可在 PPT 旁获得该页面的 HTML 文件。",
-      "openInteractive": "打开互动页面",
+      "interactiveDesc": "互动网页。点击按钮在线打开，或扫描二维码。",
       "quizDesc": "测验场景。本 PPT 不包含答案。",
-      "quizQuestionCount": "题目数：{{count}}"
+      "quizQuestionCount": "题目数：{{count}}",
+      "openOnline": "在线打开",
+      "openOffline": "打开离线副本",
+      "offlineHint": "需将本 PPT 保留在解压后的教学资源包文件夹中",
+      "publishHint": "发布此课堂后，学生即可扫码打开。"
     }
   },
   "import": {

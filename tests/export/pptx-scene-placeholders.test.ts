@@ -1,3 +1,4 @@
+import { inflateSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
@@ -19,7 +20,10 @@ import {
   planPptxDeck,
   pptxDeckScenes,
   relativeHyperlinkTarget,
+  type OnlineClassroom,
 } from '@/lib/export/pptx-scene-placeholders';
+import { qrMatrix } from '@/lib/export/qr-png';
+import { resolveOnlineClassroom } from '@/lib/export/classroom-online-link';
 
 const t = (key: string, options?: Record<string, unknown>) =>
   options ? `${key}:${JSON.stringify(options)}` : key;
@@ -134,6 +138,12 @@ const lesson: Scene[] = [
 
 const ratioPx2Pt = (96 / 72) * (1000 / 960);
 
+const ONLINE: OnlineClassroom = {
+  classroomUrl: 'https://example.org/classroom/stage-1',
+  isPublic: false,
+};
+const sceneUrl = (sceneId: string) => `https://example.org/classroom/stage-1?scene=${sceneId}`;
+
 /** Plan and build a PPTX the way the Resource Pack hook does. */
 function buildLessonPptx(scenes: Scene[]) {
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
@@ -146,7 +156,7 @@ function buildLessonPptx(scenes: Scene[]) {
     100,
     ratioPx2Pt,
     'stage-1',
-    planPptxDeck(scenes, t, { linkInteractivePages: true }),
+    planPptxDeck(scenes, t, { linkInteractivePages: true, online: ONLINE }),
   );
 }
 
@@ -171,7 +181,7 @@ async function readText(zip: JSZip, name: string): Promise<string> {
   return file.async('string');
 }
 
-function buildDeck(linkInteractivePages: boolean) {
+function buildDeck(linkInteractivePages: boolean, online: OnlineClassroom | null = ONLINE) {
   return buildPptxBlob(
     [slideA, slideB],
     [sceneA, sceneB],
@@ -180,8 +190,47 @@ function buildDeck(linkInteractivePages: boolean) {
     1000 / 10,
     (96 / 72) * (1000 / 960),
     'stage-1',
-    planPptxDeck(lesson, t, { linkInteractivePages }),
+    planPptxDeck(lesson, t, { linkInteractivePages, online: online ?? undefined }),
   );
+}
+
+/** Module matrix read back from a 1-bit grayscale PNG (true = dark). */
+function readQrPng(png: Uint8Array, modulesPerSide: number): boolean[][] {
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  let pos = 8;
+  let width = 0;
+  const idat: Uint8Array[] = [];
+  while (pos < png.length) {
+    const len = view.getUint32(pos);
+    const type = String.fromCharCode(...png.subarray(pos + 4, pos + 8));
+    const data = png.subarray(pos + 8, pos + 8 + len);
+    if (type === 'IHDR') {
+      width = new DataView(data.buffer, data.byteOffset).getUint32(0);
+      expect([data[8], data[9]]).toEqual([1, 0]); // 1-bit grayscale
+    }
+    if (type === 'IDAT') idat.push(data);
+    pos += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const rowBytes = Math.ceil(width / 8);
+  const scale = width / modulesPerSide;
+  const pixelIsDark = (x: number, y: number) => {
+    const byte = raw[y * (rowBytes + 1) + 1 + (x >> 3)];
+    return (byte & (0x80 >> (x & 7))) === 0;
+  };
+  return Array.from({ length: modulesPerSide }, (_, my) =>
+    Array.from({ length: modulesPerSide }, (_, mx) =>
+      pixelIsDark(Math.floor((mx + 0.5) * scale), Math.floor((my + 0.5) * scale)),
+    ),
+  );
+}
+
+/** The PNG image a slide references, read from the PPTX. */
+async function slideImage(zip: JSZip, slideNumber: number): Promise<Uint8Array | null> {
+  const rels = await readText(zip, `ppt/slides/_rels/slide${slideNumber}.xml.rels`);
+  const target = rels.match(/relationships\/image" Target="\.\.\/media\/([^"]+\.png)"/)?.[1];
+  if (!target) return null;
+  return zip.file(`ppt/media/${target}`)!.async('uint8array');
 }
 
 describe('interactive page naming', () => {
@@ -222,21 +271,33 @@ describe('planPptxDeck', () => {
     ).toEqual(['slide:0', 'i1', 'q', 'slide:1']);
   });
 
-  it('links interactive placeholders to the pack page only when a pack ships', () => {
-    const withPack = planPptxDeck(lesson, t, { linkInteractivePages: true });
-    const standalone = planPptxDeck(lesson, t, { linkInteractivePages: false });
+  it('links interactive placeholders to the offline page only when a pack ships', () => {
+    const withPack = planPptxDeck(lesson, t, { linkInteractivePages: true, online: ONLINE });
+    const standalone = planPptxDeck(lesson, t, { linkInteractivePages: false, online: ONLINE });
     const [packEntry, standaloneEntry] = [withPack[1], standalone[1]];
     if (packEntry.kind !== 'placeholder' || standaloneEntry.kind !== 'placeholder') {
       throw new Error('expected placeholders');
     }
-    expect(packEntry.placeholder.link?.target).toBe(
+    expect(packEntry.placeholder.offline?.target).toBe(
       relativeHyperlinkTarget(listInteractivePages(lesson)[0].path),
     );
-    expect(packEntry.placeholder.description).toBe('export.placeholder.interactiveDesc');
-    expect(standaloneEntry.placeholder.link).toBeUndefined();
-    expect(standaloneEntry.placeholder.description).toBe(
-      'export.placeholder.interactiveDescNoPack',
-    );
+    expect(standaloneEntry.placeholder.offline).toBeUndefined();
+    // Both link to the scene in the online classroom.
+    expect(packEntry.placeholder.online?.url).toBe(sceneUrl('i1'));
+    expect(standaloneEntry.placeholder.online?.url).toBe(sceneUrl('i1'));
+  });
+
+  it('adds the publish hint only when the classroom is not public', () => {
+    const hint = (isPublic: boolean) =>
+      planPptxDeck(lesson, t, {
+        linkInteractivePages: false,
+        online: { ...ONLINE, isPublic },
+      }).flatMap((e) => (e.kind === 'placeholder' ? [e.placeholder.online?.publishHint] : []));
+    expect(hint(false)).toEqual([
+      'export.placeholder.publishHint',
+      'export.placeholder.publishHint',
+    ]);
+    expect(hint(true)).toEqual([undefined, undefined]);
   });
 
   it('summarizes a quiz by count and question stems', () => {
@@ -283,16 +344,16 @@ describe('buildPptxBlob with scene placeholders', () => {
       'Target="interactive/01_Demo%20%231_%2050%25%20done_.html" TargetMode="External"',
     );
     const xml = await readText(zip, 'ppt/slides/slide2.xml');
-    expect(xml).toContain('export.placeholder.openInteractive');
+    expect(xml).toContain('export.placeholder.openOffline');
     expect(xml).toContain('<a:hlinkClick');
   });
 
-  it('omits the interactive link in a standalone PPTX', async () => {
+  it('omits the offline link in a standalone PPTX', async () => {
     const zip = await loadZip(await buildDeck(false));
     const rels = await readText(zip, 'ppt/slides/_rels/slide2.xml.rels');
     expect(rels).not.toContain('interactive/');
-    expect(await readText(zip, 'ppt/slides/slide2.xml')).toContain(
-      'export.placeholder.interactiveDescNoPack',
+    expect(await readText(zip, 'ppt/slides/slide2.xml')).not.toContain(
+      'export.placeholder.openOffline',
     );
   });
 
@@ -381,7 +442,7 @@ describe('untitled interactive scenes', () => {
     const first = deck[0];
     if (first.kind !== 'placeholder') throw new Error('expected placeholder');
     expect(first.placeholder.title).toBe('export.placeholder.interactiveLabel');
-    expect(first.placeholder.link?.path).toBe('interactive/01.html');
+    expect(first.placeholder.offline?.path).toBe('interactive/01.html');
 
     const result = await buildPack(scenes);
     const pack = await loadZip(result.blob!);
@@ -390,5 +451,86 @@ describe('untitled interactive scenes', () => {
     expect(await readText(pptx, 'ppt/slides/_rels/slide1.xml.rels')).toContain(
       'Target="interactive/01.html" TargetMode="External"',
     );
+  });
+});
+
+describe('online link and QR code', () => {
+  for (const linkInteractivePages of [true, false]) {
+    const mode = linkInteractivePages ? 'Resource Pack PPTX' : 'standalone PPTX';
+
+    it(`links every placeholder to its online scene in the ${mode}`, async () => {
+      const zip = await loadZip(await buildDeck(linkInteractivePages));
+      for (const [slideNumber, sceneId] of [
+        [2, 'i1'],
+        [3, 'q'],
+      ] as const) {
+        const rels = await readText(zip, `ppt/slides/_rels/slide${slideNumber}.xml.rels`);
+        expect(rels).toContain(`Target="${sceneUrl(sceneId)}" TargetMode="External"`);
+        const xml = await readText(zip, `ppt/slides/slide${slideNumber}.xml`);
+        expect(xml).toContain('export.placeholder.openOnline');
+        expect(xml).toContain(sceneUrl(sceneId));
+        expect(xml).toContain('export.placeholder.publishHint');
+      }
+    });
+
+    it(`embeds a QR code that encodes the online scene URL in the ${mode}`, async () => {
+      const zip = await loadZip(await buildDeck(linkInteractivePages));
+      for (const [slideNumber, sceneId] of [
+        [2, 'i1'],
+        [3, 'q'],
+      ] as const) {
+        const png = await slideImage(zip, slideNumber);
+        expect(png).not.toBeNull();
+        const expected = await qrMatrix(sceneUrl(sceneId));
+        expect(readQrPng(png!, expected.length)).toEqual(expected);
+      }
+    });
+  }
+
+  it('leaves the publish hint out for a public classroom', async () => {
+    const zip = await loadZip(await buildDeck(true, { ...ONLINE, isPublic: true }));
+    for (const slideNumber of [2, 3]) {
+      expect(await readText(zip, `ppt/slides/slide${slideNumber}.xml`)).not.toContain(
+        'export.placeholder.publishHint',
+      );
+    }
+  });
+
+  it('draws no button or QR code without an online classroom', async () => {
+    const zip = await loadZip(await buildDeck(true, null));
+    expect(await slideImage(zip, 3)).toBeNull();
+    expect(await readText(zip, 'ppt/slides/slide3.xml')).not.toContain(
+      'export.placeholder.openOnline',
+    );
+  });
+
+  it('keeps the quiet zone light around the code', async () => {
+    const matrix = await qrMatrix(sceneUrl('q'));
+    const edge = [...matrix[0], ...matrix[matrix.length - 1], ...matrix.map((row) => row[0])];
+    expect(edge.every((dark) => !dark)).toBe(true);
+  });
+});
+
+describe('resolveOnlineClassroom', () => {
+  it('builds the classroom URL on the given origin and reads isPublic', async () => {
+    const online = await resolveOnlineClassroom('stage 1', {
+      origin: 'https://host.example/',
+      fetchMeta: async () => ({
+        outcome: 'found',
+        meta: { isOwner: true, isPublic: true, publishedAt: 1, generationComplete: true },
+      }),
+    });
+    expect(online).toEqual({
+      classroomUrl: 'https://host.example/classroom/stage%201',
+      isPublic: true,
+    });
+  });
+
+  it('treats unreadable metadata as not public', async () => {
+    const online = await resolveOnlineClassroom('s', {
+      origin: 'https://host.example',
+      fetchMeta: async () => ({ outcome: 'unavailable' }),
+    });
+    expect(online.isPublic).toBe(false);
   });
 });

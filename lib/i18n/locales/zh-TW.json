@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "互動頁面",
       "quizLabel": "測驗",
-      "interactiveDesc": "互動網頁。請將本簡報保留在解壓縮後的教學資源包資料夾中，然後點擊按鈕在瀏覽器中開啟該頁面。",
-      "interactiveDescNoPack": "互動網頁。匯出教學資源包即可在簡報旁取得該頁面的 HTML 檔案。",
-      "openInteractive": "開啟互動頁面",
+      "interactiveDesc": "互動網頁。點擊按鈕線上開啟，或掃描 QR 碼。",
       "quizDesc": "測驗場景。本簡報不包含答案。",
-      "quizQuestionCount": "題目數：{{count}}"
+      "quizQuestionCount": "題目數：{{count}}",
+      "openOnline": "線上開啟",
+      "openOffline": "開啟離線副本",
+      "offlineHint": "需將本簡報保留在解壓縮後的教學資源包資料夾中",
+      "publishHint": "發布此課堂後，學生即可掃碼開啟。"
     }
   },
   "import": {

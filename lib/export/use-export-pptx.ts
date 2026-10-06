@@ -39,6 +39,8 @@ import {
   slidesOnlyDeck,
   type PptxDeckEntry,
 } from './pptx-scene-placeholders';
+import { qrPngDataUrl } from './qr-png';
+import { resolveOnlineClassroom } from './classroom-online-link';
 import type { AssetUrlLeaseState } from '@/lib/media/use-asset-url';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import {
@@ -561,12 +563,14 @@ export async function buildPptxBlob(
         const notes = buildSpeakerNotes(entry.placeholder.scene);
         if (notes) pptxSlide.addNotes(notes);
       }
+      const onlineUrl = entry.placeholder.online?.url;
       renderScenePlaceholder(
         pptxSlide,
         entry.placeholder,
         placeholderStyle,
         { viewportSize, viewportRatio },
         { ratioPx2Inch, ratioPx2Pt },
+        onlineUrl ? await qrPngDataUrl(onlineUrl) : undefined,
       );
       continue;
     }
@@ -1338,7 +1342,16 @@ export async function buildResourcePackZip(
 
 // ── Hook ──
 
-export function useExportPPTX() {
+export interface UseExportPPTXOptions {
+  /**
+   * Origin the placeholder slides link to (`<origin>/classroom/<id>`).
+   * Defaults to the page's own origin; hosts serving the classroom elsewhere
+   * can override it.
+   */
+  classroomOrigin?: string;
+}
+
+export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
   const { t } = useI18n();
@@ -1356,6 +1369,14 @@ export function useExportPPTX() {
   // Slides, quizzes and interactive pages all become PPTX slides; a lesson
   // without any of them (e.g. PBL only) has nothing to put in a PPTX.
   const hasPptxContent = pptxDeckScenes(scenes).length > 0;
+
+  // The online classroom the placeholder slides link to (button + QR code).
+  const resolveOnline = useCallback(async () => {
+    if (!stage?.id) return undefined;
+    return resolveOnlineClassroom(stage.id, {
+      origin: classroomOrigin ?? window.location.origin,
+    });
+  }, [stage?.id, classroomOrigin]);
 
   // Shared guard + state wrapper for export actions.
   // `requirePptxContent` controls whether the guard rejects a lesson with
@@ -1389,9 +1410,12 @@ export function useExportPPTX() {
   const exportPPTX = useCallback(() => {
     withExportGuard(async () => {
       const fileName = stage?.name || 'slides';
-      // No Resource Pack next to a standalone PPTX, so interactive
-      // placeholders carry a hint instead of a link that would point nowhere.
-      const deck = planPptxDeck(scenes, t, { linkInteractivePages: false });
+      // No Resource Pack next to a standalone PPTX, so placeholders link to
+      // the online classroom only (no offline copy to point at).
+      const deck = planPptxDeck(scenes, t, {
+        linkInteractivePages: false,
+        online: await resolveOnline(),
+      });
       const blob = await buildPptxBlob(
         slides,
         slideScenes,
@@ -1407,6 +1431,7 @@ export function useExportPPTX() {
     });
   }, [
     withExportGuard,
+    resolveOnline,
     slides,
     slideScenes,
     scenes,
@@ -1425,6 +1450,7 @@ export function useExportPPTX() {
     withExportGuard(async () => {
       const fileName = stage?.name || 'slides';
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
+      const online = await resolveOnline();
 
       const result = await buildResourcePackZip(scenes, {
         viewportRatio,
@@ -1442,7 +1468,7 @@ export function useExportPPTX() {
             ratioPx2Inch,
             ratioPx2Pt,
             stage?.id,
-            planPptxDeck(scenes, t, { linkInteractivePages: true }),
+            planPptxDeck(scenes, t, { linkInteractivePages: true, online }),
           ),
       });
 
@@ -1475,6 +1501,7 @@ export function useExportPPTX() {
     }, false);
   }, [
     withExportGuard,
+    resolveOnline,
     slides,
     slideScenes,
     scenes,

@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "Interaktiv",
       "quizLabel": "Quiz",
-      "interactiveDesc": "Interaktive Webseite. Lassen Sie diese Präsentation im entpackten Ressourcenpaket-Ordner und klicken Sie auf die Schaltfläche, um die Seite im Browser zu öffnen.",
-      "interactiveDescNoPack": "Interaktive Webseite. Exportieren Sie das Ressourcenpaket, um diese Seite als HTML-Datei neben der Präsentation zu erhalten.",
-      "openInteractive": "Interaktive Seite öffnen",
+      "interactiveDesc": "Interaktive Webseite. Online öffnen oder den QR-Code scannen.",
       "quizDesc": "Quiz-Szene. Die Antworten sind in dieser Präsentation nicht enthalten.",
-      "quizQuestionCount": "Fragen: {{count}}"
+      "quizQuestionCount": "Fragen: {{count}}",
+      "openOnline": "Online öffnen",
+      "openOffline": "Offline-Kopie öffnen",
+      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt",
+      "publishHint": "Veröffentlichen Sie diesen Kurs, damit Lernende ihn per Scan öffnen können."
     }
   },
   "import": {

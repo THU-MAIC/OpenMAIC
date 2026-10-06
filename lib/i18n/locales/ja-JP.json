@@ -120,11 +120,13 @@
     "placeholder": {
       "interactiveLabel": "インタラクティブ",
       "quizLabel": "クイズ",
-      "interactiveDesc": "インタラクティブな Web ページです。このスライドを展開したリソースパックのフォルダー内に置いたまま、ボタンをクリックするとブラウザーでページが開きます。",
-      "interactiveDescNoPack": "インタラクティブな Web ページです。リソースパックをエクスポートすると、このページが HTML ファイルとしてスライドと一緒に保存されます。",
-      "openInteractive": "インタラクティブページを開く",
+      "interactiveDesc": "インタラクティブな Web ページです。オンラインで開くか、QR コードを読み取ってください。",
       "quizDesc": "クイズシーンです。このスライドには解答は含まれません。",
-      "quizQuestionCount": "問題数：{{count}}"
+      "quizQuestionCount": "問題数：{{count}}",
+      "openOnline": "オンラインで開く",
+      "openOffline": "オフライン版を開く",
+      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します",
+      "publishHint": "このクラスルームを公開すると、学生が QR コードから開けるようになります。"
     }
   },
   "import": {
