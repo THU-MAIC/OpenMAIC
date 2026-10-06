@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
+import katex from 'katex';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -260,5 +261,31 @@ describe('slide HTML on the persistence document path', () => {
       300,
     );
     expect(await storedScene(stageId, 's1')).toEqual(served.scenes[0]);
+  });
+
+  it('keeps inline math source and layout across document and scene writes and reads', async () => {
+    const stageId = `inline-math-${randomUUID()}`;
+    const latex = String.raw`\sqrt{\frac{x}{2}}`;
+    const html = `<p>Before <span data-inline-math="${latex}">${katex.renderToString(latex)}</span> after</p>`;
+    expect(
+      (await request(AUTHOR, 'PUT', `/documents/${stageId}`, course(stageId, html))).status,
+    ).toBeLessThan(300);
+    const stored = await storedScene(stageId, 's1');
+    for (const content of slideHtml(stored)) {
+      expect(content).toContain(`data-inline-math="${latex}"`);
+      expect(content).toContain('<svg');
+      expect(content).toContain('frac-line');
+      expect(content).toContain('top:');
+    }
+    const served = (await (await request(VIEWER, 'GET', `/documents/${stageId}`)).json()) as {
+      scenes: Scene[];
+    };
+    expect(slideHtml(served.scenes[0])).toEqual(slideHtml(stored));
+    expect(
+      (await request(AUTHOR, 'PUT', `/documents/${stageId}/scenes/s1`, served.scenes[0])).status,
+    ).toBeLessThan(300);
+    const reopened = await request(VIEWER, 'GET', `/documents/${stageId}/scenes/s1`);
+    expect(reopened.status).toBe(200);
+    expect(slideHtml((await reopened.json()) as Scene)).toEqual(slideHtml(stored));
   });
 });

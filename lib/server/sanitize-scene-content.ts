@@ -25,6 +25,14 @@
  * needs its own policy so formulas are not flattened.
  */
 import sanitizeHtml, { type IOptions } from 'sanitize-html';
+import katex from 'katex';
+import {
+  defaultTreeAdapter as tree,
+  html as htmlNames,
+  parseFragment,
+  serialize,
+  type DefaultTreeAdapterTypes,
+} from 'parse5';
 
 // ---------------------------------------------------------------------------
 // Allowlist primitives
@@ -174,6 +182,7 @@ export const PROSE_ALLOWED_TAGS = [
 
 const PROSE_ATTRIBUTES: Record<string, string[]> = {
   '*': ['class', 'style'],
+  span: ['data-inline-math'],
   a: ['href', 'title', 'target', 'rel', 'name'],
   p: ['align', 'data-indent'],
   ol: ['start'],
@@ -188,12 +197,103 @@ const PROSE_OPTIONS: IOptions = {
   allowedStyles: allowedStylesByTag(STYLE_PROPERTIES),
 };
 
+const INLINE_MATH_ATTRIBUTE = 'data-inline-math';
+type HtmlNode = DefaultTreeAdapterTypes.Node;
+type HtmlElement = DefaultTreeAdapterTypes.Element;
+
+function textContent(node: HtmlNode): string {
+  if (tree.isTextNode(node)) return node.value;
+  return 'childNodes' in node ? node.childNodes.map(textContent).join('') : '';
+}
+
+function texAnnotation(node: HtmlElement): HtmlElement | undefined {
+  if (
+    node.tagName === 'annotation' &&
+    node.attrs.some(({ name, value }) => name === 'encoding' && value === 'application/x-tex')
+  ) {
+    return node;
+  }
+  for (const child of node.childNodes) {
+    if (!tree.isElementNode(child)) continue;
+    const annotation = texAnnotation(child);
+    if (annotation) return annotation;
+  }
+}
+
+function inlineMathSource(node: HtmlElement): string | undefined {
+  if (node.tagName !== 'span') return undefined;
+  const source = node.attrs.find(({ name }) => name === INLINE_MATH_ATTRIBUTE);
+  if (source) return source.value;
+  const classes = node.attrs.find(({ name }) => name === 'class')?.value.split(/\s+/);
+  if (!classes?.includes('katex')) return undefined;
+  const annotation = texAnnotation(node);
+  return annotation ? textContent(annotation) : undefined;
+}
+
+function sourceSpan(latex: string): HtmlElement {
+  return tree.createElement('span', htmlNames.NS.HTML, [
+    { name: INLINE_MATH_ATTRIBUTE, value: latex },
+  ]);
+}
+
+function renderInlineMath(latex: string): HtmlElement {
+  const fallback = sourceSpan(latex);
+  if (!latex.trim()) return fallback;
+  try {
+    const formula = parseFragment(
+      katex.renderToString(latex, {
+        displayMode: false,
+        output: 'html',
+        throwOnError: false,
+        trust: false,
+      }),
+    ).childNodes[0];
+    if (formula && tree.isElementNode(formula)) {
+      formula.attrs.push({ name: INLINE_MATH_ATTRIBUTE, value: latex });
+      return formula;
+    }
+  } catch {
+    // Match the editor: a renderer failure must not lose the source or block a save.
+  }
+  tree.insertText(fallback, latex);
+  return fallback;
+}
+
+function mapInlineMath(html: string, transform: (latex: string) => HtmlElement): string {
+  // Avoid normalizing ordinary prose. Encoded KaTeX class names still have an annotation tag.
+  if (!/data-inline-math|katex|annotation/i.test(html)) return html;
+  const fragment = parseFragment(html);
+  function visit(parent: DefaultTreeAdapterTypes.ParentNode) {
+    parent.childNodes.forEach((node, index) => {
+      if (!tree.isElementNode(node)) return;
+      const latex = inlineMathSource(node);
+      if (latex !== undefined) {
+        const replacement = transform(latex);
+        replacement.parentNode = parent;
+        parent.childNodes[index] = replacement;
+        return;
+      }
+      // sanitize-html unwraps templates, so their contents need the same treatment.
+      visit(
+        node.tagName === 'template' && 'content' in node
+          ? (node as DefaultTreeAdapterTypes.Template).content
+          : node,
+      );
+    });
+  }
+  visit(fragment);
+  return serialize(fragment);
+}
+
 /**
  * Sanitize one prose-HTML string (a text element's `content`, a shape's
  * `text.content`, or a table cell's `text`).
  */
 export function sanitizeProseHtml(html: string): string {
-  return sanitizeHtml(html, PROSE_OPTIONS);
+  // Imported/editor KaTeX markup is untrusted. Retain only its source before
+  // sanitizing, then insert fresh trust:false output after the prose policy.
+  const stripped = mapInlineMath(html, sourceSpan);
+  return mapInlineMath(sanitizeHtml(stripped, PROSE_OPTIONS), renderInlineMath);
 }
 
 // ---------------------------------------------------------------------------
