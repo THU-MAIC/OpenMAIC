@@ -41,9 +41,13 @@ import sanitizeHtml, { type IOptions } from 'sanitize-html';
  * renderer may emit are enumerated below — a property not in the list is
  * dropped, so a stray `background: url(...)` or `behavior: url(...)` cannot
  * ride in through the `style` attribute.
+ *
+ * Backslashes are rejected outright: a CSS escape (`u\72l(`, `j\61vascript:`)
+ * decodes to a token the pattern below would otherwise refuse, and neither
+ * the editor schemas, the PPTX importer nor KaTeX emit escaped CSS inline.
  */
 const SAFE_CSS_VALUE =
-  /^(?!.*(?:url\s*\(|expression\s*\(|@|behavior\s*:|-moz-binding\s*:|vbscript:|javascript:))[^<>{};]{0,240}$/i;
+  /^(?!.*(?:url\s*\(|expression\s*\(|@|behavior\s*:|-moz-binding\s*:|vbscript:|javascript:))[^<>{};\\]{0,240}$/i;
 
 /**
  * Every CSS property the ProseMirror schemas, the PPTX text importer and the
