@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   collectAudioFiles: vi.fn(),
   collectMediaFiles: vi.fn(),
   collectLegacyAudioForExport: vi.fn(),
+  collectVideoPosters: vi.fn(),
 }));
 
 vi.mock('@/lib/document-store', () => ({ accessDocument: mocks.accessDocument }));
@@ -25,6 +26,7 @@ vi.mock('@/lib/export/classroom-zip-utils', async (importOriginal) => {
     collectAudioFiles: mocks.collectAudioFiles,
     collectMediaFiles: mocks.collectMediaFiles,
     collectLegacyAudioForExport: mocks.collectLegacyAudioForExport,
+    collectVideoPosters: mocks.collectVideoPosters,
   };
 });
 
@@ -50,6 +52,8 @@ import {
 import { prepareStandaloneManifest } from '@/lib/export/standalone-html/prepare-manifest';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import type { Scene } from '@/lib/types/stage';
+import type { PPTElement } from '@openmaic/dsl';
+import { legacyPBLSceneFixture } from '../fixtures/pbl-v1-scene';
 import {
   DEFAULT_FIXTURE_MEDIA,
   FIXTURE_PNG_BASE64,
@@ -111,6 +115,7 @@ function setupSnapshot(scenes: Scene[]) {
       },
     },
   ]);
+  mocks.collectVideoPosters.mockResolvedValue([]);
   mocks.collectLegacyAudioForExport.mockResolvedValue({
     audioUrlToPath: new Map(),
     blobs: [],
@@ -139,6 +144,21 @@ function embeddedJson<T>(html: string, id: string): T {
   );
   if (!match) throw new Error(`no #${id}`);
   return JSON.parse(match[1]) as T;
+}
+
+function withSlideElements(scene: Scene, edit: (elements: PPTElement[]) => PPTElement[]): Scene {
+  if (scene.content.type !== 'slide') return scene;
+  const canvas = scene.content.canvas;
+  return {
+    ...scene,
+    content: { ...scene.content, canvas: { ...canvas, elements: edit(canvas.elements) } },
+  } as Scene;
+}
+
+function slideOf(manifest: ClassroomManifest) {
+  const scene = manifest.scenes.find((s) => s.type === 'slide')!;
+  if (scene.content.type !== 'slide') throw new Error('expected slide');
+  return scene.content.canvas;
 }
 
 function imageSources(manifest: ClassroomManifest): string[] {
@@ -248,31 +268,349 @@ describe('standalone HTML export', () => {
     expect(config.strings.pblContinueOnline).toBe('[pblContinueOnline]');
   });
 
-  it('ships the math fonts and charts runtime only when the classroom needs them', async () => {
+  it('ships the charts runtime only when a slide has a chart', async () => {
     const full = await exportFixture();
-    expect(full.html).toContain(MATH_FONTS);
     expect(full.html).toContain(CHARTS_SCRIPT);
 
     const slideOnly = standaloneFixtureScenes(STAGE_ID)
       .filter((scene) => scene.type === 'slide')
-      .map((scene) => {
-        if (scene.content.type !== 'slide') return scene;
-        const elements = scene.content.canvas.elements.filter((e) => e.type !== 'chart');
-        return {
-          ...scene,
-          content: { ...scene.content, canvas: { ...scene.content.canvas, elements } },
-        };
-      }) as Scene[];
+      .map((scene) =>
+        withSlideElements(scene, (elements) => elements.filter((e) => e.type !== 'chart')),
+      );
     fetchAsset.mockClear();
     const lean = await exportFixture({}, slideOnly);
-    expect(lean.html).not.toContain(MATH_FONTS);
     expect(lean.html).not.toContain(CHARTS_SCRIPT);
     expect(fetchAsset).toHaveBeenCalledTimes(2);
+  });
+
+  it('ships the math fonts only when quiz text or slides contain math', async () => {
+    // The fixture quiz is plain prose.
+    expect((await exportFixture()).html).not.toContain(MATH_FONTS);
+
+    const withMath = standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      scene.content.type === 'quiz'
+        ? ({
+            ...scene,
+            content: {
+              ...scene.content,
+              questions: [
+                ...scene.content.questions,
+                {
+                  id: 'q-math',
+                  type: 'single',
+                  question: 'Solve $x^2 = 4$ for positive $x$.',
+                  options: [
+                    { value: 'A', label: '2' },
+                    { value: 'B', label: '4' },
+                  ],
+                  answer: ['A'],
+                },
+              ],
+            },
+          } as Scene)
+        : scene,
+    );
+    expect((await exportFixture({}, withMath)).html).toContain(MATH_FONTS);
   });
 
   it('names the file after the course', async () => {
     const { fileName } = await exportFixture();
     expect(fileName).toBe('Photosynthesis_ _Light_ & _Life_.html');
+  });
+});
+
+const INJECTED_TEXT = `<p><img src="x" onerror="document.body.setAttribute('data-pwned','1')">Hello</p>`;
+const INJECTED_IFRAME = `<p><iframe srcdoc="<script>parent.document.body.setAttribute('data-pwned','1')</script>"></iframe>Shape</p>`;
+const INJECTED_META = `<meta http-equiv="refresh" content="0;url=https://evil.example/"><p>Cell</p>`;
+
+describe('standalone HTML export content safety', () => {
+  function injectedScenes(): Scene[] {
+    return standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      withSlideElements(
+        scene,
+        (elements) =>
+          [
+            ...elements,
+            {
+              type: 'text',
+              id: 'evil-text',
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 40,
+              rotate: 0,
+              content: INJECTED_TEXT,
+              defaultFontName: 'Arial',
+              defaultColor: '#000',
+            },
+            {
+              type: 'shape',
+              id: 'evil-shape',
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 40,
+              rotate: 0,
+              viewBox: [200, 200],
+              path: 'M 0 0 L 200 0 L 200 200 Z',
+              fixedRatio: false,
+              fill: '#fff',
+              text: {
+                content: INJECTED_IFRAME,
+                defaultFontName: 'Arial',
+                defaultColor: '#000',
+                align: 'middle',
+              },
+            },
+            {
+              type: 'table',
+              id: 'evil-table',
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 40,
+              rotate: 0,
+              outline: { width: 1, style: 'solid', color: '#000' },
+              colWidths: [1],
+              cellMinHeight: 20,
+              data: [[{ id: 'c1', colspan: 1, rowspan: 1, text: INJECTED_META }]],
+            },
+            {
+              type: 'latex',
+              id: 'evil-latex',
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 40,
+              rotate: 0,
+              latex: 'x',
+              html: '<span class="katex">x</span><img src="x" onerror="alert(1)">',
+              path: '',
+              color: '#000',
+              strokeWidth: 1,
+              viewBox: [0, 0],
+              fixedRatio: true,
+            },
+          ] as PPTElement[],
+      ),
+    );
+  }
+
+  it('sanitizes slide rich text before it reaches the player document', async () => {
+    const { html } = await exportFixture({}, injectedScenes());
+    const manifest = embeddedJson<ClassroomManifest>(html, STANDALONE_MANIFEST_ELEMENT_ID);
+    const slideJson = JSON.stringify(slideOf(manifest));
+    for (const marker of [
+      'onerror',
+      'data-pwned',
+      '<iframe',
+      'srcdoc',
+      '<meta',
+      'http-equiv',
+      '<img',
+    ]) {
+      expect(slideJson).not.toContain(marker);
+    }
+    const byId = new Map(slideOf(manifest).elements.map((e) => [e.id, e]));
+    expect(byId.get('evil-text')).toMatchObject({ content: '<p>Hello</p>' });
+    expect(JSON.stringify(byId.get('evil-shape'))).toContain('Shape');
+    expect(JSON.stringify(byId.get('evil-table'))).toContain('Cell');
+    expect(byId.get('evil-latex')).toMatchObject({ html: '<span class="katex">x</span>' });
+  });
+
+  it('leaves no external address in rich text, styles or chart point images', async () => {
+    const remotePoint = 'https://images.example.com/bar-fill.png';
+    const deadPoint = 'https://images.example.com/missing.png';
+    const scenes = standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      withSlideElements(
+        scene,
+        (elements) =>
+          [
+            ...elements.map((element) =>
+              element.type === 'chart'
+                ? {
+                    ...element,
+                    importedStyle: {
+                      series: [{ pointImages: { '0': remotePoint, '1': deadPoint } }],
+                    },
+                  }
+                : element,
+            ),
+            {
+              type: 'text',
+              id: 'rich',
+              left: 0,
+              top: 0,
+              width: 100,
+              height: 40,
+              rotate: 0,
+              content:
+                '<p style="background-image: url(https://images.example.com/bg.png); color: red">Hi <img src="https://images.example.com/inline.png"></p>',
+              defaultFontName: 'Arial',
+              defaultColor: '#000',
+            },
+          ] as PPTElement[],
+      ),
+    );
+    const fetchImageWithPoint = vi.fn(async (url: string) =>
+      url === deadPoint ? null : new Blob([PNG_BYTES], { type: 'image/png' }),
+    );
+    const { html, unresolvedMedia } = await exportFixture(
+      { fetchImage: fetchImageWithPoint },
+      scenes,
+    );
+    const manifest = embeddedJson<ClassroomManifest>(html, STANDALONE_MANIFEST_ELEMENT_ID);
+    expect(JSON.stringify(manifest)).not.toMatch(/https?:\/\/images\.example\.com/);
+    const chart = slideOf(manifest).elements.find((e) => e.type === 'chart');
+    expect(chart).toMatchObject({
+      importedStyle: {
+        series: [{ pointImages: { '0': `data:image/png;base64,${FIXTURE_PNG_BASE64}` } }],
+      },
+    });
+    expect(unresolvedMedia).toEqual([deadPoint]);
+    const rich = slideOf(manifest).elements.find((e) => e.id === 'rich');
+    expect(rich).toMatchObject({ content: '<p style="color:red">Hi </p>' });
+  });
+
+  it('fetches a reference once even when several slots name it', async () => {
+    const shared = DEFAULT_FIXTURE_MEDIA.remoteImageUrl;
+    const scenes = standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      scene.content.type === 'slide'
+        ? ({
+            ...scene,
+            content: {
+              ...scene.content,
+              canvas: {
+                ...scene.content.canvas,
+                background: { type: 'image', image: { src: shared, size: 'cover' } },
+              },
+            },
+          } as Scene)
+        : scene,
+    );
+    await exportFixture({}, scenes);
+    expect(fetchImage.mock.calls.filter(([url]) => url === shared)).toHaveLength(1);
+  });
+
+  it('leaves out data the player does not use', async () => {
+    const scenes = standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      scene.type === 'slide'
+        ? ({
+            ...scene,
+            multiAgent: {
+              enabled: true,
+              agentIds: ['agent-1'],
+              directorPrompt: 'Secret director prompt',
+            },
+          } as Scene)
+        : scene,
+    );
+    const stage = setupSnapshot(scenes);
+    Object.assign(stage, {
+      generatedAgentConfigs: [
+        {
+          id: 'agent-1',
+          name: 'Teacher',
+          role: 'teacher',
+          persona: 'Secret persona',
+          avatar: '',
+          color: '#000',
+          priority: 1,
+        },
+      ],
+      videoManifest: { gen_vid_1: { prompt: 'Secret video prompt' } },
+    });
+    const { html } = await buildStandaloneHtmlExport(stage, scenes, {
+      strings,
+      lang: 'en-US',
+      fetchAsset,
+      fetchImage,
+    });
+    const manifest = embeddedJson<ClassroomManifest>(html, STANDALONE_MANIFEST_ELEMENT_ID);
+    expect(manifest.agents).toEqual([]);
+    expect(manifest.stage).not.toHaveProperty('videoManifest');
+    for (const scene of manifest.scenes) {
+      expect(scene).not.toHaveProperty('actions');
+      expect(scene).not.toHaveProperty('multiAgent');
+      expect(scene).not.toHaveProperty('whiteboards');
+    }
+    for (const secret of ['Secret', 'Let us look at photosynthesis', 'threads', 'submissions']) {
+      expect(html).not.toContain(secret);
+    }
+  });
+
+  it('resolves legacy PBL projects the way the classroom does and drops the legacy payload', async () => {
+    const scenes = [{ ...legacyPBLSceneFixture, stageId: STAGE_ID }] as Scene[];
+    const { html } = await exportFixture({}, scenes);
+    const manifest = embeddedJson<ClassroomManifest>(html, STANDALONE_MANIFEST_ELEMENT_ID);
+    const content = manifest.scenes[0].content as {
+      projectV2?: { title: string; milestones: unknown[] };
+      projectConfig?: unknown;
+    };
+    expect(content.projectConfig).toBeUndefined();
+    expect(content.projectV2?.title).toBe('Community Garden Data Project');
+    expect(content.projectV2?.milestones.length).toBeGreaterThan(0);
+    expect(html).not.toContain('system_prompt');
+  });
+
+  it('skips narration and video bytes but keeps captured video posters', async () => {
+    const scenes = standaloneFixtureScenes(STAGE_ID).map((scene) =>
+      withSlideElements(
+        scene,
+        (elements) =>
+          [
+            ...elements,
+            {
+              type: 'video',
+              id: 'clip',
+              left: 0,
+              top: 0,
+              width: 160,
+              height: 90,
+              rotate: 0,
+              src: 'gen_vid_1',
+              mediaRef: 'gen_vid_1',
+              poster: 'gen_vid_1_poster',
+              autoplay: false,
+            },
+          ] as PPTElement[],
+      ),
+    );
+    const stage = setupSnapshot(scenes);
+    mocks.buildAssetManifest.mockResolvedValue({
+      entries: [
+        { kind: 'audio', ref: 'aud-1' },
+        { kind: 'image', ref: DEFAULT_FIXTURE_MEDIA.archivedImageRef },
+        { kind: 'video', ref: 'gen_vid_1' },
+        { kind: 'poster', ref: 'gen_vid_1_poster' },
+      ],
+    });
+    mocks.collectVideoPosters.mockResolvedValue([
+      { sourceRef: 'gen_vid_1', poster: new Blob([PNG_BYTES], { type: 'image/png' }) },
+    ]);
+    const { html, unresolvedMedia } = await buildStandaloneHtmlExport(stage, scenes, {
+      strings,
+      lang: 'en-US',
+      fetchAsset,
+      fetchImage,
+    });
+
+    expect(mocks.collectAudioFiles).not.toHaveBeenCalled();
+    expect(mocks.collectLegacyAudioForExport).not.toHaveBeenCalled();
+    const mediaKinds = mocks.collectMediaFiles.mock.calls[0][1].map(
+      (e: { kind: string }) => e.kind,
+    );
+    expect(mediaKinds).not.toContain('video');
+    expect(mocks.collectVideoPosters.mock.calls[0][1]).toEqual([
+      { kind: 'video', ref: 'gen_vid_1' },
+    ]);
+
+    const clip = slideOf(
+      embeddedJson<ClassroomManifest>(html, STANDALONE_MANIFEST_ELEMENT_ID),
+    ).elements.find((e) => e.id === 'clip');
+    expect(clip).toMatchObject({ src: '', poster: `data:image/png;base64,${FIXTURE_PNG_BASE64}` });
+    // The element's own poster ref resolved nowhere, but the captured frame covered it.
+    expect(unresolvedMedia).toEqual([]);
   });
 });
 

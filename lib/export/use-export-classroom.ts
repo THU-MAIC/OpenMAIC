@@ -20,6 +20,7 @@ import {
   collectedAudioMediaIndexEntry,
   collectedMediaIndexEntry,
   collectMediaFiles,
+  collectVideoPosters,
   actionsToManifest,
   audioArchivePath,
   collectLegacyAudioForExport,
@@ -62,15 +63,27 @@ export interface ClassroomExportSnapshot {
   /**
    * Archive path → bytes, for every collected payload (narration, generated
    * media, and generated-video posters). Keys match `manifest.mediaIndex`,
-   * except poster paths, which only {@link videoPosterPaths} names.
+   * except the archive paths of captured video posters.
    */
   files: Map<string, Blob>;
-  /** Media archive path → archive path of the poster captured for that video. */
-  videoPosterPaths: Map<string, string>;
+  /** Video source ref → the poster frame captured for that video, when one exists. */
+  videoPosters: Map<string, Blob>;
   /** Stage name as the authoritative document holds it. */
   stageName: string;
   inlineFailures: InlineReport['failed'];
   missingAudioCount: number;
+}
+
+/** What a snapshot collects; every payload is collected by default. */
+export interface ClassroomExportSnapshotOptions {
+  /** Collect narration audio: stored rows and legacy audio URLs. */
+  audio?: boolean;
+  /**
+   * Collect video bytes. When false, generated videos contribute only the
+   * poster frame captured for them; posters referenced by elements are images
+   * and are always collected.
+   */
+  videoBytes?: boolean;
 }
 
 /** The archive a classroom export produces, ready to save. */
@@ -104,12 +117,19 @@ export function classroomExportBaseName(stageName: string): string {
  *
  * @param deps Document-store dependencies; production callers omit them and
  * the lazy client store is used. Injectable so tests can pin the boundary.
+ * @param options Payloads to leave out, for formats that do not carry them.
+ * The manifest then names no path for them (skipped narration is not reported
+ * missing either).
  */
 export async function buildClassroomExportSnapshot(
   stage: Stage,
   scenes: Scene[],
   deps: DocumentMigrationDeps = {},
+  options: ClassroomExportSnapshotOptions = {},
 ): Promise<ClassroomExportSnapshot> {
+  const includeAudio = options.audio !== false;
+  const includeVideoBytes = options.videoBytes !== false;
+
   // 1. Access the authoritative document and prepare the working scenes.
   const [freshDocument, documentScenes] = await Promise.all([
     accessDocument(stage.id, deps),
@@ -137,12 +157,22 @@ export async function buildClassroomExportSnapshot(
   const assetManifest = await buildStageAssetManifest(exportStage, exportScenes, stage.id, {
     includeStageWhiteboard: false,
   });
-  const audioEntries = assetManifest.entries.filter((entry) => entry.kind === 'audio');
-  const mediaEntries = assetManifest.entries.filter((entry) => entry.kind !== 'audio');
+  const audioEntries = includeAudio
+    ? assetManifest.entries.filter((entry) => entry.kind === 'audio')
+    : [];
+  const mediaEntries = assetManifest.entries.filter(
+    (entry) => entry.kind !== 'audio' && (includeVideoBytes || entry.kind !== 'video'),
+  );
+  const posterOnlyVideoEntries = includeVideoBytes
+    ? []
+    : assetManifest.entries.filter((entry) => entry.kind === 'video');
 
   // 5. Collect referenced audio and generated media.
-  const audioFiles = await collectAudioFiles(audioEntries);
+  const audioFiles = includeAudio ? await collectAudioFiles(audioEntries) : [];
   const mediaFiles = await collectMediaFiles(stage.id, mediaEntries);
+  const posterOnlyVideos = includeVideoBytes
+    ? []
+    : await collectVideoPosters(stage.id, posterOnlyVideoEntries);
 
   // 6. Build audioId → zipPath mapping for manifest
   const audioIdToPath = new Map<string, string>();
@@ -157,7 +187,13 @@ export async function buildClassroomExportSnapshot(
     audioUrlToPath,
     blobs: legacyAudioBlobs,
     fullyRescuedAudioIds,
-  } = await collectLegacyAudioForExport(exportScenes, audioIdToPath);
+  } = includeAudio
+    ? await collectLegacyAudioForExport(exportScenes, audioIdToPath)
+    : {
+        audioUrlToPath: new Map<string, string>(),
+        blobs: [],
+        fullyRescuedAudioIds: new Set<string>(),
+      };
 
   // 7. Build manifest
   const manifestStage: ManifestStage = {
@@ -254,7 +290,7 @@ export async function buildClassroomExportSnapshot(
 
   // 10. Gather the payload bytes
   const files = new Map<string, Blob>();
-  const videoPosterPaths = new Map<string, string>();
+  const videoPosters = new Map<string, Blob>();
   for (const af of audioFiles) {
     files.set(af.zipPath, af.record.blob);
   }
@@ -265,14 +301,17 @@ export async function buildClassroomExportSnapshot(
     files.set(mf.zipPath, mf.record.blob);
     if (mf.record.poster) {
       files.set(mf.posterZipPath, mf.record.poster);
-      videoPosterPaths.set(mf.zipPath, mf.posterZipPath);
+      videoPosters.set(mf.sourceRef, mf.record.poster);
     }
+  }
+  for (const video of posterOnlyVideos) {
+    videoPosters.set(video.sourceRef, video.poster);
   }
 
   return {
     manifest,
     files,
-    videoPosterPaths,
+    videoPosters,
     stageName: latestName,
     inlineFailures: aggregateReport.failed,
     missingAudioCount,

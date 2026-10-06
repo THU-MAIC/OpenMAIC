@@ -13,6 +13,7 @@ import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { fetchStageMeta } from '@/lib/classroom/stage-meta-client';
 import { mapWithConcurrency } from '@/lib/utils/concurrency';
+import { renderQuizMathText } from '@/lib/quiz/math-text';
 import {
   buildClassroomExportSnapshot,
   classroomExportBaseName,
@@ -89,7 +90,7 @@ export interface StandaloneMediaDeps {
  * {@link prepareStandaloneManifest} and reported back.
  */
 export async function resolveStandaloneMedia(
-  snapshot: Pick<ClassroomExportSnapshot, 'manifest' | 'files' | 'videoPosterPaths'>,
+  snapshot: Pick<ClassroomExportSnapshot, 'manifest' | 'files' | 'videoPosters'>,
   deps: StandaloneMediaDeps = {},
 ): Promise<StandaloneMediaResolution> {
   const fetchImage = deps.fetchImage ?? fetchImageBytes;
@@ -99,28 +100,42 @@ export async function resolveStandaloneMedia(
       pathByRef.set(entry.sourceRef, path);
     }
   }
-  const mimeByPath = (path: string) => snapshot.manifest.mediaIndex[path]?.mimeType;
+
+  // One resolution per ref, shared by every slot that names it, so a ref used
+  // as both an image and a background is fetched once.
+  const pending = new Map<string, Promise<string | undefined>>();
+  const resolveRef = (ref: string): Promise<string | undefined> => {
+    let resolution = pending.get(ref);
+    if (!resolution) {
+      resolution = (async () => {
+        const path = pathByRef.get(ref);
+        const archived = path ? snapshot.files.get(path) : undefined;
+        if (archived && archived.size > 0) {
+          return blobToDataUri(
+            archived,
+            path ? snapshot.manifest.mediaIndex[path]?.mimeType : undefined,
+          );
+        }
+        if (!isConcreteMediaAddress(ref)) return undefined;
+        const fetched = await fetchImage(ref);
+        return fetched ? blobToDataUri(fetched) : undefined;
+      })();
+      pending.set(ref, resolution);
+    }
+    return resolution;
+  };
 
   const dataUris = new Map<string, string>();
   const videoPosters = new Map<string, string>();
   const references = collectStandaloneMediaReferences(snapshot.manifest);
   await mapWithConcurrency(references, 4, async ({ ref, role }) => {
-    const path = pathByRef.get(ref);
     if (role === 'video') {
-      const posterPath = path ? snapshot.videoPosterPaths.get(path) : undefined;
-      const poster = posterPath ? snapshot.files.get(posterPath) : undefined;
+      const poster = snapshot.videoPosters.get(ref);
       if (poster) videoPosters.set(ref, await blobToDataUri(poster, 'image/jpeg'));
       return;
     }
-    if (dataUris.has(ref)) return;
-    const archived = path ? snapshot.files.get(path) : undefined;
-    if (archived && archived.size > 0) {
-      dataUris.set(ref, await blobToDataUri(archived, path ? mimeByPath(path) : undefined));
-      return;
-    }
-    if (!isConcreteMediaAddress(ref)) return;
-    const fetched = await fetchImage(ref);
-    if (fetched) dataUris.set(ref, await blobToDataUri(fetched));
+    const dataUri = await resolveRef(ref);
+    if (dataUri) dataUris.set(ref, dataUri);
   });
   return { dataUris, videoPosters };
 }
@@ -140,13 +155,28 @@ export async function resolvePublicClassroomUrl(
   return `${origin}/classroom/${encodeURIComponent(stageId)}`;
 }
 
-/** Whether the classroom can show math, so the KaTeX fonts must ship. */
+function hasQuizMath(text: string | undefined): boolean {
+  return !!text && renderQuizMathText(text).some((segment) => segment.type === 'math');
+}
+
+/**
+ * Whether the classroom shows math, so the KaTeX fonts must ship: a slide
+ * carrying KaTeX markup, or quiz text the player renders as math (the same
+ * `renderQuizMathText` decides it in both places).
+ */
 function needsMathFonts(manifest: ClassroomManifest): boolean {
-  return manifest.scenes.some(
-    (scene) =>
-      scene.content.type === 'quiz' ||
-      (scene.content.type === 'slide' && JSON.stringify(scene.content.canvas).includes('katex')),
-  );
+  return manifest.scenes.some((scene) => {
+    const content = scene.content;
+    if (content.type === 'slide') return JSON.stringify(content.canvas).includes('katex');
+    if (content.type !== 'quiz') return false;
+    return (content.questions ?? []).some(
+      (question) =>
+        hasQuizMath(question.question) ||
+        hasQuizMath(question.analysis) ||
+        (question.answer ?? []).some(hasQuizMath) ||
+        (question.options ?? []).some((option) => hasQuizMath(option.label)),
+    );
+  });
 }
 
 /** Whether any slide has a chart element, so the charts runtime must ship. */
@@ -196,7 +226,12 @@ export async function buildStandaloneHtmlExport(
   options: StandaloneHtmlExportOptions,
 ): Promise<StandaloneHtmlExport> {
   const fetchAsset = options.fetchAsset ?? fetchPlayerAsset;
-  const snapshot = await buildClassroomExportSnapshot(stage, scenes, options.documentDeps);
+  // No narration or video bytes in this format yet: skip collecting them
+  // (posters captured for generated videos are still collected).
+  const snapshot = await buildClassroomExportSnapshot(stage, scenes, options.documentDeps, {
+    audio: false,
+    videoBytes: false,
+  });
   const media = await resolveStandaloneMedia(snapshot, options);
   const { manifest, unresolved } = prepareStandaloneManifest(snapshot.manifest, media);
 

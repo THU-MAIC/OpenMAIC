@@ -5,22 +5,39 @@
  * file has no archive next to it, so this step makes the embedded copy
  * self-contained:
  *
- * - every slide image, background, shape pattern and video poster is replaced
- *   by a `data:` URI (or dropped when its bytes could not be resolved), so
- *   the player never names a network address;
+ * - slide rich text (text, shape text, table cells, LaTeX snapshots) is run
+ *   through the persistence sanitizer: the renderer injects it into the
+ *   player's own document, and the export reads working state that has not
+ *   crossed the persistence boundary yet;
+ * - every slide image, background, shape pattern, chart point image and video
+ *   poster is replaced by a `data:` URI (or dropped when its bytes could not
+ *   be resolved), so the player never names a network address;
  * - video and audio sources are dropped (P1 ships no audio/video bytes; a
  *   video shows its poster frame only);
  * - interactive HTML is patched for iframe display exactly as the classroom
- *   does, and whiteboards plus the media index (both of which only describe
- *   payloads that are not embedded) are left out.
+ *   does;
+ * - PBL content is resolved to the representation the classroom shows and
+ *   reduced to its briefing;
+ * - data the player does not use is left out: whiteboards, playback actions,
+ *   multi-agent settings, the agent roster, the video manifest and the media
+ *   index (which only describes archive payloads).
  */
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
+import { sanitizeSceneContent } from '@/lib/sanitize/scene-content';
+import { resolvePBLContent, upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
+import type { PBLContent, SlideContent } from '@/lib/types/stage';
 import type { ClassroomManifest, ManifestScene } from '../classroom-zip-types';
 import { orderManifestScenes } from './order-scenes';
 
 /** Which slot of a slide a media reference was found in. */
-export type StandaloneMediaRole = 'image' | 'background' | 'pattern' | 'poster' | 'video';
+export type StandaloneMediaRole =
+  | 'image'
+  | 'background'
+  | 'pattern'
+  | 'chart-image'
+  | 'poster'
+  | 'video';
 
 export interface StandaloneMediaReference {
   ref: string;
@@ -72,6 +89,13 @@ export function collectStandaloneMediaReferences(
       for (const element of slide.elements ?? []) {
         if (element.type === 'image') add(element.src, 'image');
         if (element.type === 'shape') add(element.pattern, 'pattern');
+        if (element.type === 'chart') {
+          for (const series of element.importedStyle?.series ?? []) {
+            for (const image of Object.values(series?.pointImages ?? {})) {
+              add(image, 'chart-image');
+            }
+          }
+        }
         if (element.type === 'video') {
           add(element.poster, 'poster');
           add(element.src, 'video');
@@ -83,11 +107,20 @@ export function collectStandaloneMediaReferences(
   return refs;
 }
 
+interface MediaResolver {
+  /** The data URI for a ref, recording the ref as unresolved when there is none. */
+  resolve(ref: string | undefined): string | undefined;
+  /** The data URI for a ref, without recording a miss. */
+  lookup(ref: string | undefined): string | undefined;
+  markUnresolved(ref: string): void;
+}
+
 function prepareElement(
   element: PPTElement,
-  resolve: (ref: string | undefined) => string | undefined,
   media: StandaloneMediaResolution,
+  resolver: MediaResolver,
 ): PPTElement {
+  const { resolve, lookup } = resolver;
   switch (element.type) {
     case 'image':
       return { ...element, src: resolve(element.src) ?? '' };
@@ -97,12 +130,28 @@ function prepareElement(
       const { pattern: _dropped, ...rest } = element;
       return pattern ? { ...rest, pattern } : rest;
     }
+    case 'chart': {
+      if (!element.importedStyle?.series) return element;
+      const series = element.importedStyle.series.map((entry) => {
+        if (!entry?.pointImages) return entry;
+        const pointImages: Record<string, string> = {};
+        for (const [point, image] of Object.entries(entry.pointImages)) {
+          const src = resolve(image);
+          if (src) pointImages[point] = src;
+        }
+        return { ...entry, pointImages };
+      });
+      return { ...element, importedStyle: { ...element.importedStyle, series } };
+    }
     case 'video': {
       const { mediaRef, poster: rawPoster, src, ...rest } = element;
+      // The element's own poster first, then the frame captured for the
+      // video; a poster ref counts as unresolved only when neither exists.
       const poster =
-        resolve(rawPoster) ??
+        lookup(rawPoster) ??
         (src ? media.videoPosters?.get(src) : undefined) ??
         (mediaRef ? media.videoPosters?.get(mediaRef) : undefined);
+      if (!poster && rawPoster) resolver.markUnresolved(rawPoster);
       return { ...rest, src: '', ...(poster ? { poster } : {}) };
     }
     case 'audio':
@@ -114,12 +163,12 @@ function prepareElement(
 
 function prepareSlide(
   slide: Slide,
-  resolve: (ref: string | undefined) => string | undefined,
   media: StandaloneMediaResolution,
+  resolver: MediaResolver,
 ): Slide {
   let background = slide.background;
   if (background?.type === 'image' && background.image) {
-    const src = resolve(background.image.src);
+    const src = resolver.resolve(background.image.src);
     background = src
       ? { ...background, image: { ...background.image, src } }
       : { ...background, type: 'solid', image: undefined };
@@ -127,22 +176,80 @@ function prepareSlide(
   return {
     ...slide,
     ...(background ? { background } : {}),
-    elements: (slide.elements ?? []).map((element) => prepareElement(element, resolve, media)),
+    elements: (slide.elements ?? []).map((element) => prepareElement(element, media, resolver)),
   };
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The PBL scene as the classroom shows it, reduced to its briefing. Authority
+ * between the current and the legacy representation is decided exactly as the
+ * classroom decides it (`resolvePBLContent`); a legacy project is upgraded the
+ * same way the classroom upgrades it. Runtime state (threads, submissions,
+ * evaluations), role prompts and the legacy chat never reach the file.
+ */
+function preparePblContent(content: PBLContent): PBLContent {
+  const resolved = resolvePBLContent(content);
+  const project =
+    resolved.kind === 'v2'
+      ? resolved.projectV2
+      : resolved.kind === 'legacy'
+        ? upgradeLegacyPBLConfigToProjectV2(resolved.projectConfig)
+        : undefined;
+  if (!project) return { type: 'pbl' };
+  const scenario = isRecord(project.scenario) ? project.scenario : undefined;
+  const briefing = {
+    title: project.title,
+    description: project.description,
+    learningObjective: project.learningObjective,
+    scenario: scenario && {
+      setting: scenario.setting,
+      goal: scenario.goal,
+      learnerRole: scenario.learnerRole,
+      characters: (scenario.characters ?? [])
+        .filter(isRecord)
+        .map((character) => ({ name: character.name, persona: character.persona })),
+    },
+    milestones: (project.milestones ?? []).filter(isRecord).map((milestone) => ({
+      title: milestone.title,
+      description: milestone.description,
+      order: milestone.order,
+      microtasks: (milestone.microtasks ?? []).filter(isRecord).map((task) => ({
+        title: task.title,
+        description: task.description,
+        learnerBrief: task.learnerBrief,
+        order: task.order,
+      })),
+    })),
+  };
+  // A briefing projection, not a runnable project: the player reads only
+  // these fields.
+  return { type: 'pbl', projectV2: briefing as unknown as PBLContent['projectV2'] };
 }
 
 function prepareScene(
   scene: ManifestScene,
-  resolve: (ref: string | undefined) => string | undefined,
   media: StandaloneMediaResolution,
+  resolver: MediaResolver,
 ): ManifestScene {
-  const { whiteboards: _whiteboards, ...rest } = scene;
+  const rest: ManifestScene = {
+    type: scene.type,
+    title: scene.title,
+    order: scene.order,
+    content: scene.content,
+  };
   const content = scene.content;
   if (content.type === 'slide') {
+    const sanitized = sanitizeSceneContent<SlideContent>(content);
     return {
       ...rest,
-      content: { ...content, canvas: prepareSlide(content.canvas, resolve, media) },
+      content: { ...sanitized, canvas: prepareSlide(sanitized.canvas, media, resolver) },
     };
+  }
+  if (content.type === 'pbl') {
+    return { ...rest, content: preparePblContent(content) };
   }
   if (content.type === 'interactive') {
     // Inline HTML is the only form that works offline; a URL-only scene keeps
@@ -163,19 +270,26 @@ export function prepareStandaloneManifest(
   media: StandaloneMediaResolution,
 ): PreparedStandaloneManifest {
   const unresolved = new Set<string>();
-  const resolve = (ref: string | undefined): string | undefined => {
+  const lookup = (ref: string | undefined): string | undefined => {
     if (!ref) return undefined;
     if (isDataUri(ref)) return ref;
-    const dataUri = media.dataUris.get(ref);
-    if (dataUri) return dataUri;
-    unresolved.add(ref);
-    return undefined;
+    return media.dataUris.get(ref);
+  };
+  const resolver: MediaResolver = {
+    lookup,
+    resolve: (ref) => {
+      const dataUri = lookup(ref);
+      if (!dataUri && ref) unresolved.add(ref);
+      return dataUri;
+    },
+    markUnresolved: (ref) => unresolved.add(ref),
   };
   const scenes = orderManifestScenes(manifest.scenes).map((scene) =>
-    prepareScene(scene, resolve, media),
+    prepareScene(scene, media, resolver),
   );
+  const { videoManifest: _videoManifest, ...stage } = manifest.stage;
   return {
-    manifest: { ...manifest, scenes, mediaIndex: {} },
+    manifest: { ...manifest, stage, agents: [], scenes, mediaIndex: {} },
     unresolved: [...unresolved],
   };
 }

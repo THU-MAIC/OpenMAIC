@@ -20,6 +20,11 @@ import {
  * also cover authored interactive pages (inline scripts, inlined `data:`
  * modules, and the `eval` some of their libraries rely on). Those pages still
  * run in an opaque origin: the sandbox never grants `allow-same-origin`.
+ *
+ * Because `'unsafe-inline'` applies to the player's own document as well, the
+ * CSP is not what keeps authored content from running there: slide rich text,
+ * which the renderer injects as HTML, is sanitized before it is embedded (see
+ * `prepare-manifest.ts`), and quiz and PBL text is rendered as text.
  */
 export const STANDALONE_HTML_CSP = [
   "default-src 'none'",
