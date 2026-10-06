@@ -283,6 +283,30 @@ export function placeholderStyleFor(slides: readonly Slide[]): PlaceholderStyle 
 /** QR code edge length on the 1000px design canvas (about a fifth of the width). */
 const QR_SIZE = 210;
 
+type Bounds = { x: number; y: number; w: number; h: number };
+
+/**
+ * Make an area clickable with a top-most, text-less, invisible shape that
+ * carries the link. Viewers differ in which part of a link they honour: WPS
+ * ignores a link on a shape covered by a text box and advances the slideshow
+ * instead, but follows one on an uncovered shape. So every link is also put on
+ * a hotspot drawn after (above) the visible element. The fill is transparent
+ * rather than absent because some viewers only hit-test the outline of a shape
+ * without fill; the outline is transparent too.
+ */
+function addLinkHotspot(
+  pptxSlide: pptxgen.Slide,
+  bounds: Bounds,
+  hyperlink: pptxgen.HyperlinkProps,
+): void {
+  pptxSlide.addShape('rect' as pptxgen.ShapeType, {
+    ...bounds,
+    fill: { color: '#ffffff', transparency: 100 },
+    line: { color: '#ffffff', transparency: 100 },
+    hyperlink,
+  });
+}
+
 /**
  * Draw a placeholder card on an empty PPTX slide. Coordinates are designed on
  * a 1000px-wide canvas and scaled to the deck's viewport, like slide elements.
@@ -405,8 +429,8 @@ export function renderScenePlaceholder(
   if (online) {
     const button = { x: inch(left), y: inch(actionsTop), w: inch(260 * u), h: inch(52 * u) };
     const hyperlink = { url: online.url, tooltip: online.url };
-    // The shape carries the link so the whole button is clickable; the text
-    // run repeats it because the text box sits on top of the shape.
+    // The shape and the text run carry the link for viewers that honour
+    // them; the hotspot added last makes the whole button clickable in all.
     pptxSlide.addShape('roundRect' as pptxgen.ShapeType, {
       ...button,
       fill: { color: style.accent },
@@ -429,6 +453,7 @@ export function renderScenePlaceholder(
       ],
       { ...button, fontSize: pt(20 * u), align: 'center', valign: 'middle', margin: 0 },
     );
+    addLinkHotspot(pptxSlide, button, hyperlink);
 
     if (qrDataUrl) {
       // No hyperlink on the image: pptxgenjs does not XML-escape image link
@@ -441,12 +466,15 @@ export function renderScenePlaceholder(
         h: inch(QR_SIZE * u),
       });
     }
-    pptxSlide.addText([{ text: online.url, options: { hyperlink, color: style.fontColor } }], {
-      fontFace: style.fontName,
+    const urlText = {
       x: inch(qrLeft),
       y: inch((132 + QR_SIZE + 8) * u),
       w: inch(QR_SIZE * u),
       h: inch(48 * u),
+    };
+    pptxSlide.addText([{ text: online.url, options: { hyperlink, color: style.fontColor } }], {
+      ...urlText,
+      fontFace: style.fontName,
       fontSize: pt(10 * u),
       // Left-aligned: the URL is one long word, which some renderers centre
       // as if it were unbroken and so push off to the left.
@@ -454,6 +482,19 @@ export function renderScenePlaceholder(
       valign: 'top',
       margin: 0,
     });
+    // One hotspot over the QR code and the URL under it.
+    addLinkHotspot(
+      pptxSlide,
+      qrDataUrl
+        ? {
+            x: inch(qrLeft),
+            y: inch(132 * u),
+            w: urlText.w,
+            h: urlText.y + urlText.h - inch(132 * u),
+          }
+        : urlText,
+      hyperlink,
+    );
     if (online.publishHint) {
       pptxSlide.addText(online.publishHint, {
         ...font,
@@ -473,6 +514,12 @@ export function renderScenePlaceholder(
   if (placeholder.offline) {
     const offline = placeholder.offline;
     const hyperlink = { url: offline.target, tooltip: offline.path };
+    const line = {
+      x: inch(left),
+      y: inch(online ? actionsTop + 62 * u : actionsTop),
+      w: inch(width),
+      h: inch(28 * u),
+    };
     pptxSlide.addText(
       [
         {
@@ -482,15 +529,13 @@ export function renderScenePlaceholder(
         { text: ` · ${offline.hint}`, options: { color: style.fontColor } },
       ],
       {
+        ...line,
         fontFace: style.fontName,
-        x: inch(left),
-        y: inch(online ? actionsTop + 62 * u : actionsTop),
-        w: inch(width),
-        h: inch(28 * u),
         fontSize: pt(14 * u),
         margin: 0,
         valign: 'middle',
       },
     );
+    addLinkHotspot(pptxSlide, line, hyperlink);
   }
 }

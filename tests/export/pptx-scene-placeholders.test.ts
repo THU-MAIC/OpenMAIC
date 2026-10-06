@@ -607,3 +607,94 @@ describe('bounded classroom status lookup', () => {
     expect(fetchMeta).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('link hotspots', () => {
+  interface SlideShape {
+    index: number;
+    xml: string;
+    box: { x: number; y: number; w: number; h: number };
+    target?: string;
+    hasText: boolean;
+  }
+
+  async function slideShapes(zip: JSZip, slideNumber: number): Promise<SlideShape[]> {
+    const xml = await readText(zip, `ppt/slides/slide${slideNumber}.xml`);
+    const rels = await readText(zip, `ppt/slides/_rels/slide${slideNumber}.xml.rels`);
+    const targets = new Map(
+      [...rels.matchAll(/Id="(rId\d+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+    );
+    return [...xml.matchAll(/<p:(sp|pic)>[\s\S]*?<\/p:\1>/g)].map((m, index) => {
+      const shape = m[0];
+      const off = shape.match(/<a:off x="(\d+)" y="(\d+)"\/>/)!;
+      const ext = shape.match(/<a:ext cx="(\d+)" cy="(\d+)"\/>/)!;
+      const rId = shape.match(/<a:hlinkClick r:id="(rId\d+)"/)?.[1];
+      return {
+        index,
+        xml: shape,
+        box: { x: +off[1], y: +off[2], w: +ext[1], h: +ext[2] },
+        target: rId ? targets.get(rId) : undefined,
+        hasText: /<a:t>[^<]+<\/a:t>/.test(shape),
+      };
+    });
+  }
+
+  const covers = (outer: SlideShape['box'], inner: SlideShape['box']) =>
+    outer.x <= inner.x &&
+    outer.y <= inner.y &&
+    outer.x + outer.w >= inner.x + inner.w &&
+    outer.y + outer.h >= inner.y + inner.h;
+  const overlaps = (a: SlideShape['box'], b: SlideShape['box']) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const isHotspot = (s: SlideShape) =>
+    !!s.target &&
+    !s.hasText &&
+    !s.xml.includes('<p:txBody>') &&
+    /<p:cNvPr [^>]*><a:hlinkClick /.test(s.xml) &&
+    /<\/a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"><a:alpha val="0"\/>/.test(s.xml) &&
+    /<a:ln[^>]*><a:solidFill><a:srgbClr val="FFFFFF"><a:alpha val="0"\/>/.test(s.xml);
+
+  for (const linkInteractivePages of [true, false]) {
+    const mode = linkInteractivePages ? 'Resource Pack PPTX' : 'standalone PPTX';
+
+    it(`puts a top-most invisible hotspot over every link in the ${mode}`, async () => {
+      const zip = await loadZip(await buildDeck(linkInteractivePages));
+      for (const [slideNumber, expectedHotspots] of [
+        [2, linkInteractivePages ? 3 : 2], // interactive: button, QR + URL, offline link
+        [3, 2], // quiz: button, QR + URL
+      ] as const) {
+        const shapes = await slideShapes(zip, slideNumber);
+        const hotspots = shapes.filter(isHotspot);
+        expect(hotspots).toHaveLength(expectedHotspots);
+
+        // Visible linked elements: the button shape and every linked text box.
+        const linked = shapes.filter(
+          (s) => s.target && !isHotspot(s) && (s.hasText || s.xml.includes('prst="roundRect"')),
+        );
+        expect(linked.length).toBeGreaterThanOrEqual(expectedHotspots);
+        for (const element of linked) {
+          const hotspot = hotspots.find(
+            (h) =>
+              h.index > element.index && h.target === element.target && covers(h.box, element.box),
+          );
+          expect(hotspot, `hotspot over ${element.xml.slice(0, 80)}`).toBeDefined();
+          // Nothing is drawn above the hotspot where it lies.
+          const above = shapes.filter(
+            (s) => s.index > hotspot!.index && overlaps(s.box, hotspot!.box),
+          );
+          expect(above).toEqual([]);
+        }
+      }
+    });
+  }
+
+  it('covers the QR code and the URL under it with one hotspot', async () => {
+    const zip = await loadZip(await buildDeck(false));
+    const shapes = await slideShapes(zip, 3);
+    const qr = shapes.find((s) => s.xml.startsWith('<p:pic>'))!;
+    const url = shapes.find((s) => s.hasText && s.xml.includes(`>${sceneUrl('q')}<`))!;
+    const hotspot = shapes.find(
+      (s) => isHotspot(s) && covers(s.box, qr.box) && covers(s.box, url.box),
+    );
+    expect(hotspot?.target).toBe(sceneUrl('q'));
+  });
+});
