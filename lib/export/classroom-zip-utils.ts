@@ -229,6 +229,25 @@ export async function collectMediaFiles(
   return collected;
 }
 
+/**
+ * The poster frames captured for generated videos, without their video bytes,
+ * for exports that show a video as its poster only. The poster comes from the
+ * same compatibility row {@link collectMediaFiles} reads it from.
+ */
+export async function collectVideoPosters(
+  stageId: string,
+  entries: readonly AssetManifestEntry[],
+): Promise<Array<{ sourceRef: string; poster: Blob }>> {
+  const posters: Array<{ sourceRef: string; poster: Blob }> = [];
+  for (const entry of entries) {
+    const record = await db.mediaFiles.get(mediaFileKey(stageId, entry.ref)).catch(() => undefined);
+    if (record?.poster && record.poster.size > 0 && !record.error) {
+      posters.push({ sourceRef: entry.ref, poster: record.poster });
+    }
+  }
+  return posters;
+}
+
 // ─── Export: Action Serialization ──────────────────────────────
 
 /** Bytes fetched from a legacy audio URL during export, with its assigned archive path. */

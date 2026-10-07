@@ -189,6 +189,84 @@ describe('sanitizeProseHtml — content outside the renderer vocabulary', () => 
   });
 });
 
+describe('inline style values — CSS escape sequences', () => {
+  // Each value decodes (per CSS Syntax escapes) to a token the style-value
+  // check refuses in its literal form.
+  const escapedValues = [
+    'u\\72l(https://example.test/x)', // `\72` = r
+    '\\75 rl(https://example.test/x)', // `\75 ` = u, space terminates the escape
+    'u\\72 l(https://example.test/x)', // `\72 ` = r, space terminates the escape
+    'U\\52L(https://example.test/x)', // uppercase hex
+    'u\\000072l(https://example.test/x)', // six-digit escape
+    'u\\52l(https://example.test/x)', // mixed case after decoding
+    'j\\61vascript:x', // `\61` = a
+    'J\\41VASCRIPT:x', // uppercase hex
+    'j\\61 v\\41script:x', // mixed lowercase/uppercase escapes
+    '\\65xpression(x)', // `\65` = e
+    '\\45 XPRESSION(x)', // uppercase hex + space terminator
+    'v\\62 script:x', // `\62 ` = b
+    '\\40import', // `\40` = @
+    'u\\rl(https://example.test/x)', // identity escape of a non-hex character
+  ];
+
+  function styleProperties(html: string): string[] {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const style = template.content.querySelector('[style]')?.getAttribute('style') ?? '';
+    return styleDeclarations(style).map(([name]) => name);
+  }
+
+  it.each(escapedValues)('drops a declaration whose value is %s', (value) => {
+    for (const property of ['color', 'background-color', 'font-family', 'text-decoration']) {
+      const output = sanitizeProseHtml(`<p style="${property}: ${value}; font-size: 14px">t</p>`);
+      expect(output, `${property}: ${value}`).not.toContain('\\');
+      expect(styleProperties(output), `${property}: ${value}`).not.toContain(property);
+    }
+  });
+
+  it('keeps sibling declarations when only the escaped one is dropped', () => {
+    for (const value of ['u\\72l(https://example.test/x)', '\\75 rl(x)', '\\65xpression(x)']) {
+      for (const property of ['color', 'background-color', 'font-family', 'text-decoration']) {
+        const output = sanitizeProseHtml(`<p style="${property}: ${value}; font-size: 14px">t</p>`);
+        expect(canon(output), `${property}: ${value}`).toEqual(
+          canon('<p style="font-size: 14px">t</p>'),
+        );
+      }
+    }
+  });
+
+  it('drops an escaped value delivered through an HTML character reference', () => {
+    const output = sanitizeProseHtml('<p style="color: u&#92;72l(x); font-size: 14px">t</p>');
+    expect(output).not.toContain('\\');
+    expect(canon(output)).toEqual(canon('<p style="font-size: 14px">t</p>'));
+  });
+
+  it('applies the same rule to the KaTeX snapshot policy', () => {
+    const output = sanitizeLatexHtml(
+      '<span class="katex" style="top: -2.5em; color: u\\72l(x)">E</span>',
+    );
+    expect(output).not.toContain('\\');
+    expect(canon(output)).toEqual(canon('<span class="katex" style="top: -2.5em">E</span>'));
+  });
+
+  it('keeps ordinary values that contain no escapes', () => {
+    expectProseUnchanged(
+      '<p style="font-family: &quot;Times New Roman&quot;, serif; color: #ff0000; font-size: 28px; line-height: 1.5">t</p>',
+    );
+    expectProseUnchanged(
+      '<p><span style="font-family: &quot;Microsoft YaHei&quot;">A</span><span style="background-color: rgb(255, 255, 0); letter-spacing: 1.5pt; text-decoration: underline">B</span></p>',
+    );
+    // KaTeX layout values (em lengths, negative offsets, vertical-align, color).
+    const html = katex.renderToString('\\frac{a}{b} + \\sqrt{x^2 + y^2} + \\color{red}{z}', {
+      throwOnError: false,
+      displayMode: true,
+      output: 'html',
+    });
+    expect(html).toContain('style="');
+    expect(canon(sanitizeLatexHtml(html))).toEqual(canon(html));
+  });
+});
+
 describe('sanitizeLatexHtml — KaTeX snapshot policy', () => {
   it('removes handlers, scripts and foreign tags from a KaTeX snapshot', () => {
     const input =
