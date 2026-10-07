@@ -82,6 +82,8 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
    * the run's preview while its outline waits). Null otherwise.
    */
   generation: { status: CourseRunStatus; href: string } | null;
+  /** The paused run's failure; cleared while the run proceeds. */
+  failure: RunView['error'];
   /** Retry the failed scene of a paused run. */
   retryOutline: (outlineId: string) => Promise<void>;
 } {
@@ -254,6 +256,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
   const runStatus = view && !finished ? courseRunStatus(view) : null;
   return {
     runId: view ? runId : null,
+    failure: view?.state === 'paused' ? view.error : null,
     generation:
       view && runStatus
         ? {

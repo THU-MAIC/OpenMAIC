@@ -158,8 +158,9 @@ export class TTSRateLimitError extends Error {
     public readonly provider: string,
     message: string,
     retryAfterMs?: number,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = 'TTSRateLimitError';
     if (retryAfterMs !== undefined && Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
       this.retryAfterMs = retryAfterMs;
@@ -269,12 +270,14 @@ export function throwIfTtsRateLimited(
   provider: string,
   status: number,
   retryAfterHeader?: string | null,
+  options?: ErrorOptions,
 ): void {
   if (status === 429) {
     throw new TTSRateLimitError(
       provider,
       `${provider} TTS rate limit exceeded (HTTP 429)`,
       parseRetryAfterMs(retryAfterHeader),
+      options,
     );
   }
 }
@@ -388,9 +391,14 @@ async function generateOpenAITTS(
   });
 
   if (!response.ok) {
-    throwIfTtsRateLimited('OpenAI', response.status, response.headers?.get('retry-after'));
     const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(`OpenAI TTS API error: ${error.error?.message || response.statusText}`);
+    // Retain the response without changing the HTTP status used by route retries.
+    const options = { cause: { data: error } };
+    throwIfTtsRateLimited('OpenAI', response.status, response.headers?.get('retry-after'), options);
+    throw new Error(
+      `OpenAI TTS API error: ${error.error?.message || response.statusText}`,
+      options,
+    );
   }
 
   return await validateTTSAudioResponse(response, 'OpenAI');
@@ -1077,7 +1085,7 @@ function throwIfMiniMaxBaseRespFailed(
     );
   }
 
-  throw new Error(`MiniMax TTS API error (${statusCode}): ${statusMsg}`);
+  throw new Error(`MiniMax TTS API error (${statusCode}): ${statusMsg}`, { cause: { data } });
 }
 
 /**
@@ -1122,9 +1130,15 @@ async function generateMiniMaxTTS(
   });
 
   if (!response.ok) {
-    throwIfTtsRateLimited('MiniMax', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(`MiniMax TTS API error: ${errorText}`);
+    const options = { cause: { responseBody: errorText } };
+    throwIfTtsRateLimited(
+      'MiniMax',
+      response.status,
+      response.headers?.get('retry-after'),
+      options,
+    );
+    throw new Error(`MiniMax TTS API error: ${errorText}`, options);
   }
 
   const data = await response.json();

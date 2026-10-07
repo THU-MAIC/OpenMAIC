@@ -7,6 +7,7 @@
 import { resolveWorkbenchMaterialMime } from '@/lib/workbench/material-upload-policy';
 
 import { announceRunsChanged } from './runs-changed';
+import { quotaFailureKey } from './failure-message';
 import type { GenerationRunInput, RunSnapshot } from './types';
 
 /**
@@ -32,6 +33,8 @@ export function runApiErrorText(
   error: RunApiError,
   t: (key: string, values?: Record<string, string | number>) => string,
 ): string {
+  const quotaKey = quotaFailureKey(error.errorCode);
+  if (quotaKey) return t(quotaKey);
   if (error.errorCode === 'ACTIVE_RUN_LIMIT') return t('generation.activeRunLimit');
   return error.serverMessage ?? t(error.fallbackKey, error.fallbackValues);
 }

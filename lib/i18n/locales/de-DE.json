@@ -1127,6 +1127,7 @@
     "materialTooLarge": "{{name}} ist zu groß: Ein Material darf höchstens {{size}} groß sein."
   },
   "generation": {
+    "quotaExhausted": "Das Generierungskontingent ist aufgebraucht. Prüfen Sie Ihr Tarifkontingent oder Kontoguthaben, oder wenden Sie sich an den Administrator, bevor Sie es erneut versuchen.",
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
     "pdfParseFailed": "PDF konnte nicht verarbeitet werden",
     "courseMaterialLoadFailed": "Kursmaterial konnte nicht geladen werden. Bitte versuche es erneut.",

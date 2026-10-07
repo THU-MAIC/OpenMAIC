@@ -8,6 +8,11 @@ import type { GenerationRunFailure } from '@/lib/server/generation/run/types';
 
 export type FailureText = { key: string } | { text: string };
 
+/** The same quota guidance for a refused start, a paused run and its classroom. */
+export function quotaFailureKey(errorCode: string | undefined): string | undefined {
+  return errorCode === 'QUOTA_EXHAUSTED' ? 'generation.quotaExhausted' : undefined;
+}
+
 /** The classic mapping of a scene step's failure (content, actions) to a sentence. */
 export function sceneFailureText(failure: {
   message?: string;
@@ -15,6 +20,8 @@ export function sceneFailureText(failure: {
   statusCode?: number;
 }): FailureText {
   const { errorCode, statusCode } = failure;
+  const quotaKey = quotaFailureKey(errorCode);
+  if (quotaKey) return { key: quotaKey };
   if (errorCode === 'MISSING_API_KEY' || statusCode === 401 || statusCode === 403) {
     return { key: 'generation.sceneGenerateAuthFailed' };
   }
@@ -32,6 +39,8 @@ export function sceneFailureText(failure: {
 export function runFailureText(
   failure: Pick<GenerationRunFailure, 'step' | 'message' | 'errorCode' | 'statusCode'>,
 ): FailureText {
+  const quotaKey = quotaFailureKey(failure.errorCode);
+  if (quotaKey) return { key: quotaKey };
   const step = failure.step ?? '';
   if (step === 'material-analysis') return { key: 'generation.courseMaterialParseFailed' };
   if (step === 'research') {

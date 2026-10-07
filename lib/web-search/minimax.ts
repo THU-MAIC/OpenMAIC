@@ -81,7 +81,9 @@ export async function searchWithMiniMax(params: {
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => '');
-    throw new Error(formatMiniMaxError(res.status, res.statusText, errorText));
+    throw new Error(formatMiniMaxError(res.status, res.statusText, errorText), {
+      cause: { responseBody: errorText },
+    });
   }
 
   const raw = (await res.json()) as MiniMaxSearchResponse;
@@ -91,6 +93,7 @@ export async function searchWithMiniMax(params: {
       `MiniMax Web Search API error (${baseResp.status_code}): ${
         baseResp.status_msg || 'Request failed'
       }`,
+      { cause: { data: { base_resp: baseResp } } },
     );
   }
 

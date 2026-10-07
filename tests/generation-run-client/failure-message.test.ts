@@ -1,13 +1,59 @@
 import { describe, expect, it } from 'vitest';
 
 import { applyRunEvent, viewFromSnapshot } from '@/lib/generation-run-client/reducer';
-import { runFailureText } from '@/lib/generation-run-client/failure-message';
+import { runFailureText, sceneFailureText } from '@/lib/generation-run-client/failure-message';
+import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 
 import { event, snapshot } from './fixtures';
 
 describe('what a paused run says', () => {
   const at = (step: string, extra: Record<string, unknown> = {}) =>
     runFailureText({ step, message: 'raw message', ...extra });
+
+  it.each([
+    null,
+    'material-analysis',
+    'research',
+    'outline',
+    'scene:0:content',
+    'scene:1:actions',
+    'scene:2:narration',
+  ])('shows the shared quota guidance at %s instead of the provider message', (step) => {
+    expect(
+      runFailureText({
+        step,
+        errorCode: 'QUOTA_EXHAUSTED',
+        statusCode: 429,
+        message: 'raw provider message',
+      }),
+    ).toEqual({
+      key: 'generation.quotaExhausted',
+    });
+  });
+
+  it('prefers a classified quota failure over its HTTP status in a scene', () => {
+    expect(sceneFailureText({ errorCode: 'QUOTA_EXHAUSTED', statusCode: 403 })).toEqual({
+      key: 'generation.quotaExhausted',
+    });
+  });
+
+  it('uses the same guidance when the host refuses to start a run', () => {
+    const failure = new RunApiError(
+      429,
+      'QUOTA_EXHAUSTED',
+      'raw host refusal',
+      'upload.generateFailed',
+    );
+    expect(runApiErrorText(failure, (key) => `translated:${key}`)).toBe(
+      'translated:generation.quotaExhausted',
+    );
+    expect(
+      runApiErrorText(
+        new RunApiError(429, 'ACTIVE_RUN_LIMIT', 'too many runs', 'upload.generateFailed'),
+        (key) => `translated:${key}`,
+      ),
+    ).toBe('translated:generation.activeRunLimit');
+  });
 
   it('says a scene failure the way the classic preview did', () => {
     expect(at('scene:0:content', { errorCode: 'UPSTREAM_ERROR', statusCode: 503 })).toEqual({

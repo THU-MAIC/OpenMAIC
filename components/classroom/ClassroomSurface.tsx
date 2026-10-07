@@ -47,6 +47,7 @@ import {
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
+import { quotaFailureKey } from '@/lib/generation-run-client/failure-message';
 import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
 
 const log = createLogger('Classroom');
@@ -278,6 +279,7 @@ export function ClassroomSurface({
   // A course a server-side generation run produces: the classroom follows the
   // run (its scenes, media and pauses) and sends it Retry.
   const runCourse = useRunCourse({ classroomId, ready: !loading && !error });
+  const quotaKey = quotaFailureKey(runCourse.failure?.errorCode);
 
   const view = resolveClassroomSurfaceView({
     variant,
@@ -371,6 +373,7 @@ export function ClassroomSurface({
           ) : (
             <Stage
               classroomId={classroomId}
+              generationFailureMessage={quotaKey ? t(quotaKey) : undefined}
               onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
             />
           )}

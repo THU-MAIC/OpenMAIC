@@ -25,6 +25,7 @@ interface CanvasAreaProps extends CanvasToolbarProps {
   readonly isPendingScene?: boolean;
   readonly isCourseComplete?: boolean;
   readonly isGenerationFailed?: boolean;
+  readonly generationFailureMessage?: string;
   /** The pending scene will never be produced (its generation was interrupted). */
   readonly isGenerationInterrupted?: boolean;
   readonly onRetryGeneration?: () => void;
@@ -62,6 +63,7 @@ export function CanvasArea({
   isPendingScene,
   isCourseComplete,
   isGenerationFailed,
+  generationFailureMessage,
   isGenerationInterrupted,
   onRetryGeneration,
   elementPickActive,
@@ -202,10 +204,10 @@ export function CanvasArea({
                         />
                       </svg>
                     </div>
-                    <span className="text-sm text-red-500 dark:text-red-400 font-medium">
+                    <span className="max-w-md px-4 text-center text-sm text-red-500 dark:text-red-400 font-medium">
                       {isGenerationInterrupted
                         ? t('stage.generationInterrupted')
-                        : t('stage.generationFailed')}
+                        : (generationFailureMessage ?? t('stage.generationFailed'))}
                     </span>
                     {onRetryGeneration && !isGenerationInterrupted && (
                       <button
