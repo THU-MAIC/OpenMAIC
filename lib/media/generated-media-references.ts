@@ -2,9 +2,8 @@
  * The document view of generated media: which generation placeholders a course
  * still carries, and how one of them is replaced by an allocated asset id.
  *
- * Pure and IO-free over the document, so both the write-back funnel and the
- * "has this already been generated?" test share one definition of where a
- * generated reference lives. Slots come from the DSL's own slot classification
+ * Pure and IO-free over the document, so the browser write-back funnel and the
+ * generation runs share one definition of where a generated reference lives. Slots come from the DSL's own slot classification
  * (`slideMediaReferenceSlots`), so a new media-bearing property is picked up
  * here the moment the contract describes it.
  */
@@ -22,14 +21,6 @@ export interface GeneratedMediaReferenceRewrite {
   readonly assetId: string;
   /** Allocated id for a generated video poster, when one was stored. */
   readonly posterAssetId?: string;
-}
-
-/** A course's slide-bearing surfaces, as much of them as a caller holds. */
-export interface MediaBearingDocument {
-  readonly stage?: Pick<Stage, 'whiteboard'> | null;
-  readonly scenes?: readonly Scene[];
-  /** The course has no outline still waiting for its scene. */
-  readonly generationComplete?: boolean;
 }
 
 type SlideLike = Pick<Slide, 'background' | 'elements'>;
@@ -144,72 +135,4 @@ export function stageCarriesMediaReference(
   return (stage?.whiteboard ?? []).some((slide) =>
     [...slideMediaReferenceSlots(slide)].some((slot) => slot.read() === placeholderRef),
   );
-}
-
-/**
- * What the document says about generated media, as the facts the skip test
- * needs.
- */
-export interface GeneratedMediaDocumentIndex {
-  /** Orders of the scenes that exist today. */
-  readonly materializedOrders: ReadonlySet<number>;
-  /** Every generation placeholder the document still carries. */
-  readonly pendingPlaceholders: ReadonlySet<string>;
-  /** Whether every outline of this course already has its scene. */
-  readonly deckComplete: boolean;
-}
-
-export function indexGeneratedMediaReferences(
-  document: MediaBearingDocument,
-): GeneratedMediaDocumentIndex {
-  const materializedOrders = new Set<number>();
-  const pendingPlaceholders = new Set<string>();
-
-  const visit = (slide: SlideLike) => {
-    for (const slot of slideMediaReferenceSlots(slide)) {
-      const ref = slot.read();
-      if (ref && isGeneratedMediaPlaceholder(ref)) pendingPlaceholders.add(ref);
-    }
-  };
-
-  for (const slide of document.stage?.whiteboard ?? []) visit(slide);
-  for (const scene of document.scenes ?? []) {
-    materializedOrders.add(scene.order);
-    for (const slide of slidesOfScene(scene)) visit(slide);
-  }
-
-  return {
-    materializedOrders,
-    pendingPlaceholders,
-    deckComplete: document.generationComplete === true,
-  };
-}
-
-/**
- * Has this generation request already produced durable media?
- *
- * The document is the authority, so the answer is read off it rather than off
- * this browser's task table: the slide that owns the request no longer holds
- * the placeholder, which means either the reference was rewritten to an
- * allocated id or the element was deleted. Both mean "do not call the
- * provider".
- *
- * The absence of a placeholder is decisive only once the slide that would carry
- * it exists, because during a first pass media runs alongside content and the
- * slide may not have been built yet. "Exists" is asked the way the rest of the
- * app asks it — by scene order, the only link between an outline and its scene
- * that the document carries. That link is weaker than it looks: Pro-mode
- * insert and delete rebalance `order`, so on a deck that is still generating,
- * an outline whose scene was renumbered can look unmaterialized and be
- * generated again. A finished deck is exempt: every outline that still has a
- * scene has one, so the placeholder's absence answers on its own and the
- * renumbering cannot cause a needless call.
- */
-export function isGeneratedMediaSatisfied(
-  index: GeneratedMediaDocumentIndex,
-  outlineOrder: number,
-  placeholderRef: string,
-): boolean {
-  if (index.pendingPlaceholders.has(placeholderRef)) return false;
-  return index.deckComplete || index.materializedOrders.has(outlineOrder);
 }

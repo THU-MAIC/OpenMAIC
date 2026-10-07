@@ -34,27 +34,3 @@ export function resolveClassroomSurfaceView({
   if (error) return 'error';
   return 'stage';
 }
-
-/**
- * Progressive-load state plus the ownership gate, in one decision.
- *
- * `mayGenerate` is required rather than defaulted: a caller that forgot it
- * would silently open the operator's budget to every viewer, which is exactly
- * the failure the gate exists to prevent. It is the same value the surface
- * uses to decide whether to offer a retry affordance at all.
- */
-export function shouldResumeClassroomGeneration({
-  loading,
-  error,
-  transportPersistenceFenced,
-  generationStarted,
-  mayGenerate,
-}: {
-  loading: boolean;
-  error: string | null;
-  transportPersistenceFenced: boolean;
-  generationStarted: boolean;
-  mayGenerate: boolean;
-}): boolean {
-  return !loading && !error && !transportPersistenceFenced && !generationStarted && mayGenerate;
-}

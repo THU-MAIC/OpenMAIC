@@ -14,7 +14,6 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 
 const mocks = vi.hoisted(() => ({
-  parallelSceneConcurrency: 0,
   settingsState: vi.fn(),
   audioPut: vi.fn(),
   audioDelete: vi.fn(),
@@ -26,11 +25,6 @@ const mocks = vi.hoisted(() => ({
   resolveAgentVoiceOptions: vi.fn(),
   listAgents: vi.fn(),
   toastWarning: vi.fn(),
-}));
-
-// How many narration clips may be generated at once (GET /api/health).
-vi.mock('@/lib/generation/server-generation-settings', () => ({
-  getParallelSceneConcurrency: async () => mocks.parallelSceneConcurrency,
 }));
 
 vi.mock('@/lib/store/settings', () => ({
@@ -137,7 +131,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
   });
 
   it('falls back with a notice when the pinned ghost clone is missing (bound == global)', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
     mocks.settingsState.mockReturnValue({
       ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
@@ -186,7 +180,7 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
   });
 
   it('falls back to the enabled provider instead of silently skipping when the pinned provider is disabled', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
     mocks.settingsState.mockReturnValue({
       ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
@@ -240,7 +234,7 @@ describe('generateAndStoreTTS — bound clone dead, global clone dead (review fi
   });
 
   it('rejects after exactly 2 attempts when the bound clone differs from the global clone and both are missing', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
+    const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
     mocks.settingsState.mockReturnValue({
       ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {

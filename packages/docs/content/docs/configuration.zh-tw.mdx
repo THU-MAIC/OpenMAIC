@@ -7,8 +7,8 @@ OpenMAIC 有三個設定來源，各自只負責一件事：
 
 | 來源 | 由誰撰寫 | 內容 | 何時生效 |
 | --- | --- | --- | --- |
-| `openmaic.yml` | 維運人員 | AI 模型的供應商、插槽指派和政策 | 啟動時（修改後需重新啟動） |
-| Web 端的模型設定 | 工作區的使用者 | `openmaic.yml` 沒有寫死的供應商和指派，儲存在資料庫中 | 立即生效 |
+| `openmaic.yml` | 維運人員 | 供應商、伺服器端預設指派、鎖定的插槽，以及使用者能否新增自己的 Key | 啟動時（修改後需重新啟動） |
+| Web 端的模型設定 | 工作區的使用者 | 使用者自己的供應商，以及 `openmaic.yml` 未鎖定插槽的指派，儲存在資料庫中 | 立即生效 |
 | 環境變數（`.env.local`、容器 Secret） | 維運人員 | `openmaic.yml` 引用的金鑰，以及其他所有伺服器端選項 | 啟動時 |
 
 除了 `DATABASE_URL`，所有環境變數都是選填（見[部署](./deployment.mdx)）。全部環境變數請見 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以從 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 開始撰寫模型設定，範本和模型 ID 請見[支援的模型](./supported-models.mdx)。
@@ -80,13 +80,13 @@ slots:
   tts: minimax:speech-2.8-turbo
   image: openai-image:gpt-image-2
   webSearch: tavily                # 只寫供應商：使用它的預設模型
-  video: null                      # 關閉，並鎖定為關閉
+  video: null                      # 預設關閉；使用者可以自行開啟
 
-policy:
-  allowWorkspaceProviders: false   # 使用者不能自行新增供應商
+lock: [tts]                        # 對所有人固定，連同其子樹
+allowUserKeys: false               # 使用者只能在這些供應商中選擇，不能自行新增
 ```
 
-使用這份檔案時，列出的每個插槽對所有使用者都是固定的。檔案沒寫的對話插槽（例如 `course.agents`）沿用父插槽（`llm`）；沒寫的能力根插槽（例如 `asr` 或 `document`）維持未設定。使用者可以在模型設定中為這兩類插槽指派模型，但只能從已宣告的供應商中選擇。
+使用這份檔案時，`slots` 下寫出的插槽是伺服器端預設值：使用者可以在模型設定中逐一修改，只有被 `lock` 固定的 `tts` 對所有人不可變更。檔案沒寫的對話插槽（例如 `course.agents`）沿用父插槽（`llm`）；沒寫的能力根插槽（例如 `asr` 或 `document`）在使用者指派之前維持未設定。設定 `allowUserKeys: false` 後，使用者只能在這裡宣告的供應商中選擇。
 
 ### 供應商
 
@@ -110,7 +110,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 
 | 插槽 | 能力 | 父插槽 | 作用 |
 | --- | --- | --- | --- |
-| `llm` | chat | — | 預設對話模型：下方任何插槽都不涵蓋的對話呼叫，包括無瀏覽器 `/api/generate-classroom` API 中沒有專屬插槽的步驟 |
+| `llm` | chat | — | 預設對話模型：下方任何插槽都不涵蓋的對話呼叫 |
 | `course.research` | chat | `llm` | 課程研究時改寫網路搜尋查詢 |
 | `course.outline` | chat | `llm` | 場景大綱 |
 | `course.agents` | chat | `llm` | 老師和同學智慧體的人設 |
@@ -133,7 +133,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 插槽的解析方式：
 
 - 從呼叫所在的插槽開始，逐層往上直到能力根插槽，遇到的第一個指派生效。因此父插槽的指派就是整棵子樹的預設值；修改父插槽，會同時改變所有沒有自己指派的子插槽。
-- 在每個插槽上，先看 `openmaic.yml`，再看工作區的模型設定。
+- 在鎖定的子樹內（該插槽或其祖先被 `lock` 列出，或使用 `lock: all`），只看 `openmaic.yml`：往上查找到被鎖定的插槽為止，檔案中寫出的第一個指派生效。其他位置以使用者的選擇為準：先從該插槽往上直到根插槽查找工作區自己的指派，只有完全沒有時，才同樣從該插槽往上查找 `openmaic.yml` 寫的預設值。因此，工作區設定了父插槽時，沒有被工作區改過的子插槽會跟隨它，即使伺服器在子插槽上寫了預設值；伺服器的值只是預設值。
 - `null` 會停止往上查找：該插槽，以及其下所有沒有自己指派的插槽，都會被關閉。
 - 一直到根插槽都沒有指派時，該能力處於未設定狀態。呼叫會報錯並指出插槽名稱，不會退回任何廠商。
 - 需求（requirement）屬於宣告它的插槽，依該插槽最終解析到的模型檢查，無論是自己指派還是繼承而來。`agent` 需要支援工具呼叫；若內建模型目錄表明它的模型不支援，智慧體會拒絕執行，而不是勉強湊合。目錄中沒有的模型允許使用。`agent.title` 沒有需求，因此可以使用較小的模型。
@@ -179,30 +179,49 @@ slots:
 
 ### 關閉某項能力
 
-在它的插槽上寫 `null`。`video: null` 會對所有工作區關閉影片生成，並鎖定為關閉；`course.content.pbl: null` 只關閉 PBL 場景生成，`course.content` 的其他部分照常運作。對已關閉插槽的呼叫會立即失敗，媒體相關介面回傳 `403`，而不是改用其他廠商。
+在它的插槽上寫 `null`。`video: null` 預設關閉影片生成，使用者仍可在模型設定中開啟；再加上 `lock: [video]` 即對所有人維持關閉。`course.content.pbl: null` 只關閉 PBL 場景生成，`course.content` 的其他部分照常運作。對已關閉插槽的呼叫會立即失敗，媒體相關介面回傳 `403`，而不是改用其他廠商。
 
-### 鎖定與模型設定
+### 預設值、鎖定與模型設定
 
-`openmaic.yml` 中 `slots` 下寫出的內容都會被**鎖定**：模型設定會標示為 **Set by the server**（由伺服器設定），且無法修改。只有寫出的插槽會被鎖定。工作區仍可為被鎖定插槽的子插槽指派模型，從而覆寫該子樹的值。要固定整棵子樹，需要把其中每個插槽都寫出來。
+`openmaic.yml` 在 `slots` 下寫出的內容是伺服器端的**預設值**：使用者可以在模型設定中修改，卡片上會標示**伺服器預設**，**恢復伺服器預設**會撤銷使用者的修改。在 `lock` 下列出的插槽由**管理員固定**，對所有人生效，並連同整棵子樹一起固定：
+
+```yaml
+lock: [llm, video]   # 這些插槽及其下所有插槽
+# lock: all          # 所有插槽
+```
+
+- `lock` 列出的每個插槽都必須在 `slots` 中寫出（`null` 也算：`video: null` 加 `lock: [video]` 會對所有人關閉影片）。未知插槽，或 `slots` 中沒有寫出的鎖定插槽，會讓服務在啟動時拒絕執行，並指出其位置（`lock.1: ...`）。
+- 鎖定的插槽同時固定其子插槽：使用 `lock: [llm]` 時，任何使用者都不能設定 `course.outline` 或其他語言模型插槽，它們全部只依 `openmaic.yml` 解析。
+- `lock: all` 固定所有插槽，無論是否寫出；`slots` 沒寫的能力根插槽因此對所有人都是未設定。
+- `null`、伺服器端預設值與鎖定可以組合：只寫 `video: null` 時預設關閉，使用者可以開啟；加上 `lock: [video]` 後維持關閉。
+
+設定介面會依照設定呈現三種形態之一：
+
+| 形態 | 條件 | 顯示內容 |
+| --- | --- | --- |
+| **自行設定** | 開啟 `allowUserKeys`（預設） | Token Plan、模型服務和課程模型設定 |
+| **選擇模型** | `allowUserKeys: false` | 只顯示課程模型設定，在 `openmaic.yml` 宣告的供應商中選擇 |
+| **由管理員設定** | 所有插槽都被鎖定（`lock: all`） | 課程模型圖，每張卡片皆為唯讀（顯示其模型，或已關閉、未設定） |
+
+所有控制項遵循同一條規則：只有使用它能改變什麼時才顯示。模型服務中某個能力的分頁及其新增服務入口，只在該能力還有使用者可設定的插槽時出現；Token Plan 只在某個方案還能填入未鎖定的插槽時出現，連接方案也絕不會改動鎖定的插槽。課程模型設定中被鎖定的卡片顯示為一行唯讀內容，並標示**由管理員固定**。首頁的模型選擇器只在預設模型可以修改時出現（`llm` 未被鎖定，且有供應商提供語言模型）。
 
 Web 端的模型設定讀寫目前工作區的同一棵樹：
 
 - **Token Plan**：連接方案會用該 key 新增方案的供應商，並為方案推薦、且仍未指派的插槽填入模型。解除連接會刪除該供應商，原本使用它的插槽重新跟隨父插槽。
 - **模型服務**：每種能力一個分頁（語言模型、圖像、影片、語音合成、語音辨識、文件解析、網路搜尋），列出各自的服務。來自 `openmaic.yml` 的供應商以唯讀方式顯示，不顯示任何關於 key 的資訊。工作區設定的服務會成為工作區供應商：key 只能寫入，只顯示類似 `…abcd` 的遮罩；自訂位址僅限語言模型（Azure 語音服務使用其官方區域位址，例如 `https://<region>.tts.speech.microsoft.com`）；自架服務與金鑰對需在 `openmaic.yml` 中設定。測試按鈕在伺服器端檢查已儲存的供應商。
-- **課程模型設定**：主線模型就是 `llm` 插槽，管線的每個環節對應自己的插槽（跟隨主線即該環節沒有自己的指派）；圖像、影片、語音、搜尋和轉寫的開關會把對應插槽設為 `null`。`openmaic.yml` 中寫出的插槽在這裡只顯示、不可修改。
+- **課程模型設定**：主線模型就是 `llm` 插槽，管線的每個環節對應自己的插槽（跟隨主線即該環節沒有自己的指派）；圖像、影片、語音、搜尋和轉寫的開關會把對應插槽設為 `null`。被鎖定的插槽顯示為一行唯讀內容；使用伺服器端預設值的插槽在使用者修改後提供**恢復伺服器預設**。
 
-早期版本儲存在瀏覽器中的供應商設定（供應商及其 key 和 Base URL、所選模型、Token Plan 連接狀態，以及每種能力的選擇）會一次性匯入工作區。匯入不會取代工作區既有的設定或 `openmaic.yml` 鎖定的插槽，並會略過被政策或驗證拒絕的項目。收到 2xx 回應後，只有工作區已持有的內容會從瀏覽器中刪除：伺服器略過的每個項目（媒體服務的自訂位址、工作區不可使用的預設、與部署宣告重名的供應商 id 等）都會連同 key 保留在此瀏覽器中，不會再次傳送，提示一次，並在「設定 → 模型服務」中連同原因列出，直到重新設定或被捨棄。帶官方區域位址的 Azure 語音供應商會被匯入。收到 400 時整份匯入內容被拒絕：不會再次傳送，其中各項目會連同 key 保留在此瀏覽器中，並與被略過的項目一起列出；匯入內容無法讀取時會被捨棄。只有在 401、404、409、5xx 或網路錯誤時，匯入內容才會保留在瀏覽器中，供之後重試。明確關閉過的語音輸入會變為 `asr: null`；在已有可用供應商時關閉的語音講解、圖像或影片會變為 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 鎖定的插槽保持不變）。以下內容需要手動重新設定：依階段設定的模型（在課程模型設定中，或在 `openmaic.yml` 的 `slots` 中）、推理設定（插槽上的 `thinking`）、自訂語音合成與語音辨識供應商以及 AliDocMind 的金鑰對（在 `openmaic.yml` 中；它們會保留在瀏覽器中，與被略過的項目一起列出）、VoxCPM 後端（`options.backend`），以及百度搜尋子來源（使用伺服器端預設值）。關閉的研究開關不會遷移（它只停止課程研究，對話和智慧體仍會搜尋），僅因預設值而處於關閉的開關也不會遷移：每項能力只要其插槽能解析就會執行。
+早期版本儲存在瀏覽器中的供應商設定（供應商及其 key 和 Base URL、所選模型、Token Plan 連接狀態，以及每種能力的選擇）會一次性匯入工作區。匯入不會取代工作區既有的設定或 `openmaic.yml` 鎖定子樹中的插槽，並會略過被 `allowUserKeys: false` 或驗證拒絕的項目。收到 2xx 回應後，只有工作區已持有的內容會從瀏覽器中刪除：伺服器略過的每個項目（媒體服務的自訂位址、工作區不可使用的預設、與部署宣告重名的供應商 id 等）都會連同 key 保留在此瀏覽器中，不會再次傳送，提示一次，並在「設定 → 模型服務」中連同原因列出，直到重新設定或被捨棄。帶官方區域位址的 Azure 語音供應商會被匯入。收到 400 時整份匯入內容被拒絕：不會再次傳送，其中各項目會連同 key 保留在此瀏覽器中，並與被略過的項目一起列出；匯入內容無法讀取時會被捨棄。只有在 401、404、409、5xx 或網路錯誤時，匯入內容才會保留在瀏覽器中，供之後重試。明確關閉過的語音輸入會變為 `asr: null`；在已有可用供應商時關閉的語音講解、圖像或影片會變為 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 鎖定的插槽保持不變）。以下內容需要手動重新設定：依階段設定的模型（在課程模型設定中，或在 `openmaic.yml` 的 `slots` 中）、推理設定（插槽上的 `thinking`）、自訂語音合成與語音辨識供應商以及 AliDocMind 的金鑰對（在 `openmaic.yml` 中；它們會保留在瀏覽器中，與被略過的項目一起列出）、VoxCPM 後端（`options.backend`），以及百度搜尋子來源（使用伺服器端預設值）。關閉的研究開關不會遷移（它只停止課程研究，對話和智慧體仍會搜尋），僅因預設值而處於關閉的開關也不會遷移：每項能力只要其插槽能解析就會執行。
 
 工作區即[持久化文件](./deployment.mdx)中所說的擁有者（owner）：預設的 Docker Compose 部署（單使用者模式）只有一個工作區；多使用者部署中，每個已登入帳號各有一個工作區。
 
-### 政策
+### allowUserKeys
 
 ```yaml
-policy:
-  allowWorkspaceProviders: false
+allowUserKeys: false
 ```
 
-`allowWorkspaceProviders`（預設 `true`）決定工作區能否新增自己的供應商。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為檔案沒有寫死的插槽選擇模型；請求自帶的模型、金鑰或端點（已棄用的 `x-model`、`x-api-key`、`x-base-url` 請求標頭以及媒體介面的供應商欄位）也會被忽略，供應商測試按鈕的請求標頭形式會被拒絕。由部署方負擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
+`allowUserKeys`（預設 `true`）決定使用者能否新增自己的供應商、Key 和 Token Plan。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為未鎖定的插槽選擇模型：不顯示 Token Plan 和新增服務入口，工作區先前新增的供應商也不再使用。請求自帶的模型、金鑰或端點（已棄用的 `x-model`、`x-api-key`、`x-base-url` 請求標頭以及媒體介面的供應商欄位）也會被忽略，供應商測試按鈕的請求標頭形式會被拒絕。由部署方承擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
 
 ### 金鑰與 OPENMAIC_SECRET_KEY
 
@@ -210,7 +229,7 @@ policy:
 - 工作區在模型設定中填寫的 key 儲存在資料庫中，使用實例金鑰 `OPENMAIC_SECRET_KEY` 以 AES-256-GCM 加密。
 - 未設定 `OPENMAIC_SECRET_KEY` 時，伺服器端會在首次使用時於 `data/instance-secret.key`（Docker Compose 中位於 `openmaic-data` 資料卷內）產生一把隨機金鑰，之後持續使用它。
 
-請把這把金鑰和資料庫備份放在一起：金鑰遺失或更換後，先前儲存的 key 無法讀取，需要重新填寫（模型設定會標示這些 key）。多個實例共用同一個資料庫時，或在沒有持久化資料目錄的平台（例如 Vercel）上，請明確設定 `OPENMAIC_SECRET_KEY`；任何字串都可以，例如 `openssl rand -base64 32` 的輸出。
+請把這把金鑰和資料庫備份放在一起：金鑰遺失或更換後，先前儲存的 key 無法讀取，需要重新填寫（模型設定會標示這些 key）。多個實例共用同一個資料庫時，或服務沒有持久化資料目錄時（例如未掛載資料卷的容器），請明確設定 `OPENMAIC_SECRET_KEY`；任何字串都可以，例如 `openssl rand -base64 32` 的輸出。
 
 不設定它時，若資料目錄無法跨重新啟動保留（沒有掛載磁碟區的容器、暫存磁碟），每次啟動都會產生新金鑰；多個副本也會各自產生一把；工作目錄唯讀時則無法建立金鑰，在模型設定中儲存 key 會失敗。啟動時，若 `OPENMAIC_SECRET_KEY` 未設定且資料目錄不可寫入，或資料庫中已有 key 是以與目前不同的金鑰加密（例如 `data/instance-secret.key` 遺失），伺服器端會記錄警告，但仍會正常啟動。
 
@@ -237,7 +256,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
 
-舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽在 `openmaic.yml` 和工作區中都沒有指派時才會生效；插槽一旦有指派，以設定為準；設為 `null` 的插槽無論請求寫了什麼都會拒絕。在 `policy.allowWorkspaceProviders: false` 下，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
+舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽沒有指派，或者在仍透過舊變數設定的伺服器上只有由舊變數轉換得到的預設值時（`DEFAULT_MODEL` 一直排在請求指定的模型之後），才會生效；`openmaic.yml` 中的預設值、工作區自己的選擇和鎖定的插槽優先，設為 `null` 的插槽無論請求寫了什麼都會拒絕。設定 `allowUserKeys: false` 時，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
 
 ### 從舊設定遷移
 
@@ -291,7 +310,7 @@ slots:
   webSearch: tavily
 ```
 
-之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。與轉換得到的 `DEFAULT_MODEL` 不同，這裡寫出的 `llm` 是鎖定的；如果希望工作區自行選擇，就不要把它寫進 `slots`。另外，與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持 Pro 智慧體關閉，請寫 `agent: null`。
+之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持 Pro 智慧體關閉，請寫 `agent: null`。
 
 **server-providers.yml。** 遷移前：
 
@@ -356,6 +375,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`、`maic-agent` | 無：這些階段已移除，直接刪掉 |
 
 多個階段共用一個插槽時，為該插槽指定它們應共同使用的那個模型。路由中的 `thinking` 移到插槽的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 插槽。遷移前：
 
@@ -385,6 +405,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+一旦存在 `openmaic.yml`，供應商變數本身就不再設定任何東西：只靠變數設定的 TTS、圖像、文件或網路搜尋供應商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不會得到預設供應商。請把用到的每個供應商寫進 `providers`，並在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的環境變數範例；未指定的槽位保持未設定，除非某個工作區在模型設定中為它指定。
 
 然後刪除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 

@@ -20,7 +20,7 @@ export function modelSettingsViewFor(
 ): ModelSettingsView {
   return {
     revision: null,
-    policy: { allowWorkspaceProviders: true },
+    allowUserKeys: true,
     presets: [],
     providers: [],
     slots: MODEL_SLOTS.map((definition) => {
@@ -31,11 +31,12 @@ export function modelSettingsViewFor(
         capability: definition.capability,
         configOnly: false,
         locked: false,
+        source: target ? { kind: 'default' as const } : { kind: 'unconfigured' as const },
         effective: target
           ? {
               status: 'assigned' as const,
               resolvedAt: definition.id,
-              source: 'deployment',
+              source: 'default' as const,
               requirements: [],
               providerId: target.providerId ?? target.registryId,
               providerSource: 'deployment' as const,

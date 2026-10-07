@@ -78,7 +78,7 @@ import {
 } from '@/lib/model-settings/client';
 import { serviceEntries } from '@/lib/model-settings/services';
 
-import { chatPreset, makeView, workspaceProvider } from '../model-settings/fixtures';
+import { chatPreset, makeView, withLlm, workspaceProvider } from '../model-settings/fixtures';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -90,6 +90,7 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver;
+  Element.prototype.scrollIntoView ??= function () {};
 });
 
 const roots: Root[] = [];
@@ -234,7 +235,7 @@ describe('Model Services → provider changes', () => {
     const view = makeView({
       providers: [{ ...workspaceProvider('operator'), source: 'deployment', key: undefined }],
       presets: [],
-      policy: { allowWorkspaceProviders: false },
+      allowUserKeys: false,
     });
     const { apply } = recordingApply(() => view);
     mount(
@@ -246,6 +247,48 @@ describe('Model Services → provider changes', () => {
     // Another service: the server does not let the workspace add it.
     click(byText('OpenAI'));
     expect(document.body.textContent).toContain('settings.serverConfig.serverOnlyPolicy');
+  });
+
+  it('brings the selected service into view, so the highlighted row is the one the panel shows', () => {
+    // A connected token plan whose provider is named after a built-in service
+    // far down the list, and in use: the panel opens on it.
+    const plan: PresetView = { ...chatPreset, id: 'minimax', name: 'MiniMax' };
+    const view = withLlm(
+      makeView({ presets: [plan], providers: [workspaceProvider('minimax', plan)] }),
+      'minimax:acme-large',
+    );
+    const { apply } = recordingApply(() => view);
+    const scrolled: Element[] = [];
+    vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    const selectedRow = () => {
+      const rows = [...document.body.querySelectorAll<HTMLElement>('button[aria-pressed="true"]')];
+      expect(rows).toHaveLength(1);
+      return rows[0];
+    };
+    const panelTitle = () =>
+      document.body.querySelector('.overflow-y-auto.p-4 p.truncate')?.textContent ?? '';
+    try {
+      mount(
+        createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+      );
+      // The list does not open on its first row: the plan's row is selected
+      // further down, and the panel beside it shows that same service.
+      const rows = [...document.body.querySelectorAll<HTMLElement>('button[aria-pressed]')];
+      expect(rows.indexOf(selectedRow())).toBeGreaterThan(0);
+      expect(selectedRow().textContent).toContain('MiniMax');
+      expect(panelTitle()).toBe('MiniMax');
+      expect(scrolled).toEqual([selectedRow()]);
+
+      // Picking another row moves the highlight and the panel together.
+      click(byText('OpenAI'));
+      expect(selectedRow().textContent).toContain('OpenAI');
+      expect(panelTitle()).toBe('OpenAI');
+      expect(scrolled.at(-1)).toBe(selectedRow());
+    } finally {
+      vi.mocked(Element.prototype.scrollIntoView).mockRestore();
+    }
   });
 
   it('sends no key with anything but the settings write', async () => {
@@ -359,11 +402,13 @@ describe('Token Plan → provider and recommended slots', () => {
 function deploymentView(): ModelSettingsView {
   return makeView({
     presets: [],
-    policy: { allowWorkspaceProviders: false },
+    allowUserKeys: false,
     providers: [
       {
         id: 'gateway',
         preset: 'openai-compatible',
+        presetName: 'OpenAI-compatible endpoint',
+        presetKind: 'single',
         source: 'deployment',
         models: ['gpt-5.1', 'gpt-5.4-mini', 'deepseek-v4-flash-0731'],
         capabilities: {
@@ -379,6 +424,8 @@ function deploymentView(): ModelSettingsView {
       {
         id: 'deepseek',
         preset: 'deepseek',
+        presetName: 'DeepSeek',
+        presetKind: 'single',
         source: 'deployment',
         capabilities: {
           chat: {
@@ -528,6 +575,8 @@ describe('review fixes', () => {
         {
           id: 'browser-native-tts',
           preset: 'browser-native-tts',
+          presetName: 'Browser TTS',
+          presetKind: 'single' as const,
           source: 'workspace' as const,
           capabilities: browserTts.capabilities,
           key: { set: false },

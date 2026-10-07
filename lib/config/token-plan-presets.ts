@@ -115,7 +115,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         apiFormat: 'openai',
         // The plan's own model family is its primary course-generation set: base
         // drives the mainline while slide/interactive cover courseware and
-        // interactive pages.
+        // interactive pages; the Pro agent runs on DeepSeek V4.1 Flash.
         defaultModels: [
           'cogevol-base',
           'cogevol-slide-0828',
@@ -132,6 +132,8 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         stageRoutes: {
           'scene-content:slide': 'cogevol-slide-0828',
           'scene-content:interactive': 'cogevol-interactive-0828',
+          // The Pro agent needs dependable tool calling: a general model.
+          'maic-agent-driver': 'deepseek-v4.1-flash',
         },
       },
       image: {

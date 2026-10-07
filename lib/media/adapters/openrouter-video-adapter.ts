@@ -29,7 +29,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
-import { runPolledTask, type PollResult } from '../polled-task';
+import { runPolledTask, type PollResult, type PolledTaskControl } from '../polled-task';
 import { requireModel } from '../require-model';
 import { openRouterBaseUrl, openRouterHeaders } from './openrouter-image-adapter';
 
@@ -210,6 +210,7 @@ export async function testOpenRouterVideoConnectivity(
 export async function generateWithOpenRouterVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   const baseUrl = openRouterBaseUrl(config.baseUrl);
   const model = requireModel(config.model, 'OpenRouter Video');
@@ -254,6 +255,7 @@ export async function generateWithOpenRouterVideo(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'OpenRouter video generation',
+    control,
     // Cancelling a generation should stop the poll immediately, not after the
     // current 10s sleep elapses.
     ...(options.signal ? { signal: options.signal } : {}),

@@ -70,6 +70,8 @@ vi.mock('@/lib/persistence/server-provider', () => ({
     documentStore: mocks.fakeStore!.store,
     pool: mocks.queryPool,
     assetStore: mocks.assetStore,
+    withTransaction: async (body: (queryable: unknown) => Promise<unknown>) =>
+      body(mocks.queryPool),
   }),
 }));
 // The stage routes obtain their store through the owner-scoped seam (which

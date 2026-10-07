@@ -21,6 +21,7 @@ import {
   validateRuntimeRecord,
   validateRuntimeSession,
 } from '@openmaic/dsl';
+import { applySchemaMigrations, type SchemaMigrationSet } from '../pg-migrations.js';
 import type {
   RuntimePayload,
   RuntimeRecord,
@@ -122,7 +123,10 @@ export interface PgRuntimeStoreOptions {
   resolveFinalLearner?: (transaction: Queryable, learnerKey: string) => Promise<string>;
 }
 
-/** Idempotent schema for the PostgreSQL runtime backend. */
+/**
+ * Idempotent schema for the PostgreSQL runtime backend: every migration's SQL,
+ * which is the baseline alone so far.
+ */
 export const RUNTIME_PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS runtime_sessions (
   id TEXT PRIMARY KEY,
@@ -154,19 +158,19 @@ CREATE INDEX IF NOT EXISTS runtime_records_session_scene_idx
   ON runtime_records (session_id, scene_id);
 `;
 
+/** The runtime backend's migrations, recorded under the store `runtime`. */
+export const RUNTIME_PG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'runtime',
+  migrations: [{ version: 1, name: 'baseline', up: RUNTIME_PG_SCHEMA, transaction: false }],
+};
+
 /**
- * Create the tables owned by this backend when absent. Safe to call repeatedly;
- * changing an existing table requires a real migration.
+ * Create the tables owned by this backend, or bring an existing database up to
+ * date, by applying the pending {@link RUNTIME_PG_MIGRATIONS}. Safe to call on
+ * every start; a schema change is a new migration.
  */
 export async function ensureSchema(queryable: Queryable): Promise<void> {
-  // Keep Queryable minimal: PGlite's query() intentionally accepts one
-  // statement at a time, while node-postgres also accepts each statement.
-  // This split is deliberately simple and would break on semicolons inside SQL
-  // string literals; replace it with a migration runner before adding such SQL.
-  for (const sql of RUNTIME_PG_SCHEMA.split(';')) {
-    const statement = sql.trim();
-    if (statement !== '') await queryable.query(statement);
-  }
+  await applySchemaMigrations(queryable, RUNTIME_PG_MIGRATIONS);
 }
 
 const DEFAULT_PAYLOAD_VALIDATORS: Record<string, RuntimePayloadValidator> = {

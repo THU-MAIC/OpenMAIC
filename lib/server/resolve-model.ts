@@ -75,7 +75,7 @@ export interface ModelRequest {
 
 let deprecationLogged = false;
 
-/** Why a request's own model is refused under `policy.allowWorkspaceProviders: false`. */
+/** Why a request's own model is refused under `allowUserKeys: false`. */
 export const REQUEST_PROVIDERS_REFUSED =
   'This server uses only the providers its configuration declares; a request cannot name its own model, key or endpoint.';
 
@@ -86,7 +86,7 @@ export const REQUEST_PROVIDERS_REFUSED =
  */
 export async function resolveModel(params: ModelRequest): Promise<ResolvedModel> {
   const { requestProvidersAllowed } = await import('@/lib/server/model-config/runtime');
-  // Under `policy.allowWorkspaceProviders: false` users choose only among the
+  // Under `allowUserKeys: false` users choose only among the
   // providers openmaic.yml declares: the model, key and endpoint a request
   // names are ignored, and only the configuration decides.
   const allowed = requestProvidersAllowed();
@@ -109,7 +109,7 @@ export async function resolveModel(params: ModelRequest): Promise<ResolvedModel>
  * x-base-url, x-provider-type, x-model-routes, or the equivalent body
  * fields), or undefined when it names none. Deprecated: the configuration
  * decides, and this answers only for a slot it leaves unassigned, and never
- * under `policy.allowWorkspaceProviders: false` (see resolveModel).
+ * under `allowUserKeys: false` (see resolveModel).
  */
 export async function resolveRequestedModel(
   params: ModelRequest,

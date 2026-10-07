@@ -17,6 +17,7 @@
  * Temporary, like the importer: remove with it.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS legacy_classroom_imports (
@@ -29,8 +30,13 @@ CREATE TABLE IF NOT EXISTS legacy_classroom_imports (
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`;
 
+export const LEGACY_CLASSROOM_IMPORT_MIGRATIONS: SchemaMigrationSet = {
+  store: 'legacy-classroom-imports',
+  migrations: [{ version: 1, name: 'baseline', up: SCHEMA, transaction: false }],
+};
+
 export async function ensureLegacyClassroomImportSchema(queryable: Queryable): Promise<void> {
-  await queryable.query(SCHEMA);
+  await applySchemaMigrations(queryable, LEGACY_CLASSROOM_IMPORT_MIGRATIONS);
 }
 
 /** Failed attempts after which a classroom is settled as skipped. */

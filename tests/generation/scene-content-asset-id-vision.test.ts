@@ -1,36 +1,29 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createLogger } from '@/lib/logger';
 import type { SceneOutline } from '@/lib/types/generation';
 
 const callLLMMock = vi.hoisted(() => vi.fn());
-const resolveModelFromRequestMock = vi.hoisted(() => vi.fn());
+const resolveModelMock = vi.hoisted(() => vi.fn());
 const resolveVisionImagesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/ai/llm', () => ({
   callLLM: callLLMMock,
 }));
 
-vi.mock('@/lib/server/resolve-model', () => ({
-  resolveModelFromRequest: resolveModelFromRequestMock,
-}));
-
-vi.mock('@/lib/persistence/resolve-vision-images', () => ({
-  resolveVisionImagesForPrompt: resolveVisionImagesMock,
-}));
-
 /**
  * Server-backed generation by allocated asset id (RFC #1153 part 2 B): the
- * client sends `imageMapping` as (image id → allocated asset id), the route
+ * run passes `imageMapping` as (image id → allocated asset id), the step
  * resolves those ids to bytes at prompt-assembly time (before
  * `buildVisionUserContent`), and `resolveImageIds` writes the ALLOCATED ID
  * into `PPTImageElement.src` for the renderer to resolve through the pool.
  */
-describe('scene-content route — asset-id image transport', () => {
+describe('scene content step — asset-id image transport', () => {
   beforeEach(() => {
     callLLMMock.mockReset();
-    resolveModelFromRequestMock.mockReset();
+    resolveModelMock.mockReset();
     resolveVisionImagesMock.mockReset();
-    resolveModelFromRequestMock.mockResolvedValue({
+    resolveModelMock.mockResolvedValue({
       model: { provider: 'test.chat', modelId: 'test-model' },
       modelInfo: { outputWindow: 4096, capabilities: { vision: true } },
       modelString: 'test:test-model',
@@ -40,7 +33,7 @@ describe('scene-content route — asset-id image transport', () => {
 
   test('resolves asset ids to the same bytes the base64 path would send and writes the allocated id into src', async () => {
     vi.resetModules();
-    // The vision slice reaches the route with the allocated id as its src.
+    // The vision slice reaches the step with the allocated id as its src.
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
       images.map((image) => ({
         ...image,
@@ -64,17 +57,12 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(),
-        pdfImages: [{ id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 }],
-        imageMapping: { img_1: 'ast_allocated_image_0001' },
-      }),
-    );
-    const body = await response.json();
+    const body = await generate({
+      outline: slideOutline(),
+      pdfImages: [{ id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 }],
+      imageMapping: { img_1: 'ast_allocated_image_0001' },
+    });
 
-    expect(body.success).toBe(true);
     // The prompt-assembly resolution was asked for the allocated id.
     expect(resolveVisionImagesMock).toHaveBeenCalledWith(
       [
@@ -124,17 +112,12 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(),
-        pdfImages: [{ id: 'img_1', src: dataUrl, pageNumber: 1, width: 100, height: 100 }],
-        imageMapping: { img_1: dataUrl },
-      }),
-    );
-    const body = await response.json();
+    const body = await generate({
+      outline: slideOutline(),
+      pdfImages: [{ id: 'img_1', src: dataUrl, pageNumber: 1, width: 100, height: 100 }],
+      imageMapping: { img_1: dataUrl },
+    });
 
-    expect(body.success).toBe(true);
     // The data-URL payload reaches the resolver verbatim (pass-through), so
     // the LLM content is byte-identical to the pre-part-2 path.
     expect(resolveVisionImagesMock).toHaveBeenCalledWith(
@@ -175,20 +158,15 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(['img_1', 'img_2']),
-        pdfImages: [
-          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
-        ],
-        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
-      }),
-    );
-    const body = await response.json();
+    const body = await generate({
+      outline: slideOutline(['img_1', 'img_2']),
+      pdfImages: [
+        { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+        { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+      ],
+      imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+    });
 
-    expect(body.success).toBe(true);
     // The prompt text promised `[see attached]` only for img_1 — img_2's
     // text mention is gone with its attachment (no dangling promise).
     const content = callLLMMock.mock.calls[0][0].messages[0].content;
@@ -242,20 +220,15 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(['img_1', 'img_2']),
-        pdfImages: [
-          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-          { id: 'img_2', src: dataUrl, pageNumber: 2, width: 200, height: 100 },
-        ],
-        imageMapping: { img_1: 'ast_mixed_1', img_2: dataUrl },
-      }),
-    );
-    const body = await response.json();
+    const body = await generate({
+      outline: slideOutline(['img_1', 'img_2']),
+      pdfImages: [
+        { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+        { id: 'img_2', src: dataUrl, pageNumber: 2, width: 200, height: 100 },
+      ],
+      imageMapping: { img_1: 'ast_mixed_1', img_2: dataUrl },
+    });
 
-    expect(body.success).toBe(true);
     // The LLM received both images (id resolved, data URL passed through).
     const content = callLLMMock.mock.calls[0][0].messages[0].content;
     const imageParts = content.filter((part: { type: string }) => part.type === 'image');
@@ -290,24 +263,19 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(ids),
-        pdfImages: ids.map((id, index) => ({
-          id,
-          src: '',
-          pageNumber: index + 1,
-          width: 100,
-          height: 100,
-        })),
-        imageMapping: Object.fromEntries(
-          ids.map((id) => [id, gone.has(id) ? 'ast_gone' : `ast_${id}`]),
-        ),
-      }),
-    );
-    const body = await response.json();
-    expect(body.success).toBe(true);
+    const body = await generate({
+      outline: slideOutline(ids),
+      pdfImages: ids.map((id, index) => ({
+        id,
+        src: '',
+        pageNumber: index + 1,
+        width: 100,
+        height: 100,
+      })),
+      imageMapping: Object.fromEntries(
+        ids.map((id) => [id, gone.has(id) ? 'ast_gone' : `ast_${id}`]),
+      ),
+    });
 
     const content = callLLMMock.mock.calls[0][0].messages[0].content;
     const textPart = content.find((part: { type: string }) => part.type === 'text');
@@ -352,13 +320,8 @@ describe('scene-content route — asset-id image transport', () => {
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({ outline: slideOutline(ids), pdfImages, imageMapping }),
-    );
-    const body = await response.json();
+    await generate({ outline: slideOutline(ids), pdfImages, imageMapping });
 
-    expect(body.success).toBe(true);
     // The fuse tripped after exactly 3 probes — the other 22 were never
     // probed (no N-warn churn).
     expect(resolveVisionImagesMock).toHaveBeenCalledTimes(3);
@@ -379,7 +342,7 @@ describe('scene-content route — asset-id image transport', () => {
     vi.resetModules();
     vi.useFakeTimers();
     // The store accepts the probe but never answers — a stalled database with
-    // no statement timeout. Each probe would otherwise hold the route until
+    // no statement timeout. Each probe would otherwise hold the step until
     // the platform cap; the aggregate phase budget (the mocked 50 ms below,
     // the shared 15 s constant in production) must stop the phase within the
     // bound and degrade to text-only generation.
@@ -390,15 +353,10 @@ describe('scene-content route — asset-id image transport', () => {
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const responsePromise = POST(
-      mockRequest({ outline: slideOutline(ids), pdfImages, imageMapping }),
-    );
+    const pending = generate({ outline: slideOutline(ids), pdfImages, imageMapping });
     await vi.advanceTimersByTimeAsync(15_000);
-    const response = await responsePromise;
-    const body = await response.json();
+    await pending;
 
-    expect(body.success).toBe(true);
     // Only the FIRST candidate was probed before the budget fired.
     expect(resolveVisionImagesMock).toHaveBeenCalledTimes(1);
     expect(callLLMMock).toHaveBeenCalledTimes(1);
@@ -421,7 +379,7 @@ describe('scene-content route — asset-id image transport', () => {
         .filter((image) => image.src !== 'ast_gone')
         .map((image) => ({ ...image, src: dataUrlFor(`bytes-for-${image.id}`) })),
     );
-    // The model hallucinates a reference to img_2, which the route dropped
+    // The model hallucinates a reference to img_2, which the step dropped
     // (its allocated id does not resolve server-side — a reclaimed asset).
     callLLMMock.mockResolvedValueOnce({
       text: JSON.stringify({
@@ -433,19 +391,14 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(['img_1', 'img_2']),
-        pdfImages: [
-          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
-        ],
-        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
-      }),
-    );
-    const body = await response.json();
-    expect(body.success).toBe(true);
+    const body = await generate({
+      outline: slideOutline(['img_1', 'img_2']),
+      pdfImages: [
+        { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+        { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+      ],
+      imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+    });
 
     // img_2 was STRIPPED from the mapping passed to the generator, so
     // resolveImageIds takes the clean "no mapping → remove element" path
@@ -472,22 +425,17 @@ describe('scene-content route — asset-id image transport', () => {
       }),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
-    const response = await POST(
-      mockRequest({
-        outline: slideOutline(ids),
-        pdfImages: ids.map((id, index) => ({
-          id,
-          src: '',
-          pageNumber: index + 1,
-          width: 100,
-          height: 100,
-        })),
-        imageMapping: Object.fromEntries(ids.map((id) => [id, dataUrlFor(id)])),
-      }),
-    );
-    const body = await response.json();
-    expect(body.success).toBe(true);
+    const body = await generate({
+      outline: slideOutline(ids),
+      pdfImages: ids.map((id, index) => ({
+        id,
+        src: '',
+        pageNumber: index + 1,
+        width: 100,
+        height: 100,
+      })),
+      imageMapping: Object.fromEntries(ids.map((id) => [id, dataUrlFor(id)])),
+    });
 
     const content = callLLMMock.mock.calls[0][0].messages[0].content;
     const textPart = content.find((part: { type: string }) => part.type === 'text');
@@ -503,7 +451,8 @@ describe('scene-content route — asset-id image transport', () => {
   });
 });
 
-function mockRequest(body: {
+/** Generate one scene's content as a run does, with the stubbed model and vision resolver. */
+async function generate(input: {
   outline: SceneOutline;
   pdfImages?: Array<{
     id: string;
@@ -514,19 +463,23 @@ function mockRequest(body: {
   }>;
   imageMapping?: Record<string, string>;
 }) {
-  return {
-    json: async () => ({
-      outline: body.outline,
-      allOutlines: [body.outline],
-      stageId: 'stage-1',
-      stageInfo: { name: 'Test Stage' },
-      pdfImages: body.pdfImages ?? [],
-      imageMapping: body.imageMapping ?? {},
-    }),
-    headers: {
-      get: () => null,
+  const { generateSceneContent } = await import('@/lib/server/generation/steps/scene-content');
+  const result = await generateSceneContent(
+    {
+      outline: input.outline,
+      pdfImages: input.pdfImages ?? [],
+      imageMapping: input.imageMapping ?? {},
+      targetLanguage: '',
+      model: await resolveModelMock(),
     },
-  } as unknown as Parameters<typeof import('@/app/api/generate/scene-content/route').POST>[0];
+    {
+      log: createLogger('Scene Content'),
+      resolveVisionImages: (images) => resolveVisionImagesMock(images, {}),
+    },
+  );
+  // The assertions read the generated content as the JSON it is.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return result as { content: any; effectiveOutline: any };
 }
 
 function slideOutline(suggestedImageIds: string[] = ['img_1']): SceneOutline {

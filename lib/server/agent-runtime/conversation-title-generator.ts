@@ -58,9 +58,7 @@ export async function generateConversationTitle(
   try {
     // agent.title follows the agent by default; titles only think when the
     // title slot itself says so.
-    const lookup = await lookupSlot('agent.title', workspaceId);
-    const resolution =
-      lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured;
+    const resolution = await lookupSlot('agent.title', workspaceId);
     if (resolution.status !== 'assigned') return null;
     const connection = await slotLanguageModel(resolution);
     const thinking =

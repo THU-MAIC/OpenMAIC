@@ -1,5 +1,6 @@
 import { AssetQuotaExceededError, type AssetStore } from '@openmaic/storage';
 import type { AssetMeta } from '@openmaic/dsl';
+import type { Queryable } from '@openmaic/storage/document/pg';
 
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
@@ -44,6 +45,19 @@ export interface StoreGeneratedAssetInput {
    * database; production callers never pass it.
    */
   assetStore?: AssetStore;
+  /**
+   * Runs first on the allocation's transaction (after the owner's identity
+   * lock): a background worker's lease check, so a worker whose work was
+   * taken over allocates nothing.
+   */
+  fence?: (tx: Queryable) => Promise<void>;
+  /**
+   * Runs on the allocation's transaction once the id is allocated, before
+   * COMMIT: a background worker's checkpoint of the id, so the bytes and the
+   * record of them commit together and a takeover never pays for them again.
+   * Production path only (not with `assetStore`).
+   */
+  afterPut?: (tx: Queryable, assetId: string) => Promise<void>;
 }
 
 export type StoreGeneratedAssetResult =
@@ -110,13 +124,17 @@ export async function storeGeneratedAsset(
         const provider = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
         return provider.withTransaction(async (tx) => {
           const ownerId = await forwardOwnerWrite(tx, input.ownerId);
-          return provider.assetStoreIn(tx).put(assetPrincipalForOwner(ownerId), blob, meta);
+          await input.fence?.(tx);
+          const assetId = await provider
+            .assetStoreIn(tx)
+            .put(assetPrincipalForOwner(ownerId), blob, meta);
+          await input.afterPut?.(tx, assetId);
+          return assetId;
         });
       };
   // `stageId` rides in the entry's metadata rather than in a dedicated column:
-  // the browser chain's `putAsset(bytes, meta, { stageId })` never sends its
-  // stage to the server at all (it retires a device-local "the store had no
-  // room" note), so there is no server-side field to mirror. The durable
+  // the browser's `putAsset(bytes, meta)` never sends a stage to the server, so
+  // there is no server-side field to mirror. The durable
   // stage→asset fact is the reference table the document write maintains; this
   // is provenance on the entry itself, for a server-side writer that has no
   // other place to put it.

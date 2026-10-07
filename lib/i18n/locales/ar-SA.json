@@ -46,23 +46,61 @@
     "ttsPreview": "معاينة",
     "ttsPreviewing": "جارٍ التشغيل...",
     "modelChangeFailed": "تعذّر تغيير النموذج: {{message}}",
-    "modelLockedHint": "النموذج الذي تستخدمه المقررات، ويحدده هذا الخادم",
     "pickModel": "اختر نموذجًا",
-    "defaultModel": "افتراضي",
     "defaultModelNote": "يغيّر النموذج الافتراضي؛ تحتفظ المراحل المضبوطة بشكل منفصل بنماذجها.",
-    "stagesSetSeparately": "{{count}} مراحل مضبوطة بشكل منفصل",
-    "stagesSetSeparately_one": "{{count}} مرحلة مضبوطة بشكل منفصل",
-    "stagesSetSeparately_other": "{{count}} مراحل مضبوطة بشكل منفصل",
-    "stagesSetSeparatelyHint": "مراحل بنموذج خاص بها",
-    "perStageSetup": "ضبط حسب المرحلة",
-    "perStageSetupHint": "لكل مرحلة من مراحل الدورة نموذج خاص بها"
+    "materialUploading": "جارٍ الرفع {{percent}}%",
+    "materialParsing": "جارٍ التحليل…",
+    "materialTranscribing": "جارٍ التفريغ النصي…",
+    "materialReady": "جاهز",
+    "materialFailed": "فشل",
+    "materialRetry": "إعادة المحاولة",
+    "materialMediaLabel": "صوت/فيديو",
+    "materialUnavailable": "لم تعد هذه المادة متاحة. أزلها ثم أرفق الملف مرة أخرى."
   },
   "export": {
     "pptx": "تصدير PPTX",
     "resourcePack": "تصدير حزمة الموارد",
     "resourcePackDesc": "PPTX + صفحات تفاعلية",
+    "withPlaceholders": "مع شرائح بديلة (موصى به)",
+    "withPlaceholdersDesc": "تحصل الصفحات التفاعلية والاختبارات والمشاريع على شريحة برمز QR",
+    "slidesOnly": "الشرائح فقط",
+    "slidesOnlyDesc": "مشاهد الشرائح فقط",
+    "packWithPlaceholders": "PPTX مع شرائح بديلة + صفحات تفاعلية (موصى به)",
+    "packSlidesOnly": "PPTX بالشرائح فقط + صفحات تفاعلية",
     "classroomZip": "تصدير ملف الفصل ZIP",
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
+    "html": "تصدير بتنسيق HTML",
+    "htmlDesc": "ملف واحد للاستخدام دون اتصال، بلا تعليق صوتي",
+    "htmlPlayer": {
+      "previous": "السابق",
+      "next": "التالي",
+      "scenes": "المشاهد",
+      "fullscreen": "ملء الشاشة",
+      "exitFullscreen": "الخروج من ملء الشاشة",
+      "emptyClassroom": "لا يحتوي هذا الفصل على أي مشاهد.",
+      "unsupportedScene": "هذا المشهد غير متاح في التصدير دون اتصال.",
+      "interactiveTitle": "مشهد تفاعلي",
+      "videoUnavailable": "الفيديو غير مضمّن في التصدير دون اتصال",
+      "quizSubmit": "إرسال",
+      "quizRetry": "حاول مجددًا",
+      "quizScore": "الدرجة",
+      "quizCorrect": "صحيح",
+      "quizIncorrect": "غير صحيح",
+      "quizCorrectAnswer": "الإجابة الصحيحة",
+      "quizExplanation": "الشرح",
+      "quizReferenceAnswer": "الإجابة المرجعية",
+      "quizNoReferenceAnswer": "لا تتوفر إجابة مرجعية لهذا السؤال.",
+      "quizAnswerPlaceholder": "اكتب إجابتك...",
+      "quizMultipleHint": "اختر كل ما ينطبق",
+      "pblScenario": "السيناريو",
+      "pblGoal": "الهدف",
+      "pblYourRole": "دورك",
+      "pblCharacters": "الشخصيات",
+      "pblLearningObjective": "هدف التعلّم",
+      "pblMilestones": "المراحل",
+      "pblOnlineOnly": "العمل على المشروع مع وكلاء الذكاء الاصطناعي متاح فقط في الفصل عبر الإنترنت.",
+      "pblContinueOnline": "تابع هذا المشروع عبر الإنترنت"
+    },
     "scriptMd": "تنزيل النص (.md)",
     "scriptMdDesc": "نص السرد بتنسيق Markdown",
     "script": "تنزيل النص",
@@ -117,7 +155,21 @@
     "subtitlesFailed": "فشل تنزيل الترجمة",
     "noSlides": "لا توجد شرائح للتصدير",
     "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
-    "nothingToExport": "لا يوجد محتوى للتصدير"
+    "nothingToExport": "لا يوجد محتوى للتصدير",
+    "placeholder": {
+      "interactiveLabel": "تفاعلي",
+      "quizLabel": "اختبار",
+      "interactiveDesc": "صفحة ويب تفاعلية. افتحها عبر الإنترنت أو امسح رمز QR.",
+      "quizDesc": "مشهد اختبار. لا يتضمن هذا العرض الإجابات.",
+      "quizQuestionCount": "عدد الأسئلة: {{count}}",
+      "openOnline": "فتح عبر الإنترنت",
+      "openOffline": "فتح النسخة غير المتصلة",
+      "offlineHint": "تعمل عندما يبقى هذا العرض داخل مجلد حزمة الموارد بعد فك ضغطها",
+      "pblLabel": "مشروع",
+      "pblDesc": "نشاط قائم على المشاريع بأدوار ذكاء اصطناعي. افتحه عبر الإنترنت أو امسح رمز QR.",
+      "pblGoal": "الهدف: {{goal}}",
+      "pblMilestoneCount": "المراحل: {{count}}"
+    }
   },
   "import": {
     "classroom": "استيراد فصل",
@@ -245,6 +297,7 @@
     "generating": "جارٍ التوليد...",
     "paused": "متوقف مؤقتًا",
     "generationFailed": "فشل التوليد",
+    "generationInterrupted": "تمت مقاطعة الإنشاء",
     "confirmSwitchTitle": "تبديل المشهد",
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
@@ -1032,7 +1085,11 @@
     "notFoundDesc": "هذه الدورة غير موجودة أو تم حذفها.",
     "loadUnavailable": "تعذر تحميل هذه الدورة",
     "loadUnavailableDesc": "تعذر استرداد الدورة. تحقق من صلاحية الوصول أو حاول مرة أخرى.",
-    "backToHome": "العودة إلى الصفحة الرئيسية"
+    "backToHome": "العودة إلى الصفحة الرئيسية",
+    "runOutlining": "جارٍ إعداد المخطط…",
+    "runAwaitingConfirmation": "بانتظار التأكيد",
+    "runGenerating": "جارٍ التوليد {{completed}}/{{total}}",
+    "runPaused": "متوقف مؤقتًا"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
@@ -1044,13 +1101,15 @@
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
     "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
     "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
-    "unsupportedCourseMaterial": "لا يدعم {{parser}} نوع الملف هذا. الصيغ المدعومة: {{formats}}"
+    "unsupportedCourseMaterial": "لا يدعم {{parser}} نوع الملف هذا. الصيغ المدعومة: {{formats}}",
+    "unsupportedMaterialFormat": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر.",
+    "materialQuotaExceeded": "مساحة تخزين المواد ممتلئة. احذف بعض المواد ثم حاول مرة أخرى.",
+    "materialUploadFailed": "فشل رفع {{name}}. يرجى المحاولة مرة أخرى.",
+    "materialTooLarge": "{{name}} كبير جدًا: الحد الأقصى لحجم المادة {{size}}."
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
     "pdfParseFailed": "فشل تحليل PDF",
-    "analyzingCourseMaterial": "تحليل المستندات",
-    "analyzingCourseMaterialDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
     "courseMaterialLoadFailed": "فشل تحميل مادة المقرر، يرجى المحاولة مرة أخرى",
     "courseMaterialParseFailed": "فشل تحليل مادة المقرر",
     "streamNotReadable": "تعذرت قراءة تدفق التوليد",
@@ -1080,6 +1139,7 @@
     "continue": "متابعة",
     "outlineRetrying": "مشكلة في توليد المخطط، جارٍ إعادة المحاولة...",
     "outlineEmptyResponse": "لم يُرجع النموذج مخططات صالحة. يرجى التحقق من تكوين النموذج والمحاولة مرة أخرى",
+    "customAgentsUnavailable": "تعذّر تحميل الوكلاء المخصّصين. يرجى المحاولة مرة أخرى.",
     "outlineGenerateFailed": "فشل توليد المخطط، يرجى المحاولة لاحقًا",
     "sceneGenerateFailed": "فشل توليد المشهد، يرجى المحاولة لاحقًا",
     "sceneGenerateAuthFailed": "فشل توليد المشهد لأن مزود النموذج رفض بيانات الاعتماد. يرجى التحقق من إعدادات النموذج.",
@@ -1155,8 +1215,15 @@
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
     "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
-    "analyzingMediaMaterial": "تحليل الصوت/الفيديو",
-    "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى."
+    "modelSettingsUnavailable": "تعذّرت قراءة إعدادات النماذج، فتوقف التوليد. حاول مرة أخرى.",
+    "activeRunLimit": "لديك بالفعل الحد الأقصى من المقررات قيد التوليد. انتظر حتى ينتهي أحدها ثم حاول مرة أخرى.",
+    "outlineConfirmedElsewhere": "تم تأكيد هذا المخطط في مكان آخر؛ لم تُطبَّق تعديلاتك هنا.",
+    "outlineAlreadyContinued": "استمر توليد المقرر بالفعل، لذا لم يعد بالإمكان تغيير المخطط.",
+    "runChangedElsewhere": "تقدّم التوليد بالفعل في مكان آخر.",
+    "runLoadFailed": "تعذّر تحميل عملية التوليد هذه",
+    "runLoadRetrying": "جارٍ إعادة المحاولة…",
+    "mediaGenerationFailed": "فشل توليد الوسائط",
+    "mediaGenerationDisabled": "التوليد معطّل"
   },
   "settings": {
     "title": "الإعدادات",
@@ -1708,7 +1775,7 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time.",
       "statusConnected": "متصل",
-      "keyStorage": "يُحفظ المفتاح مشفّرًا على الخادم ولا يُعرض مرة أخرى. عند الاتصال تُطبَّق النماذج الموصى بها في هذه الخطة على مراحل الدورة؛ وإذا كان ذلك سيستبدل نماذج اخترتها، فسيُطلب منك التأكيد أولًا.",
+      "keyStorage": "يُحفظ المفتاح مشفّرًا على الخادم ولا يُعرض مرة أخرى. عند الاتصال تُطبَّق النماذج الموصى بها في هذه الخطة على مراحل الدورة؛ وإذا كان ذلك سيستبدل ما تستخدمه مرحلة الآن (نموذجًا اخترته أو قيمة الخادم الافتراضية)، فسيُطلب منك التأكيد أولًا.",
       "saveKey": "حفظ وتشغيل",
       "cancelKeyUpdate": "إلغاء التحديث",
       "manageAccount": "إدارة الحساب",
@@ -1730,7 +1797,7 @@
       "stageInteractive": "تفاعلي",
       "stageSlide": "شرائح الدرس",
       "applyTitle": "هل تريد استخدام الإعداد الموصى به لهذه الخطة؟",
-      "applyBody": "توصي {{name}} بنماذجها الخاصة لهذه المراحل، التي تستخدم حاليًا نماذج اخترتها:",
+      "applyBody": "توصي {{name}} بنماذجها الخاصة لهذه المراحل. استخدامها يستبدل ما تستخدمه كل مرحلة الآن، بما في ذلك قيم الخادم الافتراضية:",
       "applyKeep": "الإبقاء على إعدادي الحالي",
       "applyRecommended": "استخدام الإعداد الموصى به للخطة"
     },
@@ -1879,7 +1946,7 @@
     "saveModel": "حفظ",
     "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
     "serverConfigured": "الخادم",
-    "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا. لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا.",
     "startRecording": "بدء التسجيل",
     "stopRecording": "إيقاف التسجيل",
     "supportedFormats": "الصيغ المدعومة",
@@ -1904,7 +1971,7 @@
       "unavailableTitle": "يدير الخادم النماذج",
       "unavailableBody": "لا يحفظ هذا الخادم إعدادات النماذج لكل مساحة عمل، لذلك يستخدم النماذج التي هيّأها المسؤول.",
       "conflict": "تغيّرت الإعدادات في مكان آخر وأُعيد تحميلها. راجعها ثم حاول مرة أخرى.",
-      "lockedNow": "أصبح الخادم يحدد هذا الإعداد، لذا لم يتغيّر.",
+      "lockedNow": "ثبّت المسؤول هذا، لذا لم يُغيَّر.",
       "unconfirmed": "فُقد رد الخادم، فأُعيد تحميل الإعدادات. تحقّق مما إذا كان التغيير قد طُبّق.",
       "serverOnly": "لا يمكن إعداد هذه الخدمة إلا من إعدادات الخادم (openmaic.yml). تواصل مع مسؤول الخادم.",
       "serverOnlyPolicy": "لا يسمح هذا الخادم لمساحات العمل بإضافة خدماتها الخاصة. تواصل مع مسؤول الخادم.",
@@ -1935,8 +2002,7 @@
         "off": "متوقف",
         "unassigned": "غير محدد",
         "invalid": "إعداد غير صالح",
-        "locked": "يحدّده الخادم",
-        "lockedHint": "تحدّده إعدادات الخادم ولا يمكن تغييره هنا.",
+        "lockedHint": "ثبّت المسؤول هذا للجميع على هذا الخادم؛ لا يمكن تغييره هنا.",
         "followers": "الخطوات التي تتبعه: {{count}}",
         "childrenFollow": "أنواع الصفحات · كلها تتبع",
         "childrenOwn": "أنواع الصفحات · {{count}} بإعداد خاص"
@@ -1945,7 +2011,7 @@
         "label": "مفتاح الخريطة",
         "follows": "يتبع الأعلى",
         "own": "إعداد خاص",
-        "locked": "يحدّده الخادم"
+        "locked": "ثبّته المسؤول"
       },
       "map": {
         "label": "خريطة نماذج الدورة. اسحب أو استخدم مفاتيح الأسهم للتنقل، واستخدم أزرار التكبير والتصغير.",
@@ -1972,11 +2038,13 @@
         "noFallback": "لا شيء",
         "manageProviders": "الإدارة في خدمات النماذج",
         "conflict": "تغيّرت الإعدادات في مكان آخر وأُعيد تحميلها. راجعها ثم حاول مرة أخرى.",
-        "lockedNow": "أصبح الخادم يحدّد هذا الإعداد، لذلك لم يتغيّر شيء.",
+        "lockedNow": "ثبّت المسؤول هذا، لذا لم يُغيَّر.",
         "clear": "مسح الإعداد الخاص",
-        "clearHint": "استخدام إعداد الخادم إن وُجد",
+        "clearHint": "يتركه دون تعيين",
         "unconfirmed": "فُقدت استجابة الخادم، لذا أُعيد تحميل الإعدادات. تحقّق مما إذا كان التغيير قد طُبّق.",
-        "thinking": "التفكير"
+        "thinking": "التفكير",
+        "serverDefault": "افتراضي الخادم",
+        "resetDefault": "إعادة التعيين إلى افتراضي الخادم"
       },
       "slots": {
         "llm": {
@@ -2054,8 +2122,8 @@
       },
       "source": {
         "inherited": "يتبع {{name}}",
-        "deployment": "الخادم",
-        "default": "افتراضي الخادم"
+        "default": "افتراضي الخادم",
+        "locked": "ثبّته المسؤول"
       },
       "stations": {
         "research": "البحث على الويب",
@@ -2071,7 +2139,8 @@
         "prompt": "لا يوجد نموذج لغة بعد. أعدّ خدمة في خدمات النماذج أو اربط خطة في Token Plan؛ تملأ نماذجها الأجزاء غير المضبوطة.",
         "open": "فتح خدمات النماذج",
         "askAdmin": "لا يوجد نموذج لغة مُعد. اطلب من مسؤول الخادم إعداد واحد."
-      }
+      },
+      "adminNotice": "حدّد المسؤول النماذج التي يستخدمها هذا الخادم."
     },
     "unimported": {
       "toast": "تعذّر نقل بعض إعدادات النماذج من هذا المتصفح إلى الخادم. تجدها في الإعدادات ← خدمات النماذج.",
@@ -2093,7 +2162,8 @@
         "unsupported": "لا يمكن نقل هذا النوع من المزوّدين المخصصين: أضفه مجددًا كنقطة نهاية متوافقة مع OpenAI.",
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
-    }
+    },
+    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
@@ -2163,6 +2233,13 @@
     "collapseClassroom": "Collapse classroom",
     "expandClassroom": "Classroom",
     "readOnlyBadge": "Read-only",
+    "courseGeneratingTitle": "لا يزال هذا المقرر قيد الإنشاء",
+    "coursePausedTitle": "تم إيقاف إنشاء هذا المقرر مؤقتًا",
+    "courseGeneratingDesc": "سيُفتح هنا تلقائيًا عند اكتمال الإنشاء، ويمكنك تعديله حينها.",
+    "coursePausedDesc": "تعذّر إنشاء إحدى الصفحات. أعد المحاولة في الفصل؛ سيُفتح المقرر هنا عند اكتمال الإنشاء.",
+    "viewGenerationProgress": "عرض تقدّم الإنشاء",
+    "openToRetry": "افتح لإعادة المحاولة",
+    "courseGeneratingRowHint": "متاح عند اكتمال الإنشاء",
     "noCourseTitle": "No course open",
     "noCourseHint": "افتحها من رابط دورة في المحادثة، أو اختر واحدة من القائمة على اليسار — تبقى المحادثة كما هي",
     "resizeChatAria": "Drag to resize the conversation pane",

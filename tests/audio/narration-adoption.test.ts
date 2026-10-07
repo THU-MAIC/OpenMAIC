@@ -50,10 +50,6 @@ vi.mock('@/lib/device-storage/database', () => ({
 
 import { adoptCachedNarration } from '@/lib/audio/adopt-cached-narration';
 import {
-  isAssetStorageFull,
-  setAssetStorageFullStoreForTests,
-} from '@/lib/media/asset-storage-full';
-import {
   noteStageGenerationOwnership,
   resetGenerationPermissionsForTests,
 } from '@/lib/classroom/generation-permission';
@@ -211,30 +207,8 @@ function cachedRow(overrides: Record<string, unknown> = {}): Record<string, unkn
   };
 }
 
-/** The device KV the storage-full marker lives in, in memory. */
-function memoryKv() {
-  const entries = new Map<string, unknown>();
-  return {
-    entries,
-    store: {
-      get: async <T>(key: string) => (entries.get(key) as T) ?? null,
-      set: async (key: string, value: unknown) => {
-        entries.set(key, value);
-      },
-      remove: async (key: string) => {
-        entries.delete(key);
-      },
-      keys: async (prefix = '') => [...entries.keys()].filter((key) => key.startsWith(prefix)),
-    },
-  };
-}
-
 describe('adopting cached narration', () => {
-  let kv: ReturnType<typeof memoryKv>;
-
   beforeEach(() => {
-    kv = memoryKv();
-    setAssetStorageFullStoreForTests(kv.store);
     resetGenerationPermissionsForTests();
     mocks.mutateDocument.mockReset();
     mocks.saveStageData.mockReset().mockResolvedValue(undefined);
@@ -250,7 +224,6 @@ describe('adopting cached narration', () => {
   });
 
   afterEach(() => {
-    setAssetStorageFullStoreForTests(undefined);
     useStageStore.setState({ stage: null, scenes: [] });
     resetGenerationPermissionsForTests();
   });
@@ -786,12 +759,9 @@ describe('adopting cached narration', () => {
     expect(liveAudioIds()).toEqual([sizedRef(0), 'ast_second']);
   });
 
-  // Adoption reads no marker and writes none. It spends no provider money, so
-  // it has nothing to protect with a deck-wide memory of a refusal -- and the
-  // marker it used to write is the media pass's instruction not to spend, which
-  // adoption is in no position to give. One over-large clip is not evidence
-  // that a slide's image will not fit.
-  it('never tells the media pass a store is full', async () => {
+  // Adoption spends no provider money, so it keeps no memory of a refusal past
+  // the load.
+  it('answers a same-size clip from an earlier refusal in the same load', async () => {
     useStageStore.setState({ scenes: [twoLineScene()] });
     serveDocument();
     mocks.audioGet.mockImplementation(async (id: string) => cachedRow({ id, text: 'Welcome' }));
@@ -801,70 +771,8 @@ describe('adopting cached narration', () => {
 
     // One upload: the two clips are the same size, so the first refusal already
     // answers for the second. Nothing is remembered past the load, so the next
-    // one asks again and the media pass is left to discover its own conditions.
+    // one asks again.
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-  });
-
-  // A marker the media pass DID set does not gate adoption either. Adoption is
-  // free, so standing it down buys nothing, and standing it down was what left
-  // narration-only courses unrecoverable.
-  it('attempts its clips on a course the media pass marked, and lifts the marker', async () => {
-    useStageStore.setState({ scenes: [twoLineScene()] });
-    serveDocument();
-    mocks.audioGet.mockImplementation(async (id: string) =>
-      cachedRow({ id, text: id === derivedRef ? 'Welcome' : 'And then' }),
-    );
-    let allocations = 0;
-    mocks.putAsset.mockImplementation(async () => `ast_narration_${(allocations += 1)}`);
-    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 2, unbacked: 0 });
-
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
-    // A write that went through is a fact, and it is the one the media pass
-    // needs: it disproves the condition it stood down on.
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
-  });
-
-  // The ordering hazard the end-of-load write created: a media commit clears
-  // the marker while adoption is running, and adoption then ends with a clip it
-  // could not fit. Writing a marker at that point would clobber a fact a
-  // successful media write had just established.
-  it('does not re-arm a marker a media write cleared mid-load', async () => {
-    useStageStore.setState({ scenes: [twoLineScene()] });
-    serveDocument();
-    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
-    // The first clip is long and is refused for room; the second is short
-    // enough to still be worth attempting. A media commit lands in between and
-    // clears the marker; the short clip is then refused too.
-    //
-    // Both rows state their text rather than leaning on the fixture's default.
-    // The first clip's key is import-shaped, so a stage-less row under it is
-    // admitted only when its recorded text is the text of the action being
-    // converted -- and the default happens to be that text, which would leave
-    // this case passing on a coincidence that the fixture's first line could
-    // break at any time.
-    mocks.audioGet.mockImplementation(async (id: string) =>
-      cachedRow({
-        id,
-        text: id === derivedRef ? 'Welcome' : 'And then',
-        blob: new Blob([id === derivedRef ? 'x'.repeat(500) : 'y'.repeat(50)], {
-          type: 'audio/mp3',
-        }),
-      }),
-    );
-    mocks.putAsset.mockImplementationOnce(async () => {
-      throw quotaRefusal();
-    });
-    mocks.putAsset.mockImplementationOnce(async () => {
-      await kv.store.remove(`asset-storage-full:${stageId}`);
-      throw quotaRefusal();
-    });
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 0, unbacked: 2 });
-
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   it('converts the whole course on the first load after the ceiling is raised', async () => {
@@ -900,9 +808,6 @@ describe('adopting cached narration', () => {
     expect(ids[0]).toBe(bigRef);
     expect(ids[1]).toBe('ast_small_1');
     expect(ids[2]).toBe('ast_small_2');
-    // And the one clip that did not fit is not turned into a claim about the
-    // deck, or about the course's images.
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   // The clip left outstanding is attempted again, once, on the next load --
@@ -939,20 +844,6 @@ describe('adopting cached narration', () => {
     await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 1 });
 
     expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-  });
-
-  // The marker is set before the run, or this asserts nothing: a fresh device
-  // KV answers "not full" whether or not anything lifted it.
-  it('lifts the marker as soon as a clip is stored', async () => {
-    serveDocument();
-    mocks.audioGet.mockResolvedValue(cachedRow());
-    await kv.store.set(`asset-storage-full:${stageId}`, Date.now());
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
-
-    await expect(adoptCachedNarration(stageId)).resolves.toEqual({ adopted: 1, unbacked: 0 });
-
-    // Lifted for the media pass too, which has no other way to learn it.
-    await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
   });
 
   it('counts a clip whose storage fails as unbacked, and keeps its derived id', async () => {

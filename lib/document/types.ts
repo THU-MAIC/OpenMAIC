@@ -33,6 +33,11 @@ export interface DocumentExtractorConfig {
    * slot, for media extractors that transcribe an audio track.
    */
   asr?: ASRModelConfig;
+  /**
+   * The caller stopped waiting (a deleted material, a deadline, shutdown): the
+   * extractor aborts its requests, polls and commands and rejects.
+   */
+  signal?: AbortSignal;
 }
 
 export interface DocumentExtractorInput {

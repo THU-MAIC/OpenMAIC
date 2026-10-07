@@ -70,7 +70,7 @@ export function effectiveTarget(
 const BROWSER_NATIVE_ASR_PROVIDER_ID = 'browser-native';
 const BROWSER_SPEECH_RECOGNITION = {
   providerId: BROWSER_NATIVE_ASR_PROVIDER_ID,
-  providerSource: 'default',
+  providerSource: 'deployment',
   presetId: BROWSER_NATIVE_ASR_PROVIDER_ID,
   registryId: BROWSER_NATIVE_ASR_PROVIDER_ID,
 } as EffectiveTarget;

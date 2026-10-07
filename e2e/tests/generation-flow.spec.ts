@@ -1,89 +1,113 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
+import { HomePage } from '../pages/home.page';
+import { MockApi } from '../fixtures/mock-api';
 import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
-import { mockOutlines } from '../fixtures/test-data/scene-outlines';
+import type { Page } from '@playwright/test';
 
 const SETTINGS_STORAGE = createSettingsStorage();
 const REVIEW_SETTINGS_STORAGE = createSettingsStorage({ reviewOutlineEnabled: true });
 
-const GENERATION_SESSION = JSON.stringify({
-  sessionId: 'e2e-test-session',
-  requirements: {
-    requirement: '讲解光合作用',
-    language: 'zh-CN',
-  },
-  pdfText: '',
-  pdfImages: [],
-  imageStorageIds: [],
-  sceneOutlines: null,
-  currentStep: 'generating',
-});
-
-const PERSISTED_REVIEW_SESSION = JSON.stringify({
-  sessionId: 'e2e-review-session',
-  requirements: {
-    requirement: '讲解光合作用',
-    language: 'zh-CN',
-  },
-  pdfText: '',
-  pdfImages: [],
-  imageStorageIds: [],
-  sceneOutlines: mockOutlines,
-  languageDirective: 'Use Chinese for the generated course.',
-  currentStep: 'generating',
-  previewPhase: 'review',
-});
+async function startFromHome(page: Page) {
+  const home = new HomePage(page);
+  await home.goto();
+  await home.fillRequirement('讲解光合作用');
+  await home.submit();
+  await page.waitForURL(/\/generation-preview\?run=/);
+}
 
 test.describe('Generation Flow', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(
-      ({ settings, session }) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-        sessionStorage.setItem('generationSession', session);
-      },
-      { settings: SETTINGS_STORAGE, session: GENERATION_SESSION },
-    );
+    await page.addInitScript((settings) => {
+      localStorage.setItem('maic:account:settings-storage', settings);
+    }, SETTINGS_STORAGE);
   });
 
-  test('completes generation pipeline and redirects to classroom', async ({ page, mockApi }) => {
-    // Set up all API mocks
-    await mockApi.setupGenerationMocks();
-
-    const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
-    // Generation card with progress dots should be visible
-    await expect(preview.stepTitle).toBeVisible();
-
-    // Wait for auto-redirect to classroom
-    await preview.waitForRedirectToClassroom();
-    expect(page.url()).toMatch(/\/classroom\//);
-  });
-
-  test('opens outline editor from preview review opportunity and resumes generation', async ({
+  test('starts a run that confirms its own outline after the countdown and follows it to the classroom', async ({
     page,
     mockApi,
   }) => {
-    await mockApi.setupGenerationMocks();
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    expect(run.input.outlineReview).toBe('countdown');
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
+    await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
+    // The run confirms its outline itself; the page never does.
+    await preview.waitForRedirectToClassroom();
+    expect(page.url()).toContain(`/classroom/${run.stageId}`);
+    expect(run.confirmations).toHaveLength(0);
+    expect(run.holds).toHaveLength(0);
+    expect(run.autoConfirmations).toBe(1);
+  });
 
+  test('a run left at once goes on to completion with no page open', async ({ page, mockApi }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    await new GenerationPreviewPage(page).backButton.first().click();
+    await page.waitForURL((url) => url.pathname === '/');
+    await expect.poll(() => run.snapshot().state, { timeout: 20_000 }).toBe('completed');
+    expect(run.autoConfirmations).toBe(1);
+    expect(run.confirmations).toHaveLength(0);
+  });
+
+  test('opens the review on the outline-ready card, which holds the run, and confirms the edit', async ({
+    page,
+    mockApi,
+  }) => {
+    // A countdown long enough to open the review on the card.
+    const run = await mockApi.setupGenerationMocks({ countdownMs: 10_000 });
+    await startFromHome(page);
+
+    const preview = new GenerationPreviewPage(page);
+    await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
+    await preview.openOutlineReview();
+    await expect.poll(() => run.holds.length).toBe(1);
+    // Held: the countdown no longer confirms it.
+    await page.waitForTimeout(11_000);
+    expect(run.autoConfirmations).toBe(0);
+    expect(run.confirmations).toHaveLength(0);
+
+    const title = page.locator('textarea').first();
+    await title.fill('Edited during the countdown');
+    await preview.confirmOutlines();
+    await preview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+    expect((run.confirmations[0]!.outlines as Array<{ title: string }>)[0]!.title).toBe(
+      'Edited during the countdown',
+    );
+  });
+
+  test('opens the review while the outline streams, which holds the run, and resumes generation', async ({
+    page,
+    mockApi,
+  }) => {
+    // Slow enough to open the review while the outline streams.
+    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    await startFromHome(page);
+
+    const preview = new GenerationPreviewPage(page);
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await expect(preview.editorTitle).toBeVisible();
+    await expect.poll(() => run.holds.length).toBe(1);
+    // The review holds the run: nothing is confirmed until the learner does.
+    await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    await page.waitForTimeout(3_000);
+    expect(run.confirmations).toHaveLength(0);
+    expect(run.autoConfirmations).toBe(0);
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
-    expect(page.url()).toMatch(/\/classroom\//);
+    expect(run.confirmations).toHaveLength(1);
   });
 
   test('persists always review preference from the outline editor', async ({ page, mockApi }) => {
-    await mockApi.setupGenerationMocks();
+    // Slow enough to open the review while the outline streams.
+    await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await preview.enableAlwaysReview();
@@ -102,48 +126,167 @@ test.describe('Generation Flow', () => {
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
   });
+});
 
-  test('automatically opens outline editor when always review is enabled', async ({
+test.describe('Generation Flow with outline review', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript((settings) => {
+      localStorage.setItem('maic:account:settings-storage', settings);
+    }, REVIEW_SETTINGS_STORAGE);
+  });
+
+  test('waits for the outline review when always review is enabled', async ({ page, mockApi }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    expect(run.input.outlineReview).toBe('wait');
+
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForEditor();
+    await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    // The review holds the run, with no countdown: nothing is confirmed until the learner does.
+    await page.waitForTimeout(3_000);
+    expect(run.confirmations).toHaveLength(0);
+
+    await preview.confirmOutlines();
+    await preview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+    expect(run.confirmations[0]).toMatchObject({ outlineRevision: 1 });
+  });
+
+  test('opens outline editor while the outline streams and resumes generation', async ({
     page,
     mockApi,
   }) => {
-    await page.addInitScript(
-      ({ settings, session }) => {
-        localStorage.setItem('maic:account:settings-storage', settings);
-        sessionStorage.setItem('generationSession', session);
-      },
-      { settings: REVIEW_SETTINGS_STORAGE, session: GENERATION_SESSION },
-    );
-
-    await mockApi.setupGenerationMocks();
+    // Slow enough to open the review while the outline streams.
+    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
-    await preview.goto();
-
-    await preview.waitForEditor();
+    await preview.waitForReviewOpportunity();
+    await preview.openOutlineReview();
     await expect(preview.editorTitle).toBeVisible();
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
+    expect(page.url()).toMatch(/\/classroom\//);
+    expect(run.confirmations).toHaveLength(1);
+  });
+
+  test('a reload during outline review shows the same review, which confirms the run', async ({
+    page,
+    mockApi,
+  }) => {
+    // Slow enough to open the review while the outline streams.
+    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    await startFromHome(page);
+
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForReviewOpportunity();
+    await preview.openOutlineReview();
+    await page.reload();
+
+    // The run is still waiting: the page attaches to it in review.
+    await preview.waitForEditor();
+    await preview.confirmOutlines();
+    await preview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+  });
+
+  test('a confirmation that lost to another tab keeps the edits and says so', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForEditor();
+    await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    const title = page.locator('textarea').first();
+    await title.fill('Edited here');
+    run.confirmElsewhere();
+    await preview.confirmOutlines();
+    await expect(page.getByText(/already confirmed elsewhere|已在其他地方确认/i)).toBeVisible();
+    await expect(page.locator('textarea').first()).toHaveValue('Edited here');
+  });
+
+  test('every tab on a waiting run shows the review, and none confirms on a timer', async ({
+    page,
+    mockApi,
+    context,
+  }) => {
+    const run = await mockApi.setupGenerationMocks({ stepMs: 400 });
+    await startFromHome(page);
+    // A second tab on the same run, attached while the outline streams.
+    const second = await context.newPage();
+    await new MockApi(second).mockModelSettings();
+    await run.attach(second);
+    await second.goto(page.url());
+    const secondPreview = new GenerationPreviewPage(second);
+    await secondPreview.waitForEditor();
+    const firstPreview = new GenerationPreviewPage(page);
+    await firstPreview.waitForEditor();
+    await expect(secondPreview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
+    await page.waitForTimeout(3_000);
+    expect(run.confirmations).toHaveLength(0);
+    // Confirmed in the second tab: the first follows the run.
+    await secondPreview.confirmOutlines();
+    await firstPreview.waitForRedirectToClassroom();
+    expect(run.confirmations).toHaveLength(1);
+    await second.close();
   });
 });
 
-test('resumes generation from a persisted outline review session', async ({ page, mockApi }) => {
-  await page.addInitScript(
-    ({ settings, session }) => {
-      localStorage.setItem('maic:account:settings-storage', settings);
-      sessionStorage.setItem('generationSession', session);
-    },
-    { settings: SETTINGS_STORAGE, session: PERSISTED_REVIEW_SESSION },
-  );
+test.describe('Generation runs', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(
+      (settings) => {
+        localStorage.setItem('maic:account:settings-storage', settings);
+      },
+      createSettingsStorage({ sidebarCollapsed: false }),
+    );
+  });
 
-  await mockApi.setupGenerationMocks();
+  test('the classroom follows the run: scenes arrive, and the course is read-only until it completes', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks();
+    await startFromHome(page);
+    const preview = new GenerationPreviewPage(page);
+    await preview.waitForRedirectToClassroom();
+    const scenes = page.locator('[data-testid="scene-item"]');
+    await expect(scenes.first()).toBeVisible({ timeout: 15_000 });
+    // Generating: the Pro switch shows, disabled.
+    await expect(page.getByRole('switch')).toBeDisabled();
+    // The second scene arrives while the classroom is open.
+    await expect(scenes).toHaveCount(2, { timeout: 15_000 });
+    // Completed: editable.
+    await expect(page.getByRole('switch')).toBeEnabled({ timeout: 15_000 });
+    expect(page.url()).toContain(run.stageId);
+  });
 
-  const preview = new GenerationPreviewPage(page);
-  await preview.goto();
+  test('a failed first scene pauses with Retry, and Retry resumes the run', async ({
+    page,
+    mockApi,
+  }) => {
+    const run = await mockApi.setupGenerationMocks({ failFirstScene: true });
+    await startFromHome(page);
+    const retry = page.getByTestId('generation-retry');
+    await expect(retry).toBeVisible({ timeout: 15_000 });
+    // The classic sentence for a provider that is unavailable.
+    await expect(page.getByText(/temporarily unavailable|暂时不可用/i)).toBeVisible();
+    await retry.click();
+    await new GenerationPreviewPage(page).waitForRedirectToClassroom();
+    expect(run.retries).toHaveLength(1);
+  });
 
-  await preview.waitForEditor();
-  await preview.confirmOutlines();
-  await preview.waitForRedirectToClassroom();
-  expect(page.url()).toMatch(/\/classroom\//);
+  test('a start over the active-run limit says so', async ({ page, mockApi }) => {
+    await mockApi.setupGenerationMocks({ atRunLimit: true });
+    const home = new HomePage(page);
+    await home.goto();
+    await home.fillRequirement('讲解光合作用');
+    await home.submit();
+    await expect(page.getByText(/maximum number of courses|同时生成的课程已达上限/i)).toBeVisible();
+    expect(page.url()).not.toContain('/generation-preview');
+  });
 });

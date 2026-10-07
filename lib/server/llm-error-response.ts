@@ -1,5 +1,4 @@
 import { APICallError, RetryError } from 'ai';
-import { apiError } from '@/lib/server/api-response';
 
 const HTTP_ERROR_MIN = 400;
 const HTTP_ERROR_MAX = 599;
@@ -49,31 +48,4 @@ function statusFromError(error: unknown, seen = new Set<unknown>()): number | un
   if (status !== undefined) return status;
 
   return statusFromError(error.cause, seen) ?? statusFromError(error.lastError, seen);
-}
-
-function messageForStatus(status: number): string {
-  if (status === 401 || status === 403) {
-    return 'Upstream authentication or authorization failed.';
-  }
-  if (status === 404) return 'Upstream endpoint not found.';
-  if (status === 429) return 'Upstream rate limit reached. Please try again shortly.';
-  if (status >= 500) return 'Upstream model provider is temporarily unavailable. Please try again.';
-  return 'Upstream provider rejected the request.';
-}
-
-/**
- * Preserve a provider's HTTP semantics for client retry classification without
- * exposing provider response bodies, URLs, or credential-adjacent details.
- */
-export function llmApiError(error: unknown) {
-  const status = statusFromError(error);
-  if (status === undefined) {
-    return apiError('INTERNAL_ERROR', 500, 'Scene generation failed. Please try again.');
-  }
-
-  return apiError(
-    status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR',
-    status,
-    messageForStatus(status),
-  );
 }

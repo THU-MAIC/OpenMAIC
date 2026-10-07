@@ -21,7 +21,8 @@ import {
   stationLit,
   type PlacedStation,
 } from '@/lib/model-settings/diagram';
-import type { OffMemory } from '@/lib/model-settings/edit';
+import { setOnSlot, type OffMemory } from '@/lib/model-settings/edit';
+import { canAddService } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 
 import { MS } from './slot-meta';
@@ -143,16 +144,15 @@ export function ModelMap({
   view: ModelSettingsView;
   apply: ApplyChange;
   t: T;
-  onManageProviders: () => void;
+  /** Open Model Services; absent when it is not shown. */
+  onManageProviders?: () => void;
   /** What the switches turned off; kept for the page unless a test passes its own. */
   offMemory?: OffMemory;
 }) {
   const stations = useMemo(() => placeStations(view), [view]);
   const [openKey, setOpenKey] = useState<string | null>(null);
   const expandable = stations.find((station) => station.expandable && station.children.length);
-  const [expanded, setExpanded] = useState(
-    () => !!expandable?.children.some((slot) => slot.assignment !== undefined || slot.locked),
-  );
+  const [expanded, setExpanded] = useState(() => !!expandable?.children.some(setOnSlot));
 
   // Card heights vary with their lines; edges and the children follow the measured boxes.
   const nodes = useRef(new Map<string, HTMLDivElement>());
@@ -419,8 +419,7 @@ export function ModelMap({
     llm.effective.status === 'unassigned' &&
     !llm.locked &&
     !view.providers.some((provider) => provider.capabilities.chat)
-      ? view.policy.allowWorkspaceProviders &&
-        view.presets.some((preset) => preset.capabilities.chat)
+      ? canAddService(view, 'chat')
         ? ('workspace' as const)
         : ('server' as const)
       : undefined;

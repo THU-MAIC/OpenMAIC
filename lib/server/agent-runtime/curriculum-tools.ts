@@ -22,6 +22,7 @@ import { folderIdForCall, stageIdForCall } from './course-stage';
 import { mergeStageOutline } from './course-outline-union';
 import { runStageMutation } from './mutation-fence';
 import { FOLDER_COUNT_LIMIT, validateFolderName } from '@/lib/utils/folder-name-validation';
+import { courseGenerationFields, type CourseGenerationLookup } from './course-generation';
 
 export { stageIdForCall } from './course-stage';
 
@@ -96,6 +97,8 @@ export interface CurriculumToolDeps {
    * request for the same bytes back.
    */
   onLibraryChanged?: (change: LibraryChange) => void;
+  /** The owner's courses a generation run is still producing (read-only until it completes). */
+  courseGenerations?: CourseGenerationLookup;
   /** Fired after a successful stage-document write. */
   onCheckpoint?: (info: {
     tool: string;
@@ -511,17 +514,23 @@ export function buildCurriculumTools(deps: CurriculumToolDeps): AgentTool<never,
       const courses = await deps.store.listDocuments(params.folderId);
       if (signal?.aborted) throw new Error('aborted');
       if (courses.length === 0) return toolResult('No stages found.', { courses: [], count: 0 });
-      const details = courses.map((course) => ({
-        stageId: course.id,
-        title: course.name,
-        ...(course.folderId ? { folderId: course.folderId } : {}),
-        updatedAt: course.updatedAt,
-        pageCount: course.sceneCount,
-      }));
+      const generations = (await deps.courseGenerations?.()) ?? new Map();
+      if (signal?.aborted) throw new Error('aborted');
+      const details = courses.map((course) => {
+        const generation = generations.get(course.id);
+        return {
+          stageId: course.id,
+          title: course.name,
+          ...(course.folderId ? { folderId: course.folderId } : {}),
+          updatedAt: course.updatedAt,
+          pageCount: course.sceneCount,
+          ...(generation ? courseGenerationFields(generation) : {}),
+        };
+      });
       const lines = details
         .map(
           (course) =>
-            `- "${course.title}" (${course.stageId}, ${course.pageCount} page(s)${course.folderId ? `, folder ${course.folderId}` : ''})`,
+            `- "${course.title}" (${course.stageId}, ${course.pageCount} page(s)${course.folderId ? `, folder ${course.folderId}` : ''}${'generating' in course ? `, still being generated: ${course.scenesCompleted}/${course.scenesTotal} pages, read-only until generation completes` : ''})`,
         )
         .join('\n');
       return toolResult(`Stages:\n${lines}`, { courses: details, count: details.length });

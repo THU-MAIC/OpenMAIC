@@ -17,6 +17,7 @@
  * claim moves the row to the account unless the account has one already.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
 import { encodeJson } from '@openmaic/storage/pg-json';
 import {
   nodePostgresTransaction,
@@ -41,8 +42,15 @@ CREATE TABLE IF NOT EXISTS workspace_model_config (
 )
 `;
 
+export const WORKSPACE_MODEL_CONFIG_MIGRATIONS: SchemaMigrationSet = {
+  store: 'workspace-model-config',
+  migrations: [
+    { version: 1, name: 'baseline', up: WORKSPACE_MODEL_CONFIG_SCHEMA, transaction: false },
+  ],
+};
+
 export async function ensureWorkspaceModelConfigSchema(queryable: Queryable): Promise<void> {
-  await queryable.query(WORKSPACE_MODEL_CONFIG_SCHEMA);
+  await applySchemaMigrations(queryable, WORKSPACE_MODEL_CONFIG_MIGRATIONS);
   await ensureOwnerMergeSchema(queryable);
 }
 
@@ -142,10 +150,13 @@ export async function saveWorkspaceModelConfig(
 ): Promise<number> {
   const { config, issues } = checkModelConfigShape(next);
   if (!config) throw new WorkspaceConfigInvalidError(issues);
-  if (config.policy !== undefined) {
-    throw new WorkspaceConfigInvalidError([
-      'policy: only the deployment configuration sets policy',
-    ]);
+  const deploymentOnly = (['lock', 'allowUserKeys'] as const).filter(
+    (key) => config[key] !== undefined,
+  );
+  if (deploymentOnly.length) {
+    throw new WorkspaceConfigInvalidError(
+      deploymentOnly.map((key) => `${key}: only the deployment configuration sets ${key}`),
+    );
   }
 
   const withTransaction = nodePostgresTransaction(queryable);

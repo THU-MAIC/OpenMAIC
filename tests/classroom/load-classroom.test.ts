@@ -24,6 +24,7 @@ import {
 } from '@/lib/utils/deleted-stages';
 import { loadStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
+import { restoreAgentSelection } from '@/lib/orchestration/registry/agent-selection';
 
 // The store flush path imports stage-storage dynamically; mock it so a pending
 // mark scheduled by commitMigratedAgentConfigsToStore can never reach a real
@@ -849,5 +850,40 @@ describe('discardRestoredMediaTasks', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:image');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:poster');
     revokeObjectURL.mockRestore();
+  });
+});
+
+describe('runClassroomLoad before the custom agents arrived', () => {
+  function userSetSelection(agentsKnown: boolean) {
+    const { deps, settings, setStage } = makeDeps({
+      getAgent: (id) => (id === 'default-1' ? { isGenerated: false } : undefined),
+      agentsReady: vi.fn().mockResolvedValue(agentsKnown),
+      restoreAgentSelection,
+    });
+    settings.agentMode = 'preset' as never;
+    settings.selectedAgentIds = ['default-1', 'my-tutor'];
+    settings.agentSelectionIsUserSet = true;
+    setStage(makeStage('stage-a', []));
+    return { deps, settings };
+  }
+
+  it('keeps a user-set selection naming a custom agent it cannot see yet', async () => {
+    const { deps, settings } = userSetSelection(false);
+    await expect(runClassroomLoad(deps)).resolves.toEqual({ outcome: 'ready' });
+    expect(deps.agentsReady).toHaveBeenCalledOnce();
+    expect(settings.setSelectedAgentIds).not.toHaveBeenCalled();
+    expect(settings.setAgentMode).not.toHaveBeenCalled();
+    expect(settings.setAgentSelectionIsUserSet).not.toHaveBeenCalled();
+  });
+
+  it('replaces it once the registry says the agent is gone', async () => {
+    const { deps, settings } = userSetSelection(true);
+    await runClassroomLoad(deps);
+    expect(settings.setSelectedAgentIds).toHaveBeenCalledWith([
+      'default-1',
+      'default-2',
+      'default-3',
+    ]);
+    expect(settings.setAgentSelectionIsUserSet).toHaveBeenCalledWith(false);
   });
 });

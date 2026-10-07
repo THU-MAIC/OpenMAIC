@@ -45,7 +45,6 @@ import { InvalidReferenceAudioError } from '@/lib/audio/wav-validate';
 
 const log = createLogger('Voice Registration API');
 
-export const maxDuration = 30;
 const ROUTE_DEADLINE_MS = 29_000;
 const EXISTS_LOOKUP_SLICE_MS = 5_000;
 

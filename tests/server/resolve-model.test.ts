@@ -3,15 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeploymentLayer } from '@/lib/server/model-config/deployment-layer';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
-// Resolution order for a stage (RFC #1701): the configured slot (deployment,
-// then workspace), else the model the request names (deprecated), else the
-// legacy defaults (DEFAULT_MODEL), else a loud error. Only getModel is stubbed
+// Resolution order for a stage (RFC #1701): the configured slot (a lock, the
+// workspace's choice, a server default such as DEFAULT_MODEL), except that the
+// model the request names (deprecated) replaces a server default or nothing;
+// else a loud error. Only getModel is stubbed
 // (recording its args), so no provider client is built; provider-config stubs
 // echo the client key and base URL so a test can see whether they were used.
 const mocks = vi.hoisted(() => ({
   getModelCalls: [] as Array<Record<string, unknown>>,
   serverManaged: false,
-  deployment: { layer: null, defaults: null, notices: [] } as DeploymentLayer,
+  deployment: { layer: null, legacy: false, notices: [] } as DeploymentLayer,
   workspace: null as ModelConfigLayer | null,
 }));
 
@@ -42,9 +43,10 @@ const operator: ModelConfigLayer = {
   source: 'deployment',
   config: { providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } } },
 };
+// What DEFAULT_MODEL translates to: the operator's providers and the default model.
 const legacyDefault: ModelConfigLayer = {
-  source: 'default',
-  config: { slots: { llm: 'openai:gpt-5.6', agent: null } },
+  source: 'deployment',
+  config: { ...operator.config, slots: { llm: 'openai:gpt-5.6', agent: null } },
 };
 
 describe('resolveModel', () => {
@@ -52,7 +54,7 @@ describe('resolveModel', () => {
     vi.resetModules();
     mocks.getModelCalls.length = 0;
     mocks.serverManaged = false;
-    mocks.deployment = { layer: null, defaults: null, notices: [] };
+    mocks.deployment = { layer: null, legacy: false, notices: [] };
     mocks.workspace = null;
     const runtime = await import('@/lib/server/model-config/runtime');
     // Read at lookup time, so a case can set mocks.deployment after this.
@@ -60,8 +62,8 @@ describe('resolveModel', () => {
       get layer() {
         return mocks.deployment.layer;
       },
-      get defaults() {
-        return mocks.deployment.defaults;
+      get legacy() {
+        return mocks.deployment.legacy;
       },
       notices: [],
     });
@@ -83,21 +85,21 @@ describe('resolveModel', () => {
   });
 
   it('uses the legacy default model when the request names nothing', async () => {
-    mocks.deployment = { layer: operator, defaults: legacyDefault, notices: [] };
+    mocks.deployment = { layer: legacyDefault, legacy: true, notices: [] };
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content' });
     expect(r).toMatchObject({ modelString: 'openai:gpt-5.6', apiKey: 'sk-operator' });
   });
 
   it('lets the model the request names win over the legacy default, as before', async () => {
-    mocks.deployment = { layer: operator, defaults: legacyDefault, notices: [] };
+    mocks.deployment = { layer: legacyDefault, legacy: true, notices: [] };
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content', modelString: 'openai:gpt-5.4-mini' });
     expect(r.modelString).toBe('openai:gpt-5.4-mini');
   });
 
   it('lets a configured slot win over everything the request names', async () => {
-    mocks.deployment = { layer: operator, defaults: legacyDefault, notices: [] };
+    mocks.deployment = { layer: legacyDefault, legacy: true, notices: [] };
     mocks.workspace = {
       source: 'workspace',
       config: {
@@ -140,7 +142,7 @@ describe('resolveModel', () => {
   it('refuses a request for a slot the configuration turned off', async () => {
     mocks.deployment = {
       layer: { source: 'deployment', config: { slots: { 'course.actions': null } } },
-      defaults: null,
+      legacy: false,
       notices: [],
     };
     const { resolveModel } = await import('@/lib/server/resolve-model');

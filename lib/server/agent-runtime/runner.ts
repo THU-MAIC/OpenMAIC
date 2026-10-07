@@ -92,6 +92,12 @@ import { listAgentUserMessages } from './user-messages';
 import { subscribeAgentEventWakeup } from './event-notify-bus';
 import { getBackgroundDocumentStore } from './owner-scoped-documents';
 import { canonicalizeStoredOwner } from '@/lib/persistence/owner-merges';
+import {
+  courseGenerationNotice,
+  listCourseGenerations,
+  withCourseGenerationNotice,
+  type CourseGeneration,
+} from './course-generation';
 import { assertCurrentStageMutationActive } from './mutation-fence';
 import { inventorySlide } from './course-edit/apply';
 import {
@@ -375,6 +381,12 @@ export interface FollowUpMessage {
    * name rather than the snapshot the composer captured at pick time.
    */
   courseRefs?: readonly CourseRef[];
+  /**
+   * The named classrooms a generation run is still producing, by stage id
+   * (see `resolveCourseRefContext`). Prompt input only: the durable receipt
+   * keeps the refs alone.
+   */
+  courseRefGenerations?: Readonly<Record<string, CourseGeneration>>;
 }
 
 export type ResolvedElementRef =
@@ -721,12 +733,46 @@ export async function resolveCourseRefsForContext(
   return resolved;
 }
 
+/**
+ * The message's classrooms resolved for the prompt: their current names, and
+ * which of them a generation run is still producing.
+ */
+export async function resolveCourseRefContext(
+  ownerId: string,
+  message: FollowUpMessage,
+): Promise<FollowUpMessage> {
+  if (!message.courseRefs?.length) return message;
+  const [courseRefs, generations] = await Promise.all([
+    resolveCourseRefsForContext(ownerId, message.courseRefs),
+    listCourseGenerations(ownerId),
+  ]);
+  const named = Object.fromEntries(
+    courseRefs.flatMap((ref) => {
+      const generation = generations.get(ref.stageId);
+      return generation ? [[ref.stageId, generation] as const] : [];
+    }),
+  );
+  return {
+    ...message,
+    courseRefs,
+    ...(Object.keys(named).length ? { courseRefGenerations: named } : {}),
+  };
+}
+
 /** Append the named classrooms to a message the runner is about to deliver. */
-export function composeCourseRefsText(text: string, refs: readonly CourseRef[]): string {
+export function composeCourseRefsText(
+  text: string,
+  refs: readonly CourseRef[],
+  generations: Readonly<Record<string, CourseGeneration>> = {},
+): string {
   if (refs.length === 0) return text;
   const label = refs.length === 1 ? 'classroom' : 'classrooms';
   const list = refs.map((ref) => `"${ref.title}" (${ref.stageId})`).join(', ');
-  return `${text}\n\n[The user named this ${label}: ${list}. Work on the named ${label} for this message.]`;
+  const notices = refs.flatMap((ref) => {
+    const generation = generations[ref.stageId];
+    return generation ? [` "${ref.title}": ${courseGenerationNotice(generation)}`] : [];
+  });
+  return `${text}\n\n[The user named this ${label}: ${list}. Work on the named ${label} for this message.${notices.join('')}]`;
 }
 
 export function composeFollowUpText(message: FollowUpMessage): string {
@@ -752,7 +798,7 @@ export function composeFollowUpText(message: FollowUpMessage): string {
     );
   }
   if (message.courseRefs?.length) {
-    blocks.push(composeCourseRefsText('', message.courseRefs).trim());
+    blocks.push(composeCourseRefsText('', message.courseRefs, message.courseRefGenerations).trim());
   }
   return blocks.join('\n\n');
 }
@@ -1232,15 +1278,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const pending = await Promise.all(
       loggedMessages
         .filter((message) => message.seq > deliveredThrough)
-        .map(async (message) => {
-          const followUp = toFollowUp(message);
-          return followUp.courseRefs?.length
-            ? {
-                ...followUp,
-                courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
-              }
-            : followUp;
-        }),
+        .map((message) => resolveCourseRefContext(meta.ownerId, toFollowUp(message))),
     );
     const idleAttach = meta.existingCourse;
 
@@ -1386,6 +1424,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // toolset, the curriculum toolset, and the scene-preview tool (reference
     // semantics: three call sites, one probe).
     const stageAccess = async (stageId: string) => probeStageAccess(await currentOwner(), stageId);
+    // The owner's courses generation runs are still producing: the reader
+    // tools say so before their results, and the list tools mark them.
+    const courseGenerations = async () => listCourseGenerations(await currentOwner());
     // The stage read/patch toolset and the stage-level CRUD it needs. All of
     // them write through `ownerScopedStore`; every stageId-bearing tool is
     // owner-gated by `withOwnerStageAuthorization`, and patch_stage is marked
@@ -1415,6 +1456,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       onStageLink: (course) => emit(LIFECYCLE.stageLink, course),
       onLibraryChanged: (change) => emit(LIFECYCLE.libraryChanged, change),
       onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
+      courseGenerations,
     });
     // Scene preview is registered beside the course toolset with its own
     // owner probe (reference semantics) — it is not wrapped by the generic
@@ -1469,36 +1511,40 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         getSessionStore: async () => store,
       }),
       id,
+      courseGenerations,
     );
-    const tools = assembleRunnerTools(
-      [askUserTool],
-      webSearchTools,
-      // ownerId is captured from the claimed durable session. It is deliberately
-      // absent from the model-visible parameters, so the model cannot forge a
-      // target owner.
-      [buildCreateSkillTool(meta.ownerId)],
-      // read_skill / patch_skill close the loop create_skill opens. Registered
-      // unconditionally rather than gated on "the user already has Skills": a
-      // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
-      // once at start), and a tool that appears only on the next run would be a
-      // capability the model cannot discover when it needs it.
-      buildSkillEditTools(meta.ownerId, currentOwner),
-      // The native `read` tool is restricted to installed skill resources; it is
-      // present exactly when skills exist. Discovery and invocation stay pi-native.
-      skillReadTool ? [skillReadTool] : [],
-      // fetch_url is registered unconditionally (reference semantics: the
-      // material tools are always registered alongside the capability-gated
-      // web_search). The URL trust gate — not registration — is what keeps a
-      // fetch inside the session's observed origins, and it is the tool's core
-      // security property.
-      [buildFetchUrlTool({ sessionId: id, ownerId: meta.ownerId })],
-      dslTools,
-      curriculumTools,
-      scenePreviewTools,
-      materialTools,
-      rosterTools,
-      voiceCloneTools,
-      personalHistoryTools,
+    const tools = withCourseGenerationNotice(
+      assembleRunnerTools(
+        [askUserTool],
+        webSearchTools,
+        // ownerId is captured from the claimed durable session. It is deliberately
+        // absent from the model-visible parameters, so the model cannot forge a
+        // target owner.
+        [buildCreateSkillTool(meta.ownerId)],
+        // read_skill / patch_skill close the loop create_skill opens. Registered
+        // unconditionally rather than gated on "the user already has Skills": a
+        // Skill created earlier IN THIS RUN is not in `installedSkills` (loaded
+        // once at start), and a tool that appears only on the next run would be a
+        // capability the model cannot discover when it needs it.
+        buildSkillEditTools(meta.ownerId, currentOwner),
+        // The native `read` tool is restricted to installed skill resources; it is
+        // present exactly when skills exist. Discovery and invocation stay pi-native.
+        skillReadTool ? [skillReadTool] : [],
+        // fetch_url is registered unconditionally (reference semantics: the
+        // material tools are always registered alongside the capability-gated
+        // web_search). The URL trust gate — not registration — is what keeps a
+        // fetch inside the session's observed origins, and it is the tool's core
+        // security property.
+        [buildFetchUrlTool({ sessionId: id, ownerId: meta.ownerId })],
+        dslTools,
+        curriculumTools,
+        scenePreviewTools,
+        materialTools,
+        rosterTools,
+        voiceCloneTools,
+        personalHistoryTools,
+      ),
+      courseGenerations,
     );
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
@@ -1622,12 +1668,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // Same resolution as the start path: a steered message names its
         // classrooms on the durable event, and the model must be told the
         // course's current name, not the pick-time snapshot.
-        const courseResolved = followUp.courseRefs?.length
-          ? {
-              ...followUp,
-              courseRefs: await resolveCourseRefsForContext(meta.ownerId, followUp.courseRefs),
-            }
-          : followUp;
+        const courseResolved = await resolveCourseRefContext(meta.ownerId, followUp);
         const resolved = await resolveFollowUpElementContext(courseResolved);
         agent.steer(
           tagDurableUserMessage(

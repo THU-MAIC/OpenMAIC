@@ -73,6 +73,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
   const scenes = useStageStore((s) => s.scenes);
+  // A course its generation run is still producing shows the generating
+  // placeholder, not a classroom to learn from.
+  const courseGenerating = useStageStore((s) => s.courseGenerating);
   const setPlaybackOn = useWorkbenchStore((s) => s.setPlaybackOn);
 
   // Pro-mode sizing for a hosted classroom: fill the 16:9 card instead of
@@ -138,7 +141,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           <button
             type="button"
             data-testid="workbench-start-learning"
-            disabled={scenes.length === 0}
+            disabled={scenes.length === 0 || courseGenerating}
             onClick={() => setPlaybackOn(true)}
             className={cn(
               'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-violet-600/10 px-3 text-[11px] font-medium text-violet-700 transition-[background-color,color,transform,box-shadow] duration-150',

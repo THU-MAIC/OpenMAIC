@@ -46,26 +46,64 @@
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
     "interactiveModeLabel": "深度交互",
     "modelChangeFailed": "无法切换模型：{{message}}",
-    "modelLockedHint": "课程使用的模型，由此服务器设定",
     "pickModel": "选择模型",
-    "defaultModel": "默认",
     "defaultModelNote": "这里修改默认模型，单独配置的环节不受影响",
-    "stagesSetSeparately": "{{count}} 个环节单独配置",
-    "stagesSetSeparately_one": "{{count}} 个环节单独配置",
-    "stagesSetSeparately_other": "{{count}} 个环节单独配置",
-    "stagesSetSeparatelyHint": "单独配置模型的环节",
-    "perStageSetup": "按环节配置",
-    "perStageSetupHint": "课程生成的每个环节都已单独配置模型"
+    "materialUploading": "上传中 {{percent}}%",
+    "materialParsing": "解析中…",
+    "materialTranscribing": "转写中…",
+    "materialReady": "已就绪",
+    "materialFailed": "失败",
+    "materialRetry": "重试",
+    "materialMediaLabel": "音视频",
+    "materialUnavailable": "该素材已不可用，请移除后重新添加文件。"
   },
   "export": {
     "pptx": "导出 PPTX",
     "resourcePack": "导出教学资源包",
     "resourcePackDesc": "PPTX + 交互式页面",
+    "withPlaceholders": "含占位页（推荐）",
+    "withPlaceholdersDesc": "互动页面、测验和项目式学习生成带二维码的占位页",
+    "slidesOnly": "仅幻灯片",
+    "slidesOnlyDesc": "只导出幻灯片场景",
+    "packWithPlaceholders": "含占位页的 PPTX + 交互式页面（推荐）",
+    "packSlidesOnly": "仅幻灯片 PPTX + 交互式页面",
     "exporting": "正在导出...",
     "exportSuccess": "导出成功",
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
+    "html": "导出为 HTML",
+    "htmlDesc": "单个离线文件，不含旁白",
+    "htmlPlayer": {
+      "previous": "上一页",
+      "next": "下一页",
+      "scenes": "场景",
+      "fullscreen": "全屏",
+      "exitFullscreen": "退出全屏",
+      "emptyClassroom": "该课堂没有任何场景。",
+      "unsupportedScene": "离线导出暂不支持此场景。",
+      "interactiveTitle": "互动场景",
+      "videoUnavailable": "离线导出不包含视频",
+      "quizSubmit": "提交",
+      "quizRetry": "重新作答",
+      "quizScore": "得分",
+      "quizCorrect": "正确",
+      "quizIncorrect": "错误",
+      "quizCorrectAnswer": "正确答案",
+      "quizExplanation": "解析",
+      "quizReferenceAnswer": "参考答案",
+      "quizNoReferenceAnswer": "此题暂无参考答案。",
+      "quizAnswerPlaceholder": "输入你的答案...",
+      "quizMultipleHint": "可多选",
+      "pblScenario": "情境",
+      "pblGoal": "目标",
+      "pblYourRole": "你的角色",
+      "pblCharacters": "角色",
+      "pblLearningObjective": "学习目标",
+      "pblMilestones": "里程碑",
+      "pblOnlineOnly": "与 AI 智能体协作完成项目仅在在线课堂中可用。",
+      "pblContinueOnline": "在线继续此项目"
+    },
     "scriptMd": "下载演讲稿 (.md)",
     "scriptMdDesc": "以 Markdown 导出语音播报文字",
     "script": "下载演讲稿",
@@ -117,7 +155,21 @@
     "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
     "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
-    "nothingToExport": "没有可导出的内容"
+    "nothingToExport": "没有可导出的内容",
+    "placeholder": {
+      "interactiveLabel": "互动页面",
+      "quizLabel": "测验",
+      "interactiveDesc": "互动网页。点击按钮在线打开，或扫描二维码。",
+      "quizDesc": "测验场景。本 PPT 不包含答案。",
+      "quizQuestionCount": "题目数：{{count}}",
+      "openOnline": "在线打开",
+      "openOffline": "打开离线副本",
+      "offlineHint": "需将本 PPT 保留在解压后的教学资源包文件夹中",
+      "pblLabel": "项目式学习",
+      "pblDesc": "由 AI 角色参与的项目式学习活动。点击按钮在线打开，或扫描二维码。",
+      "pblGoal": "目标：{{goal}}",
+      "pblMilestoneCount": "里程碑数：{{count}}"
+    }
   },
   "import": {
     "classroom": "导入课堂",
@@ -245,6 +297,7 @@
     "generating": "生成中...",
     "paused": "已暂停",
     "generationFailed": "生成失败",
+    "generationInterrupted": "生成已中断",
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
@@ -1032,7 +1085,11 @@
     "notFoundDesc": "课程不存在，或已被删除。",
     "loadUnavailable": "暂时无法加载这门课程",
     "loadUnavailableDesc": "无法获取课程，请检查访问权限或重试。",
-    "backToHome": "返回首页"
+    "backToHome": "返回首页",
+    "runOutlining": "正在生成大纲…",
+    "runAwaitingConfirmation": "等待确认",
+    "runGenerating": "生成中 {{completed}}/{{total}}",
+    "runPaused": "已暂停"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
@@ -1044,13 +1101,15 @@
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
     "courseMaterialCountLimit": "最多可上传 5 个课程材料文件",
     "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
-    "unsupportedCourseMaterial": "{{parser}} 不支持该文件类型，当前支持：{{formats}}"
+    "unsupportedCourseMaterial": "{{parser}} 不支持该文件类型，当前支持：{{formats}}",
+    "unsupportedMaterialFormat": "当前解析器不支持该格式，请切换解析器或选择其他文件",
+    "materialQuotaExceeded": "素材存储空间已满，请删除部分素材后重试。",
+    "materialUploadFailed": "上传 {{name}} 失败，请重试。",
+    "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
-    "analyzingCourseMaterial": "解析文档",
-    "analyzingCourseMaterialDesc": "正在提取文档结构和内容...",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",
     "courseMaterialParseFailed": "课程材料解析失败",
     "streamNotReadable": "无法读取生成数据流",
@@ -1080,6 +1139,7 @@
     "continue": "继续",
     "outlineRetrying": "大纲生成异常，正在重试...",
     "outlineEmptyResponse": "模型未返回有效的大纲内容，请检查模型配置后重试",
+    "customAgentsUnavailable": "无法加载你的自定义智能体，请稍后重试。",
     "outlineGenerateFailed": "大纲生成失败，请稍后重试",
     "sceneGenerateFailed": "场景生成失败，请稍后重试",
     "sceneGenerateAuthFailed": "场景生成失败：模型服务拒绝了当前凭据。请检查模型配置。",
@@ -1155,8 +1215,15 @@
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
     "jumpToBlankTitle": "跳到待补充标题的章节",
-    "analyzingMediaMaterial": "解析音视频内容",
-    "modelSettingsUnavailable": "无法读取模型设置，已停止生成。请重试。"
+    "modelSettingsUnavailable": "无法读取模型设置，已停止生成。请重试。",
+    "activeRunLimit": "同时生成的课程已达上限，请等待其中一门完成后再试。",
+    "outlineConfirmedElsewhere": "该大纲已在其他地方确认，此处的修改未生效。",
+    "outlineAlreadyContinued": "课程已继续生成，大纲无法再修改。",
+    "runChangedElsewhere": "生成已在其他地方继续。",
+    "runLoadFailed": "无法加载此次生成",
+    "runLoadRetrying": "正在重试…",
+    "mediaGenerationFailed": "媒体生成失败",
+    "mediaGenerationDisabled": "生成已禁用"
   },
   "settings": {
     "title": "设置",
@@ -1708,7 +1775,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。",
       "statusConnected": "已连接",
-      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换你已选的模型，会先征求你的确认。",
+      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换环节当前所用的模型（你选的模型或服务端默认值），会先征求你的确认。",
       "saveKey": "保存并启用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理账号",
@@ -1730,7 +1797,7 @@
       "stageInteractive": "互动页面",
       "stageSlide": "课件页面",
       "applyTitle": "使用该套餐的推荐配置？",
-      "applyBody": "{{name}} 为以下环节推荐了自己的模型，这些环节目前使用的是你选的模型：",
+      "applyBody": "{{name}} 为以下环节推荐了自己的模型。使用它们会替换这些环节当前所用的模型，包括服务端默认值：",
       "applyKeep": "保留当前配置",
       "applyRecommended": "使用套餐推荐配置"
     },
@@ -1879,7 +1946,7 @@
     "saveModel": "保存",
     "searxngServerOnlyNotice": "SearXNG 须由服务端配置。请设置 SEARXNG_BASE_URL 环境变量（或在 server-providers.yml 的 web-search 段中配置）。不接受客户端自行填写实例地址。",
     "serverConfigured": "服务端",
-    "serverConfiguredNotice": "此提供方由服务端托管，无法在此修改。如需使用自己的凭据，请新增一个提供方。",
+    "serverConfiguredNotice": "此提供方由服务端托管，无法在此修改。",
     "startRecording": "开始录音",
     "stopRecording": "停止录音",
     "supportedFormats": "支持的格式",
@@ -1904,7 +1971,7 @@
       "unavailableTitle": "模型由服务器统一管理",
       "unavailableBody": "此服务器不保存工作区的模型设置，使用的是管理员配置的模型。",
       "conflict": "设置已在别处被修改并已重新加载，请检查后重试。",
-      "lockedNow": "该项现由服务器设定，未做修改。",
+      "lockedNow": "管理员已固定此项，因此未更改。",
       "unconfirmed": "服务器的响应丢失，已重新加载设置，请确认修改是否生效。",
       "serverOnly": "此服务只能通过服务器配置（openmaic.yml）设置，请联系服务器管理员。",
       "serverOnlyPolicy": "此服务器不允许工作区添加自己的服务，请联系服务器管理员。",
@@ -1935,8 +2002,7 @@
         "off": "已关闭",
         "unassigned": "未配置",
         "invalid": "配置无效",
-        "locked": "由服务端设置",
-        "lockedHint": "由服务端配置设置，无法在此更改。",
+        "lockedHint": "管理员已为此服务器上的所有人固定此项，无法在此更改。",
         "followers": "跟随它的环节：{{count}}",
         "childrenFollow": "页型 · 全部跟随",
         "childrenOwn": "页型 · {{count}} 个单独设置"
@@ -1945,7 +2011,7 @@
         "label": "图例",
         "follows": "跟随上级",
         "own": "单独设置",
-        "locked": "由服务端设置"
+        "locked": "由管理员固定"
       },
       "map": {
         "label": "课程模型图。拖动或使用方向键平移，使用缩放按钮缩放。",
@@ -1972,11 +2038,13 @@
         "noFallback": "无",
         "manageProviders": "在模型服务中管理",
         "conflict": "设置已在别处更改并已重新加载，请检查后重试。",
-        "lockedNow": "服务端现在设置了此项，因此未作更改。",
+        "lockedNow": "管理员已固定此项，因此未更改。",
         "clear": "清除单独设置",
-        "clearHint": "改用服务端的设置（如有）",
+        "clearHint": "改为不设置",
         "unconfirmed": "服务端的响应丢失，设置已重新加载。请检查更改是否已生效。",
-        "thinking": "思考"
+        "thinking": "思考",
+        "serverDefault": "服务端默认",
+        "resetDefault": "恢复服务端默认"
       },
       "slots": {
         "llm": {
@@ -2054,8 +2122,8 @@
       },
       "source": {
         "inherited": "跟随{{name}}",
-        "deployment": "服务端",
-        "default": "服务端默认"
+        "default": "服务端默认",
+        "locked": "由管理员固定"
       },
       "stations": {
         "research": "联网调研",
@@ -2071,7 +2139,8 @@
         "prompt": "还没有可用的语言模型。在「模型服务」中配置服务，或在「Token Plan」中接入套餐，其模型会填入尚未设置的环节。",
         "open": "打开模型服务",
         "askAdmin": "尚未配置语言模型，请联系服务器管理员。"
-      }
+      },
+      "adminNotice": "管理员已设定此服务器使用的模型。"
     },
     "unimported": {
       "toast": "此浏览器中的部分模型设置未能迁移到服务器，已列在「设置 → 模型服务」中。",
@@ -2093,7 +2162,8 @@
         "unsupported": "此类自定义服务商无法迁移：请作为 OpenAI 兼容端点重新添加。",
         "unconfirmed": "服务器未确认已导入。"
       }
-    }
+    },
+    "serverConfiguredAddOwn": "如需使用自己的凭据，请新增一个提供方。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",
@@ -2163,6 +2233,13 @@
     "collapseClassroom": "收起课堂",
     "expandClassroom": "课堂",
     "readOnlyBadge": "只读",
+    "courseGeneratingTitle": "课程生成中",
+    "coursePausedTitle": "课程生成已暂停",
+    "courseGeneratingDesc": "生成完成后会自动在这里打开，届时即可编辑。",
+    "coursePausedDesc": "有一页生成失败。请在课堂中重试，生成完成后课程会在这里打开。",
+    "viewGenerationProgress": "查看生成进度",
+    "openToRetry": "前往重试",
+    "courseGeneratingRowHint": "生成完成后可打开",
     "noCourseTitle": "还没有打开课堂",
     "noCourseHint": "点对话里的课堂链接打开，或在左侧列表里选一节；对话会一直在这儿",
     "resizeChatAria": "拖动调整对话栏宽度",

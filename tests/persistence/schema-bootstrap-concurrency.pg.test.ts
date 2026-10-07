@@ -106,9 +106,13 @@ describe.skipIf(!contractUrl)('concurrent schema bootstrap (PostgreSQL)', () => 
 
       const check = instancePool();
       try {
-        // Adopted once, whichever instance got there first.
+        // Adopted once, whichever instance got there first, and recorded as done.
         const meta = await check.query('SELECT stage_id, owner_id FROM stage_meta');
         expect(meta.rows).toEqual([{ stage_id: 'legacy', owner_id: ALICE }]);
+        const versions = await check.query(
+          `SELECT version FROM openmaic_schema_migrations WHERE store = 'stage-meta' ORDER BY version`,
+        );
+        expect(versions.rows).toEqual([{ version: 1 }, { version: 2 }]);
         expect((await storeFor(check, ALICE).listDocuments()).map((row) => row.id)).toEqual([
           'legacy',
         ]);

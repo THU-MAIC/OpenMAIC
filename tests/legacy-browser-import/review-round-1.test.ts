@@ -139,7 +139,7 @@ describe('media the server refuses for good', () => {
       status: 'failed',
       reason: '413 PAYLOAD_TOO_LARGE',
     });
-    // The same record the media pass writes for a failure: the element shows
+    // The same record a failed media Retry writes: the element shows
     // as failed (with its Retry), not as a silent blank.
     expect(await db.mediaFiles.get(`big-course:${poolId}`)).toMatchObject({
       stageId: 'big-course',

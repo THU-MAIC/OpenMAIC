@@ -436,7 +436,7 @@ export function CanvasToolbar({
               }}
               disabled={!canPickSlideElement}
               className={cn(
-                'relative flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-all',
+                'relative flex h-6 w-6 items-center justify-center rounded-md transition-all',
                 elementPickActive
                   ? 'bg-violet-500/15 text-violet-700 ring-1 ring-violet-400/40 dark:text-violet-300'
                   : 'text-gray-500 hover:bg-gray-500/[0.08] dark:text-gray-400',
@@ -451,7 +451,6 @@ export function CanvasToolbar({
               }
             >
               <Quote className="h-3.5 w-3.5" />
-              <span>{t('chat.elementReference.button')}</span>
             </button>
           )}
         </div>

@@ -27,6 +27,7 @@ import { getModel, parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { createLogger } from '@/lib/logger';
+import { isNonRetryableHostFailure } from '@/lib/server/generation-run-hooks/runtime';
 
 const log = createLogger('LLM Fallback');
 
@@ -156,12 +157,14 @@ export function isEmptyLlmOutput(text: string | null | undefined): boolean {
 /**
  * Single, shared retryable-failure decision for both call paths.
  *
- * - `error` set: retryable iff `isRetryableLlmError(error)`.
+ * - `error` set: retryable iff `isRetryableLlmError(error)`, unless the host
+ *   classified it as its own failure that no retry helps
+ *   (`lib/server/generation-run-hooks`).
  * - `error` undefined (validation path): retryable iff the output is
  *   empty/whitespace-only (see `isEmptyLlmOutput`).
  */
 export function shouldFallbackFor(error: unknown, text: string | null | undefined): boolean {
-  if (error !== undefined) return isRetryableLlmError(error);
+  if (error !== undefined) return !isNonRetryableHostFailure(error) && isRetryableLlmError(error);
   return isEmptyLlmOutput(text);
 }
 

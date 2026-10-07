@@ -139,13 +139,13 @@ interface LegacySearchRules {
   refuseDisabled?: boolean;
   /**
    * Prefer the operator's configured backend over an unmanaged request
-   * choice, as `/api/web-search` always did; classroom search honored the
+   * choice, as the 1.1.x `/api/web-search` route did; classroom search honored the
    * request's own provider and key.
    */
   preferServerProvider?: boolean;
   /**
    * The provider a request that names none means, after the server's own
-   * (`/api/web-search` always searched with one, using the request's key).
+   * (the 1.1.x `/api/web-search` route searched with one, using the request's key).
    */
   fallbackProviderId?: WebSearchProviderId;
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { Box, ExternalLink, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -31,6 +32,13 @@ export function ProviderList({
   onAddProvider,
 }: ProviderListProps) {
   const { t, locale } = useI18n();
+  // The panel beside the list shows the selected service, which by default is
+  // the one in use and can sit far down a long list: bring its row into view
+  // whenever the selection changes, so the highlighted row and the panel agree.
+  const selectedRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedProviderId]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -38,8 +46,9 @@ export function ProviderList({
         {providers.map((provider) => {
           const configured = provider.configured;
           const active = selectedProviderId === provider.id;
-          // 推广位（如 Kimi）：常驻主色描边强调（选中态沿用更深的选中描边），
-          // 行尾附获取 API key 的跳转（按界面语言分流国内/海外）。
+          // The promoted row (Kimi) keeps a faint primary ring, fainter than the
+          // selected row's so the two are not confused, and a link to get an API
+          // key at its end (domestic or international by the UI locale).
           const promoted = provider.id === PINNED_PROVIDER_ID;
           const signupLinks = configured ? undefined : PROVIDER_SIGNUP_LINKS[provider.id];
           return (
@@ -47,13 +56,14 @@ export function ProviderList({
             // 行右端，点击不会透传到选择按钮；有链接的行给按钮留出右侧空间。
             <div key={provider.id} className="relative">
               <button
+                ref={active ? selectedRef : undefined}
                 onClick={() => onSelect(provider.id)}
                 aria-pressed={active}
                 className={cn(
                   'group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors',
                   signupLinks && 'pr-8',
                   active
-                    ? 'bg-background shadow-sm ring-1 ring-border/70'
+                    ? 'bg-background shadow-sm ring-1 ring-primary/60'
                     : cn(
                         'hover:bg-background/60',
                         promoted && 'bg-primary/[0.04] ring-1 ring-primary/25',

@@ -3,11 +3,11 @@
  *
  * A visitor who works anonymously and then signs in has two owners: the
  * anonymous one their courses, folders, materials, agent sessions, skills,
- * runtime records and media were written under, and the account. A claim
- * moves everything the anonymous owner holds to the account, in one
- * transaction, and records the move in `owner_merges` so the anonymous id is
- * retired from then on (see `./owner-merges.ts` for what retirement means to
- * later writes).
+ * custom agents, runtime records and media were written under, and the
+ * account. A claim moves everything the anonymous owner holds to the account,
+ * in one transaction, and records the move in `owner_merges` so the anonymous
+ * id is retired from then on (see `./owner-merges.ts` for what retirement
+ * means to later writes).
  *
  * ## Participants
  *
@@ -31,6 +31,7 @@
  * |   700 | `assets`          | `asset_entries.principal`                              |
  * |   800 | `legacy-import-bindings` | `legacy_import_bindings` (which owner a browser's pre-server data belongs to) |
  * |   900 | `workspace-model-config` | `workspace_model_config` (moved unless the account has its own) |
+ * |   950 | `custom-agents`   | `owner_agents` (an id the account already uses keeps the account's) |
  *
  * Why this order. Every core write path takes the identity lock first, so none
  * of them can be holding a row a claim wants while it waits for the claim: for
@@ -83,6 +84,7 @@ import { PgRuntimeStore } from '@openmaic/storage/runtime/pg';
 import { PgUserSkillStore } from '@openmaic/storage/skill/pg';
 
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
+import { rekeyOwnerAgents } from '@/lib/server/agents/store';
 import type { OwnerAssurance, OwnerPrincipal, SubjectKind } from '@/lib/server/identity/types';
 import { isStorableOwnerId } from '@/lib/server/identity/types';
 import { principalFromStoredOwner } from '@/lib/server/identity/stored-owner';
@@ -131,6 +133,7 @@ export const CORE_CLAIM_PARTICIPANTS = [
   'assets',
   'legacy-import-bindings',
   'workspace-model-config',
+  'custom-agents',
 ] as const;
 
 /**
@@ -335,6 +338,12 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       name: 'workspace-model-config',
       order: 900,
       rekey: async (tx, from, to) => rekeyWorkspaceModelConfig(tx, from, to),
+    },
+    {
+      // Custom agents: the account keeps its own agent where both use an id.
+      name: 'custom-agents',
+      order: 950,
+      rekey: async (tx, from, to) => rekeyOwnerAgents(tx, from, to),
     },
   ];
 }

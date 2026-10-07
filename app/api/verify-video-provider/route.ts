@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // The old header form tests a provider the request names: not under
-    // `policy.allowWorkspaceProviders: false`, which leaves only the
+    // `allowUserKeys: false`, which leaves only the
     // configuration's providers (tested by id above).
     if (!requestProvidersAllowed()) {
       return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);

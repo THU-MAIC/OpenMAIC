@@ -1,15 +1,13 @@
 /**
  * Slot resolution at request time (RFC #1701, tracked in #1725).
  *
- * The configured answer comes from the deployment layer (openmaic.yml, loaded
- * once per process) and the workspace layer (the request owner's web
- * settings), walked together over the whole slot tree: a workspace model on
- * `llm` covers every chat slot below it. Only when that leaves a slot
- * unassigned does a caller look further, first at what a request still names
- * the old way (model and key headers, deprecated) and then at the defaults an
- * older deployment set through DEFAULT_MODEL and friends. The defaults are a
- * second walk rather than a third layer in the first one, so that a default
- * never outranks a workspace choice made higher up the tree.
+ * The answer comes from the deployment layer (openmaic.yml, or the legacy
+ * variables translated, loaded once per process) and the workspace layer (the
+ * request owner's web settings), walked together over the whole slot tree: a
+ * workspace model on `llm` covers every chat slot below it that has nothing
+ * nearer. What a request still names the old way (model and key headers,
+ * deprecated) counts only where that walk finds nothing, or a default
+ * translated from the legacy variables (see {@link requestMayChoose}).
  */
 import { slotForStage, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { createLogger } from '@/lib/logger';
@@ -33,7 +31,7 @@ const STATE_KEY = Symbol.for('openmaic.model-config.deployment');
 const globalState = globalThis as typeof globalThis & { [STATE_KEY]?: DeploymentLayer };
 
 /**
- * The deployment layer and legacy defaults, loaded on first use and kept for
+ * The deployment layer, loaded on first use and kept for
  * the life of the process (openmaic.yml applies on restart). Startup calls
  * this so that a broken file or a leftover MODEL_ROUTES stops the server
  * before it serves anything, and prints the notices once.
@@ -53,15 +51,36 @@ export function setDeploymentConfigForTests(config?: DeploymentLayer): void {
   else delete globalState[STATE_KEY];
 }
 
+/** Whether users may add providers, keys and token plans of their own (`allowUserKeys`, default true). */
+export function userKeysAllowed(deployment: ModelConfigLayer | null): boolean {
+  return deployment?.config.allowUserKeys !== false;
+}
+
 /**
  * Whether a request may still name its own provider the deprecated way
  * (`x-model`, `x-api-key`, `x-base-url`, the media routes' provider headers and
- * body fields). Not under `policy.allowWorkspaceProviders: false`: users then
- * choose only among the providers openmaic.yml declares, so a request's own
- * model, key or endpoint is ignored and only the configuration decides.
+ * body fields). Not under `allowUserKeys: false`: users then choose only among
+ * the providers the deployment declares, so a request's own model, key or
+ * endpoint is ignored and only the configuration decides.
  */
 export function requestProvidersAllowed(): boolean {
-  return deploymentConfig().layer?.config.policy?.allowWorkspaceProviders !== false;
+  return userKeysAllowed(deploymentConfig().layer);
+}
+
+/**
+ * Whether what a request names the old way may answer for a slot that
+ * resolved like this: when nothing is assigned and nothing locks it, and on a
+ * deployment still configured through the legacy variables, over a default
+ * they translate to (DEFAULT_MODEL always ranked below the model a request
+ * named). openmaic.yml's defaults, the workspace's own choice and a lock all
+ * stand.
+ */
+export function requestMayChoose(
+  resolution: SlotResolution,
+  { legacyDefaults = deploymentConfig().legacy }: { legacyDefaults?: boolean } = {},
+): boolean {
+  if (resolution.status === 'unassigned') return !resolution.locked;
+  return legacyDefaults && resolution.source === 'default';
 }
 
 type WorkspaceLayerLoader = (ownerId: string) => Promise<ModelConfigLayer | null>;
@@ -133,17 +152,9 @@ export async function backgroundWorkspaceId(storedOwnerId: string): Promise<stri
   return canonicalizeStoredOwner(storedOwnerId);
 }
 
-export interface SlotLookup {
-  /** Through the deployment and the workspace. */
-  configured: SlotResolution;
-  /** Through the legacy defaults, for when `configured` is unassigned. */
-  defaults(): SlotResolution;
-}
-
 export interface ResolutionLayers {
   deployment: ModelConfigLayer | null;
   workspace: ModelConfigLayer | null;
-  defaults: ModelConfigLayer | null;
 }
 
 /**
@@ -161,16 +172,16 @@ export function workspaceOnlyProviders(
 }
 
 /**
- * The workspace layer as the deployment's policy lets it count. With
- * `policy.allowWorkspaceProviders: false`, providers a workspace added earlier
- * are not used: they are left out, with the assignments that name them (an
- * assignment whose fallback alone names one keeps its model).
+ * The workspace layer as the deployment lets it count. With `allowUserKeys:
+ * false`, providers a workspace added earlier are not used: they are left out,
+ * with the assignments that name them (an assignment whose fallback alone
+ * names one keeps its model).
  */
-export function workspaceUnderPolicy(
+export function usableWorkspace(
   workspace: ModelConfigLayer | null,
   deployment: ModelConfigLayer | null,
 ): ModelConfigLayer | null {
-  if (!workspace || deployment?.config.policy?.allowWorkspaceProviders !== false) return workspace;
+  if (!workspace || userKeysAllowed(deployment)) return workspace;
   const own = workspaceOnlyProviders(workspace, deployment);
   if (!own.size && !workspace.config.providers) return workspace;
   const names = (ref: string | undefined) => {
@@ -203,30 +214,29 @@ export function workspaceUnderPolicy(
   return { ...workspace, config: { ...rest, slots } as ModelConfigFile };
 }
 
-/** The lookup over given layers; {@link lookupSlot} gathers them for a workspace. */
+/** The resolution over given layers; {@link lookupSlot} gathers them for a workspace. */
 export function lookupFromLayers(
   slot: SlotId,
-  { deployment, workspace: stored, defaults }: ResolutionLayers,
-): SlotLookup {
-  const workspace = workspaceUnderPolicy(stored, deployment);
-  const persisted = [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry);
-  return {
-    configured: resolveSlot(slot, persisted),
-    defaults: () =>
-      defaults
-        ? resolveSlot(slot, [...(deployment ? [deployment] : []), defaults])
-        : { status: 'unassigned', slot },
-  };
+  { deployment, workspace: stored }: ResolutionLayers,
+): SlotResolution {
+  const workspace = usableWorkspace(stored, deployment);
+  return resolveSlot(
+    slot,
+    [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry),
+  );
 }
 
-export async function lookupSlot(slot: SlotId, workspaceId: string | null): Promise<SlotLookup> {
-  const { layer, defaults } = deploymentConfig();
+export async function lookupSlot(
+  slot: SlotId,
+  workspaceId: string | null,
+): Promise<SlotResolution> {
+  const { layer } = deploymentConfig();
   const workspace = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
-  return lookupFromLayers(slot, { deployment: layer, workspace, defaults });
+  return lookupFromLayers(slot, { deployment: layer, workspace });
 }
 
 /** {@link lookupSlot} for a call site that knows its stage key. */
-export function lookupStage(stage: LlmStage, workspaceId: string | null): Promise<SlotLookup> {
+export function lookupStage(stage: LlmStage, workspaceId: string | null): Promise<SlotResolution> {
   return lookupSlot(slotForStage(stage), workspaceId);
 }
 
@@ -238,7 +248,11 @@ export class SlotDisabledError extends Error {
 }
 
 export class SlotUnassignedError extends Error {
-  constructor(readonly slot: SlotId) {
+  constructor(
+    readonly slot: SlotId,
+    /** In a locked subtree (`lock: all` over a root the deployment leaves unset). */
+    readonly locked = false,
+  ) {
     super(
       `No model is configured for ${slot}. Set one in the model settings, or assign the slot (or an ancestor) in openmaic.yml.`,
     );
@@ -248,7 +262,7 @@ export class SlotUnassignedError extends Error {
 
 /**
  * A provider the workspace has configured (the deployment's, or its own as
- * the policy lets it count), resolved by reference for a capability: what the
+ * the deployment lets it count), resolved by reference for a capability: what the
  * settings' test buttons check, so that the browser names a saved provider
  * and never sends its key. With `workspaceOnly`, only the workspace's own
  * providers (what the settings may edit, such as fetching a model list).
@@ -269,7 +283,7 @@ export async function savedProviderTarget(
 ): Promise<ResolvedModelTarget> {
   const { layer: deployment } = deploymentConfig();
   const stored = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
-  const workspace = workspaceUnderPolicy(stored, deployment);
+  const workspace = usableWorkspace(stored, deployment);
   const layers = workspaceOnly
     ? [workspace].filter((entry): entry is ModelConfigLayer => !!entry)
     : [deployment, workspace].filter((entry): entry is ModelConfigLayer => !!entry);

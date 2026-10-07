@@ -5,6 +5,7 @@ import { Type, type Static } from 'typebox';
 import { createLogger } from '@/lib/logger';
 import type { Scene } from '@/lib/types/stage';
 import type { CourseStore } from './course-tools';
+import { courseGenerationFields, type CourseGenerationLookup } from './course-generation';
 import { AgentSessionEntryStorage } from './entry-tree-storage';
 import { getOwnerScopedDocumentStore } from './owner-scoped-documents';
 import { getAgentSessionStore } from './store';
@@ -401,6 +402,8 @@ export function buildPersonalHistoryTools(
   ownerId: string,
   source: PersonalHistorySource = createPersonalHistorySource(),
   currentSessionId?: string,
+  /** The owner's courses a generation run is still producing (read-only until it completes). */
+  courseGenerations?: CourseGenerationLookup,
 ): AgentTool<never, never>[] {
   const searchClassrooms: AgentTool<typeof SearchClassroomsParams, unknown> = {
     name: 'search_classrooms',
@@ -417,17 +420,22 @@ export function buildPersonalHistoryTools(
           (row) => row.ownerId === ownerId && (!query || classroomSearchText(row).includes(query)),
         );
         const found = page(rows, offset, limit);
+        const generations = (await courseGenerations?.()) ?? new Map();
         return result({
           query,
           ...found,
-          items: found.items.map((row) => ({
-            id: row.id,
-            title: clean(row.title, 200),
-            updatedAt: row.updatedAt,
-            pageCount: row.pageCount,
-            snippet: snippet(classroomSearchText(row), query),
-            next: `read_classroom classroomId=${row.id}`,
-          })),
+          items: found.items.map((row) => {
+            const generation = generations.get(row.id);
+            return {
+              id: row.id,
+              title: clean(row.title, 200),
+              updatedAt: row.updatedAt,
+              pageCount: row.pageCount,
+              ...(generation ? courseGenerationFields(generation) : {}),
+              snippet: snippet(classroomSearchText(row), query),
+              next: `read_classroom classroomId=${row.id}`,
+            };
+          }),
         });
       } catch (error) {
         log.error('search_classrooms failed', error);

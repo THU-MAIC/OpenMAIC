@@ -405,31 +405,33 @@ export function groupPresets(
   })).filter((entry) => entry.presets.length > 0);
 }
 
-/** Where a slot's effective value comes from, for its card. */
-export type SlotSource =
-  | { kind: 'own' }
-  | { kind: 'deployment' }
-  | { kind: 'default' }
-  | { kind: 'inherited'; from: string }
-  | { kind: 'none' };
-
-export function slotSource(slot: SlotView): SlotSource {
-  const effective = slot.effective;
-  if (effective.status === 'assigned' || effective.status === 'disabled') {
-    if (effective.resolvedAt !== slot.slot)
-      return { kind: 'inherited', from: effective.resolvedAt };
-    if (effective.source === 'deployment') return { kind: 'deployment' };
-    if (effective.source === 'default') return { kind: 'default' };
-    return { kind: 'own' };
-  }
-  if (slot.locked) return { kind: 'deployment' };
-  if (slot.assignment !== undefined) return { kind: 'own' };
-  return slot.parent ? { kind: 'inherited', from: slot.parent } : { kind: 'none' };
+/** An assignment in one comparable form: a bare reference is `{ model }`, keys sorted. */
+function normalizedAssignment(assignment: SlotAssignment | undefined): string {
+  if (assignment === undefined || assignment === null) return String(assignment);
+  const value = typeof assignment === 'string' ? { model: assignment } : assignment;
+  const sorted = (entry: unknown): unknown =>
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? Object.fromEntries(
+          Object.entries(entry as Record<string, unknown>)
+            .filter(([, inner]) => inner !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, inner]) => [key, sorted(inner)]),
+        )
+      : entry;
+  return JSON.stringify(sorted(value));
 }
 
-/** A slot that merely follows its parent: nothing of its own, nothing locked. */
-export function followsParent(slot: SlotView): boolean {
-  return slot.parent !== null && !slot.locked && slot.assignment === undefined;
+/** Whether two assignments say the same: model, fallback, thinking and parameters. */
+export function sameAssignment(
+  a: SlotAssignment | undefined,
+  b: SlotAssignment | undefined,
+): boolean {
+  return normalizedAssignment(a) === normalizedAssignment(b);
+}
+
+/** Whether a slot is set on itself (by the workspace, a server default or a lock), not inherited. */
+export function setOnSlot(slot: SlotView): boolean {
+  return slot.source.kind !== 'inherited' && slot.source.kind !== 'unconfigured';
 }
 
 /** The i18n key segment for a slot id (`course.content.slide` → `courseContentSlide`). */
@@ -443,8 +445,7 @@ export function slotKey(slot: string): string {
  */
 export function providerLabel(view: ModelSettingsView, providerId: string): string {
   const provider = view.providers.find((entry) => entry.id === providerId);
-  const preset = provider ? presetOf(view, provider) : undefined;
-  return preset && preset.id === providerId ? preset.name : providerId;
+  return provider && provider.preset === providerId ? provider.presetName : providerId;
 }
 
 /** A client's apply: the change, and the view it was worked out from. */

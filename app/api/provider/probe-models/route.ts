@@ -8,6 +8,8 @@ import {
   savedProviderRef,
   savedProviderResponse,
 } from '@/lib/server/model-config/saved-provider';
+import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('ProbeModels');
 
@@ -46,6 +48,9 @@ export async function POST(req: NextRequest) {
         if (refused) return refused;
         throw error;
       }
+    } else if (!requestProvidersAllowed()) {
+      // A raw endpoint and key: not under `allowUserKeys: false`.
+      return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);
     }
 
     if (!baseUrl) {

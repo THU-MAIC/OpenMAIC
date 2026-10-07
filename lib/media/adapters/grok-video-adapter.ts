@@ -23,7 +23,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { runPolledTask } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -176,6 +176,7 @@ async function pollVideoStatus(
 export async function generateWithGrokVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   const model = requireModel(config.model, 'Grok Video');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -227,6 +228,7 @@ export async function generateWithGrokVideo(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'Grok video generation',
+    control,
     formatTimeout: ({ taskId, elapsedMs }) =>
       `Grok video generation timed out after ${elapsedMs / 1000}s (request: ${taskId})`,
   });

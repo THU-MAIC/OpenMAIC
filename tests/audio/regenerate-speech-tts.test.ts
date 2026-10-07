@@ -34,7 +34,7 @@ vi.mock('@/lib/device-storage/database', () => ({
 
 vi.mock('@/lib/document-store', () => ({ accessDocument: mocks.accessDocument }));
 
-vi.mock('@/lib/hooks/use-scene-generator', () => ({
+vi.mock('@/lib/audio/narration-tts', () => ({
   generateAndStoreTTS: mocks.generateAndStoreTTS,
 }));
 

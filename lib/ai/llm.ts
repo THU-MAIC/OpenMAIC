@@ -16,6 +16,8 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { isEmptyLlmOutput, shouldFallbackFor, logFallbackFired } from '@/lib/server/llm-fallback';
+import { getGenerationRunHooks } from '@/lib/server/generation-run-hooks/registry';
+import { isNonRetryableHostFailure } from '@/lib/server/generation-run-hooks/runtime';
 import {
   attachedModelFallback,
   type FallbackLoader,
@@ -392,7 +394,7 @@ export async function callLLM<T extends GenerateTextParams>(
       // can read the config and inject vendor-specific body params for
       // OpenAI-compatible providers.
       const result = await thinkingContext.run(effectiveThinking, () =>
-        generateText(injectedParams),
+        generateText(withHostRetryGate(injectedParams)),
       );
 
       // Record before validating: every attempt that got this far was billed,
@@ -445,6 +447,10 @@ export async function callLLM<T extends GenerateTextParams>(
     if (round.ok) return round.result;
     if (round.error !== undefined) {
       lastError = round.error;
+      // A host failure no retry helps (lib/server/generation-run-hooks):
+      // no further attempt and no fallback, and it is what the caller gets,
+      // never an earlier attempt's invalid result.
+      if (isNonRetryableHostFailure(round.error)) throw round.error;
       if (attempt < maxAttempts) {
         log.warn(
           `[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`,
@@ -490,8 +496,12 @@ export async function callLLM<T extends GenerateTextParams>(
         'fallback',
       );
       if (round.ok) return round.result;
-      if (round.error !== undefined) lastError = round.error;
-      else lastResult = round.result;
+      if (round.error !== undefined) {
+        // Same rule as the primary attempts: a host failure is what the
+        // caller gets, never the primary's empty result.
+        if (isNonRetryableHostFailure(round.error)) throw round.error;
+        lastError = round.error;
+      } else lastResult = round.result;
     } else {
       log.warn(`[${source}] fallback requested but none configured; giving up`);
     }
@@ -531,6 +541,106 @@ async function resolveFallbackModelSafe(
 type ModelV3 = Parameters<typeof wrapLanguageModel>[0]['model'];
 type StreamResultV3 = Awaited<ReturnType<ModelV3['doStream']>>;
 type StreamPartV3 = StreamResultV3['stream'] extends ReadableStream<infer P> ? P : never;
+
+/**
+ * A provider error the SDK would retry that the host classified as its own
+ * failure no retry helps (`lib/server/generation-run-hooks`), raised again as
+ * not retryable (the original is its `cause`), so the SDK's built-in retries
+ * stop at it as the generation steps' own retries do.
+ */
+function hostGatedError(error: unknown): unknown {
+  if (!APICallError.isInstance(error) || !error.isRetryable || !isNonRetryableHostFailure(error)) {
+    return error;
+  }
+  return new APICallError({
+    message: error.message,
+    url: error.url,
+    requestBodyValues: error.requestBodyValues,
+    statusCode: error.statusCode,
+    responseHeaders: error.responseHeaders,
+    responseBody: error.responseBody,
+    cause: error,
+    isRetryable: false,
+    data: error.data,
+  });
+}
+
+/** Models already behind the host retry gate. */
+const HOST_GATED_MODELS = new WeakSet<object>();
+
+/**
+ * `model` with its provider calls (`doGenerate`, `doStream`) behind
+ * {@link hostGatedError}, whatever its specification version (the SDK still
+ * accepts v2 models and adapts them the same way, by delegation). A model id
+ * string is resolved by the SDK itself and is left as it is.
+ *
+ * The gated model delegates every other read to the model itself (functions
+ * bound to it, so class getters and private fields keep working). It is a
+ * proxy over an empty object of its own, not over the model: a proxy's
+ * answers must agree with its target's non-configurable properties, so a
+ * proxy over a frozen model could not answer `doGenerate` with the gate.
+ */
+function hostGatedModel<M>(model: M): M {
+  if (!model || typeof model !== 'object') return model;
+  const target = model as unknown as Record<PropertyKey, unknown>;
+  if (HOST_GATED_MODELS.has(target)) return model;
+  if (typeof target.doGenerate !== 'function' || typeof target.doStream !== 'function') {
+    return model;
+  }
+  const gate =
+    (property: 'doGenerate' | 'doStream') =>
+    async (...args: unknown[]): Promise<unknown> => {
+      try {
+        return await (target[property] as (...a: unknown[]) => Promise<unknown>).apply(
+          target,
+          args,
+        );
+      } catch (error) {
+        throw hostGatedError(error);
+      }
+    };
+  const gatedCalls = { doGenerate: gate('doGenerate'), doStream: gate('doStream') };
+  const gated = new Proxy(Object.create(null) as object, {
+    get(_own, property) {
+      if (property === 'doGenerate' || property === 'doStream') return gatedCalls[property];
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    has(_own, property) {
+      return property in target;
+    },
+  });
+  HOST_GATED_MODELS.add(gated);
+  return gated as unknown as M;
+}
+
+/** A `prepareStep` whose step model goes behind the host retry gate too. */
+function hostGatedPrepareStep(prepare: unknown): unknown {
+  if (typeof prepare !== 'function') return prepare;
+  return async (...args: unknown[]) => {
+    const prepared = (await prepare(...args)) as { model?: unknown } | undefined | null;
+    return prepared && prepared.model !== undefined
+      ? { ...prepared, model: hostGatedModel(prepared.model) }
+      : prepared;
+  };
+}
+
+/**
+ * The one place every model call of this module passes through on its way to
+ * the SDK: with a host `classifyFailure` registered, the call's model, and
+ * any model its `prepareStep` picks for a step, raise a provider error the
+ * host says no retry helps as not retryable, so the SDK does not retry it.
+ * Without one, `params` is returned as it is.
+ */
+function withHostRetryGate<T extends GenerateTextParams | StreamTextParams>(params: T): T {
+  if (!getGenerationRunHooks().classifyFailure) return params;
+  const record = params as Record<string, unknown>;
+  const gated: Record<string, unknown> = { ...record, model: hostGatedModel(record.model) };
+  for (const key of ['prepareStep', 'experimental_prepareStep']) {
+    if (record[key] !== undefined) gated[key] = hostGatedPrepareStep(record[key]);
+  }
+  return gated as T;
+}
 
 /** Parts a stream may send before its first content (or error). */
 const PREAMBLE_PARTS = new Set(['stream-start', 'response-metadata']);
@@ -786,7 +896,9 @@ export function streamLLM<T extends StreamTextParams>(
   }
 
   const injectedParams = injectProviderOptions(wrappedParams, effectiveThinking);
-  const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
+  const result = thinkingContext.run(effectiveThinking, () =>
+    streamText(withHostRetryGate(injectedParams)),
+  );
 
   return result;
 }

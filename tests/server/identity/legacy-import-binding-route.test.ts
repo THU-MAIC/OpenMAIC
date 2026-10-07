@@ -357,6 +357,7 @@ describe('the legacy import binding and its fence', () => {
       'app/api/folders/route.ts': () => import('@/app/api/folders/route'),
       'app/api/folders/members/route.ts': () => import('@/app/api/folders/members/route'),
       'app/api/model-config/import/route.ts': () => import('@/app/api/model-config/import/route'),
+      'app/api/agents/import/route.ts': () => import('@/app/api/agents/import/route'),
     };
     const load = modules[endpoint.route];
     if (!load) throw new Error(`No handler table entry for ${endpoint.route}`);

@@ -94,13 +94,13 @@ pre-runtime quiz keys until the ledger records the import as complete
 | Server persistence unreachable, learner key unavailable | Nothing is done; the next load tries again.                                                                                           |
 | Network error (including the asset client's `0 HTTP_REQUEST_FAILED`, a dropped request or a timed-out existence probe), 5xx, 408/429, 409, a 2xx/3xx answer the client could not use | The item stays pending; a later load retries it. Backoff between runs: 30 s, doubling, capped at 6 h.                                  |
 | 503 `OWNER_BUSY`                                         | The run pauses; the next run is allowed after `Retry-After` (2 s when not visible to the client).                                      |
-| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff. This holds for a failure from any call of a course.            |
+| 401 (`INVALID_CREDENTIAL`, the access-code gate)         | The run pauses; items stay pending; a later load retries with backoff, or at once when the access code is accepted (`resumeLegacyBrowserImportAfterAccess`). This holds for a failure from any call of a course. |
 | 403 `OWNER_RETIRED`                                      | The run stops and items stay pending; the claim carried the binding, so the account continues them.                                  |
 | 503 `PERSISTENCE_UNAVAILABLE` (the fence could not read the binding) | Transient, like any 5xx.                                                                                                              |
 | 409 `LEGACY_IMPORT_NOT_BOUND`                            | The owner this request resolved to does not hold the browser (the cookie changed): the run stops, items stay pending, and a later load asks for the binding again. |
 | 403 `FORBIDDEN_LEARNER` (the owner changed mid-run)      | The run stops; items stay pending for the next run.                                                                                   |
 | 400 / 422 validation on an item, or a local validation failure of the asset client (`0 VALIDATION_FAILED`) | That item is recorded as failed with the reason; the rest continue.                                                                  |
-| An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one the generation pass writes) instead of a dangling reference: with Retry (regenerate) when the legacy row has a generation request, without it (`ASSET_REFUSED`) for the user's own media. The legacy bytes stay. |
+| An upload refused for good (413, 400, 403)               | The element gets the app's ordinary failed-media record in the device cache (the one a failed media Retry writes) instead of a dangling reference: with Retry (regenerate) when the legacy row has a generation request, without it (`ASSET_REFUSED`) for the user's own media. The legacy bytes stay. |
 | A whiteboard / PBL session is already active on the server | The legacy session of that kind is not created (the app keeps one active session per kind).                                         |
 | Asset quota exceeded                                     | The document is imported anyway. A generation placeholder's bytes go to the device cache's `mediaFiles` and narration to its `audioFiles`, where the app's own retry uploads them without a provider call; references with no such path (legacy pool ids, import-minted ids) stay pending and the importer retries them. Nothing is lost: the legacy copy is untouched. |
 | Folder name refused or folder limit reached              | The folder is recorded as failed; its courses stay unfiled.                                                                          |
@@ -260,6 +260,48 @@ proposal.
 Clear Local Cache keeps a proposal that is still waiting: it exists nowhere
 else.
 
+## Custom agents
+
+Earlier builds kept the agent registry in localStorage (`agent-registry-storage`,
+the zustand `persist` snapshot of `lib/orchestration/registry/store.ts`). Built-in
+agents are now code (`lib/orchestration/registry/built-in.ts`) and an owner's custom
+agents live on the server (`/api/agents`, `lib/server/agents`). `agents-import.ts`
+carries the custom ones over once: the registry's first load
+runs it in the background (`importLegacyAgents`).
+
+- It reads the snapshot's custom agents (not the `default-*` built-ins, not
+  generated agents, which belong to a course's roster) and sends their stored
+  fields to `POST /api/agents/import`, bound like the model settings import:
+  the binding first, then the request with `X-OpenMAIC-Legacy-Import` (one of
+  `FENCED_ENDPOINTS`).
+- The server checks each agent with the registry's schema and keeps an agent
+  the owner already has under that id; invalid agents, built-in ids and agents
+  past the per-owner limit are skipped with the reason.
+- The ledger records each agent the server settled (imported, or already
+  there) in `agentsSettled`, and a later run sends only the others, so an
+  agent the user deleted on the server after it arrived is not created again.
+  It records `agents: 'done'` once every agent is settled. The agents go in
+  batches under the route's limits (`MAX_IMPORT_BATCH_AGENTS`,
+  `MAX_IMPORT_BODY_BYTES`). Agents the server skipped (the owner's limit,
+  a record it refuses) keep the import open: the registry shows them as
+  `legacyAgentsPending`, and every later load sends the agents again. A
+  refused request, another owner holding the browser, 401, 409, 5xx or a
+  network error also leave it for a later load. A browser with no custom
+  agents gets no ledger from it.
+- Empty optional fields of an old record (a voice without a provider or voice
+  id, an empty model id, an incomplete voice design) are left out before it is
+  sent.
+- Runs are serialized across tabs with the Web Lock
+  `openmaic:legacy-agents-import`; the settled ids are read and recorded
+  under it, and a tab that finds it taken leaves the import to that tab.
+  Without Web Locks tabs are not serialized, and an agent deleted while two
+  tabs import at once can be created again.
+- It runs in the background after the registry's first read of the owner's
+  agents, in the registry's request queue, and the list is read again (queued
+  after it) when it added any.
+- The snapshot is never written or removed. Clear Local Cache keeps it until
+  the ledger records the import.
+
 ## Removal
 
 When the maintainers decide enough releases have passed:
@@ -276,7 +318,16 @@ When the maintainers decide enough releases have passed:
    imports `LEDGER_KEY` and `legacyImportIsComplete` from `ledger.ts`: define the
    ledger key there again (or drop it with step 5) and drop the quiz-key retention,
    with its cases in `tests/settings/general-settings.test.ts`.
-2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`.
+   The custom agents import: remove `importLegacyAgents`, its call and
+   `legacyAgentsPending` in `lib/orchestration/registry/store.ts`,
+   `app/api/agents/import/` with its case in
+   `tests/server/agents/agents-route.test.ts` and its entry in the handler
+   table of `tests/server/identity/legacy-import-binding-route.test.ts`, and
+   `LEGACY_AGENT_REGISTRY_KEY` with its retention in
+   `lib/device-storage/clear-local-cache.ts`.
+2. Remove the dynamic import at the end of `lib/persistence/bootstrap.ts`, and the
+   one in `components/access-code-guard.tsx` that resumes the import once the
+   access code is accepted.
 3. Remove the server side:
    - `app/api/identity/legacy-import-binding/` and
      `tests/server/identity/legacy-import-binding-route.test.ts`;

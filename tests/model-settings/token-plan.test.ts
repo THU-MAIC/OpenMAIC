@@ -21,7 +21,7 @@ import {
 const deployment = (config: ModelConfigLayer['config'] | null) =>
   setDeploymentConfigForTests({
     layer: config ? { source: 'deployment', config } : null,
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 
@@ -79,6 +79,7 @@ describe('token plan recommendation', () => {
       llm: 'tokendance:cogevol-base',
       'course.content.slide': 'tokendance:cogevol-slide-0828',
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      agent: 'tokendance:deepseek-v4.1-flash',
       image: 'tokendance:seedream-5.0-lite',
       video: 'tokendance:minimax-h3',
       tts: 'tokendance:minimax-speech-2.8-turbo',
@@ -86,22 +87,39 @@ describe('token plan recommendation', () => {
     });
   });
 
-  it('leaves out the slots the deployment locks', async () => {
+  it('leaves out the slots the deployment locks, and only those', async () => {
     deployment({
       providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
       slots: {
         llm: 'operator:deepseek-v4-pro',
         'course.content.slide': 'operator:deepseek-v4-pro',
       },
+      lock: ['course.content.slide'],
     });
     const view = viewOf(await configure(addPlan('tokendance')));
     const recommendation = recommendationIn(view, 'tokendance');
-    expect(recommendation).not.toHaveProperty('llm');
     expect(recommendation).not.toHaveProperty('course.content.slide');
+    // A server default that is not locked is the plan's to fill.
+    expect(recommendation).toHaveProperty('llm');
     expect(recommendation).toHaveProperty(
       'course.content.interactive',
       'tokendance:cogevol-interactive-0828',
     );
+  });
+
+  it('never fills a slot inside a locked subtree', async () => {
+    deployment({
+      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      slots: { llm: 'operator:deepseek-v4-pro' },
+      lock: ['llm'],
+    });
+    const view = viewOf(await configure(addPlan('tokendance')));
+    const recommendation = recommendationIn(view, 'tokendance');
+    const chat = Object.keys(recommendation).filter(
+      (slot) => view.slots.find((entry) => entry.slot === slot)?.capability === 'chat',
+    );
+    expect(chat).toEqual([]);
+    expect(Object.keys(recommendation).length).toBeGreaterThan(0);
   });
 
   it('yields the slots a higher-priority connected plan holds, whatever the connect order', async () => {
@@ -188,6 +206,7 @@ describe('token plan assignments', () => {
     const keep = tokenPlanAssignments(view, recommendation, 'keep');
     expect(keep).toEqual({
       'course.content.interactive': 'tokendance:cogevol-interactive-0828',
+      agent: 'tokendance:deepseek-v4.1-flash',
       video: 'tokendance:minimax-h3',
       tts: 'tokendance:minimax-speech-2.8-turbo',
       webSearch: 'tokendance',

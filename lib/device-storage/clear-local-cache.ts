@@ -1,3 +1,7 @@
+import {
+  LEGACY_AGENT_REGISTRY_KEY,
+  legacyAgentImportIsComplete,
+} from '@/lib/legacy-browser-import/agents-import';
 import { LEDGER_KEY, legacyImportIsComplete } from '@/lib/legacy-browser-import/ledger';
 import { MODEL_SETTINGS_IMPORT_KEY } from '@/lib/legacy-browser-import/model-settings';
 import { MODEL_SETTINGS_UNIMPORTED_KEY } from '@/lib/legacy-browser-import/model-settings-unimported';
@@ -15,7 +19,7 @@ import { clearDeviceStorage } from './database';
 
 /**
  * Clear what this browser keeps for itself: the device-local database (media
- * and narration cache, staged images, undo history, voice profiles) and the
+ * and narration cache, course thumbnails, undo history, voice profiles) and the
  * in-memory asset client. Courses, chat history, learner progress and media on
  * the server are durable user data and are not touched; neither is the
  * pre-server browser database, which the one-way importer still has to read.
@@ -58,13 +62,15 @@ const LEGACY_QUIZ_KEY_PREFIXES = [
  * `localStorage.clear()`, except for the values the one-way importer needs:
  * the learner key that finds this browser's pre-server runtime data, the
  * importer's ledger, the model settings still waiting to be imported and the
- * ones that could not be (they exist nowhere else), and, until the ledger records the import as complete,
- * the pre-runtime quiz keys. Clearing the cache must not orphan data the user
- * has not moved to the server yet, nor bring back data the user removed after
- * it was moved.
+ * ones that could not be (they exist nowhere else), the old agent registry
+ * until the ledger records its custom agents as imported, and, until the
+ * ledger records the import as complete, the pre-runtime quiz keys. Clearing
+ * the cache must not orphan data the user has not moved to the server yet,
+ * nor bring back data the user removed after it was moved.
  */
 export function clearLocalStorageKeepingImportState(storage: Storage = localStorage): void {
   const keepQuizState = !legacyImportIsComplete(storage);
+  const keepAgents = !legacyAgentImportIsComplete(storage);
   const kept = new Map<string, string>();
   for (let index = 0; index < storage.length; index += 1) {
     const key = storage.key(index);
@@ -74,6 +80,7 @@ export function clearLocalStorageKeepingImportState(storage: Storage = localStor
       key === LEGACY_IMPORT_LEDGER_KEY ||
       key === MODEL_SETTINGS_IMPORT_KEY ||
       key === MODEL_SETTINGS_UNIMPORTED_KEY ||
+      (keepAgents && key === LEGACY_AGENT_REGISTRY_KEY) ||
       (keepQuizState && LEGACY_QUIZ_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)));
     if (keep) {
       const value = storage.getItem(key);

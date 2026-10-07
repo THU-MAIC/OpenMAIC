@@ -8,10 +8,19 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   getSessionMaterial: vi.fn(),
+  touchOwnerMaterial: vi.fn(),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
+  isServerPersistenceConfigured: () => true,
+}));
+vi.mock('@/lib/persistence/server-provider', () => ({
+  getServerPersistenceProvider: async () => ({ pool: {} }),
+}));
+vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/persistence/owner-materials')>()),
+  touchOwnerMaterial: mocks.touchOwnerMaterial,
 }));
 vi.mock('@/lib/server/identity/resolve', async () =>
   (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
@@ -81,11 +90,48 @@ describe('GET /api/materials/[id]', () => {
     expect(mocks.getSessionMaterial).toHaveBeenCalledWith(SESSION_ID, MATERIAL_ID);
   });
 
-  it('rejects a missing sessionId', async () => {
+  it("reads the owner's own upload with its extraction when no session is named", async () => {
+    mocks.runtimeConfigured = false;
+    mocks.touchOwnerMaterial.mockResolvedValue({
+      id: MATERIAL_ID,
+      ownerId: 'owner-1',
+      kind: 'source',
+      derivedFrom: null,
+      mime: 'application/pdf',
+      bytes: 10,
+      originalName: 'notes.pdf',
+      ossKey: 'materials/owner-1/x',
+      sha256: 'sha',
+      status: 'ready',
+      extraction: { status: 'failed', error: 'no text', identityKey: 'internal' },
+      createdAt: 1_700_000_000_000,
+      deletedAt: null,
+    });
     const req = new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}`);
     const response = await GET(req, { params: Promise.resolve({ id: MATERIAL_ID }) });
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(200);
+    expect((await response.json()).material).toMatchObject({
+      materialId: MATERIAL_ID,
+      mediaKind: 'document',
+      extraction: { status: 'failed', error: 'no text' },
+    });
+    expect(mocks.touchOwnerMaterial).toHaveBeenCalledWith({}, 'owner-1', MATERIAL_ID);
     expect(mocks.getSessionMaterial).not.toHaveBeenCalled();
+
+    mocks.touchOwnerMaterial.mockResolvedValue(null);
+    const missing = await GET(new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}`), {
+      params: Promise.resolve({ id: MATERIAL_ID }),
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it('rejects an empty sessionId instead of reading the library', async () => {
+    const response = await GET(
+      new NextRequest(`http://localhost/api/materials/${MATERIAL_ID}?sessionId=`),
+      { params: Promise.resolve({ id: MATERIAL_ID }) },
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.touchOwnerMaterial).not.toHaveBeenCalled();
   });
 
   it('answers 404 for a foreign or missing session (no existence oracle)', async () => {

@@ -49,6 +49,7 @@ describe('model map layout', () => {
           capability: 'chat',
           configOnly: false,
           locked: false,
+          source: { kind: 'unconfigured' },
           effective: { status: 'unassigned' },
         },
       ],
@@ -62,7 +63,7 @@ describe('model map layout', () => {
     const assigned = (resolvedAt: 'llm' | 'classroom') => ({
       status: 'assigned' as const,
       resolvedAt,
-      source: 'workspace',
+      source: 'workspace' as const,
       requirements: [],
       providerId: 'a',
       providerSource: 'workspace' as const,

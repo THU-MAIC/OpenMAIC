@@ -75,7 +75,28 @@ const MIME_MAP: Record<string, string> = (() => {
 // zip. Kept in lockstep with MIME_MAP by deriving from the same source.
 const IMAGE_EXTENSION_RE = new RegExp(`\\.(${Object.keys(MIME_MAP).join('|')})$`, 'i');
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+/** A request's own timeout, ended early when the caller stops waiting. */
+function requestSignal(timeoutMs: number, caller: AbortSignal | undefined): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return caller ? AbortSignal.any([timeout, caller]) : timeout;
+}
 
 function extToMime(ext: string): string {
   return MIME_MAP[ext.toLowerCase()] ?? 'application/octet-stream';
@@ -97,16 +118,24 @@ function isRetryable(err: unknown): boolean {
   );
 }
 
-async function fetchWithRetry<T>(fn: () => Promise<T>, context: string, attempts = 4): Promise<T> {
+async function fetchWithRetry<T>(
+  fn: () => Promise<T>,
+  context: string,
+  attempts = 4,
+  signal?: AbortSignal,
+): Promise<T> {
   let lastErr: unknown;
   for (let i = 1; i <= attempts; i++) {
+    signal?.throwIfAborted();
     try {
       return await fn();
     } catch (err) {
+      // The caller stopped waiting: not a transport failure to retry.
+      signal?.throwIfAborted();
       lastErr = err;
       if (!isRetryable(err) || i === attempts) break;
       log.warn(`[MinerU Cloud] ${context} — retry ${i}/${attempts}:`, err);
-      await sleep(400 * i);
+      await sleep(400 * i, signal);
     }
   }
   // Preserve an address-policy refusal as its original typed error so callers
@@ -286,7 +315,7 @@ function assertZipEntryBudget(zip: JSZip): void {
   }
 }
 
-async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
+async function parseMinerUZip(zipUrl: string, signal?: AbortSignal): Promise<ParsedPdfContent> {
   await assertPublicHttpsResponseUrl(zipUrl, 'ZIP download');
   log.info('[MinerU Cloud] Downloading result ZIP...');
 
@@ -294,10 +323,12 @@ async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
     () =>
       providerFetch(
         zipUrl,
-        { signal: AbortSignal.timeout(TIMEOUTS.zip) },
+        { signal: requestSignal(TIMEOUTS.zip, signal) },
         { allowLocalNetworks: false, requireHttps: true },
       ),
     'ZIP download',
+    4,
+    signal,
   );
   if (!zipRes.ok) {
     await zipRes.body?.cancel().catch(() => undefined);
@@ -485,31 +516,36 @@ export async function parseWithMinerUCloud(
   log.info(`[MinerU Cloud] Starting parse: ${uploadFileName} (${documentBuffer.byteLength} bytes)`);
 
   // Step 1: Create batch — request presigned upload URL
-  const batchData = await fetchWithRetry(async () => {
-    const res = await providerFetch(
-      `${apiRoot}/file-urls/batch`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
+  const batchData = await fetchWithRetry(
+    async () => {
+      const res = await providerFetch(
+        `${apiRoot}/file-urls/batch`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            files: [{ name: uploadFileName }],
+            enable_formula: true,
+            enable_table: true,
+            model_version: 'vlm',
+            language: 'ch',
+          }),
+          signal: requestSignal(TIMEOUTS.batch, config.signal),
         },
-        body: JSON.stringify({
-          files: [{ name: uploadFileName }],
-          enable_formula: true,
-          enable_table: true,
-          model_version: 'vlm',
-          language: 'ch',
-        }),
-        signal: AbortSignal.timeout(TIMEOUTS.batch),
-      },
-      firstHopPolicy,
-    );
-    return readMinerUJson<{ batch_id: string; file_urls?: string[]; files?: string[] }>(
-      res,
-      'file-urls/batch',
-    );
-  }, 'create batch');
+        firstHopPolicy,
+      );
+      return readMinerUJson<{ batch_id: string; file_urls?: string[]; files?: string[] }>(
+        res,
+        'file-urls/batch',
+      );
+    },
+    'create batch',
+    4,
+    config.signal,
+  );
 
   const uploadUrls = batchData.file_urls ?? batchData.files;
   if (!batchData.batch_id || !uploadUrls?.length) {
@@ -532,7 +568,7 @@ export async function parseWithMinerUCloud(
               documentBuffer.byteOffset + documentBuffer.byteLength,
             ) as ArrayBuffer,
           ]),
-          signal: AbortSignal.timeout(TIMEOUTS.upload),
+          signal: requestSignal(TIMEOUTS.upload, config.signal),
           // No Content-Type — presigned OSS URLs are sensitive to headers in the signature
         },
         // A presigned URL identifies one exact destination: a 3xx answer is a
@@ -541,6 +577,7 @@ export async function parseWithMinerUCloud(
       ),
     'presigned upload',
     5,
+    config.signal,
   );
   if (!putRes.ok) {
     await putRes.body?.cancel().catch(() => undefined);
@@ -548,7 +585,7 @@ export async function parseWithMinerUCloud(
   }
 
   // Give the backend a moment to register the upload
-  await sleep(1_500);
+  await sleep(1_500, config.signal);
 
   // Step 3: Poll for completion
   log.info(`[MinerU Cloud] Upload complete, polling for results...`);
@@ -562,7 +599,7 @@ export async function parseWithMinerUCloud(
           `${apiRoot}/extract-results/batch/${batchData.batch_id}`,
           {
             headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-            signal: AbortSignal.timeout(TIMEOUTS.poll),
+            signal: requestSignal(TIMEOUTS.poll, config.signal),
           },
           firstHopPolicy,
         );
@@ -573,6 +610,7 @@ export async function parseWithMinerUCloud(
       },
       'poll batch',
       3,
+      config.signal,
     );
 
     const rows = statusData.extract_result;
@@ -583,7 +621,7 @@ export async function parseWithMinerUCloud(
       list[0];
 
     if (!row?.state) {
-      await sleep(POLL_INTERVAL_MS);
+      await sleep(POLL_INTERVAL_MS, config.signal);
       continue;
     }
 
@@ -598,10 +636,10 @@ export async function parseWithMinerUCloud(
     }
 
     if (row.state === 'done' && row.full_zip_url) {
-      return parseMinerUZip(row.full_zip_url);
+      return parseMinerUZip(row.full_zip_url, config.signal);
     }
 
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(POLL_INTERVAL_MS, config.signal);
   }
 
   log.warn(`[MinerU Cloud] Batch ${batchData.batch_id} timed out`);

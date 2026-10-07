@@ -97,6 +97,8 @@ export function orderCourseMentionCandidates(input: {
   readonly courses: readonly CourseMentionSource[];
   /** Courses already named for this turn. */
   readonly referencedIds: readonly string[];
+  /** Courses that may not be named now (a generation run is still producing them). */
+  readonly excludedIds?: ReadonlySet<string>;
   /** Fallback title for a course the workspace cannot name. */
   readonly untitled: string;
   readonly limit?: number;
@@ -110,7 +112,7 @@ export function orderCourseMentionCandidates(input: {
   const ordered: { id: string; reason: CourseMentionCandidate['reason'] }[] = [];
   const seen = new Set<string>();
   const push = (id: string, reason: CourseMentionCandidate['reason']) => {
-    if (!id || seen.has(id)) return;
+    if (!id || seen.has(id) || input.excludedIds?.has(id)) return;
     seen.add(id);
     ordered.push({ id, reason });
   };

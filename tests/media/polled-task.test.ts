@@ -168,4 +168,75 @@ describe('runPolledTask', () => {
       lastPendingDetail: 'Processing',
     });
   });
+
+  it('tells the caller the task id once submitted, before the first wait', async () => {
+    vi.useFakeTimers();
+    const order: string[] = [];
+    const submit = vi.fn(async () => {
+      order.push('submit');
+      return { status: 'submitted' as const, taskId: 'task-1' };
+    });
+    const poll = vi.fn(async (taskId: string) => {
+      order.push(`poll:${taskId}`);
+      return { status: 'done' as const, result: 'video-url' };
+    });
+    const onSubmitted = vi.fn(async (taskId: string) => {
+      order.push(`submitted:${taskId}`);
+    });
+
+    const pending = runPolledTask({
+      submit,
+      poll,
+      intervalMs: 1_000,
+      maxAttempts: 3,
+      label: 'Test task',
+      control: { onSubmitted },
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(pending).resolves.toBe('video-url');
+    expect(order).toEqual(['submit', 'submitted:task-1', 'poll:task-1']);
+  });
+
+  it('resumes the wait on a task submitted earlier without submitting again', async () => {
+    vi.useFakeTimers();
+    const submit = vi.fn();
+    const poll = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'pending' })
+      .mockResolvedValueOnce({ status: 'done', result: 'video-url' });
+    const onSubmitted = vi.fn();
+
+    const pending = runPolledTask({
+      submit,
+      poll,
+      intervalMs: 1_000,
+      maxAttempts: 3,
+      label: 'Test task',
+      control: { resumeTaskId: 'task-9', onSubmitted },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(pending).resolves.toBe('video-url');
+    expect(submit).not.toHaveBeenCalled();
+    expect(onSubmitted).not.toHaveBeenCalled();
+    expect(poll).toHaveBeenCalledWith('task-9');
+  });
+
+  it('refuses to resume a task without an id instead of submitting a new one', async () => {
+    const submit = vi.fn();
+    const poll = vi.fn();
+    await expect(
+      runPolledTask({
+        submit,
+        poll,
+        intervalMs: 1_000,
+        maxAttempts: 3,
+        label: 'Test task',
+        control: { resumeTaskId: ' ' },
+      }),
+    ).rejects.toThrow('Test task: cannot resume a task without an id');
+    expect(submit).not.toHaveBeenCalled();
+    expect(poll).not.toHaveBeenCalled();
+  });
 });

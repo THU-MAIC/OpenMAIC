@@ -76,9 +76,10 @@ describe('/api/model-config', () => {
         config: {
           providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator' } },
           slots: { video: null },
+          lock: ['video'],
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
   });
@@ -115,7 +116,8 @@ describe('/api/model-config', () => {
   it('reads and edits the workspace settings, keeping keys out of every answer', async () => {
     const initial = await (await get('alice')).json();
     expect(initial.revision).toBeNull();
-    expect(initial.policy).toEqual({ allowWorkspaceProviders: true });
+    expect(initial.allowUserKeys).toBe(true);
+    expect(initial).not.toHaveProperty('policy');
 
     let response = await put('alice', null, {
       kind: 'provider',
@@ -131,6 +133,8 @@ describe('/api/model-config', () => {
       capabilities: expect.any(Object),
       id: 'mine',
       preset: 'openai',
+      presetName: 'OpenAI',
+      presetKind: 'single',
       source: 'workspace',
       key: { set: true, mask: '…4321' },
     });
@@ -175,6 +179,25 @@ describe('/api/model-config', () => {
     const locked = await put('alice', 1, { kind: 'slots', set: { video: 'operator:x' } });
     expect(locked.status).toBe(409);
     expect((await locked.json()).error.code).toBe('SLOT_LOCKED');
+    // A slot below a locked one is fixed with it.
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator' } },
+          slots: { llm: 'operator:deepseek-v4-pro' },
+          lock: ['llm'],
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    const below = await put('alice', 1, {
+      kind: 'slots',
+      set: { 'course.content.slide': 'operator:deepseek-v4-flash' },
+    });
+    expect(below.status).toBe(409);
+    expect((await below.json()).error.code).toBe('SLOT_LOCKED');
   });
 
   it('refuses a thinking effort on the agent slot, and drops the one it inherits', async () => {

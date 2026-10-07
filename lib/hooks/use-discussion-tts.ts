@@ -182,7 +182,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       );
       // Teacher's voice = the global lecture selection, honored VERBATIM (incl.
       // its model) whenever that provider is enabled — identical to what the
-      // pre-generated lecture sends (use-scene-generator), so lecture and
+      // lecture narration sends (lib/audio/narration-tts), so lecture and
       // discussion teacher never diverge. No voiceId re-validation/fallback that
       // could swap the user's chosen voice. Only if the global provider is itself
       // disabled does the teacher fall back to an enabled provider.
