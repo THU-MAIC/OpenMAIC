@@ -26,7 +26,7 @@ async function failedOutline(fetch: typeof globalThis.fetch): Promise<unknown> {
         requirements: { requirement: 'Teach photosynthesis' },
         model: {
           model,
-          modelInfo: undefined,
+          modelInfo: null,
           modelString: 'openai:gpt-4o-mini',
           thinkingConfig: undefined,
           serverManaged: false,
