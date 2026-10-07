@@ -40,6 +40,15 @@ describe('actual interactive generation path — no model calls', () => {
           expect(system).toContain('32768 bytes');
           // The parts the reviewer asked to keep.
           expect(system).toContain('function publishState(observation)');
+          expect(system).toContain('Never call `publishState()` without an observation');
+          expect(system).toContain('function publishCurrentState()');
+          expect(system).toContain('Do not wrap or monkey-patch update functions');
+          expect(system).toContain('initial render, every semantic change, reset');
+          expect(system).toContain('programmatic or timer-driven updates');
+          if (kind === 'game') {
+            expect(system).toContain('Construct the state object before any field access');
+            expect(system).toContain('including the first render, Start, and reset');
+          }
           expect(system).toContain('after every semantic change');
           expect(system).toContain('Do not add a state-request message listener');
           // No structural protocol is imposed on the generator any more.

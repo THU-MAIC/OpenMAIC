@@ -5,6 +5,7 @@ import tinycolor from 'tinycolor2';
 import type { ChartData, ChartOptions, ChartType, ImportedChartStyle } from '@openmaic/dsl';
 import { getChartOption } from './chartOption';
 import { loadChartRuntime } from './chartRuntime';
+import { isWebKitEngine, repaintClipPaths } from './clipRepaint';
 
 interface ChartProps {
   width: number;
@@ -84,7 +85,16 @@ export function Chart({
       .then((echarts) => {
         if (!mounted || !chartRef.current) return;
 
-        chartInstance.current = echarts.init(chartRef.current, null, { renderer: 'svg' });
+        const chartElement = chartRef.current;
+        const chart = echarts.init(chartElement, null, { renderer: 'svg' });
+        chartInstance.current = chart;
+        if (isWebKitEngine(globalThis.navigator?.userAgent)) {
+          // WebKit does not repaint a series clipped by an animated clip path
+          // (see clipRepaint.ts). `rendered` fires after every painted frame,
+          // so the clipped series shows as it would elsewhere, on first
+          // render, re-render and resize alike.
+          chart.on('rendered', () => repaintClipPaths(chartElement));
+        }
         setChartState('ready');
         updateOptionRef.current();
 
