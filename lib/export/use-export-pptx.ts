@@ -1281,10 +1281,10 @@ export async function buildPptxBlob(
 //
 // `getPptxBlob` is invoked whenever the lesson has a scene that gets a PPTX
 // slide (`pptxDeckScenes`): a slide, a quiz, a PBL project or an interactive
-// page, or only a slide when placeholders are turned off. With placeholders
-// on, every shipped HTML page has a placeholder slide, so a non-empty pack
-// holds a PPTX; with them off, a lesson without slides ships its HTML pages
-// alone (`skippedPptx`). Returns `empty: true` (and a null blob) when there is
+// page, or only a slide for a slides-only export. With placeholders, every
+// shipped HTML page has a placeholder slide, so a non-empty pack holds a PPTX;
+// slides only, a lesson without slides ships its HTML pages alone
+// (`skippedPptx`). Returns `empty: true` (and a null blob) when there is
 // nothing to ship. The HTML page paths come from
 // `listInteractivePages`, the same list the PPTX placeholder links use.
 
@@ -1295,7 +1295,7 @@ export interface ResourcePackResult {
   empty: boolean;
   /**
    * True when the pack ships HTML pages without a PPTX: placeholder slides
-   * are turned off and the lesson has no slide scene.
+   * are not wanted and the lesson has no slide scene.
    */
   skippedPptx: boolean;
   /** External asset URLs that could not be inlined into the HTML pages. */
@@ -1342,7 +1342,7 @@ export async function buildResourcePackZip(
     zip.file(page.path, inlinedHtml);
   }
 
-  // 2. Generate the PPTX (slides, plus placeholders unless turned off).
+  // 2. Generate the PPTX (slides, plus placeholders unless slides only).
   if (hasPptx) {
     const pptxBlob = await opts.getPptxBlob();
     // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
@@ -1363,6 +1363,10 @@ export interface UseExportPPTXOptions {
    * can override it.
    */
   classroomOrigin?: string;
+}
+
+/** Per-export choices, made in the export menu. */
+export interface PptxExportChoice {
   /**
    * Whether the PPTX includes placeholder slides for quiz, interactive and
    * PBL scenes (default true). When false it holds the slide scenes only.
@@ -1370,10 +1374,7 @@ export interface UseExportPPTXOptions {
   includePlaceholders?: boolean;
 }
 
-export function useExportPPTX({
-  classroomOrigin,
-  includePlaceholders = true,
-}: UseExportPPTXOptions = {}) {
+export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
   const { t } = useI18n();
@@ -1388,10 +1389,6 @@ export function useExportPPTX({
 
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
-  // Slides, quizzes, PBL projects and interactive pages all become PPTX
-  // slides (only slides when placeholders are off); a lesson without any of
-  // them has nothing to put in a PPTX.
-  const hasPptxContent = pptxDeckScenes(scenes, { includePlaceholders }).length > 0;
 
   // The online classroom page the placeholder slides link to (button + QR
   // code). Anyone with the link can open a classroom, so no status lookup is
@@ -1403,13 +1400,15 @@ export function useExportPPTX({
   );
 
   // Shared guard + state wrapper for export actions.
-  // `requirePptxContent` controls whether the guard rejects a lesson with
-  // nothing to put in the PPTX (the resource pack reports that itself via
-  // `result.empty`). When it rejects, callers get a toast instead of silence.
+  // `hasPptxContent` is passed by actions that need something to put in the
+  // PPTX: slides, quizzes, PBL projects and interactive pages all become PPTX
+  // slides (only slides when placeholders are off). The resource pack reports
+  // an empty lesson itself via `result.empty`. When the guard rejects, callers
+  // get a toast instead of silence.
   const withExportGuard = useCallback(
-    (action: () => Promise<void>, requirePptxContent = true) => {
+    (action: () => Promise<void>, hasPptxContent = true) => {
       if (exportingRef.current) return;
-      if (requirePptxContent && !hasPptxContent) {
+      if (!hasPptxContent) {
         toast.warning(t('export.noSlides'));
         return;
       }
@@ -1427,66 +1426,23 @@ export function useExportPPTX({
         }
       }, 100);
     },
-    [hasPptxContent, t],
+    [t],
   );
 
   // ── Export PPTX only ──
-  const exportPPTX = useCallback(() => {
-    withExportGuard(async () => {
-      const fileName = stage?.name || 'slides';
-      // No Resource Pack next to a standalone PPTX, so placeholders link to
-      // the online classroom only (no offline copy to point at).
-      const deck = planPptxDeck(scenes, t, {
-        linkInteractivePages: false,
-        classroomUrl: getClassroomUrl(),
-        includePlaceholders,
-      });
-      const blob = await buildPptxBlob(
-        slides,
-        slideScenes,
-        viewportRatio,
-        viewportSize,
-        ratioPx2Inch,
-        ratioPx2Pt,
-        stage?.id,
-        deck,
-      );
-      saveAs(blob, `${fileName}.pptx`);
-      toast.success(t('export.exportSuccess'));
-    });
-  }, [
-    withExportGuard,
-    getClassroomUrl,
-    includePlaceholders,
-    slides,
-    slideScenes,
-    scenes,
-    stage,
-    viewportSize,
-    viewportRatio,
-    ratioPx2Inch,
-    ratioPx2Pt,
-    t,
-  ]);
-
-  // ── Export Resource Pack (PPTX + interactive HTML pages as ZIP) ──
-  // `requirePptxContent` is false: `buildResourcePackZip` reports an empty
-  // lesson itself and the hook shows "nothing to export".
-  const exportResourcePack = useCallback(() => {
-    withExportGuard(async () => {
-      const fileName = stage?.name || 'slides';
-      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
-      const classroomUrl = getClassroomUrl();
-
-      const result = await buildResourcePackZip(scenes, {
-        viewportRatio,
-        viewportSize,
-        ratioPx2Inch,
-        ratioPx2Pt,
-        fileName,
-        fetcher: sharedFetcher,
-        getPptxBlob: () =>
-          buildPptxBlob(
+  const exportPPTX = useCallback(
+    ({ includePlaceholders = true }: PptxExportChoice = {}) => {
+      withExportGuard(
+        async () => {
+          const fileName = stage?.name || 'slides';
+          // No Resource Pack next to a standalone PPTX, so placeholders link to
+          // the online classroom only (no offline copy to point at).
+          const deck = planPptxDeck(scenes, t, {
+            linkInteractivePages: false,
+            classroomUrl: getClassroomUrl(),
+            includePlaceholders,
+          });
+          const blob = await buildPptxBlob(
             slides,
             slideScenes,
             viewportRatio,
@@ -1494,59 +1450,109 @@ export function useExportPPTX({
             ratioPx2Inch,
             ratioPx2Pt,
             stage?.id,
-            planPptxDeck(scenes, t, {
-              linkInteractivePages: true,
-              classroomUrl,
-              includePlaceholders,
-            }),
-          ),
-        includePlaceholders,
-      });
+            deck,
+          );
+          saveAs(blob, `${fileName}.pptx`);
+          toast.success(t('export.exportSuccess'));
+        },
+        pptxDeckScenes(scenes, { includePlaceholders }).length > 0,
+      );
+    },
+    [
+      withExportGuard,
+      getClassroomUrl,
+      slides,
+      slideScenes,
+      scenes,
+      stage,
+      viewportSize,
+      viewportRatio,
+      ratioPx2Inch,
+      ratioPx2Pt,
+      t,
+    ],
+  );
 
-      if (result.empty) {
-        toast.warning(t('export.nothingToExport'));
-        return;
-      }
-      if (result.skippedPptx) {
-        toast.info(t('export.noSlidesSkipped'));
-      }
-      saveAs(result.blob!, `${fileName}.zip`);
-      toast.success(t('export.exportSuccess'));
-      if (result.failedAssetUrls.length > 0) {
-        log.warn(
-          'Resource Pack: some interactive-scene assets could not be inlined:',
-          result.failedAssetUrls,
-        );
-        const hosts = [
-          ...new Set(
-            result.failedAssetUrls.map((u) => {
-              try {
-                return new URL(u).host;
-              } catch {
-                return u;
-              }
-            }),
-          ),
-        ];
-        toast.warning(t('export.inlinePartial', { count: result.failedAssetUrls.length }), {
-          description: hosts.join(', '),
+  // ── Export Resource Pack (PPTX + interactive HTML pages as ZIP) ──
+  // No PPTX-content check in the guard: `buildResourcePackZip` reports an
+  // empty lesson itself and the hook shows "nothing to export".
+  const exportResourcePack = useCallback(
+    ({ includePlaceholders = true }: PptxExportChoice = {}) => {
+      withExportGuard(async () => {
+        const fileName = stage?.name || 'slides';
+        const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
+        const classroomUrl = getClassroomUrl();
+
+        const result = await buildResourcePackZip(scenes, {
+          viewportRatio,
+          viewportSize,
+          ratioPx2Inch,
+          ratioPx2Pt,
+          fileName,
+          fetcher: sharedFetcher,
+          getPptxBlob: () =>
+            buildPptxBlob(
+              slides,
+              slideScenes,
+              viewportRatio,
+              viewportSize,
+              ratioPx2Inch,
+              ratioPx2Pt,
+              stage?.id,
+              planPptxDeck(scenes, t, {
+                linkInteractivePages: true,
+                classroomUrl,
+                includePlaceholders,
+              }),
+            ),
+          includePlaceholders,
         });
-      }
-    }, false);
-  }, [
-    withExportGuard,
-    getClassroomUrl,
-    includePlaceholders,
-    slides,
-    slideScenes,
-    scenes,
-    stage,
-    viewportSize,
-    viewportRatio,
-    ratioPx2Inch,
-    ratioPx2Pt,
-    t,
-  ]);
+
+        if (result.empty) {
+          toast.warning(t('export.nothingToExport'));
+          return;
+        }
+        if (result.skippedPptx) {
+          toast.info(t('export.noSlidesSkipped'));
+        }
+        saveAs(result.blob!, `${fileName}.zip`);
+        toast.success(t('export.exportSuccess'));
+        if (result.failedAssetUrls.length > 0) {
+          log.warn(
+            'Resource Pack: some interactive-scene assets could not be inlined:',
+            result.failedAssetUrls,
+          );
+          const hosts = [
+            ...new Set(
+              result.failedAssetUrls.map((u) => {
+                try {
+                  return new URL(u).host;
+                } catch {
+                  return u;
+                }
+              }),
+            ),
+          ];
+          toast.warning(t('export.inlinePartial', { count: result.failedAssetUrls.length }), {
+            description: hosts.join(', '),
+          });
+        }
+      });
+    },
+    [
+      withExportGuard,
+      getClassroomUrl,
+      slides,
+      slideScenes,
+      scenes,
+      stage,
+      viewportSize,
+      viewportRatio,
+      ratioPx2Inch,
+      ratioPx2Pt,
+      t,
+    ],
+  );
 
   return { exporting, exportPPTX, exportResourcePack };
 }
