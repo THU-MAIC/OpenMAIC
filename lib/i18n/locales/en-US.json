@@ -61,6 +61,8 @@
     "pptx": "Export PPTX",
     "resourcePack": "Export Resource Pack",
     "resourcePackDesc": "PPTX + interactive pages",
+    "includePlaceholders": "Include placeholder slides",
+    "includePlaceholdersHint": "Interactive pages, quizzes and PBL projects get a slide at their place in the lesson, with an “Open online” button and a QR code that opens that scene in the online classroom.",
     "exporting": "Exporting...",
     "exportSuccess": "Export successful",
     "exportFailed": "Export failed",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "No narration to make subtitles from",
     "subtitlesFailed": "Subtitle download failed",
     "noSlides": "No slides to export",
+    "noSlidesSkipped": "No slides in this course — PPTX skipped",
     "nothingToExport": "Nothing to export",
     "placeholder": {
       "interactiveLabel": "Interactive",

@@ -61,6 +61,8 @@
     "pptx": "Экспорт PPTX",
     "resourcePack": "Экспорт ресурсного пакета",
     "resourcePackDesc": "PPTX + интерактивные страницы",
+    "includePlaceholders": "Добавлять слайды-заглушки",
+    "includePlaceholdersHint": "Интерактивные страницы, тесты и проекты PBL получают слайд на своём месте в уроке с кнопкой «Открыть онлайн» и QR-кодом, который открывает эту сцену в онлайн-классе.",
     "exporting": "Экспорт...",
     "exportSuccess": "Экспорт успешен",
     "exportFailed": "Ошибка экспорта",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "Нет закадрового текста для субтитров",
     "subtitlesFailed": "Не удалось скачать субтитры",
     "noSlides": "Нет слайдов для экспорта",
+    "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
     "nothingToExport": "Нет данных для экспорта",
     "placeholder": {
       "interactiveLabel": "Интерактив",

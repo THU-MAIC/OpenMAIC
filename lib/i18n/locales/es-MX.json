@@ -61,6 +61,8 @@
     "pptx": "Exportar PPTX",
     "resourcePack": "Exportar paquete de recursos",
     "resourcePackDesc": "PPTX + páginas interactivas",
+    "includePlaceholders": "Incluir diapositivas de marcador",
+    "includePlaceholdersHint": "Las páginas interactivas, cuestionarios y proyectos PBL obtienen una diapositiva en su lugar de la lección, con un botón “Abrir en línea” y un código QR que abre esa escena en la clase en línea.",
     "exporting": "Exportando...",
     "exportSuccess": "Exportación exitosa",
     "exportFailed": "Error al exportar",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "No hay narración para generar subtítulos",
     "subtitlesFailed": "Error al descargar los subtítulos",
     "noSlides": "No hay diapositivas para exportar",
+    "noSlidesSkipped": "Este curso no tiene diapositivas — se omitió el PPTX",
     "nothingToExport": "Nada que exportar",
     "placeholder": {
       "interactiveLabel": "Interactivo",

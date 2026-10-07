@@ -767,3 +767,88 @@ describe('PBL placeholders', () => {
     });
   }
 });
+
+describe('placeholder slides turned off', () => {
+  it('plans the slide scenes only', () => {
+    const deck = planPptxDeck(lesson, t, {
+      linkInteractivePages: true,
+      classroomUrl: CLASSROOM_URL,
+      includePlaceholders: false,
+    });
+    expect(deck).toEqual([
+      { kind: 'slide', slideIndex: 0 },
+      { kind: 'slide', slideIndex: 1 },
+    ]);
+    expect(pptxDeckScenes(lesson, { includePlaceholders: false })).toEqual([sceneA, sceneB]);
+  });
+
+  it('builds a slides-only PPTX in the Resource Pack, which still ships the HTML pages', async () => {
+    const result = await buildResourcePackZip(lesson, {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob: () =>
+        buildPptxBlob(
+          [slideA, slideB],
+          [sceneA, sceneB],
+          0.5625,
+          1000,
+          100,
+          ratioPx2Pt,
+          'stage-1',
+          planPptxDeck(lesson, t, {
+            linkInteractivePages: true,
+            classroomUrl: CLASSROOM_URL,
+            includePlaceholders: false,
+          }),
+        ),
+    });
+    expect(result.skippedPptx).toBe(false);
+    const pack = await loadZip(result.blob!);
+    expect(pack.file('interactive/01_Demo #1_ 50% done_.html')).not.toBeNull();
+    const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
+    expect(pptx.file('ppt/slides/slide2.xml')).not.toBeNull();
+    expect(pptx.file('ppt/slides/slide3.xml')).toBeNull();
+    // Slide links point at the slides-only numbering again.
+    expect(await readText(pptx, 'ppt/slides/_rels/slide1.xml.rels')).toMatch(
+      /relationships\/slide" Target="slide2\.xml"/,
+    );
+  });
+
+  it('ships the HTML pages without a PPTX when the lesson has no slide scene', async () => {
+    const getPptxBlob = vi.fn(async () => new Blob([new Uint8Array([1])]));
+    const scenes = [interactiveScene('i', 'Widget'), quizScene('q', 'Check'), pblScene('p')];
+    const result = await buildResourcePackZip(scenes, {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob,
+    });
+    expect(result.empty).toBe(false);
+    expect(result.skippedPptx).toBe(true);
+    expect(getPptxBlob).not.toHaveBeenCalled();
+    const pack = await loadZip(result.blob!);
+    expect(Object.keys(pack.files).filter((n) => !pack.files[n].dir)).toEqual([
+      'interactive/01_Widget.html',
+    ]);
+  });
+
+  it('reports nothing to ship when there is neither a slide nor an HTML page', async () => {
+    const result = await buildResourcePackZip([quizScene('q', 'Check'), pblScene('p')], {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob: vi.fn(),
+    });
+    expect(result.empty).toBe(true);
+  });
+});

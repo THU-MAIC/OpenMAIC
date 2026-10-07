@@ -61,6 +61,8 @@
     "pptx": "导出 PPTX",
     "resourcePack": "导出教学资源包",
     "resourcePackDesc": "PPTX + 交互式页面",
+    "includePlaceholders": "包含占位页",
+    "includePlaceholdersHint": "互动页面、测验和项目式学习会在课程中对应的位置生成一页占位幻灯片，附带「在线打开」按钮和二维码，可直接打开在线课堂中的该场景。",
     "exporting": "正在导出...",
     "exportSuccess": "导出成功",
     "exportFailed": "导出失败",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "没有可生成字幕的旁白",
     "subtitlesFailed": "字幕下载失败",
     "noSlides": "无可导出的幻灯片",
+    "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
     "nothingToExport": "没有可导出的内容",
     "placeholder": {
       "interactiveLabel": "互动页面",

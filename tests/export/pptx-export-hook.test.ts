@@ -145,4 +145,34 @@ describe('useExportPPTX placeholders', () => {
     const xml = await pptx.file('ppt/slides/slide2.xml')!.async('string');
     expect(xml).not.toContain(translate('export.placeholder.openOnline'));
   });
+
+  it('exports the slide scenes only when placeholder slides are off', async () => {
+    const hook = useExportPPTX({ classroomOrigin: ORIGIN, includePlaceholders: false });
+    await runExport(hook.exportPPTX);
+
+    const pptx = await savedPptx();
+    expect(pptx.file('ppt/slides/slide1.xml')).not.toBeNull();
+    expect(pptx.file('ppt/slides/slide2.xml')).toBeNull();
+  });
+
+  it('reports no slides when placeholders are off and the lesson has none', async () => {
+    mocks.stageState.scenes = mocks.stageState.scenes.slice(1);
+    const hook = useExportPPTX({ classroomOrigin: ORIGIN, includePlaceholders: false });
+    hook.exportPPTX();
+
+    expect(mocks.toast.warning).toHaveBeenCalledWith(translate('export.noSlides'));
+    expect(mocks.saveAs).not.toHaveBeenCalled();
+  });
+
+  it('ships the HTML pages alone from the Resource Pack when placeholders are off and there are no slides', async () => {
+    mocks.stageState.scenes = mocks.stageState.scenes.slice(1);
+    const hook = useExportPPTX({ classroomOrigin: ORIGIN, includePlaceholders: false });
+    await runExport(hook.exportResourcePack);
+
+    expect(mocks.toast.info).toHaveBeenCalledWith(translate('export.noSlidesSkipped'));
+    const blob = mocks.saveAs.mock.calls.at(-1)![0] as Blob;
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const files = Object.keys(zip.files).filter((n) => !zip.files[n].dir);
+    expect(files).toEqual(['interactive/01_Scene i1.html']);
+  });
 });

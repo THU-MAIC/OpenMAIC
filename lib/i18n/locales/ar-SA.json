@@ -61,6 +61,8 @@
     "pptx": "تصدير PPTX",
     "resourcePack": "تصدير حزمة الموارد",
     "resourcePackDesc": "PPTX + صفحات تفاعلية",
+    "includePlaceholders": "تضمين شرائح بديلة",
+    "includePlaceholdersHint": "تحصل الصفحات التفاعلية والاختبارات ومشاريع PBL على شريحة في موضعها من الدرس، مع زر «فتح عبر الإنترنت» ورمز QR يفتح ذلك المشهد في الفصل عبر الإنترنت.",
     "classroomZip": "تصدير ملف الفصل ZIP",
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
     "html": "تصدير بتنسيق HTML",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "لا يوجد سرد لإنشاء الترجمة منه",
     "subtitlesFailed": "فشل تنزيل الترجمة",
     "noSlides": "لا توجد شرائح للتصدير",
+    "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
     "nothingToExport": "لا يوجد محتوى للتصدير",
     "placeholder": {
       "interactiveLabel": "تفاعلي",

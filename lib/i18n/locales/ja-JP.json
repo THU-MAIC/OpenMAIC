@@ -61,6 +61,8 @@
     "pptx": "PPTXエクスポート",
     "resourcePack": "リソースパックをエクスポート",
     "resourcePackDesc": "PPTX＋インタラクティブページ",
+    "includePlaceholders": "プレースホルダースライドを含める",
+    "includePlaceholdersHint": "インタラクティブページ、クイズ、PBL プロジェクトは、レッスン内の位置にスライドとして入ります。「オンラインで開く」ボタンと QR コードから、オンライン教室のそのシーンを開けます。",
     "exporting": "エクスポート中...",
     "exportSuccess": "エクスポートが完了しました",
     "exportFailed": "エクスポートに失敗しました",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "字幕にできるナレーションがありません",
     "subtitlesFailed": "字幕のダウンロードに失敗しました",
     "noSlides": "エクスポート可能なスライドがありません",
+    "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
     "nothingToExport": "エクスポートできるものがありません",
     "placeholder": {
       "interactiveLabel": "インタラクティブ",

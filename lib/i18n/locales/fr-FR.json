@@ -61,6 +61,8 @@
     "pptx": "Exporter en PPTX",
     "resourcePack": "Exporter le pack de ressources",
     "resourcePackDesc": "PPTX + pages interactives",
+    "includePlaceholders": "Inclure les diapositives de remplacement",
+    "includePlaceholdersHint": "Les pages interactives, quiz et projets PBL reçoivent une diapositive à leur place dans la leçon, avec un bouton « Ouvrir en ligne » et un QR code qui ouvre cette scène dans la classe en ligne.",
     "exporting": "Export en cours…",
     "exportSuccess": "Export réussi",
     "exportFailed": "Échec de l’export",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "Aucune narration à partir de laquelle générer des sous-titres",
     "subtitlesFailed": "Échec du téléchargement des sous-titres",
     "noSlides": "Aucune diapositive à exporter",
+    "noSlidesSkipped": "Aucune diapositive dans ce cours. Export PPTX ignoré.",
     "nothingToExport": "Rien à exporter",
     "placeholder": {
       "interactiveLabel": "Interactif",

@@ -1281,8 +1281,10 @@ export async function buildPptxBlob(
 //
 // `getPptxBlob` is invoked whenever the lesson has a scene that gets a PPTX
 // slide (`pptxDeckScenes`): a slide, a quiz, a PBL project or an interactive
-// page. Every shipped HTML page has a placeholder slide, so a non-empty pack
-// always holds a PPTX. Returns `empty: true` (and a null blob) when there is
+// page, or only a slide when placeholders are turned off. With placeholders
+// on, every shipped HTML page has a placeholder slide, so a non-empty pack
+// holds a PPTX; with them off, a lesson without slides ships its HTML pages
+// alone (`skippedPptx`). Returns `empty: true` (and a null blob) when there is
 // nothing to ship. The HTML page paths come from
 // `listInteractivePages`, the same list the PPTX placeholder links use.
 
@@ -1291,6 +1293,11 @@ export interface ResourcePackResult {
   blob: Blob | null;
   /** True when no scene could be exported (no PPTX slide, no HTML page). */
   empty: boolean;
+  /**
+   * True when the pack ships HTML pages without a PPTX: placeholder slides
+   * are turned off and the lesson has no slide scene.
+   */
+  skippedPptx: boolean;
   /** External asset URLs that could not be inlined into the HTML pages. */
   failedAssetUrls: string[];
 }
@@ -1305,6 +1312,8 @@ export async function buildResourcePackZip(
     fileName: string;
     /** Called only when the lesson has PPTX content; produces the PPTX blob. */
     getPptxBlob: () => Promise<Blob>;
+    /** Whether the PPTX includes placeholder slides (default true). */
+    includePlaceholders?: boolean;
     /** Passed through to `inlineHtmlAssets`; tests inject a no-op fetcher. */
     fetcher?: FetchAsset;
   },
@@ -1313,13 +1322,16 @@ export async function buildResourcePackZip(
   const zip = new JSZip();
   const failedAssetUrls: string[] = [];
 
-  // Nothing to ship: no slide, quiz, PBL project or interactive page.
-  if (pptxDeckScenes(scenes).length === 0) {
-    return { blob: null, empty: true, failedAssetUrls };
+  const hasPptx =
+    pptxDeckScenes(scenes, { includePlaceholders: opts.includePlaceholders }).length > 0;
+  const pages = listInteractivePages(scenes);
+
+  // Nothing to ship: no PPTX slide and no interactive page.
+  if (!hasPptx && pages.length === 0) {
+    return { blob: null, empty: true, skippedPptx: false, failedAssetUrls };
   }
 
   // 1. Add interactive HTML pages
-  const pages = listInteractivePages(scenes);
   for (const page of pages) {
     const { html: inlinedHtml, report } = await inlineHtmlAssets(page.html, {
       fetcher: opts.fetcher,
@@ -1330,14 +1342,16 @@ export async function buildResourcePackZip(
     zip.file(page.path, inlinedHtml);
   }
 
-  // 2. Generate the PPTX (slides plus quiz / interactive placeholders).
-  const pptxBlob = await opts.getPptxBlob();
-  // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
-  // Blob (which it can't reliably round-trip outside the browser).
-  zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
+  // 2. Generate the PPTX (slides, plus placeholders unless turned off).
+  if (hasPptx) {
+    const pptxBlob = await opts.getPptxBlob();
+    // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
+    // Blob (which it can't reliably round-trip outside the browser).
+    zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
+  }
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  return { blob, empty: false, failedAssetUrls };
+  return { blob, empty: false, skippedPptx: !hasPptx, failedAssetUrls };
 }
 
 // ── Hook ──
@@ -1349,9 +1363,17 @@ export interface UseExportPPTXOptions {
    * can override it.
    */
   classroomOrigin?: string;
+  /**
+   * Whether the PPTX includes placeholder slides for quiz, interactive and
+   * PBL scenes (default true). When false it holds the slide scenes only.
+   */
+  includePlaceholders?: boolean;
 }
 
-export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
+export function useExportPPTX({
+  classroomOrigin,
+  includePlaceholders = true,
+}: UseExportPPTXOptions = {}) {
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
   const { t } = useI18n();
@@ -1367,8 +1389,9 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
   // Slides, quizzes, PBL projects and interactive pages all become PPTX
-  // slides; a lesson without any of them has nothing to put in a PPTX.
-  const hasPptxContent = pptxDeckScenes(scenes).length > 0;
+  // slides (only slides when placeholders are off); a lesson without any of
+  // them has nothing to put in a PPTX.
+  const hasPptxContent = pptxDeckScenes(scenes, { includePlaceholders }).length > 0;
 
   // The online classroom page the placeholder slides link to (button + QR
   // code). Anyone with the link can open a classroom, so no status lookup is
@@ -1416,6 +1439,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
       const deck = planPptxDeck(scenes, t, {
         linkInteractivePages: false,
         classroomUrl: getClassroomUrl(),
+        includePlaceholders,
       });
       const blob = await buildPptxBlob(
         slides,
@@ -1433,6 +1457,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   }, [
     withExportGuard,
     getClassroomUrl,
+    includePlaceholders,
     slides,
     slideScenes,
     scenes,
@@ -1469,13 +1494,21 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
             ratioPx2Inch,
             ratioPx2Pt,
             stage?.id,
-            planPptxDeck(scenes, t, { linkInteractivePages: true, classroomUrl }),
+            planPptxDeck(scenes, t, {
+              linkInteractivePages: true,
+              classroomUrl,
+              includePlaceholders,
+            }),
           ),
+        includePlaceholders,
       });
 
       if (result.empty) {
         toast.warning(t('export.nothingToExport'));
         return;
+      }
+      if (result.skippedPptx) {
+        toast.info(t('export.noSlidesSkipped'));
       }
       saveAs(result.blob!, `${fileName}.zip`);
       toast.success(t('export.exportSuccess'));
@@ -1503,6 +1536,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   }, [
     withExportGuard,
     getClassroomUrl,
+    includePlaceholders,
     slides,
     slideScenes,
     scenes,

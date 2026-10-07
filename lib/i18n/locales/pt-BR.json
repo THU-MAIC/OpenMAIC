@@ -61,6 +61,8 @@
     "pptx": "Exportar PPTX",
     "resourcePack": "Exportar Pacote de Recursos",
     "resourcePackDesc": "PPTX + páginas interativas",
+    "includePlaceholders": "Incluir slides de marcação",
+    "includePlaceholdersHint": "Páginas interativas, quizzes e projetos PBL ganham um slide no seu lugar na aula, com um botão “Abrir on-line” e um QR code que abre essa cena na aula on-line.",
     "exporting": "Exportando...",
     "exportSuccess": "Exportação concluída",
     "exportFailed": "Falha na exportação",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "Nenhuma narração para gerar legendas",
     "subtitlesFailed": "Falha ao baixar legendas",
     "noSlides": "Não há slides para exportar",
+    "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
     "nothingToExport": "Nada para exportar",
     "placeholder": {
       "interactiveLabel": "Interativo",

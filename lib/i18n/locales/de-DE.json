@@ -61,6 +61,8 @@
     "pptx": "PPTX exportieren",
     "resourcePack": "Ressourcenpaket exportieren",
     "resourcePackDesc": "PPTX + interaktive Seiten",
+    "includePlaceholders": "Platzhalterfolien einschließen",
+    "includePlaceholdersHint": "Interaktive Seiten, Quizze und PBL-Projekte erhalten an ihrer Stelle im Kurs eine Folie mit einer Schaltfläche „Online öffnen“ und einem QR-Code, der diese Szene im Online-Kurs öffnet.",
     "exporting": "Wird exportiert...",
     "exportSuccess": "Export erfolgreich",
     "exportFailed": "Export fehlgeschlagen",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "Keine Erzählspur zum Erstellen von Untertiteln vorhanden",
     "subtitlesFailed": "Untertitel konnten nicht heruntergeladen werden",
     "noSlides": "Keine Folien zum Exportieren",
+    "noSlidesSkipped": "Dieser Kurs enthält keine Folien — PPTX wurde übersprungen",
     "nothingToExport": "Nichts zu exportieren",
     "placeholder": {
       "interactiveLabel": "Interaktiv",

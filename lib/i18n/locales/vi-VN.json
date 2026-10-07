@@ -61,6 +61,8 @@
     "pptx": "Xuất PPTX",
     "resourcePack": "Xuất gói tài nguyên",
     "resourcePackDesc": "PPTX + các trang tương tác",
+    "includePlaceholders": "Thêm slide giữ chỗ",
+    "includePlaceholdersHint": "Trang tương tác, bài kiểm tra và dự án PBL có một slide ở đúng vị trí trong bài học, kèm nút “Mở trực tuyến” và mã QR để mở cảnh đó trong lớp học trực tuyến.",
     "exporting": "Đang xuất…",
     "exportSuccess": "Xuất thành công",
     "exportFailed": "Xuất không thành công",
@@ -148,6 +150,7 @@
     "subtitlesEmpty": "Không có lời giảng để tạo phụ đề",
     "subtitlesFailed": "Tải phụ đề không thành công",
     "noSlides": "Không có slide nào để xuất",
+    "noSlidesSkipped": "Bài học này không có slide — đã bỏ qua PPTX",
     "nothingToExport": "Không có gì để xuất",
     "placeholder": {
       "interactiveLabel": "Tương tác",

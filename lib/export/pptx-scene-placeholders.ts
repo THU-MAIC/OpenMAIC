@@ -117,6 +117,11 @@ export interface PlanPptxDeckOptions {
    * link to their scene in the online classroom.
    */
   classroomUrl?: string;
+  /**
+   * Whether quiz, interactive and PBL scenes get placeholder slides (the
+   * default). When false the PPTX holds the slide scenes only.
+   */
+  includePlaceholders?: boolean;
 }
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -163,16 +168,21 @@ function readPblBriefing(content: PBLContent): PblBriefing | null {
 
 /**
  * The scenes that get a PPTX slide, in lesson order: slide, quiz and PBL
- * scenes, and interactive scenes that ship an HTML page. Export is possible
- * exactly when this list is non-empty; `planPptxDeck` lays out the same list.
+ * scenes, and interactive scenes that ship an HTML page; only the slide scenes
+ * when `includePlaceholders` is false. Export is possible exactly when this
+ * list is non-empty; `planPptxDeck` lays out the same list.
  */
-export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
+export function pptxDeckScenes(
+  scenes: readonly Scene[],
+  { includePlaceholders = true }: { includePlaceholders?: boolean } = {},
+): Scene[] {
   return scenes.filter(
     (scene) =>
       scene.content.type === 'slide' ||
-      scene.content.type === 'quiz' ||
-      scene.content.type === 'pbl' ||
-      (scene.content.type === 'interactive' && !!scene.content.html),
+      (includePlaceholders &&
+        (scene.content.type === 'quiz' ||
+          scene.content.type === 'pbl' ||
+          (scene.content.type === 'interactive' && !!scene.content.html))),
   );
 }
 
@@ -185,7 +195,7 @@ export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
 export function planPptxDeck(
   scenes: readonly Scene[],
   t: Translate,
-  { linkInteractivePages, classroomUrl }: PlanPptxDeckOptions,
+  { linkInteractivePages, classroomUrl, includePlaceholders = true }: PlanPptxDeckOptions,
 ): PptxDeckEntry[] {
   const pagePaths = new Map(listInteractivePages(scenes).map((p) => [p.scene, p.path]));
   const deck: PptxDeckEntry[] = [];
@@ -199,7 +209,7 @@ export function planPptxDeck(
         }
       : undefined;
 
-  for (const scene of pptxDeckScenes(scenes)) {
+  for (const scene of pptxDeckScenes(scenes, { includePlaceholders })) {
     const content = scene.content;
     const title = truncate(normalizeSceneTitle(scene.title), MAX_TITLE_LENGTH);
     if (content.type === 'slide') {
