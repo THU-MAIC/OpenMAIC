@@ -715,6 +715,55 @@ describe('PBL placeholders', () => {
     expect(truncateToWidth('abcdef', 4)).toBe('abc…');
     expect(truncateToWidth('设计一个火星基地', 8)).toBe('设计一…');
     expect(truncateToWidth('  a\n b  ', 10)).toBe('a b');
+    expect(truncateToWidth('', 5)).toBe('');
+    expect(truncateToWidth('   ', 5)).toBe('');
+  });
+
+  it('never cuts inside a grapheme cluster and counts emoji as wide', () => {
+    // Combining accents stay with their letter.
+    const accented = 'a\u0301b\u0301c\u0301';
+    expect(truncateToWidth(accented, 4)).toBe(accented);
+    expect(truncateToWidth(`${accented}d\u0301e`, 4)).toBe('a\u0301b\u0301c\u0301…');
+    // A ZWJ sequence is one wide cluster.
+    const coder = '\u{1F469}\u200D\u{1F4BB}';
+    expect(truncateToWidth(`${coder}x`, 3)).toBe(`${coder}x`);
+    expect(truncateToWidth(`${coder}xyz`, 3)).toBe(`${coder}…`);
+    expect(truncateToWidth(`x${coder}`, 2)).toBe('x…');
+    // Emoji are two columns wide: 64 of them overflow a 64-column line.
+    const grin = '\u{1F600}';
+    const cut = truncateToWidth(grin.repeat(64), 64);
+    expect(cut).toBe(`${grin.repeat(31)}…`);
+    // Flags, skin tones and ZWJ families survive whole.
+    const flag = '\u{1F1EF}\u{1F1F5}';
+    const wave = '\u{1F44B}\u{1F3FD}';
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}';
+    expect(truncateToWidth(`${flag}${wave}${family}`, 6)).toBe(`${flag}${wave}${family}`);
+    expect(truncateToWidth(`${flag}${wave}${family}!`, 6)).toBe(`${flag}${wave}…`);
+    // CJK still counts double; a keycap emoji with VS16 is wide.
+    expect(truncateToWidth('火星基地', 5)).toBe('火星…');
+    expect(truncateToWidth('1\uFE0F\u20E3ab', 3)).toBe('1\uFE0F\u20E3…');
+  });
+
+  it('caps titles without leaving a lone surrogate', () => {
+    const title = `${'a'.repeat(118)}\u{1F600}${'b'.repeat(20)}`;
+    const hasLoneSurrogate = (text: string) =>
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text);
+    for (const scene of [
+      { ...pblScene('p'), title },
+      { ...quizScene('q', title) },
+      interactiveScene('i', title),
+      // The project title is the fallback when the scene has none.
+      pblScene('p2', { projectV2: pblProject({ title }) }),
+    ]) {
+      const entry = planPptxDeck(
+        [scene.id === 'p2' ? ({ ...scene, title: '' } as Scene) : (scene as Scene)],
+        t,
+        { linkInteractivePages: false },
+      )[0];
+      if (entry.kind !== 'placeholder') throw new Error('expected placeholder');
+      expect(hasLoneSurrogate(entry.placeholder.title)).toBe(false);
+      expect(entry.placeholder.title).toBe(`${'a'.repeat(118)}\u{1F600}…`);
+    }
   });
 
   it('upgrades a legacy project the way the classroom does', () => {

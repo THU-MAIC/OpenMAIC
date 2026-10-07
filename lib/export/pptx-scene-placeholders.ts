@@ -135,24 +135,61 @@ const MAX_PBL_MILESTONE_WIDTH = 66;
 const MAX_PBL_GOAL_WIDTH = 64;
 const MAX_TITLE_LENGTH = 120;
 
-function truncate(text: string, max: number): string {
-  const oneLine = text.replace(/\s+/g, ' ').trim();
-  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
+// ── Text truncation ──
+// Placeholder text is cut by user-perceived characters (grapheme clusters), so
+// a cut never splits an accented letter, a surrogate pair or an emoji
+// sequence.
+
+const graphemeSegmenter =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl
+    ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+    : null;
+
+/** `text` split into grapheme clusters (code points where Segmenter is missing). */
+function graphemes(text: string): string[] {
+  return graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(text), (part) => part.segment)
+    : Array.from(text);
 }
 
-/** Wide (CJK, full-width) characters take about two Latin character widths. */
-const WIDE_CHAR =
-  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+/** Cut `text` to at most `max` characters, the last one being "…". */
+export function truncate(text: string, max: number): string {
+  const clusters = graphemes(oneLine(text));
+  return clusters.length > max ? `${clusters.slice(0, max - 1).join('')}…` : clusters.join('');
+}
+
+/** East Asian Wide and Fullwidth characters (CJK, Hangul, full-width forms). */
+const WIDE_CHAR = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{20000}-\u{3fffd}]/u;
+/** Emoji shown as pictures: default emoji presentation, flags, keycaps. */
+const EMOJI_CLUSTER = /\p{Emoji_Presentation}|\p{Regional_Indicator}|️/u;
+
+/**
+ * Display width of one grapheme cluster in Latin character widths: 2 for wide
+ * characters and emoji (including ZWJ, skin-tone and flag sequences), else 1.
+ * Combining marks, joiners and variation selectors add nothing of their own:
+ * they are part of the cluster they modify.
+ */
+function clusterWidth(cluster: string): number {
+  if (WIDE_CHAR.test(cluster) || EMOJI_CLUSTER.test(cluster)) return 2;
+  if (cluster.includes('‍') && /\p{Extended_Pictographic}/u.test(cluster)) return 2;
+  return 1;
+}
 
 /** Cut `text` to one line of about `maxWidth` Latin character widths. */
 export function truncateToWidth(text: string, maxWidth: number): string {
-  const chars = Array.from(text.replace(/\s+/g, ' ').trim());
+  const clusters = graphemes(oneLine(text));
+  const widths = clusters.map(clusterWidth);
+  if (widths.reduce((sum, w) => sum + w, 0) <= maxWidth) return clusters.join('');
+  // Room for the ellipsis (width 1) is reserved before taking clusters.
   let width = 0;
-  for (let i = 0; i < chars.length; i++) {
-    width += WIDE_CHAR.test(chars[i]) ? 2 : 1;
-    if (width > maxWidth) return `${chars.slice(0, Math.max(i - 1, 0)).join('')}…`;
+  let count = 0;
+  while (count < clusters.length && width + widths[count] <= maxWidth - 1) {
+    width += widths[count];
+    count++;
   }
-  return chars.join('');
+  return `${clusters.slice(0, count).join('')}…`;
 }
 
 const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
