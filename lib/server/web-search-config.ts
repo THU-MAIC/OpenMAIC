@@ -21,6 +21,7 @@ import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/type
 const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
   tavily: ['https://api.tavily.com', 'https://api.tavily.com/search'],
   exa: ['https://api.exa.ai', 'https://api.exa.ai/search'],
+  firecrawl: ['https://api.firecrawl.dev', 'https://api.firecrawl.dev/v2/search'],
   bocha: [
     'https://api.bocha.cn',
     'https://api.bocha.cn/v1',

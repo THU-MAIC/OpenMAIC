@@ -96,7 +96,7 @@ const MEDIA_DEFAULTS: ReadonlyArray<[Section, SlotId]> = [
 ];
 
 /** The order the server preferred web search providers in (with a key). */
-const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude'];
+const WEB_SEARCH_PRIORITY = ['tavily', 'exa', 'bocha', 'baidu', 'minimax', 'claude', 'firecrawl'];
 
 /**
  * The document services the browser switched to when the server configured

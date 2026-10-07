@@ -670,7 +670,7 @@ ALIDOCMIND_BASE_URL=       # تجاوز اختياري
 
 ### البحث عبر الإنترنت
 
-اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+اضبط موفري البحث Tavily، Exa، Firecrawl، Bocha، Brave، Baidu، SearXNG أو MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -678,6 +678,9 @@ TAVILY_BASE_URL=           # تجاوز اختياري
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # تجاوز اختياري
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # تجاوز اختياري
@@ -738,6 +741,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```

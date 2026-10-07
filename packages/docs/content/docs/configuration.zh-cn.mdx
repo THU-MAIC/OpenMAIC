@@ -670,7 +670,7 @@ AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPE
 
 ### 联网搜索
 
-配置 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+配置 Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
@@ -678,6 +678,9 @@ TAVILY_BASE_URL=           # 可选覆盖
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 可选覆盖
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # 可选覆盖
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 可选覆盖
@@ -738,6 +741,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```

@@ -135,6 +135,15 @@ describe('translateLegacyConfig: media defaults', () => {
     expect(resolveSlot('webSearch', layers)).toMatchObject({ registryId: 'exa', apiKey: 'e' });
   });
 
+  it('keeps the earlier web search providers ahead of Firecrawl', () => {
+    const withClaude = translateLegacyConfig(
+      server({ webSearch: { firecrawl: { apiKey: 'f' }, claude: { apiKey: 'c' } } }),
+    );
+    expect(withClaude.config.slots?.webSearch).toBe('claude');
+    const alone = translateLegacyConfig(server({ webSearch: { firecrawl: { apiKey: 'f' } } }));
+    expect(alone.config.slots?.webSearch).toBe('firecrawl');
+  });
+
   it('prefers DEFAULT_IMAGE_PROVIDER when it names a usable image provider', () => {
     const images = server({
       image: { seedream: { apiKey: 'sk' }, 'qwen-image': { apiKey: 'sk' } },

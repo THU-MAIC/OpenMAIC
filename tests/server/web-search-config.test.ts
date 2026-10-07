@@ -8,6 +8,8 @@ describe('server web search config', () => {
     delete process.env.TAVILY_BASE_URL;
     delete process.env.EXA_API_KEY;
     delete process.env.EXA_BASE_URL;
+    delete process.env.FIRECRAWL_API_KEY;
+    delete process.env.FIRECRAWL_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BRAVE_API_KEY;
@@ -88,6 +90,43 @@ describe('server web search config', () => {
       providerId: 'exa',
       apiKey: 'exa-server-key',
       baseUrl: 'https://proxy.example.com/exa',
+    });
+  });
+
+  it('allows official Firecrawl client base URLs and resolves client credentials', async () => {
+    const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
+      await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveSafeClientWebSearchBaseUrl('firecrawl', 'https://api.firecrawl.dev/v2/search'),
+    ).toBe('https://api.firecrawl.dev/v2/search');
+    expect(() => resolveSafeClientWebSearchBaseUrl('firecrawl', 'http://127.0.0.1:3002')).toThrow(
+      'Unsupported Firecrawl base URL',
+    );
+    expect(
+      await resolveClassroomWebSearchConfig(null, {
+        webSearchProviderId: 'firecrawl',
+        webSearchApiKey: 'fc-client-key',
+        webSearchBaseUrl: 'https://api.firecrawl.dev',
+      }),
+    ).toEqual({
+      providerId: 'firecrawl',
+      apiKey: 'fc-client-key',
+      baseUrl: 'https://api.firecrawl.dev',
+    });
+  });
+
+  it('resolves Firecrawl classroom config from server environment variables', async () => {
+    vi.stubEnv('FIRECRAWL_API_KEY', 'fc-server-key');
+    vi.stubEnv('FIRECRAWL_BASE_URL', 'https://firecrawl.internal');
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(
+      await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'firecrawl' }),
+    ).toEqual({
+      providerId: 'firecrawl',
+      apiKey: 'fc-server-key',
+      baseUrl: 'https://firecrawl.internal',
     });
   });
 

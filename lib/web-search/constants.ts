@@ -35,6 +35,13 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.exa.ai',
     endpointPath: '/search',
   },
+  firecrawl: {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.firecrawl.dev',
+    endpointPath: '/v2/search',
+  },
   bocha: {
     id: 'bocha',
     name: 'Bocha',

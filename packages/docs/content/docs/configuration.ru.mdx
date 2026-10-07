@@ -670,7 +670,7 @@ AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JP
 
 ### Поисковые провайдеры
 
-Настройте Tavily, Exa, Bocha, Brave, Baidu, SearXNG или MiniMax:
+Настройте Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG или MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -678,6 +678,9 @@ TAVILY_BASE_URL=           # опциональное переопределен
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # опциональное переопределение
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # опциональное переопределение
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # опциональное переопределение
@@ -738,6 +741,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
