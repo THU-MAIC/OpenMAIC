@@ -34,7 +34,7 @@ const LOCAL_NETWORK_BLOCK_MESSAGE =
 
 /** Opt-in-governed refusal when the caller forced the strict public policy. */
 const CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE =
-  'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. Configure the provider in server-providers.yml so the endpoint is operator-managed.';
+  'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. The endpoint must be a provider configured by the operator in openmaic.yml.';
 
 export class UnsafeNetworkTargetError extends Error {
   constructor(message: string) {
@@ -621,7 +621,7 @@ export async function validateClientBaseUrl(url: string): Promise<string | null>
  * policy for a client-supplied BYOK endpoint: metadata, private, loopback and
  * CGNAT targets are always refused. Opt-in-governed refusals say the flag does
  * not unlock this path; the supported alternative is an operator-managed
- * provider in `server-providers.yml`.
+ * provider in `openmaic.yml` (under `providers:`).
  */
 export async function validatePublicUrlForSSRF(url: string): Promise<string | null> {
   return validateUrlForSSRFWithPolicy(url, {
