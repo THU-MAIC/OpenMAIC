@@ -157,7 +157,11 @@
       "quizQuestionCount": "Perguntas: {{count}}",
       "openOnline": "Abrir on-line",
       "openOffline": "Abrir cópia off-line",
-      "offlineHint": "funciona se esta apresentação ficar na pasta extraída do pacote de recursos"
+      "offlineHint": "funciona se esta apresentação ficar na pasta extraída do pacote de recursos",
+      "pblLabel": "Projeto",
+      "pblDesc": "Atividade baseada em projeto com papéis de IA. Abra on-line ou escaneie o QR code.",
+      "pblGoal": "Objetivo: {{goal}}",
+      "pblMilestoneCount": "Marcos: {{count}}"
     }
   },
   "import": {

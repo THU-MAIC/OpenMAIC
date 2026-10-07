@@ -157,7 +157,11 @@
       "quizQuestionCount": "Questions: {{count}}",
       "openOnline": "Open online",
       "openOffline": "Open offline copy",
-      "offlineHint": "works when this deck stays in the extracted Resource Pack folder"
+      "offlineHint": "works when this deck stays in the extracted Resource Pack folder",
+      "pblLabel": "Project",
+      "pblDesc": "Project-based activity with AI roles. Open it online or scan the QR code.",
+      "pblGoal": "Goal: {{goal}}",
+      "pblMilestoneCount": "Milestones: {{count}}"
     }
   },
   "import": {

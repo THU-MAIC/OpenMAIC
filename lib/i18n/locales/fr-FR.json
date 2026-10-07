@@ -157,7 +157,11 @@
       "quizQuestionCount": "Questions : {{count}}",
       "openOnline": "Ouvrir en ligne",
       "openOffline": "Ouvrir la copie hors ligne",
-      "offlineHint": "fonctionne si cette présentation reste dans le dossier extrait du pack de ressources"
+      "offlineHint": "fonctionne si cette présentation reste dans le dossier extrait du pack de ressources",
+      "pblLabel": "Projet",
+      "pblDesc": "Activité par projet avec des rôles IA. Ouvrez-la en ligne ou scannez le QR code.",
+      "pblGoal": "Objectif : {{goal}}",
+      "pblMilestoneCount": "Étapes : {{count}}"
     }
   },
   "import": {

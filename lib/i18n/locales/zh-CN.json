@@ -157,7 +157,11 @@
       "quizQuestionCount": "题目数：{{count}}",
       "openOnline": "在线打开",
       "openOffline": "打开离线副本",
-      "offlineHint": "需将本 PPT 保留在解压后的教学资源包文件夹中"
+      "offlineHint": "需将本 PPT 保留在解压后的教学资源包文件夹中",
+      "pblLabel": "项目式学习",
+      "pblDesc": "由 AI 角色参与的项目式学习活动。点击按钮在线打开，或扫描二维码。",
+      "pblGoal": "目标：{{goal}}",
+      "pblMilestoneCount": "里程碑数：{{count}}"
     }
   },
   "import": {

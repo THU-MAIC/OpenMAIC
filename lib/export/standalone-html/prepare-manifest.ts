@@ -26,7 +26,7 @@
 import type { PPTElement, Slide } from '@openmaic/dsl';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import { sanitizeSlideRichText } from './rich-text';
-import { resolvePBLContent, upgradeLegacyPBLConfigToProjectV2 } from '@/lib/pbl/legacy/read';
+import { pblBriefing } from '../pbl-briefing';
 import type { PBLContent, SlideContent } from '@/lib/types/stage';
 import type { ClassroomManifest, ManifestScene } from '../classroom-zip-types';
 import { orderManifestScenes } from './order-scenes';
@@ -181,52 +181,14 @@ function prepareSlide(
   };
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 /**
- * The PBL scene as the classroom shows it, reduced to its briefing. Authority
- * between the current and the legacy representation is decided exactly as the
- * classroom decides it (`resolvePBLContent`); a legacy project is upgraded the
- * same way the classroom upgrades it. Runtime state (threads, submissions,
- * evaluations), role prompts and the legacy chat never reach the file.
+ * The PBL scene reduced to its briefing (see `pblBriefing`): the player reads
+ * only these fields.
  */
 function preparePblContent(content: PBLContent): PBLContent {
-  const resolved = resolvePBLContent(content);
-  const project =
-    resolved.kind === 'v2'
-      ? resolved.projectV2
-      : resolved.kind === 'legacy'
-        ? upgradeLegacyPBLConfigToProjectV2(resolved.projectConfig)
-        : undefined;
-  if (!project) return { type: 'pbl' };
-  const scenario = isRecord(project.scenario) ? project.scenario : undefined;
-  const briefing = {
-    title: project.title,
-    description: project.description,
-    learningObjective: project.learningObjective,
-    scenario: scenario && {
-      setting: scenario.setting,
-      goal: scenario.goal,
-      learnerRole: scenario.learnerRole,
-      characters: (scenario.characters ?? [])
-        .filter(isRecord)
-        .map((character) => ({ name: character.name, persona: character.persona })),
-    },
-    milestones: (project.milestones ?? []).filter(isRecord).map((milestone) => ({
-      title: milestone.title,
-      description: milestone.description,
-      order: milestone.order,
-      microtasks: (milestone.microtasks ?? []).filter(isRecord).map((task) => ({
-        title: task.title,
-        description: task.description,
-        learnerBrief: task.learnerBrief,
-        order: task.order,
-      })),
-    })),
-  };
-  // A briefing projection, not a runnable project: the player reads only
-  // these fields.
+  const briefing = pblBriefing(content);
+  if (!briefing) return { type: 'pbl' };
+  // A briefing projection, not a runnable project.
   return { type: 'pbl', projectV2: briefing as unknown as PBLContent['projectV2'] };
 }
 

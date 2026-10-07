@@ -157,7 +157,11 @@
       "quizQuestionCount": "問題数：{{count}}",
       "openOnline": "オンラインで開く",
       "openOffline": "オフライン版を開く",
-      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します"
+      "offlineHint": "このスライドを展開したリソースパックのフォルダー内に置いた場合に動作します",
+      "pblLabel": "プロジェクト",
+      "pblDesc": "AI ロールと進めるプロジェクト型学習です。オンラインで開くか、QR コードを読み取ってください。",
+      "pblGoal": "目標：{{goal}}",
+      "pblMilestoneCount": "マイルストーン数：{{count}}"
     }
   },
   "import": {

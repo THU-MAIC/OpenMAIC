@@ -1,8 +1,9 @@
 import type pptxgen from 'pptxgenjs';
 import tinycolor from 'tinycolor2';
 import type { Slide } from '@openmaic/dsl';
-import type { Scene } from '@/lib/types/stage';
+import type { PBLContent, Scene } from '@/lib/types/stage';
 import { classroomSceneUrl } from '@/lib/classroom/scene-deep-link';
+import { pblBriefing, type PblBriefing } from './pbl-briefing';
 
 // ── Interactive page naming (shared by the Resource Pack ZIP and PPTX links) ──
 
@@ -74,7 +75,7 @@ export function relativeHyperlinkTarget(path: string): string {
 
 export interface ScenePlaceholder {
   scene: Scene;
-  sceneType: 'interactive' | 'quiz';
+  sceneType: 'interactive' | 'quiz' | 'pbl';
   /** Localized scene-type label, e.g. "Interactive". */
   typeLabel: string;
   title: string;
@@ -86,9 +87,14 @@ export interface ScenePlaceholder {
    * relative link; `path` is the readable pack path.
    */
   offline?: { label: string; hint: string; target: string; path: string };
-  /** Extra summary line, e.g. the quiz question count. */
+  /** Plain line above `meta`, e.g. a PBL project's goal. */
+  lead?: string;
+  /** Bold summary line, e.g. the quiz question or PBL milestone count. */
   meta?: string;
-  /** Plain-text list items, e.g. quiz question stems (never answers). */
+  /**
+   * Plain-text list items: quiz question stems (never answers) or PBL
+   * milestone titles.
+   */
   items?: string[];
 }
 
@@ -117,31 +123,64 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 const MAX_QUIZ_ITEMS = 4;
 const MAX_QUIZ_ITEM_LENGTH = 90;
+const MAX_PBL_MILESTONES = 4;
+// PBL lines are single lines in the left column, so they are cut by display
+// width (a CJK character counts twice) rather than by character count.
+const MAX_PBL_MILESTONE_WIDTH = 66;
+const MAX_PBL_GOAL_WIDTH = 64;
+const MAX_TITLE_LENGTH = 120;
 
 function truncate(text: string, max: number): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
   return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
 }
 
+/** Wide (CJK, full-width) characters take about two Latin character widths. */
+const WIDE_CHAR =
+  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+
+/** Cut `text` to one line of about `maxWidth` Latin character widths. */
+export function truncateToWidth(text: string, maxWidth: number): string {
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim());
+  let width = 0;
+  for (let i = 0; i < chars.length; i++) {
+    width += WIDE_CHAR.test(chars[i]) ? 2 : 1;
+    if (width > maxWidth) return `${chars.slice(0, Math.max(i - 1, 0)).join('')}…`;
+  }
+  return chars.join('');
+}
+
+const asText = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/** A PBL scene's briefing, or null when its project is missing or unreadable. */
+function readPblBriefing(content: PBLContent): PblBriefing | null {
+  try {
+    return pblBriefing(content);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The scenes that get a PPTX slide, in lesson order: slide scenes, quiz scenes
- * and interactive scenes that ship an HTML page. Export is possible exactly
- * when this list is non-empty; `planPptxDeck` lays out the same list.
+ * The scenes that get a PPTX slide, in lesson order: slide, quiz and PBL
+ * scenes, and interactive scenes that ship an HTML page. Export is possible
+ * exactly when this list is non-empty; `planPptxDeck` lays out the same list.
  */
 export function pptxDeckScenes(scenes: readonly Scene[]): Scene[] {
   return scenes.filter(
     (scene) =>
       scene.content.type === 'slide' ||
       scene.content.type === 'quiz' ||
+      scene.content.type === 'pbl' ||
       (scene.content.type === 'interactive' && !!scene.content.html),
   );
 }
 
 /**
- * Lay out the PPTX in lesson order. Slide scenes map to their slide; quiz and
- * interactive scenes get a placeholder slide; PBL scenes are left out.
- * Interactive scenes without an html payload are left out too, matching the
- * Resource Pack, which has no page for them.
+ * Lay out the PPTX in lesson order. Slide scenes map to their slide; quiz,
+ * interactive and PBL scenes get a placeholder slide. Interactive scenes
+ * without an html payload are left out, matching the Resource Pack, which has
+ * no page for them.
  */
 export function planPptxDeck(
   scenes: readonly Scene[],
@@ -162,7 +201,7 @@ export function planPptxDeck(
 
   for (const scene of pptxDeckScenes(scenes)) {
     const content = scene.content;
-    const title = normalizeSceneTitle(scene.title);
+    const title = truncate(normalizeSceneTitle(scene.title), MAX_TITLE_LENGTH);
     if (content.type === 'slide') {
       deck.push({ kind: 'slide', slideIndex: slideIndex++ });
     } else if (content.type === 'interactive') {
@@ -206,6 +245,38 @@ export function planPptxDeck(
           description: t('export.placeholder.quizDesc'),
           online: onlineLink(scene),
           meta: t('export.placeholder.quizQuestionCount', { count: questions.length }),
+          items,
+        },
+      });
+    } else if (content.type === 'pbl') {
+      // Only the briefing reaches the slide: title, goal and milestone titles.
+      // Role prompts, evaluation data and chat history never do.
+      const typeLabel = t('export.placeholder.pblLabel');
+      const briefing = readPblBriefing(content);
+      const goal = asText(briefing?.learningObjective) || asText(briefing?.scenario?.goal);
+      const milestones = (briefing?.milestones ?? [])
+        .slice()
+        .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+      const items = milestones
+        .slice(0, MAX_PBL_MILESTONES)
+        .map((milestone) => truncateToWidth(asText(milestone.title), MAX_PBL_MILESTONE_WIDTH))
+        .filter(Boolean);
+      // No "…" line for more milestones: the count above says how many.
+      deck.push({
+        kind: 'placeholder',
+        placeholder: {
+          scene,
+          sceneType: 'pbl',
+          typeLabel,
+          title: title || truncate(asText(briefing?.title), MAX_TITLE_LENGTH) || typeLabel,
+          description: t('export.placeholder.pblDesc'),
+          online: onlineLink(scene),
+          lead: goal
+            ? t('export.placeholder.pblGoal', { goal: truncateToWidth(goal, MAX_PBL_GOAL_WIDTH) })
+            : undefined,
+          meta: milestones.length
+            ? t('export.placeholder.pblMilestoneCount', { count: milestones.length })
+            : undefined,
           items,
         },
       });
@@ -379,20 +450,37 @@ export function renderScenePlaceholder(
     transparency: 20,
   });
 
-  let y = 300 * u;
+  // A slide with a lead line (PBL: goal, milestone count, milestones) packs
+  // its summary tighter so four list items still fit above the button.
+  const compact = !!placeholder.lead;
+  const listFontSize = compact ? 15 : 16;
+  let y = (compact ? 288 : 300) * u;
+  if (placeholder.lead) {
+    pptxSlide.addText(placeholder.lead, {
+      ...font,
+      x: inch(left),
+      y: inch(y),
+      w: inch(width),
+      h: inch(22 * u),
+      fontSize: pt(15 * u),
+      margin: 0,
+      valign: 'middle',
+    });
+    y += 24 * u;
+  }
   if (placeholder.meta) {
     pptxSlide.addText(placeholder.meta, {
       ...font,
       x: inch(left),
       y: inch(y),
       w: inch(width),
-      h: inch(30 * u),
-      fontSize: pt(18 * u),
+      h: inch((compact ? 22 : 30) * u),
+      fontSize: pt((compact ? 16 : 18) * u),
       bold: true,
       margin: 0,
       valign: 'middle',
     });
-    y += 38 * u;
+    y += (compact ? 26 : 38) * u;
   }
 
   if (placeholder.items?.length) {
@@ -409,11 +497,11 @@ export function renderScenePlaceholder(
         x: inch(left),
         y: inch(y),
         w: inch(width),
-        h: inch(Math.max(actionsTop - y - 12 * u, 30 * u)),
-        fontSize: pt(16 * u),
+        h: inch(Math.max(actionsTop - y - (compact ? 6 : 12) * u, 30 * u)),
+        fontSize: pt(listFontSize * u),
         margin: 0,
         valign: 'top',
-        paraSpaceBefore: pt(4 * u),
+        paraSpaceBefore: pt((compact ? 2 : 4) * u),
         fit: 'shrink',
       },
     );

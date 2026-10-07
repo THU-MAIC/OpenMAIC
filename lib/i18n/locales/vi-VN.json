@@ -157,7 +157,11 @@
       "quizQuestionCount": "Số câu hỏi: {{count}}",
       "openOnline": "Mở trực tuyến",
       "openOffline": "Mở bản ngoại tuyến",
-      "offlineHint": "hoạt động khi bản trình chiếu nằm trong thư mục gói tài nguyên đã giải nén"
+      "offlineHint": "hoạt động khi bản trình chiếu nằm trong thư mục gói tài nguyên đã giải nén",
+      "pblLabel": "Dự án",
+      "pblDesc": "Hoạt động học theo dự án với các vai AI. Mở trực tuyến hoặc quét mã QR.",
+      "pblGoal": "Mục tiêu: {{goal}}",
+      "pblMilestoneCount": "Số mốc: {{count}}"
     }
   },
   "import": {

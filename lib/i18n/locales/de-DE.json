@@ -157,7 +157,11 @@
       "quizQuestionCount": "Fragen: {{count}}",
       "openOnline": "Online öffnen",
       "openOffline": "Offline-Kopie öffnen",
-      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt"
+      "offlineHint": "funktioniert, wenn diese Präsentation im entpackten Ressourcenpaket-Ordner bleibt",
+      "pblLabel": "Projekt",
+      "pblDesc": "Projektbasierte Aktivität mit KI-Rollen. Online öffnen oder den QR-Code scannen.",
+      "pblGoal": "Ziel: {{goal}}",
+      "pblMilestoneCount": "Meilensteine: {{count}}"
     }
   },
   "import": {

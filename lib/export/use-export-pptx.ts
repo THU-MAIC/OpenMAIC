@@ -1280,10 +1280,10 @@ export async function buildPptxBlob(
 // without a React/jsdom harness. The hook stays the only runtime caller.
 //
 // `getPptxBlob` is invoked whenever the lesson has a scene that gets a PPTX
-// slide (`pptxDeckScenes`): a slide, a quiz or an interactive page. Every
-// shipped HTML page has a placeholder slide, so a non-empty pack always holds
-// a PPTX. Returns `empty: true` (and a null blob) when there is nothing to
-// ship, e.g. a PBL-only lesson. The HTML page paths come from
+// slide (`pptxDeckScenes`): a slide, a quiz, a PBL project or an interactive
+// page. Every shipped HTML page has a placeholder slide, so a non-empty pack
+// always holds a PPTX. Returns `empty: true` (and a null blob) when there is
+// nothing to ship. The HTML page paths come from
 // `listInteractivePages`, the same list the PPTX placeholder links use.
 
 export interface ResourcePackResult {
@@ -1313,7 +1313,7 @@ export async function buildResourcePackZip(
   const zip = new JSZip();
   const failedAssetUrls: string[] = [];
 
-  // Nothing to ship: no slide, quiz or interactive page (e.g. PBL only).
+  // Nothing to ship: no slide, quiz, PBL project or interactive page.
   if (pptxDeckScenes(scenes).length === 0) {
     return { blob: null, empty: true, failedAssetUrls };
   }
@@ -1366,8 +1366,8 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
 
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
-  // Slides, quizzes and interactive pages all become PPTX slides; a lesson
-  // without any of them (e.g. PBL only) has nothing to put in a PPTX.
+  // Slides, quizzes, PBL projects and interactive pages all become PPTX
+  // slides; a lesson without any of them has nothing to put in a PPTX.
   const hasPptxContent = pptxDeckScenes(scenes).length > 0;
 
   // The online classroom page the placeholder slides link to (button + QR

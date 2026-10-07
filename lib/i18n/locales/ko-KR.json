@@ -157,7 +157,11 @@
       "quizQuestionCount": "문항 수: {{count}}",
       "openOnline": "온라인으로 열기",
       "openOffline": "오프라인 사본 열기",
-      "offlineHint": "이 프레젠테이션이 압축 해제한 리소스 팩 폴더 안에 있을 때 작동합니다"
+      "offlineHint": "이 프레젠테이션이 압축 해제한 리소스 팩 폴더 안에 있을 때 작동합니다",
+      "pblLabel": "프로젝트",
+      "pblDesc": "AI 역할과 함께하는 프로젝트 기반 활동입니다. 온라인으로 열거나 QR 코드를 스캔하세요.",
+      "pblGoal": "목표: {{goal}}",
+      "pblMilestoneCount": "마일스톤 수: {{count}}"
     }
   },
   "import": {
