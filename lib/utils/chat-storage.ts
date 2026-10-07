@@ -200,13 +200,29 @@ function withPartitionLocks<T>(
 ): Promise<T> {
   if (typeof navigator !== 'undefined' && navigator.locks) {
     const locks = navigator.locks;
-    return locks.request<Promise<T>>(
+    // iPadOS exposes navigator.locks but the nested partition request can
+    // reject at runtime (WebKit permission/backgrounding quirks). The
+    // API-absence gate below never engages there, so every stage flush would
+    // fail forever (#1800). When the lock layer rejects BEFORE the protected
+    // work started, degrade to the lock-free best-effort path instead of
+    // surfacing the error: the write is revision-fenced, flush failures are
+    // retried by the stage store, and isolated-writes mode is the documented
+    // no-Web-Locks fallback — a rare cross-realm LWW race beats a permanently
+    // broken autosave. If the work itself already ran and rejected, the error
+    // is preserved untouched so business failures are never masked.
+    let workStarted = false;
+    const locked = locks.request<Promise<T>>(
       chatStoragePartitionLockName(crossRealmKey),
       () =>
-        locks.request<Promise<T>>(chatStoragePartitionLockName(key), () =>
-          work(false),
-        ) as unknown as Promise<T>,
+        locks.request<Promise<T>>(chatStoragePartitionLockName(key), () => {
+          workStarted = true;
+          return work(false);
+        }) as unknown as Promise<T>,
     ) as unknown as Promise<T>;
+    return locked.catch((error) => {
+      if (workStarted) throw error;
+      return work(true);
+    });
   }
   if (requiresCrossRealmLock) {
     throw new ChatStorageLockUnavailableError(
