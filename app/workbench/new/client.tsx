@@ -109,7 +109,7 @@ export function WorkbenchLaunchBridge() {
 
   if (error) {
     return (
-      <main className="flex min-h-screen w-full flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+      <main className="flex min-h-app w-full flex-col items-center justify-center gap-4 bg-background px-6 text-center">
         <p className="text-sm text-destructive">{error}</p>
         <button
           type="button"
@@ -129,7 +129,7 @@ export function WorkbenchLaunchBridge() {
   }
 
   return (
-    <main className="flex min-h-screen w-full items-center justify-center bg-background">
+    <main className="flex min-h-app w-full items-center justify-center bg-background">
       <Loader2
         className="size-6 animate-spin text-muted-foreground motion-reduce:animate-none"
         aria-label={t('workbench.common.loading')}

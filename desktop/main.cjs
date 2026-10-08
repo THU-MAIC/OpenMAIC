@@ -116,6 +116,13 @@ function createWindow(url) {
     show: false,
     backgroundColor: '#ffffff',
     title: 'OpenMAIC',
+    // The page paints the 32px title bar; Electron keeps the native controls.
+    titleBarStyle: 'hidden',
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 12, y: 9 } }
+      : {
+          titleBarOverlay: { color: '#00000000', symbolColor: '#64748b', height: 32 },
+        }),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -162,6 +169,7 @@ async function boot() {
 
   try {
     const url = isDev ? DEV_URL : await startBundledServer();
+    localUrl = url;
     installDesktopSyncCredential(url);
     createWindow(url);
   } catch (error) {

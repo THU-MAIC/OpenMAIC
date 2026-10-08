@@ -417,9 +417,9 @@ function PBLV2WorkspaceLayer({
   };
   const fullscreenStyle = {
     left: 0,
-    top: 0,
+    top: 'var(--desktop-titlebar-height)',
     width: '100vw',
-    height: '100dvh',
+    height: 'var(--app-viewport-height)',
     borderRadius: 0,
   };
   const animateFrame = isToggle || autoExpand;

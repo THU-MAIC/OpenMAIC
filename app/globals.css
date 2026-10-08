@@ -61,6 +61,8 @@
 }
 
 :root {
+  --desktop-titlebar-height: 0px;
+  --app-viewport-height: calc(100dvh - var(--desktop-titlebar-height));
   /* Inter is loaded from @fontsource in app/layout.tsx, which declares one
      @font-face per unicode subset. Previously this came from next/font wrapping
      a single latin-only file, which left Cyrillic and Vietnamese text to OS
@@ -162,6 +164,65 @@
     margin-right: 0 !important;
   }
 }
+/* Keep document scrolling and viewport-based anchors intact. Only desktop
+   reserves the in-page title bar, and only real overflow gets a scrollbar. */
+html[data-openmaic-desktop] {
+  --desktop-titlebar-height: 32px;
+  scrollbar-gutter: auto;
+  overflow-y: auto;
+  scroll-padding-top: var(--desktop-titlebar-height);
+}
+
+html[data-openmaic-desktop] body {
+  padding-top: var(--desktop-titlebar-height);
+}
+
+/* Element fullscreen has its own viewport and does not contain the title bar. */
+html[data-openmaic-desktop]:fullscreen,
+html[data-openmaic-desktop]:has(:fullscreen) {
+  --desktop-titlebar-height: 0px;
+}
+
+.desktop-titlebar {
+  display: none;
+}
+
+html[data-openmaic-desktop] .desktop-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  height: var(--desktop-titlebar-height);
+  padding: 0 140px 0 16px;
+  overflow: hidden;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+html[data-openmaic-desktop='darwin'] .desktop-titlebar {
+  padding-left: 84px;
+  padding-right: 16px;
+}
+
+html.dark[data-openmaic-desktop] .desktop-titlebar {
+  background: #020617;
+  color: #94a3b8;
+}
+
+@utility h-app {
+  height: var(--app-viewport-height);
+}
+
+@utility min-h-app {
+  min-height: var(--app-viewport-height);
+}
+
 /* ProseMirror Editor Styles */
 .prosemirror-editor {
   cursor: text;

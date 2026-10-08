@@ -764,7 +764,7 @@ export function Roundtable({
         {/* Click-outside backdrop to dismiss input/voice */}
         {(isInputOpen || isVoiceOpen) && (
           <div
-            className="fixed top-0 left-0 right-0 bottom-14 z-[45] pointer-events-auto"
+            className="fixed top-[var(--desktop-titlebar-height)] left-0 right-0 bottom-14 z-[45] pointer-events-auto"
             onClick={() => {
               setIsInputOpen(false);
               setIsVoiceOpen(false);

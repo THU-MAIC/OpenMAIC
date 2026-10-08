@@ -39,6 +39,10 @@ import '@fontsource-variable/inter';
  */
 const THEME_INIT_SCRIPT = `try{var t=localStorage.getItem('theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`;
 
+// Electron's isolated preload exposes this flag before any page scripts run.
+// Set it before paint so the title bar never overlaps a full-height route.
+const DESKTOP_INIT_SCRIPT = `if(window.openmaicDesktop?.isDesktop)document.documentElement.dataset.openmaicDesktop=window.openmaicDesktop.platform`;
+
 export const metadata: Metadata = {
   title: 'OpenMAIC',
   description:
@@ -54,11 +58,15 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: DESKTOP_INIT_SCRIPT }} />
       </head>
       <body
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <div className="desktop-titlebar" aria-hidden="true">
+          OpenMAIC
+        </div>
         <ThemeProvider>
           <I18nProvider>
             <ModelSettingsInit />

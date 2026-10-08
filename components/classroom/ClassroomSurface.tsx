@@ -299,7 +299,7 @@ export function ClassroomSurface({
                 // to content, and the classroom chrome (which layers with
                 // `absolute inset-0`) then has nothing to fill.
                 'flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden'
-              : 'h-screen flex flex-col overflow-hidden'
+              : 'h-app flex flex-col overflow-hidden'
           }
         >
           {view === 'loading' ? (

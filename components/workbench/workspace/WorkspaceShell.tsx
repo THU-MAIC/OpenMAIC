@@ -1032,7 +1032,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       data-ws-layout={
         render.home ? 'home' : `${chatOpen ? 'chat' : ''}${classroomOpen ? 'classroom' : ''}`
       }
-      className="ws-root flex h-[100dvh] w-full overflow-hidden"
+      className="ws-root flex h-app w-full overflow-hidden"
       // The default only — the persisted width is applied to this same
       // variable in a layout effect, so server and client markup agree.
       style={{ ['--ws-rail-w' as string]: `${RAIL_WIDTH_DEFAULT}px` }}
