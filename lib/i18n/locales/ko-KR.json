@@ -1127,6 +1127,7 @@
     "materialTooLarge": "{{name}} 파일이 너무 큽니다. 자료는 최대 {{size}}까지 가능합니다."
   },
   "generation": {
+    "narrationWarning": "강의 생성 중 {{count}}개의 음성이 저장되지 않았습니다. 저장 공간과 음성 설정을 확인한 후 타임라인에서 누락된 내레이션을 다시 생성하세요.",
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
     "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",

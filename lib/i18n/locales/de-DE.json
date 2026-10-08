@@ -1127,6 +1127,7 @@
     "materialTooLarge": "{{name}} ist zu groß: Ein Material darf höchstens {{size}} groß sein."
   },
   "generation": {
+    "narrationWarning": "Bei der Kurserstellung blieben {{count}} Sprachabschnitte ohne Audio. Prüfen Sie Speicherplatz und Spracheinstellungen und erzeugen Sie die fehlende Vertonung in der Zeitleiste erneut.",
     "pdfLoadFailed": "PDF-Datei konnte nicht geladen werden. Bitte versuche es erneut.",
     "pdfParseFailed": "PDF konnte nicht verarbeitet werden",
     "courseMaterialLoadFailed": "Kursmaterial konnte nicht geladen werden. Bitte versuche es erneut.",

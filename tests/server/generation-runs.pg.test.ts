@@ -1477,6 +1477,55 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
   });
 
+  it('reports committed skipped narration in scene events and the owner snapshot', async () => {
+    const base = fakeServices({ research: async () => null });
+    let clips = 0;
+    const { services } = fakeServices({
+      research: async () => null,
+      // The narration service returns null when asset storage refuses a clip.
+      narrateClip: async (owner, input, ctx) =>
+        ++clips === 1 ? base.services.narrateClip(owner, input, ctx) : null,
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('completed');
+    const stored = (await readGenerationRun(run.id, OWNER))!;
+    expect(stored.narrationUnvoiced).toBe(2);
+    const events = await readGenerationRunEvents(run.id, 0);
+    expect(
+      events
+        .filter((event) => event.type === 'scene_ready')
+        .map((event) => event.data.narrationUnvoiced),
+    ).toEqual([0, 1, 2]);
+    const route = await import('@/app/api/generation-runs/[id]/route');
+    const response = await route.GET(
+      new NextRequest(`http://localhost/api/generation-runs/${run.id}`, {
+        headers: cookie(OWNER_COOKIE),
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    expect((await response.json()).run).toMatchObject({ state: 'completed', narrationUnvoiced: 2 });
+  });
+
+  it.each([false, true])(
+    'does not warn when narration is successful or disabled (disabled: %s)',
+    async (disabled) => {
+      const base = fakeServices({ research: async () => null });
+      const services = disabled
+        ? { ...base.services, narrationTarget: async () => null }
+        : base.services;
+      const run = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(run.id, services)).toBe('completed');
+      const route = await import('@/app/api/generation-runs/[id]/route');
+      const response = await route.GET(
+        new NextRequest(`http://localhost/api/generation-runs/${run.id}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: run.id }) },
+      );
+      expect((await response.json()).run.narrationUnvoiced).toBe(0);
+    },
+  );
+
   it('releases the clips of a narration attempt that failed', async () => {
     const base = fakeServices({ research: async () => null });
     let clips = 0;
@@ -1503,6 +1552,40 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       calls.releasedClips,
     ]);
     expect(entries.rows).toEqual([]);
+  });
+
+  it('does not count skipped clips from a failed attempt again after retry', async () => {
+    let failing = true;
+    const base = fakeServices({ research: async () => null });
+    const { services } = fakeServices({
+      research: async () => null,
+      sceneActions: async (owner, input, ctx) => {
+        const result = await base.services.sceneActions(owner, input, ctx);
+        if (input.outline.id === 'o1') {
+          result.scene.actions = [
+            ...result.scene.actions!,
+            { id: 'second', type: 'speech', text: 'Second line.' },
+          ] as never;
+        }
+        return result;
+      },
+      narrateClip: async (owner, input, ctx) => {
+        if (input.text === 'Say Intro') return null;
+        if (failing) throw Object.assign(new Error('voice refused'), { httpStatus: 400 });
+        return base.services.narrateClip(owner, input, ctx);
+      },
+    });
+    const run = await start(runInput({ outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('paused');
+    expect((await readGenerationRun(run.id, OWNER))!.narrationUnvoiced).toBe(0);
+    failing = false;
+    await retryGenerationRun(run.id, OWNER, { commandId: 'retry-narration-warning' });
+    expect(await drive(run.id, services)).toBe('completed');
+    expect((await readGenerationRun(run.id, OWNER))!.narrationUnvoiced).toBe(1);
+    const ready = (await readGenerationRunEvents(run.id, 0)).filter(
+      (event) => event.type === 'scene_ready',
+    );
+    expect(ready.map((event) => event.data.narrationUnvoiced)).toEqual([1, 1, 1]);
   });
 
   it('caps the run streams one owner holds', async () => {

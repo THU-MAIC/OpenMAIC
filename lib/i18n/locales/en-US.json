@@ -1127,6 +1127,7 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "narrationWarning": "During course generation, {{count}} speech clips were left without audio. Check storage capacity and voice settings, then regenerate missing narration in the timeline.",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
     "courseMaterialLoadFailed": "Failed to load course material, please try again",

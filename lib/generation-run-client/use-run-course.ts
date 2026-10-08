@@ -82,6 +82,8 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
    * the run's preview while its outline waits). Null otherwise.
    */
   generation: { status: CourseRunStatus; href: string } | null;
+  /** Skipped clips reported when this course finished generating. */
+  narrationUnvoiced: number;
   /** Retry the failed scene of a paused run. */
   retryOutline: (outlineId: string) => Promise<void>;
 } {
@@ -261,6 +263,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
             href: courseRunHref({ id: view.runId, state: view.state, stageId: input.classroomId }),
           }
         : null,
+    narrationUnvoiced: view?.state === 'completed' ? view.narrationUnvoiced : 0,
     retryOutline,
   };
 }

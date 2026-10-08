@@ -1127,6 +1127,7 @@
     "materialTooLarge": "{{name}} が大きすぎます。資料は最大 {{size}} までです。"
   },
   "generation": {
+    "narrationWarning": "コース生成時に {{count}} 件の音声が保存されませんでした。ストレージ容量と音声設定を確認し、タイムラインで不足しているナレーションを再生成してください。",
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
     "pdfParseFailed": "PDFの解析に失敗しました",
     "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",

@@ -387,3 +387,23 @@ describe('RunFollower reads', () => {
     expect(signals.at(-1)!.aborted).toBe(true);
   });
 });
+
+describe('narration warning recovery', () => {
+  it('keeps a newer event count when an older in-flight snapshot arrives', () => {
+    const current = viewFromSnapshot(generating({ seq: 25, narrationUnvoiced: 3 }));
+    const merged = mergeSnapshotView(current, generating({ seq: 24, narrationUnvoiced: 2 }));
+    expect(merged.narrationUnvoiced).toBe(3);
+  });
+
+  it('restores skipped narration after an event-log resync', async () => {
+    const { follower, sources } = setup([
+      generating(),
+      generating({ seq: 30, narrationUnvoiced: 4 }),
+    ]);
+    await follower.start();
+    sources[0]!.emit('resync', { type: 'resync' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(follower.current.view?.narrationUnvoiced).toBe(4);
+    follower.close();
+  });
+});
