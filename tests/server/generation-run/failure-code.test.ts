@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { runFailureCode } from '@/lib/server/generation/run/failure-code';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
 function providerError(statusCode: number, body?: unknown) {
   return new APICallError({
@@ -24,7 +25,7 @@ describe('run failure codes', () => {
     'project_spend_limit_exceeded',
   ])('distinguishes the explicit %s quota code from temporary throttling', (code) => {
     expect(runFailureCode(providerError(429, { error: { code } }))).toEqual({
-      errorCode: 'QUOTA_EXHAUSTED',
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
       statusCode: 429,
     });
   });
@@ -37,13 +38,27 @@ describe('run failure codes', () => {
       statusCode: 429,
       data: { error: { type: 'insufficient_quota', code: null } },
     });
-    expect(runFailureCode(error)).toEqual({ errorCode: 'QUOTA_EXHAUSTED', statusCode: 429 });
+    expect(runFailureCode(error)).toEqual({
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
+      statusCode: 429,
+    });
   });
 
-  it.each([1008, 2056])('recognizes MiniMax native quota code %s', (status_code) => {
-    expect(runFailureCode(providerError(400, { base_resp: { status_code } }))).toEqual({
-      errorCode: 'QUOTA_EXHAUSTED',
-      statusCode: 400,
+  it.each([1008, 2056])(
+    'leaves a vendor-native code (%s) to its adapter, not the shared classification',
+    (status_code) => {
+      expect(runFailureCode(providerError(400, { base_resp: { status_code } }))).toEqual({
+        errorCode: 'UPSTREAM_ERROR',
+        statusCode: 400,
+      });
+    },
+  );
+
+  it('recognizes an adapter’s quota error, thrown or as the cause of the error it throws', () => {
+    const quota = new ProviderQuotaExhaustedError('Example', 'Example API error (4711): no credit');
+    expect(runFailureCode(quota)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
+    expect(runFailureCode(new Error('Example rate limit exceeded', { cause: quota }))).toEqual({
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
     });
   });
 
@@ -54,7 +69,7 @@ describe('run failure codes', () => {
       errors: [providerError(503), providerError(429, { error: { code: 'insufficient_quota' } })],
     });
     expect(runFailureCode(new Error('generation failed', { cause: retry }))).toEqual({
-      errorCode: 'QUOTA_EXHAUSTED',
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
       statusCode: 429,
     });
   });

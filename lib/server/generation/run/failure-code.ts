@@ -23,9 +23,11 @@ export function runFailureCode(error: unknown): RunFailureCode {
   // actions routes answer it as GENERATION_FAILED.
   if (error instanceof StepRefusal) return { errorCode: 'GENERATION_FAILED' };
   const status = upstreamHttpStatus(error);
+  // The provider account's plan or balance, not the owner's quota: a host's
+  // own quota failure has the code its `classifyFailure` answers.
   if (isUpstreamQuotaExhausted(error)) {
     return {
-      errorCode: 'QUOTA_EXHAUSTED',
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
       ...(status !== undefined ? { statusCode: status } : {}),
     };
   }

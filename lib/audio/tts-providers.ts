@@ -116,6 +116,7 @@ import {
   audioProviderFetch,
   type AudioEndpointTarget,
 } from '@/lib/server/audio-provider-fetch';
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
 import { pcmS16leMonoToWav } from './pcm-wav';
 
@@ -1055,6 +1056,13 @@ async function generateQwenTTS(
  */
 const MINIMAX_RATE_LIMIT_STATUS_CODES = new Set([1002, 1039, 1041, 2045]);
 
+/**
+ * MiniMax plan and balance exhaustion, as opposed to its rate limits:
+ * 1008 insufficient balance, 2056 usage limit exceeded (the plan's window).
+ * https://platform.minimax.io/docs/api-reference/errorcode
+ */
+const MINIMAX_QUOTA_STATUS_CODES = new Set([1008, 2056]);
+
 function minimaxStatusCode(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() !== '') {
@@ -1062,6 +1070,26 @@ function minimaxStatusCode(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+/** The `base_resp.status_code` of a MiniMax error response body, if it has one. */
+function minimaxBodyStatusCode(body: string): number | undefined {
+  try {
+    const parsed = JSON.parse(body) as { base_resp?: { status_code?: unknown } } | null;
+    return minimaxStatusCode(parsed?.base_resp?.status_code);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A MiniMax quota code as the provider-neutral quota error; undefined for any other code. */
+function minimaxQuotaError(
+  statusCode: number | undefined,
+  message: string,
+): ProviderQuotaExhaustedError | undefined {
+  return statusCode !== undefined && MINIMAX_QUOTA_STATUS_CODES.has(statusCode)
+    ? new ProviderQuotaExhaustedError('MiniMax', message)
+    : undefined;
 }
 
 /** Any non-zero MiniMax `base_resp.status_code` is a failure, even with audio bytes. */
@@ -1085,7 +1113,8 @@ function throwIfMiniMaxBaseRespFailed(
     );
   }
 
-  throw new Error(`MiniMax TTS API error (${statusCode}): ${statusMsg}`, { cause: { data } });
+  const message = `MiniMax TTS API error (${statusCode}): ${statusMsg}`;
+  throw minimaxQuotaError(statusCode, message) ?? new Error(message);
 }
 
 /**
@@ -1131,14 +1160,17 @@ async function generateMiniMaxTTS(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
-    const options = { cause: { responseBody: errorText } };
+    const message = `MiniMax TTS API error: ${errorText}`;
+    // A quota code in the body says what the HTTP status does not; an HTTP 429
+    // keeps its rate-limit type and carries the quota error as its cause.
+    const quota = minimaxQuotaError(minimaxBodyStatusCode(errorText), message);
     throwIfTtsRateLimited(
       'MiniMax',
       response.status,
       response.headers?.get('retry-after'),
-      options,
+      quota ? { cause: quota } : undefined,
     );
-    throw new Error(`MiniMax TTS API error: ${errorText}`, options);
+    throw quota ?? new Error(message);
   }
 
   const data = await response.json();

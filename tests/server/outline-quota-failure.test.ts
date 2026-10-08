@@ -46,7 +46,7 @@ async function failedOutline(fetch: typeof globalThis.fetch): Promise<unknown> {
 
 describe('an upstream refusal through outline generation', () => {
   it.each([
-    ['insufficient_quota', 'QUOTA_EXHAUSTED'],
+    ['insufficient_quota', 'PROVIDER_QUOTA_EXHAUSTED'],
     ['rate_limit_exceeded', 'RATE_LIMITED'],
   ])('preserves %s for the run classifier after the existing retries', async (code, errorCode) => {
     let requests = 0;
@@ -59,7 +59,7 @@ describe('an upstream refusal through outline generation', () => {
     expect(runFailureCode(failure)).toEqual({ errorCode, statusCode: 429 });
     // Three outline attempts, each retaining the SDK's three attempts.
     expect(requests).toBe(9);
-    if (errorCode === 'QUOTA_EXHAUSTED') {
+    if (errorCode === 'PROVIDER_QUOTA_EXHAUSTED') {
       expect(
         runFailureText({ step: 'outline', message: String(failure), ...runFailureCode(failure) }),
       ).toEqual({

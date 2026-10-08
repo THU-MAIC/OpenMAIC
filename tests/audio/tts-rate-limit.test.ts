@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateTTS, throwIfTtsRateLimited, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import { runFailureCode } from '@/lib/server/generation/run/failure-code';
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
 const fetchMock = vi.hoisted(() => vi.fn());
 
@@ -51,29 +52,63 @@ describe('TTS provider failure classification', () => {
   });
 
   it.each([1008, 2056, '1008', '2056'])(
-    'preserves native quota code %s for the run without making it a rate-limit error',
+    'translates native quota code %s into the provider quota error, not a rate-limit error',
     async (status_code) => {
       fetchMock.mockResolvedValue(
         jsonResponse({ base_resp: { status_code, status_msg: 'Refused' } }),
       );
       const failure = await generateTTS(miniMaxConfig, 'hello').catch((error: unknown) => error);
-      expect(failure).toBeInstanceOf(Error);
+      expect(failure).toBeInstanceOf(ProviderQuotaExhaustedError);
       expect(failure).not.toBeInstanceOf(TTSRateLimitError);
-      expect(runFailureCode(failure)).toEqual({ errorCode: 'QUOTA_EXHAUSTED' });
+      expect(failure).toMatchObject({
+        provider: 'MiniMax',
+        message: `MiniMax TTS API error (${status_code}): Refused`,
+      });
+      expect(runFailureCode(failure)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
     },
   );
 
-  it('preserves MiniMax quota details on HTTP 429 while keeping the rate-limit type', async () => {
+  it('keeps the rate-limit type on HTTP 429 and carries the quota error as its cause', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ base_resp: { status_code: 2056, status_msg: 'Refused' } }, 429),
     );
     const failure = await generateTTS(miniMaxConfig, 'hello').catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(TTSRateLimitError);
-    expect(runFailureCode(failure)).toEqual({ errorCode: 'QUOTA_EXHAUSTED' });
+    expect((failure as Error).cause).toBeInstanceOf(ProviderQuotaExhaustedError);
+    expect(runFailureCode(failure)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
+  });
+
+  it('translates a quota code in a MiniMax HTTP error body', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ base_resp: { status_code: 1008, status_msg: 'insufficient balance' } }, 400),
+    );
+    const failure = await generateTTS(miniMaxConfig, 'hello').catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ProviderQuotaExhaustedError);
+    expect((failure as Error).message).toContain('MiniMax TTS API error: ');
+    expect(runFailureCode(failure)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
   });
 
   it.each([
-    ['insufficient_quota', 'QUOTA_EXHAUSTED'],
+    [200, 1002],
+    [429, 1002],
+    [400, 1004],
+    [500, undefined],
+  ])('leaves every other MiniMax answer (%s/%s) as it was', async (status, status_code) => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        status_code === undefined ? { error: 'boom' } : { base_resp: { status_code } },
+        status,
+      ),
+    );
+    const failure = await generateTTS(miniMaxConfig, 'hello').catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(ProviderQuotaExhaustedError);
+    expect((failure as Error).cause).toBeUndefined();
+    expect(runFailureCode(failure)).toEqual({ errorCode: 'INTERNAL_ERROR' });
+  });
+
+  it.each([
+    ['insufficient_quota', 'PROVIDER_QUOTA_EXHAUSTED'],
     ['rate_limit_exceeded', 'INTERNAL_ERROR'],
   ])(
     'preserves OpenAI %s details without changing its retry delay or error type',
