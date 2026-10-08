@@ -132,6 +132,9 @@ async function runtimeChatRecords(store: RuntimeStore): Promise<RuntimeRecord[]>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Exercise the isolated fallback by default, regardless of Node's native
+  // Web Locks support. Locked-write tests install their own lock manager.
+  vi.stubGlobal('navigator', { locks: undefined });
 });
 
 afterEach(() => {

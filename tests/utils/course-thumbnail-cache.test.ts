@@ -169,6 +169,7 @@ describe('course thumbnail cache', () => {
 
     await loadCourseThumbnail('stage-1', 10, signal());
     expect(mocks.loadFirstSlideThumbnail).toHaveBeenCalledTimes(2);
+    await cached('stage-1', 10);
   });
 
   it('is emptied by Clear Local Cache', async () => {
@@ -180,6 +181,7 @@ describe('course thumbnail cache', () => {
     expect(await db.courseThumbnails.count()).toBe(0);
     await loadCourseThumbnail('stage-1', 10, signal());
     expect(mocks.loadFirstSlideThumbnail).toHaveBeenCalledTimes(2);
+    await cached('stage-1', 10);
   });
 
   it('never shows one owner the thumbnails another owner cached', async () => {

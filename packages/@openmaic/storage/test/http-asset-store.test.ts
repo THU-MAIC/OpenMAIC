@@ -634,7 +634,7 @@ describe('asset HTTP handler contract', () => {
     ['continuation parameter', 'form-data; name=meta; name*0=bytes'],
     ['non-ASCII separator', 'form-data;\u00a0name=meta'],
     ['bare LF in a quoted filename', 'form-data; name=meta; filename="a\nb"'],
-  ] as const)('platform parser rejects %s', async (_label, metaDisposition) => {
+  ] as const)('rejects multipart disposition: %s', async (label, metaDisposition) => {
     const boundary = 'asset-test-boundary';
     const body = Buffer.concat([
       Buffer.from(
@@ -655,12 +655,20 @@ describe('asset HTTP handler contract', () => {
       body,
     });
     expect(response.status).toBe(400);
-    expect(JSON.parse(response.body.toString())).toEqual({
+    const result = JSON.parse(response.body.toString());
+    expect(result).toEqual({
       error: {
         code: 'VALIDATION_FAILED',
-        message: '@openmaic/storage: malformed multipart body',
+        message: expect.any(String),
       },
     });
+    const messages = ['@openmaic/storage: malformed multipart body'];
+    if (label === 'trailing text after a quote') {
+      // Node 22 rejects this syntax in the platform parser. Node 24 decodes it
+      // as a text part, which the handler must still reject as invalid metadata.
+      messages.push('@openmaic/storage: the meta part must be sent as a file');
+    }
+    expect(messages).toContain(result.error.message);
   });
 
   test('rejects a meta part without filename as text-decoded data', async () => {

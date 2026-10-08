@@ -568,9 +568,11 @@ describe('parseWithMinerUCloud — bounded reads', () => {
     // A small, compressed archive whose single entry expands beyond the cap;
     // the declared total is under the archive budget, so the extracted length
     // is what has to reject it.
-    const zip = new JSZip();
-    zip.file('full.md', 'a'.repeat(MAX_ZIP_TEXT_ENTRY_BYTES + 1));
-    const zipBuf = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    // Use native compression to build the large fixture without spending the
+    // test's extraction budget in JSZip's JavaScript compressor.
+    const expandedBytes = MAX_ZIP_TEXT_ENTRY_BYTES + 1;
+    const rawDeflated = zlib.deflateRawSync(Buffer.alloc(expandedBytes, 0x61), { level: 6 });
+    const zipBuf = makeSingleEntryZip('full.md', rawDeflated, expandedBytes);
     expect(zipBuf.length).toBeLessThan(MAX_ZIP_BYTES);
 
     const result = await runWithZipResponse(new Response(new Uint8Array(zipBuf), { status: 200 }));

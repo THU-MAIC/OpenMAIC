@@ -32,6 +32,7 @@ const eslintConfig = defineConfig([
     '.next/**',
     'out/**',
     'build/**',
+    'dist/**',
     'next-env.d.ts',
     // Third-party / vendored packages (not our code):
     'packages/docs/**',
@@ -49,6 +50,8 @@ const eslintConfig = defineConfig([
     '.superpowers/**',
     '.worktrees/**',
     '.scratch/**',
+    '.omx/**',
+    '.trigger-tree/**',
     // Playwright e2e tests (not React code):
     'e2e/**',
     // Isolated MP4 render service: its own package, tsconfig, and Node-only

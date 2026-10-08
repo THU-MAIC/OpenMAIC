@@ -44,6 +44,10 @@ function wrapStore(store: RuntimeStore, overrides: Partial<RuntimeStore>): Runti
 
 describe('quiz attempt runtime persistence', () => {
   beforeEach(() => {
+    // Model separate tabs without Web Locks. Node 24 exposes a real lock
+    // manager, which would serialize the deliberate races below and deadlock
+    // their two-participant barriers. Web Lock behavior has its own read suite.
+    vi.stubGlobal('navigator', { locks: undefined });
     Object.defineProperty(globalThis, 'IDBKeyRange', {
       configurable: true,
       value: IDBKeyRange,
@@ -52,6 +56,7 @@ describe('quiz attempt runtime persistence', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('coalesces rapid draft changes into one latest snapshot', async () => {

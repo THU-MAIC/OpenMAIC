@@ -17,6 +17,11 @@ packages/docs/
 # Build output
 .next/
 out/
+dist/
+
+# Local agent execution records
+.omx/
+.trigger-tree/
 
 # Generated files
 *.min.js
