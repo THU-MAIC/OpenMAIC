@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Synchronous scene previews and video exports no longer block each other; each uses its own execution lane. [#1830](https://github.com/THU-MAIC/OpenMAIC/pull/1830)
+- Preview concurrency is capped by the render resource profile and reported by `/health`. Cancelling a preview during Chromium startup retains its execution slot until launch and browser cleanup settle.
+
 ## [1.2.0-rc.1] - 2026-10-04
 
 The release candidate for 1.2.0, **server-first**.

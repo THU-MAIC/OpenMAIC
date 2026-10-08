@@ -262,6 +262,7 @@ export function createApp(deps: AppDeps): Hono {
       // Aggregate-only by design — the full rationale lives on
       // RenderCoordinator#accepting (never queue depths or per-identity data).
       accepting: coordinator.accepting,
+      previewMaxConcurrency: config.previewMaxConcurrency,
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
     }),

@@ -66,6 +66,18 @@ describe('config maxJobsPerUser', () => {
 });
 
 describe('config preview admission', () => {
+  it.each([
+    ['standard', 2],
+    ['low-memory', 1],
+  ])('bounds preview execution for the %s profile', async (profile, maximum) => {
+    process.env.RENDER_RESOURCE_PROFILE = String(profile);
+    process.env.RENDER_PREVIEW_MAX_CONCURRENCY = String(maximum);
+    expect((await loadConfig()).previewMaxConcurrency).toBe(maximum);
+
+    process.env.RENDER_PREVIEW_MAX_CONCURRENCY = String(Number(maximum) + 1);
+    await expect(loadConfig()).rejects.toThrow(/RENDER_PREVIEW_MAX_CONCURRENCY=.*profile limit/);
+  });
+
   it('provides bounded defaults', async () => {
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(20_000);

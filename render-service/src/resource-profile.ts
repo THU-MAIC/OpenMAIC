@@ -17,6 +17,8 @@ export interface ResourceProfile {
   maxConcurrentExtractions: 1;
   maxPreviewPixels: number;
   maxPreviewDeviceScaleFactor: number;
+  /** Hard limit on Chromium previews running alongside video export. */
+  maxPreviewConcurrency: number;
   /** Hard local chunk fan-out limits for the selected memory/CPU profile. */
   maxChunkWorkers: number;
   maxParallelChunks: number;
@@ -46,6 +48,7 @@ function defineProfile(
     ...COMMON_LIMITS,
     maxPreviewPixels: name === 'low-memory' ? 1920 * 1080 : 3840 * 2160,
     maxPreviewDeviceScaleFactor: name === 'low-memory' ? 1 : 2,
+    maxPreviewConcurrency: name === 'low-memory' ? 1 : 2,
     minimumMemoryBytes,
     maxChunkWorkers: 1,
     maxParallelChunks,
@@ -176,6 +179,7 @@ export function publicResourceProfile(profile: ResourceProfile) {
     maxConcurrentExtractions: profile.maxConcurrentExtractions,
     maxPreviewPixels: profile.maxPreviewPixels,
     maxPreviewDeviceScaleFactor: profile.maxPreviewDeviceScaleFactor,
+    maxPreviewConcurrency: profile.maxPreviewConcurrency,
     maxChunkWorkers: profile.maxChunkWorkers,
     maxParallelChunks: profile.maxParallelChunks,
     minimumMemoryMiB: profile.minimumMemoryBytes / 1024 ** 2,

@@ -13,7 +13,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ArtifactStore } from '../src/artifact-store.js';
 import type { JobStore } from '../src/job-store.js';
 import type { RenderCoordinatorOptions } from '../src/render-coordinator.js';
@@ -101,6 +101,26 @@ async function healthBody(app: ReturnType<typeof createApp>): Promise<Record<str
 }
 
 describe('POST /render buffering/extraction bound', () => {
+  it('reports the configured preview concurrency, not just its default', async () => {
+    vi.stubEnv('RENDER_PREVIEW_MAX_CONCURRENCY', '2');
+    vi.resetModules();
+    try {
+      const { createApp: createConfiguredApp } = await import('../src/main.js');
+      const jobs = createMemoryJobStore();
+      const artifacts = createMemoryArtifactStore().store;
+      const app = createConfiguredApp({
+        jobs,
+        artifacts,
+        coordinator: new RenderCoordinator(succeedingExecutor, jobs, artifacts),
+        extractionGate: new Semaphore(1),
+      });
+      await expect(healthBody(app)).resolves.toMatchObject({ previewMaxConcurrency: 2 });
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
   it('reports the selected profile and observed runtime versions from health', async () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore().store;
@@ -126,6 +146,7 @@ describe('POST /render buffering/extraction bound', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
+      previewMaxConcurrency: 1,
       resourceProfile: {
         name: 'standard',
         capturePolicy: 'prefer-beginframe',
@@ -133,6 +154,7 @@ describe('POST /render buffering/extraction bound', () => {
         requireBeginFrame: false,
         producerWorkers: 1,
         maxConcurrency: 1,
+        maxPreviewConcurrency: 2,
         minimumMemoryMiB: 8 * 1024,
       },
       versions: runtimeVersions,
@@ -393,7 +415,13 @@ describe('admission observability (429 reason + /health accepting)', () => {
     // Pinning the exact key set: any new field (queue depths, per-identity
     // data) must be a deliberate, reviewed change — identity keys are client
     // IPs behind a trusted proxy, so they must never reach this response.
-    expect(Object.keys(body).sort()).toEqual(['accepting', 'ok', 'resourceProfile', 'versions']);
+    expect(Object.keys(body).sort()).toEqual([
+      'accepting',
+      'ok',
+      'previewMaxConcurrency',
+      'resourceProfile',
+      'versions',
+    ]);
     expect(typeof body.accepting).toBe('boolean');
   });
 
