@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 
 export interface LatexEditorResult {
   readonly latex: string;
@@ -12,11 +13,14 @@ export type LatexRenderResult = { readonly html: string } | { readonly error: st
 export function renderLatexSource(source: string): LatexRenderResult {
   try {
     return {
-      html: katex.renderToString(source, {
-        displayMode: true,
-        output: 'html',
-        throwOnError: true,
-      }),
+      html: katex.renderToString(
+        source,
+        safeKatexOptions({
+          displayMode: true,
+          output: 'html',
+          throwOnError: true,
+        }),
+      ),
     };
   } catch (error) {
     return {

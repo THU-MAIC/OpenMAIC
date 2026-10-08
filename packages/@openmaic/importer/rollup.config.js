@@ -17,7 +17,14 @@ const plugins = [
   json(),
   typescript({ tsconfig: './tsconfig.json' }),
   terser(),
-  globals({ dirname: false, filename: false }),
+  globals({
+    dirname: false,
+    filename: false,
+    // @openmaic/dsl ships browser-safe ES2022 and never needs Node global
+    // shims. This plugin re-parses any module mentioning `global`/`process`
+    // with an old acorn that predates `??`, so keep it off the dsl build.
+    exclude: [/[\\/]@openmaic[\\/]dsl[\\/]dist[\\/]/],
+  }),
   builtins(),
 ];
 

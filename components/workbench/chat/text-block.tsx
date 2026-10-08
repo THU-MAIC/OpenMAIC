@@ -21,9 +21,9 @@
  *    link renders exactly as it did before, and outside `/workspace` — where
  *    there is no right pane — the pill falls back to the plain anchor.
  */
-import { createMathPlugin } from '@streamdown/math';
 import { Streamdown, defaultRemarkPlugins } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
+import { createSafeMathPlugin } from '@/lib/markdown/safe-math-plugin';
 import { courseIdFromHref } from '@/lib/workbench/course-link';
 import { remarkSelectiveSingleDollarMath } from '@/lib/workbench/markdown-math';
 import { CourseLink } from './course-link';
@@ -36,8 +36,9 @@ const REMARK_PLUGINS = [
 
 const STREAMDOWN_PLUGINS = {
   // The official tokenizer handles `$$`; the Workbench extension validates
-  // single-dollar candidates before accepting them as math.
-  math: createMathPlugin({ singleDollarTextMath: false }),
+  // single-dollar candidates before accepting them as math. KaTeX runs with
+  // the hardened options (formula-defined macros disabled).
+  math: createSafeMathPlugin({ singleDollarTextMath: false }),
 } as const;
 
 // remark-math already accepts an unterminated flow fence through EOF. Generic

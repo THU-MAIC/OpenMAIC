@@ -5,6 +5,7 @@
  */
 
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import type { RenderContext } from './RenderContext';
 import type { TextBody, TextParagraph, TextRun } from '../model/nodes/ShapeNode';
 import type { PlaceholderInfo } from '../model/nodes/BaseNode';
@@ -1664,10 +1665,13 @@ export function renderTextBody(
               // throwOnError:true so invalid LaTeX throws → we fall back to the
               // formula's plain text below, instead of KaTeX printing the raw
               // source in red (the "红色 LaTeX 乱码" reviewers flagged).
-              mathHtml = katex.renderToString(latex, {
-                displayMode: false,
-                throwOnError: true,
-              });
+              mathHtml = katex.renderToString(
+                latex,
+                safeKatexOptions({
+                  displayMode: false,
+                  throwOnError: true,
+                }),
+              );
             } catch {
               mathHtml = '';
             }

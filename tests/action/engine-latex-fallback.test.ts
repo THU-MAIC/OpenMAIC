@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { safeKatexOptions } from '@openmaic/dsl';
 import type { StageStore } from '@/lib/api/stage-api';
 import { ActionEngine } from '@/lib/action/engine';
 
@@ -111,11 +112,14 @@ describe('ActionEngine wb_draw_text LaTeX fallback', () => {
       }),
       'wb-1',
     );
-    expect(mocks.renderToString).toHaveBeenCalledWith(latex, {
-      throwOnError: false,
-      displayMode: true,
-      output: 'html',
-    });
+    expect(mocks.renderToString).toHaveBeenCalledWith(
+      latex,
+      safeKatexOptions({
+        throwOnError: false,
+        displayMode: true,
+        output: 'html',
+      }),
+    );
   });
 
   test('renders dollar-delimited math after removing the delimiters', async () => {
@@ -129,11 +133,14 @@ describe('ActionEngine wb_draw_text LaTeX fallback', () => {
       }),
       'wb-1',
     );
-    expect(mocks.renderToString).toHaveBeenCalledWith('E = mc^2', {
-      throwOnError: false,
-      displayMode: true,
-      output: 'html',
-    });
+    expect(mocks.renderToString).toHaveBeenCalledWith(
+      'E = mc^2',
+      safeKatexOptions({
+        throwOnError: false,
+        displayMode: true,
+        output: 'html',
+      }),
+    );
   });
 
   test('renders expressions with a high density of less-common LaTeX commands', async () => {
@@ -193,10 +200,13 @@ describe('ActionEngine wb_draw_text LaTeX fallback', () => {
       }),
       'wb-1',
     );
-    expect(mocks.renderToString).toHaveBeenCalledWith(String.raw`\frac{1}{`, {
-      throwOnError: false,
-      displayMode: true,
-      output: 'html',
-    });
+    expect(mocks.renderToString).toHaveBeenCalledWith(
+      String.raw`\frac{1}{`,
+      safeKatexOptions({
+        throwOnError: false,
+        displayMode: true,
+        output: 'html',
+      }),
+    );
   });
 });

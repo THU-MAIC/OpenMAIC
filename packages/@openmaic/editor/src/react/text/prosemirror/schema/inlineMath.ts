@@ -1,4 +1,5 @@
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import type { NodeSpec } from 'prosemirror-model';
 
 /** Keep rendered formulas opaque to the prose parser, including hidden MathML. */
@@ -37,11 +38,14 @@ export const inlineMath: NodeSpec = {
     if (latex.trim()) {
       try {
         // Rebuild trusted markup rather than storing arbitrary imported HTML.
-        katex.render(latex, host, {
-          displayMode: false,
-          throwOnError: false,
-          trust: false,
-        });
+        katex.render(
+          latex,
+          host,
+          safeKatexOptions({
+            displayMode: false,
+            throwOnError: false,
+          }),
+        );
         formula = (host.firstElementChild as HTMLElement | null) ?? host;
       } catch {
         host.textContent = latex;
