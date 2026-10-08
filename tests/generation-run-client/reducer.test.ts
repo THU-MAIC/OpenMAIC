@@ -157,3 +157,29 @@ describe('run view reducer', () => {
     expect(view.generatedAgents).toHaveLength(1);
   });
 });
+
+describe('persisted narration warnings', () => {
+  it('restores the committed count on reload, including a completed run', () => {
+    const view = viewFromSnapshot(snapshot({ state: 'completed', narrationUnvoiced: 3 }));
+    expect(view.narrationUnvoiced).toBe(3);
+  });
+
+  it('uses the cumulative scene count without double-counting replayed events', () => {
+    let view = viewFromSnapshot(snapshot({ state: 'generating', seq: 10, narrationUnvoiced: 2 }));
+    const frame = event(11, 'scene_ready', {
+      index: 1,
+      sceneId: 's2',
+      order: 2,
+      narrationUnvoiced: 3,
+    });
+    view = applyRunEvent(view, frame);
+    view = applyRunEvent(view, frame);
+    expect(view.narrationUnvoiced).toBe(3);
+    view = applyRunEvent(view, event(12, 'scene_ready', { index: 2, sceneId: 's3', order: 3 }));
+    expect(view.narrationUnvoiced).toBe(3);
+  });
+
+  it('does not warn for snapshots without skipped narration', () => {
+    expect(viewFromSnapshot(snapshot()).narrationUnvoiced).toBe(0);
+  });
+});

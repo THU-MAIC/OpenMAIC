@@ -46,6 +46,7 @@ import {
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
+import { NarrationWarning } from './NarrationWarning';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
 import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
 
@@ -369,10 +370,13 @@ export function ClassroomSurface({
               href={runCourse.generation.href}
             />
           ) : (
-            <Stage
-              classroomId={classroomId}
-              onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
-            />
+            <>
+              {mayGenerate && <NarrationWarning count={runCourse.narrationUnvoiced} />}
+              <Stage
+                classroomId={classroomId}
+                onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
+              />
+            </>
           )}
         </div>
       </MediaStageProvider>

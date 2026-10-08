@@ -1173,7 +1173,15 @@ async function executeClaimedRun(
         ...(sceneIndex === 0
           ? [{ type: 'course_created' as const, data: { stageId: stage.id } }]
           : []),
-        { type: 'scene_ready', data: { index: sceneIndex, sceneId: scene.id, order: scene.order } },
+        {
+          type: 'scene_ready',
+          data: {
+            index: sceneIndex,
+            sceneId: scene.id,
+            order: scene.order,
+            narrationUnvoiced: run.narrationUnvoiced + unvoiced,
+          },
+        },
         ...(media.events ?? []),
       ],
     };

@@ -1108,6 +1108,7 @@
     "materialTooLarge": "{{name}} é grande demais: um material pode ter no máximo {{size}}."
   },
   "generation": {
+    "narrationWarning": "Durante a geração do curso, {{count}} trechos ficaram sem áudio. Verifique o espaço de armazenamento e as configurações de voz e gere novamente a narração ausente na linha do tempo.",
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
     "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",

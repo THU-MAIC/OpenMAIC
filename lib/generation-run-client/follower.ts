@@ -87,6 +87,8 @@ export function mergeSnapshotView(current: RunView | null, snapshot: RunSnapshot
   if (logOnly) return current;
   return {
     ...next,
+    // A snapshot may have been read before the last live scene event.
+    narrationUnvoiced: Math.max(next.narrationUnvoiced, current.narrationUnvoiced),
     researchSources: current.researchSources,
     readyScenes: current.readyScenes,
     skippedScenes: current.skippedScenes,

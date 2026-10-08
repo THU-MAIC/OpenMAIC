@@ -1108,6 +1108,7 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "narrationWarning": "课程生成时有 {{count}} 段讲解未保存音频。请检查存储容量和语音设置，再到时间轴重新生成缺失的配音。",
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",

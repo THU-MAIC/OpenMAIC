@@ -1108,6 +1108,7 @@
     "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
+    "narrationWarning": "Lors de la génération du cours, {{count}} segments sont restés sans audio. Vérifiez le stockage et les paramètres vocaux, puis régénérez la narration manquante dans la chronologie.",
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",
     "courseMaterialLoadFailed": "Échec du chargement du support de cours, veuillez réessayer",

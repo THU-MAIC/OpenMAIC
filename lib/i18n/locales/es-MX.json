@@ -1108,6 +1108,7 @@
     "materialTooLarge": "{{name}} es demasiado grande: un material puede medir como máximo {{size}}."
   },
   "generation": {
+    "narrationWarning": "Durante la generación del curso, {{count}} segmentos quedaron sin audio. Revisa el espacio de almacenamiento y la configuración de voz, y vuelve a generar la narración faltante en la línea de tiempo.",
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
     "courseMaterialLoadFailed": "Error al cargar el material del curso, inténtalo de nuevo",

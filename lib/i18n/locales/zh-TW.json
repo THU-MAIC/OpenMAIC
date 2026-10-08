@@ -1093,6 +1093,7 @@
     "materialTooLarge": "{{name}} 過大：單個素材最大為 {{size}}。"
   },
   "generation": {
+    "narrationWarning": "課程生成時有 {{count}} 段講解未儲存音訊。請檢查儲存容量和語音設定，再到時間軸重新生成缺少的配音。",
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
     "pdfParseFailed": "PDF 解析失敗",
     "courseMaterialLoadFailed": "無法載入課程材料，請重試",
