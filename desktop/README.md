@@ -10,6 +10,14 @@
 - 桌面端默认发现 `~/.codex/skills` 和 `~/.agents/skills` 下包含 `SKILL.md` 的本机公共 skill；也可通过 `OPENMAIC_PUBLIC_SKILLS_DIRS` 传入 JSON 目录数组覆盖扫描范围。
 - 公共 skill 只读展示并按低优先级任务指导处理，不能覆盖系统指令或工具安全边界。
 
+## 开发版窗口
+
+页面顶部提供 32px 高的拖动区域，并保留系统原生窗口控制按钮。在 macOS 上，
+可拖动此区域移动窗口、双击缩放窗口，或通过原生按钮进入全屏。
+页面内容溢出时才显示滚动条。
+
+![macOS 开发版桌面窗口](../.github/assets/desktop-development-macos.jpg)
+
 ## 开发
 
 ```bash
