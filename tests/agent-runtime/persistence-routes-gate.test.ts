@@ -35,6 +35,8 @@ import { makeDocument, makeSlideScene } from './_stage-fixtures';
  * "serves" rows are exercised hermetically. A library route put back behind
  * the runtime gate fails the third row; an agent route moved to the
  * persistence gate fails it too.
+ * Filesystem Skill discovery is the exception: its GET stays available without
+ * either gate, while private user Skills still require the configured runtime.
  */
 const ENV_KEYS = ['OPENMAIC_AGENT_RUNTIME_ENABLED', 'DATABASE_URL'] as const;
 
@@ -401,10 +403,6 @@ const AGENT_ONLY_ROUTES: { name: string; call: () => Promise<Response> }[] = [
       ),
   },
   {
-    name: 'GET /api/agent/skills',
-    call: () => getAgentSkills(new NextRequest('http://localhost/api/agent/skills')),
-  },
-  {
     name: 'GET /api/agent/owner-events',
     call: () => getOwnerEvents(new NextRequest('http://localhost/api/agent/owner-events')),
   },
@@ -570,6 +568,17 @@ for (const state of STATES) {
     });
 
     if (!state.open.runtime) {
+      it('lists filesystem skills without touching the owner store', async () => {
+        const response = await getAgentSkills(new NextRequest('http://localhost/api/agent/skills'));
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Cache-Control')).toBe('no-store');
+        const skills = await response.json();
+        expect(skills.length).toBeGreaterThan(0);
+        expect(skills.every((skill: { source: string }) => skill.source !== 'user')).toBe(true);
+        expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+        expect(mocks.queryPool.query).not.toHaveBeenCalled();
+      });
+
       it.each(AGENT_ONLY_ROUTES.map((route) => [route.name, route] as const))(
         '%s stays behind the agent runtime gate',
         async (_name, route) => {
