@@ -11,11 +11,15 @@ import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { RunCourseFailure } from '@/lib/generation-run-client/use-run-course';
+import { viewFromSnapshot } from '@/lib/generation-run-client/reducer';
+import type { RunView } from '@/lib/generation-run-client/types';
+import { useStageStore } from '@/lib/store/stage';
 import type { SceneOutline } from '@/lib/types/generation';
+import { outline, snapshot } from '../generation-run-client/fixtures';
 
 const run = vi.hoisted(() => ({
-  failure: null as RunCourseFailure | null,
+  view: null as RunView | null,
+  refresh: vi.fn(),
   /** The outlines not produced yet: the first is the pending scene card. */
   generatingOutlines: [] as SceneOutline[],
   stageProps: null as Record<string, unknown> | null,
@@ -46,20 +50,29 @@ vi.mock('@/lib/classroom/load-classroom', () => ({
   runClassroomLoad: async (deps: { classroomId: string; setLoading: (value: boolean) => void }) => {
     const { useStageStore } = await import('@/lib/store/stage');
     useStageStore.setState({
-      stage: { id: deps.classroomId, name: 'Paused course' } as never,
+      stage: { id: deps.classroomId, name: 'Paused course', createdAt: 1, updatedAt: 1 },
+      outlineProducer: 'server-job',
+      outlineProducerRef: run.view!.runId,
+      outlines: [outline(1), outline(2), outline(3), outline(4)],
       generatingOutlines: run.generatingOutlines,
     });
     deps.setLoading(false);
     return { outcome: 'ready' };
   },
 }));
-vi.mock('@/lib/generation-run-client/use-run-course', () => ({
-  useRunCourse: () => ({
-    runId: 'run-1',
-    generation: { status: { kind: 'paused' }, href: '/classroom/stage-paused' },
-    failure: run.failure,
-    retryOutline: async () => {},
+vi.mock('@/lib/generation-run-client/use-generation-run', () => ({
+  useGenerationRun: (runId: string | null) => ({
+    view: runId ? run.view : null,
+    status: runId ? 'live' : 'idle',
+    refresh: run.refresh,
   }),
+}));
+vi.mock('@/lib/model-settings/use-model-settings', () => ({
+  useModelCapabilities: () => ({}),
+}));
+vi.mock('@/lib/workbench/stage-freshness', () => ({
+  fetchStageManifest: async () => ({ status: 'ok', manifest: { scenes: [] } }),
+  fetchScenesByIds: async () => [],
 }));
 
 (
@@ -71,24 +84,32 @@ const roots: Root[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.replaceChildren();
-  run.failure = null;
+  useStageStore.setState(useStageStore.getInitialState());
+  run.view = null;
   run.generatingOutlines = [];
   run.stageProps = null;
 });
 
-function outline(order: number): SceneOutline {
-  return { id: `o${order}`, type: 'slide', title: `Scene ${order}`, order } as SceneOutline;
-}
-
 /** Paused at scene 3 (outline o4) on the provider's quota. */
-function failure(patch: Partial<RunCourseFailure> = {}): RunCourseFailure {
-  return {
-    step: 'scene:3:actions',
-    message: 'insufficient balance',
-    errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
-    outlineId: 'o4',
-    ...patch,
-  };
+function pausedRun(patch: Partial<NonNullable<RunView['error']>> = {}): RunView {
+  return viewFromSnapshot(
+    snapshot({
+      state: 'paused',
+      stageId: 'stage-paused',
+      outline: {
+        outlines: [outline(1), outline(2), outline(3), outline(4)],
+        languageDirective: 'en',
+        taskEngineMode: false,
+        revision: 1,
+      },
+      error: {
+        step: 'scene:3:actions',
+        message: 'insufficient balance',
+        errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
+        ...patch,
+      },
+    }),
+  );
 }
 
 async function renderClassroom() {
@@ -111,7 +132,7 @@ async function renderClassroom() {
 
 describe('a paused run’s failure, in its classroom', () => {
   it('gives the pending card of the scene the run stopped at the quota guidance', async () => {
-    run.failure = failure();
+    run.view = pausedRun();
     run.generatingOutlines = [outline(4)];
     await renderClassroom();
 
@@ -120,19 +141,34 @@ describe('a paused run’s failure, in its classroom', () => {
 
   it('keeps the generic text on a scene the run went on past', async () => {
     // Scene 1 (o2) failed earlier and was skipped: its card is the pending one.
-    run.failure = failure();
+    run.view = pausedRun();
+    run.view.skippedScenes = { 1: 'invalid response' };
     run.generatingOutlines = [outline(2), outline(4)];
     await renderClassroom();
 
     expect(run.stageProps?.generationFailureMessage).toBeUndefined();
+    expect(useStageStore.getState().failedOutlines.map((o) => o.id)).toEqual(['o2', 'o4']);
+
+    // The same run's guidance follows the pending card once the earlier scene is filled.
+    await act(async () => useStageStore.setState({ generatingOutlines: [outline(4)] }));
+    expect(run.stageProps?.generationFailureMessage).toBe('generation.quotaExhausted');
   });
 
-  it.each<[string, Partial<RunCourseFailure>]>([
+  it('uses the loaded course outlines when the run has no outline snapshot', async () => {
+    run.view = pausedRun();
+    run.view.outline = null;
+    run.generatingOutlines = [outline(4)];
+    await renderClassroom();
+
+    expect(run.stageProps?.generationFailureMessage).toBe('generation.quotaExhausted');
+  });
+
+  it.each<[string, Partial<NonNullable<RunView['error']>>]>([
     ['an ordinary failure', { errorCode: 'RATE_LIMITED', statusCode: 429 }],
     ['the host’s own quota code', { errorCode: 'QUOTA_EXHAUSTED' }],
-    ['a stop outside the scenes', { step: 'agents', outlineId: null }],
+    ['a stop outside the scenes', { step: 'agents' }],
   ])('gives the stage nothing for %s', async (_case, patch) => {
-    run.failure = failure(patch);
+    run.view = pausedRun(patch);
     run.generatingOutlines = [outline(4)];
     await renderClassroom();
 
@@ -140,12 +176,12 @@ describe('a paused run’s failure, in its classroom', () => {
   });
 
   it('clears the guidance once the run proceeds', async () => {
-    run.failure = failure();
+    run.view = pausedRun();
     run.generatingOutlines = [outline(4)];
     const view = await renderClassroom();
     expect(run.stageProps?.generationFailureMessage).toBe('generation.quotaExhausted');
 
-    run.failure = null;
+    run.view = { ...run.view, state: 'generating', error: null };
     await view.rerender();
     expect(run.stageProps?.generationFailureMessage).toBeUndefined();
   });
