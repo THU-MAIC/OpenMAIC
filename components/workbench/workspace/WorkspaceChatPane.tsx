@@ -36,6 +36,7 @@ export function WorkspaceChatPane({
   hidden,
   navigation,
   draftConversation = null,
+  paneSessionId = null,
   prefill = null,
   onPrefillConsumed,
   onCollapse,
@@ -70,6 +71,8 @@ export function WorkspaceChatPane({
    * ordinary attached chat.
    */
   readonly draftConversation?: WorkbenchDraftConversation | null;
+  /** The session the workspace pane has selected, even before chat attach completes. */
+  readonly paneSessionId?: string | null;
   /** Product-owned text to stage in the composer without sending it. */
   readonly prefill?: WorkbenchComposerPrefill | null;
   readonly onPrefillConsumed?: (id: number) => void;
@@ -190,6 +193,7 @@ export function WorkspaceChatPane({
             <WorkbenchChat
               hosted
               adjacentPanelOpen={!fill}
+              paneSessionId={paneSessionId}
               prefill={prefill}
               onPrefillConsumed={onPrefillConsumed}
             />

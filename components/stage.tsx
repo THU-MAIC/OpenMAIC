@@ -31,6 +31,7 @@ import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { workspaceHref } from '@/lib/workbench/workspace-panes';
 import { exitProPlaybackToStandalone } from '@/lib/workbench/pro-playback-exit';
 import { stageInteractiveRepairHandoff } from '@/lib/workbench/interactive-repair-handoff';
+import { interactiveRepairEntry } from '@/lib/workbench/interactive-repair-entry';
 
 /**
  * Stage — top-level classroom container. Standalone classrooms dispatch
@@ -147,13 +148,21 @@ export function Stage({
   // may start it from standalone/playback and be handed into the workspace;
   // read-only viewers never receive a mutation affordance. Inside an editable
   // workspace pane, keep the direct handoff so no navigation is needed.
-  const requestInteractiveRepair = canEditOwnedStage
-    ? workbenchShowingClassroom && workbenchPanel.requestInteractiveRepair
+  const repairEntry = interactiveRepairEntry({
+    writable: canEditOwnedStage,
+    generating: courseGenerating,
+    inWorkspacePane,
+    playback: workbenchPlayback,
+    showingClassroom: workbenchShowingClassroom,
+    hostedCallback: Boolean(workbenchPanel.requestInteractiveRepair),
+    canHandoff: Boolean(proWorkbenchEntry && stage?.id),
+  });
+  const requestInteractiveRepair =
+    repairEntry === 'direct'
       ? workbenchPanel.requestInteractiveRepair
-      : proWorkbenchEntry && stage?.id
+      : repairEntry === 'handoff'
         ? handoffInteractiveRepair
-        : undefined
-    : undefined;
+        : undefined;
 
   // Single decision for the classroom chrome's top-left back affordance:
   // plain classroom → home arrow; full-screen playback → "Back to workspace";

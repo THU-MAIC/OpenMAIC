@@ -51,6 +51,17 @@ describe('interactive repair prefill', () => {
     expect(japanese).toContain('Repair the broken interactive scene "scene-1".');
   });
 
+  it('does not split a Unicode surrogate pair at the evidence cap', () => {
+    const evidence = `${'a'.repeat(INTERACTIVE_REPAIR_ERROR_MAX - 2)}😀extra`;
+    const result = buildInteractiveRepairPrefill({
+      sceneId: 'scene-1',
+      error: evidence,
+      t: createWorkbenchTranslator('en-US'),
+    });
+    expect(result).not.toContain('\\uD83D');
+    expect(result).toContain('…');
+  });
+
   it('caps page-controlled error text and chooses a fence it cannot close', () => {
     const injection = [
       '[error] TypeError',

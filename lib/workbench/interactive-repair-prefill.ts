@@ -5,6 +5,8 @@ const INTERACTIVE_REPAIR_SCENE_ID_MAX = 128;
 
 export interface WorkbenchComposerPrefill {
   readonly id: number;
+  /** The failing course, never inferred from whichever classroom is open later. */
+  readonly courseId: string;
   readonly text: string;
 }
 
@@ -15,7 +17,10 @@ export function canApplyWorkbenchComposerPrefill(currentDraft: string): boolean 
 function cap(value: string, max: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= max) return trimmed;
-  return `${trimmed.slice(0, max - 1)}…`;
+  // Do not leave a dangling UTF-16 high surrogate at the evidence boundary.
+  const head = trimmed.slice(0, max - 1);
+  const last = head.charCodeAt(head.length - 1);
+  return `${last >= 0xd800 && last <= 0xdbff ? head.slice(0, -1) : head}…`;
 }
 
 function markdownFenceFor(value: string): string {

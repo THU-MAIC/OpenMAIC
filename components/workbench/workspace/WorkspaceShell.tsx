@@ -73,6 +73,7 @@ import {
   consumeInteractiveRepairHandoff,
   INTERACTIVE_REPAIR_HANDOFF_EVENT,
 } from '@/lib/workbench/interactive-repair-handoff';
+import { mayConsumeInteractiveRepairHandoff } from '@/lib/workbench/interactive-repair-entry';
 import {
   clampRailWidth,
   parseRailWidth,
@@ -379,11 +380,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const repairConversationAvailable =
     draftCourseId !== null || (panes.sessionId !== null && attachedSessionId === panes.sessionId);
 
+  // ── Read-only ─────────────────────────────────────────────────────────
+  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
+  // saved from Discover) and a generation run still producing the course.
+  const courseIsOwner = useMemo(
+    () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
+    [courses.classrooms, panes.courseId],
+  );
+  const courseGenerating = useStageStore((s) => s.courseGenerating);
+  const readOnlyCourse = isCourseReadOnly({
+    isOwner: courseIsOwner,
+    generating: courseGenerating,
+  });
+
   const requestInteractiveRepair = useCallback(
     (sceneId: string, runtimeError: string) => {
       composerPrefillSequence.current += 1;
+      if (!panes.courseId) return;
       setComposerPrefill({
         id: composerPrefillSequence.current,
+        courseId: panes.courseId,
         text: buildInteractiveRepairPrefill({ sceneId, error: runtimeError, t }),
       });
       // On narrow layouts the classroom and chat are mutually exclusive. A
@@ -391,11 +407,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       collapse.expandChat();
       setNarrowFocus('chat');
     },
-    [collapse, t],
+    [collapse, panes.courseId, t],
   );
 
   useEffect(() => {
     const consumeHandoff = () => {
+      if (
+        !mayConsumeInteractiveRepairHandoff({
+          courseId: panes.courseId,
+          isOwner: courseIsOwner,
+          generating:
+            readOnlyCourse || Boolean(panes.courseId && generatingCourseIds.has(panes.courseId)),
+          conversationReady: repairConversationAvailable,
+        })
+      )
+        return;
       const handoff = consumeInteractiveRepairHandoff(panes.courseId);
       if (!handoff) return;
       requestInteractiveRepair(handoff.sceneId, handoff.error);
@@ -407,7 +433,14 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     consumeHandoff();
     window.addEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
     return () => window.removeEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
-  }, [panes.courseId, requestInteractiveRepair]);
+  }, [
+    panes.courseId,
+    courseIsOwner,
+    readOnlyCourse,
+    generatingCourseIds,
+    repairConversationAvailable,
+    requestInteractiveRepair,
+  ]);
 
   const acknowledgeComposerPrefill = useCallback((id: number) => {
     setComposerPrefill((current) => (current?.id === id ? null : current));
@@ -995,19 +1028,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     if (!panes.courseId && playbackOn) setPlaybackOn(false);
   }, [panes.courseId, playbackOn, setPlaybackOn]);
 
-  // ── Read-only ─────────────────────────────────────────────────────────
-  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
-  // saved from Discover) and a generation run still producing the course.
-  const courseIsOwner = useMemo(
-    () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
-    [courses.classrooms, panes.courseId],
-  );
-  const courseGenerating = useStageStore((s) => s.courseGenerating);
-  const readOnlyCourse = isCourseReadOnly({
-    isOwner: courseIsOwner,
-    generating: courseGenerating,
-  });
-
   /* ── What a course is CALLED ───────────────────────────────────────────
      Tabs and in-chat links both need a name and a page count for an id, and
      both must degrade rather than invent one. The authoritative list is the
@@ -1138,6 +1158,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           width={chatWidth.value}
           navigation={courseNavigation}
           draftConversation={draftConversation}
+          paneSessionId={panes.sessionId}
           prefill={composerPrefill}
           onPrefillConsumed={acknowledgeComposerPrefill}
           onRename={
@@ -1176,7 +1197,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           readOnly={readOnlyCourse}
           playback={playbackOn}
           onRequestInteractiveRepair={
-            repairConversationAvailable && !readOnlyCourse ? requestInteractiveRepair : undefined
+            repairConversationAvailable &&
+            courseIsOwner === true &&
+            !readOnlyCourse &&
+            !generatingCourseIds.has(panes.courseId)
+              ? requestInteractiveRepair
+              : undefined
           }
           // Symmetric with the conversation's fold: offered only while both
           // panes are on screen (the last visible pane cannot fold — see

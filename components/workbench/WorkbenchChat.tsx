@@ -104,10 +104,8 @@ import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/e
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
-import {
-  canApplyWorkbenchComposerPrefill,
-  type WorkbenchComposerPrefill,
-} from '@/lib/workbench/interactive-repair-prefill';
+import type { WorkbenchComposerPrefill } from '@/lib/workbench/interactive-repair-prefill';
+import { useRepairComposerPrefill } from '@/lib/workbench/use-repair-composer-prefill';
 
 const NO_ELEMENT_REFS: ElementRef[] = [];
 const NO_COURSE_REFS: CourseRef[] = [];
@@ -115,6 +113,7 @@ const NO_COURSE_REFS: CourseRef[] = [];
 export function WorkbenchChat({
   hosted = false,
   adjacentPanelOpen = false,
+  paneSessionId,
   prefill = null,
   onPrefillConsumed,
 }: {
@@ -131,6 +130,8 @@ export function WorkbenchChat({
    * changes, so a hosted chat must not use that value to size its transcript.
    */
   adjacentPanelOpen?: boolean;
+  /** Selected session in the workspace pane, independent of chat attach timing. */
+  paneSessionId?: string | null;
   /** Product-owned draft text staged by another workbench pane; never auto-sent. */
   prefill?: WorkbenchComposerPrefill | null;
   /** Acknowledge one-shot prefill consumption so a remount cannot replay stale text. */
@@ -253,7 +254,6 @@ export function WorkbenchChat({
    */
   const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
-  const consumedPrefillId = useRef<number | null>(null);
 
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
@@ -274,30 +274,20 @@ export function WorkbenchChat({
   useCourseRefsOwnerLifecycle(composerOwnerId);
   const courseRefs = useCourseRefsForSession(composerOwnerId);
 
-  useEffect(() => {
-    if (!prefill || consumedPrefillId.current === prefill.id) return;
-    consumedPrefillId.current = prefill.id;
-    onPrefillConsumed?.(prefill.id);
-
-    // Never overwrite user-authored text. The repair action can be clicked
-    // again after the current draft is sent or cleared.
-    if (!canApplyWorkbenchComposerPrefill(draft)) {
-      toast.info(t('workbench.interactiveRepair.draftOccupied'));
-      return;
-    }
-
-    // The workspace deliberately does not infer that the open classroom belongs
-    // to this conversation. Name it explicitly using the existing @course
-    // channel so read_stage/patch_stage receive the correct stage id.
-    const activeCourseId = navigation?.activeCourseId;
-    if (activeCourseId) {
-      const course = navigation.lookupCourse(activeCourseId);
-      const ref = makeCourseRef(activeCourseId, course?.name ?? t('workspace.untitledCourse'));
-      if (ref) useCourseRefsStore.getState().add(ref);
-    }
-
-    replaceDraft(prefill.text);
-  }, [draft, navigation, onPrefillConsumed, prefill, replaceDraft, t]);
+  useRepairComposerPrefill({
+    prefill,
+    composerOwnerId,
+    expectedOwnerId:
+      paneSessionId === undefined
+        ? composerOwnerId
+        : (paneSessionId ?? draftConversation?.ownerKey ?? null),
+    draft,
+    navigation,
+    replaceDraft,
+    onConsumed: onPrefillConsumed,
+    t,
+    untitledCourse: t('workspace.untitledCourse'),
+  });
 
   const refreshedCreateCalls = useRef(new Set<string>());
 
