@@ -4,6 +4,7 @@ import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { OPENMAIC_DATA_DIR } from '../data-path';
 
 export type MaterialByteInput = Buffer | Uint8Array | Readable | ReadableStream<Uint8Array>;
 
@@ -35,7 +36,7 @@ function safeLocalPath(root: string, key: string): string {
 export class LocalMaterialByteStore implements MaterialByteStore {
   private readonly root: string;
 
-  constructor(root: string = resolve(process.cwd(), 'data')) {
+  constructor(root: string = resolve(OPENMAIC_DATA_DIR)) {
     this.root = resolve(root);
   }
 

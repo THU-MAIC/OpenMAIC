@@ -2,6 +2,7 @@
   "name": "openmaic",
   "version": "1.2.0-rc.1",
   "private": true,
+  "main": "desktop/main.cjs",
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"
@@ -15,7 +16,13 @@
     "gen:video-export-noto-cjk": "node scripts/generate-video-export-noto-cjk.mjs",
     "gen:video-export-noto-script-fonts": "node scripts/generate-video-export-noto-script-fonts.mjs",
     "dev": "node scripts/build-standalone-player.mjs && next dev",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
     "build": "node scripts/assert-vendor-maic-importer.mjs && node scripts/build-standalone-player.mjs && next build",
+    "desktop:build": "node scripts/desktop-build.mjs",
+    "desktop:dist": "pnpm desktop:build && electron-builder",
+    "desktop:dist:mac": "pnpm desktop:build && electron-builder --mac",
+    "desktop:dist:win": "pnpm desktop:build && electron-builder --win",
+    "desktop:dist:linux": "pnpm desktop:build && electron-builder --linux",
     "start": "next start",
     "db:up": "docker compose -p openmaic-dev-db -f docker-compose.db.yml up -d --wait postgres",
     "db:down": "docker compose -p openmaic-dev-db -f docker-compose.db.yml stop postgres",
@@ -148,6 +155,7 @@
     "react-colorful": "^5.7.0",
     "react-dom": "19.2.3",
     "react-i18next": "^17.0.1",
+    "remark-cjk-friendly": "^2.3.1",
     "sanitize-html": "2.17.0",
     "shadcn": "^3.6.3",
     "sharp": "0.35.4",
@@ -168,8 +176,7 @@
     "uqr": "^0.1.3",
     "use-stick-to-bottom": "^1.1.1",
     "zod": "^4.3.5",
-    "zustand": "^5.0.10",
-    "remark-cjk-friendly": "^2.3.1"
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.16",
@@ -189,6 +196,9 @@
     "@types/sanitize-html": "^2.16.1",
     "@types/tinycolor2": "^1.4.6",
     "esbuild": "0.27.7",
+    "concurrently": "^9.2.4",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "fake-indexeddb": "^6.2.5",
@@ -204,13 +214,77 @@
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.8",
-    "vue-to-react": "^1.0.0"
+    "vue-to-react": "^1.0.0",
+    "wait-on": "^9.1.0"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [
+      "@alicloud/openapi-core",
+      "@biomejs/biome",
+      "@google/genai",
+      "@scarf/scarf",
+      "canvas",
+      "core-js",
+      "electron-winstaller",
+      "es5-ext",
+      "esbuild",
+      "msw",
+      "onnxruntime-node",
+      "protobufjs",
       "sharp",
       "unrs-resolver"
+    ],
+    "onlyBuiltDependencies": [
+      "electron"
     ]
+  },
+  "build": {
+    "appId": "chat.maic.openmaic",
+    "productName": "OpenMAIC",
+    "icon": "desktop/openmaic-icon.png",
+    "asar": true,
+    "directories": {
+      "app": "desktop",
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/desktop-runtime",
+        "to": "openmaic-server"
+      },
+      {
+        "from": ".next/static",
+        "to": "openmaic-server/.next/static"
+      },
+      {
+        "from": "public",
+        "to": "openmaic-server/public"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "category": "Education",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   },
   "packageManager": "pnpm@10.28.0+sha512.05df71d1421f21399e053fde567cea34d446fa02c76571441bfc1c7956e98e363088982d940465fd34480d4d90a0668bc12362f8aa88000a64e83d0b0e47be48"
 }

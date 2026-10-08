@@ -16,7 +16,7 @@ export interface AgentSkillInfo {
   title?: string;
   description: string;
   hasConstraints: boolean;
-  source: 'builtin' | 'user';
+  source: 'builtin' | 'user' | 'public';
 }
 
 interface RegistrySnapshot {

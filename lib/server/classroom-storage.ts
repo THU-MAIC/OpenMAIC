@@ -1,5 +1,6 @@
 import path from 'path';
 import type { NextRequest } from 'next/server';
+import { OPENMAIC_DATA_DIR } from './data-path';
 
 /**
  * The file-backed classroom directory of earlier versions: `<id>.json` course
@@ -16,7 +17,7 @@ import type { NextRequest } from 'next/server';
  */
 export const CLASSROOMS_DIR = process.env.OPENMAIC_CLASSROOMS_DIR
   ? path.resolve(process.env.OPENMAIC_CLASSROOMS_DIR)
-  : path.join(process.cwd(), 'data', 'classrooms');
+  : path.join(OPENMAIC_DATA_DIR, 'classrooms');
 
 export function buildRequestOrigin(req: NextRequest): string {
   return req.headers.get('x-forwarded-host')

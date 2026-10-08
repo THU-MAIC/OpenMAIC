@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
 /**
- * The settings dialog offers the Skills section only when the agent runtime
- * can serve it. `/api/agent/skills` 404s without the runtime, so showing the
- * item there would only ever show a load error.
+ * The settings dialog follows the Web runtime gate, while the desktop keeps
+ * the Skills section because it can list built-in and local public skills
+ * without the agent runtime.
  *
  *  1. runtime off (`enabled: false` from `/api/agent/runtime`): no Skills item;
  *  2. runtime on: the Skills item is listed;
@@ -60,6 +60,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.replaceChildren();
   vi.unstubAllGlobals();
+  delete window.openmaicDesktop;
 });
 
 function stubRuntime(enabled: boolean) {
@@ -113,6 +114,21 @@ describe('the Skills section follows the agent runtime', () => {
 
     expect(skillsNav()).not.toBeNull();
     act(() => (skillsNav() as HTMLButtonElement).click());
+    expect(panel('skills')).not.toBeNull();
+  });
+
+  it('shows the Skills item in the desktop when the runtime is off', async () => {
+    window.openmaicDesktop = {
+      isDesktop: true,
+      platform: 'darwin',
+      version: 'dev',
+      openExternal: vi.fn(),
+    };
+    stubRuntime(false);
+    await mountDialog('skills');
+    await flush();
+
+    expect(skillsNav()).not.toBeNull();
     expect(panel('skills')).not.toBeNull();
   });
 

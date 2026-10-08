@@ -144,6 +144,7 @@ export function SkillSlashMenu({
   const groups = [
     { source: 'user' as const, label: t('proMode.userSkillsGroup') },
     { source: 'builtin' as const, label: t('proMode.builtinSkillsGroup') },
+    { source: 'public' as const, label: t('proMode.publicSkillsGroup') },
   ];
   return (
     <div

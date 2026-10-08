@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles } from 'lucide-react';
+import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles, MonitorDown } from 'lucide-react';
+import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useAgentRuntimeAvailable } from '@/lib/hooks/use-agent-runtime-available';
 import { settingsSections } from '@/lib/model-settings/shape';
@@ -51,11 +52,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   // Navigation
   const [requestedSection, setActiveSection] = useState<SettingsSection>('token-plan');
-  // Skills are served by the agent runtime (`/api/agent/skills` 404s without
-  // it), so the section is offered only once the server says the runtime is
-  // available. Until then — and on a deployment without it — the item is
-  // hidden, and a request to open it lands on the first section instead.
-  const skillsAvailable = useAgentRuntimeAvailable();
+  // Web deployments keep the upstream runtime gate. The desktop can also list
+  // built-in and local public skills when the agent runtime is disabled.
+  const runtimeSkillsAvailable = useAgentRuntimeAvailable();
+  const desktopEnvironment = useSyncExternalStore(
+    () => () => {},
+    () => window.openmaicDesktop?.isDesktop === true,
+    () => null,
+  );
+  const skillsAvailable = runtimeSkillsAvailable || desktopEnvironment === true;
   // Until the model settings are read, every section is listed; each one
   // shows its own loading state.
   const modelView = useModelSettingsView();
@@ -82,7 +87,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   useEffect(() => {
     if (open && initialSection) {
       if (SERVICE_TABS.includes(initialSection as ServiceTab)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync service tab from legacy section value
         setServiceTab(initialSection as ServiceTab);
         setActiveSection('model-services');
       } else {
@@ -136,6 +140,43 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       document.body.style.cursor = '';
     };
   }, [isResizing]);
+
+  const [desktopSyncing, setDesktopSyncing] = useState(false);
+  const handleSyncToDesktop = async () => {
+    if (desktopSyncing) return;
+    setDesktopSyncing(true);
+    try {
+      const response = await fetch('/api/desktop-sync', {
+        method: 'POST',
+        signal: AbortSignal.timeout(5000),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create' }),
+      });
+      if (!response.ok) throw new Error('desktop sync failed');
+      const { id } = await response.json();
+      if (typeof id !== 'string') throw new Error('invalid receipt');
+      const deadline = Date.now() + 30_000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const status = await fetch(`/api/desktop-sync?id=${encodeURIComponent(id)}`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!status.ok) throw new Error('transfer expired');
+        const receipt = await status.json();
+        if (receipt.applied === true) {
+          toast.success(t('settings.syncToDesktopSuccess'));
+          return;
+        }
+        if (typeof receipt.error === 'string') throw new Error(receipt.error);
+      }
+      throw new Error('desktop did not confirm');
+    } catch {
+      toast.error(t('settings.syncToDesktopFailed'));
+    } finally {
+      setDesktopSyncing(false);
+    }
+  };
 
   // Get header content based on section
   const getHeaderContent = () => {
@@ -216,6 +257,20 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             <div className="flex items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div className="flex items-center gap-3">{getHeaderContent()}</div>
               <div className="flex items-center gap-2">
+                {desktopEnvironment === false && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 gap-1.5"
+                    onClick={() => void handleSyncToDesktop()}
+                    disabled={desktopSyncing}
+                    aria-busy={desktopSyncing}
+                    title={t('settings.syncToDesktop')}
+                  >
+                    <MonitorDown className="h-4 w-4" />
+                    <span className="hidden xl:inline">{t('settings.syncToDesktop')}</span>
+                  </Button>
+                )}
                 <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
                   <X className="h-4 w-4" />
                 </Button>

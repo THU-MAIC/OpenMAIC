@@ -2,6 +2,23 @@
 const numberFromEnv = (value: string | undefined, fallback: number) =>
   value ? Number(value) : fallback;
 
+const publicSkillDirsFromEnv = (): string[] => {
+  const raw = process.env.OPENMAIC_PUBLIC_SKILLS_DIRS?.trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed))
+      return parsed.filter((item): item is string => typeof item === 'string');
+  } catch {
+    if (raw.startsWith('[')) return [];
+    // A comma-separated fallback keeps manual deployment configuration simple.
+  }
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+};
+
 export const agentRuntimeConfig = {
   /** How often the runner scans for claimable sessions. */
   scanIntervalMs: numberFromEnv(process.env.OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS, 1000),
@@ -42,6 +59,8 @@ export const agentRuntimeConfig = {
   },
   /** Directory skills are loaded from. Overridable so a deployment can mount its own set. */
   skillsDir: process.env.OPENMAIC_AGENT_SKILLS_DIR ?? `${process.cwd()}/skills/agent-runtime`,
+  /** Read-only local skill roots explicitly exposed by the desktop shell. */
+  publicSkillsDirs: publicSkillDirsFromEnv(),
   /** Audio/video upload safety ceiling; defaults to the same 50 MiB cap as documents/images. */
   maxUploadBytes: numberFromEnv(process.env.OPENMAIC_AGENT_MAX_UPLOAD_BYTES, 50 * 1024 * 1024),
   /** Document/image cap, aligned with the course material cap of generation runs. */

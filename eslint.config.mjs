@@ -665,6 +665,12 @@ const eslintConfig = defineConfig([
       'no-restricted-syntax': ['error', ...AI_SDK_DYNAMIC_IMPORT_BAN],
     },
   },
+  {
+    files: ['desktop/**/*.cjs'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
 ]);
 
 export default eslintConfig;

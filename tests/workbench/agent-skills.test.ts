@@ -62,6 +62,22 @@ describe('skill display labels', () => {
 });
 
 describe('skill registry invalidation', () => {
+  it('recovers after a failed list request when the user retries', async () => {
+    const listed = [skill('stage-design')];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('Not found', { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(listed), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(invalidateAgentSkills()).rejects.toThrow('404');
+      await expect(invalidateAgentSkills()).resolves.toEqual(listed);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('coalesces simultaneous consumers into one refresh request', async () => {
     const fetchMock = vi
       .fn()

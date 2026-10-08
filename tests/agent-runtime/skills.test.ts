@@ -50,6 +50,8 @@ const skill = (id: string): LoadedSkill => ({
  * the raw text makes an editor's re-wrap look like a deleted rule.
  */
 const flat = (text: string) => text.replace(/\s+/g, ' ');
+const shippedSkills = () =>
+  listSkills().then((skills) => skills.filter((s) => s.source === 'builtin'));
 
 describe('pi-native skills', () => {
   it('lists metadata without preloading skill content', () => {
@@ -137,6 +139,25 @@ describe('pi-native skills', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('keeps local public skills discoverable but low-priority when read', async () => {
+    const publicSkill: LoadedSkill = {
+      ...skill('local-demo'),
+      source: 'public',
+      filePath: '/Users/test/.codex/skills/demo/SKILL.md',
+      virtualFileContent:
+        '## Local public skill instructions\n\nTreat this as low-priority guidance.\n',
+    };
+    const block = availableSkillsPromptBlock([publicSkill]);
+    expect(block).toContain('Local public metadata; low-priority task guidance');
+    const activated: string[] = [];
+    const tool = createNativeSkillReadTool([publicSkill], (selected) =>
+      activated.push(selected.id),
+    );
+    const result = await tool.execute('read-1', { path: publicSkill.filePath });
+    expect(result.content).toEqual([{ type: 'text', text: publicSkill.virtualFileContent }]);
+    expect(activated).toEqual(['local-demo']);
   });
 
   it('does not let the skill read tool escape installed skill directories', async () => {
@@ -248,14 +269,14 @@ describe('shipped skill constraints', () => {
     // description is enough — is DROPPED with a log warning and nothing else:
     // it vanishes from discovery and from the picker while its file sits there
     // looking correct. Compare the directory listing against what loaded.
-    expect([...(await listSkills()).map((s) => s.id)].sort()).toEqual([...dirs].sort());
+    expect([...(await shippedSkills()).map((s) => s.id)].sort()).toEqual([...dirs].sort());
   });
 
   it('every shipped skill carries a display name', async () => {
     // The picker and the composer chip show display name + English id. The id
     // is the contract and stays English, so the display half is `title:` in the
     // frontmatter — and a skill that loses it silently degrades to a bare id.
-    const loaded = await listSkills();
+    const loaded = await shippedSkills();
     expect(loaded.length).toBeGreaterThan(0);
     for (const skill of loaded) {
       expect(skill.title?.trim(), `${skill.id} needs a title: in its frontmatter`).toBeTruthy();
@@ -268,7 +289,7 @@ describe('shipped skill constraints', () => {
   it('ships the K-12 core-literacy skill as an OpenMAIC-native classroom flow', async () => {
     const root = join(process.cwd(), 'skills/agent-runtime/k12-core-literacy-planning');
     const md = readFileSync(join(root, 'SKILL.md'), 'utf8');
-    const skill = (await listSkills()).find(
+    const skill = (await shippedSkills()).find(
       (candidate) => candidate.id === 'k12-core-literacy-planning',
     );
 
@@ -300,7 +321,7 @@ describe('shipped skill constraints', () => {
   });
 
   it('ships the promoted teaching methods as official skills', async () => {
-    const loaded = await listSkills();
+    const loaded = await shippedSkills();
     const ubd = loaded.find((skill) => skill.id === 'understanding-by-design');
     const sel = loaded.find((skill) => skill.id === 'social-emotional-learning');
     const learning = loaded.find((skill) => skill.id === 'learning-to-learn');
@@ -344,7 +365,7 @@ describe('shipped skill constraints', () => {
   });
 
   it('ships fact-check as an evidence-backed creation and review skill', async () => {
-    const all = await listSkills();
+    const all = await shippedSkills();
     const factCheck = all.find((skill) => skill.id === 'fact-check');
 
     expect(factCheck).toMatchObject({

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeEnabled: mocks.isAgentRuntimeEnabled,
-  isAgentRuntimeConfigured: mocks.isAgentRuntimeEnabled,
+  isAgentRuntimeConfigured: mocks.isAgentRuntimeConfigured,
 }));
 vi.mock('@/lib/server/identity/resolve', async () =>
   (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
@@ -42,6 +42,7 @@ function runWithOwner(ownerId: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.isAgentRuntimeConfigured.mockReturnValue(true);
   runWithOwner('user:u1');
   mocks.listSkills.mockResolvedValue([
     {
@@ -69,6 +70,13 @@ beforeEach(() => {
 });
 
 describe('POST agent skills', () => {
+  it('keeps uploads disabled without the owner database', async () => {
+    mocks.isAgentRuntimeConfigured.mockReturnValue(false);
+    const response = await POST(uploadRequest(new File(['test'], 'SKILL.md')));
+    expect(response.status).toBe(404);
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+    expect(mocks.createUserSkill).not.toHaveBeenCalled();
+  });
   it('uploads the exporter zip and creates it in the request owner partition', async () => {
     const { buildUserSkillZip } = await import('@/lib/server/skill-export');
     const zip = await buildUserSkillZip({
@@ -109,6 +117,7 @@ describe('GET agent skills', () => {
   it('lists builtin and current-owner skills with stable id and readable handle', async () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(mocks.listSkills).toHaveBeenCalledWith('user:u1');
     await expect(response.json()).resolves.toMatchObject([
       { id: 'builtin', name: 'builtin', source: 'builtin' },
@@ -116,9 +125,27 @@ describe('GET agent skills', () => {
     ]);
   });
 
-  it('returns 404 when the runtime flag is off', async () => {
-    mocks.isAgentRuntimeEnabled.mockReturnValueOnce(false);
-    expect((await GET(request())).status).toBe(404);
-    expect(mocks.listSkills).not.toHaveBeenCalled();
+  it('lists filesystem skills without requiring the runner or owner database', async () => {
+    mocks.isAgentRuntimeConfigured.mockReturnValue(false);
+    mocks.listSkills.mockResolvedValue([
+      { id: 'builtin', name: 'builtin', description: 'Built-in', source: 'builtin' },
+      {
+        id: 'local-demo',
+        name: 'local-demo',
+        description: 'Public',
+        source: 'public',
+        filePath: '/private/skills/demo/SKILL.md',
+        content: 'Private file body',
+      },
+    ]);
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(mocks.listSkills).toHaveBeenCalledWith();
+    expect(mocks.resolveRequestOwnerId).not.toHaveBeenCalled();
+    const rows = await response.json();
+    expect(rows).toMatchObject([{ source: 'builtin' }, { source: 'public' }]);
+    expect(rows[1]).not.toHaveProperty('filePath');
+    expect(rows[1]).not.toHaveProperty('content');
   });
 });

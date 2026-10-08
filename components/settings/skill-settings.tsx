@@ -58,6 +58,7 @@ import { cn } from '@/lib/utils';
  */
 function DownloadLink({ skill }: { skill: AgentSkillInfo }) {
   const { t } = useI18n();
+  if (skill.source === 'public') return null;
   return (
     <a
       href={`/api/skills/${encodeURIComponent(skill.id)}`}
@@ -79,7 +80,9 @@ function SkillBadges({ skill }: { skill: AgentSkillInfo }) {
       <span className="shrink-0 rounded bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary">
         {skill.source === 'user'
           ? t('settings.skills.badgeOwner')
-          : t('settings.skills.badgeBuiltin')}
+          : skill.source === 'public'
+            ? t('settings.skills.publicSkills')
+            : t('settings.skills.badgeBuiltin')}
       </span>
       {skill.hasConstraints && (
         <span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
@@ -308,6 +311,13 @@ function SkillDetailDialog({
                   </pre>
                 </div>
               )
+            ) : skill.source === 'public' ? (
+              <p
+                data-testid="skill-settings-detail-public-note"
+                className="rounded-md border border-border bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
+              >
+                {t('settings.skills.publicDetailNote')}
+              </p>
             ) : (
               <p
                 data-testid="skill-settings-detail-note"
@@ -353,6 +363,7 @@ export function SkillSettings() {
   ].filter((skill) => !hiddenSkillIds.has(skill.id));
   const userSkills = visibleSkills.filter((skill) => skill.source === 'user');
   const builtinSkills = visibleSkills.filter((skill) => skill.source === 'builtin');
+  const publicSkills = visibleSkills.filter((skill) => skill.source === 'public');
 
   const openDetails = useCallback((skill: AgentSkillInfo) => setDetailSkill(skill), []);
 
@@ -482,6 +493,13 @@ export function SkillSettings() {
             skills={builtinSkills}
             emptyLabel={t('settings.skills.emptyBuiltinSkills')}
             testId="skill-settings-builtin-group"
+            onDetails={openDetails}
+          />
+          <SkillGroup
+            label={t('settings.skills.publicSkills')}
+            skills={publicSkills}
+            emptyLabel={t('settings.skills.emptyPublicSkills')}
+            testId="skill-settings-public-group"
             onDetails={openDetails}
           />
         </>

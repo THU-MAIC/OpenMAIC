@@ -1,0 +1,6 @@
+{
+  "name": "openmaic-desktop",
+  "version": "1.0.3",
+  "private": true,
+  "main": "main.cjs"
+}

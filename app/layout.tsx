@@ -13,6 +13,7 @@ import { ModelSettingsInit } from '@/components/model-settings-init';
 import { StorageHealthNotice } from '@/components/storage-health-notice';
 import { AccessCodeGuard } from '@/components/access-code-guard';
 import { ProSwapWatcher } from '@/components/workbench/ProSwapWatcher';
+import { DesktopSettingsBridge } from '@/components/desktop-settings-bridge';
 
 // The UI font is loaded from @fontsource's stylesheet rather than next/font,
 // because only the stylesheet carries the per-subset `unicode-range`
@@ -63,6 +64,7 @@ export default function RootLayout({
             <ModelSettingsInit />
             <AgentRegistryInit />
             <ProSwapWatcher />
+            <DesktopSettingsBridge />
             <AccessCodeGuard>{children}</AccessCodeGuard>
             <Toaster position="top-center" />
             {/* After the Toaster: this one raises a toast on mount when

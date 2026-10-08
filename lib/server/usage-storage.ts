@@ -2,12 +2,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { createLogger } from '@/lib/logger';
 import { hasBillableTokens, type NormalizedUsage } from '@/lib/usage/normalize';
+import { OPENMAIC_DATA_DIR } from './data-path';
 
 const log = createLogger('UsageStorage');
 
 /** Base directory for usage logs; lands in the openmaic-data volume in Docker. */
 function usageDir(baseDir?: string): string {
-  return baseDir ?? path.join(process.cwd(), 'data', 'usage');
+  return baseDir ?? path.join(OPENMAIC_DATA_DIR, 'usage');
 }
 
 /** Current month's jsonl file name, e.g. usage/2026-06.jsonl. */

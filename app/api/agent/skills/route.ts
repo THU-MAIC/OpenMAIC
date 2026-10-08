@@ -25,11 +25,10 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
-  if (!isAgentRuntimeConfigured()) {
-    return new Response('Not found', { status: 404 });
-  }
-  return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
-    const skills = await listSkills(ownerId);
+  const respond = async (ownerId?: string, responseHeaders = new Headers()) => {
+    const skills = ownerId ? await listSkills(ownerId) : await listSkills();
+    responseHeaders.set('Cache-Control', 'no-store');
+
     return NextResponse.json(
       skills.map((s) => ({
         id: s.id,
@@ -41,7 +40,11 @@ export async function GET(req: NextRequest) {
       })),
       { headers: responseHeaders },
     );
-  });
+  };
+  // Browsing filesystem skills does not require the background runner or its
+  // database. Only add private user skills when their owner store is available.
+  if (!isAgentRuntimeConfigured()) return respond();
+  return withRequestOwner(req, ({ ownerId }, headers) => respond(ownerId, headers));
 }
 
 /** Upload one owner Skill as the exporter zip or a bare canonical SKILL.md. */
