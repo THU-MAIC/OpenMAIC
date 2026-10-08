@@ -491,8 +491,12 @@ describe('voice clone agent tools', () => {
       endSec: 3,
     } as never);
 
-    expect(clipAudio).toHaveBeenCalledWith(sourceAudio, 'mat_source.mp4', 1, 3);
-    expect(storeRawAsset).toHaveBeenCalledWith('ses_1', clipWav, 'audio/wav');
+    // Spy matchers eagerly format expected arguments even on success. Keep
+    // large audio buffers out of that path and compare their bytes natively.
+    expect(clipAudio).toHaveBeenCalledExactlyOnceWith(expect.any(Buffer), 'mat_source.mp4', 1, 3);
+    expect(clipAudio.mock.calls[0][0].equals(sourceAudio)).toBe(true);
+    expect(storeRawAsset).toHaveBeenCalledExactlyOnceWith('ses_1', expect.any(Buffer), 'audio/wav');
+    expect(storeRawAsset.mock.calls[0][1].equals(clipWav)).toBe(true);
     expect(createMaterial).toHaveBeenCalledWith(
       'ses_1',
       expect.objectContaining({
