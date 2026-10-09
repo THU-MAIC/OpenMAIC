@@ -61,7 +61,9 @@ describe('scene generation primitives', () => {
     );
 
     const content = await generateSceneContent(slideOutline(), aiCall);
-    expect(content?.elements[0]).toMatchObject({ type: 'shape', rotate: 36.5 });
+    expect(content).not.toBeNull();
+    if (!content || !('elements' in content)) throw new Error('expected slide content');
+    expect(content.elements[0]).toMatchObject({ type: 'shape', rotate: 36.5 });
   });
 
   it('generates quiz content through the json-output-rules prompt path', async () => {
