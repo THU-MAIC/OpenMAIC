@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => ({
   realpath: vi.fn(),
   stat: vi.fn(),
   createReadStream: vi.fn(),
-  resolveRequestOwnerId: vi.fn(),
   query: vi.fn(),
   accessRow: null as Record<string, unknown> | null,
 }));
@@ -16,12 +15,6 @@ vi.mock('fs', () => ({
   promises: { realpath: mocks.realpath, stat: mocks.stat },
   createReadStream: mocks.createReadStream,
 }));
-
-vi.mock('@/lib/server/identity/resolve', async () =>
-  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
-    mocks.resolveRequestOwnerId,
-  ),
-);
 
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
@@ -43,9 +36,6 @@ import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 
 const CLASSROOM_ID = 'classroom-1';
 const FILE_SIZE = 100;
-const OWNER_COOKIE = 'anonymous_id=viewer; Path=/; HttpOnly';
-const SESSION_COOKIE = 'owner_session=renewed; Path=/; HttpOnly';
-const OWNER_COOKIES = [OWNER_COOKIE, SESSION_COOKIE];
 
 function fakeReadStream(chunks: string[]) {
   const emitter = new EventEmitter() as EventEmitter & { destroy: () => void };
@@ -75,18 +65,9 @@ function getPath(pathSegments: string[]) {
   });
 }
 
-function expectOwnerCookies(response: Response) {
-  expect(response.headers.getSetCookie()).toEqual(OWNER_COOKIES);
-}
-
 describe('GET /api/classroom-media range support', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.resolveRequestOwnerId.mockImplementation((_req, headers: Headers) => {
-      headers.append('Set-Cookie', OWNER_COOKIE);
-      headers.append('Set-Cookie', SESSION_COOKIE);
-      return 'anon:viewer';
-    });
     mocks.accessRow = {
       meta_owner_id: 'owner-of-course',
       meta_is_public: false,
@@ -105,15 +86,14 @@ describe('GET /api/classroom-media range support', () => {
     );
   });
 
-  it('serves a live foreign private course by capability with 200', async () => {
+  it('serves a live course by capability with 200', async () => {
     const res = await get();
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Length')).toBe(String(FILE_SIZE));
     expect(res.headers.get('Content-Type')).toBe('video/mp4');
     expect(res.headers.get('Accept-Ranges')).toBe('bytes');
-    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
     expect(mocks.query.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.realpath.mock.invocationCallOrder[0]!,
     );
@@ -128,8 +108,7 @@ describe('GET /api/classroom-media range support', () => {
     expect(res.headers.get('Content-Range')).toBe(`bytes 10-19/${FILE_SIZE}`);
     expect(res.headers.get('Content-Length')).toBe('10');
     expect(res.headers.get('Accept-Ranges')).toBe('bytes');
-    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
     expect(mocks.createReadStream).toHaveBeenCalledWith(expect.any(String), {
       start: 10,
       end: 19,
@@ -163,7 +142,6 @@ describe('GET /api/classroom-media range support', () => {
     expect(res.headers.get('Content-Range')).toBe(`bytes */${FILE_SIZE}`);
     // A cached 416 would poison the media URL for later valid requests.
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
     expect(mocks.createReadStream).not.toHaveBeenCalled();
   });
 
@@ -172,19 +150,27 @@ describe('GET /api/classroom-media range support', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Length')).toBe(String(FILE_SIZE));
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
   });
 
-  it('answers the same 404 for a missing course before touching the filesystem', async () => {
-    mocks.accessRow = null;
+  it('continues to serve a legacy media folder without a metadata row', async () => {
+    mocks.accessRow = {
+      meta_owner_id: null,
+      meta_is_public: null,
+      meta_published_at: null,
+      meta_generation_complete: null,
+      meta_deleted_at: null,
+      document_name: null,
+    };
 
     const res = await get();
 
-    expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: 'Not found' });
-    expectOwnerCookies(res);
-    expect(mocks.realpath).not.toHaveBeenCalled();
-    expect(mocks.stat).not.toHaveBeenCalled();
-    expect(mocks.createReadStream).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Cache-Control')).toBe('private, max-age=300, must-revalidate');
+    expect(mocks.realpath).toHaveBeenCalledOnce();
+    expect(mocks.stat).toHaveBeenCalledOnce();
+    expect(mocks.createReadStream).toHaveBeenCalledOnce();
+    expect(await res.text()).toBe('x'.repeat(FILE_SIZE));
   });
 
   it('answers 404 for a tombstoned course even when its old file still exists', async () => {
@@ -194,18 +180,17 @@ describe('GET /api/classroom-media range support', () => {
 
     expect(res.status).toBe(404);
     await expect(res.json()).resolves.toEqual({ error: 'Not found' });
-    expectOwnerCookies(res);
+    expect(res.headers.get('Cache-Control')).toBe('private, no-store');
     expect(mocks.realpath).not.toHaveBeenCalled();
     expect(mocks.stat).not.toHaveBeenCalled();
     expect(mocks.createReadStream).not.toHaveBeenCalled();
   });
 
-  it('preserves the owner cookie on path validation errors', async () => {
+  it('keeps path validation errors private and uncacheable', async () => {
     const res = await getPath(['images', 'clip.mp4']);
 
     expect(res.status).toBe(404);
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
     expect(mocks.query).not.toHaveBeenCalled();
     expect(mocks.realpath).not.toHaveBeenCalled();
   });
@@ -217,20 +202,18 @@ describe('GET /api/classroom-media range support', () => {
 
     expect(res.status).toBe(500);
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
     expect(mocks.realpath).not.toHaveBeenCalled();
     expect(mocks.stat).not.toHaveBeenCalled();
     expect(mocks.createReadStream).not.toHaveBeenCalled();
   });
 
-  it('preserves the owner cookie when the media file is absent', async () => {
+  it('keeps a missing media response private and uncacheable', async () => {
     mocks.realpath.mockRejectedValue(Object.assign(new Error('missing media'), { code: 'ENOENT' }));
 
     const res = await get();
 
     expect(res.status).toBe(404);
     expect(res.headers.get('Cache-Control')).toBe('private, no-store');
-    expectOwnerCookies(res);
     expect(mocks.createReadStream).not.toHaveBeenCalled();
   });
 });

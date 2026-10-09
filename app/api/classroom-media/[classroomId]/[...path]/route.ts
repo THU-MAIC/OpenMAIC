@@ -7,13 +7,15 @@ import {
   isValidClassroomId,
 } from '@/lib/server/classroom-storage';
 import { parseRangeHeader } from '@/lib/server/http-range';
-import { withRequestOwner } from '@/lib/server/identity/with-owner';
-import { resolveStageAccess } from '@/lib/server/stage-access';
+import { readStageAccessIncludingDeleted } from '@/lib/server/stage-access';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomMedia');
 
-const CACHE_CONTROL = 'private, no-store';
+const SUCCESS_CACHE_HEADERS = {
+  'Cache-Control': 'private, max-age=300, must-revalidate',
+} as const;
+const ERROR_CACHE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
 
 /** Bridge a fs ReadStream into a web ReadableStream, propagating errors and cancel. */
 function toWebStream(stream: ReadStream): ReadableStream {
@@ -33,102 +35,120 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ classroomId: string; path: string[] }> },
 ) {
-  return withRequestOwner(req, async (_principal, responseHeaders) => {
-    responseHeaders.set('Cache-Control', CACHE_CONTROL);
-    const { classroomId, path: pathSegments } = await params;
+  const { classroomId, path: pathSegments } = await params;
 
-    // Validate classroomId
-    if (!isValidClassroomId(classroomId)) {
+  // Validate classroomId
+  if (!isValidClassroomId(classroomId)) {
+    return NextResponse.json(
+      { error: 'Invalid classroom ID' },
+      { status: 400, headers: ERROR_CACHE_HEADERS },
+    );
+  }
+
+  // Validate path segments — no traversal
+  const joined = pathSegments.join('/');
+  if (joined.includes('..') || pathSegments.some((s) => s.includes('\0'))) {
+    return NextResponse.json(
+      { error: 'Invalid path' },
+      { status: 400, headers: ERROR_CACHE_HEADERS },
+    );
+  }
+
+  // Only allow media/ and audio/ subdirectories
+  const subDir = pathSegments[0];
+  if (subDir !== 'media' && subDir !== 'audio') {
+    return NextResponse.json(
+      { error: 'Invalid path' },
+      { status: 404, headers: ERROR_CACHE_HEADERS },
+    );
+  }
+
+  const filePath = path.join(CLASSROOMS_DIR, classroomId, ...pathSegments);
+  const resolvedBase = path.resolve(CLASSROOMS_DIR, classroomId);
+
+  try {
+    // Media reads are capability-by-id. Only a tombstone revokes that
+    // capability; legacy media folders may have no database row.
+    const access = await readStageAccessIncludingDeleted(classroomId);
+    if (access !== null && access.deletedAt !== null) {
       return NextResponse.json(
-        { error: 'Invalid classroom ID' },
-        { status: 400, headers: responseHeaders },
+        { error: 'Not found' },
+        { status: 404, headers: ERROR_CACHE_HEADERS },
       );
     }
 
-    // Validate path segments — no traversal
-    const joined = pathSegments.join('/');
-    if (joined.includes('..') || pathSegments.some((s) => s.includes('\0'))) {
+    // Resolve symlinks and verify the real path stays within the classroom dir
+    const realPath = await fs.realpath(filePath);
+    if (!realPath.startsWith(resolvedBase + path.sep) && realPath !== resolvedBase) {
       return NextResponse.json(
-        { error: 'Invalid path' },
-        { status: 400, headers: responseHeaders },
+        { error: 'Not found' },
+        { status: 404, headers: ERROR_CACHE_HEADERS },
       );
     }
 
-    // Only allow media/ and audio/ subdirectories
-    const subDir = pathSegments[0];
-    if (subDir !== 'media' && subDir !== 'audio') {
+    const stat = await fs.stat(realPath);
+    if (!stat.isFile()) {
       return NextResponse.json(
-        { error: 'Invalid path' },
-        { status: 404, headers: responseHeaders },
+        { error: 'Not found' },
+        { status: 404, headers: ERROR_CACHE_HEADERS },
       );
     }
 
-    const filePath = path.join(CLASSROOMS_DIR, classroomId, ...pathSegments);
-    const resolvedBase = path.resolve(CLASSROOMS_DIR, classroomId);
+    const ext = path.extname(realPath).toLowerCase();
+    const contentType = classroomMediaMimeType(ext) ?? 'application/octet-stream';
 
-    try {
-      // Course reads are capability-by-id, but a tombstone revokes that
-      // capability. Resolve liveness before observing whether old bytes remain.
-      const access = await resolveStageAccess(classroomId);
-      if (!access) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404, headers: responseHeaders });
-      }
+    // Range requests enable progressive playback and seeking for hosted media
+    // (e.g. <video> streams the moov atom first, then fetches on seek).
+    const range = parseRangeHeader(req.headers.get('range'), stat.size);
 
-      // Resolve symlinks and verify the real path stays within the classroom dir
-      const realPath = await fs.realpath(filePath);
-      if (!realPath.startsWith(resolvedBase + path.sep) && realPath !== resolvedBase) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404, headers: responseHeaders });
-      }
-
-      const stat = await fs.stat(realPath);
-      if (!stat.isFile()) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404, headers: responseHeaders });
-      }
-
-      const ext = path.extname(realPath).toLowerCase();
-      const contentType = classroomMediaMimeType(ext) ?? 'application/octet-stream';
-
-      // Range requests enable progressive playback and seeking for hosted media
-      // (e.g. <video> streams the moov atom first, then fetches on seek).
-      const range = parseRangeHeader(req.headers.get('range'), stat.size);
-
-      if (range.kind === 'unsatisfiable') {
-        const headers = new Headers(responseHeaders);
-        headers.set('Content-Range', `bytes */${stat.size}`);
-        return new NextResponse(null, { status: 416, headers });
-      }
-
-      if (range.kind === 'range') {
-        const stream = createReadStream(realPath, { start: range.start, end: range.end });
-        const headers = new Headers(responseHeaders);
-        headers.set('Content-Type', contentType);
-        headers.set('Content-Length', String(range.end - range.start + 1));
-        headers.set('Content-Range', `bytes ${range.start}-${range.end}/${stat.size}`);
-        headers.set('Accept-Ranges', 'bytes');
-        return new NextResponse(toWebStream(stream), { status: 206, headers });
-      }
-
-      // Stream the file to avoid loading large videos into memory
-      const headers = new Headers(responseHeaders);
-      headers.set('Content-Type', contentType);
-      headers.set('Content-Length', String(stat.size));
-      headers.set('Accept-Ranges', 'bytes');
-      return new NextResponse(toWebStream(createReadStream(realPath)), {
-        status: 200,
-        headers,
+    if (range.kind === 'unsatisfiable') {
+      return new NextResponse(null, {
+        status: 416,
+        headers: {
+          ...ERROR_CACHE_HEADERS,
+          'Content-Range': `bytes */${stat.size}`,
+        },
       });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return NextResponse.json({ error: 'Not found' }, { status: 404, headers: responseHeaders });
-      }
-      log.error(
-        `Classroom media serving failed [classroomId=${classroomId}, path=${joined}]:`,
-        error,
-      );
+    }
+
+    if (range.kind === 'range') {
+      const stream = createReadStream(realPath, { start: range.start, end: range.end });
+      return new NextResponse(toWebStream(stream), {
+        status: 206,
+        headers: {
+          ...SUCCESS_CACHE_HEADERS,
+          'Content-Type': contentType,
+          'Content-Length': String(range.end - range.start + 1),
+          'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
+
+    // Stream the file to avoid loading large videos into memory
+    return new NextResponse(toWebStream(createReadStream(realPath)), {
+      status: 200,
+      headers: {
+        ...SUCCESS_CACHE_HEADERS,
+        'Content-Type': contentType,
+        'Content-Length': String(stat.size),
+        'Accept-Ranges': 'bytes',
+      },
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return NextResponse.json(
-        { error: 'Internal error' },
-        { status: 500, headers: responseHeaders },
+        { error: 'Not found' },
+        { status: 404, headers: ERROR_CACHE_HEADERS },
       );
     }
-  });
+    log.error(
+      `Classroom media serving failed [classroomId=${classroomId}, path=${joined}]:`,
+      error,
+    );
+    return NextResponse.json(
+      { error: 'Internal error' },
+      { status: 500, headers: ERROR_CACHE_HEADERS },
+    );
+  }
 }
