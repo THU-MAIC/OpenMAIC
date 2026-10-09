@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ArtifactStore } from '../src/artifact-store.js';
-import type { JobStore } from '../src/job-store.js';
+import { InMemoryJobStore, type JobStore } from '../src/job-store.js';
 import type { RenderCoordinatorOptions } from '../src/render-coordinator.js';
 import type { RenderExecutor } from '../src/render-executor.js';
 import { Semaphore } from '../src/semaphore.js';
@@ -51,6 +51,7 @@ afterEach(async () => {
 
 /** Build a valid-looking multipart body for `POST /render`. */
 const OWNER_HEADER = 'x-openmaic-render-owner';
+const OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
 
 function renderRequest(sizeBytes = 4096, identity = 'anon', ownerId = 'owner-a'): Request {
   const form = new FormData();
@@ -162,6 +163,7 @@ describe('POST /render buffering/extraction bound', () => {
 
     const response = await app.fetch(new Request('http://test/health'));
     expect(response.status).toBe(200);
+    expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       previewMaxConcurrency: 1,
@@ -301,6 +303,7 @@ describe('render HTTP contract through a replaceable executor', () => {
 
     const submit = await app.fetch(renderRequest());
     expect(submit.status).toBe(202);
+    expect(submit.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     const { jobId } = (await submit.json()) as { jobId: string };
 
     await expect(waitForPoll(app, jobId, 'succeeded')).resolves.toEqual({
@@ -315,6 +318,7 @@ describe('render HTTP contract through a replaceable executor', () => {
 
     const download = await app.fetch(jobRequest(`/render/${jobId}/download`));
     expect(download.status).toBe(200);
+    expect(download.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     expect(download.headers.get('content-type')).toBe('video/mp4');
     expect(download.headers.get('content-disposition')).toBe(`attachment; filename="${jobId}.mp4"`);
     expect(Buffer.from(await download.arrayBuffer()).toString()).toBe('fake-mp4');
@@ -469,7 +473,9 @@ describe('render HTTP contract through a replaceable executor', () => {
   it('makes foreign and missing jobs indistinguishable across poll and cancel', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-owner-cancel-'));
     scratch.push(dir);
+    const jobs = new InMemoryJobStore(60_000);
     const { app } = testApp(succeedingExecutor, {
+      jobs,
       coordinator: { maxConcurrency: 0 },
       makeProjectDir: async () => dir,
     });
@@ -499,7 +505,7 @@ describe('render HTTP contract through a replaceable executor', () => {
   });
 
   it('does not locate an artifact for a foreign or missing job', async () => {
-    const jobs = createMemoryJobStore();
+    const jobs = new InMemoryJobStore(60_000);
     const now = Date.now();
     await jobs.create({
       id: 'ready-for-owner',
@@ -534,6 +540,43 @@ describe('render HTTP contract through a replaceable executor', () => {
       await expect(response.json()).resolves.toEqual({ error: 'Job not found' });
     }
     expect(locate).toHaveBeenCalledOnce();
+  });
+
+  it('hides an ownerless record from poll, cancel, and download', async () => {
+    const jobs = new InMemoryJobStore(60_000);
+    const records: unknown = Reflect.get(jobs, 'jobs');
+    if (!(records instanceof Map)) throw new Error('InMemoryJobStore backing map not found');
+    const now = Date.now();
+    records.set('legacy-ownerless', {
+      id: 'legacy-ownerless',
+      admissionIdentity: requireAdmissionIdentity('client-a'),
+      status: 'succeeded',
+      progress: 1,
+      currentStage: 'complete',
+      createdAtMs: now,
+      updatedAtMs: now,
+      projectDir: '/tmp/legacy-ownerless',
+      outputPath: '/tmp/legacy-ownerless/output.mp4',
+    });
+    const locate = vi.fn();
+    const artifacts: ArtifactStore = {
+      async put() {},
+      locate,
+      async remove() {},
+    };
+    const { app } = testApp(succeedingExecutor, { artifacts, jobs });
+
+    for (const request of [
+      jobRequest('/render/legacy-ownerless'),
+      jobRequest('/render/legacy-ownerless', 'owner-a', { method: 'DELETE' }),
+      jobRequest('/render/legacy-ownerless/download'),
+    ]) {
+      const response = await app.fetch(request);
+      expect(response.status).toBe(404);
+      expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
+      await expect(response.json()).resolves.toEqual({ error: 'Job not found' });
+    }
+    expect(locate).not.toHaveBeenCalled();
   });
 });
 

@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { apiError } from '@/lib/server/api-response';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
+  isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
+  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -38,6 +40,17 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     const controller = new AbortController();
     const headerTimeout = setTimeout(() => controller.abort(), 30_000);
     try {
+      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
+        clearTimeout(headerTimeout);
+        return answer(
+          apiError(
+            'UPSTREAM_ERROR',
+            502,
+            'Render service must be upgraded before downloading jobs',
+          ),
+        );
+      }
+
       const upstream = await proxyFetch(
         `${resolved.url}/render/${encodeURIComponent(jobId)}/download`,
         {
@@ -48,6 +61,15 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
         },
       );
       clearTimeout(headerTimeout);
+      if (!isRenderOwnerBoundResponse(upstream)) {
+        return answer(
+          apiError(
+            'UPSTREAM_ERROR',
+            502,
+            'Render service must be upgraded before downloading jobs',
+          ),
+        );
+      }
 
       // Presigned-URL artifact store: hand the redirect to the browser.
       if (upstream.status === 302 || upstream.status === 301) {

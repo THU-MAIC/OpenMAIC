@@ -2,7 +2,9 @@ import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
+  isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
+  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -25,11 +27,22 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     }
 
     try {
+      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before reading jobs'),
+        );
+      }
+
       const upstream = await proxyFetch(`${resolved.url}/render/${encodeURIComponent(jobId)}`, {
         method: 'GET',
         headers: renderServiceOwnerHeaders(ownerId),
         signal: AbortSignal.timeout(15_000),
       });
+      if (!isRenderOwnerBoundResponse(upstream)) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before reading jobs'),
+        );
+      }
       const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
       if (!upstream.ok) {
         const status = upstream.status === 404 ? 404 : 502;
@@ -55,12 +68,26 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ jobI
     }
 
     try {
+      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before cancelling jobs'),
+        );
+      }
+
       const upstream = await proxyFetch(`${resolved.url}/render/${encodeURIComponent(jobId)}`, {
         method: 'DELETE',
         headers: renderServiceOwnerHeaders(ownerId),
         signal: AbortSignal.timeout(15_000),
       });
-      if (!upstream.ok && upstream.status !== 404) {
+      if (!isRenderOwnerBoundResponse(upstream)) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before cancelling jobs'),
+        );
+      }
+      if (upstream.status === 404) {
+        return answer(apiError('UPSTREAM_ERROR', 404, 'Render job lookup failed'));
+      }
+      if (!upstream.ok) {
         return answer(apiError('UPSTREAM_ERROR', 502, 'Failed to cancel render job'));
       }
       return answer(apiSuccess({ cancelled: true }));

@@ -12,10 +12,35 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('RenderService');
 
 export const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
+export const RENDER_OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
+const RENDER_OWNER_BOUND_VALUE = '1';
 
 /** Headers the app asserts on every request to its private render service. */
 export function renderServiceOwnerHeaders(ownerId: string): Record<string, string> {
   return { [RENDER_OWNER_HEADER]: ownerId };
+}
+
+/** Whether the upstream service explicitly enforces owner-scoped render jobs. */
+export function isRenderOwnerBoundResponse(response: Response): boolean {
+  return response.headers.get(RENDER_OWNER_BOUND_HEADER) === RENDER_OWNER_BOUND_VALUE;
+}
+
+async function fetchRenderServiceHealth(url: string): Promise<Response> {
+  return proxyFetch(`${url}/health`, {
+    method: 'GET',
+    signal: AbortSignal.timeout(3000),
+  });
+}
+
+/**
+ * Probe the protocol before sending a request that may read or mutate a job.
+ * The response check on each job request still protects mixed-version pools.
+ */
+export async function renderServiceSupportsOwnerBinding(url: string): Promise<boolean> {
+  const response = await fetchRenderServiceHealth(url);
+  const supported = response.ok && isRenderOwnerBoundResponse(response);
+  await response.body?.cancel().catch(() => undefined);
+  return supported;
 }
 
 /**
@@ -67,7 +92,7 @@ export function resolveRenderServiceUrl(): { url: string } | { error: 'not_confi
 
 export interface RenderServiceCapability {
   enabled: boolean;
-  /** Omitted for older services that do not report admission state. */
+  /** Omitted when a compatible service does not report admission state. */
   accepting?: boolean;
 }
 
@@ -81,13 +106,10 @@ export async function getRenderServiceCapability(): Promise<RenderServiceCapabil
   const url = getRenderServiceUrl();
   if (!url) return { enabled: false };
   try {
-    const res = await proxyFetch(`${url}/health`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return { enabled: false };
-    // A healthy older service may not expose admission state. Only a boolean
-    // is authoritative; an absent/unreadable body retains the old behavior.
+    const res = await fetchRenderServiceHealth(url);
+    if (!res.ok || !isRenderOwnerBoundResponse(res)) return { enabled: false };
+    // Admission state is optional, but owner binding is mandatory. This keeps a
+    // newer app from advertising an older, unscoped render service as usable.
     const body = (await res.json().catch(() => null)) as { accepting?: unknown } | null;
     return {
       enabled: true,

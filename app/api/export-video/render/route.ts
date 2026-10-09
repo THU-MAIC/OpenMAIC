@@ -2,7 +2,9 @@ import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
+  isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
+  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -54,6 +56,12 @@ export async function POST(req: NextRequest) {
     const capped = capBodyStream(req.body, MAX_UPLOAD_BYTES);
 
     try {
+      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before accepting jobs'),
+        );
+      }
+
       // Long enough for the upload of a multi-MB ZIP; the render is async.
       const upstream = await proxyFetch(`${resolved.url}/render`, {
         method: 'POST',
@@ -67,6 +75,11 @@ export async function POST(req: NextRequest) {
         },
         signal: AbortSignal.timeout(SUBMIT_TIMEOUT_MS),
       } as RequestInit);
+      if (!isRenderOwnerBoundResponse(upstream)) {
+        return answer(
+          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before accepting jobs'),
+        );
+      }
 
       const data = (await upstream.json().catch(() => ({}))) as Record<string, unknown>;
       if (!upstream.ok) {

@@ -124,6 +124,7 @@ interface PreviewPayload {
 }
 
 const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
+const RENDER_OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
 const ADMISSION_IDENTITY_HEADER = 'x-openmaic-client';
 
 function requestOwner(c: Context): RenderOwnerId | null {
@@ -275,6 +276,10 @@ export function createApp(deps: AppDeps): Hono {
     deps.previewExecutionGate ?? new Semaphore(config.previewMaxConcurrency);
 
   const app = new Hono();
+  app.use('*', async (c, next) => {
+    await next();
+    c.header(RENDER_OWNER_BOUND_HEADER, '1');
+  });
 
   app.get('/health', (c) =>
     c.json({

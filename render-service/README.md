@@ -44,6 +44,12 @@ a network that only the app can reach, as the default Compose deployment does.
 For a standalone deployment, put the service behind the app proxy and do not
 publish its port to browsers or other untrusted clients.
 
+Deploy the render service before or together with the main app. Owner-aware
+service builds return `x-openmaic-render-owner-bound: 1` on health and job
+responses. A newer app rejects a service without this marker, so upgrading the
+app first temporarily disables server-side video export instead of sending jobs
+through an older service that does not enforce ownership.
+
 ### Admission: 429s and `/health`
 
 Admission rejections are machine-readable. `POST /render` answers `429` with a
