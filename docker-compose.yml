@@ -141,12 +141,15 @@ services:
       # per-user identity (see render-service/README.md).
       - RENDER_MAX_JOBS_PER_USER=0
       - RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}
+      # Separate Chromium capacity: previews can run alongside a video export.
+      - RENDER_PREVIEW_MAX_CONCURRENCY=${RENDER_PREVIEW_MAX_CONCURRENCY:-1}
       - RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}
       # Preview callers send a durable owner identity in x-openmaic-client, so
       # keep this per-owner guard enabled. Set it to 0 only in deployments that
       # call /preview without an owner identity.
       - RENDER_PREVIEW_MAX_PER_USER=${RENDER_PREVIEW_MAX_PER_USER:-2}
-    # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory-heavy.
+    # Bound RAM for the export (Chromium + FFmpeg + archive expansion) and the
+    # independent preview browsers. Provision more before raising preview concurrency.
     # The standard profile requires 8 GiB. For the explicit low-memory profile,
     # set RENDER_RESOURCE_PROFILE=low-memory and RENDER_SERVICE_MEMORY_LIMIT=4g.
     mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}

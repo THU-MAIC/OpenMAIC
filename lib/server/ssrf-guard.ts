@@ -32,6 +32,10 @@ const CLOUD_METADATA_BLOCK_MESSAGE =
 const LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
 
+/** Opt-in-governed refusal when the caller forced the strict public policy. */
+const CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE =
+  'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. The endpoint must be a provider configured by the operator in openmaic.yml.';
+
 export class UnsafeNetworkTargetError extends Error {
   constructor(message: string) {
     super(message);
@@ -459,6 +463,14 @@ export function isPrivateIP(ip: string): boolean {
  */
 export interface SsrfValidationPolicy {
   allowLocalNetworks: boolean;
+  /**
+   * When true, this call forced the strict public policy for a client-supplied
+   * endpoint. Opt-in-governed refusals then say that `ALLOW_LOCAL_NETWORKS`
+   * does not unlock the path, instead of telling the caller to set the flag.
+   * Cloud metadata and IANA reserved/multicast/broadcast refusals keep their
+   * own messages. Only {@link validatePublicUrlForSSRF} sets this.
+   */
+  clientSupplied?: boolean;
 }
 
 /**
@@ -467,6 +479,8 @@ export interface SsrfValidationPolicy {
  *
  * Cloud metadata endpoints and IANA reserved/multicast/broadcast ranges are
  * refused under every policy, including `allowLocalNetworks: true`.
+ * Opt-in-governed targets (loopback, private, link-local, CGNAT, `.local`) use
+ * the flag guidance unless `clientSupplied` selects the strict-public wording.
  */
 export async function validateUrlForSSRFWithPolicy(
   url: string,
@@ -487,6 +501,11 @@ export async function validateUrlForSSRFWithPolicy(
   // loopback, link-local and CGNAT targets. Cloud instance metadata endpoints
   // and IANA reserved/multicast/broadcast ranges stay blocked either way.
   const allowLocal = policy.allowLocalNetworks;
+  // The flag guidance stays the default. A caller that forced the strict public
+  // policy (client-supplied BYOK) must not promise that setting the flag helps.
+  const optInGovernedBlockMessage = policy.clientSupplied
+    ? CLIENT_SUPPLIED_LOCAL_NETWORK_BLOCK_MESSAGE
+    : LOCAL_NETWORK_BLOCK_MESSAGE;
   const hostname = normalizeAddress(parsed.hostname);
 
   // Cloud metadata endpoints are never allowed, with or without the flag.
@@ -535,7 +554,7 @@ export async function validateUrlForSSRFWithPolicy(
     hostname === '::1' ||
     isOptInGovernedRange(hostname)
   ) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
+    return optInGovernedBlockMessage;
   }
 
   if (isIP(hostname)) {
@@ -557,12 +576,16 @@ export async function validateUrlForSSRFWithPolicy(
     return CLOUD_METADATA_BLOCK_MESSAGE;
   }
 
-  if (
-    resolvedAddresses.some(
-      ({ address }) => isOptInGovernedRange(address) || isNeverAllowedRange(address),
-    )
-  ) {
+  // A never-allowed answer stays on the generic message: server configuration
+  // does not unlock reserved, multicast, or broadcast ranges either. The
+  // client-supplied wording applies only when every disqualifying answer is
+  // opt-in-governed.
+  if (resolvedAddresses.some(({ address }) => isNeverAllowedRange(address))) {
     return LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
+  if (resolvedAddresses.some(({ address }) => isOptInGovernedRange(address))) {
+    return optInGovernedBlockMessage;
   }
 
   return null;
@@ -572,7 +595,7 @@ export async function validateUrlForSSRFWithPolicy(
  * Validate a URL against SSRF attacks under the process-wide policy
  * (`ALLOW_LOCAL_NETWORKS`). Callers that need to keep a client-supplied URL on
  * the strict public policy regardless of the operator's local-network opt-in
- * must call {@link validateUrlForSSRFWithPolicy} instead.
+ * must call {@link validatePublicUrlForSSRF} instead.
  */
 export async function validateUrlForSSRF(url: string): Promise<string | null> {
   return validateUrlForSSRFWithPolicy(url, { allowLocalNetworks: allowLocalNetworksEnabled() });
@@ -596,8 +619,13 @@ export async function validateClientBaseUrl(url: string): Promise<string | null>
  * Validate a URL that must resolve to a globally routable public address, no
  * matter what the operator's `ALLOW_LOCAL_NETWORKS` opt-in says. This is the
  * policy for a client-supplied BYOK endpoint: metadata, private, loopback and
- * CGNAT targets are always refused.
+ * CGNAT targets are always refused. Opt-in-governed refusals say the flag does
+ * not unlock this path; the supported alternative is an operator-managed
+ * provider in `openmaic.yml` (under `providers:`).
  */
 export async function validatePublicUrlForSSRF(url: string): Promise<string | null> {
-  return validateUrlForSSRFWithPolicy(url, { allowLocalNetworks: false });
+  return validateUrlForSSRFWithPolicy(url, {
+    allowLocalNetworks: false,
+    clientSupplied: true,
+  });
 }

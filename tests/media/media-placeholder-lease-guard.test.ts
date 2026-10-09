@@ -201,11 +201,26 @@ describe('every lease and probe entry point carries the guard', () => {
     // `packages/` is searched too: a package that grew an application import
     // would be an entry point nobody thought to look for.
     const roots = ['app', 'components', 'lib', 'packages'];
-    const hits = execSync(
-      `grep -rlE --exclude-dir=node_modules "${exported.join('|')}" ${roots.join(' ')} || true`,
-      { cwd: process.cwd(), encoding: 'utf8' },
-    )
+    let rawHits = '';
+    try {
+      rawHits = execSync(`git grep -lE "${exported.join('|')}" -- ${roots.join(' ')}`, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      try {
+        rawHits = execSync(
+          `grep -rlE --exclude-dir=node_modules "${exported.join('|')}" ${roots.join(' ')}`,
+          { cwd: process.cwd(), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+        );
+      } catch {
+        rawHits = '';
+      }
+    }
+    const hits = rawHits
       .split('\n')
+      .map((line) => line.trim().replace(/\\/g, '/'))
       .filter(
         (line) =>
           line &&

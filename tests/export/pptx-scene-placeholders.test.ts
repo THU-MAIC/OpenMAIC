@@ -20,8 +20,10 @@ import {
   planPptxDeck,
   pptxDeckScenes,
   relativeHyperlinkTarget,
+  truncateToWidth,
 } from '@/lib/export/pptx-scene-placeholders';
 import { qrMatrix } from '@/lib/export/qr-png';
+import { legacyPBLSceneFixture } from '../fixtures/pbl-v1-scene';
 
 const t = (key: string, options?: Record<string, unknown>) =>
   options ? `${key}:${JSON.stringify(options)}` : key;
@@ -93,14 +95,81 @@ function quizScene(id: string, title: string): Scene {
   } as unknown as Scene;
 }
 
-function pblScene(id: string): Scene {
+const microtask = (id: string) => ({
+  id,
+  title: `Task ${id}`,
+  status: 'todo',
+  assignee: 'user',
+  hints: ['SECRET-HINT'],
+  order: 0,
+});
+const milestone = (id: string, title: string, order: number) => ({
+  id,
+  title,
+  description: 'SECRET-MILESTONE-DESCRIPTION',
+  status: 'locked',
+  order,
+  microtasks: [microtask(`${id}-t`)],
+});
+
+/** A runnable PBL v2 project with secrets planted where slides must not look. */
+function pblProject(overrides: Record<string, unknown> = {}) {
+  return {
+    uiPhase: 'hero',
+    title: 'Design a school greenhouse',
+    description: 'Plan a greenhouse on a budget.',
+    learningObjective: 'Apply the limiting factors of photosynthesis to a real design.',
+    tags: [],
+    language: 'en-US',
+    proficiency: 'beginner',
+    status: 'active',
+    scenario: {
+      setting: 'SECRET-SETTING',
+      goal: 'Present a design the principal can approve.',
+      learnerRole: 'Lead designer',
+      characters: [{ id: 'c1', name: 'Ms. Rivera', persona: 'SECRET-PERSONA' }],
+    },
+    roles: [{ id: 'r1', type: 'instructor', name: 'Coach', systemPrompt: 'SECRET-ROLE-PROMPT' }],
+    // Listed out of order: the slide follows `order`.
+    milestones: [
+      milestone('m2', 'Sketch the design', 1),
+      milestone('m1', 'Research limiting factors', 0),
+    ],
+    submissions: [{ id: 's1', content: 'SECRET-SUBMISSION' }],
+    evaluations: [{ id: 'e1', rubric: 'SECRET-RUBRIC', feedback: 'SECRET-EVALUATION' }],
+    threads: [{ id: 'th1', messages: [{ id: 'msg', content: 'SECRET-CHAT' }] }],
+    engagementEvents: [],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+const PBL_SECRETS = [
+  'SECRET-HINT',
+  'SECRET-MILESTONE-DESCRIPTION',
+  'SECRET-SETTING',
+  'SECRET-PERSONA',
+  'SECRET-ROLE-PROMPT',
+  'SECRET-SUBMISSION',
+  'SECRET-RUBRIC',
+  'SECRET-EVALUATION',
+  'SECRET-CHAT',
+  'SECRET-PBL-NARRATION',
+];
+
+function pblScene(
+  id: string,
+  content: Record<string, unknown> = { projectV2: pblProject() },
+): Scene {
   return {
     id,
     stageId: 'stage-1',
     type: 'pbl',
     title: 'Project week',
     order: 0,
-    content: { type: 'pbl', projectConfig: {} },
+    actions: [{ id: `${id}-speech`, type: 'speech', text: 'SECRET-PBL-NARRATION' }],
+    content: { type: 'pbl', ...content },
   } as unknown as Scene;
 }
 
@@ -262,11 +331,11 @@ describe('interactive page naming', () => {
 });
 
 describe('planPptxDeck', () => {
-  it('keeps lesson order, skips PBL and html-less interactive scenes', () => {
+  it('keeps lesson order with PBL in place and skips html-less interactive scenes', () => {
     const deck = planPptxDeck(lesson, t, { linkInteractivePages: true });
     expect(
       deck.map((e) => (e.kind === 'slide' ? `slide:${e.slideIndex}` : e.placeholder.scene.id)),
-    ).toEqual(['slide:0', 'i1', 'q', 'slide:1']);
+    ).toEqual(['slide:0', 'i1', 'q', 'p', 'slide:1']);
   });
 
   it('links interactive placeholders to the offline page only when a pack ships', () => {
@@ -306,7 +375,7 @@ describe('buildPptxBlob with scene placeholders', () => {
   it('emits slides in lesson order with placeholders in place', async () => {
     const zip = await loadZip(await buildDeck(true));
     const slideFiles = Object.keys(zip.files).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
-    expect(slideFiles).toHaveLength(4);
+    expect(slideFiles).toHaveLength(5);
 
     expect(await readText(zip, 'ppt/slides/slide2.xml')).toContain('Demo #1: 50% done?');
     const quizXml = await readText(zip, 'ppt/slides/slide3.xml');
@@ -315,16 +384,14 @@ describe('buildPptxBlob with scene placeholders', () => {
     // Question stems only: options, answers and analysis stay out of the deck.
     expect(quizXml).not.toContain('Jupiter');
     expect(quizXml).not.toContain('SECRET-ANALYSIS');
-    for (const name of slideFiles) {
-      expect(await readText(zip, name)).not.toContain('Project week');
-    }
+    expect(await readText(zip, 'ppt/slides/slide4.xml')).toContain('Project week');
   });
 
   it('resolves slide-to-slide links to the PPTX slide number after insertion', async () => {
     const zip = await loadZip(await buildDeck(true));
     const rels = await readText(zip, 'ppt/slides/_rels/slide1.xml.rels');
-    // slide-b is slides[1] but the 4th PPTX slide (two placeholders before it).
-    expect(rels).toMatch(/relationships\/slide" Target="slide4\.xml"/);
+    // slide-b is slides[1] but the 5th PPTX slide (three placeholders before it).
+    expect(rels).toMatch(/relationships\/slide" Target="slide5\.xml"/);
     expect(rels).not.toContain('Target="slide2.xml"');
   });
 
@@ -389,11 +456,11 @@ describe('speaker notes on placeholder slides', () => {
 });
 
 describe('placeholder-only lessons', () => {
-  it('counts quiz and interactive scenes as PPTX content, but not PBL', () => {
+  it('counts quiz, interactive and PBL scenes as PPTX content', () => {
     expect(pptxDeckScenes([quizScene('q', 'Q')])).toHaveLength(1);
     expect(pptxDeckScenes([interactiveScene('i', 'I')])).toHaveLength(1);
     expect(pptxDeckScenes([interactiveScene('i', 'I', '')])).toHaveLength(0);
-    expect(pptxDeckScenes([pblScene('p')])).toHaveLength(0);
+    expect(pptxDeckScenes([pblScene('p')])).toHaveLength(1);
   });
 
   it('exports a quiz-only lesson as a one-slide PPTX with fallback styling', async () => {
@@ -417,11 +484,20 @@ describe('placeholder-only lessons', () => {
     );
   });
 
-  it('still reports a PBL-only lesson as empty', async () => {
+  it('exports a PBL-only lesson as a PPTX, with no HTML page in the pack', async () => {
+    const result = await buildPack([pblScene('p')]);
+    expect(result.empty).toBe(false);
+    const pack = await loadZip(result.blob!);
+    expect(Object.keys(pack.files).filter((n) => !pack.files[n].dir)).toEqual(['deck.pptx']);
+    const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
+    expect(await readText(pptx, 'ppt/slides/slide1.xml')).toContain('Project week');
+    expect(pptx.file('ppt/slides/slide2.xml')).toBeNull();
+  });
+
+  it('reports a lesson without any exportable scene as empty', async () => {
     const getPptxBlob = vi.fn(async () => new Blob([new Uint8Array([1])]));
-    const result = await buildPack([pblScene('p')], getPptxBlob);
+    const result = await buildPack([interactiveScene('i', 'No html', '')], getPptxBlob);
     expect(result.empty).toBe(true);
-    expect(result.blob).toBeNull();
     expect(getPptxBlob).not.toHaveBeenCalled();
   });
 });
@@ -580,5 +656,248 @@ describe('link hotspots', () => {
       (s) => isHotspot(s) && covers(s.box, qr.box) && covers(s.box, url.box),
     );
     expect(hotspot?.target).toBe(sceneUrl('q'));
+  });
+});
+
+describe('PBL placeholders', () => {
+  const pblEntry = (
+    scene: Scene,
+    options = { linkInteractivePages: true, classroomUrl: CLASSROOM_URL },
+  ) => {
+    const entry = planPptxDeck([scene], t, options)[0];
+    if (entry.kind !== 'placeholder') throw new Error('expected placeholder');
+    return entry.placeholder;
+  };
+
+  it('summarizes the goal and milestones in order, with no offline link', () => {
+    const placeholder = pblEntry(pblScene('p'));
+    expect(placeholder.sceneType).toBe('pbl');
+    expect(placeholder.typeLabel).toBe('export.placeholder.pblLabel');
+    expect(placeholder.title).toBe('Project week');
+    expect(placeholder.description).toBe('export.placeholder.pblDesc');
+    expect(placeholder.lead).toBe(
+      'export.placeholder.pblGoal:{"goal":"Apply the limiting factors of photosynthesis to a real design."}',
+    );
+    expect(placeholder.meta).toBe('export.placeholder.pblMilestoneCount:{"count":2}');
+    expect(placeholder.items).toEqual(['Research limiting factors', 'Sketch the design']);
+    expect(placeholder.online?.url).toBe(sceneUrl('p'));
+    expect(placeholder.offline).toBeUndefined();
+  });
+
+  it('falls back to the scenario goal and truncates long goals, titles and milestones', () => {
+    const long = (word: string) => Array.from({ length: 40 }, () => word).join(' ');
+    const placeholder = pblEntry(
+      pblScene('p', {
+        projectV2: pblProject({
+          learningObjective: '',
+          scenario: { goal: long('goal'), characters: [] },
+          milestones: Array.from({ length: 6 }, (_, i) => milestone(`m${i}`, long(`m${i}`), i)),
+        }),
+      }),
+    );
+    expect(placeholder.lead).toMatch(/"goal":"goal goal .*…"/);
+    const goal = JSON.parse(placeholder.lead!.slice(placeholder.lead!.indexOf(':') + 1)).goal;
+    expect(goal.length).toBeLessThanOrEqual(64);
+    // The count says how many milestones there are; four titles are listed.
+    expect(placeholder.meta).toBe('export.placeholder.pblMilestoneCount:{"count":6}');
+    expect(placeholder.items).toHaveLength(4);
+    for (const item of placeholder.items!) {
+      expect(item.length).toBeLessThanOrEqual(66);
+      expect(item.endsWith('…')).toBe(true);
+    }
+
+    const untitled = pblEntry({ ...pblScene('p'), title: long('title') } as Scene);
+    expect(untitled.title.length).toBeLessThanOrEqual(120);
+  });
+
+  it('cuts lines by display width, counting CJK characters twice', () => {
+    expect(truncateToWidth('abc', 3)).toBe('abc');
+    expect(truncateToWidth('abcdef', 4)).toBe('abc…');
+    expect(truncateToWidth('设计一个火星基地', 8)).toBe('设计一…');
+    expect(truncateToWidth('  a\n b  ', 10)).toBe('a b');
+    expect(truncateToWidth('', 5)).toBe('');
+    expect(truncateToWidth('   ', 5)).toBe('');
+  });
+
+  it('never cuts inside a grapheme cluster and counts emoji as wide', () => {
+    // Combining accents stay with their letter.
+    const accented = 'a\u0301b\u0301c\u0301';
+    expect(truncateToWidth(accented, 4)).toBe(accented);
+    expect(truncateToWidth(`${accented}d\u0301e`, 4)).toBe('a\u0301b\u0301c\u0301…');
+    // A ZWJ sequence is one wide cluster.
+    const coder = '\u{1F469}\u200D\u{1F4BB}';
+    expect(truncateToWidth(`${coder}x`, 3)).toBe(`${coder}x`);
+    expect(truncateToWidth(`${coder}xyz`, 3)).toBe(`${coder}…`);
+    expect(truncateToWidth(`x${coder}`, 2)).toBe('x…');
+    // Emoji are two columns wide: 64 of them overflow a 64-column line.
+    const grin = '\u{1F600}';
+    const cut = truncateToWidth(grin.repeat(64), 64);
+    expect(cut).toBe(`${grin.repeat(31)}…`);
+    // Flags, skin tones and ZWJ families survive whole.
+    const flag = '\u{1F1EF}\u{1F1F5}';
+    const wave = '\u{1F44B}\u{1F3FD}';
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}';
+    expect(truncateToWidth(`${flag}${wave}${family}`, 6)).toBe(`${flag}${wave}${family}`);
+    expect(truncateToWidth(`${flag}${wave}${family}!`, 6)).toBe(`${flag}${wave}…`);
+    // CJK still counts double; a keycap emoji with VS16 is wide.
+    expect(truncateToWidth('火星基地', 5)).toBe('火星…');
+    expect(truncateToWidth('1\uFE0F\u20E3ab', 3)).toBe('1\uFE0F\u20E3…');
+  });
+
+  it('caps titles without leaving a lone surrogate', () => {
+    const title = `${'a'.repeat(118)}\u{1F600}${'b'.repeat(20)}`;
+    const hasLoneSurrogate = (text: string) =>
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text);
+    for (const scene of [
+      { ...pblScene('p'), title },
+      { ...quizScene('q', title) },
+      interactiveScene('i', title),
+      // The project title is the fallback when the scene has none.
+      pblScene('p2', { projectV2: pblProject({ title }) }),
+    ]) {
+      const entry = planPptxDeck(
+        [scene.id === 'p2' ? ({ ...scene, title: '' } as Scene) : (scene as Scene)],
+        t,
+        { linkInteractivePages: false },
+      )[0];
+      if (entry.kind !== 'placeholder') throw new Error('expected placeholder');
+      expect(hasLoneSurrogate(entry.placeholder.title)).toBe(false);
+      expect(entry.placeholder.title).toBe(`${'a'.repeat(118)}\u{1F600}…`);
+    }
+  });
+
+  it('upgrades a legacy project the way the classroom does', () => {
+    const placeholder = pblEntry({
+      ...legacyPBLSceneFixture,
+      stageId: 'stage-1',
+    } as Scene);
+    expect(placeholder.meta).toMatch(/pblMilestoneCount/);
+    expect(placeholder.items!.length).toBeGreaterThan(0);
+  });
+
+  it('falls back to title and description when the project is missing or unreadable', () => {
+    for (const content of [{}, { projectConfig: {} }, { projectV2: { title: 'broken' } }]) {
+      const placeholder = pblEntry({ ...pblScene('p', content), title: '' } as Scene);
+      expect(placeholder.title).toBe('export.placeholder.pblLabel');
+      expect(placeholder.description).toBe('export.placeholder.pblDesc');
+      expect(placeholder.lead).toBeUndefined();
+      expect(placeholder.meta).toBeUndefined();
+      expect(placeholder.items).toEqual([]);
+    }
+  });
+
+  for (const linkInteractivePages of [true, false]) {
+    const mode = linkInteractivePages ? 'Resource Pack PPTX' : 'standalone PPTX';
+
+    it(`links online with a QR code and hotspots in the ${mode}, leaking nothing`, async () => {
+      const zip = await loadZip(await buildDeck(linkInteractivePages));
+      const xml = await readText(zip, 'ppt/slides/slide4.xml');
+      const rels = await readText(zip, 'ppt/slides/_rels/slide4.xml.rels');
+      expect(xml).toContain('Project week');
+      expect(xml).toContain('Research limiting factors');
+      expect(rels).toContain(`Target="${sceneUrl('p')}" TargetMode="External"`);
+      expect(rels).not.toContain('interactive/');
+
+      const png = await slideImage(zip, 4);
+      const expected = await qrMatrix(sceneUrl('p'));
+      expect(readQrPng(png!, expected.length)).toEqual(expected);
+
+      const hotspots = [...xml.matchAll(/<p:sp>(?:(?!<\/p:sp>)[\s\S])*<\/p:sp>/g)]
+        .map((m) => m[0])
+        .filter((sp) => sp.includes('<a:hlinkClick') && !/<a:t>[^<]+<\/a:t>/.test(sp))
+        .filter((sp) => sp.includes('<a:alpha val="0"/>'));
+      expect(hotspots).toHaveLength(2); // button, QR code + URL
+
+      const notes = await readText(zip, 'ppt/notesSlides/notesSlide4.xml');
+      for (const secret of PBL_SECRETS) {
+        expect(xml).not.toContain(secret);
+        expect(notes).not.toContain(secret);
+      }
+    });
+  }
+});
+
+describe('placeholder slides turned off', () => {
+  it('plans the slide scenes only', () => {
+    const deck = planPptxDeck(lesson, t, {
+      linkInteractivePages: true,
+      classroomUrl: CLASSROOM_URL,
+      includePlaceholders: false,
+    });
+    expect(deck).toEqual([
+      { kind: 'slide', slideIndex: 0 },
+      { kind: 'slide', slideIndex: 1 },
+    ]);
+    expect(pptxDeckScenes(lesson, { includePlaceholders: false })).toEqual([sceneA, sceneB]);
+  });
+
+  it('builds a slides-only PPTX in the Resource Pack, which still ships the HTML pages', async () => {
+    const result = await buildResourcePackZip(lesson, {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob: () =>
+        buildPptxBlob(
+          [slideA, slideB],
+          [sceneA, sceneB],
+          0.5625,
+          1000,
+          100,
+          ratioPx2Pt,
+          'stage-1',
+          planPptxDeck(lesson, t, {
+            linkInteractivePages: true,
+            classroomUrl: CLASSROOM_URL,
+            includePlaceholders: false,
+          }),
+        ),
+    });
+    expect(result.skippedPptx).toBe(false);
+    const pack = await loadZip(result.blob!);
+    expect(pack.file('interactive/01_Demo #1_ 50% done_.html')).not.toBeNull();
+    const pptx = await JSZip.loadAsync(await pack.file('deck.pptx')!.async('uint8array'));
+    expect(pptx.file('ppt/slides/slide2.xml')).not.toBeNull();
+    expect(pptx.file('ppt/slides/slide3.xml')).toBeNull();
+    // Slide links point at the slides-only numbering again.
+    expect(await readText(pptx, 'ppt/slides/_rels/slide1.xml.rels')).toMatch(
+      /relationships\/slide" Target="slide2\.xml"/,
+    );
+  });
+
+  it('ships the HTML pages without a PPTX when the lesson has no slide scene', async () => {
+    const getPptxBlob = vi.fn(async () => new Blob([new Uint8Array([1])]));
+    const scenes = [interactiveScene('i', 'Widget'), quizScene('q', 'Check'), pblScene('p')];
+    const result = await buildResourcePackZip(scenes, {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob,
+    });
+    expect(result.empty).toBe(false);
+    expect(result.skippedPptx).toBe(true);
+    expect(getPptxBlob).not.toHaveBeenCalled();
+    const pack = await loadZip(result.blob!);
+    expect(Object.keys(pack.files).filter((n) => !pack.files[n].dir)).toEqual([
+      'interactive/01_Widget.html',
+    ]);
+  });
+
+  it('reports nothing to ship when there is neither a slide nor an HTML page', async () => {
+    const result = await buildResourcePackZip([quizScene('q', 'Check'), pblScene('p')], {
+      viewportRatio: 0.5625,
+      viewportSize: 1000,
+      ratioPx2Inch: 100,
+      ratioPx2Pt,
+      fileName: 'deck',
+      includePlaceholders: false,
+      getPptxBlob: vi.fn(),
+    });
+    expect(result.empty).toBe(true);
   });
 });

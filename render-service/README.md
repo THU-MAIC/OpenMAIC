@@ -49,8 +49,8 @@ one of:
   live (buffering or executing).
 - `preview_per_user_limit` — this client identity already holds
   `RENDER_PREVIEW_MAX_PER_USER` previews.
-- `capacity_busy` — the shared execution slot is occupied, including by a video
-  render. Previews never queue for this slot; retry later.
+- `capacity_busy` — all preview execution slots are occupied by other previews.
+  Previews never queue for these slots; retry later.
 
 The opt-in per-task resource mode does not expose `/preview`: it returns `503`
 with `reason: resource_mode_unsupported` before reading the request body. Preview
@@ -66,9 +66,13 @@ data. Identity keys are client IPs when the service runs behind
 `TRUST_PROXY_HEADERS=true`, so exposing the per-identity map would publish the
 IP address of everyone currently rendering.
 
-Previews share the service's single Chromium execution slot with video renders,
-but never wait in the video queue. Once a preview has passed its body and
-semantic checks, it renders immediately or fails with `capacity_busy`.
+Previews have their own execution budget, defaulting to one concurrent preview,
+independent of the video render queue. Once a preview has passed its body and
+semantic checks, it renders immediately or fails with `capacity_busy`. Each
+executing preview launches its own Chromium browser and cleans it up when the
+request finishes or aborts. A video export and a preview can therefore run at
+the same time. Request buffering still shares the bounded extraction gate;
+the preview deadline also covers waiting for that gate.
 
 `/preview` requires fully self-contained scenes (inline code and data: URLs
 only); network, blob:, and relative references are rejected. Slide media must
@@ -93,6 +97,7 @@ caller-side preparation (tracked separately).
 | `RENDER_JOB_TTL_MS`                      | `1800000`                                      | How long finished jobs + artifacts live before cleanup.                                                                                                                                                                                           |
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                                      | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                     |
 | `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                                        | Hard wall-clock deadline for a synchronous preview, including body parsing and Chromium cleanup.                                                                                                                                                  |
+| `RENDER_PREVIEW_MAX_CONCURRENCY`         | `1`                                            | Maximum executing previews, independent of video export concurrency. Each slot can launch one Chromium browser; provision memory for both workloads before increasing it.                                                                         |
 | `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                                            | Maximum admitted previews across buffering and execution.                                                                                                                                                                                         |
 | `RENDER_PREVIEW_MAX_PER_USER`            | `2`                                            | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                              |
 | `RENDER_PREVIEW_MAX_JSON_BYTES`          | `33554432`                                     | Maximum preview JSON body size (32 MiB), enforced on declared length and streamed bytes independently of the ZIP upload cap.                                                                                                                      |
@@ -233,7 +238,7 @@ at a time. It requires at least 8 GiB of host/cgroup memory and an existing
 headless shell so ordinary compositions remain BeginFrame-eligible. No host GPU
 is required or requested; Chromium uses its software/SwiftShader selector.
 
-Use the safe `low-memory` profile only when BeginFrame latency is less important
+Use the `low-memory` profile only when BeginFrame latency is less important
 than a smaller memory ceiling. It fixes screenshot capture, one worker, one
 render, and one extraction, and requires at least 4 GiB:
 
@@ -242,6 +247,24 @@ RENDER_RESOURCE_PROFILE=low-memory \
 RENDER_SERVICE_MEMORY_LIMIT=4g \
 docker compose --profile video-export up --build
 ```
+
+Both profiles additionally allow one preview to execute by default, alongside
+the video export and extraction. The existing startup minima remain 8 GiB for
+`standard` and 4 GiB for `low-memory`; these are shared by both workloads, not
+separate allowances for each. Preview pixels remain limited to 3840 × 2160 in
+`standard` and 1920 × 1080 in `low-memory` (including device scale factor).
+Increasing `RENDER_PREVIEW_MAX_CONCURRENCY` adds concurrent Chromium browsers
+without increasing the container memory limit. Measure combined peak memory
+with representative scenes and provision additional RAM before raising it,
+especially when also enabling parallel export chunks.
+
+A bounded concurrent smoke run used the emitted mixed slide/quiz/PBL sample
+(9.1 seconds, 1080p, 30 fps) on `low-memory` with 4 vCPU and a 4 GiB container
+limit. The export completed while 54 consecutive 1080p interactive previews
+returned PNGs; cgroup peak memory was 2.47 GiB with no OOM events. Preview
+latency was 0.31–1.19 seconds. This sample checks the default combined workload,
+not a memory ceiling or latency guarantee for arbitrary scenes or higher
+preview concurrency.
 
 Both `/health` and `GET /render/:jobId` make the selection observable. Health
 reports the capture policy, requested mode, worker/concurrency bounds, minimum

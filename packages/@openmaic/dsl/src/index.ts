@@ -35,3 +35,4 @@ export * from './storage.js';
 export * from './asset-manifest.js';
 export * from './slide-media-slots.js';
 export * from './runtime.js';
+export * from './math-render.js';

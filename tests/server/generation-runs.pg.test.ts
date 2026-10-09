@@ -2540,6 +2540,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         signal: abortA.signal,
       });
       await reached.promise;
+      // Stop the old media lane before injecting the crash checkpoint, so its
+      // pending failure cannot overwrite the stored bytes we want B to recover.
+      abortA.abort();
+      blocked.release();
+      expect(await executionA).toBe('interrupted');
       // Simulate the crash window: the bytes and their checkpoint committed together.
       const stageId = (await readGenerationRun(run.id, OWNER))!.stageId!;
       const stored = await storeGeneratedAsset({
@@ -2559,9 +2564,6 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           );
         },
       });
-      abortA.abort();
-      blocked.release();
-      expect(await executionA).toBe('interrupted');
       await new Promise((resolve) => setTimeout(resolve, 10));
       const takeover = (await claim(run.id, 'worker-b', 1))!;
       const resumed = mediaServices({
