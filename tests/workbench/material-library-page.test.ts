@@ -629,6 +629,7 @@ describe('staying fresh without moving the teacher', () => {
         await openMenu('kb-material-menu-a');
         await choose('kb-material-menu-a-move');
         await choose('kb-move-to-f1');
+        await choose('kb-move-confirm');
       }
       expect(writeCalls, action).toHaveLength(1);
 
@@ -1633,6 +1634,127 @@ describe('the rows’ columns', () => {
   });
 });
 
+// ── The original, and Move to… (#1835 teacher feedback 3, review §6) ──────
+
+describe('opening or downloading the original', () => {
+  it('says Open only for a type the server serves inline, Download original otherwise', async () => {
+    let photoName = 'photo.png';
+    library = () =>
+      json({
+        materials: [
+          source('photo', { name: photoName, mime: 'image/png', opensInline: true }),
+          source('notes', { mime: 'application/pdf', opensInline: false }),
+          // An answer from before the field: downloads, as it always did for most types.
+          source('older', { mime: 'image/png' }),
+        ],
+        limits: LIMITS,
+      });
+    const page = await openPage();
+    const label = async (id: string) => {
+      await openMenu(`kb-material-menu-${id}`);
+      const item = inDocument(`kb-material-menu-${id}-open`)!;
+      const text = item.textContent;
+      expect(item.getAttribute('href')).toBe(`/api/materials/${id}/original`);
+      await act(async () =>
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        ),
+      );
+      await settle();
+      return text;
+    };
+    expect(await label('photo')).toContain('workspace.knowledgeBase.actions.open');
+    expect(await label('notes')).toContain('workspace.knowledgeBase.actions.downloadOriginal');
+    expect(await label('older')).toContain('workspace.knowledgeBase.actions.downloadOriginal');
+    // A new name does not change what the original does.
+    photoName = 'Board.png';
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(page.query('kb-material-photo')?.textContent).toContain('Board.png');
+    expect(await label('photo')).toContain('workspace.knowledgeBase.actions.open');
+    await page.dispose();
+  });
+});
+
+describe('Move to…, chosen then confirmed', () => {
+  const pressed = () =>
+    [...inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]')]
+      .filter((target) => target.getAttribute('aria-pressed') === 'true')
+      .map((target) => target.getAttribute('data-testid'));
+  const confirmButton = () => inDocument('kb-move-confirm') as HTMLButtonElement;
+  const openMove = async () => {
+    await openMenu('kb-material-menu-a');
+    await choose('kb-material-menu-a-move');
+    await settle();
+  };
+
+  it('opens with nothing chosen and the focus on no folder; a click chooses, Move moves', async () => {
+    const page = await openPage();
+    await openMove();
+    expect(pressed()).toEqual([]);
+    expect(confirmButton().disabled).toBe(true);
+    expect(document.activeElement?.getAttribute('data-testid')).not.toMatch(/^kb-move-to-/);
+    await choose('kb-move-to-f2');
+    expect(pressed()).toEqual(['kb-move-to-f2']);
+    expect(writeCalls).toEqual([]);
+    await choose('kb-move-to-f1');
+    expect(pressed()).toEqual(['kb-move-to-f1']);
+    expect(confirmButton().disabled).toBe(false);
+    await choose('kb-move-confirm');
+    await settle();
+    expect(writeCalls).toEqual([
+      { method: 'POST', path: '/api/materials/move', body: { materialIds: ['a'], folderId: 'f1' } },
+    ]);
+    expect(inDocument('kb-move-dialog')).toBeNull();
+    await page.dispose();
+  });
+
+  it('a keyboard focus is not a choice; Cancel moves nothing', async () => {
+    const page = await openPage();
+    await openMove();
+    await act(async () => (inDocument('kb-move-to-f1') as HTMLElement).focus());
+    expect(pressed()).toEqual([]);
+    expect(confirmButton().disabled).toBe(true);
+    await choose('kb-move-cancel');
+    await settle();
+    expect(inDocument('kb-move-dialog')).toBeNull();
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
+  it('keeps a refusal in the dialog to retry, and sends one move however often it is confirmed', async () => {
+    const answers = [
+      json(
+        { success: false, errorCode: 'INVALID_REQUEST', error: 'no', reason: 'not_movable' },
+        422,
+      ),
+    ];
+    const pending = deferred<Response>();
+    writeMaterial = () => answers.shift() ?? pending.promise;
+    const page = await openPage();
+    await openMove();
+    await choose('kb-move-to-f1');
+    await choose('kb-move-confirm');
+    await settle();
+    expect(inDocument('kb-move-dialog-error')?.textContent).toBe(
+      'workspace.knowledgeBase.error.notMovable',
+    );
+    expect(pressed()).toEqual(['kb-move-to-f1']);
+    // Retry: one request, however often Move is pressed while it is answered.
+    await act(async () => {
+      confirmButton().click();
+      confirmButton().click();
+    });
+    expect(confirmButton().disabled).toBe(true);
+    expect(writeCalls).toHaveLength(2);
+    await act(async () => pending.resolve(json({ status: 'moved', movedCount: 1 })));
+    await settle();
+    expect(inDocument('kb-move-dialog')).toBeNull();
+    expect(writeCalls).toHaveLength(2);
+    await page.dispose();
+  });
+});
+
 // ── Organizing ─────────────────────────────────────────────────────────────
 
 describe('organizing from the page', () => {
@@ -1642,6 +1764,7 @@ describe('organizing from the page', () => {
     await choose('kb-material-menu-a-move');
     expect(inDocument('kb-move-to-unfiled')).toBeNull();
     await choose('kb-move-to-f1');
+    await choose('kb-move-confirm');
     await settle();
     expect(writeCalls.at(-1)).toEqual({
       method: 'POST',
@@ -1679,6 +1802,7 @@ describe('organizing from the page', () => {
     await openMenu('kb-material-menu-a');
     await choose('kb-material-menu-a-move');
     await choose('kb-move-to-f1');
+    await choose('kb-move-confirm');
     await settle();
     expect(inDocument('kb-move-dialog-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.notMovable',
@@ -1704,6 +1828,7 @@ describe('organizing from the page', () => {
         limits: LIMITS,
       });
     await choose('kb-move-to-f1');
+    await choose('kb-move-confirm');
     await settle();
     expect(inDocument('kb-material-menu-a')).toBeNull();
     expect(document.activeElement?.id).toBe('pro-workspace-library-title');
@@ -2015,7 +2140,12 @@ describe('public extraction failure explanations', () => {
       });
       await settle();
       const dialog = document.querySelector('[role="dialog"]')!;
-      expect(dialog.textContent).toBe(`workspace.knowledgeBase.failure.${reasonCode}.description`);
+      // The duration limit is the extractor's own number, passed in.
+      expect(dialog.textContent).toBe(
+        `workspace.knowledgeBase.failure.${reasonCode}.description${
+          reasonCode === 'media_too_long' ? '{"minutes":90}' : ''
+        }`,
+      );
       expect(document.body.innerHTML).not.toContain('PRIVATE_RAW_DETAIL');
       await act(async () => {
         dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

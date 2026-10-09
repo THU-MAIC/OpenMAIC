@@ -476,7 +476,7 @@ async function extractOrReuse(
       failures.push(error);
     }
   }
-  throw documentExtractionFailure(errors, failures);
+  throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
 /**

@@ -304,3 +304,19 @@ it('R6 defines parse and parse-again actions explicitly in all twelve locales', 
     }
   }
 });
+
+it('R8.5 states the media duration limit by interpolation in all twelve locales', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const description: string = resource.workspace.knowledgeBase.failure.media_too_long.description;
+    expect(interpolations(description), code).toEqual(['minutes']);
+    // The number comes from the extractor's constant, never from the copy.
+    expect(description, code).not.toMatch(/\d/);
+    for (const key of ['open', 'downloadOriginal']) {
+      expect(resource.workspace.knowledgeBase.actions[key].trim(), code).not.toBe('');
+    }
+    expect(resource.workspace.knowledgeBase.dialog.moveConfirm.trim(), code).not.toBe('');
+  }
+});

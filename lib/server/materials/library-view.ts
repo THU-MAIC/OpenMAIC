@@ -13,6 +13,7 @@ import { ownerLibraryUsage } from '@/lib/persistence/material-library';
 import type { OwnerMaterialEntry } from '@/lib/persistence/session-material-links';
 import type { ResolvedMaterial } from '@/lib/server/agent-runtime/material-resolver';
 import { publicMaterialView } from '@/lib/server/agent-runtime/session-materials';
+import { opensInline } from '@/lib/server/materials/original-response';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
@@ -30,6 +31,8 @@ export interface LibraryMaterialView {
   folderName?: string;
   /** Attached to the conversation the listing was asked about, when it was asked. */
   attached?: boolean;
+  /** A source's original opens in the tab rather than downloading (the page's label). */
+  opensInline?: boolean;
   derivedFrom?: string;
   pageNumber?: number;
   timeMs?: number;
@@ -58,6 +61,7 @@ export function libraryMaterialView(
     ...(context.attached ? { attached: context.attached.has(entry.id) } : {}),
     ...(entry.derivedFrom ? { derivedFrom: entry.derivedFrom } : {}),
     ...(entry.lineage ?? {}),
+    ...(entry.kind === 'source' ? { opensInline: opensInline(entry.mime) } : {}),
     ...(entry.kind === 'source'
       ? {
           extraction: {

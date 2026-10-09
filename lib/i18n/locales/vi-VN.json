@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "Âm thanh hoặc video quá dài",
-          "description": "Phương thức phân tích này không xử lý được tệp dài như vậy. Hãy rút ngắn hoặc chia nhỏ tệp rồi tải lên lại."
+          "description": "Phương thức phân tích này xử lý được âm thanh hoặc video dài tối đa {{minutes}} phút. Hãy rút ngắn hoặc chia nhỏ tệp rồi tải lên lại."
         },
         "no_text_extracted": {
           "label": "Không trích xuất được văn bản",
@@ -2081,7 +2081,8 @@
         "move": "Chuyển đến…",
         "removeFromFolder": "Bỏ khỏi thư mục",
         "delete": "Xóa",
-        "open": "Mở tệp gốc",
+        "open": "Mở",
+        "downloadOriginal": "Tải xuống tệp gốc",
         "chat": "Trò chuyện với tài liệu này"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "Hủy",
         "moveTitle": "Chuyển “{{name}}”",
+        "moveConfirm": "Chuyển",
         "noFolders": "Chưa có thư mục nào để chuyển đến. Hãy tạo một thư mục trước.",
         "close": "Đóng"
       },

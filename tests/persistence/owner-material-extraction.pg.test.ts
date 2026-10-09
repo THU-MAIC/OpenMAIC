@@ -27,6 +27,8 @@ import {
   ANON,
   bootExtractionHarness,
   failureReasonScenario,
+  documentFallbackScenario,
+  documentServiceUnavailableScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -153,6 +155,14 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
 
   it('extracts a source two conversations start exactly once', async () => {
     await twoConversationsOneExtractionScenario(await boot());
+  });
+
+  it('says the parsing service is unavailable only when no document candidate is configured', async () => {
+    await documentServiceUnavailableScenario(await boot());
+  });
+
+  it('keeps document fallback, and a PDF’s own failure, free of that reason', async () => {
+    await documentFallbackScenario(await boot());
   });
 
   it('keeps public failure reasons on current terminal claims only', async () => {

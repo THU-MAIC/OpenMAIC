@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { MaterialExtractionReasonCode } from '@/lib/types/material-extraction-failure';
+import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
@@ -155,7 +156,10 @@ function MaterialIcon({ mime }: { readonly mime?: string }) {
   return <File {...ROW_ICON} />;
 }
 
-const failureCopy: Record<MaterialExtractionReasonCode, { label: string; description: string }> = {
+const failureCopy: Record<
+  MaterialExtractionReasonCode,
+  { label: string; description: string; values?: Record<string, unknown> }
+> = {
   storage_full: {
     label: 'workspace.knowledgeBase.failure.storage_full.label',
     description: 'workspace.knowledgeBase.failure.storage_full.description',
@@ -171,6 +175,8 @@ const failureCopy: Record<MaterialExtractionReasonCode, { label: string; descrip
   media_too_long: {
     label: 'workspace.knowledgeBase.failure.media_too_long.label',
     description: 'workspace.knowledgeBase.failure.media_too_long.description',
+    // The extractor's own limit, so the explanation cannot drift from it.
+    values: { minutes: MEDIA_MAX_DURATION_SEC / 60 },
   },
   no_text_extracted: {
     label: 'workspace.knowledgeBase.failure.no_text_extracted.label',
@@ -231,7 +237,7 @@ function StatusLabel({
             className="max-w-[calc(100vw-2rem)] text-sm"
             collisionPadding={16}
           >
-            {t(failure.description)}
+            {t(failure.description, failure.values)}
           </PopoverContent>
         </Popover>
       ) : null}
@@ -507,6 +513,15 @@ function InlineName({
  * beside. The menu is the last child either way, so each row has one. A
  * search has one column more, so it waits for a wider list.
  */
+/**
+ * The column names stay at the top of the page's scroller while a long list
+ * scrolls under them (#1835 review §6), on an opaque ground (the surface
+ * over the canvas) so no row shows through. Only the grid has them: below
+ * it each row says what it is, and nothing sticks.
+ */
+const STICKY_HEADER =
+  'sticky top-0 z-10 hidden border-b border-[color:var(--ws-line)] [background:linear-gradient(var(--ws-surface),var(--ws-surface)),var(--ws-canvas-top)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)]';
+
 const LAYOUT = {
   tree: {
     row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @2xl:grid @2xl:items-center @2xl:gap-3',
@@ -517,8 +532,7 @@ const LAYOUT = {
     menu: 'ws-kb-row-menu shrink-0 @2xl:flex @2xl:justify-end',
     /** A folder's name takes the status column too; its count is in Size. */
     nameSpan: '@2xl:col-span-2',
-    header:
-      'hidden border-b border-[color:var(--ws-line)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)] @2xl:grid @2xl:gap-3',
+    header: `${STICKY_HEADER} @2xl:grid @2xl:gap-3`,
   },
   search: {
     row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @3xl:grid @3xl:items-center @3xl:gap-3',
@@ -527,8 +541,7 @@ const LAYOUT = {
     narrowOnly: '@3xl:hidden',
     wideOnly: 'hidden @3xl:block',
     menu: 'ws-kb-row-menu shrink-0 @3xl:flex @3xl:justify-end',
-    header:
-      'hidden border-b border-[color:var(--ws-line)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)] @3xl:grid @3xl:gap-3',
+    header: `${STICKY_HEADER} @3xl:grid @3xl:gap-3`,
   },
 } as const;
 
@@ -995,11 +1008,15 @@ export function MaterialLibraryPage({
           ]
         : []),
       {
-        // Inline types open in the tab; everything else downloads (the
-        // route's headers decide, RFC #1716: "opens in a new tab or downloads").
+        // Inline types open in the tab; everything else downloads. The view's
+        // `opensInline` is the route's own decision; without it, Download.
         id: 'open',
-        label: t('workspace.knowledgeBase.actions.open'),
-        icon: menuIcons.open,
+        label: t(
+          material.opensInline
+            ? 'workspace.knowledgeBase.actions.open'
+            : 'workspace.knowledgeBase.actions.downloadOriginal',
+        ),
+        icon: material.opensInline ? menuIcons.open : menuIcons.download,
         href: `/api/materials/${encodeURIComponent(material.materialId)}/original`,
         onSelect: () => {},
       },
@@ -1438,7 +1455,8 @@ export function MaterialLibraryPage({
       ref={scroller}
       data-testid="pro-workspace-library"
       aria-labelledby="pro-workspace-library-title"
-      className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto [overflow-anchor:none]"
+      // Room for the sticky column names, so a row given the focus is not under them.
+      className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto [overflow-anchor:none] [scroll-padding-top:2.75rem]"
     >
       {/* Below `md` the rail is gone, so the page carries its own way out. */}
       <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
@@ -1553,7 +1571,9 @@ export function MaterialLibraryPage({
           <div
             ref={list}
             data-testid="kb-list"
-            className="@container overflow-hidden rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)]"
+            // `clip`, not `hidden`: the rounded corners still clip, but the
+            // list is no scroll container, so its column names can stick.
+            className="@container overflow-clip rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)]"
           >
             {body}
           </div>

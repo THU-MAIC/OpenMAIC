@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "Audio o video demasiado largo",
-          "description": "Este método de análisis no puede procesar un archivo de esta duración. Acórtalo o divídelo y vuelve a subirlo."
+          "description": "Este método de análisis procesa audio o video de hasta {{minutes}} minutos. Acórtalo o divídelo y vuelve a subirlo."
         },
         "no_text_extracted": {
           "label": "No se extrajo texto",
@@ -2081,7 +2081,8 @@
         "move": "Mover a…",
         "removeFromFolder": "Quitar de la carpeta",
         "delete": "Eliminar",
-        "open": "Abrir el original",
+        "open": "Abrir",
+        "downloadOriginal": "Descargar el original",
         "chat": "Conversar sobre este material"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "Cancelar",
         "moveTitle": "Mover “{{name}}”",
+        "moveConfirm": "Mover",
         "noFolders": "Aún no hay carpetas a donde moverlo. Crea una primero.",
         "close": "Cerrar"
       },

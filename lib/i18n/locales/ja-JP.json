@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "音声・動画が長すぎます",
-          "description": "この解析方法では処理できない長さです。短くするか分割して、もう一度アップロードしてください。"
+          "description": "この解析方法で処理できるのは {{minutes}} 分までの音声・動画です。短くするか分割して、もう一度アップロードしてください。"
         },
         "no_text_extracted": {
           "label": "テキストを抽出できませんでした",
@@ -2081,7 +2081,8 @@
         "move": "移動…",
         "removeFromFolder": "フォルダーの外に移動",
         "delete": "削除",
-        "open": "元のファイルを開く",
+        "open": "開く",
+        "downloadOriginal": "元のファイルをダウンロード",
         "chat": "この資料で会話する"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "キャンセル",
         "moveTitle": "「{{name}}」を移動",
+        "moveConfirm": "移動",
         "noFolders": "移動先のフォルダーがまだありません。先に作成してください。",
         "close": "閉じる"
       },

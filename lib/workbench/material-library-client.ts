@@ -31,6 +31,8 @@ export interface LibraryMaterial {
   readonly bytes: number;
   readonly folderId: string | null;
   readonly folderName?: string;
+  /** The original opens in the tab; absent or false, it downloads (the server decides). */
+  readonly opensInline?: boolean;
   readonly extraction: {
     readonly status: MaterialExtractionStatus;
     readonly reasonCode?: MaterialExtractionReasonCode;
@@ -184,6 +186,7 @@ function materialOf(raw: unknown): LibraryMaterial | null {
     bytes: typeof item.bytes === 'number' ? item.bytes : 0,
     folderId: typeof item.folderId === 'string' ? item.folderId : null,
     ...(typeof item.folderName === 'string' ? { folderName: item.folderName } : {}),
+    ...(item.opensInline === true ? { opensInline: true } : {}),
     extraction: {
       status,
       ...(reasonCode ? { reasonCode } : {}),

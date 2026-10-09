@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "Audio or video too long",
-          "description": "This parsing method cannot process media of this length. Shorten or split the file and upload it again."
+          "description": "This parsing method handles audio or video up to {{minutes}} minutes. Shorten or split the file and upload it again."
         },
         "no_text_extracted": {
           "label": "No text extracted",
@@ -2081,7 +2081,8 @@
         "move": "Move to…",
         "removeFromFolder": "Remove from folder",
         "delete": "Delete",
-        "open": "Open original",
+        "open": "Open",
+        "downloadOriginal": "Download original",
         "chat": "Chat with this material"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "Cancel",
         "moveTitle": "Move “{{name}}”",
+        "moveConfirm": "Move",
         "noFolders": "There are no folders to move it to yet. Create one first.",
         "close": "Close"
       },

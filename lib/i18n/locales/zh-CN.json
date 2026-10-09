@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "音视频过长",
-          "description": "当前解析方式无法处理这段音视频，请缩短或分段后重新上传。"
+          "description": "当前解析方式最长支持 {{minutes}} 分钟的音视频，请缩短或分段后重新上传。"
         },
         "no_text_extracted": {
           "label": "未提取到文字",
@@ -2081,7 +2081,8 @@
         "move": "移动到…",
         "removeFromFolder": "移出文件夹",
         "delete": "删除",
-        "open": "打开原文件",
+        "open": "打开",
+        "downloadOriginal": "下载原文件",
         "chat": "用这份资料对话"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "取消",
         "moveTitle": "移动“{{name}}”",
+        "moveConfirm": "移动",
         "noFolders": "还没有可以移入的文件夹，请先新建一个。",
         "close": "关闭"
       },

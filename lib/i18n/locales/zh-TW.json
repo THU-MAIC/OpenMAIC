@@ -2002,7 +2002,7 @@
         },
         "media_too_long": {
           "label": "音訊或影片過長",
-          "description": "目前的解析方式無法處理這段音訊或影片，請縮短或分段後重新上傳。"
+          "description": "目前的解析方式最長支援 {{minutes}} 分鐘的音訊或影片，請縮短或分段後重新上傳。"
         },
         "no_text_extracted": {
           "label": "未擷取到文字",
@@ -2066,7 +2066,8 @@
         "move": "移動到…",
         "removeFromFolder": "移出資料夾",
         "delete": "刪除",
-        "open": "開啟原始檔案",
+        "open": "開啟",
+        "downloadOriginal": "下載原始檔案",
         "chat": "用這份資料對話"
       },
       "folder": {
@@ -2078,6 +2079,7 @@
       "dialog": {
         "cancel": "取消",
         "moveTitle": "移動「{{name}}」",
+        "moveConfirm": "移動",
         "noFolders": "還沒有可以移入的資料夾，請先新增一個。",
         "close": "關閉"
       },

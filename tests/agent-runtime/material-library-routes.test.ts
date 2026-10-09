@@ -1246,6 +1246,42 @@ describe('material library routes and tools (PGlite)', () => {
     },
   );
 
+  it('R8.5 labels each original with the decision its response is served by', async () => {
+    const h = await boot();
+    const cases: Array<[string, string | null, boolean]> = [
+      ['r85-png', 'image/png', true],
+      ['r85-mp3', 'audio/mpeg', true],
+      ['r85-mp4', 'video/mp4', true],
+      ['r85-pdf', 'application/pdf', false],
+      ['r85-txt', 'text/plain', false],
+      ['r85-svg', 'image/svg+xml', false],
+      ['r85-unknown', 'application/x-unknown', false],
+      ['r85-none', null, false],
+    ];
+    for (const [id, mime] of cases) {
+      await seedPoolSource(h, id, Buffer.from(id), mime ?? 'application/octet-stream');
+      if (mime === null) {
+        await h.pool.query('UPDATE owner_material SET mime = NULL WHERE id = $1', [id]);
+      }
+    }
+    const listed = (await (
+      await libraryRoute(request('GET', '/api/materials/library'))
+    ).json()) as {
+      materials: Array<{ materialId: string; opensInline?: boolean }>;
+    };
+    for (const [id, mime, inline] of cases) {
+      const view = listed.materials.find((material) => material.materialId === id)!;
+      const response = await originalRoute(
+        request('GET', `/api/materials/${id}/original`),
+        params(id),
+      );
+      const disposition = response.headers.get('content-disposition') ?? '';
+      // The label's field and the response come from the one decision.
+      expect(view.opensInline, String(mime)).toBe(disposition.startsWith('inline;'));
+      expect(view.opensInline, String(mime)).toBe(inline);
+    }
+  });
+
   it('serves a source’s original to its owner, inline only for media the pool serves inline', async () => {
     const h = await boot();
     const video = Buffer.from('fake-mp4');

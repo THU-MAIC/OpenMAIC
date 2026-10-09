@@ -20,7 +20,7 @@ import {
 } from '@/lib/server/material-extraction/extract';
 import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runner';
 import { LocalMediaExtractionError } from '@/lib/document/extractors/local-media';
-import type { MediaExtractorProvider } from '@/lib/document';
+import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
 
 function mediaProvider(
   extract: MediaExtractorProvider['extract'],
@@ -359,5 +359,64 @@ it('preserves a local duration reason through the real media plan without changi
   await expect(runSourceExtraction(plan, 'long.mp4')).rejects.toMatchObject({
     reasonCode: 'media_too_long',
     retryable: false,
+  });
+});
+
+describe('document parsing service unavailable (session chain)', () => {
+  const documentService = (
+    id: string,
+    mimes: string[],
+    message = `API key required for PDF provider: ${id}`,
+  ): DocumentExtractorProvider => ({
+    id: id as never,
+    displayName: id,
+    version: '1',
+    supportedMimeTypes: mimes,
+    capabilities: {
+      text: true,
+      images: false,
+      tables: false,
+      formulas: false,
+      layout: false,
+      ocr: false,
+      async: false,
+    },
+    extract: vi.fn(async () => {
+      throw new Error(message);
+    }) as never,
+  });
+
+  it('names it when every candidate is an unconfigured service', async () => {
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('png'), mime: 'image/png' },
+      'board.png',
+      {
+        providers: () => [
+          documentService('mineru', ['image/png']),
+          documentService('alidocmind', ['image/png']),
+        ],
+        configuredProviderIds: () => [],
+      },
+    );
+    await expect(runSourceExtraction(plan, 'board.png')).rejects.toMatchObject({
+      reasonCode: 'service_unavailable',
+      retryable: false,
+    });
+  });
+
+  it('does not name it when the local unpdf took a PDF and failed', async () => {
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('%PDF'), mime: 'application/pdf' },
+      'broken.pdf',
+      {
+        providers: () => [
+          documentService('mineru', ['application/pdf']),
+          documentService('unpdf', ['application/pdf'], 'Invalid PDF structure'),
+        ],
+        configuredProviderIds: () => [],
+      },
+    );
+    const failure = await runSourceExtraction(plan, 'broken.pdf').catch((error) => error);
+    expect(failure.reasonCode).toBeUndefined();
   });
 });

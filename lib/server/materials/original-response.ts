@@ -14,6 +14,16 @@ import { DEFAULT_RENDERABLE_TYPES } from '@openmaic/storage';
 
 const INLINE_TYPES = new Set(DEFAULT_RENDERABLE_TYPES.map((type) => type.toLowerCase()));
 
+/**
+ * Whether an original of this type is served inline (opened in the tab)
+ * rather than downloaded. The one decision behind both the response's
+ * disposition and the library view's `opensInline`, so the page's
+ * "Open" / "Download original" says what the response does.
+ */
+export function opensInline(mime: string | null | undefined): boolean {
+  return INLINE_TYPES.has((mime ?? '').toLowerCase());
+}
+
 /** The name without control characters (CR/LF included) or path separators. */
 function safeFileName(name: string | null, fallback: string): string {
   const cleaned = Array.from(name ?? '')
@@ -66,7 +76,7 @@ export function originalResponseHeaders(input: {
   byteLength: number;
 }): Headers {
   const mime = (input.mime ?? '').toLowerCase();
-  const inline = INLINE_TYPES.has(mime);
+  const inline = opensInline(mime);
   return new Headers({
     'Content-Type': inline ? mime : 'application/octet-stream',
     'Content-Length': String(input.byteLength),

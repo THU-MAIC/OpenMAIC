@@ -2017,7 +2017,7 @@
         },
         "media_too_long": {
           "label": "Audio ou vidéo trop long",
-          "description": "Cette méthode d’analyse ne peut pas traiter un média de cette durée. Raccourcissez ou divisez le fichier, puis importez-le à nouveau."
+          "description": "Cette méthode d’analyse traite les médias jusqu’à {{minutes}} minutes. Raccourcissez ou divisez le fichier, puis importez-le à nouveau."
         },
         "no_text_extracted": {
           "label": "Aucun texte extrait",
@@ -2081,7 +2081,8 @@
         "move": "Déplacer vers…",
         "removeFromFolder": "Retirer du dossier",
         "delete": "Supprimer",
-        "open": "Ouvrir l’original",
+        "open": "Ouvrir",
+        "downloadOriginal": "Télécharger l’original",
         "chat": "Discuter de ce document"
       },
       "folder": {
@@ -2093,6 +2094,7 @@
       "dialog": {
         "cancel": "Annuler",
         "moveTitle": "Déplacer « {{name}} »",
+        "moveConfirm": "Déplacer",
         "noFolders": "Aucun dossier où le déplacer pour l’instant. Créez-en un d’abord.",
         "close": "Fermer"
       },

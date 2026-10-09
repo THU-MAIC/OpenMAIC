@@ -1443,6 +1443,92 @@ export async function parserFailureScenario(h: ExtractionHarness): Promise<void>
   }
 }
 
+/** Document candidates for the service-unavailable scenarios: a service fails unless given work. */
+function documentCandidates(h: ExtractionHarness) {
+  const failing = (message: string) =>
+    vi.fn(async () => {
+      throw new Error(message);
+    });
+  const provider = (
+    id: string,
+    mimes: string[],
+    extract: ReturnType<typeof vi.fn> = failing(`API key required for PDF provider: ${id}`),
+  ): DocumentExtractorProvider => ({
+    ...documentProvider(extract),
+    id: id as never,
+    supportedMimeTypes: mimes,
+  });
+  const run = async (
+    id: string,
+    mime: string,
+    providers: DocumentExtractorProvider[],
+    configured: string[] = [],
+  ) => {
+    await seedSource(h, id, { mime });
+    await ensure(h, id);
+    await drain(h, h.deps({ providers: () => providers, configuredProviderIds: () => configured }));
+    return stateOf(h, id);
+  };
+  return { failing, provider, run };
+}
+
+/**
+ * "Parsing service unavailable" (#1835 review §6) only when every document
+ * candidate is a service the deployment has not configured -- an image, say,
+ * that only MinerU or AliDocMind take. A configured service that fails, or a
+ * type no extractor takes, keeps no reason code.
+ */
+export async function documentServiceUnavailableScenario(h: ExtractionHarness): Promise<void> {
+  const { failing, provider, run } = documentCandidates(h);
+  const png = ['image/png'];
+  expect(
+    await run('img-no-service', 'image/png', [
+      provider('mineru', png),
+      provider('alidocmind', png),
+    ]),
+  ).toMatchObject({ status: 'failed', reason_code: 'service_unavailable', extraction_claims: 1 });
+  expect(
+    await run(
+      'img-configured',
+      'image/png',
+      [provider('mineru', png, failing('HTTP 500'))],
+      ['mineru'],
+    ),
+  ).toMatchObject({ status: 'failed', reason_code: null });
+  expect(await run('img-unsupported', 'image/tiff', [provider('mineru', png)])).toMatchObject({
+    status: 'failed',
+    reason_code: null,
+  });
+}
+
+/**
+ * A PDF always has the local `unpdf`: no service configured, it is parsed
+ * there, and a PDF unpdf cannot read is a real failure, with no reason code.
+ * An unconfigured service that fails still falls back to the next candidate.
+ */
+export async function documentFallbackScenario(h: ExtractionHarness): Promise<void> {
+  const { failing, provider, run } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  expect(
+    await run('pdf-local', 'application/pdf', [
+      provider('mineru', pdf),
+      provider('unpdf', pdf, h.documentExtract),
+    ]),
+  ).toMatchObject({ status: 'done', reason_code: null });
+  expect(
+    await run('pdf-broken', 'application/pdf', [
+      provider('mineru', pdf),
+      provider('unpdf', pdf, failing('Invalid PDF structure')),
+    ]),
+  ).toMatchObject({ status: 'failed', reason_code: null });
+  expect(
+    await run('img-fallback', 'image/png', [
+      provider('mineru', ['image/png']),
+      provider('alidocmind', ['image/png'], h.documentExtract),
+    ]),
+  ).toMatchObject({ status: 'done', reason_code: null });
+}
+
 /** Public failure reasons survive only a terminal, current claim. */
 export async function failureReasonScenario(h: ExtractionHarness): Promise<void> {
   await seedSource(h, 'src-unavailable');

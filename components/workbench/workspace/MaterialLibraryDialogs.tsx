@@ -9,6 +9,8 @@
  */
 import { useRef, useState, type ReactNode } from 'react';
 import {
+  Check,
+  Download,
   ExternalLink,
   FileText,
   FolderInput,
@@ -29,7 +31,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -150,14 +158,18 @@ export const menuIcons = {
   removeFromFolder: <FolderOutput className="size-3.5" aria-hidden="true" />,
   delete: <Trash2 className="size-3.5" aria-hidden="true" />,
   open: <ExternalLink className="size-3.5" aria-hidden="true" />,
+  download: <Download className="size-3.5" aria-hidden="true" />,
   chat: <MessageSquarePlus className="size-3.5" aria-hidden="true" />,
 };
 
 /**
  * Move one source to another folder: folders only, the one it is in not
  * offered (taking it out of a folder is the row menu's Remove from folder).
- * `move` answers with the i18n key of a refusal, or `null`. Mounted per
- * request (the page keys it), so each one starts fresh.
+ * Choosing a folder selects it; Move moves (#1835 review §6). Nothing is
+ * selected when it opens, and the focus is not a selection: a folder looks
+ * chosen only once it is. `move` answers with the i18n key of a refusal, or
+ * `null`; a refusal stays here, to retry or cancel. Mounted per request (the
+ * page keys it), so each one starts fresh.
  */
 export function MoveDialog({
   material,
@@ -174,21 +186,22 @@ export function MoveDialog({
   readonly returnFocus: ReturnFocus;
   readonly t: Translate;
 }) {
+  const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** One move at a time, whatever is clicked meanwhile. */
+  const moving = useRef(false);
+  const content = useRef<HTMLDivElement>(null);
 
-  const targets: { id: string; label: string; icon: ReactNode }[] = folders
-    .filter((folder) => folder.id !== material.folderId)
-    .map((folder) => ({
-      id: folder.id,
-      label: folder.name,
-      icon: <Folder className="size-4 shrink-0 opacity-60" aria-hidden="true" />,
-    }));
+  const targets = folders.filter((folder) => folder.id !== material.folderId);
 
-  const choose = async (folderId: string) => {
-    if (busy) return;
+  const confirm = async () => {
+    if (!selected || moving.current) return;
+    moving.current = true;
     setBusy(true);
-    const refusal = await move(folderId);
+    setError(null);
+    const refusal = await move(selected);
+    moving.current = false;
     setBusy(false);
     if (refusal) setError(refusal);
     else onClose();
@@ -197,8 +210,14 @@ export function MoveDialog({
   return (
     <Dialog open onOpenChange={(next) => (!next && !busy ? onClose() : undefined)}>
       <DialogContent
+        ref={content}
         data-testid="kb-move-dialog"
         aria-describedby={undefined}
+        // Not onto the first folder: a focus ring there reads as a choice made.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          content.current?.focus();
+        }}
         onCloseAutoFocus={returnFocus}
         className="sm:max-w-[400px]"
       >
@@ -213,22 +232,34 @@ export function MoveDialog({
           </p>
         ) : (
           <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-            {targets.map((target) => (
-              <li key={target.id}>
-                <button
-                  type="button"
-                  data-testid={`kb-move-to-${target.id}`}
-                  disabled={busy}
-                  onClick={() => void choose(target.id)}
-                  className={cn(
-                    'flex h-9 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] hover:bg-accent disabled:opacity-50',
-                  )}
-                >
-                  {target.icon}
-                  <span className="min-w-0 flex-1 truncate">{target.label}</span>
-                </button>
-              </li>
-            ))}
+            {targets.map((folder) => {
+              const chosen = selected === folder.id;
+              return (
+                <li key={folder.id}>
+                  <button
+                    type="button"
+                    data-testid={`kb-move-to-${folder.id}`}
+                    // A dialog renders outside `.ws-root`: the app's own tokens, not `--ws-*`.
+                    aria-pressed={chosen}
+                    disabled={busy}
+                    onClick={() => {
+                      setSelected(folder.id);
+                      setError(null);
+                    }}
+                    className={cn(
+                      'flex h-9 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+                      chosen && 'bg-primary/10 font-medium hover:bg-primary/10',
+                    )}
+                  >
+                    <Folder className="size-4 shrink-0 opacity-60" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                    {chosen ? (
+                      <Check className="size-4 shrink-0 text-primary" aria-hidden="true" />
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
         {error ? (
@@ -236,6 +267,27 @@ export function MoveDialog({
             {t(error)}
           </p>
         ) : null}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="kb-move-cancel"
+            disabled={busy}
+            onClick={onClose}
+          >
+            {t('workspace.knowledgeBase.dialog.cancel')}
+          </Button>
+          {targets.length > 0 ? (
+            <Button
+              type="button"
+              data-testid="kb-move-confirm"
+              disabled={!selected || busy}
+              onClick={() => void confirm()}
+            >
+              {t('workspace.knowledgeBase.dialog.moveConfirm')}
+            </Button>
+          ) : null}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

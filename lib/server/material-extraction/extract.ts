@@ -90,6 +90,14 @@ export function mediaArtifactText(artifact: MediaArtifact): string {
     .join('\n\n');
 }
 
+/**
+ * The document extractors that are services a deployment configures (its
+ * `pdf` providers). `plain-text` and `unpdf` run here with nothing to
+ * configure -- `unpdf` is every PDF's unconditional local fallback, as in
+ * `fetch-url.ts` -- so a PDF always has a candidate that is not a service.
+ */
+const DOCUMENT_EXTRACTION_SERVICES = new Set(['mineru', 'mineru-cloud', 'alidocmind']);
+
 function extractorCandidates(
   mime: string,
   providers: DocumentExtractorProvider[],
@@ -127,6 +135,11 @@ export type SourceExtractionPlan =
       kind: 'document';
       candidates: DocumentExtractorProvider[];
       input: Omit<DocumentExtractorInput, 'config'>;
+      /**
+       * Every candidate is a parsing service the deployment has not
+       * configured: if they all fail, the reason is `service_unavailable`.
+       */
+      noServiceConfigured?: boolean;
     };
 
 /** An image the extractor returned, not yet decoded or stored. */
@@ -198,10 +211,16 @@ export async function planSourceExtraction(
   const configuredIds =
     dependencies.configuredProviderIds?.() ?? Object.keys(getServerPDFProviders());
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
+  // No extractor for this type is not a missing service: no reason code.
   if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
+  const configured = new Set(configuredIds);
+  const noServiceConfigured = candidates.every(
+    (provider) => DOCUMENT_EXTRACTION_SERVICES.has(provider.id) && !configured.has(provider.id),
+  );
   return {
     kind: 'document',
     candidates,
+    ...(noServiceConfigured ? { noServiceConfigured } : {}),
     input: {
       buffer: raw.bytes,
       fileName: title ?? undefined,
@@ -282,7 +301,7 @@ export async function runSourceExtraction(
     }
     return documentOutcome(artifact, provider);
   }
-  throw documentExtractionFailure(errors, failures);
+  throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
 /** Run one document provider on a planned input; a failure is the provider's own error. */
@@ -307,14 +326,20 @@ export function documentFailureLine(provider: DocumentExtractorProvider, error: 
   return `${provider.id}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-/** The failure once every document provider failed: retryable if any failure was transient. */
+/**
+ * The failure once every document provider failed: retryable if any failure
+ * was transient, and `service_unavailable` when no candidate was a service
+ * the deployment configured (any other failure keeps no reason code).
+ */
 export function documentExtractionFailure(
   errors: string[],
   failures: unknown[],
+  noServiceConfigured = false,
 ): MaterialExtractionError {
   return new MaterialExtractionError(
     `document extraction failed (${errors.join('; ')})`,
     failures.some(isTransientExtractionError),
+    noServiceConfigured ? { reasonCode: 'service_unavailable' } : undefined,
   );
 }
 
