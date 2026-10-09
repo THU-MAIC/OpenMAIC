@@ -50,6 +50,16 @@ export type { AssetRef, AssetRefKind } from './html-asset-inventory';
 
 const HTTP_URL = /^https?:\/\//i;
 
+/** An audio/video source: `<video src>`, `<audio src>`, or a `<source>` inside either. */
+function isMediaSource(asset: { kind: AssetRefKind; parentTagName?: string }): boolean {
+  return (
+    asset.kind === 'video' ||
+    asset.kind === 'audio' ||
+    (asset.kind === 'source' &&
+      (asset.parentTagName === 'video' || asset.parentTagName === 'audio'))
+  );
+}
+
 interface CssImportConditions {
   layer?: string | null;
   supports?: string;
@@ -602,10 +612,21 @@ export async function inlineHtmlAssets(
   // Pre-warm non-importmap asset fetches in parallel so the sequential
   // structured rewrite phases hit a warm cache (fonts are parallelized inside
   // inlineCssUrls; importmap modules are handled in buildInlinedImportmap).
+  const skippedMediaUrls = new Set(
+    options?.skipMedia
+      ? analyzeHtmlAssetInventory(html)
+          .attributeAssets.filter(isMediaSource)
+          .map((asset) => asset.url)
+      : [],
+  );
   await Promise.all(
     collectAssetRefs(html)
       .filter(
         (ref) =>
+          !(
+            (ref.kind === 'video' || ref.kind === 'audio' || ref.kind === 'source') &&
+            skippedMediaUrls.has(ref.url)
+          ) &&
           ref.kind !== 'importmap' &&
           ref.kind !== 'iframe-src' &&
           ref.kind !== 'iframe-srcdoc' &&
@@ -633,6 +654,7 @@ export async function inlineHtmlAssets(
     const patches: SourcePatch[] = [];
     for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
       if (!kinds.has(asset.kind) || !HTTP_URL.test(asset.url)) continue;
+      if (options?.skipMedia && isMediaSource(asset)) continue;
       const isSvgReference = asset.kind === 'svg-image' || asset.kind === 'svg-use';
       const hashIndex = isSvgReference ? asset.url.indexOf('#') : -1;
       const fetchUrl = hashIndex === -1 ? asset.url : asset.url.slice(0, hashIndex);
