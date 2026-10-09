@@ -2091,12 +2091,7 @@
         "new": "Nouveau dossier"
       },
       "dialog": {
-        "name": "Nom",
         "cancel": "Annuler",
-        "save": "Enregistrer",
-        "create": "Créer",
-        "renameFolderTitle": "Renommer le dossier",
-        "renameMaterialTitle": "Renommer le document",
         "moveTitle": "Déplacer « {{name}} »",
         "noFolders": "Aucun dossier où le déplacer pour l’instant. Créez-en un d’abord.",
         "close": "Fermer"

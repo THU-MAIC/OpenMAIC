@@ -2076,12 +2076,7 @@
         "new": "新增資料夾"
       },
       "dialog": {
-        "name": "名稱",
         "cancel": "取消",
-        "save": "儲存",
-        "create": "建立",
-        "renameFolderTitle": "重新命名資料夾",
-        "renameMaterialTitle": "重新命名資料",
         "moveTitle": "移動「{{name}}」",
         "noFolders": "還沒有可以移入的資料夾，請先新增一個。",
         "close": "關閉"

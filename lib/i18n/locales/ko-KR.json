@@ -2091,12 +2091,7 @@
         "new": "새 폴더"
       },
       "dialog": {
-        "name": "이름",
         "cancel": "취소",
-        "save": "저장",
-        "create": "만들기",
-        "renameFolderTitle": "폴더 이름 변경",
-        "renameMaterialTitle": "자료 이름 변경",
         "moveTitle": "“{{name}}” 이동",
         "noFolders": "옮길 폴더가 아직 없습니다. 먼저 폴더를 만드세요.",
         "close": "닫기"

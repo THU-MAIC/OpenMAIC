@@ -2091,12 +2091,7 @@
         "new": "مجلد جديد"
       },
       "dialog": {
-        "name": "الاسم",
         "cancel": "إلغاء",
-        "save": "حفظ",
-        "create": "إنشاء",
-        "renameFolderTitle": "إعادة تسمية المجلد",
-        "renameMaterialTitle": "إعادة تسمية المادة",
         "moveTitle": "نقل «{{name}}»",
         "noFolders": "لا توجد مجلدات لنقلها إليها بعد. أنشئ مجلدًا أولًا.",
         "close": "إغلاق"

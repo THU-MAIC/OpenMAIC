@@ -2091,12 +2091,7 @@
         "new": "Thư mục mới"
       },
       "dialog": {
-        "name": "Tên",
         "cancel": "Hủy",
-        "save": "Lưu",
-        "create": "Tạo",
-        "renameFolderTitle": "Đổi tên thư mục",
-        "renameMaterialTitle": "Đổi tên tài liệu",
         "moveTitle": "Chuyển “{{name}}”",
         "noFolders": "Chưa có thư mục nào để chuyển đến. Hãy tạo một thư mục trước.",
         "close": "Đóng"

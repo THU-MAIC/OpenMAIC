@@ -2091,12 +2091,7 @@
         "new": "Nueva carpeta"
       },
       "dialog": {
-        "name": "Nombre",
         "cancel": "Cancelar",
-        "save": "Guardar",
-        "create": "Crear",
-        "renameFolderTitle": "Cambiar nombre de la carpeta",
-        "renameMaterialTitle": "Cambiar nombre del material",
         "moveTitle": "Mover “{{name}}”",
         "noFolders": "Aún no hay carpetas a donde moverlo. Crea una primero.",
         "close": "Cerrar"

@@ -2091,12 +2091,7 @@
         "new": "Neuer Ordner"
       },
       "dialog": {
-        "name": "Name",
         "cancel": "Abbrechen",
-        "save": "Speichern",
-        "create": "Erstellen",
-        "renameFolderTitle": "Ordner umbenennen",
-        "renameMaterialTitle": "Material umbenennen",
         "moveTitle": "„{{name}}“ verschieben",
         "noFolders": "Es gibt noch keinen Ordner, in den es verschoben werden kann. Lege zuerst einen an.",
         "close": "Schließen"

@@ -2091,12 +2091,7 @@
         "new": "Nova pasta"
       },
       "dialog": {
-        "name": "Nome",
         "cancel": "Cancelar",
-        "save": "Salvar",
-        "create": "Criar",
-        "renameFolderTitle": "Renomear pasta",
-        "renameMaterialTitle": "Renomear material",
         "moveTitle": "Mover “{{name}}”",
         "noFolders": "Ainda não há pastas para onde movê-lo. Crie uma primeiro.",
         "close": "Fechar"

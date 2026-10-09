@@ -2091,12 +2091,7 @@
         "new": "新しいフォルダー"
       },
       "dialog": {
-        "name": "名前",
         "cancel": "キャンセル",
-        "save": "保存",
-        "create": "作成",
-        "renameFolderTitle": "フォルダー名を変更",
-        "renameMaterialTitle": "資料名を変更",
         "moveTitle": "「{{name}}」を移動",
         "noFolders": "移動先のフォルダーがまだありません。先に作成してください。",
         "close": "閉じる"

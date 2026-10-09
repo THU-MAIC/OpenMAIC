@@ -74,7 +74,6 @@ import {
   LibraryItemMenu,
   menuIcons,
   MoveDialog,
-  NameDialog,
   type LibraryMenuItem,
 } from './MaterialLibraryDialogs';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
@@ -338,6 +337,156 @@ function useLibraryUploads(onUploaded: () => void) {
   };
 }
 
+/** The default name of a new folder, numbered when the folders shown already have it. */
+export function newFolderName(base: string, folders: readonly LibraryFolder[]): string {
+  // The server's comparison (the folders' normalized name); it stays the authority.
+  const taken = new Set(folders.map((folder) => folder.name.toLocaleLowerCase('en-US')));
+  if (!taken.has(base.toLocaleLowerCase('en-US'))) return base;
+  for (let number = 2; ; number += 1) {
+    const name = `${base} ${number}`;
+    if (!taken.has(name.toLocaleLowerCase('en-US'))) return name;
+  }
+}
+
+/** Where a file's name stops before its extension, for selecting it. */
+const nameStemEnd = (name: string) => {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? dot : name.length;
+};
+
+/** How an edit in place asked to be saved. */
+type CommitCause = 'enter' | 'blur';
+
+/**
+ * A name edited in place, in its row (#1835 review §1): Enter or leaving the
+ * field saves, Escape cancels. One edit asks once: the blur after Enter or
+ * Escape, or while the answer is awaited, asks nothing, and the Enter that
+ * ends an input method's composition belongs to the composition. What was
+ * typed stays the field's own; an answer never rewrites it.
+ */
+function InlineName({
+  testId,
+  errorTestId,
+  label,
+  initialName,
+  selectEnd,
+  maxLength,
+  busy,
+  error,
+  onEdit,
+  onCommit,
+  onCancel,
+}: {
+  readonly testId: string;
+  readonly errorTestId: string;
+  readonly label: string;
+  readonly initialName: string;
+  /** Selected up to here at first (a file's name without its extension); all of it otherwise. */
+  readonly selectEnd?: number;
+  readonly maxLength?: number;
+  readonly busy: boolean;
+  /** Why the last attempt was refused, already translated. */
+  readonly error: string | null;
+  readonly onEdit: () => void;
+  readonly onCommit: (name: string, cause: CommitCause) => void;
+  readonly onCancel: () => void;
+}) {
+  const field = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState(initialName);
+  const firstSelection = useRef(selectEnd);
+  /** Enter or a blur asked; nothing asks again until the page has answered. */
+  const asked = useRef(false);
+  /** Escape ended the edit: the blur that follows saves nothing. */
+  const cancelled = useRef(false);
+  const wasBusy = useRef(false);
+  /** How the answered attempt was asked: only an Enter's refusal takes the focus back. */
+  const lastCause = useRef<CommitCause>('enter');
+  useLayoutEffect(() => {
+    const input = field.current;
+    if (!input) return;
+    // Not from a field the teacher is typing in elsewhere (the search).
+    const active = document.activeElement;
+    const typing =
+      active instanceof HTMLElement &&
+      active !== input &&
+      (active.isContentEditable ||
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement);
+    if (typing) return;
+    input.focus();
+    input.setSelectionRange(0, firstSelection.current ?? input.value.length);
+  }, []);
+  // Every render the page answered in: a kept edit can ask again, and after
+  // an Enter's refusal it takes the focus back if nothing else has it.
+  useEffect(() => {
+    if (busy) {
+      wasBusy.current = true;
+      return;
+    }
+    asked.current = false;
+    if (!wasBusy.current) return;
+    wasBusy.current = false;
+    if (
+      lastCause.current === 'enter' &&
+      (document.activeElement === null || document.activeElement === document.body)
+    ) {
+      field.current?.focus();
+    }
+  });
+  return (
+    <div className="min-w-0 flex-1">
+      <input
+        ref={field}
+        data-testid={testId}
+        data-kb-inline-name=""
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        value={value}
+        maxLength={maxLength}
+        disabled={busy}
+        onChange={(event) => {
+          setValue(event.target.value);
+          onEdit();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            cancelled.current = true;
+            onCancel();
+            return;
+          }
+          if (event.key !== 'Enter') return;
+          // WebKit sends the composition's Enter after compositionend, as 229.
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+          event.preventDefault();
+          if (asked.current) return;
+          asked.current = true;
+          lastCause.current = 'enter';
+          onCommit(value, 'enter');
+        }}
+        onBlur={(event) => {
+          if (cancelled.current || asked.current || busy || !event.currentTarget.isConnected) {
+            return;
+          }
+          asked.current = true;
+          lastCause.current = 'blur';
+          onCommit(event.currentTarget.value, 'blur');
+        }}
+        className="-my-1 h-7 w-full min-w-0 rounded-md border border-[color:var(--ws-accent)] bg-transparent px-1.5 text-[13px] outline-none disabled:opacity-60"
+      />
+      {error ? (
+        <p
+          data-testid={errorTestId}
+          role="alert"
+          className="mt-1 text-[12px] text-[color:var(--ws-fail)]"
+        >
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Rows share one grid once the list itself is wide enough -- a container
  * query, not the window: the rail and the page's padding take their share,
@@ -434,23 +583,13 @@ export function MaterialLibraryPage({
       heading.current?.focus();
     }
   };
-  /** The folder a name already names: pointed at, for a moment. */
-  const [highlighted, setHighlighted] = useState<string | null>(null);
-  useEffect(() => {
-    if (!highlighted) return;
-    const timer = setTimeout(() => setHighlighted(null), 2_500);
-    return () => clearTimeout(timer);
-  }, [highlighted]);
   /**
-   * A folder to show once the list has it: one just created, or the one a
-   * taken name names (perhaps made elsewhere, not listed here yet). It is
-   * pointed at -- highlighted, for a duplicate -- when its row appears, and
-   * the focus goes to it only if the teacher has not moved on meanwhile: the
-   * focus is still on the new-folder row, or nowhere (the row just closed).
+   * A folder just created, to show once the list has it: the focus goes to
+   * it when its row appears, only if the teacher has not moved on meanwhile
+   * -- the focus is still on the new-folder row, or nowhere (the row just
+   * closed). A taken name is not a creation: nothing is pointed at.
    */
-  const reveal = useRef<{ readonly folderId: string | null; readonly highlight: boolean } | null>(
-    null,
-  );
+  const reveal = useRef<{ readonly folderId: string | null } | null>(null);
   useEffect(() => {
     // Stop following this creation once focus leaves its row, even if that
     // other control later disappears and focus returns to the body.
@@ -490,12 +629,21 @@ export function MaterialLibraryPage({
     const toggle = folderToggle(pending.folderId);
     if (!toggle) return;
     reveal.current = null;
-    if (pending.highlight) setHighlighted(pending.folderId);
     toggle.scrollIntoView?.({ block: 'nearest' });
     toggle.focus();
   };
+  /** The row control an ended edit gives the focus back to, once rendered. */
+  const editHome = useRef<string | null>(null);
   useEffect(() => {
     revealArrived();
+    const home = editHome.current;
+    editHome.current = null;
+    const back = home ? list.current?.querySelector<HTMLElement>(`[data-testid="${home}"]`) : null;
+    if (back && (document.activeElement === null || document.activeElement === document.body)) {
+      back.focus();
+      // Followed like a dialog's opener: gone with its row, the heading takes it.
+      returnedTo.current = back;
+    }
     const target = returnedTo.current;
     if (!target) return;
     if (target.isConnected) {
@@ -556,22 +704,31 @@ export function MaterialLibraryPage({
   // ── New folder, in a row of the list ────────────────────────────────
   const newFolderButton = useRef<HTMLButtonElement>(null);
   const [creating, setCreating] = useState<{
+    /** One per draft: an answer is only its own draft's. */
+    readonly id: number;
     readonly name: string;
     readonly error: string | null;
     readonly busy: boolean;
   } | null>(null);
+  const creationSeq = useRef(0);
   const startCreating = () => {
     // One creation at a time: the row is busy until the server answers.
     if (creating?.busy) return;
     reveal.current = null;
     // A folder goes into the tree: leave a search for it, by the teacher's hand.
     changeQuery('');
-    setCreating({ name: '', error: null, busy: false });
+    creationSeq.current += 1;
+    setCreating({
+      id: creationSeq.current,
+      name: newFolderName(t('workspace.knowledgeBase.folder.new'), tree.folders),
+      error: null,
+      busy: false,
+    });
   };
-  const cancelCreating = () => {
+  const cancelCreating = (focusBack: boolean) => {
     reveal.current = null;
     setCreating(null);
-    newFolderButton.current?.focus();
+    if (focusBack) newFolderButton.current?.focus();
   };
   const checkFolderName = (name: string) => {
     const checked = validateFolderName(name);
@@ -580,49 +737,46 @@ export function MaterialLibraryPage({
       ? 'workspace.knowledgeBase.error.folderNameEmpty'
       : 'workspace.knowledgeBase.error.folderNameTooLong';
   };
-  const submitCreating = async () => {
-    if (!creating || creating.busy) return;
-    const hint = checkFolderName(creating.name);
+  const commitCreating = async (typed: string, cause: CommitCause) => {
+    const draft = creating;
+    if (!draft || draft.busy) return;
+    const name = typed.trim();
+    // An empty name cancels, as Escape does.
+    if (!name) return cancelCreating(cause === 'enter');
+    const hint = checkFolderName(name);
     if (hint) {
-      setCreating({ ...creating, error: hint });
+      setCreating({ ...draft, error: hint });
       return;
     }
-    reveal.current = { folderId: null, highlight: false };
-    setCreating({ ...creating, busy: true, error: null });
+    const own = (change: (current: NonNullable<typeof creating>) => typeof creating) =>
+      setCreating((current) => (current?.id === draft.id ? change(current) : current));
+    // Left by a blur, the teacher has moved on (WebKit leaves a click's focus
+    // on the body): only an Enter's creation takes the focus to its row.
+    reveal.current = cause === 'enter' ? { folderId: null } : null;
+    setCreating({ ...draft, busy: true, error: null });
     try {
-      const { folderId, created } = await createLibraryFolder(creating.name.trim());
+      const { folderId, created } = await createLibraryFolder(name);
       if (created) {
-        setCreating(null);
-        if (reveal.current) reveal.current = { folderId, highlight: false };
+        own(() => null);
+        if (reveal.current) reveal.current = { folderId };
       } else {
-        // That name is taken: show the folder it names, and keep the row.
-        setCreating(
-          (current) =>
-            current && {
-              ...current,
-              busy: false,
-              error: 'workspace.knowledgeBase.error.nameTaken',
-            },
-        );
-        if (reveal.current) reveal.current = { folderId, highlight: true };
-        revealArrived();
+        // That name is taken: the edit stays, saying so; the folder it names is not shown.
+        reveal.current = null;
+        own((current) => ({
+          ...current,
+          busy: false,
+          error: 'workspace.knowledgeBase.error.nameTaken',
+        }));
       }
     } catch (error) {
       reveal.current = null;
-      setCreating(
-        (current) =>
-          current && { ...current, busy: false, error: materialLibraryWriteErrorKey(error) },
-      );
+      own((current) => ({ ...current, busy: false, error: materialLibraryWriteErrorKey(error) }));
     } finally {
       reloadIfMounted.current();
     }
   };
 
   // ── Organizing (RFC #1716 §5) ───────────────────────────────────────
-  type NameRequest =
-    | { readonly kind: 'renameMaterial'; readonly material: LibraryMaterial }
-    | { readonly kind: 'renameFolder'; readonly folder: LibraryFolder };
-  const [naming, setNaming] = useState<NameRequest | null>(null);
   const [moving, setMoving] = useState<LibraryMaterial | null>(null);
   // Deletion is page-only, after confirmation (RFC #1716 §5, §4).
   type DeleteRequest =
@@ -652,13 +806,133 @@ export function MaterialLibraryPage({
       ? 'workspace.knowledgeBase.error.invalidName'
       : null;
   };
-  const submitName = (name: string) => {
-    if (!naming) return Promise.resolve(null);
-    if (naming.kind === 'renameMaterial') {
-      return write(() => renameLibraryMaterial(naming.material.materialId, name));
-    }
-    return write(() => renameLibraryFolder(naming.folder.id, name));
+
+  // ── Renaming, in place ──────────────────────────────────────────────
+  interface Renaming {
+    /** One per edit: an answer is only its own edit's. */
+    readonly id: number;
+    readonly kind: 'material' | 'folder';
+    readonly targetId: string;
+    /** The name when the edit began. */
+    readonly name: string;
+    /** The view the row was in: the tree or the results. */
+    readonly mode: MaterialLibraryTree['mode'];
+    readonly busy: boolean;
+    readonly error: string | null;
+  }
+  const [renaming, setRenaming] = useState<Renaming | null>(null);
+  const renamingNow = useRef<number | null>(null);
+  const renameSeq = useRef(0);
+  const startRenaming = (kind: Renaming['kind'], targetId: string, name: string) => {
+    renameSeq.current += 1;
+    renamingNow.current = renameSeq.current;
+    setRenaming({
+      id: renameSeq.current,
+      kind,
+      targetId,
+      name,
+      mode: tree.mode,
+      busy: false,
+      error: null,
+    });
   };
+  const ownRename = (id: number, change: (current: Renaming) => Renaming | null) =>
+    setRenaming((current) => (current?.id === id ? change(current) : current));
+  /** The focus is the edit's to place: still in its field, or nowhere. */
+  const focusInEdit = () => {
+    const active = document.activeElement;
+    return (
+      active === null ||
+      active === document.body ||
+      (active instanceof HTMLElement && active.dataset.kbInlineName !== undefined)
+    );
+  };
+  const endRenaming = (edit: Renaming, focusBack: boolean) => {
+    if (renamingNow.current === edit.id) renamingNow.current = null;
+    ownRename(edit.id, () => null);
+    // Back to the row: a folder's toggle, a file's ⋯.
+    if (focusBack) {
+      editHome.current =
+        edit.kind === 'folder'
+          ? `kb-folder-toggle-${edit.targetId}`
+          : `kb-material-menu-${edit.targetId}`;
+    }
+  };
+  const commitRenaming = async (edit: Renaming, typed: string, cause: CommitCause) => {
+    if (edit.busy) return;
+    const name = typed.trim();
+    // An empty or unchanged name asks nothing.
+    if (!name || name === edit.name) return endRenaming(edit, cause === 'enter');
+    // Files may share a name (several versions of a handout); folders are the server's to refuse.
+    const hint = edit.kind === 'material' ? checkMaterialName(name) : checkFolderName(name);
+    if (hint) {
+      ownRename(edit.id, (current) => ({ ...current, error: hint }));
+      return;
+    }
+    ownRename(edit.id, (current) => ({ ...current, busy: true, error: null }));
+    const refusal = await write(() =>
+      edit.kind === 'material'
+        ? renameLibraryMaterial(edit.targetId, name)
+        : renameLibraryFolder(edit.targetId, name),
+    );
+    if (renamingNow.current !== edit.id) {
+      // A newer edit took over: it stays as it is; a refusal is still said.
+      if (refusal) toast.error(t(refusal));
+      return;
+    }
+    if (refusal) ownRename(edit.id, (current) => ({ ...current, busy: false, error: refusal }));
+    else endRenaming(edit, cause === 'enter' && focusInEdit());
+  };
+  // The edited row is no longer shown: the edit ends. Only a folder gone
+  // from the folders (all of them are listed) is said to be gone; a file can
+  // leave its view without being deleted (moved into a closed folder, the
+  // search typed or cleared), and a rename answered 404 says so itself. While
+  // an answer is awaited, that answer decides.
+  useEffect(() => {
+    if (!renaming) return;
+    const end = () => {
+      renamingNow.current = null;
+      setRenaming(null);
+    };
+    if (renaming.mode !== tree.mode) return end();
+    if (renaming.busy) return;
+    if (renaming.kind === 'folder') {
+      if (tree.folders.some((folder) => folder.id === renaming.targetId)) return;
+      end();
+      toast.error(t('workspace.knowledgeBase.error.gone'));
+      return;
+    }
+    const nodes =
+      tree.mode === 'search'
+        ? [tree.results]
+        : [tree.root, ...tree.expanded.map((id) => tree.folder(id))];
+    if (
+      nodes.some((node) =>
+        node?.files.some((material) => material.materialId === renaming.targetId),
+      )
+    ) {
+      return;
+    }
+    end();
+  }, [renaming, tree, t]);
+  const renameField = (edit: Renaming, label: string, selectEnd?: number) => (
+    <InlineName
+      key={edit.id}
+      testId="kb-rename-input"
+      errorTestId="kb-rename-error"
+      label={label}
+      initialName={edit.name}
+      selectEnd={selectEnd}
+      maxLength={edit.kind === 'material' ? MATERIAL_NAME_MAX_LENGTH : undefined}
+      busy={edit.busy}
+      error={edit.error ? t(edit.error) : null}
+      onEdit={() =>
+        ownRename(edit.id, (current) => (current.error ? { ...current, error: null } : current))
+      }
+      onCommit={(name, cause) => void commitRenaming(edit, name, cause)}
+      onCancel={() => endRenaming(edit, true)}
+    />
+  );
 
   const materialMenu = (material: LibraryMaterial) => {
     const items: LibraryMenuItem[] = [
@@ -704,7 +978,8 @@ export function MaterialLibraryPage({
         id: 'rename',
         label: t('workspace.knowledgeBase.actions.rename'),
         icon: menuIcons.rename,
-        onSelect: openFrom(() => setNaming({ kind: 'renameMaterial', material })),
+        afterClose: true,
+        onSelect: () => startRenaming('material', material.materialId, material.name),
       },
       {
         id: 'move',
@@ -737,7 +1012,8 @@ export function MaterialLibraryPage({
           id: 'rename',
           label: t('workspace.knowledgeBase.actions.rename'),
           icon: menuIcons.rename,
-          onSelect: openFrom(() => setNaming({ kind: 'renameFolder', folder })),
+          afterClose: true,
+          onSelect: () => startRenaming('folder', folder.id, folder.name),
         },
         // Only an empty folder can go (the server still decides).
         ...(folder.materialCount === 0
@@ -765,6 +1041,8 @@ export function MaterialLibraryPage({
     const layout = options.search ? LAYOUT.search : LAYOUT.tree;
     const size = formatMaterialBytes(material.bytes, locale);
     const date = formatLibraryDate(material.createdAt, locale);
+    const edit =
+      renaming?.kind === 'material' && renaming.targetId === material.materialId ? renaming : null;
     return (
       <li
         key={material.materialId}
@@ -775,9 +1053,18 @@ export function MaterialLibraryPage({
         <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
           <MaterialIcon mime={material.mime} />
           <div className="min-w-0 flex-1">
-            <span className="block break-words text-[13px]" title={material.name}>
-              {material.name}
-            </span>
+            {edit ? (
+              renameField(edit, t('workspace.knowledgeBase.actions.rename'), nameStemEnd(edit.name))
+            ) : (
+              // Double-click the name to rename it; touch screens use the ⋯.
+              <span
+                className="block break-words text-[13px]"
+                title={material.name}
+                onDoubleClick={() => startRenaming('material', material.materialId, material.name)}
+              >
+                {material.name}
+              </span>
+            )}
             <span
               className={cn(
                 'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--ws-ink-mute)]',
@@ -828,44 +1115,61 @@ export function MaterialLibraryPage({
   const folderRow = (folder: LibraryFolder) => {
     const node = tree.folder(folder.id);
     const open = node !== null;
+    const edit = renaming?.kind === 'folder' && renaming.targetId === folder.id ? renaming : null;
+    const chevron = open ? (
+      <ChevronDown className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+    ) : (
+      <ChevronRight className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+    );
+    const icon = (
+      <Folder className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]" aria-hidden="true" />
+    );
     return (
       <li key={folder.id} data-testid={`kb-folder-${folder.id}`}>
-        <div
-          data-kb-row=""
-          data-highlighted={highlighted === folder.id ? 'true' : undefined}
-          className={cn(
-            LAYOUT.tree.row,
-            LAYOUT.tree.columns,
-            'transition-colors',
-            highlighted === folder.id && 'bg-[color:var(--ws-accent-wash)]',
-          )}
-        >
+        <div data-kb-row="" className={cn(LAYOUT.tree.row, LAYOUT.tree.columns)}>
           {/* The toggle and the ⋯ are siblings: choosing from the menu never
-              expands or collapses the folder. */}
-          <button
-            type="button"
-            data-testid={`kb-folder-toggle-${folder.id}`}
-            aria-expanded={open}
-            onClick={() => (open ? tree.collapse(folder.id) : tree.expand(folder.id))}
-            className={cn(
-              'flex min-w-0 flex-1 items-start gap-2 rounded-md text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)]',
-              LAYOUT.tree.nameSpan,
-            )}
-          >
-            {open ? (
-              <ChevronDown className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
-            ) : (
-              <ChevronRight className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
-            )}
-            <Folder
-              className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]"
-              aria-hidden="true"
-            />
-            <span className="min-w-0 break-words font-medium">{folder.name}</span>
-            <span className="shrink-0 text-[11px] text-[color:var(--ws-ink-mute)]">
-              ({folder.materialCount})
-            </span>
-          </button>
+              expands or collapses the folder. While the name is edited, the
+              row holds the field instead of the toggle. */}
+          {edit ? (
+            <div
+              className={cn(
+                'flex min-w-0 flex-1 items-start gap-2 text-[13px] font-medium',
+                LAYOUT.tree.nameSpan,
+              )}
+            >
+              {chevron}
+              {icon}
+              {renameField(edit, t('workspace.knowledgeBase.actions.rename'))}
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid={`kb-folder-toggle-${folder.id}`}
+              aria-expanded={open}
+              // The second click of a double-click renames instead (below).
+              onClick={(event) => {
+                if (event.detail > 1) return;
+                if (open) tree.collapse(folder.id);
+                else tree.expand(folder.id);
+              }}
+              className={cn(
+                'flex min-w-0 flex-1 items-start gap-2 rounded-md text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)]',
+                LAYOUT.tree.nameSpan,
+              )}
+            >
+              {chevron}
+              {icon}
+              <span
+                className="min-w-0 break-words font-medium"
+                onDoubleClick={() => startRenaming('folder', folder.id, folder.name)}
+              >
+                {folder.name}
+              </span>
+              <span className="shrink-0 text-[11px] text-[color:var(--ws-ink-mute)]">
+                ({folder.materialCount})
+              </span>
+            </button>
+          )}
           <span className={LAYOUT.tree.cell}>{formatLibraryDate(folder.updatedAt, locale)}</span>
           <span className={LAYOUT.tree.menu}>{folderMenu(folder)}</span>
         </div>
@@ -937,63 +1241,39 @@ export function MaterialLibraryPage({
     </li>
   ));
 
+  // The same row as a folder's, its name a field (#1835 review §1).
   const creatingRow = creating ? (
-    <li data-testid="kb-new-folder-row" className="px-3 py-2">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submitCreating();
-        }}
-        className="flex flex-wrap items-center gap-2"
-      >
-        <FolderPlus
-          className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]"
-          aria-hidden="true"
-        />
-        <input
-          autoFocus
-          data-testid="kb-new-folder-input"
-          aria-label={t('workspace.knowledgeBase.folder.new')}
-          aria-invalid={creating.error ? true : undefined}
-          placeholder={t('workspace.knowledgeBase.dialog.name')}
-          value={creating.name}
-          disabled={creating.busy}
-          onChange={(event) => setCreating({ ...creating, name: event.target.value, error: null })}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault();
-              cancelCreating();
+    <li data-testid="kb-new-folder-row">
+      <div data-kb-row="" className={cn(LAYOUT.tree.row, LAYOUT.tree.columns)}>
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 items-start gap-2 text-[13px] font-medium',
+            LAYOUT.tree.nameSpan,
+          )}
+        >
+          <ChevronRight className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
+          <Folder className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]" aria-hidden="true" />
+          <InlineName
+            key={creating.id}
+            testId="kb-new-folder-input"
+            errorTestId="kb-new-folder-error"
+            label={t('workspace.knowledgeBase.folder.new')}
+            initialName={creating.name}
+            busy={creating.busy}
+            error={creating.error ? t(creating.error) : null}
+            onEdit={() =>
+              setCreating((current) => (current?.error ? { ...current, error: null } : current))
             }
-          }}
-          className="h-8 min-w-0 flex-1 rounded-md border border-[color:var(--ws-line)] bg-transparent px-2 text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)] sm:max-w-80"
-        />
-        <button
-          type="submit"
-          data-testid="kb-new-folder-submit"
-          disabled={creating.busy}
-          className="ws-new h-8 rounded-md px-3 text-[12px] font-medium disabled:opacity-60"
-        >
-          {t('workspace.knowledgeBase.dialog.create')}
-        </button>
-        <button
-          type="button"
-          data-testid="kb-new-folder-cancel"
-          disabled={creating.busy}
-          onClick={cancelCreating}
-          className="ws-quiet h-8 px-2 text-[12px] underline disabled:opacity-60"
-        >
-          {t('workspace.knowledgeBase.dialog.cancel')}
-        </button>
-      </form>
-      {creating.error ? (
-        <p
-          data-testid="kb-new-folder-error"
-          role="alert"
-          className="mt-1 pl-6 text-[12px] text-[color:var(--ws-fail)]"
-        >
-          {t(creating.error)}
-        </p>
-      ) : null}
+            onCommit={(name, cause) => void commitCreating(name, cause)}
+            onCancel={() => cancelCreating(true)}
+          />
+        </div>
+        <span className={LAYOUT.tree.cell} />
+        {/* Where a folder has its ⋯: the same room, so the row is as tall. */}
+        <span className={LAYOUT.tree.menu}>
+          <span className="ws-util-btn invisible shrink-0" aria-hidden="true" />
+        </span>
+      </div>
     </li>
   ) : null;
 
@@ -1224,29 +1504,6 @@ export function MaterialLibraryPage({
         </section>
       </div>
 
-      {naming ? (
-        <NameDialog
-          key={
-            naming.kind === 'renameMaterial'
-              ? `material-${naming.material.materialId}`
-              : `folder-${naming.folder.id}`
-          }
-          testId="kb-name-dialog"
-          title={t(
-            naming.kind === 'renameFolder'
-              ? 'workspace.knowledgeBase.dialog.renameFolderTitle'
-              : 'workspace.knowledgeBase.dialog.renameMaterialTitle',
-          )}
-          submitLabel={t('workspace.knowledgeBase.dialog.save')}
-          initialName={naming.kind === 'renameMaterial' ? naming.material.name : naming.folder.name}
-          maxLength={naming.kind === 'renameMaterial' ? MATERIAL_NAME_MAX_LENGTH : undefined}
-          check={naming.kind === 'renameMaterial' ? checkMaterialName : checkFolderName}
-          submit={submitName}
-          onClose={() => setNaming(null)}
-          returnFocus={returnFocus}
-          t={t}
-        />
-      ) : null}
       {deleting?.kind === 'material' ? (
         <DeleteDialog
           key={`material-${deleting.material.materialId}`}

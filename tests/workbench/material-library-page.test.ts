@@ -196,10 +196,23 @@ const typeInto = async (element: HTMLInputElement, value: string) => {
     element.dispatchEvent(new Event('input', { bubbles: true }));
   });
 };
-const typeName = (value: string) =>
-  typeInto(inDocument('kb-name-dialog-input') as HTMLInputElement, value);
-const submitName = async () => {
-  await choose('kb-name-dialog-submit');
+/** A key pressed in an element; `keyCode` too, as an input method's Enter carries 229. */
+const press = (
+  element: Element,
+  key: string,
+  init: KeyboardEventInit & { keyCode?: number } = {},
+) =>
+  act(async () => {
+    const { keyCode, ...rest } = init;
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...rest });
+    if (keyCode !== undefined) Object.defineProperty(event, 'keyCode', { value: keyCode });
+    element.dispatchEvent(event);
+  });
+const renameInput = () => inDocument('kb-rename-input') as HTMLInputElement | null;
+/** Rename from a ⋯ menu: the field opens once the menu has closed. */
+const renameFrom = async (menuId: string) => {
+  await openMenu(menuId);
+  await choose(`${menuId}-rename`);
   await settle();
 };
 const search = async (value: string) => {
@@ -602,12 +615,11 @@ describe('staying fresh without moving the teacher', () => {
       if (action === 'create') {
         await page.click('kb-folder-new');
         await typeInto(inDocument('kb-new-folder-input') as HTMLInputElement, 'Later');
-        await choose('kb-new-folder-submit');
+        await press(inDocument('kb-new-folder-input')!, 'Enter');
       } else if (action === 'rename') {
-        await openMenu('kb-material-menu-a');
-        await choose('kb-material-menu-a-rename');
-        await typeName('Later');
-        await choose('kb-name-dialog-submit');
+        await renameFrom('kb-material-menu-a');
+        await typeInto(renameInput()!, 'Later');
+        await press(renameInput()!, 'Enter');
       } else {
         await openMenu('kb-material-menu-a');
         await choose('kb-material-menu-a-move');
@@ -801,6 +813,10 @@ describe('uploading from the page', () => {
 
 describe('a new folder, in a row of the list', () => {
   const input = () => inDocument('kb-new-folder-input') as HTMLInputElement;
+  const enter = async () => {
+    await press(input(), 'Enter');
+    await settle();
+  };
 
   it('creates it from a row, then gives the focus to the new folder once it is listed', async () => {
     const page = await openPage();
@@ -814,8 +830,7 @@ describe('a new folder, in a row of the list', () => {
         ],
       });
     await typeInto(input(), '  New ');
-    await choose('kb-new-folder-submit');
-    await settle();
+    await enter();
     expect(writeCalls).toEqual([
       { method: 'POST', path: '/api/materials/folders', body: { name: 'New' } },
     ]);
@@ -824,20 +839,118 @@ describe('a new folder, in a row of the list', () => {
     await page.dispose();
   });
 
-  it('points at the folder a name already names, and says so', async () => {
-    writeMaterial = () => json({ folder: { id: 'f1', name: 'Unit 1' }, created: false }, 200);
+  it('is a folder row among the folders, its default name selected, with no buttons', async () => {
     const page = await openPage();
     await page.click('kb-folder-new');
-    await typeInto(input(), 'unit 1');
-    await choose('kb-new-folder-submit');
+    const row = page.query('kb-new-folder-row')!;
+    expect(page.query('kb-tree')!.firstElementChild).toBe(row);
+    expect(row.querySelector('[data-kb-row]')?.className).toBe(
+      page.query('kb-folder-f1')!.querySelector('[data-kb-row]')?.className,
+    );
+    expect(row.querySelectorAll('button')).toHaveLength(0);
+    expect(input().value).toBe('workspace.knowledgeBase.folder.new');
+    expect([input().selectionStart, input().selectionEnd]).toEqual([0, input().value.length]);
+    await page.dispose();
+  });
+
+  it('numbers the default name when the folders shown already have it', async () => {
+    const base = 'workspace.knowledgeBase.folder.new';
+    folders = () =>
+      json({
+        folders: [
+          { id: 'n1', name: base.toUpperCase(), materialCount: 0 },
+          { id: 'n2', name: `${base} 2`, materialCount: 0 },
+        ],
+      });
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    expect(input().value).toBe(`${base} 3`);
+    await page.dispose();
+  });
+
+  it('saves when the teacher clicks elsewhere, without taking the focus back', async () => {
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'Elsewhere');
+    const searchBox = page.query('kb-search')!;
+    folders = () => json({ folders: [{ id: 'f-new', name: 'Elsewhere', materialCount: 0 }] });
+    await act(async () => searchBox.focus());
+    await settle();
+    expect(writeCalls).toEqual([
+      { method: 'POST', path: '/api/materials/folders', body: { name: 'Elsewhere' } },
+    ]);
+    expect(page.query('kb-new-folder-row')).toBeNull();
+    expect(page.query('kb-folder-toggle-f-new')).not.toBeNull();
+    expect(document.activeElement).toBe(searchBox);
+    await page.dispose();
+  });
+
+  it('moves no focus after a blur that left it nowhere (WebKit: a click on a button)', async () => {
+    const answer = deferred<Response>();
+    writeMaterial = () => answer.promise;
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'Nowhere');
+    await act(async () => input().blur());
+    expect(document.activeElement).toBe(document.body);
+    folders = () => json({ folders: [{ id: 'f-new', name: 'Nowhere', materialCount: 0 }] });
+    answer.resolve(json({ folder: { id: 'f-new' }, created: true }));
+    await settle();
+    expect(page.query('kb-folder-toggle-f-new')).not.toBeNull();
+    expect(document.activeElement).toBe(document.body);
+
+    // A refusal of a blur's attempt keeps the edit, without taking the focus either.
+    writeMaterial = () => json({ folder: { id: 'f-new' }, created: false });
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'Nowhere');
+    await act(async () => input().blur());
     await settle();
     expect(page.query('kb-new-folder-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.nameTaken',
     );
+    expect(document.activeElement).toBe(document.body);
+    await page.dispose();
+  });
+
+  it('keeps editing a taken name, saying so, without pointing at the folder it names', async () => {
+    writeMaterial = () => json({ folder: { id: 'f1', name: 'Unit 1' }, created: false }, 200);
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'unit 1');
+    await enter();
+    expect(page.query('kb-new-folder-error')?.textContent).toBe(
+      'workspace.knowledgeBase.error.nameTaken',
+    );
     expect(page.query('kb-new-folder-row')).not.toBeNull();
-    expect(document.activeElement).toBe(page.query('kb-folder-toggle-f1'));
-    expect(page.query('kb-folder-toggle-f1')?.parentElement?.getAttribute('data-highlighted')).toBe(
-      'true',
+    expect(input().value).toBe('unit 1');
+    expect(document.activeElement).toBe(input());
+    expect(page.query('kb-list')!.querySelector('[data-highlighted]')).toBeNull();
+    // Typing again clears the message; Enter asks again.
+    await typeInto(input(), 'Unit 9');
+    expect(page.query('kb-new-folder-error')).toBeNull();
+    writeMaterial = () => json({ folder: { id: 'f9', name: 'Unit 9' }, created: true }, 201);
+    await enter();
+    expect(writeCalls).toHaveLength(2);
+    expect(page.query('kb-new-folder-row')).toBeNull();
+    await page.dispose();
+  });
+
+  it('does not point at a folder of the taken name that a later refresh brings', async () => {
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'Elsewhere');
+    const reread = deferred<Response>();
+    folders = () => reread.promise;
+    writeMaterial = () => json({ folder: { id: 'external' }, created: false });
+    await enter();
+    await act(async () =>
+      reread.resolve(json({ folders: [{ id: 'external', name: 'Elsewhere', materialCount: 0 }] })),
+    );
+    await settle();
+    expect(page.query('kb-folder-toggle-external')).not.toBeNull();
+    expect(document.activeElement).toBe(input());
+    expect(page.query('kb-new-folder-error')?.textContent).toBe(
+      'workspace.knowledgeBase.error.nameTaken',
     );
     await page.dispose();
   });
@@ -848,7 +961,7 @@ describe('a new folder, in a row of the list', () => {
     const page = await openPage();
     await page.click('kb-folder-new');
     await typeInto(input(), 'First');
-    await choose('kb-new-folder-submit');
+    await press(input(), 'Enter');
     expect((page.query('kb-folder-new') as HTMLButtonElement).disabled).toBe(true);
     await page.click('kb-folder-new');
     expect(input().value).toBe('First');
@@ -862,14 +975,43 @@ describe('a new folder, in a row of the list', () => {
     expect(input().value).toBe('Second');
   });
 
+  it('asks once for Enter and the blur that follows it', async () => {
+    const answer = deferred<Response>();
+    writeMaterial = () => answer.promise;
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), 'Once');
+    await press(input(), 'Enter');
+    await act(async () => page.query('kb-search')!.focus());
+    answer.resolve(json({ folder: { id: 'f-once' }, created: true }));
+    await settle();
+    expect(writeCalls).toHaveLength(1);
+    await page.dispose();
+  });
+
+  it('leaves the Enter of an input method’s composition to the composition', async () => {
+    const page = await openPage();
+    await page.click('kb-folder-new');
+    await typeInto(input(), '单元');
+    await press(input(), 'Enter', { isComposing: true });
+    await press(input(), 'Enter', { keyCode: 229 });
+    await settle();
+    expect(writeCalls).toEqual([]);
+    expect(page.query('kb-new-folder-row')).not.toBeNull();
+    await enter();
+    expect(writeCalls).toEqual([
+      { method: 'POST', path: '/api/materials/folders', body: { name: '单元' } },
+    ]);
+    await page.dispose();
+  });
+
   it('does not steal search focus when the new folder arrives in a slow refresh', async () => {
     const page = await openPage();
     const reread = deferred<Response>();
     await page.click('kb-folder-new');
     await typeInto(input(), 'New');
     folders = () => reread.promise;
-    await choose('kb-new-folder-submit');
-    await settle();
+    await enter();
     const searchBox = page.query('kb-search')!;
     searchBox.focus();
     reread.resolve(json({ folders: [{ id: 'f-new', name: 'New', materialCount: 0 }] }));
@@ -884,7 +1026,7 @@ describe('a new folder, in a row of the list', () => {
     writeMaterial = () => answer.promise;
     await page.click('kb-folder-new');
     await typeInto(input(), 'New');
-    await choose('kb-new-folder-submit');
+    await press(input(), 'Enter');
     const searchBox = page.query('kb-search')!;
     searchBox.focus();
     searchBox.blur();
@@ -896,52 +1038,54 @@ describe('a new folder, in a row of the list', () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it('reveals a duplicate created elsewhere only when it arrives, with a fresh highlight lifetime', async () => {
+  it('does not take the focus back for a refusal answered after the teacher moved on', async () => {
+    const answer = deferred<Response>();
+    writeMaterial = () => answer.promise;
     const page = await openPage();
     await page.click('kb-folder-new');
-    await typeInto(input(), 'Elsewhere');
-    const reread = deferred<Response>();
-    folders = () => reread.promise;
-    writeMaterial = () => json({ folder: { id: 'external' }, created: false });
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    await choose('kb-new-folder-submit');
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
-    });
-    expect(page.query('kb-folder-toggle-external')).toBeNull();
-    await act(async () => {
-      reread.resolve(json({ folders: [{ id: 'external', name: 'Elsewhere', materialCount: 0 }] }));
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    const toggle = page.query('kb-folder-toggle-external')!;
-    expect(document.activeElement).toBe(toggle);
-    expect(toggle.parentElement?.getAttribute('data-highlighted')).toBe('true');
+    await typeInto(input(), 'Unit 1');
+    await press(input(), 'Enter');
+    const searchBox = page.query('kb-search')!;
+    searchBox.focus();
+    answer.resolve(json({ folder: { id: 'f1' }, created: false }));
+    await settle();
     expect(page.query('kb-new-folder-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.nameTaken',
     );
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_499);
-    });
-    expect(toggle.parentElement?.getAttribute('data-highlighted')).toBe('true');
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
-    expect(toggle.parentElement?.hasAttribute('data-highlighted')).toBe(false);
+    expect(document.activeElement).toBe(searchBox);
+    expect(input().value).toBe('Unit 1');
+    await page.dispose();
   });
 
-  it('hints at an empty or overlong name before asking the server', async () => {
+  it('keeps the row and its focus through a background refresh', async () => {
     const page = await openPage();
     await page.click('kb-folder-new');
-    await typeInto(input(), '   ');
-    await choose('kb-new-folder-submit');
-    expect(page.query('kb-new-folder-error')?.textContent).toBe(
-      'workspace.knowledgeBase.error.folderNameEmpty',
-    );
+    await typeInto(input(), 'Half typed');
+    const field = input();
+    const reads = libraryCalls.length;
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(libraryCalls.length).toBeGreaterThan(reads);
+    expect(input()).toBe(field);
+    expect(field.value).toBe('Half typed');
+    expect(document.activeElement).toBe(field);
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
+  it('cancels on an empty name and hints at an overlong one before asking the server', async () => {
+    const page = await openPage();
+    await page.click('kb-folder-new');
     await typeInto(input(), '一'.repeat(21));
-    await choose('kb-new-folder-submit');
+    await enter();
     expect(page.query('kb-new-folder-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.folderNameTooLong',
     );
+    await typeInto(input(), '   ');
+    await enter();
+    expect(page.query('kb-new-folder-row')).toBeNull();
+    expect(page.query('kb-new-folder-error')).toBeNull();
+    expect(document.activeElement).toBe(page.query('kb-folder-new'));
     expect(writeCalls).toEqual([]);
     await page.dispose();
   });
@@ -958,8 +1102,7 @@ describe('a new folder, in a row of the list', () => {
     await typeInto(input(), 'Another');
     const shown: (string | null | undefined)[] = [];
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await choose('kb-new-folder-submit');
-      await settle();
+      await enter();
       shown.push(page.query('kb-new-folder-error')?.textContent);
     }
     expect(shown).toEqual([
@@ -970,16 +1113,12 @@ describe('a new folder, in a row of the list', () => {
     await page.dispose();
   });
 
-  it('is cancelled by Escape or Cancel, giving the focus back to "New folder"', async () => {
+  it('is cancelled by Escape, giving the focus back to "New folder"; the blur after it saves nothing', async () => {
     const page = await openPage();
     await page.click('kb-folder-new');
-    await act(async () => {
-      input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    expect(page.query('kb-new-folder-row')).toBeNull();
-    expect(document.activeElement).toBe(page.query('kb-folder-new'));
-    await page.click('kb-folder-new');
-    await page.click('kb-new-folder-cancel');
+    await typeInto(input(), 'Not this');
+    await press(input(), 'Escape');
+    await settle();
     expect(page.query('kb-new-folder-row')).toBeNull();
     expect(document.activeElement).toBe(page.query('kb-folder-new'));
     expect(writeCalls).toEqual([]);
@@ -1035,26 +1174,62 @@ describe('a folder row', () => {
   });
 });
 
-// ── Organizing ─────────────────────────────────────────────────────────────
+// ── Renaming in place ──────────────────────────────────────────────────────
 
-describe('organizing from the page', () => {
-  it('renames a source from its menu, then reads the list again', async () => {
+describe('renaming in place', () => {
+  const enter = async () => {
+    await press(renameInput()!, 'Enter');
+    await settle();
+  };
+
+  it('renames a source from its menu, its name selected without the extension, then reads the list again', async () => {
     const page = await openPage();
     const reads = libraryCalls.length;
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-rename');
-    expect((inDocument('kb-name-dialog-input') as HTMLInputElement).value).toBe('a.pdf');
-    await typeName('  Chapter 1  ');
-    await submitName();
+    await renameFrom('kb-material-menu-a');
+    const field = renameInput()!;
+    expect(page.query('kb-material-a')!.contains(field)).toBe(true);
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toBe('a.pdf');
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 1]);
+    await typeInto(field, '  Chapter 1  ');
+    await enter();
     expect(writeCalls).toEqual([
       { method: 'PATCH', path: '/api/materials/a', body: { name: 'Chapter 1' } },
     ]);
-    expect(inDocument('kb-name-dialog')).toBeNull();
+    expect(renameInput()).toBeNull();
     expect(libraryCalls.length).toBe(reads + 1);
     await page.dispose();
   });
 
-  it('keeps a refused folder rename in its dialog, in the server’s terms, and still re-reads', async () => {
+  it('lets a file take a name another file has: the server decides, the page does not check', async () => {
+    library = () => json({ materials: [source('a'), source('b')], limits: LIMITS });
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'b.pdf');
+    await enter();
+    expect(writeCalls).toEqual([
+      { method: 'PATCH', path: '/api/materials/a', body: { name: 'b.pdf' } },
+    ]);
+    await page.dispose();
+  });
+
+  it('renames a folder in its row, its whole name selected', async () => {
+    const page = await openPage();
+    await renameFrom('kb-folder-menu-f1');
+    const field = renameInput()!;
+    expect(page.query('kb-folder-f1')!.contains(field)).toBe(true);
+    expect(page.query('kb-folder-toggle-f1')).toBeNull();
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 'Unit 1'.length]);
+    await typeInto(field, 'Unit 1 · Functions');
+    await enter();
+    expect(writeCalls).toEqual([
+      { method: 'PATCH', path: '/api/materials/folders/f1', body: { name: 'Unit 1 · Functions' } },
+    ]);
+    expect(document.activeElement).toBe(page.query('kb-folder-toggle-f1'));
+    await page.dispose();
+  });
+
+  it('keeps a refused folder rename in its row, in the server’s terms, and still re-reads', async () => {
     writeMaterial = () =>
       json(
         { success: false, errorCode: 'INVALID_REQUEST', error: 'taken', reason: 'name_taken' },
@@ -1062,39 +1237,242 @@ describe('organizing from the page', () => {
       );
     const page = await openPage();
     const reads = libraryCalls.length;
-    await openMenu('kb-folder-menu-f1');
-    await choose('kb-folder-menu-f1-rename');
-    await typeName('Unit 2');
-    await submitName();
+    await renameFrom('kb-folder-menu-f1');
+    await typeInto(renameInput()!, 'Unit 2');
+    await enter();
     expect(writeCalls).toEqual([
       { method: 'PATCH', path: '/api/materials/folders/f1', body: { name: 'Unit 2' } },
     ]);
-    expect(inDocument('kb-name-dialog-error')?.textContent).toBe(
+    expect(inDocument('kb-rename-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.nameTaken',
     );
-    expect(inDocument('kb-name-dialog')).not.toBeNull();
+    expect(renameInput()!.value).toBe('Unit 2');
+    expect(document.activeElement).toBe(renameInput());
     expect(libraryCalls.length).toBe(reads + 1);
     await page.dispose();
   });
 
-  it('hints at an empty or overlong folder name in the rename dialog too', async () => {
+  it('hints at an overlong folder name; an empty or unchanged name asks nothing', async () => {
     const page = await openPage();
-    await openMenu('kb-folder-menu-f1');
-    await choose('kb-folder-menu-f1-rename');
-    await typeName('   ');
-    await submitName();
-    expect(inDocument('kb-name-dialog-error')?.textContent).toBe(
-      'workspace.knowledgeBase.error.folderNameEmpty',
-    );
-    await typeName('一'.repeat(21));
-    await submitName();
-    expect(inDocument('kb-name-dialog-error')?.textContent).toBe(
+    await renameFrom('kb-folder-menu-f1');
+    await typeInto(renameInput()!, '一'.repeat(21));
+    await enter();
+    expect(inDocument('kb-rename-error')?.textContent).toBe(
       'workspace.knowledgeBase.error.folderNameTooLong',
     );
+    await typeInto(renameInput()!, '   ');
+    await enter();
+    expect(renameInput()).toBeNull();
+    await renameFrom('kb-folder-menu-f1');
+    await enter();
+    expect(renameInput()).toBeNull();
     expect(writeCalls).toEqual([]);
     await page.dispose();
   });
 
+  it('is cancelled by Escape, the focus back on the row; the blur after it saves nothing', async () => {
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'Not this');
+    await press(renameInput()!, 'Escape');
+    await settle();
+    expect(renameInput()).toBeNull();
+    expect(document.activeElement).toBe(inDocument('kb-material-menu-a'));
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
+  it('saves on a blur, once with the Enter before it, and not during a composition', async () => {
+    const answer = deferred<Response>();
+    writeMaterial = () => answer.promise;
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, '第一章');
+    await press(renameInput()!, 'Enter', { isComposing: true });
+    await press(renameInput()!, 'Enter', { keyCode: 229 });
+    expect(writeCalls).toEqual([]);
+    await press(renameInput()!, 'Enter');
+    await act(async () => page.query('kb-search')!.focus());
+    answer.resolve(json({ status: 'renamed' }));
+    await settle();
+    expect(writeCalls).toEqual([
+      { method: 'PATCH', path: '/api/materials/a', body: { name: '第一章' } },
+    ]);
+    // The teacher went to the search: the focus stays there.
+    expect(document.activeElement).toBe(page.query('kb-search'));
+
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'By blur');
+    writeMaterial = () => json({ status: 'renamed' });
+    await act(async () => page.query('kb-search')!.focus());
+    await settle();
+    expect(writeCalls.at(-1)).toEqual({
+      method: 'PATCH',
+      path: '/api/materials/a',
+      body: { name: 'By blur' },
+    });
+    expect(writeCalls).toHaveLength(2);
+    await page.dispose();
+  });
+
+  it('does not let an earlier answer close a newer edit or rewrite what it holds', async () => {
+    library = () => json({ materials: [source('a'), source('b')], limits: LIMITS });
+    const first = deferred<Response>();
+    writeMaterial = () => first.promise;
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'Old');
+    await press(renameInput()!, 'Enter');
+    await renameFrom('kb-material-menu-b');
+    await typeInto(renameInput()!, 'Newer');
+    await act(async () =>
+      first.resolve(
+        json(
+          { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'invalid_name' },
+          400,
+        ),
+      ),
+    );
+    await settle();
+    expect(page.query('kb-material-b')!.contains(renameInput())).toBe(true);
+    expect(renameInput()!.value).toBe('Newer');
+    expect(inDocument('kb-rename-error')).toBeNull();
+    // The refusal is still said.
+    expect(parseToast.error).toHaveBeenCalledWith('workspace.knowledgeBase.error.invalidName');
+    await page.dispose();
+  });
+
+  it('keeps the edited row and its focus through a background refresh', async () => {
+    const page = await openPage();
+    await renameFrom('kb-folder-menu-f1');
+    await typeInto(renameInput()!, 'Half');
+    const field = renameInput()!;
+    const rounds = folderReads;
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(folderReads).toBeGreaterThan(rounds);
+    expect(renameInput()).toBe(field);
+    expect(field.value).toBe('Half');
+    expect(document.activeElement).toBe(field);
+    await page.dispose();
+  });
+
+  it('ends the edit, saying so, when what is renamed was deleted elsewhere', async () => {
+    const page = await openPage();
+    await renameFrom('kb-folder-menu-f2');
+    expect(renameInput()).not.toBeNull();
+    folders = () => json({ folders: [{ id: 'f1', name: 'Unit 1', materialCount: 2 }] });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(renameInput()).toBeNull();
+    expect(page.query('kb-folder-f2')).toBeNull();
+    expect(parseToast.error).toHaveBeenCalledWith('workspace.knowledgeBase.error.gone');
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
+  it('ends a file’s edit without calling it gone when the file leaves the list, moved into a closed folder', async () => {
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    expect(renameInput()).not.toBeNull();
+    library = (params) =>
+      json({
+        materials: params.get('folderId') === 'f1' ? [inF1('a'), inF1('in-f1')] : [],
+        limits: LIMITS,
+      });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(renameInput()).toBeNull();
+    expect(page.query('kb-material-a')).toBeNull();
+    expect(parseToast.error).not.toHaveBeenCalled();
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
+  it('says a file is gone when its rename is answered 404', async () => {
+    writeMaterial = () => new Response('Not found', { status: 404 });
+    const page = await openPage();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'Too late');
+    await press(renameInput()!, 'Enter');
+    await settle();
+    expect(inDocument('kb-rename-error')?.textContent).toBe('workspace.knowledgeBase.error.gone');
+    await page.dispose();
+  });
+
+  it('ends a search result’s edit without a word when the search is left', async () => {
+    library = (params) =>
+      json({
+        materials: params.get('query') ? [inF1('in-f1')] : [source('a')],
+        limits: LIMITS,
+      });
+    writeMaterial = () =>
+      json(
+        { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'invalid_name' },
+        400,
+      );
+    const page = await openPage();
+    await search('in');
+    await renameFrom('kb-material-menu-in-f1');
+    await typeInto(renameInput()!, 'Refused');
+    await press(renameInput()!, 'Enter');
+    await settle();
+    expect(inDocument('kb-rename-error')).not.toBeNull();
+    parseToast.error.mockClear();
+    await act(async () => {
+      const box = inDocument('kb-search') as HTMLInputElement;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box, '');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await settle();
+    expect(page.query('kb-tree')).not.toBeNull();
+    expect(renameInput()).toBeNull();
+    expect(parseToast.error).not.toHaveBeenCalled();
+    await page.dispose();
+  });
+
+  it('renames on a double-click of the name, expanding or collapsing the folder at most once', async () => {
+    const page = await openPage();
+    const toggle = page.query('kb-folder-toggle-f1')!;
+    const name = [...toggle.querySelectorAll('span')].find(
+      (span) => span.textContent === 'Unit 1',
+    )!;
+    // A browser renders between the events of a double-click.
+    for (const [type, detail] of [
+      ['click', 1],
+      ['click', 2],
+      ['dblclick', 2],
+    ] as const) {
+      await act(async () => {
+        name.dispatchEvent(new MouseEvent(type, { bubbles: true, detail }));
+      });
+      await settle();
+    }
+    expect(page.query('kb-folder-files-f1')).not.toBeNull();
+    expect(libraryCalls.filter((params) => params.get('folderId') === 'f1')).toHaveLength(1);
+    const field = renameInput()!;
+    expect(page.query('kb-folder-f1')!.contains(field)).toBe(true);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, 'Unit 1'.length]);
+    await press(field, 'Escape');
+    await settle();
+    expect(document.activeElement).toBe(page.query('kb-folder-toggle-f1'));
+
+    const file = [...page.query('kb-material-a')!.querySelectorAll('span')].find(
+      (span) => span.textContent === 'a.pdf',
+    )!;
+    await act(async () => {
+      file.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, detail: 2 }));
+    });
+    await settle();
+    expect(page.query('kb-material-a')!.contains(renameInput())).toBe(true);
+    expect([renameInput()!.selectionStart, renameInput()!.selectionEnd]).toEqual([0, 1]);
+    await page.dispose();
+  });
+});
+
+// ── Organizing ─────────────────────────────────────────────────────────────
+
+describe('organizing from the page', () => {
   it('moves a source into a folder, or out of it with null', async () => {
     const page = await openPage();
     await openMenu('kb-material-menu-a');
@@ -1149,10 +1527,9 @@ describe('organizing from the page', () => {
 
   it('gives the focus back to the control that opened a dialog', async () => {
     const page = await openPage();
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-rename');
-    await typeName('Chapter 1');
-    await submitName();
+    await renameFrom('kb-material-menu-a');
+    await typeInto(renameInput()!, 'Chapter 1');
+    await press(renameInput()!, 'Enter');
     await settle();
     expect(document.activeElement).toBe(inDocument('kb-material-menu-a'));
 
@@ -1189,10 +1566,9 @@ describe('organizing from the page', () => {
       const page = await openPage();
       await search('Before');
       expect(libraryCalls.at(-1)?.get('query')).toBe('Before');
-      await openMenu('kb-material-menu-a');
-      await choose('kb-material-menu-a-rename');
-      await typeName('After');
-      await submitName();
+      await renameFrom('kb-material-menu-a');
+      await typeInto(renameInput()!, 'After');
+      await press(renameInput()!, 'Enter');
       await settle();
       expect(document.activeElement).toBe(inDocument('kb-material-menu-a'));
       return page;

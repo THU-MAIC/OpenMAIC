@@ -2091,12 +2091,7 @@
         "new": "新建文件夹"
       },
       "dialog": {
-        "name": "名称",
         "cancel": "取消",
-        "save": "保存",
-        "create": "创建",
-        "renameFolderTitle": "重命名文件夹",
-        "renameMaterialTitle": "重命名资料",
         "moveTitle": "移动“{{name}}”",
         "noFolders": "还没有可以移入的文件夹，请先新建一个。",
         "close": "关闭"

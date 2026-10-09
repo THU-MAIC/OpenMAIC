@@ -2091,12 +2091,7 @@
         "new": "New folder"
       },
       "dialog": {
-        "name": "Name",
         "cancel": "Cancel",
-        "save": "Save",
-        "create": "Create",
-        "renameFolderTitle": "Rename folder",
-        "renameMaterialTitle": "Rename material",
         "moveTitle": "Move “{{name}}”",
         "noFolders": "There are no folders to move it to yet. Create one first.",
         "close": "Close"

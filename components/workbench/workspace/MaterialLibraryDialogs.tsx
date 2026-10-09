@@ -29,13 +29,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,6 +63,11 @@ export interface LibraryMenuItem {
   readonly destructive?: boolean;
   /** A link instead of an action: opened in a new tab. */
   readonly href?: string;
+  /**
+   * Runs once the menu has closed, and the focus is the action's to place
+   * (an edit in place takes it) instead of going back to the ⋯ button.
+   */
+  readonly afterClose?: boolean;
 }
 
 /** A ⋯ button and its menu, for a source or a folder. */
@@ -83,6 +82,7 @@ export function LibraryItemMenu({
   readonly items: readonly LibraryMenuItem[];
 }) {
   const trigger = useRef<HTMLButtonElement>(null);
+  const afterClose = useRef<(() => void) | null>(null);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -98,7 +98,17 @@ export function LibraryItemMenu({
           <MoreHorizontal className="size-4" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="pro-popover w-44">
+      <DropdownMenuContent
+        align="end"
+        className="pro-popover w-44"
+        onCloseAutoFocus={(event) => {
+          const run = afterClose.current;
+          afterClose.current = null;
+          if (!run) return;
+          event.preventDefault();
+          run();
+        }}
+      >
         {items.map((item) =>
           item.href ? (
             <DropdownMenuItem key={item.id} asChild onSelect={() => item.onSelect(trigger.current)}>
@@ -118,7 +128,10 @@ export function LibraryItemMenu({
               data-testid={`${testId}-${item.id}`}
               disabled={item.disabled}
               variant={item.destructive ? 'destructive' : 'default'}
-              onSelect={() => item.onSelect(trigger.current)}
+              onSelect={() => {
+                if (item.afterClose) afterClose.current = () => item.onSelect(trigger.current);
+                else item.onSelect(trigger.current);
+              }}
             >
               {item.icon}
               {item.label}
@@ -138,107 +151,6 @@ export const menuIcons = {
   open: <ExternalLink className="size-3.5" aria-hidden="true" />,
   chat: <MessageSquarePlus className="size-3.5" aria-hidden="true" />,
 };
-
-/**
- * Ask for a name: rename a source or a folder, or name a new folder.
- * `check` gives the early hint (the server stays the authority); `submit`
- * answers with the i18n key of a refusal, or `null` once it is done.
- * Mounted per request (the page keys it), so each one starts fresh.
- */
-export function NameDialog({
-  testId,
-  title,
-  submitLabel,
-  initialName,
-  maxLength,
-  check,
-  submit,
-  onClose,
-  returnFocus,
-  t,
-}: {
-  readonly testId: string;
-  readonly title: string;
-  readonly submitLabel: string;
-  readonly initialName: string;
-  readonly maxLength?: number;
-  readonly check: (name: string) => string | null;
-  readonly submit: (name: string) => Promise<string | null>;
-  readonly onClose: () => void;
-  readonly returnFocus: ReturnFocus;
-  readonly t: Translate;
-}) {
-  const [name, setName] = useState(initialName);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const confirm = async () => {
-    if (busy) return;
-    const hint = check(name);
-    if (hint) {
-      setError(hint);
-      return;
-    }
-    setBusy(true);
-    const refusal = await submit(name.trim());
-    setBusy(false);
-    if (refusal) setError(refusal);
-    else onClose();
-  };
-
-  return (
-    <Dialog open onOpenChange={(next) => (!next && !busy ? onClose() : undefined)}>
-      <DialogContent
-        data-testid={testId}
-        aria-describedby={undefined}
-        onCloseAutoFocus={returnFocus}
-        className="sm:max-w-[400px]"
-      >
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void confirm();
-          }}
-          className="flex flex-col gap-2"
-        >
-          <label className="text-[13px] text-muted-foreground" htmlFor={`${testId}-input`}>
-            {t('workspace.knowledgeBase.dialog.name')}
-          </label>
-          <input
-            autoFocus
-            onFocus={(event) => event.currentTarget.select()}
-            id={`${testId}-input`}
-            data-testid={`${testId}-input`}
-            value={name}
-            maxLength={maxLength}
-            aria-invalid={error ? true : undefined}
-            onChange={(event) => {
-              setName(event.target.value);
-              setError(null);
-            }}
-            className="h-9 rounded-md border border-input bg-transparent px-3 text-[14px] outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          />
-          {error ? (
-            <p data-testid={`${testId}-error`} role="alert" className="text-[12px] text-red-600">
-              {t(error)}
-            </p>
-          ) : null}
-          <DialogFooter className="mt-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
-              {t('workspace.knowledgeBase.dialog.cancel')}
-            </Button>
-            <Button type="submit" data-testid={`${testId}-submit`} disabled={busy}>
-              {submitLabel}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /**
  * Move one source to a folder or to Unfiled. The place it already is in is
