@@ -238,7 +238,7 @@
       "extractionStillRunning": "Extraction en cours",
       "folderExisted": "Le dossier existait déjà",
       "unchanged": "Aucun changement",
-      "movedToUnfiled": "Déplacé vers Non classés"
+      "movedOutOfFolder": "Sorti du dossier"
     },
     "error": {
       "materialExtraction": "L'extraction du document a échoué",

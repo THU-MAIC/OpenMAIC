@@ -238,7 +238,7 @@
       "extractionStillRunning": "Разбор ещё идёт",
       "folderExisted": "Папка уже была",
       "unchanged": "Без изменений",
-      "movedToUnfiled": "Перемещено в «Без папки»"
+      "movedOutOfFolder": "Перемещено из папки"
     },
     "error": {
       "materialExtraction": "Не удалось разобрать материал",

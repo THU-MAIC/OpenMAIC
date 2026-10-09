@@ -129,15 +129,30 @@ export function formatLibraryDate(value: number | string | undefined, locale: st
 
 const parsing = (status: MaterialExtractionStatus) => status === 'pending' || status === 'running';
 
+/**
+ * One icon set for the list (#1835 review §2): chevrons, folders and files
+ * share a size, a stroke and a colour, so a row's slots line up.
+ */
+const ROW_ICON = {
+  className: 'size-4 shrink-0 text-[color:var(--ws-ink-mute)]',
+  strokeWidth: 1.75,
+  'aria-hidden': true,
+} as const;
+
+/** The chevron slot every row keeps: a folder's chevron, empty on a file. */
+function RowChevron({ open }: { readonly open?: boolean }) {
+  if (open === undefined) return <span className="size-4 shrink-0" aria-hidden="true" />;
+  return open ? <ChevronDown {...ROW_ICON} /> : <ChevronRight {...ROW_ICON} />;
+}
+
 function MaterialIcon({ mime }: { readonly mime?: string }) {
-  const className = 'size-4 shrink-0 text-[color:var(--ws-ink-mute)]';
-  if (mime?.startsWith('image/')) return <FileImage className={className} aria-hidden="true" />;
-  if (mime?.startsWith('audio/')) return <FileAudio className={className} aria-hidden="true" />;
-  if (mime?.startsWith('video/')) return <FileVideo className={className} aria-hidden="true" />;
+  if (mime?.startsWith('image/')) return <FileImage {...ROW_ICON} />;
+  if (mime?.startsWith('audio/')) return <FileAudio {...ROW_ICON} />;
+  if (mime?.startsWith('video/')) return <FileVideo {...ROW_ICON} />;
   if (mime?.startsWith('text/') || mime === 'application/pdf' || mime?.includes('document')) {
-    return <FileText className={className} aria-hidden="true" />;
+    return <FileText {...ROW_ICON} />;
   }
-  return <File className={className} aria-hidden="true" />;
+  return <File {...ROW_ICON} />;
 }
 
 const failureCopy: Record<MaterialExtractionReasonCode, { label: string; description: string }> = {
@@ -224,7 +239,10 @@ function StatusLabel({
   );
 }
 
-/** "Used 8.7 MB of 2 GB", its bar, and the file count. The pool quota is not shown. */
+/**
+ * One group (#1835 review §2): "Used 781.7 KB of 2 GB · 1 of 100 files" and a
+ * short bar beside it. The pool quota is not shown.
+ */
 function Usage({
   limits,
   locale,
@@ -238,38 +256,32 @@ function Usage({
     limits.maxTotalBytes > 0
       ? Math.min(1, Math.max(0, limits.usedBytes / limits.maxTotalBytes))
       : 0;
-  const used = t('workspace.knowledgeBase.usage.bytes', {
+  const summary = t('workspace.knowledgeBase.usage.summary', {
     used: formatMaterialBytes(limits.usedBytes, locale),
     max: formatMaterialBytes(limits.maxTotalBytes, locale),
+    count: limits.usedCount,
+    maxCount: limits.maxCount,
   });
   return (
     <div
       data-testid="kb-usage"
-      className="flex flex-col gap-2 text-[12px] text-[color:var(--ws-ink-soft)] sm:flex-row sm:items-center sm:gap-4"
+      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-[color:var(--ws-ink-soft)]"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span className="shrink-0">{used}</span>
+      <span data-testid="kb-usage-summary">{summary}</span>
+      <div
+        role="progressbar"
+        aria-label={summary}
+        aria-valuemin={0}
+        aria-valuemax={limits.maxTotalBytes}
+        aria-valuenow={limits.usedBytes}
+        data-testid="kb-usage-bar"
+        className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-[color:var(--ws-tint-strong)]"
+      >
         <div
-          role="progressbar"
-          aria-label={used}
-          aria-valuemin={0}
-          aria-valuemax={limits.maxTotalBytes}
-          aria-valuenow={limits.usedBytes}
-          data-testid="kb-usage-bar"
-          className="h-1.5 min-w-16 flex-1 overflow-hidden rounded-full bg-[color:var(--ws-tint-strong)] sm:max-w-64"
-        >
-          <div
-            className="h-full rounded-full bg-[color:var(--ws-accent)]"
-            style={{ width: `${share * 100}%` }}
-          />
-        </div>
+          className="h-full rounded-full bg-[color:var(--ws-accent)]"
+          style={{ width: `${share * 100}%` }}
+        />
       </div>
-      <span data-testid="kb-usage-count" className="shrink-0">
-        {t('workspace.knowledgeBase.usage.count', {
-          count: limits.usedCount,
-          maxCount: limits.maxCount,
-        })}
-      </span>
     </div>
   );
 }
@@ -497,24 +509,24 @@ function InlineName({
  */
 const LAYOUT = {
   tree: {
-    row: 'flex min-w-0 items-start gap-2 px-3 py-2 @2xl:grid @2xl:items-center @2xl:gap-3',
+    row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @2xl:grid @2xl:items-center @2xl:gap-3',
     columns: '@2xl:grid-cols-[minmax(0,1fr)_9rem_5.5rem_5.5rem_2rem]',
     cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @2xl:block',
     narrowOnly: '@2xl:hidden',
     wideOnly: 'hidden @2xl:block',
-    menu: 'shrink-0 @2xl:flex @2xl:justify-end',
-    nameSpan: '@2xl:col-span-3',
+    menu: 'ws-kb-row-menu shrink-0 @2xl:flex @2xl:justify-end',
+    /** A folder's name takes the status column too; its count is in Size. */
+    nameSpan: '@2xl:col-span-2',
     header:
       'hidden border-b border-[color:var(--ws-line)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)] @2xl:grid @2xl:gap-3',
   },
   search: {
-    row: 'flex min-w-0 items-start gap-2 px-3 py-2 @3xl:grid @3xl:items-center @3xl:gap-3',
+    row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @3xl:grid @3xl:items-center @3xl:gap-3',
     columns: '@3xl:grid-cols-[minmax(0,1fr)_9rem_9rem_5.5rem_5.5rem_2rem]',
     cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @3xl:block',
     narrowOnly: '@3xl:hidden',
     wideOnly: 'hidden @3xl:block',
-    menu: 'shrink-0 @3xl:flex @3xl:justify-end',
-    nameSpan: '@3xl:col-span-3',
+    menu: 'ws-kb-row-menu shrink-0 @3xl:flex @3xl:justify-end',
     header:
       'hidden border-b border-[color:var(--ws-line)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)] @3xl:grid @3xl:gap-3',
   },
@@ -653,7 +665,12 @@ export function MaterialLibraryPage({
     }
     returnedTo.current = null;
     if (document.activeElement === null || document.activeElement === document.body) {
-      heading.current?.focus();
+      // The same control in the row's new place (a file taken out of its
+      // folder), or the heading when its row left the view.
+      const again = target.dataset.testid
+        ? list.current?.querySelector<HTMLElement>(`[data-testid="${target.dataset.testid}"]`)
+        : null;
+      (again ?? heading.current)?.focus();
     }
   });
 
@@ -934,6 +951,24 @@ export function MaterialLibraryPage({
     />
   );
 
+  /** Sources being taken out of their folder: one request each, however often it is chosen. */
+  const removing = useRef(new Set<string>());
+  const removeFromFolder = (material: LibraryMaterial, trigger: HTMLElement | null) => {
+    if (removing.current.has(material.materialId)) return;
+    removing.current.add(material.materialId);
+    // Run once the menu has closed: the ⋯ gets the focus here, before the
+    // list can move its row, and once it does the focus follows the file to
+    // its new row (or goes to the heading) -- unless the teacher moved it on.
+    if (trigger?.isConnected) {
+      trigger.focus();
+      returnedTo.current = trigger;
+    }
+    void write(() => moveLibraryMaterials([material.materialId], null)).then((error) => {
+      removing.current.delete(material.materialId);
+      if (error) toast.error(t(error));
+    });
+  };
+
   const materialMenu = (material: LibraryMaterial) => {
     const items: LibraryMenuItem[] = [
       ...(material.extraction.status === 'idle' || material.extraction.status === 'failed'
@@ -987,6 +1022,18 @@ export function MaterialLibraryPage({
         icon: menuIcons.move,
         onSelect: openFrom(() => setMoving(material)),
       },
+      // Out of its folder, to the top level (`folderId: null`); Move to… lists folders only.
+      ...(material.folderId !== null
+        ? [
+            {
+              id: 'remove-from-folder',
+              label: t('workspace.knowledgeBase.actions.removeFromFolder'),
+              icon: menuIcons.removeFromFolder,
+              afterClose: true,
+              onSelect: (trigger: HTMLElement | null) => removeFromFolder(material, trigger),
+            },
+          ]
+        : []),
       {
         id: 'delete',
         label: t('workspace.knowledgeBase.actions.delete'),
@@ -1032,10 +1079,9 @@ export function MaterialLibraryPage({
   );
 
   // ── Rows ────────────────────────────────────────────────────────────
+  /** A file's folder, when it is in one: a top-level file shows nothing (#1835 review §3). */
   const folderName = (material: LibraryMaterial) =>
-    material.folderId === null
-      ? t('workspace.knowledgeBase.scope.unfiled')
-      : (material.folderName ?? '');
+    material.folderId === null ? null : (material.folderName ?? null);
 
   const fileRow = (material: LibraryMaterial, options: { nested?: boolean; search?: boolean }) => {
     const layout = options.search ? LAYOUT.search : LAYOUT.tree;
@@ -1051,6 +1097,7 @@ export function MaterialLibraryPage({
         className={cn(layout.row, layout.columns)}
       >
         <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
+          <RowChevron />
           <MaterialIcon mime={material.mime} />
           <div className="min-w-0 flex-1">
             {edit ? (
@@ -1074,7 +1121,7 @@ export function MaterialLibraryPage({
               <StatusLabel material={material} t={t} />
               <span>{size}</span>
               {date ? <span>{date}</span> : null}
-              {options.search ? <span>{folderName(material)}</span> : null}
+              {options.search && folderName(material) ? <span>{folderName(material)}</span> : null}
             </span>
           </div>
         </div>
@@ -1096,7 +1143,7 @@ export function MaterialLibraryPage({
     nested = false,
   ) =>
     node.hasMore ? (
-      <li className={cn('px-3 py-2', nested && 'pl-11')}>
+      <li className={cn('py-2 pl-9 pr-3', nested && 'pl-15')}>
         <button
           type="button"
           data-testid={testId}
@@ -1116,13 +1163,19 @@ export function MaterialLibraryPage({
     const node = tree.folder(folder.id);
     const open = node !== null;
     const edit = renaming?.kind === 'folder' && renaming.targetId === folder.id ? renaming : null;
-    const chevron = open ? (
-      <ChevronDown className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
-    ) : (
-      <ChevronRight className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
-    );
-    const icon = (
-      <Folder className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]" aria-hidden="true" />
+    const items = t('workspace.knowledgeBase.folder.items', { count: folder.materialCount });
+    const date = formatLibraryDate(folder.updatedAt, locale);
+    // Below the grid the count and the date go under the name, as a file's size does.
+    const narrowMeta = (
+      <span
+        className={cn(
+          'mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] font-normal text-[color:var(--ws-ink-mute)]',
+          LAYOUT.tree.narrowOnly,
+        )}
+      >
+        <span>{items}</span>
+        {date ? <span>{date}</span> : null}
+      </span>
     );
     return (
       <li key={folder.id} data-testid={`kb-folder-${folder.id}`}>
@@ -1137,8 +1190,8 @@ export function MaterialLibraryPage({
                 LAYOUT.tree.nameSpan,
               )}
             >
-              {chevron}
-              {icon}
+              <RowChevron open={open} />
+              <Folder {...ROW_ICON} />
               {renameField(edit, t('workspace.knowledgeBase.actions.rename'))}
             </div>
           ) : (
@@ -1157,30 +1210,33 @@ export function MaterialLibraryPage({
                 LAYOUT.tree.nameSpan,
               )}
             >
-              {chevron}
-              {icon}
-              <span
-                className="min-w-0 break-words font-medium"
-                onDoubleClick={() => startRenaming('folder', folder.id, folder.name)}
-              >
-                {folder.name}
-              </span>
-              <span className="shrink-0 text-[11px] text-[color:var(--ws-ink-mute)]">
-                ({folder.materialCount})
+              <RowChevron open={open} />
+              <Folder {...ROW_ICON} />
+              <span className="min-w-0 flex-1">
+                <span
+                  className="block break-words font-medium"
+                  onDoubleClick={() => startRenaming('folder', folder.id, folder.name)}
+                >
+                  {folder.name}
+                </span>
+                {narrowMeta}
               </span>
             </button>
           )}
-          <span className={LAYOUT.tree.cell}>{formatLibraryDate(folder.updatedAt, locale)}</span>
+          <span data-testid={`kb-folder-items-${folder.id}`} className={LAYOUT.tree.cell}>
+            {items}
+          </span>
+          <span className={LAYOUT.tree.cell}>{date}</span>
           <span className={LAYOUT.tree.menu}>{folderMenu(folder)}</span>
         </div>
         {node ? (
           <ul data-testid={`kb-folder-files-${folder.id}`}>
             {node.status === 'loading' ? (
-              <li className="py-2 pl-11 text-[12px] text-[color:var(--ws-ink-mute)]">
+              <li className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]">
                 {t('workspace.knowledgeBase.loading')}
               </li>
             ) : node.status === 'error' ? (
-              <li className="flex items-center gap-2 py-2 pl-11 text-[12px]" role="alert">
+              <li className="flex items-center gap-2 py-2 pl-15 text-[12px]" role="alert">
                 <span>{t(materialLibraryErrorKey(node.error))}</span>
                 <button type="button" onClick={() => tree.reload()} className="ws-quiet underline">
                   {t('workspace.knowledgeBase.retry')}
@@ -1189,7 +1245,7 @@ export function MaterialLibraryPage({
             ) : node.files.length === 0 ? (
               <li
                 data-testid={`kb-folder-empty-${folder.id}`}
-                className="py-2 pl-11 text-[12px] text-[color:var(--ws-ink-mute)]"
+                className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]"
               >
                 {t('workspace.knowledgeBase.empty.folder')}
               </li>
@@ -1209,13 +1265,11 @@ export function MaterialLibraryPage({
       data-testid={`kb-${entry.id}`}
       className="flex min-w-0 items-start gap-2 px-3 py-2 text-[13px]"
     >
+      <RowChevron />
       {entry.error === undefined ? (
-        <LoaderCircle
-          className="mt-0.5 size-4 shrink-0 animate-spin opacity-60"
-          aria-hidden="true"
-        />
+        <LoaderCircle {...ROW_ICON} className={cn(ROW_ICON.className, 'animate-spin')} />
       ) : (
-        <X className="mt-0.5 size-4 shrink-0 text-[color:var(--ws-fail)]" aria-hidden="true" />
+        <X {...ROW_ICON} className="size-4 shrink-0 text-[color:var(--ws-fail)]" />
       )}
       <span className="min-w-0 flex-1 break-words">
         {entry.name}
@@ -1251,8 +1305,8 @@ export function MaterialLibraryPage({
             LAYOUT.tree.nameSpan,
           )}
         >
-          <ChevronRight className="mt-0.5 size-3.5 shrink-0 opacity-60" aria-hidden="true" />
-          <Folder className="size-4 shrink-0 text-[color:var(--ws-ink-mute)]" aria-hidden="true" />
+          <RowChevron open={false} />
+          <Folder {...ROW_ICON} />
           <InlineName
             key={creating.id}
             testId="kb-new-folder-input"
@@ -1268,6 +1322,8 @@ export function MaterialLibraryPage({
             onCancel={() => cancelCreating(true)}
           />
         </div>
+        {/* Size and date: nothing yet. */}
+        <span className={LAYOUT.tree.cell} />
         <span className={LAYOUT.tree.cell} />
         {/* Where a folder has its ⋯: the same room, so the row is as tall. */}
         <span className={LAYOUT.tree.menu}>
@@ -1369,9 +1425,10 @@ export function MaterialLibraryPage({
       data-testid="kb-upload"
       onClick={() => fileInput.current?.click()}
       aria-describedby={perFileLimits ? limitsId : undefined}
-      className="ws-new flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] font-medium"
+      // The primary action: filled, as the composer's send is.
+      className="flex h-9 items-center gap-2 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)] focus-visible:ring-offset-2"
     >
-      <Upload className="size-4 shrink-0 opacity-60" aria-hidden="true" />
+      <Upload className="size-4 shrink-0" aria-hidden="true" />
       {t('workspace.knowledgeBase.upload.button')}
     </button>
   );
@@ -1396,11 +1453,9 @@ export function MaterialLibraryPage({
         </button>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-4 px-4 pb-16 pt-2 sm:px-8 md:pt-8">
-        <header
-          data-testid="kb-header"
-          className="flex flex-col gap-3 border-b border-[color:var(--ws-line)] pb-4"
-        >
+      {/* Three regions told apart by space, not rules (#1835 review §2). */}
+      <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 px-4 pb-16 pt-2 sm:px-8 md:pt-8">
+        <header data-testid="kb-header" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1
               ref={heading}
@@ -1410,8 +1465,9 @@ export function MaterialLibraryPage({
             >
               {t('workspace.knowledgeBase.title')}
             </h1>
-            <label className="ws-find flex h-9 w-full items-center gap-2 rounded-lg px-3 sm:w-64">
-              <Search className="size-4 shrink-0 opacity-50" aria-hidden="true" />
+            {/* Outlined, as the buttons beside it are. */}
+            <label className="flex h-9 w-full items-center gap-2 rounded-lg border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)] px-3 text-[color:var(--ws-ink-mute)] transition-[border-color,box-shadow] focus-within:border-[color:var(--ws-accent-thread)] focus-within:shadow-[0_0_0_3px_var(--ws-accent-wash)] sm:w-64">
+              <Search className="size-4 shrink-0" aria-hidden="true" />
               <input
                 data-testid="kb-search"
                 type="search"
@@ -1419,7 +1475,7 @@ export function MaterialLibraryPage({
                 onChange={(event) => changeQuery(event.target.value)}
                 placeholder={t('workspace.knowledgeBase.search')}
                 aria-label={t('workspace.knowledgeBase.search')}
-                className="min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-[color:var(--ws-ink)] outline-none placeholder:text-[color:var(--ws-ink-mute)]"
               />
             </label>
             <div className="flex flex-wrap items-center gap-2">
@@ -1429,7 +1485,7 @@ export function MaterialLibraryPage({
                 data-testid="kb-folder-new"
                 disabled={creating?.busy}
                 onClick={startCreating}
-                className="ws-quiet flex h-9 items-center gap-2 rounded-lg border border-[color:var(--ws-line)] px-3 text-[13px] disabled:opacity-60"
+                className="ws-new flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] disabled:opacity-60"
               >
                 <FolderPlus className="size-4 shrink-0 opacity-60" aria-hidden="true" />
                 {t('workspace.knowledgeBase.folder.new')}
@@ -1472,7 +1528,7 @@ export function MaterialLibraryPage({
         </header>
 
         {tree.limits ? (
-          <section className="border-b border-[color:var(--ws-line)] pb-4">
+          <section>
             <Usage limits={tree.limits} locale={locale} t={t} />
           </section>
         ) : null}

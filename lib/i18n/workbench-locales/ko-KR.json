@@ -238,7 +238,7 @@
       "extractionStillRunning": "아직 분석 중입니다",
       "folderExisted": "폴더가 이미 있습니다",
       "unchanged": "변경 없음",
-      "movedToUnfiled": "미분류로 옮겼습니다"
+      "movedOutOfFolder": "폴더 밖으로 옮겼습니다"
     },
     "error": {
       "materialExtraction": "자료 분석에 실패했습니다",

@@ -2001,9 +2001,6 @@
       "loading": "Wird geladen…",
       "retry": "Erneut versuchen",
       "loadMore": "Mehr laden",
-      "scope": {
-        "unfiled": "Nicht abgelegt"
-      },
       "failure": {
         "more": "Hinweis zum Fehler: {{reason}}",
         "storage_full": {
@@ -2049,12 +2046,11 @@
         "perFile": "Bis {{document}} pro Dokument oder Bild, {{media}} pro Audio oder Video"
       },
       "usage": {
-        "bytes": "{{used}} von {{max}} belegt",
-        "count": "{{count}} von {{maxCount}} Dateien"
+        "summary": "{{used}} von {{max}} belegt · {{count}} von {{maxCount}} Dateien"
       },
       "empty": {
         "title": "Deine Wissensbasis ist leer",
-        "body": "Lade Unterrichtsmaterialien hoch, lass den Assistenten sie ablegen und analysieren, und wähle sie bei der Kursvorbereitung mit @ aus.",
+        "body": "Lade Unterrichtsmaterialien hoch, lass den Assistenten sie ordnen und analysieren, und wähle sie bei der Kursvorbereitung mit @ aus.",
         "folder": "In diesem Ordner sind noch keine Materialien",
         "query": "Keine Materialien passen zu „{{query}}“"
       },
@@ -2083,12 +2079,16 @@
         "more": "Weitere Aktionen für {{name}}",
         "rename": "Umbenennen",
         "move": "Verschieben nach…",
+        "removeFromFolder": "Aus dem Ordner entfernen",
         "delete": "Löschen",
         "open": "Original öffnen",
         "chat": "Mit diesem Material chatten"
       },
       "folder": {
-        "new": "Neuer Ordner"
+        "new": "Neuer Ordner",
+        "items": "{{count}} Elemente",
+        "items_one": "{{count}} Element",
+        "items_other": "{{count}} Elemente"
       },
       "dialog": {
         "cancel": "Abbrechen",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Schon in dieser Nachricht",
       "materialExtracting": "Wird aufbereitet",
       "materialFailed": "Aufbereitung fehlgeschlagen",
-      "unfiled": "Ohne Ordner",
       "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
       "materialNotExtracted": "Nicht aufbereitet",
       "materialExtracted": "Aufbereitet"

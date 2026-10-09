@@ -2001,9 +2001,6 @@
       "loading": "불러오는 중…",
       "retry": "다시 시도",
       "loadMore": "더 불러오기",
-      "scope": {
-        "unfiled": "미분류"
-      },
       "failure": {
         "more": "실패 설명: {{reason}}",
         "storage_full": {
@@ -2049,8 +2046,7 @@
         "perFile": "문서·이미지는 최대 {{document}}, 오디오·동영상은 최대 {{media}}"
       },
       "usage": {
-        "bytes": "{{max}} 중 {{used}} 사용",
-        "count": "파일 {{count}} / {{maxCount}}개"
+        "summary": "{{max}} 중 {{used}} 사용 · 파일 {{count}} / {{maxCount}}개"
       },
       "empty": {
         "title": "지식 베이스가 비어 있습니다",
@@ -2083,12 +2079,16 @@
         "more": "{{name}} 추가 작업",
         "rename": "이름 변경",
         "move": "이동…",
+        "removeFromFolder": "폴더에서 빼기",
         "delete": "삭제",
         "open": "원본 파일 열기",
         "chat": "이 자료로 대화하기"
       },
       "folder": {
-        "new": "새 폴더"
+        "new": "새 폴더",
+        "items": "{{count}}개 항목",
+        "items_one": "{{count}}개 항목",
+        "items_other": "{{count}}개 항목"
       },
       "dialog": {
         "cancel": "취소",
@@ -2128,7 +2128,6 @@
       "materialStaged": "이 메시지에 이미 있습니다",
       "materialExtracting": "분석 중",
       "materialFailed": "분석 실패",
-      "unfiled": "미분류",
       "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요",
       "materialNotExtracted": "분석 전",
       "materialExtracted": "분석 완료"

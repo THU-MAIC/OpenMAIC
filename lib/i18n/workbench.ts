@@ -303,7 +303,7 @@ export const workbenchEn = {
       extractionStillRunning: 'Still extracting',
       folderExisted: 'Folder already existed',
       unchanged: 'No change',
-      movedToUnfiled: 'Moved to Unfiled',
+      movedOutOfFolder: 'Moved out of folder',
     },
     error: {
       materialExtraction: 'Material extraction failed',
@@ -622,7 +622,7 @@ export const workbenchZh = {
       extractionStillRunning: '仍在解析',
       folderExisted: '文件夹已存在',
       unchanged: '没有变化',
-      movedToUnfiled: '已移回未归档',
+      movedOutOfFolder: '已移出文件夹',
     },
     error: {
       materialExtraction: '材料解析失败',

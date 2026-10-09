@@ -2001,9 +2001,6 @@
       "loading": "Carregando…",
       "retry": "Tentar novamente",
       "loadMore": "Carregar mais",
-      "scope": {
-        "unfiled": "Sem pasta"
-      },
       "failure": {
         "more": "Sobre esta falha: {{reason}}",
         "storage_full": {
@@ -2049,8 +2046,7 @@
         "perFile": "Até {{document}} por documento ou imagem, {{media}} por áudio ou vídeo"
       },
       "usage": {
-        "bytes": "{{used}} usados de {{max}}",
-        "count": "{{count}} de {{maxCount}} arquivos"
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} arquivos"
       },
       "empty": {
         "title": "Sua base de conhecimento está vazia",
@@ -2083,12 +2079,16 @@
         "more": "Mais ações para {{name}}",
         "rename": "Renomear",
         "move": "Mover para…",
+        "removeFromFolder": "Remover da pasta",
         "delete": "Excluir",
         "open": "Abrir o original",
         "chat": "Conversar sobre este material"
       },
       "folder": {
-        "new": "Nova pasta"
+        "new": "Nova pasta",
+        "items": "{{count}} itens",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} itens"
       },
       "dialog": {
         "cancel": "Cancelar",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Já está nesta mensagem",
       "materialExtracting": "Processando",
       "materialFailed": "Falha no processamento",
-      "unfiled": "Sem pasta",
       "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
       "materialNotExtracted": "Não processado",
       "materialExtracted": "Processado"

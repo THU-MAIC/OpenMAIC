@@ -2001,9 +2001,6 @@
       "loading": "Loading…",
       "retry": "Retry",
       "loadMore": "Load more",
-      "scope": {
-        "unfiled": "Unfiled"
-      },
       "failure": {
         "more": "About this failure: {{reason}}",
         "storage_full": {
@@ -2049,12 +2046,11 @@
         "perFile": "Up to {{document}} per document or image, {{media}} per audio or video"
       },
       "usage": {
-        "bytes": "Used {{used}} of {{max}}",
-        "count": "{{count}} of {{maxCount}} files"
+        "summary": "Used {{used}} of {{max}} · {{count}} of {{maxCount}} files"
       },
       "empty": {
         "title": "Your knowledge base is empty",
-        "body": "Upload your teaching materials, let the assistant file and parse them, then pick them with @ while you prepare a course.",
+        "body": "Upload your teaching materials, let the assistant organize and parse them, then pick them with @ while you prepare a course.",
         "folder": "No materials in this folder yet",
         "query": "No materials match “{{query}}”"
       },
@@ -2083,12 +2079,16 @@
         "more": "More actions for {{name}}",
         "rename": "Rename",
         "move": "Move to…",
+        "removeFromFolder": "Remove from folder",
         "delete": "Delete",
         "open": "Open original",
         "chat": "Chat with this material"
       },
       "folder": {
-        "new": "New folder"
+        "new": "New folder",
+        "items": "{{count}} items",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} items"
       },
       "dialog": {
         "cancel": "Cancel",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Already on this message",
       "materialExtracting": "Extracting",
       "materialFailed": "Extraction failed",
-      "unfiled": "Unfiled",
       "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
       "materialNotExtracted": "Not extracted",
       "materialExtracted": "Extracted"

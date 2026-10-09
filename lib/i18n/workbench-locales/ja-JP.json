@@ -238,7 +238,7 @@
       "extractionStillRunning": "まだ解析中です",
       "folderExisted": "フォルダはすでにありました",
       "unchanged": "変更なし",
-      "movedToUnfiled": "未分類へ移動しました"
+      "movedOutOfFolder": "フォルダーの外へ移動しました"
     },
     "error": {
       "materialExtraction": "素材の解析に失敗しました",

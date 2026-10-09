@@ -2001,9 +2001,6 @@
       "loading": "Đang tải…",
       "retry": "Thử lại",
       "loadMore": "Tải thêm",
-      "scope": {
-        "unfiled": "Chưa phân loại"
-      },
       "failure": {
         "more": "Thông tin lỗi: {{reason}}",
         "storage_full": {
@@ -2049,8 +2046,7 @@
         "perFile": "Tối đa {{document}} cho mỗi tài liệu hoặc hình ảnh, {{media}} cho mỗi âm thanh hoặc video"
       },
       "usage": {
-        "bytes": "Đã dùng {{used}} / {{max}}",
-        "count": "{{count}} / {{maxCount}} tệp"
+        "summary": "Đã dùng {{used}} / {{max}} · {{count}} / {{maxCount}} tệp"
       },
       "empty": {
         "title": "Kho kiến thức của bạn đang trống",
@@ -2083,12 +2079,16 @@
         "more": "Thao tác khác cho {{name}}",
         "rename": "Đổi tên",
         "move": "Chuyển đến…",
+        "removeFromFolder": "Bỏ khỏi thư mục",
         "delete": "Xóa",
         "open": "Mở tệp gốc",
         "chat": "Trò chuyện với tài liệu này"
       },
       "folder": {
-        "new": "Thư mục mới"
+        "new": "Thư mục mới",
+        "items": "{{count}} mục",
+        "items_one": "{{count}} mục",
+        "items_other": "{{count}} mục"
       },
       "dialog": {
         "cancel": "Hủy",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Đã có trong tin nhắn này",
       "materialExtracting": "Đang bóc tách",
       "materialFailed": "Bóc tách thất bại",
-      "unfiled": "Chưa phân loại",
       "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
       "materialNotExtracted": "Chưa bóc tách",
       "materialExtracted": "Đã bóc tách"

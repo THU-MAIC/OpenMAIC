@@ -238,7 +238,7 @@
       "extractionStillRunning": "Ainda em processamento",
       "folderExisted": "A pasta já existia",
       "unchanged": "Sem alteração",
-      "movedToUnfiled": "Movido para Sem pasta"
+      "movedOutOfFolder": "Retirado da pasta"
     },
     "error": {
       "materialExtraction": "O processamento do material falhou",

@@ -2001,9 +2001,6 @@
       "loading": "Chargement…",
       "retry": "Réessayer",
       "loadMore": "Charger plus",
-      "scope": {
-        "unfiled": "Non classés"
-      },
       "failure": {
         "more": "À propos de cet échec : {{reason}}",
         "storage_full": {
@@ -2049,12 +2046,11 @@
         "perFile": "Jusqu’à {{document}} par document ou image, {{media}} par audio ou vidéo"
       },
       "usage": {
-        "bytes": "{{used}} utilisés sur {{max}}",
-        "count": "{{count}} fichiers sur {{maxCount}}"
+        "summary": "{{used}} utilisés sur {{max}} · {{count}} fichiers sur {{maxCount}}"
       },
       "empty": {
         "title": "Votre base de connaissances est vide",
-        "body": "Importez vos supports de cours, laissez l’assistant les classer et les analyser, puis choisissez-les avec @ en préparant un cours.",
+        "body": "Importez vos supports de cours, laissez l’assistant les organiser et les analyser, puis choisissez-les avec @ en préparant un cours.",
         "folder": "Aucun document dans ce dossier pour l’instant",
         "query": "Aucun document ne correspond à « {{query}} »"
       },
@@ -2083,12 +2079,16 @@
         "more": "Autres actions pour {{name}}",
         "rename": "Renommer",
         "move": "Déplacer vers…",
+        "removeFromFolder": "Retirer du dossier",
         "delete": "Supprimer",
         "open": "Ouvrir l’original",
         "chat": "Discuter de ce document"
       },
       "folder": {
-        "new": "Nouveau dossier"
+        "new": "Nouveau dossier",
+        "items": "{{count}} éléments",
+        "items_one": "{{count}} élément",
+        "items_other": "{{count}} éléments"
       },
       "dialog": {
         "cancel": "Annuler",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Déjà dans ce message",
       "materialExtracting": "Extraction en cours",
       "materialFailed": "L'extraction a échoué",
-      "unfiled": "Non classés",
       "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner",
       "materialNotExtracted": "Non extrait",
       "materialExtracted": "Extrait"

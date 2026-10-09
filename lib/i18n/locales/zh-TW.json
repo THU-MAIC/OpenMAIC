@@ -1986,9 +1986,6 @@
       "loading": "載入中…",
       "retry": "重試",
       "loadMore": "載入更多",
-      "scope": {
-        "unfiled": "未歸檔"
-      },
       "failure": {
         "more": "失敗說明：{{reason}}",
         "storage_full": {
@@ -2034,12 +2031,11 @@
         "perFile": "單一文件或圖片不超過 {{document}}，音訊與影片不超過 {{media}}"
       },
       "usage": {
-        "bytes": "已用 {{used}} / {{max}}",
-        "count": "{{count}} / {{maxCount}} 個檔案"
+        "summary": "已用 {{used}} / {{max}} · {{count}} / {{maxCount}} 個檔案"
       },
       "empty": {
         "title": "知識庫還是空的",
-        "body": "上傳教學資料，讓助理幫你歸檔與解析，備課時用 @ 選用。",
+        "body": "上傳教學資料，讓助理幫你整理與解析，備課時用 @ 選用。",
         "folder": "這個資料夾裡還沒有資料",
         "query": "找不到與「{{query}}」相符的資料"
       },
@@ -2068,12 +2064,16 @@
         "more": "{{name}} 的更多操作",
         "rename": "重新命名",
         "move": "移動到…",
+        "removeFromFolder": "移出資料夾",
         "delete": "刪除",
         "open": "開啟原始檔案",
         "chat": "用這份資料對話"
       },
       "folder": {
-        "new": "新增資料夾"
+        "new": "新增資料夾",
+        "items": "{{count}} 項",
+        "items_one": "{{count}} 項",
+        "items_other": "{{count}} 項"
       },
       "dialog": {
         "cancel": "取消",
@@ -2113,7 +2113,6 @@
       "materialStaged": "已在這則訊息裡",
       "materialExtracting": "解析中",
       "materialFailed": "解析失敗",
-      "unfiled": "未歸檔",
       "materialsCapped": "只顯示前 {{count}} 份材料，繼續輸入可縮小範圍",
       "materialNotExtracted": "未解析",
       "materialExtracted": "已解析"

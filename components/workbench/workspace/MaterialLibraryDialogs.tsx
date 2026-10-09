@@ -12,7 +12,7 @@ import {
   ExternalLink,
   FileText,
   FolderInput,
-  Inbox,
+  FolderOutput,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
@@ -147,15 +147,17 @@ export const menuIcons = {
   parse: <FileText className="size-3.5" aria-hidden="true" />,
   rename: <Pencil className="size-3.5" aria-hidden="true" />,
   move: <FolderInput className="size-3.5" aria-hidden="true" />,
+  removeFromFolder: <FolderOutput className="size-3.5" aria-hidden="true" />,
   delete: <Trash2 className="size-3.5" aria-hidden="true" />,
   open: <ExternalLink className="size-3.5" aria-hidden="true" />,
   chat: <MessageSquarePlus className="size-3.5" aria-hidden="true" />,
 };
 
 /**
- * Move one source to a folder or to Unfiled. The place it already is in is
- * not offered; `move` answers with the i18n key of a refusal, or `null`.
- * Mounted per request (the page keys it), so each one starts fresh.
+ * Move one source to another folder: folders only, the one it is in not
+ * offered (taking it out of a folder is the row menu's Remove from folder).
+ * `move` answers with the i18n key of a refusal, or `null`. Mounted per
+ * request (the page keys it), so each one starts fresh.
  */
 export function MoveDialog({
   material,
@@ -167,7 +169,7 @@ export function MoveDialog({
 }: {
   readonly material: LibraryMaterial;
   readonly folders: readonly LibraryFolder[];
-  readonly move: (folderId: string | null) => Promise<string | null>;
+  readonly move: (folderId: string) => Promise<string | null>;
   readonly onClose: () => void;
   readonly returnFocus: ReturnFocus;
   readonly t: Translate;
@@ -175,26 +177,15 @@ export function MoveDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const targets: { id: string | null; label: string; icon: ReactNode }[] = [
-    ...(material.folderId !== null
-      ? [
-          {
-            id: null,
-            label: t('workspace.knowledgeBase.scope.unfiled'),
-            icon: <Inbox className="size-4 shrink-0 opacity-60" aria-hidden="true" />,
-          },
-        ]
-      : []),
-    ...folders
-      .filter((folder) => folder.id !== material.folderId)
-      .map((folder) => ({
-        id: folder.id,
-        label: folder.name,
-        icon: <Folder className="size-4 shrink-0 opacity-60" aria-hidden="true" />,
-      })),
-  ];
+  const targets: { id: string; label: string; icon: ReactNode }[] = folders
+    .filter((folder) => folder.id !== material.folderId)
+    .map((folder) => ({
+      id: folder.id,
+      label: folder.name,
+      icon: <Folder className="size-4 shrink-0 opacity-60" aria-hidden="true" />,
+    }));
 
-  const choose = async (folderId: string | null) => {
+  const choose = async (folderId: string) => {
     if (busy) return;
     setBusy(true);
     const refusal = await move(folderId);
@@ -223,10 +214,10 @@ export function MoveDialog({
         ) : (
           <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
             {targets.map((target) => (
-              <li key={target.id ?? 'unfiled'}>
+              <li key={target.id}>
                 <button
                   type="button"
-                  data-testid={`kb-move-to-${target.id ?? 'unfiled'}`}
+                  data-testid={`kb-move-to-${target.id}`}
                   disabled={busy}
                   onClick={() => void choose(target.id)}
                   className={cn(

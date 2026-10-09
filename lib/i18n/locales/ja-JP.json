@@ -2001,9 +2001,6 @@
       "loading": "読み込み中…",
       "retry": "再試行",
       "loadMore": "さらに読み込む",
-      "scope": {
-        "unfiled": "未分類"
-      },
       "failure": {
         "more": "失敗の説明：{{reason}}",
         "storage_full": {
@@ -2049,8 +2046,7 @@
         "perFile": "文書・画像は {{document}} まで、音声・動画は {{media}} まで"
       },
       "usage": {
-        "bytes": "{{max}} 中 {{used}} を使用",
-        "count": "{{count}} / {{maxCount}} ファイル"
+        "summary": "{{max}} 中 {{used}} を使用 · {{count}} / {{maxCount}} ファイル"
       },
       "empty": {
         "title": "ナレッジベースはまだ空です",
@@ -2083,12 +2079,16 @@
         "more": "{{name}} のその他の操作",
         "rename": "名前を変更",
         "move": "移動…",
+        "removeFromFolder": "フォルダーの外に移動",
         "delete": "削除",
         "open": "元のファイルを開く",
         "chat": "この資料で会話する"
       },
       "folder": {
-        "new": "新しいフォルダー"
+        "new": "新しいフォルダー",
+        "items": "{{count}} 件",
+        "items_one": "{{count}} 件",
+        "items_other": "{{count}} 件"
       },
       "dialog": {
         "cancel": "キャンセル",
@@ -2128,7 +2128,6 @@
       "materialStaged": "このメッセージにすでにあります",
       "materialExtracting": "解析中",
       "materialFailed": "解析に失敗しました",
-      "unfiled": "未分類",
       "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
       "materialNotExtracted": "未解析",
       "materialExtracted": "解析済み"

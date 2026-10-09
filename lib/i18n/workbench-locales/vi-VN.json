@@ -238,7 +238,7 @@
       "extractionStillRunning": "Vẫn đang bóc tách",
       "folderExisted": "Thư mục đã có sẵn",
       "unchanged": "Không thay đổi",
-      "movedToUnfiled": "Đã chuyển về Chưa phân loại"
+      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục"
     },
     "error": {
       "materialExtraction": "Bóc tách tài liệu thất bại",

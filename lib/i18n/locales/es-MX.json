@@ -2001,9 +2001,6 @@
       "loading": "Cargando…",
       "retry": "Reintentar",
       "loadMore": "Cargar más",
-      "scope": {
-        "unfiled": "Sin clasificar"
-      },
       "failure": {
         "more": "Información del error: {{reason}}",
         "storage_full": {
@@ -2049,12 +2046,11 @@
         "perFile": "Hasta {{document}} por documento o imagen, {{media}} por audio o video"
       },
       "usage": {
-        "bytes": "{{used}} usados de {{max}}",
-        "count": "{{count}} de {{maxCount}} archivos"
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} archivos"
       },
       "empty": {
         "title": "Tu base de conocimientos está vacía",
-        "body": "Sube tus materiales didácticos, deja que el asistente los clasifique y analice, y elígelos con @ al preparar un curso.",
+        "body": "Sube tus materiales didácticos, deja que el asistente los organice y analice, y elígelos con @ al preparar un curso.",
         "folder": "Esta carpeta aún no tiene materiales",
         "query": "Ningún material coincide con “{{query}}”"
       },
@@ -2083,12 +2079,16 @@
         "more": "Más acciones para {{name}}",
         "rename": "Cambiar nombre",
         "move": "Mover a…",
+        "removeFromFolder": "Quitar de la carpeta",
         "delete": "Eliminar",
         "open": "Abrir el original",
         "chat": "Conversar sobre este material"
       },
       "folder": {
-        "new": "Nueva carpeta"
+        "new": "Nueva carpeta",
+        "items": "{{count}} elementos",
+        "items_one": "{{count}} elemento",
+        "items_other": "{{count}} elementos"
       },
       "dialog": {
         "cancel": "Cancelar",
@@ -2128,7 +2128,6 @@
       "materialStaged": "Ya está en este mensaje",
       "materialExtracting": "Procesando",
       "materialFailed": "Falló el procesamiento",
-      "unfiled": "Sin carpeta",
       "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
       "materialNotExtracted": "Sin procesar",
       "materialExtracted": "Procesado"

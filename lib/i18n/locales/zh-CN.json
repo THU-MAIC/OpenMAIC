@@ -2001,9 +2001,6 @@
       "loading": "加载中…",
       "retry": "重试",
       "loadMore": "加载更多",
-      "scope": {
-        "unfiled": "未归档"
-      },
       "failure": {
         "more": "失败说明：{{reason}}",
         "storage_full": {
@@ -2049,12 +2046,11 @@
         "perFile": "单个文档或图片不超过 {{document}}，音视频不超过 {{media}}"
       },
       "usage": {
-        "bytes": "已用 {{used}} / {{max}}",
-        "count": "{{count}} / {{maxCount}} 个文件"
+        "summary": "已用 {{used}} / {{max}} · {{count}} / {{maxCount}} 个文件"
       },
       "empty": {
         "title": "知识库还是空的",
-        "body": "上传教学资料，让助手帮你归档和解析，备课时用 @ 选用。",
+        "body": "上传教学资料，让助手帮你整理和解析，备课时用 @ 选用。",
         "folder": "这个文件夹里还没有资料",
         "query": "没有找到与“{{query}}”匹配的资料"
       },
@@ -2083,12 +2079,16 @@
         "more": "{{name}} 的更多操作",
         "rename": "改名",
         "move": "移动到…",
+        "removeFromFolder": "移出文件夹",
         "delete": "删除",
         "open": "打开原文件",
         "chat": "用这份资料对话"
       },
       "folder": {
-        "new": "新建文件夹"
+        "new": "新建文件夹",
+        "items": "{{count}} 项",
+        "items_one": "{{count}} 项",
+        "items_other": "{{count}} 项"
       },
       "dialog": {
         "cancel": "取消",
@@ -2128,7 +2128,6 @@
       "materialStaged": "已在这条消息里",
       "materialExtracting": "解析中",
       "materialFailed": "解析失败",
-      "unfiled": "未归档",
       "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
       "materialNotExtracted": "未解析",
       "materialExtracted": "已解析"

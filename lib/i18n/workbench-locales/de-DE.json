@@ -238,7 +238,7 @@
       "extractionStillRunning": "Wird noch aufbereitet",
       "folderExisted": "Ordner gab es bereits",
       "unchanged": "Keine Änderung",
-      "movedToUnfiled": "Nach „Ohne Ordner“ verschoben"
+      "movedOutOfFolder": "Aus dem Ordner verschoben"
     },
     "error": {
       "materialExtraction": "Materialaufbereitung fehlgeschlagen",

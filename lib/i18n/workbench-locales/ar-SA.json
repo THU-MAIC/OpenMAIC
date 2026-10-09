@@ -238,7 +238,7 @@
       "extractionStillRunning": "لا يزال التحليل جاريًا",
       "folderExisted": "المجلد موجود بالفعل",
       "unchanged": "لا تغيير",
-      "movedToUnfiled": "نُقلت إلى غير مصنّف"
+      "movedOutOfFolder": "نُقل خارج المجلد"
     },
     "error": {
       "materialExtraction": "فشل تحليل المادة",

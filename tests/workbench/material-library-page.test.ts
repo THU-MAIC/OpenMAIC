@@ -292,7 +292,11 @@ describe('the list', () => {
       .map((row) => row.getAttribute('data-testid'))
       .filter((id) => id === 'kb-folder-f1' || id === 'kb-folder-f2' || id === 'kb-material-a');
     expect(rows).toEqual(['kb-folder-f1', 'kb-folder-f2', 'kb-material-a']);
-    expect(page.query('kb-folder-f1')?.textContent).toContain('(2)');
+    // The count is in the Size column ("N items"), not after the name.
+    expect(page.query('kb-folder-items-f1')?.textContent).toBe(
+      'workspace.knowledgeBase.folder.items{"count":2}',
+    );
+    expect(page.query('kb-folder-toggle-f1')?.textContent).not.toContain('(2)');
     expect(page.query('kb-folder-toggle-f1')?.getAttribute('aria-expanded')).toBe('false');
     expect(page.query('kb-material-in-f1')).toBeNull();
 
@@ -325,9 +329,10 @@ describe('the list', () => {
     expect(asked.get('folderId')).toBeNull();
     expect(page.query('kb-tree')).toBeNull();
     expect(page.query('kb-material-hit')?.textContent).toContain('Unit 1');
-    expect(page.query('kb-material-loose')?.textContent).toContain(
-      'workspace.knowledgeBase.scope.unfiled',
-    );
+    // A top-level file names no folder, under any word.
+    const loose = page.query('kb-material-loose')!.textContent ?? '';
+    expect(loose).not.toContain('Unit 1');
+    expect(loose).not.toMatch(/unfiled/i);
 
     // Clearing goes back at once, with the folder still open.
     await typeInto(inDocument('kb-search') as HTMLInputElement, '');
@@ -388,12 +393,12 @@ describe('the list', () => {
     expect(bar.getAttribute('role')).toBe('progressbar');
     expect(bar.getAttribute('aria-valuenow')).toBe(String(LIMITS.usedBytes));
     expect(bar.getAttribute('aria-valuemax')).toBe(String(LIMITS.maxTotalBytes));
-    expect(page.query('kb-usage')?.textContent).toContain(
-      'workspace.knowledgeBase.usage.bytes{"used":"2 KB","max":"2 GB"}',
+    // One group: the bytes and the file count in one line, the short bar beside it.
+    expect(page.query('kb-usage-summary')?.textContent).toBe(
+      'workspace.knowledgeBase.usage.summary{"used":"2 KB","max":"2 GB","count":3,"maxCount":100}',
     );
-    expect(page.query('kb-usage-count')?.textContent).toBe(
-      'workspace.knowledgeBase.usage.count{"count":3,"maxCount":100}',
-    );
+    expect(page.query('kb-usage')!.contains(bar)).toBe(true);
+    expect(bar.getAttribute('aria-label')).toBe(page.query('kb-usage-summary')?.textContent);
     // The upload button is described by the per-file limits, written out
     // where there is no hover.
     const upload = page.query('kb-upload')!;
@@ -1470,10 +1475,168 @@ describe('renaming in place', () => {
   });
 });
 
+// ── Out of a folder, and the rows' columns (#1835 review §2, §3) ──────────
+
+describe('taking a file out of its folder', () => {
+  /** f1 holds in-f1 until a move answers; then in-f1 is at the top level. */
+  const movable = () => {
+    let out = false;
+    library = (params) =>
+      json({
+        materials:
+          params.get('folderId') === 'f1'
+            ? out
+              ? []
+              : [inF1('in-f1')]
+            : out
+              ? [source('a'), source('in-f1')]
+              : [source('a')],
+        limits: LIMITS,
+      });
+    return () => {
+      out = true;
+    };
+  };
+
+  it('offers Remove from folder only on a file in a folder, and puts it at the top level', async () => {
+    const moveOut = movable();
+    writeMaterial = () => {
+      moveOut();
+      return json({ status: 'moved', movedCount: 1 });
+    };
+    const page = await openPage();
+    await openMenu('kb-material-menu-a');
+    expect(inDocument('kb-material-menu-a-remove-from-folder')).toBeNull();
+    await act(async () =>
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      ),
+    );
+    await settle();
+    await expand('f1');
+    await openMenu('kb-material-menu-in-f1');
+    expect(inDocument('kb-material-menu-in-f1-remove-from-folder')?.textContent).toContain(
+      'workspace.knowledgeBase.actions.removeFromFolder',
+    );
+    await choose('kb-material-menu-in-f1-remove-from-folder');
+    await settle();
+    expect(writeCalls).toEqual([
+      {
+        method: 'POST',
+        path: '/api/materials/move',
+        body: { materialIds: ['in-f1'], folderId: null },
+      },
+    ]);
+    expect(page.query('kb-folder-files-f1')?.contains(page.query('kb-material-in-f1'))).toBe(false);
+    expect(page.query('kb-tree')?.contains(page.query('kb-material-in-f1'))).toBe(true);
+    // The focus follows the file to its new row.
+    expect(document.activeElement).toBe(page.query('kb-material-menu-in-f1'));
+    await page.dispose();
+  });
+
+  it('says why it was refused, leaving the file where it was', async () => {
+    writeMaterial = () =>
+      json(
+        { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'not_movable' },
+        409,
+      );
+    const page = await openPage();
+    await expand('f1');
+    await openMenu('kb-material-menu-in-f1');
+    await choose('kb-material-menu-in-f1-remove-from-folder');
+    await settle();
+    expect(parseToast.error).toHaveBeenCalledWith('workspace.knowledgeBase.error.notMovable');
+    expect(page.query('kb-folder-files-f1')?.contains(page.query('kb-material-in-f1'))).toBe(true);
+    await page.dispose();
+  });
+
+  it('asks once while a removal is answered, and leaves a focus the teacher moved', async () => {
+    const answer = deferred<Response>();
+    const moveOut = movable();
+    writeMaterial = () => answer.promise;
+    const page = await openPage();
+    await expand('f1');
+    await openMenu('kb-material-menu-in-f1');
+    await choose('kb-material-menu-in-f1-remove-from-folder');
+    await settle();
+    await openMenu('kb-material-menu-in-f1');
+    await choose('kb-material-menu-in-f1-remove-from-folder');
+    await settle();
+    expect(writeCalls).toHaveLength(1);
+    const searchBox = page.query('kb-search')!;
+    searchBox.focus();
+    moveOut();
+    await act(async () => answer.resolve(json({ status: 'moved', movedCount: 1 })));
+    await settle();
+    expect(page.query('kb-tree')?.contains(page.query('kb-material-in-f1'))).toBe(true);
+    expect(document.activeElement).toBe(searchBox);
+    await page.dispose();
+  });
+
+  it('says plainly when there is no other folder to move to', async () => {
+    folders = () => json({ folders: [{ id: 'f1', name: 'Unit 1', materialCount: 1 }] });
+    const page = await openPage();
+    await expand('f1');
+    await openMenu('kb-material-menu-in-f1');
+    await choose('kb-material-menu-in-f1-move');
+    expect(inDocument('kb-move-dialog')!.textContent).toContain(
+      'workspace.knowledgeBase.dialog.noFolders',
+    );
+    expect(
+      inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]'),
+    ).toHaveLength(0);
+    await page.dispose();
+  });
+});
+
+describe('the rows’ columns', () => {
+  const gridChildren = (row: Element) =>
+    [...row.children].map((child) =>
+      child.className.includes('col-span-2') ? 'name×2' : child.tagName,
+    );
+
+  it('keeps a chevron slot on every row and the folder count in the Size column', async () => {
+    const page = await openPage();
+    await expand('f1');
+    const folderRow = page.query('kb-folder-f1')!.querySelector('[data-kb-row]')!;
+    const fileRow = page.query('kb-material-a')!;
+    const nested = page.query('kb-material-in-f1')!;
+    // A file's first slot is the empty chevron place, then its icon.
+    for (const row of [fileRow, nested]) {
+      const lead = row.firstElementChild!;
+      expect(lead.firstElementChild?.tagName).toBe('SPAN');
+      expect(lead.firstElementChild?.getAttribute('class')).toContain('size-4');
+      expect(lead.children[1]?.tagName.toLowerCase()).toBe('svg');
+    }
+    // Indented one level inside an open folder.
+    expect(nested.firstElementChild!.className).toContain('pl-6');
+    expect(fileRow.firstElementChild!.className).not.toContain('pl-6');
+    // Name over two columns, then Size ("N items"), Date and the ⋯: five columns as a file's.
+    expect(gridChildren(folderRow)).toEqual(['name×2', 'SPAN', 'SPAN', 'SPAN']);
+    expect(gridChildren(fileRow)).toEqual(['DIV', 'SPAN', 'SPAN', 'SPAN', 'SPAN']);
+
+    await page.click('kb-folder-new');
+    const newRow = page.query('kb-new-folder-row')!.querySelector('[data-kb-row]')!;
+    expect(gridChildren(newRow)).toEqual(['name×2', 'SPAN', 'SPAN', 'SPAN']);
+    await act(async () => {
+      (inDocument('kb-new-folder-input') as HTMLInputElement).dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+    });
+    await renameFrom('kb-folder-menu-f2');
+    const renameRow = page.query('kb-folder-f2')!.querySelector('[data-kb-row]')!;
+    expect(gridChildren(renameRow)).toEqual(['name×2', 'SPAN', 'SPAN', 'SPAN']);
+    expect(page.query('kb-folder-items-f2')?.textContent).toBe(
+      'workspace.knowledgeBase.folder.items{"count":0}',
+    );
+    await page.dispose();
+  });
+});
+
 // ── Organizing ─────────────────────────────────────────────────────────────
 
 describe('organizing from the page', () => {
-  it('moves a source into a folder, or out of it with null', async () => {
+  it('moves a source into another folder; Move to… lists folders only', async () => {
     const page = await openPage();
     await openMenu('kb-material-menu-a');
     await choose('kb-material-menu-a-move');
@@ -1491,13 +1654,12 @@ describe('organizing from the page', () => {
     await openMenu('kb-material-menu-in-f1');
     await choose('kb-material-menu-in-f1-move');
     expect(inDocument('kb-move-to-f1')).toBeNull();
-    await choose('kb-move-to-unfiled');
-    await settle();
-    expect(writeCalls.at(-1)).toEqual({
-      method: 'POST',
-      path: '/api/materials/move',
-      body: { materialIds: ['in-f1'], folderId: null },
-    });
+    expect(inDocument('kb-move-to-unfiled')).toBeNull();
+    const targets = [
+      ...inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]'),
+    ];
+    expect(targets.map((target) => target.getAttribute('data-testid'))).toEqual(['kb-move-to-f2']);
+    expect(inDocument('kb-move-dialog')!.textContent).not.toMatch(/unfiled/i);
     await page.dispose();
   });
 
