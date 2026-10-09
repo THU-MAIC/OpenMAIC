@@ -314,6 +314,35 @@ describe('VideoRegistry', () => {
     expect(hooks.onUserPause).toHaveBeenCalledTimes(2);
   });
 
+  it('starting a second video by hand pauses the first one started by hand', async () => {
+    const registry = new VideoRegistry();
+    const hooks = { onUserPause: vi.fn(), onUserPlay: vi.fn() };
+    registry.setUserHooks(hooks);
+    const first = mountedVideo(registry, 'a');
+    const second = mountedVideo(registry, 'b');
+    first.scripted.userPlay();
+    expect(first.video.paused).toBe(false);
+    second.scripted.userPlay();
+    expect(first.video.paused).toBe(true);
+    expect(second.video.paused).toBe(false);
+    // The registry's own pause is not the learner's, so it adds no extra hook call.
+    expect(hooks.onUserPause).toHaveBeenCalledTimes(2);
+  });
+
+  it('starting a manual video leaves the awaited video to the playback pause', async () => {
+    const registry = new VideoRegistry();
+    registry.setUserHooks({ onUserPause: vi.fn(), onUserPlay: vi.fn() });
+    const awaited = mountedVideo(registry, 'a');
+    const manual = mountedVideo(registry, 'b');
+    void registry.play('a', control());
+    awaited.scripted.started();
+    await flush();
+    manual.scripted.userPlay();
+    // The sequencer's pause gate (not the registry) pauses the awaited clip.
+    expect(manual.video.paused).toBe(false);
+    expect(awaited.video.paused).toBe(false);
+  });
+
   it('resuming the awaited video by its controls pauses a video started by hand', async () => {
     const registry = new VideoRegistry();
     const hooks = { onUserPause: vi.fn(), onUserPlay: vi.fn() };

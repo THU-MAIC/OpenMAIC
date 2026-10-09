@@ -1375,6 +1375,51 @@ describe('assembleStandaloneHtml', () => {
     ).toThrow(/style sheet/);
   });
 
+  it('carries the same no-script fallback in the ZIP variant, under its own CSP', () => {
+    const html = assembleStandaloneHtml({ ...base, playerScript: '', linkedFiles: true });
+    expect(html).toContain('data-testid="script-fallback"');
+    expect(html).toContain('<noscript><p class="openmaic-message">[scriptRequired]</p></noscript>');
+    expect(html).toContain(`content="${STANDALONE_HTML_LINKED_FILES_CSP}"`);
+    // The fallback's styles are inline, which that policy allows.
+    expect(STANDALONE_HTML_LINKED_FILES_CSP).toContain("style-src 'unsafe-inline'");
+  });
+
+  it('carries a static no-script message that paints only once the player script is next', () => {
+    const html = assembleStandaloneHtml({
+      ...base,
+      playerScript: 'window.__p = 1;',
+      embeddedMedia: [{ key: 'audio/a.mp3', mimeType: 'audio/mpeg', base64: 'SUQz' }],
+    });
+    const message = html.indexOf('data-testid="script-fallback"');
+    expect(message).toBeGreaterThan(-1);
+    // Not in the (empty) root, and after the data blocks, right before the player:
+    // nothing shows while a large file is still being parsed.
+    expect(html).toContain('<div id="openmaic-player"></div>');
+    expect(message).toBeGreaterThan(html.indexOf('openmaic-media-1'));
+    expect(message).toBeLessThan(html.indexOf('<script>window.__p'));
+    expect(html.slice(message, html.indexOf('<script>window.__p'))).not.toContain('SUQz');
+    expect(html).toContain('[scriptRequired]');
+    expect(html).toContain('data-failed-text="[startFailed]"');
+    // Backstop: hidden for the first seconds even if reached before the script runs.
+    expect(html).toMatch(/\.openmaic-fallback\{opacity:0;animation:[^}]*2s/);
+    // The empty root keeps the viewport's height otherwise, pushing the message off screen.
+    expect(html).toContain('#openmaic-player:empty{display:none}');
+    // With scripts disabled the copy above is hidden and the <noscript> one shows.
+    expect(html).toContain('<noscript><style>.openmaic-fallback{display:none}</style></noscript>');
+    expect(html).toContain('<noscript><p class="openmaic-message">[scriptRequired]</p></noscript>');
+    expect(html).toContain(`content="${STANDALONE_HTML_CSP}"`);
+  });
+
+  it('escapes the fallback message', () => {
+    const html = assembleStandaloneHtml({
+      ...base,
+      playerScript: '',
+      config: { strings: { ...strings, scriptRequired: '<b>"x"</b>' } },
+    });
+    expect(html).not.toContain('<b>"x"</b>');
+    expect(html).toContain('&lt;b&gt;&quot;x&quot;&lt;/b&gt;');
+  });
+
   it('embeds media as non-executable base64 data blocks named by the media table', () => {
     const html = assembleStandaloneHtml({
       ...base,
@@ -1900,6 +1945,29 @@ describe('standalone HTML ZIP variant', () => {
       // The single file's size is still estimated exactly from the ZIP's manifest.
       expect(estimateStandaloneHtmlBytes(zip.manifest, [], linked.files)).toBe(
         estimateStandaloneHtmlBytes(single.manifest, []),
+      );
+    });
+
+    it('leaves inline data: images undecoded when the ZIP is not being built, with the same estimate', async () => {
+      const manifest = manifestWith(elements, background);
+      const snapshot = {
+        manifest,
+        files: new Map([
+          ['media/asset-1.png', new Blob([STORED], { type: 'image/png' })],
+          ['media/asset-2.png', new Blob([PNG_BYTES], { type: 'image/png' })],
+        ]),
+        videoPosters: new Map<string, Blob>(),
+      };
+      const bytes = await collectStandaloneMediaBytes(snapshot, { fetchImage: async () => null });
+      const full = await linkStandaloneImages(bytes, manifest);
+      const lazy = await linkStandaloneImages(bytes, manifest, { decodeInline: false });
+      // Only the stored (non-inline) images become files; inline sources stay as they are.
+      expect(lazy.files.length).toBeLessThan(full.files.length);
+      const lazyManifest = prepareStandaloneManifest(manifest, lazy.resolution).manifest;
+      expect(elementOf(lazyManifest, 'a').src).toBe(PNG_URI);
+      const fullManifest = prepareStandaloneManifest(manifest, full.resolution).manifest;
+      expect(estimateStandaloneHtmlBytes(lazyManifest, [], lazy.files)).toBe(
+        estimateStandaloneHtmlBytes(fullManifest, [], full.files),
       );
     });
 

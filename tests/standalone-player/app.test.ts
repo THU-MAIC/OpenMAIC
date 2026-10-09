@@ -2,6 +2,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mountPlayer } from '@/lib/standalone-player/mount';
 import { App } from '@/lib/standalone-player/App';
 import type { PlayerData } from '@/lib/standalone-player/read-data';
 import type { ManifestScene } from '@/lib/export/classroom-zip-types';
@@ -170,5 +171,96 @@ describe('standalone player linked media', () => {
       probes()[0].dispatchEvent(new Event('loadedmetadata'));
     });
     expect(notice()).toBeNull();
+  });
+});
+
+describe('standalone player static fallback', () => {
+  const fallbackHost = (withData: boolean, manifest: unknown = data.manifest) => {
+    host = document.createElement('div');
+    host.innerHTML =
+      '<div id="openmaic-player"></div>' +
+      (withData
+        ? `<script type="application/json" id="openmaic-classroom">${JSON.stringify(manifest)}</script><script type="application/json" id="openmaic-player-config">${JSON.stringify(data.config)}</script>`
+        : '') +
+      '<p class="openmaic-fallback" data-failed-text="could not start">needs JavaScript</p>';
+    document.body.append(host);
+    return document;
+  };
+
+  it('is hidden (but still in the DOM) as soon as the player starts', () => {
+    fallbackHost(true);
+    const el = host.querySelector('.openmaic-fallback')!;
+    expect(el.hasAttribute('hidden')).toBe(false);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // No act(): rendering has not been committed when mountPlayer returns.
+    const env = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    mountPlayer(document);
+    expect(el.isConnected).toBe(true);
+    expect(el.hasAttribute('hidden')).toBe(true);
+    env.IS_REACT_ACT_ENVIRONMENT = true;
+    spy.mockRestore();
+    root = createRoot(document.createElement('div'));
+  });
+
+  it('is removed when the player mounts', () => {
+    fallbackHost(true);
+    act(() => mountPlayer(document));
+    expect(host.querySelector('.openmaic-fallback')).toBeNull();
+    expect(host.querySelector('[data-testid=scene]')).not.toBeNull();
+    root = createRoot(document.createElement('div'));
+  });
+
+  it('keeps the message, switched to "could not start", when the first render fails', async () => {
+    const env = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    // Outside act(), as in a browser: the render happens after mountPlayer returns.
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // A stage name that is not text makes the first render throw (after render() returned).
+    fallbackHost(true, { ...data.manifest, stage: { name: { not: 'text' } } });
+    mountPlayer(document);
+    const pending = host.querySelector('.openmaic-fallback')!;
+    expect(pending.textContent).toBe('needs JavaScript');
+    // Hidden synchronously on start, before the (async) render has failed.
+    expect(pending.hasAttribute('hidden')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    env.IS_REACT_ACT_ENVIRONMENT = true;
+    const el = host.querySelector('.openmaic-fallback');
+    expect(el).not.toBeNull();
+    expect(el!.textContent).toBe('could not start');
+    expect(el!.hasAttribute('hidden')).toBe(false);
+    spy.mockRestore();
+    root = createRoot(document.createElement('div'));
+  });
+
+  it('switches to a generic "could not start" message when the player cannot start', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    fallbackHost(false);
+    act(() => mountPlayer(document));
+    const el = host.querySelector('.openmaic-fallback')!;
+    expect(el.textContent).toBe('could not start');
+    expect(el.hasAttribute('data-failed')).toBe(true);
+    expect(el.hasAttribute('hidden')).toBe(false);
+    spy.mockRestore();
+    root = createRoot(document.createElement('div'));
+  });
+});
+
+describe('standalone player captions', () => {
+  const start = () =>
+    act(() => (host.querySelector('[data-testid=start-playback]') as HTMLElement).click());
+
+  it('reserves no strip until playback starts', () => {
+    render();
+    expect(host.querySelector('[data-testid=caption-bar]')).toBeNull();
+  });
+
+  it('is a sibling of the scene once playing, laid out by .caption-bar', () => {
+    render();
+    start();
+    const bar = host.querySelector('[data-testid=caption-bar]') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(bar.className).toBe('caption-bar');
+    expect(host.querySelector('[data-testid=scene]')!.contains(bar)).toBe(false);
   });
 });

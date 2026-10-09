@@ -30,6 +30,25 @@ export function classroomHasNarration(scenes: readonly Scene[]): boolean {
   );
 }
 
+/** Whether any slide in the classroom carries a video element. */
+function classroomHasSlideVideo(scenes: readonly Scene[]): boolean {
+  return scenes.some((scene) => {
+    const content = scene.content as { type?: string; canvas?: { elements?: unknown[] } };
+    if (content?.type !== 'slide') return false;
+    return (content.canvas?.elements ?? []).some(
+      (element) => (element as { type?: string } | null)?.type === 'video',
+    );
+  });
+}
+
+/**
+ * Whether the "with narration and video" export adds anything: narration
+ * audio, or a slide video (only that export carries videos).
+ */
+export function classroomHasPlaybackMedia(scenes: readonly Scene[]): boolean {
+  return classroomHasNarration(scenes) || classroomHasSlideVideo(scenes);
+}
+
 function formatMegabytes(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1);
 }
@@ -87,9 +106,15 @@ export function useExportHtml() {
 
         saveAs(blob, fileName);
 
-        const partialCount = inlineFailures.length + unresolvedMedia.length + missingAudioCount;
-        const partial =
-          partialCount > 0 ? t('export.inlinePartial', { count: partialCount }) : undefined;
+        const partialCount = inlineFailures.length + unresolvedMedia.length;
+        // Bundling failures and missing narration are different problems, so
+        // each gets its own wording.
+        const notes = [
+          partialCount > 0 ? t('export.inlinePartial', { count: partialCount }) : undefined,
+          missingAudioCount > 0
+            ? t('export.narrationMissing', { count: missingAudioCount })
+            : undefined,
+        ].filter((note): note is string => !!note);
         if (format === 'zip') {
           // The ZIP only plays once extracted, which nobody expects from an
           // "HTML" export: say why it is a ZIP and what to do with it, and
@@ -99,23 +124,25 @@ export function useExportHtml() {
             t('export.htmlZipFallback', { size: formatMegabytes(singleFileBytes ?? byteSize) }),
             {
               id: toastId,
-              description: [t('export.htmlZipFallbackDesc'), partial].filter(Boolean).join(' '),
+              description: [t('export.htmlZipFallbackDesc'), ...notes].join(' '),
               duration: ZIP_FALLBACK_TOAST_MS,
             },
           );
         } else if (byteSize > STANDALONE_HTML_SIZE_WARNING_BYTES) {
           log.warn('Standalone HTML export is large:', { byteSize });
-          toast.warning(t('export.htmlLarge', { size: formatMegabytes(byteSize) }), {
-            id: toastId,
-            description: partial,
-          });
-        } else if (partialCount > 0) {
+          toast.warning(
+            t(includeNarration ? 'export.htmlLarge' : 'export.htmlLargeSilent', {
+              size: formatMegabytes(byteSize),
+            }),
+            { id: toastId, description: notes.length > 0 ? notes.join(' ') : undefined },
+          );
+        } else if (notes.length > 0) {
           log.warn('Some referenced assets could not be embedded:', {
             inlineFailures,
             unresolvedMedia,
             missingAudioCount,
           });
-          toast.warning(t('export.inlinePartial', { count: partialCount }), { id: toastId });
+          toast.warning(notes.join(' '), { id: toastId });
         } else {
           toast.success(t('export.exportSuccess'), { id: toastId });
         }
@@ -123,19 +150,23 @@ export function useExportHtml() {
         if (error instanceof StandaloneHtmlTooLargeError) {
           // Too large even for the ZIP: its page alone passes the ceiling
           // (media inside interactive scenes stays in the page), or the
-          // archive passes 4 GiB.
+          // archive passes 4 GiB. Leaving narration out only helps when it
+          // was included.
           log.warn(
             'Standalone HTML export refused as too large:',
             error.kind,
             error.estimatedBytes,
           );
           const size = formatMegabytes(error.estimatedBytes);
-          toast.error(
+          const key =
             error.kind === 'page'
-              ? t('export.htmlPageTooLarge', { size })
-              : t('export.htmlTooLarge', { size }),
-            { id: toastId },
-          );
+              ? includeNarration
+                ? 'export.htmlPageTooLarge'
+                : 'export.htmlPageTooLargeSilent'
+              : includeNarration
+                ? 'export.htmlTooLarge'
+                : 'export.htmlTooLargeSilent';
+          toast.error(t(key, { size }), { id: toastId });
           return;
         }
         log.error('Standalone HTML export failed:', error);

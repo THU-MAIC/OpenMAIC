@@ -43,6 +43,9 @@ export interface StandaloneMediaEntry {
 /** Playback media key (the archive path the manifest names) → its bytes. */
 export type StandaloneMediaTable = Record<string, StandaloneMediaEntry>;
 
+/** Class of the static "needs JavaScript" message the player removes on mount. */
+export const STANDALONE_FALLBACK_CLASS = 'openmaic-fallback';
+
 /** Mount point of the player app. */
 export const STANDALONE_ROOT_ELEMENT_ID = 'openmaic-player';
 
@@ -113,6 +116,8 @@ export const STANDALONE_PLAYER_STRING_KEYS = [
   'discussionContinueOnline',
   'discussionDismiss',
   'linkedFilesUnavailable',
+  'scriptRequired',
+  'startFailed',
 ] as const;
 
 export type StandalonePlayerStringKey = (typeof STANDALONE_PLAYER_STRING_KEYS)[number];

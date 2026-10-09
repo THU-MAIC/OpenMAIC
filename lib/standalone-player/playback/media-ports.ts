@@ -293,6 +293,10 @@ export class VideoRegistry {
       this.pauseManual();
       this.hooks?.onUserPlay();
     } else {
+      // Starting a second hand-started video stops the first one.
+      for (const other of this.elements.values()) {
+        if (other !== video && other !== this.active && !other.paused) this.pauseOwn(other);
+      }
       this.hooks?.onUserPause();
     }
   }

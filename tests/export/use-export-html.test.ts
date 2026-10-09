@@ -37,7 +37,11 @@ vi.mock('@/lib/export/standalone-html/build-standalone-html', async (importOrigi
   return { ...actual, buildStandaloneHtmlExport: mocks.buildStandaloneHtmlExport };
 });
 
-import { classroomHasNarration, useExportHtml } from '@/lib/export/use-export-html';
+import {
+  classroomHasNarration,
+  classroomHasPlaybackMedia,
+  useExportHtml,
+} from '@/lib/export/use-export-html';
 import {
   STANDALONE_HTML_SIZE_WARNING_BYTES,
   StandaloneHtmlTooLargeError,
@@ -177,7 +181,7 @@ describe('useExportHtml', () => {
     expect(mocks.toast.warning).toHaveBeenCalledTimes(1);
     expect(mocks.toast.warning).toHaveBeenCalledWith('export.htmlZipFallback {"size":"560"}', {
       id: 'toast',
-      description: 'export.htmlZipFallbackDesc export.inlinePartial {"count":1}',
+      description: 'export.htmlZipFallbackDesc export.narrationMissing {"count":1}',
       duration: expect.any(Number),
     });
     expect(mocks.toast.warning.mock.calls[0][1].duration).toBeGreaterThanOrEqual(10_000);
@@ -213,7 +217,20 @@ describe('useExportHtml', () => {
     );
   });
 
-  it('counts narration that could not be embedded as a partial export', async () => {
+  it('suggests nothing about narration for a silent export whose page is too large', async () => {
+    mocks.buildStandaloneHtmlExport.mockRejectedValueOnce(
+      new StandaloneHtmlTooLargeError(420 * 1024 * 1024, 'page'),
+    );
+    await act(async () => {
+      await latest!.exportStandaloneHtml({ includeNarration: false });
+    });
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      'export.htmlPageTooLargeSilent {"size":"420"}',
+      expect.objectContaining({ id: 'toast' }),
+    );
+  });
+
+  it('reports missing narration in its own words, not as an external asset', async () => {
     mocks.buildStandaloneHtmlExport.mockResolvedValueOnce({
       format: 'html',
       blob: new Blob(['<!doctype html>'], { type: 'text/html' }),
@@ -227,7 +244,54 @@ describe('useExportHtml', () => {
       await latest!.exportStandaloneHtml({ includeNarration: true });
     });
     expect(mocks.toast.warning).toHaveBeenCalledWith(
-      'export.inlinePartial {"count":2}',
+      'export.narrationMissing {"count":2}',
+      expect.objectContaining({ id: 'toast' }),
+    );
+  });
+
+  it('reports bundling failures and missing narration together', async () => {
+    mocks.buildStandaloneHtmlExport.mockResolvedValueOnce({
+      blob: new Blob(['<!doctype html>'], { type: 'text/html' }),
+      fileName: 'course.html',
+      inlineFailures: ['https://x.example/a.png'],
+      unresolvedMedia: [],
+      missingAudioCount: 1,
+      byteSize: 1024,
+    });
+    await act(async () => {
+      await latest!.exportStandaloneHtml({ includeNarration: true });
+    });
+    const message = mocks.toast.warning.mock.calls[0][0] as string;
+    expect(message).toContain('export.inlinePartial {"count":1}');
+    expect(message).toContain('export.narrationMissing {"count":1}');
+  });
+
+  it('only suggests exporting without narration when narration was included', async () => {
+    const large = {
+      blob: new Blob(['<!doctype html>'], { type: 'text/html' }),
+      fileName: 'course.html',
+      inlineFailures: [],
+      unresolvedMedia: [],
+      missingAudioCount: 0,
+      byteSize: STANDALONE_HTML_SIZE_WARNING_BYTES + 1,
+    };
+    mocks.buildStandaloneHtmlExport.mockResolvedValueOnce(large);
+    await act(async () => {
+      await latest!.exportStandaloneHtml({ includeNarration: false });
+    });
+    expect(mocks.toast.warning).toHaveBeenCalledWith(
+      'export.htmlLargeSilent {"size":"100"}',
+      expect.objectContaining({ id: 'toast' }),
+    );
+
+    mocks.buildStandaloneHtmlExport.mockRejectedValueOnce(
+      new StandaloneHtmlTooLargeError(450 * 1024 * 1024),
+    );
+    await act(async () => {
+      await latest!.exportStandaloneHtml({ includeNarration: false });
+    });
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      'export.htmlTooLargeSilent {"size":"450"}',
       expect.objectContaining({ id: 'toast' }),
     );
   });
@@ -257,5 +321,27 @@ describe('classroomHasNarration', () => {
       ),
     ).toBe(false);
     expect(classroomHasNarration([])).toBe(false);
+  });
+});
+
+describe('classroomHasPlaybackMedia', () => {
+  const slide = (elements: unknown[], actions: unknown[] = []) =>
+    [{ id: 's', actions, content: { type: 'slide', canvas: { elements } } }] as unknown as Scene[];
+
+  it('is true for narration audio or a slide video', () => {
+    expect(
+      classroomHasPlaybackMedia(slide([], [{ type: 'speech', text: 'a', audioId: 'x' }])),
+    ).toBe(true);
+    expect(classroomHasPlaybackMedia(slide([{ type: 'video', id: 'v' }]))).toBe(true);
+  });
+
+  it('is false with neither', () => {
+    expect(classroomHasPlaybackMedia(slide([{ type: 'text', id: 't' }]))).toBe(false);
+    expect(
+      classroomHasPlaybackMedia([
+        { id: 'q', actions: [], content: { type: 'quiz', questions: [] } },
+      ] as unknown as Scene[]),
+    ).toBe(false);
+    expect(classroomHasPlaybackMedia([])).toBe(false);
   });
 });

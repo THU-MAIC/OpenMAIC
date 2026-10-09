@@ -22,7 +22,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
-import { classroomHasNarration, useExportHtml } from '@/lib/export/use-export-html';
+import { classroomHasPlaybackMedia, useExportHtml } from '@/lib/export/use-export-html';
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
@@ -153,7 +153,7 @@ export function HeaderControls({
   const anyExporting = isExporting || isExportingZip || isExportingHtml || isExportingScript;
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
   // Only read while the menu is open: the scan walks every scene's actions.
-  const htmlHasNarration = exportMenuOpen && classroomHasNarration(scenes);
+  const htmlHasPlaybackMedia = exportMenuOpen && classroomHasPlaybackMedia(scenes);
 
   const compact = variant === 'compact';
   const proChecked = proModeActive ?? mode === 'edit';
@@ -402,7 +402,8 @@ export function HeaderControls({
           />
           {/* Standalone HTML: choose per export whether narration audio and
               video clips are embedded. The option that fits the classroom
-              comes first: with narration when it has narration audio. */}
+              comes first: with narration and video when the classroom has narration
+              audio or slide video. */}
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
               disabled={!canExport}
@@ -418,7 +419,7 @@ export function HeaderControls({
               </div>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-[240px]">
-              {(htmlHasNarration
+              {(htmlHasPlaybackMedia
                 ? (['narration', 'silent'] as const)
                 : (['silent', 'narration'] as const)
               ).map((variant) => (

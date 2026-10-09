@@ -174,6 +174,45 @@ describe('createMediaLibrary', () => {
   });
 });
 
+describe('linked slide image failures', () => {
+  const failing = (doc: Document, tag: string, attrs: Record<string, string>) => {
+    const el = doc.createElementNS(
+      tag === 'image' ? 'http://www.w3.org/2000/svg' : 'http://www.w3.org/1999/xhtml',
+      tag,
+    );
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    doc.body.append(el);
+    el.dispatchEvent(new Event('error'));
+  };
+
+  it('reports a slide <img> or SVG <image> that fails to load from a linked path', () => {
+    for (const [tag, attrs] of [
+      ['img', { src: 'images/image-1.png' }],
+      ['image', { href: 'images/image-2.png' }],
+    ] as const) {
+      const doc = documentWith({ a: { mimeType: 'audio/mpeg', src: 'audio/a.mp3' } }, {});
+      const library = createMediaLibrary(doc);
+      const listener = vi.fn();
+      library.subscribe(listener);
+      failing(doc, tag, attrs);
+      expect(library.linkedMediaMissing()).toBe(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('ignores inline images and stops listening once disposed', () => {
+    const doc = documentWith({}, {});
+    const library = createMediaLibrary(doc);
+    failing(doc, 'img', { src: 'data:image/png;base64,AAAA' });
+    failing(doc, 'img', { src: 'blob:null/1' });
+    failing(doc, 'img', { src: 'https://cdn.example/a.png' });
+    expect(library.linkedMediaMissing()).toBe(false);
+    library.dispose();
+    failing(doc, 'img', { src: 'images/image-1.png' });
+    expect(library.linkedMediaMissing()).toBe(false);
+  });
+});
+
 describe('firstLinkedImage', () => {
   const slide = (elements: unknown[], background?: unknown): ManifestScene =>
     ({

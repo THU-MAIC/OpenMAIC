@@ -11,6 +11,7 @@ import {
   STANDALONE_MEDIA_TABLE_ELEMENT_ID,
   STANDALONE_ROOT_ELEMENT_ID,
   type StandaloneMediaTable,
+  STANDALONE_FALLBACK_CLASS,
   type StandalonePlayerConfig,
 } from './contract';
 
@@ -112,6 +113,19 @@ function assertRawText(payload: string, element: 'script' | 'style', label: stri
   return payload;
 }
 
+const FALLBACK_STYLE = [
+  // The root keeps the viewport's height (player CSS) even while empty; hide
+  // it until the player mounts so the fallback message is on the first screen.
+  `#${STANDALONE_ROOT_ELEMENT_ID}:empty{display:none}`,
+  '.openmaic-message{box-sizing:border-box;max-width:32rem;margin:2rem auto;padding:1rem 1.25rem;',
+  'font:16px/1.5 system-ui,-apple-system,sans-serif;color:#334155;text-align:center}',
+  // Backstop for a slow parse: even when the message is reached before the
+  // player script has run, it only becomes visible after a delay.
+  `.${STANDALONE_FALLBACK_CLASS}{opacity:0;animation:openmaic-fallback-in 0s 2s forwards}`,
+  `.${STANDALONE_FALLBACK_CLASS}[data-failed]{opacity:1;animation:none}`,
+  '@keyframes openmaic-fallback-in{to{opacity:1}}',
+].join('');
+
 export interface StandaloneHtmlInput {
   /** The classroom manifest, already prepared for offline playback. */
   manifest: ClassroomManifest;
@@ -212,6 +226,16 @@ export function assembleStandaloneHtmlParts(input: StandaloneHtmlInput): string[
     throw new Error('Standalone HTML: linked media needs a document with linked files');
   }
   const csp = input.linkedFiles ? STANDALONE_HTML_LINKED_FILES_CSP : STANDALONE_HTML_CSP;
+  // Shown where the JavaScript player cannot run (iOS Files preview, scripts
+  // disabled or blocked). It sits right before the player script, after the
+  // data blocks, so nothing paints it while a large file is still being parsed;
+  // the player removes it on mount. The <noscript> copy covers disabled
+  // scripts and hides the script-dependent one.
+  const strings = input.config.strings;
+  const fallbackText = strings.scriptRequired ? escapeHtmlText(strings.scriptRequired) : '';
+  const fallbackRoot = fallbackText
+    ? `<p class="openmaic-message ${STANDALONE_FALLBACK_CLASS}" data-testid="script-fallback" data-failed-text="${escapeHtmlText(strings.startFailed ?? '')}">${fallbackText}</p>`
+    : '';
   return [
     '<!doctype html>',
     `<html lang="${escapeHtmlText(input.lang)}">`,
@@ -223,6 +247,10 @@ export function assembleStandaloneHtmlParts(input: StandaloneHtmlInput): string[
     '<meta name="generator" content="OpenMAIC">',
     `<title>${escapeHtmlText(title)}</title>`,
     styles,
+    `<style>${FALLBACK_STYLE}</style>`,
+    ...(fallbackText
+      ? [`<noscript><style>.${STANDALONE_FALLBACK_CLASS}{display:none}</style></noscript>`]
+      : []),
     '</head>',
     '<body>',
     `<div id="${STANDALONE_ROOT_ELEMENT_ID}"></div>`,
@@ -233,6 +261,9 @@ export function assembleStandaloneHtmlParts(input: StandaloneHtmlInput): string[
     .concat(
       mediaBlocks(input.embeddedMedia ?? [], linkedMedia),
       [
+        ...(fallbackText
+          ? [fallbackRoot, `<noscript><p class="openmaic-message">${fallbackText}</p></noscript>`]
+          : []),
         ...(input.extraScripts ?? []).map(
           (js, index) => `<script>${assertRawText(js, 'script', `script ${index + 1}`)}</script>`,
         ),

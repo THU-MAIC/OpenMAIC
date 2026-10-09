@@ -2,17 +2,19 @@ import { ExternalLink, MessagesSquare, Play, X } from 'lucide-react';
 import type { StandalonePlayerStrings } from '@/lib/export/standalone-html/contract';
 import { safeClassroomUrl } from './scenes/PblScene';
 
-/** The current speech line, over the bottom of the scene. */
+/**
+ * The current speech line (layout rules: `.caption-bar` in `player.css`). On
+ * narrow or short screens it is a strip of fixed height below the scene, shown
+ * while playback is active so the scene does not resize with every line.
+ */
 export function CaptionBar({ text }: { text: string }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-6">
-      <p
-        className="max-w-3xl rounded-lg bg-slate-900/80 px-4 py-2 text-center text-[15px] leading-relaxed text-white shadow-lg"
-        data-testid="caption"
-        aria-live="polite"
-      >
-        {text}
-      </p>
+    <div className="caption-bar" data-testid="caption-bar">
+      {text && (
+        <p className="caption-text" data-testid="caption" aria-live="polite">
+          {text}
+        </p>
+      )}
     </div>
   );
 }

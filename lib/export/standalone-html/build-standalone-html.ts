@@ -367,6 +367,7 @@ export function decodeImageDataUri(uri: string): Blob | undefined {
 export async function linkStandaloneImages(
   bytes: StandaloneMediaBytes,
   manifest?: Pick<ClassroomManifest, 'scenes'>,
+  options: { decodeInline?: boolean } = {},
 ): Promise<{ resolution: StandaloneMediaResolution; files: StandaloneLinkedFile[] }> {
   const files: StandaloneLinkedFile[] = [];
   const pathOf = new Map<Blob, string>();
@@ -394,7 +395,12 @@ export async function linkStandaloneImages(
     if (bytes.chartImageRefs?.has(ref) && shippedRefs && !shippedRefs.has(ref)) continue;
     dataUris.set(ref, link(blob));
   }
-  for (const uri of manifest ? collectInlineImageSources(manifest) : []) {
+  // Decoding every inline image costs time and holds a second copy of each in
+  // memory (about 0.6 s and +100 MB for 100 MB of images), so callers that
+  // do not build the ZIP turn it off.
+  for (const uri of manifest && options.decodeInline !== false
+    ? collectInlineImageSources(manifest)
+    : []) {
     const blob = decodeImageDataUri(uri);
     if (blob) dataUris.set(uri, link(blob, inlineJsonBytes(uri)));
   }
@@ -641,13 +647,30 @@ export async function buildStandaloneHtmlExport(
   const bytes = await collectStandaloneMediaBytes(snapshot, options, {
     playbackMedia: includeNarration,
   });
-  // Prepared first with images named by path (the ZIP variant's form): the
-  // single file's size can be estimated from it without encoding anything.
-  const linked = await linkStandaloneImages(bytes, snapshot.manifest);
-  const linkedPrepared = prepareStandaloneManifest(snapshot.manifest, linked.resolution);
-  const payloads = collectStandalonePlaybackPayloads(snapshot, linkedPrepared.playbackMedia, bytes);
   const maxBytes = options.maxBytes ?? STANDALONE_HTML_MAX_BYTES;
   const requested = options.format ?? 'html';
+  // Prepared first with images named by path (the ZIP variant's form): the
+  // single file's size can be estimated from it without encoding anything.
+  // Inline `data:` images are only decoded into files once the ZIP is going
+  // to be built: until then they stay in the manifest as they are, which is
+  // also exactly what the single file carries, so the estimate is unchanged.
+  let decodedInline = requested === 'zip';
+  const link = async () => {
+    const files = await linkStandaloneImages(bytes, snapshot.manifest, {
+      decodeInline: decodedInline,
+    });
+    return {
+      linked: files,
+      prepared: prepareStandaloneManifest(snapshot.manifest, files.resolution),
+    };
+  };
+  let { linked, prepared: linkedPrepared } = await link();
+  const ensureInlineDecoded = async () => {
+    if (decodedInline) return;
+    decodedInline = true;
+    ({ linked, prepared: linkedPrepared } = await link());
+  };
+  const payloads = collectStandalonePlaybackPayloads(snapshot, linkedPrepared.playbackMedia, bytes);
   const estimatedBytes = estimateStandaloneHtmlBytes(
     linkedPrepared.manifest,
     payloads,
@@ -658,6 +681,7 @@ export async function buildStandaloneHtmlExport(
     if (requested === 'html') throw new StandaloneHtmlTooLargeError(estimatedBytes);
     singleFileBytes = estimatedBytes;
   }
+  if (requested === 'zip' || singleFileBytes !== undefined) await ensureInlineDecoded();
   const { manifest, unresolved } =
     requested !== 'zip' && singleFileBytes === undefined
       ? prepareStandaloneManifest(snapshot.manifest, await encodeStandaloneImages(bytes))
@@ -712,6 +736,7 @@ export async function buildStandaloneHtmlExport(
     singleFileBytes = blob.size;
   }
 
+  await ensureInlineDecoded();
   const blob = await buildStandaloneZip(
     // Images named by path, also when the single file was assembled first.
     { ...page, manifest: linkedPrepared.manifest },

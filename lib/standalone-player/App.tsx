@@ -282,37 +282,41 @@ export function App({ data }: { data: PlayerData }) {
       )}
 
       <div className="relative flex min-h-0 flex-1">
-        <main
-          ref={mainRef}
-          className="relative min-h-0 min-w-0 flex-1"
-          data-testid="scene"
-          data-scene-index={index}
-          data-scene-type={scene?.type}
-        >
-          {scene ? (
-            <SceneErrorBoundary key={index} message={strings.unsupportedScene}>
-              <SceneView scene={scene} data={data} playback={playback} />
-            </SceneErrorBoundary>
-          ) : (
-            <UnavailableScene message={strings.emptyClassroom} />
-          )}
-          {view.discussion !== null && (
-            <DiscussionCard
-              topic={view.discussion}
-              classroomUrl={data.config.classroomUrl}
-              strings={strings}
-              onDismiss={playback.dismissDiscussion}
-            />
-          )}
-          {captionsOn && view.caption && <CaptionBar text={view.caption} />}
-          {scene && !started && !overlayDismissed && (
-            <StartOverlay
-              label={strings.playbackStart}
-              onPlay={playback.play}
-              onDismiss={() => setOverlayDismissed(true)}
-            />
-          )}
-        </main>
+        {/* The caption overlays the scene on wide screens and takes a strip below
+            it on narrow or short ones (see `.caption-bar`). */}
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <main
+            ref={mainRef}
+            className="relative min-h-0 min-w-0 flex-1"
+            data-testid="scene"
+            data-scene-index={index}
+            data-scene-type={scene?.type}
+          >
+            {scene ? (
+              <SceneErrorBoundary key={index} message={strings.unsupportedScene}>
+                <SceneView scene={scene} data={data} playback={playback} />
+              </SceneErrorBoundary>
+            ) : (
+              <UnavailableScene message={strings.emptyClassroom} />
+            )}
+            {view.discussion !== null && (
+              <DiscussionCard
+                topic={view.discussion}
+                classroomUrl={data.config.classroomUrl}
+                strings={strings}
+                onDismiss={playback.dismissDiscussion}
+              />
+            )}
+            {scene && !started && !overlayDismissed && (
+              <StartOverlay
+                label={strings.playbackStart}
+                onPlay={playback.play}
+                onDismiss={() => setOverlayDismissed(true)}
+              />
+            )}
+          </main>
+          {captionsOn && mode !== 'idle' && <CaptionBar text={view.caption ?? ''} />}
+        </div>
 
         {listOpen && (
           <nav

@@ -13,7 +13,8 @@
  * Linked files go missing when the page is opened without them (straight from
  * inside a ZIP, or copied out alone). The library notices it, from a probe of
  * one file as the player opens (a linked clip, or else a linked slide image)
- * and from any linked clip that fails to load, so the player can say so;
+ * from any linked clip that fails to load, and from any slide image that fails
+ * to load from a linked path, so the player can say so;
  * playback itself carries on without the media. A file whose codec the
  * browser cannot play fails the same way: on `file:` the two cannot be told
  * apart, so the notice covers both.
@@ -89,6 +90,24 @@ export function createMediaLibrary(doc: Document, options: MediaLibraryOptions =
     probe = null;
   };
 
+  // A slide image that fails to load from a linked relative path means the
+  // folder is missing, even when the audio and video probes would have loaded
+  // (the notice then covers images alone). `error` does not bubble, so the
+  // listener is in the capture phase. Inline `data:`/`blob:` images are never
+  // linked paths, so a single file never trips it.
+  const onResourceError = (event: Event) => {
+    const target = event.target;
+    if (!target || target === doc) return;
+    const tag = (target as Element).localName;
+    if (tag !== 'img' && tag !== 'image') return;
+    const src =
+      (target as Element).getAttribute('src') ??
+      (target as Element).getAttribute('href') ??
+      (target as Element).getAttribute('xlink:href');
+    if (isLinkedPath(src ?? undefined)) markMissing();
+  };
+  doc.addEventListener('error', onResourceError, true);
+
   return {
     reportError(key) {
       if (key && entryFor(key)?.src) markMissing();
@@ -151,6 +170,7 @@ export function createMediaLibrary(doc: Document, options: MediaLibraryOptions =
       for (const url of urls.values()) URL.revokeObjectURL(url);
       urls.clear();
       endProbe();
+      doc.removeEventListener('error', onResourceError, true);
       listeners.clear();
     },
   };
