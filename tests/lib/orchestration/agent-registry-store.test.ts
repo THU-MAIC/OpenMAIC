@@ -24,7 +24,7 @@ import {
   useAgentRegistry,
   whenAgentRegistryLoaded,
 } from '@/lib/orchestration/registry/store';
-import { BUILT_IN_AGENTS } from '@/lib/orchestration/registry/built-in';
+import { BUILT_IN_AGENTS, getDefaultAgents } from '@/lib/orchestration/registry/built-in';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { agentView } from '@/lib/orchestration/registry/wire';
 
@@ -101,6 +101,17 @@ const customIds = () =>
     .map((agent) => agent.id);
 
 describe('reading the registry', () => {
+  it('provides English built-in fallback names for non-localized consumers', () => {
+    expect(getDefaultAgents().map((agent) => agent.name)).toEqual([
+      'AI teacher',
+      'AI Assistant',
+      'Class Clown',
+      'Curious Mind',
+      'Note Taker',
+      'Deep Thinker',
+    ]);
+  });
+
   it('reads the owner’s agents, keeping built-in agents from code and the course roster', async () => {
     fetchMock.mockResolvedValue(listing(agentView(BUILT_IN_AGENTS['default-1']!), view('tutor')));
     applyGeneratedAgentsToRegistry('stage-1', [
