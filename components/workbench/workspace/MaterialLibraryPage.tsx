@@ -387,11 +387,15 @@ function InlineName({
   errorTestId,
   label,
   initialName,
-  selectEnd,
+  selection,
   maxLength,
   busy,
   error,
   onEdit,
+  onCaret,
+  onFocusChange,
+  takeFocus = true,
+  cause,
   onCommit,
   onCancel,
 }: {
@@ -399,26 +403,41 @@ function InlineName({
   readonly errorTestId: string;
   readonly label: string;
   readonly initialName: string;
-  /** Selected up to here at first (a file's name without its extension); all of it otherwise. */
-  readonly selectEnd?: number;
+  /** What is selected when the field appears; all of it unless given. */
+  readonly selection?: readonly [number, number];
   readonly maxLength?: number;
   readonly busy: boolean;
   /** Why the last attempt was refused, already translated. */
   readonly error: string | null;
-  readonly onEdit: () => void;
+  /** What is typed, as it is typed: a page keeping it can show it again in a new row. */
+  readonly onEdit: (value: string) => void;
+  /** Where the caret or selection is, whenever it changes, for the same reason. */
+  readonly onCaret?: (selection: readonly [number, number]) => void;
+  /** Whether the field has the focus, whenever that changes, for the same reason. */
+  readonly onFocusChange?: (focused: boolean) => void;
+  /** Take the focus when it appears: not in a new row for a field the teacher had left. */
+  readonly takeFocus?: boolean;
+  /** How the attempt being answered was asked, for a field that appears while it is. */
+  readonly cause?: CommitCause;
   readonly onCommit: (name: string, cause: CommitCause) => void;
   readonly onCancel: () => void;
 }) {
   const field = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(initialName);
-  const firstSelection = useRef(selectEnd);
+  const firstSelection = useRef(selection);
   /** Enter or a blur asked; nothing asks again until the page has answered. */
   const asked = useRef(false);
   /** Escape ended the edit: the blur that follows saves nothing. */
   const cancelled = useRef(false);
   const wasBusy = useRef(false);
+  const reportCaret = (input: HTMLInputElement) =>
+    onCaret?.([
+      input.selectionStart ?? input.value.length,
+      input.selectionEnd ?? input.value.length,
+    ]);
   /** How the answered attempt was asked: only an Enter's refusal takes the focus back. */
-  const lastCause = useRef<CommitCause>('enter');
+  const lastCause = useRef<CommitCause>(cause ?? 'enter');
+  const focusOnMount = useRef(takeFocus);
   useLayoutEffect(() => {
     const input = field.current;
     if (!input) return;
@@ -430,9 +449,10 @@ function InlineName({
       (active.isContentEditable ||
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement);
-    if (typing) return;
+    if (typing || !focusOnMount.current) return;
     input.focus();
-    input.setSelectionRange(0, firstSelection.current ?? input.value.length);
+    const [start, end] = firstSelection.current ?? [0, input.value.length];
+    input.setSelectionRange(start, end);
   }, []);
   // Every render the page answered in: a kept edit can ask again, and after
   // an Enter's refusal it takes the focus back if nothing else has it.
@@ -464,8 +484,10 @@ function InlineName({
         disabled={busy}
         onChange={(event) => {
           setValue(event.target.value);
-          onEdit();
+          onEdit(event.target.value);
+          reportCaret(event.target);
         }}
+        onSelect={(event) => reportCaret(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
@@ -482,7 +504,10 @@ function InlineName({
           lastCause.current = 'enter';
           onCommit(value, 'enter');
         }}
+        onFocus={() => onFocusChange?.(true)}
         onBlur={(event) => {
+          // A row taken out of the page blurs nothing the teacher did.
+          if (event.currentTarget.isConnected) onFocusChange?.(false);
           if (cancelled.current || asked.current || busy || !event.currentTarget.isConnected) {
             return;
           }
@@ -659,6 +684,8 @@ export function MaterialLibraryPage({
   };
   /** The row control an ended edit gives the focus back to, once rendered. */
   const editHome = useRef<string | null>(null);
+  /** A ⋯ followed to its file's new row (Remove from folder), not to the heading. */
+  const followsItsFile = useRef<HTMLElement | null>(null);
   useEffect(() => {
     revealArrived();
     const home = editHome.current;
@@ -677,12 +704,15 @@ export function MaterialLibraryPage({
       return;
     }
     returnedTo.current = null;
+    const follow = followsItsFile.current === target;
+    followsItsFile.current = null;
     if (document.activeElement === null || document.activeElement === document.body) {
-      // The same control in the row's new place (a file taken out of its
-      // folder), or the heading when its row left the view.
-      const again = target.dataset.testid
-        ? list.current?.querySelector<HTMLElement>(`[data-testid="${target.dataset.testid}"]`)
-        : null;
+      // A file taken out of its folder: the same ⋯ in its new row. Anything
+      // else whose row left the view: the heading.
+      const again =
+        follow && target.dataset.testid
+          ? list.current?.querySelector<HTMLElement>(`[data-testid="${target.dataset.testid}"]`)
+          : null;
       (again ?? heading.current)?.focus();
     }
   });
@@ -845,6 +875,18 @@ export function MaterialLibraryPage({
     readonly targetId: string;
     /** The name when the edit began. */
     readonly name: string;
+    /**
+     * What is typed so far. The page keeps it, not the field: a run moving
+     * the file between shown lists (the top level, an open folder) mounts
+     * its row, and the field, anew.
+     */
+    readonly draft: string;
+    /** Where the caret or selection was in it, once the field reported it. */
+    readonly caret: readonly [number, number] | null;
+    /** The field had the focus: a new row takes it again; one the teacher left, not. */
+    readonly focused: boolean;
+    /** How the attempt being answered was asked (an Enter's refusal takes the focus back). */
+    readonly cause: CommitCause | null;
     /** The view the row was in: the tree or the results. */
     readonly mode: MaterialLibraryTree['mode'];
     readonly busy: boolean;
@@ -861,6 +903,10 @@ export function MaterialLibraryPage({
       kind,
       targetId,
       name,
+      draft: name,
+      caret: null,
+      focused: true,
+      cause: null,
       mode: tree.mode,
       busy: false,
       error: null,
@@ -899,7 +945,7 @@ export function MaterialLibraryPage({
       ownRename(edit.id, (current) => ({ ...current, error: hint }));
       return;
     }
-    ownRename(edit.id, (current) => ({ ...current, busy: true, error: null }));
+    ownRename(edit.id, (current) => ({ ...current, busy: true, error: null, cause }));
     const refusal = await write(() =>
       edit.kind === 'material'
         ? renameLibraryMaterial(edit.targetId, name)
@@ -951,14 +997,24 @@ export function MaterialLibraryPage({
       testId="kb-rename-input"
       errorTestId="kb-rename-error"
       label={label}
-      initialName={edit.name}
-      selectEnd={selectEnd}
+      initialName={edit.draft}
+      // At first the name (a file's up to its extension); in a new row, the
+      // caret or selection where it was, so typing goes on where it left off.
+      selection={edit.caret ?? [0, selectEnd ?? edit.name.length]}
       maxLength={edit.kind === 'material' ? MATERIAL_NAME_MAX_LENGTH : undefined}
       busy={edit.busy}
       error={edit.error ? t(edit.error) : null}
-      onEdit={() =>
-        ownRename(edit.id, (current) => (current.error ? { ...current, error: null } : current))
+      onEdit={(value) =>
+        ownRename(edit.id, (current) => ({ ...current, draft: value, error: null }))
       }
+      onCaret={(caret) => ownRename(edit.id, (current) => ({ ...current, caret }))}
+      onFocusChange={(focused) =>
+        ownRename(edit.id, (current) =>
+          current.focused === focused ? current : { ...current, focused },
+        )
+      }
+      takeFocus={edit.focused}
+      cause={edit.cause ?? undefined}
       onCommit={(name, cause) => void commitRenaming(edit, name, cause)}
       onCancel={() => endRenaming(edit, true)}
     />
@@ -975,6 +1031,7 @@ export function MaterialLibraryPage({
     if (trigger?.isConnected) {
       trigger.focus();
       returnedTo.current = trigger;
+      followsItsFile.current = trigger;
     }
     void write(() => moveLibraryMaterials([material.materialId], null)).then((error) => {
       removing.current.delete(material.materialId);

@@ -1377,6 +1377,163 @@ describe('renaming in place', () => {
     await page.dispose();
   });
 
+  describe('when a run moves the file being renamed between shown lists', () => {
+    /** Where each file is; a refresh lists them from here. */
+    let place: Record<string, string | null>;
+    beforeEach(() => {
+      place = { a: null, 'in-f1': 'f1' };
+      library = (params) => {
+        const folderId = params.get('folderId');
+        const here = folderId === 'unfiled' ? null : folderId;
+        return json({
+          materials: Object.entries(place)
+            .filter(([, at]) => at === here)
+            .map(([id, at]) =>
+              at ? source(id, { folderId: at, folderName: `${at} name` }) : source(id),
+            ),
+          limits: LIMITS,
+        });
+      };
+    });
+    const moveByRun = async (id: string, to: string | null) => {
+      place[id] = to;
+      await act(async () =>
+        useWorkbenchStore.setState({
+          materialLibraryRevision: useWorkbenchStore.getState().materialLibraryRevision + 1,
+        }),
+      );
+      await settle();
+    };
+    const keepsDraft = async (id: string, from: string | null, to: string | null) => {
+      const page = await openPage();
+      await expand('f1');
+      await expand('f2');
+      await renameFrom(`kb-material-menu-${id}`);
+      await typeInto(renameInput()!, 'Half typed new name.pdf');
+      await moveByRun(id, to);
+      const list = to ? page.query(`kb-folder-files-${to}`)! : page.query('kb-tree')!;
+      expect(list.contains(renameInput()), `${from} → ${to}`).toBe(true);
+      // What was typed stays, the focus with it, the caret after it: nothing selected to overwrite.
+      expect(renameInput()!.value).toBe('Half typed new name.pdf');
+      expect(document.activeElement).toBe(renameInput());
+      expect([renameInput()!.selectionStart, renameInput()!.selectionEnd]).toEqual([23, 23]);
+      expect(writeCalls).toEqual([]);
+      await press(renameInput()!, 'Enter');
+      await settle();
+      expect(writeCalls).toEqual([
+        {
+          method: 'PATCH',
+          path: `/api/materials/${id}`,
+          body: { name: 'Half typed new name.pdf' },
+        },
+      ]);
+      await page.dispose();
+    };
+
+    it('keeps the draft from the top level into an open folder', async () => {
+      await keepsDraft('a', null, 'f1');
+    });
+    it('keeps the draft out of a folder to the top level', async () => {
+      await keepsDraft('in-f1', 'f1', null);
+    });
+    it('keeps the draft from one open folder to another', async () => {
+      await keepsDraft('in-f1', 'f1', 'f2');
+    });
+
+    it('keeps the caret where it was, not after the extension', async () => {
+      const page = await openPage();
+      await expand('f1');
+      await renameFrom('kb-material-menu-a');
+      await typeInto(renameInput()!, 'Chapter one.pdf');
+      await act(async () => {
+        renameInput()!.setSelectionRange(7, 7);
+        renameInput()!.dispatchEvent(
+          new KeyboardEvent('keyup', { key: 'ArrowLeft', bubbles: true }),
+        );
+      });
+      await moveByRun('a', 'f1');
+      expect(page.query('kb-folder-files-f1')!.contains(renameInput())).toBe(true);
+      expect([renameInput()!.selectionStart, renameInput()!.selectionEnd]).toEqual([7, 7]);
+      await page.dispose();
+    });
+
+    it('keeps the typed name when a rename answered after the move is refused', async () => {
+      const answer = deferred<Response>();
+      writeMaterial = () => answer.promise;
+      const page = await openPage();
+      await expand('f1');
+      await renameFrom('kb-material-menu-a');
+      await typeInto(renameInput()!, 'Refused name.pdf');
+      await press(renameInput()!, 'Enter');
+      await moveByRun('a', 'f1');
+      await act(async () =>
+        answer.resolve(
+          json(
+            { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'invalid_name' },
+            400,
+          ),
+        ),
+      );
+      await settle();
+      expect(page.query('kb-folder-files-f1')!.contains(renameInput())).toBe(true);
+      expect(renameInput()!.value).toBe('Refused name.pdf');
+      expect(inDocument('kb-rename-error')?.textContent).toBe(
+        'workspace.knowledgeBase.error.invalidName',
+      );
+      // Asked by Enter: the refusal takes the focus back to the field.
+      expect(document.activeElement).toBe(renameInput());
+      await page.dispose();
+    });
+
+    it('takes no focus, in the new row or on a refusal, for a save the teacher left by a blur', async () => {
+      const answer = deferred<Response>();
+      writeMaterial = () => answer.promise;
+      const page = await openPage();
+      await expand('f1');
+      await renameFrom('kb-material-menu-a');
+      await typeInto(renameInput()!, 'Left by blur.pdf');
+      await act(async () => renameInput()!.blur());
+      expect(document.activeElement).toBe(document.body);
+      expect(writeCalls).toHaveLength(1);
+      await moveByRun('a', 'f1');
+      expect(page.query('kb-folder-files-f1')!.contains(renameInput())).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+      await act(async () =>
+        answer.resolve(
+          json(
+            { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'invalid_name' },
+            400,
+          ),
+        ),
+      );
+      await settle();
+      expect(renameInput()!.value).toBe('Left by blur.pdf');
+      expect(inDocument('kb-rename-error')?.textContent).toBe(
+        'workspace.knowledgeBase.error.invalidName',
+      );
+      expect(document.activeElement).toBe(document.body);
+      await page.dispose();
+    });
+
+    it('takes no focus in the new row for a field the teacher had left', async () => {
+      const page = await openPage();
+      await expand('f1');
+      await renameFrom('kb-material-menu-a');
+      // Too long: the blur asks nothing of the server, and the field stays, unfocused.
+      await typeInto(renameInput()!, 'x'.repeat(300));
+      await act(async () => renameInput()!.blur());
+      expect(inDocument('kb-rename-error')?.textContent).toBe(
+        'workspace.knowledgeBase.error.invalidName',
+      );
+      expect(document.activeElement).toBe(document.body);
+      await moveByRun('a', 'f1');
+      expect(page.query('kb-folder-files-f1')!.contains(renameInput())).toBe(true);
+      expect(document.activeElement).toBe(document.body);
+      expect(writeCalls).toEqual([]);
+      await page.dispose();
+    });
+  });
+
   it('ends a file’s edit without calling it gone when the file leaves the list, moved into a closed folder', async () => {
     const page = await openPage();
     await renameFrom('kb-material-menu-a');
@@ -1709,6 +1866,21 @@ describe('Move to…, chosen then confirmed', () => {
     await page.dispose();
   });
 
+  it('drops a choice the list no longer offers: a folder deleted elsewhere cannot be moved to', async () => {
+    const page = await openPage();
+    await openMove();
+    await choose('kb-move-to-f2');
+    expect(confirmButton().disabled).toBe(false);
+    folders = () => json({ folders: [{ id: 'f1', name: 'Unit 1', materialCount: 2 }] });
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(inDocument('kb-move-to-f2')).toBeNull();
+    expect(pressed()).toEqual([]);
+    expect(confirmButton().disabled).toBe(true);
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  });
+
   it('a keyboard focus is not a choice; Cancel moves nothing', async () => {
     const page = await openPage();
     await openMove();
@@ -1758,6 +1930,50 @@ describe('Move to…, chosen then confirmed', () => {
 // ── Organizing ─────────────────────────────────────────────────────────────
 
 describe('organizing from the page', () => {
+  it.each([
+    ['before', false],
+    ['after', true],
+  ] as const)(
+    'gives the heading the focus after Move into an open folder, the list read %s the dialog closes',
+    async (_when, slowRead) => {
+      // As before R8: Move's ⋯ is gone with its row, so the heading takes the
+      // focus. Only Remove from folder follows the file to its new row.
+      const place: Record<string, string | null> = { a: null };
+      let moved = false;
+      const reread = deferred<void>();
+      library = async (params) => {
+        if (moved && slowRead) await reread.promise;
+        const folderId = params.get('folderId');
+        const here = folderId === 'unfiled' ? null : folderId;
+        return json({
+          materials: Object.entries(place)
+            .filter(([, at]) => at === here)
+            .map(([id, at]) => (at ? inF1(id) : source(id))),
+          limits: LIMITS,
+        });
+      };
+      writeMaterial = (call) => {
+        place.a = (call.body as { folderId: string }).folderId;
+        moved = true;
+        return json({ status: 'moved', movedCount: 1 });
+      };
+      const page = await openPage();
+      await expand('f1');
+      await openMenu('kb-material-menu-a');
+      await choose('kb-material-menu-a-move');
+      await choose('kb-move-to-f1');
+      await choose('kb-move-confirm');
+      await settle();
+      reread.resolve();
+      await settle();
+      expect(page.query('kb-folder-files-f1')!.contains(inDocument('kb-material-menu-a'))).toBe(
+        true,
+      );
+      expect(document.activeElement?.id).toBe('pro-workspace-library-title');
+      await page.dispose();
+    },
+  );
+
   it('moves a source into another folder; Move to… lists folders only', async () => {
     const page = await openPage();
     await openMenu('kb-material-menu-a');

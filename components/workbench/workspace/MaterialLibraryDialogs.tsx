@@ -194,13 +194,15 @@ export function MoveDialog({
   const content = useRef<HTMLDivElement>(null);
 
   const targets = folders.filter((folder) => folder.id !== material.folderId);
+  // A choice the list no longer offers (deleted elsewhere) is no choice.
+  const chosenId = targets.some((folder) => folder.id === selected) ? selected : null;
 
   const confirm = async () => {
-    if (!selected || moving.current) return;
+    if (!chosenId || moving.current) return;
     moving.current = true;
     setBusy(true);
     setError(null);
-    const refusal = await move(selected);
+    const refusal = await move(chosenId);
     moving.current = false;
     setBusy(false);
     if (refusal) setError(refusal);
@@ -233,7 +235,7 @@ export function MoveDialog({
         ) : (
           <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
             {targets.map((folder) => {
-              const chosen = selected === folder.id;
+              const chosen = chosenId === folder.id;
               return (
                 <li key={folder.id}>
                   <button
@@ -281,7 +283,7 @@ export function MoveDialog({
             <Button
               type="button"
               data-testid="kb-move-confirm"
-              disabled={!selected || busy}
+              disabled={!chosenId || busy}
               onClick={() => void confirm()}
             >
               {t('workspace.knowledgeBase.dialog.moveConfirm')}
