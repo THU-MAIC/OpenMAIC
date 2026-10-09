@@ -165,6 +165,47 @@ describe('callLLM retryable-failure fallback', () => {
     expect(secondParams.model).toBe('fallback-model');
   });
 
+  it('clamps a fallback request to the fallback model output window', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    fallbackMock.resolveFallbackModel.mockResolvedValue({
+      model: 'small-fallback' as never,
+      modelString: 'qwen:small-fallback',
+      outputWindow: 4096,
+    });
+    aiMock.generateText
+      .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
+      .mockResolvedValueOnce(okResult());
+
+    await callLLM(
+      { model: 'large-primary', prompt: 'hi', maxOutputTokens: 128000 } as never,
+      'scene-content',
+      undefined,
+      undefined,
+      { serverManaged: true },
+    );
+
+    expect(aiMock.generateText.mock.calls[0]?.[0]?.maxOutputTokens).toBe(128000);
+    expect(aiMock.generateText.mock.calls[1]?.[0]?.maxOutputTokens).toBe(4096);
+  });
+
+  it('keeps evaluation calls on their requested model', async () => {
+    fallbackMock.shouldFallbackFor.mockReturnValue(true);
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
+      model: 'slot-fallback' as never,
+      modelString: 'qwen:small-fallback',
+    }));
+    aiMock.generateText.mockRejectedValueOnce(
+      Object.assign(new Error('quota exceeded'), { statusCode: 429 }),
+    );
+
+    await expect(
+      callLLM({ model: primary, prompt: 'hi' } as never, 'eval-outline-language'),
+    ).rejects.toMatchObject({ statusCode: 429 });
+    expect(aiMock.generateText).toHaveBeenCalledTimes(1);
+    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
+  });
+
   it('only runs the fallback once when it also fails', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
     fallbackMock.resolveFallbackModel.mockResolvedValue({
