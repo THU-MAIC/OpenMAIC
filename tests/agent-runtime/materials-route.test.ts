@@ -176,6 +176,18 @@ describe('GET /api/materials', () => {
     });
   });
 
+  it('drops the backend error of a legacy row whose retryable failure went back to pending', async () => {
+    mocks.listSessionMaterials.mockResolvedValue([
+      material({ extraction: { status: 'pending', attempts: 1, error: 'PRIVATE_UPSTREAM_BODY' } }),
+    ]);
+    const response = await GET(
+      new NextRequest(`http://localhost/api/materials?sessionId=${SESSION_ID}`),
+    );
+    const body = await response.json();
+    expect(body.materials[0].extraction).toEqual({ status: 'pending', attempts: 1 });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
+  });
+
   it('rejects a missing sessionId', async () => {
     const response = await GET(new NextRequest('http://localhost/api/materials'));
     expect(response.status).toBe(400);

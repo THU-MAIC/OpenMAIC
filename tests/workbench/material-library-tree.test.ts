@@ -414,19 +414,23 @@ describe('the teacher’s actions win over reads in flight', () => {
     expect(latest.folder('f3')!.status).toBe('ready');
   });
 
-  it('T8b a folder still reading its first page is left to that read by a refresh', async () => {
+  it('T8b a refresh reads again a folder still reading its first page; the older read does not land', async () => {
     await mount();
-    const first = hold((call) => call.kind === 'listing' && inScope('f1')(call.params));
+    const first = hold((call) => call.kind === 'listing' && inScope('f1')(call.params), {
+      ignoreAbort: true,
+    });
     await run(() => latest.expand('f1'));
     expect(latest.folder('f1')!.status).toBe('loading');
+    pages.set('folder:f1', [[file('a2', 'done', 'f1')]]);
     await run(() => latest.reload());
-    expect(listings(inScope('f1'))).toHaveLength(1);
-    await first.open();
+    const reads = listings(inScope('f1'));
+    expect(reads).toHaveLength(2);
+    expect(reads[0].signal?.aborted).toBe(true);
+    expect(latest.expanded).toEqual(['f1']);
+    expect(ids(latest.folder('f1')!.files)).toEqual(['a2']);
     expect(latest.folder('f1')!.status).toBe('ready');
-    expect(ids(latest.folder('f1')!.files)).toEqual(['a1', 'a2']);
-    calls = [];
-    await run(() => latest.reload());
-    expect(listings(inScope('f1'))).toHaveLength(1);
+    await first.open();
+    expect(ids(latest.folder('f1')!.files)).toEqual(['a2']);
   });
 
   it('T9 a folder collapsed during a refresh is not expanded again by it', async () => {
@@ -607,6 +611,31 @@ describe('polling and in-run changes', () => {
     );
     expect(rounds()).toBe(before + 1);
     expect(latest.expanded).toEqual(['f1']);
+  });
+
+  it('T15b a first-page answer from before a run moved a file out does not land after the change', async () => {
+    await mount();
+    // The folder's first page is answered from before the move, and only after it.
+    const stale = hold((call) => call.kind === 'listing' && inScope('f1')(call.params), {
+      ignoreAbort: true,
+    });
+    await run(() => latest.expand('f1'));
+    expect(latest.folder('f1')!.status).toBe('loading');
+    // The agent moves a1 out of f1.
+    pages.set('folder:f1', [[file('a2', 'done', 'f1')]]);
+    pages.set('unfiled', [[file('a1'), file('u1'), file('u2')]]);
+    await run(() =>
+      useWorkbenchStore.setState({
+        materialLibraryRevision: useWorkbenchStore.getState().materialLibraryRevision + 1,
+      }),
+    );
+    await stale.open();
+    expect(latest.expanded).toEqual(['f1']);
+    expect(latest.folder('f1')!.status).toBe('ready');
+    expect(ids(latest.folder('f1')!.files)).toEqual(['a2']);
+    expect(ids(latest.root.files)).toEqual(['a1', 'u1', 'u2']);
+    const shown = [...latest.root.files, ...latest.folder('f1')!.files];
+    expect(ids(shown).filter((id) => id === 'a1')).toHaveLength(1);
   });
 });
 

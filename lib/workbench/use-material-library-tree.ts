@@ -13,8 +13,8 @@
  *   and as many pages as each shown node has (each page from the cursor the
  *   same refresh's previous page returned, stopping where a node ends now).
  *   Nothing shown turns back into "loading" meanwhile, and a failure keeps
- *   what is shown. Folders still reading their first page are left to that
- *   read; a folder deleted elsewhere leaves the tree.
+ *   what is shown. A folder still reading its first page is read again
+ *   too, superseding that read; a folder deleted elsewhere leaves the tree.
  * - **The teacher's view is theirs.** A refresh never changes which folders
  *   are expanded or the query. A read is honoured only by the node it was
  *   for: collapsing, expanding again, a new query or a refresh starting
@@ -247,8 +247,8 @@ export function useMaterialLibraryTree(input: {
       } else {
         take('root', null, { kind: 'unfiled' }, shown.root, true);
         for (const [folderId, node] of shown.expanded) {
-          // Still reading its first page: that read is recent, leave it be.
-          if (node.status === 'loading') continue;
+          // A first page still being read is read again too: its answer may
+          // predate what made this refresh start.
           take(keyOf({ folderId }), folderId, { kind: 'folder', folderId }, node, false);
         }
       }

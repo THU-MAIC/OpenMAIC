@@ -78,13 +78,11 @@ export function libraryMaterialView(
 export function sessionScopeMaterialView(material: ResolvedMaterial): Record<string, unknown> {
   if (material.origin !== 'session') return { ...libraryMaterialView(material.entry) };
   const view = publicMaterialView(material.record);
-  // Keep legacy HTTP metadata without failed diagnostics. Model tools are unchanged.
-  if (material.record.extraction.status === 'failed') {
-    const extraction = { ...material.record.extraction };
-    delete extraction.error;
-    return { ...view, extraction };
-  }
-  return view;
+  // Keep legacy HTTP metadata without diagnostics, whatever the status: a
+  // retryable failure goes back to pending with its error. Model tools are unchanged.
+  const extraction = { ...material.record.extraction };
+  delete extraction.error;
+  return { ...view, extraction };
 }
 
 export interface LibraryLimits {
