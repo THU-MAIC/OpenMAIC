@@ -11,6 +11,33 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('RenderService');
 
+export const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
+
+/** Headers the app asserts on every request to its private render service. */
+export function renderServiceOwnerHeaders(ownerId: string): Record<string, string> {
+  return { [RENDER_OWNER_HEADER]: ownerId };
+}
+
+/**
+ * Rebuild a proxy response with every owner-resolution header attached.
+ * Rebuilding also works for immutable redirects and does not pull a stream.
+ */
+export function withRenderOwnerResponseHeaders(
+  response: Response,
+  ownerHeaders: Headers,
+): Response {
+  const headers = new Headers(response.headers);
+  ownerHeaders.forEach((value, name) => {
+    if (name.toLowerCase() !== 'set-cookie') headers.append(name, value);
+  });
+  for (const cookie of ownerHeaders.getSetCookie()) headers.append('Set-Cookie', cookie);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /** The configured base URL of the render service, or null when the capability is off. */
 export function getRenderServiceUrl(): string | null {
   const raw = process.env.RENDER_SERVICE_URL?.trim();

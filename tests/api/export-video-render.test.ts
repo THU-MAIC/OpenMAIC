@@ -1,13 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const mocks = vi.hoisted(() => ({ proxyFetch: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  proxyFetch: vi.fn(),
+  resolveRequestOwnerId: vi.fn(),
+}));
 vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch: mocks.proxyFetch }));
+vi.mock('@/lib/server/identity/resolve', async () =>
+  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    mocks.resolveRequestOwnerId,
+  ),
+);
 vi.mock('@/lib/logger', () => ({
   createLogger: () => ({ info: vi.fn(), error: vi.fn() }),
 }));
 
 import { POST } from '@/app/api/export-video/render/route';
+import { DELETE as CANCEL, GET as POLL } from '@/app/api/export-video/render/[jobId]/route';
+import { GET as DOWNLOAD } from '@/app/api/export-video/render/[jobId]/download/route';
 
 function request(headers?: HeadersInit) {
   const form = new FormData();
@@ -19,9 +29,17 @@ function request(headers?: HeadersInit) {
   });
 }
 
+function jobRequest(path: string, method = 'GET') {
+  return new NextRequest(`http://localhost/api/export-video/render/${path}`, { method });
+}
+
+const context = { params: Promise.resolve({ jobId: 'job-1' }) };
+
 describe('POST /api/export-video/render', () => {
   beforeEach(() => {
     mocks.proxyFetch.mockReset();
+    mocks.resolveRequestOwnerId.mockReset();
+    mocks.resolveRequestOwnerId.mockReturnValue('owner-a');
     vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000');
     vi.stubEnv('TRUST_PROXY_HEADERS', 'false');
   });
@@ -134,7 +152,7 @@ describe('POST /api/export-video/render', () => {
     });
   });
 
-  it('keeps accepted submissions and the default shared identity unchanged', async () => {
+  it('forwards durable ownership separately from the default admission identity', async () => {
     mocks.proxyFetch.mockResolvedValueOnce(Response.json({ jobId: 'job-1' }, { status: 202 }));
     const response = await POST(request({ 'x-forwarded-for': '203.0.113.1' }));
     expect(response.status).toBe(202);
@@ -142,8 +160,124 @@ describe('POST /api/export-video/render', () => {
     expect(mocks.proxyFetch).toHaveBeenCalledWith(
       'http://render-service:9000/render',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'x-openmaic-client': 'direct' }),
+        headers: expect.objectContaining({
+          'x-openmaic-client': 'direct',
+          'x-openmaic-render-owner': 'owner-a',
+        }),
       }),
     );
+  });
+});
+
+describe('owner-scoped render job proxies', () => {
+  beforeEach(() => {
+    mocks.proxyFetch.mockReset();
+    mocks.resolveRequestOwnerId.mockReset();
+    mocks.resolveRequestOwnerId.mockReturnValue('owner-a');
+    vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000');
+    vi.stubEnv('TRUST_PROXY_HEADERS', 'false');
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('forwards the durable owner on poll, cancel, and download', async () => {
+    mocks.proxyFetch
+      .mockResolvedValueOnce(Response.json({ jobId: 'job-1', status: 'running' }))
+      .mockResolvedValueOnce(Response.json({ cancelled: true }))
+      .mockResolvedValueOnce(
+        new Response('video', {
+          headers: { 'content-type': 'video/mp4', 'content-length': '5' },
+        }),
+      );
+
+    expect((await POLL(jobRequest('job-1'), context)).status).toBe(200);
+    expect((await CANCEL(jobRequest('job-1', 'DELETE'), context)).status).toBe(200);
+    expect((await DOWNLOAD(jobRequest('job-1/download'), context)).status).toBe(200);
+
+    for (const [, init] of mocks.proxyFetch.mock.calls) {
+      expect(init).toEqual(
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'x-openmaic-render-owner': 'owner-a' }),
+        }),
+      );
+    }
+  });
+
+  it('keeps every owner cookie on JSON success, JSON error, and early errors', async () => {
+    const cookies = [
+      'anonymous_id=first; Path=/; HttpOnly',
+      'host_session=second; Path=/; HttpOnly',
+    ];
+    mocks.resolveRequestOwnerId.mockImplementation((_req: NextRequest, headers: Headers) => {
+      for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+      return 'owner-a';
+    });
+    mocks.proxyFetch
+      .mockResolvedValueOnce(Response.json({ jobId: 'job-1', status: 'running' }))
+      .mockResolvedValueOnce(Response.json({ error: 'Job not found' }, { status: 404 }));
+
+    const polled = await POLL(jobRequest('job-1'), context);
+    expect(polled.status).toBe(200);
+    expect(polled.headers.getSetCookie()).toEqual(cookies);
+
+    const missing = await POLL(jobRequest('missing'), {
+      params: Promise.resolve({ jobId: 'missing' }),
+    });
+    expect(missing.status).toBe(404);
+    expect(missing.headers.getSetCookie()).toEqual(cookies);
+
+    vi.stubEnv('RENDER_SERVICE_URL', '');
+    const disabled = await CANCEL(jobRequest('job-1', 'DELETE'), context);
+    expect(disabled.status).toBe(501);
+    expect(disabled.headers.getSetCookie()).toEqual(cookies);
+  });
+
+  it('puts every owner cookie on redirects without changing the location', async () => {
+    const cookies = ['anonymous_id=first; Path=/', 'host_session=second; Path=/'];
+    mocks.resolveRequestOwnerId.mockImplementation((_req: NextRequest, headers: Headers) => {
+      for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+      return 'owner-a';
+    });
+    mocks.proxyFetch.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://storage.example.test/video.mp4' },
+      }),
+    );
+
+    const response = await DOWNLOAD(jobRequest('job-1/download'), context);
+    expect(response.status).toBe(302);
+    expect(response.headers.get('location')).toBe('https://storage.example.test/video.mp4');
+    expect(response.headers.getSetCookie()).toEqual(cookies);
+  });
+
+  it('attaches owner cookies before returning a lazy download stream', async () => {
+    const cookies = ['anonymous_id=first; Path=/', 'host_session=second; Path=/'];
+    mocks.resolveRequestOwnerId.mockImplementation((_req: NextRequest, headers: Headers) => {
+      for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+      return 'owner-a';
+    });
+    let pulled = false;
+    const stream = new ReadableStream(
+      {
+        pull(controller) {
+          pulled = true;
+          controller.enqueue(new TextEncoder().encode('video'));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    mocks.proxyFetch.mockResolvedValueOnce(
+      new Response(stream, {
+        headers: { 'content-type': 'video/mp4', 'content-length': '5' },
+      }),
+    );
+
+    const response = await DOWNLOAD(jobRequest('job-1/download'), context);
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie()).toEqual(cookies);
+    expect(pulled).toBe(false);
+    expect(await response.text()).toBe('video');
   });
 });

@@ -12,6 +12,10 @@ export function createMemoryJobStore(): JobStore {
     async get(id) {
       return jobs.get(id) ?? null;
     },
+    async getForOwner(id, ownerId) {
+      const job = jobs.get(id);
+      return job?.ownerId === ownerId ? job : null;
+    },
     async update(id, patch) {
       const current = jobs.get(id);
       if (current) jobs.set(id, { ...current, ...patch, updatedAtMs: Date.now() });
@@ -21,11 +25,6 @@ export function createMemoryJobStore(): JobStore {
     },
     async list() {
       return [...jobs.values()];
-    },
-    async countActiveForUser(userId) {
-      return [...jobs.values()].filter(
-        (job) => job.userId === userId && (job.status === 'queued' || job.status === 'running'),
-      ).length;
     },
   };
 }

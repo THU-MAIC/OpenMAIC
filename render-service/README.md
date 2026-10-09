@@ -30,6 +30,20 @@ poll, then download. Job ids are opaque.
 `status` is one of `queued | running | succeeded | failed | cancelled`;
 `progress` is `0..1`.
 
+### Video job ownership
+
+Every video job request requires `x-openmaic-render-owner`. The app proxy sets
+this header from `OwnerPrincipal.ownerId` when it submits, polls, cancels, or
+downloads a job. The render service stores that owner on submission and returns
+`404 Job not found` when the owner does not match. A job id alone does not grant
+access. `POST /render` also requires `x-openmaic-client` for admission control.
+
+The render service validates the header format but does not authenticate the
+header. Treat it as an assertion from the trusted app proxy. Keep the service on
+a network that only the app can reach, as the default Compose deployment does.
+For a standalone deployment, put the service behind the app proxy and do not
+publish its port to browsers or other untrusted clients.
+
 ### Admission: 429s and `/health`
 
 Admission rejections are machine-readable. `POST /render` answers `429` with a

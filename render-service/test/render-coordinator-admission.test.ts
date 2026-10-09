@@ -22,6 +22,7 @@ import {
   parkingExecutor,
   succeedingExecutor,
 } from './support/fakes.js';
+import { admission, owner } from './support/identities.js';
 
 function newCoordinator(): RenderCoordinator {
   return new RenderCoordinator(
@@ -46,33 +47,33 @@ describe('RenderCoordinator admission control', () => {
   it('reserve then release fully restores the per-identity slot', () => {
     const m = newCoordinator();
     // Default RENDER_MAX_JOBS_PER_USER is 1.
-    const r = m.reserve('alice');
+    const r = m.reserve(admission('alice'));
     // A second reserve for the same identity is now rejected...
-    expect(() => m.reserve('alice')).toThrow(RenderRejectedError);
+    expect(() => m.reserve(admission('alice'))).toThrow(RenderRejectedError);
     // ...until the first is released (the makeProjectDir-failure path).
     m.release(r);
-    expect(() => m.reserve('alice')).not.toThrow();
+    expect(() => m.reserve(admission('alice'))).not.toThrow();
   });
 
   it('release is idempotent and does not double-decrement', () => {
     const m = newCoordinator();
-    const r = m.reserve('bob');
+    const r = m.reserve(admission('bob'));
     m.release(r);
     m.release(r); // no-op, must not free a slot that isn't held
     // bob now has one free slot; a fresh reserve + a stale release must not
     // let a second concurrent reserve through.
-    const r2 = m.reserve('bob');
-    expect(() => m.reserve('bob')).toThrow(RenderRejectedError);
+    const r2 = m.reserve(admission('bob'));
+    expect(() => m.reserve(admission('bob'))).toThrow(RenderRejectedError);
     m.release(r2);
   });
 
   it('enforces the per-identity cap across distinct identities independently', () => {
     const m = newCoordinator();
-    const a = m.reserve('alice');
-    const b = m.reserve('bob'); // different identity: allowed
-    expect(a.identity).toBe('alice');
-    expect(b.identity).toBe('bob');
-    expect(() => m.reserve('alice')).toThrow(RenderRejectedError);
+    const a = m.reserve(admission('alice'));
+    const b = m.reserve(admission('bob')); // different identity: allowed
+    expect(a.admissionIdentity).toBe('alice');
+    expect(b.admissionIdentity).toBe('bob');
+    expect(() => m.reserve(admission('alice'))).toThrow(RenderRejectedError);
     m.release(a);
     m.release(b);
   });
@@ -82,11 +83,11 @@ describe('RenderCoordinator admission control', () => {
     // Reserve up to RENDER_MAX_QUEUE (default 20) with unique identities so the
     // per-user guard never fires first, then the next reserve trips the queue cap.
     const held = [];
-    for (let i = 0; i < 20; i++) held.push(m.reserve(`user-${i}`));
-    expect(() => m.reserve('user-overflow')).toThrow(/queue is full/i);
+    for (let i = 0; i < 20; i++) held.push(m.reserve(admission(`user-${i}`)));
+    expect(() => m.reserve(admission('user-overflow'))).toThrow(/queue is full/i);
     held.forEach((r) => m.release(r));
     // Once released, capacity is back.
-    expect(() => m.reserve('user-again')).not.toThrow();
+    expect(() => m.reserve(admission('user-again'))).not.toThrow();
   });
 
   it('does not leak the identity slot when jobs.create fails', async () => {
@@ -98,12 +99,17 @@ describe('RenderCoordinator admission control', () => {
       throw new Error('store down');
     };
     const m = new RenderCoordinator(succeedingExecutor, store, createMemoryArtifactStore().store);
-    const r = m.reserve('carol');
+    const r = m.reserve(admission('carol'));
     await expect(
-      m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' }),
+      m.submit({
+        reservation: r,
+        ownerId: owner('carol'),
+        projectDir: '/tmp/whatever',
+        options: { fps: 30, quality: 'draft', format: 'mp4' },
+      }),
     ).rejects.toThrow('store down');
     // The slot must be free again: a fresh reserve for the same identity succeeds.
-    expect(() => m.reserve('carol')).not.toThrow();
+    expect(() => m.reserve(admission('carol'))).not.toThrow();
   });
 
   it('releases the held slot when the resource owner closes before submit', async () => {
@@ -118,18 +124,23 @@ describe('RenderCoordinator admission control', () => {
       createMemoryJobStore(),
       createMemoryArtifactStore().store,
     );
-    const reservation = m.reserve('resource-user');
+    const reservation = m.reserve(admission('resource-user'));
     accepting = false;
     await expect(
-      m.submit(reservation, '/tmp/whatever', {
-        fps: 30,
-        quality: 'draft',
-        format: 'mp4',
+      m.submit({
+        reservation,
+        ownerId: owner('resource-user'),
+        projectDir: '/tmp/whatever',
+        options: {
+          fps: 30,
+          quality: 'draft',
+          format: 'mp4',
+        },
       }),
     ).rejects.toMatchObject({ reason: 'resource_unavailable' });
 
     accepting = true;
-    expect(() => m.reserve('resource-user')).not.toThrow();
+    expect(() => m.reserve(admission('resource-user'))).not.toThrow();
   });
 
   it('labels a queue-cap rejection with reason queue_full', async () => {
@@ -139,8 +150,8 @@ describe('RenderCoordinator admission control', () => {
       createMemoryArtifactStore().store,
       { maxQueue: 1, maxJobsPerUser: 0 },
     );
-    m.reserve('alice'); // fills the whole global cap
-    const rejection = await captureRejection(() => m.reserve('bob'));
+    m.reserve(admission('alice')); // fills the whole global cap
+    const rejection = await captureRejection(() => m.reserve(admission('bob')));
     expect(rejection.reason).toBe('queue_full');
     // Distinct identity, so this is genuinely the global cap — not the per-user
     // guard firing first.
@@ -154,23 +165,33 @@ describe('RenderCoordinator admission control', () => {
       createMemoryArtifactStore().store,
       { maxQueue: 10, maxJobsPerUser: 1 },
     );
-    m.reserve('alice');
+    m.reserve(admission('alice'));
     // The queue has plenty of room; only alice's own slot is exhausted.
-    const rejection = await captureRejection(() => m.reserve('alice'));
+    const rejection = await captureRejection(() => m.reserve(admission('alice')));
     expect(rejection.reason).toBe('per_identity_limit');
     // A different identity is still admitted.
-    expect(() => m.reserve('bob')).not.toThrow();
+    expect(() => m.reserve(admission('bob'))).not.toThrow();
   });
 
   it('leaves the internal reservation invariant reason-less', async () => {
     const m = newCoordinator();
-    const r = m.reserve('dave');
-    await m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' });
+    const r = m.reserve(admission('dave'));
+    await m.submit({
+      reservation: r,
+      ownerId: owner('dave'),
+      projectDir: '/tmp/whatever',
+      options: { fps: 30, quality: 'draft', format: 'mp4' },
+    });
     // Re-submitting a consumed reservation is an internal invariant, not an
     // admission-cap rejection: no reason code, so the HTTP layer omits `reason`
     // rather than serialize `undefined`.
     const rejection = await captureRejection(() =>
-      m.submit(r, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' }),
+      m.submit({
+        reservation: r,
+        ownerId: owner('dave'),
+        projectDir: '/tmp/whatever',
+        options: { fps: 30, quality: 'draft', format: 'mp4' },
+      }),
     );
     expect(rejection.reason).toBeUndefined();
   });
@@ -187,16 +208,26 @@ describe('RenderCoordinator admission control', () => {
     });
     expect(m.accepting).toBe(true);
 
-    const a = m.reserve('alice');
-    await m.submit(a, '/tmp/whatever', { fps: 30, quality: 'draft', format: 'mp4' });
+    const a = m.reserve(admission('alice'));
+    await m.submit({
+      reservation: a,
+      ownerId: owner('alice'),
+      projectDir: '/tmp/whatever',
+      options: { fps: 30, quality: 'draft', format: 'mp4' },
+    });
     // One running job below a cap of two: still accepting — the queued second
     // job is what crosses the threshold, so running and queued both count.
     expect(m.accepting).toBe(true);
 
-    const b = m.reserve('bob');
-    await m.submit(b, '/tmp/wherever', { fps: 30, quality: 'draft', format: 'mp4' });
+    const b = m.reserve(admission('bob'));
+    await m.submit({
+      reservation: b,
+      ownerId: owner('bob'),
+      projectDir: '/tmp/wherever',
+      options: { fps: 30, quality: 'draft', format: 'mp4' },
+    });
     expect(m.accepting).toBe(false);
-    await expect(captureRejection(() => m.reserve('carol'))).resolves.toMatchObject({
+    await expect(captureRejection(() => m.reserve(admission('carol')))).resolves.toMatchObject({
       reason: 'queue_full',
     });
 
