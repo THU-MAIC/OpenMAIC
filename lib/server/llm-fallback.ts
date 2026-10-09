@@ -1,9 +1,8 @@
 /**
- * Retryable-failure model fallback (PR #1614).
+ * Generation model fallback (PR #1614).
  *
  * A small, operator-configured safety net for generation calls: when a call
- * fails with a retryable failure (SDK-classified transient error, timeout,
- * empty output, network error, quota 429, capacity 503), retry once on a
+ * fails with a transient error, empty output, or explicit quota refusal, try once on a
  * different model. The retry model is the `fallback` of the capability slot's
  * assignment (RFC #1701), which the resolved model carries with it
  * (lib/ai/model-fallbacks.ts); a model from the older request path retries on
@@ -11,7 +10,7 @@
  *
  * `verify-model` opts out (option in callLLM): it probes the exact model the
  * user typed in, and answering from a different model would report a dead or
- * mis-keyed model as healthy. Content-safety rejections and other 4xx failures
+ * mis-keyed model as healthy. Content-safety rejections and non-quota 4xx failures
  * never fall back — retrying a rejected prompt on a second model would spend
  * that model's quota to reproduce the same rejection.
  *
@@ -27,6 +26,7 @@ import { getModel, parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { createLogger } from '@/lib/logger';
+import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
 import { isNonRetryableHostFailure } from '@/lib/server/generation-run-hooks/runtime';
 
 const log = createLogger('LLM Fallback');
@@ -155,16 +155,22 @@ export function isEmptyLlmOutput(text: string | null | undefined): boolean {
 }
 
 /**
- * Single, shared retryable-failure decision for both call paths.
+ * Shared fallback decision for both call paths. A quota refusal cannot succeed
+ * by retrying the same model, but a different provider may still have credit.
  *
- * - `error` set: retryable iff `isRetryableLlmError(error)`, unless the host
+ * - `error` set: a transient failure or explicit provider quota refusal, unless the host
  *   classified it as its own failure that no retry helps
  *   (`lib/server/generation-run-hooks`).
  * - `error` undefined (validation path): retryable iff the output is
  *   empty/whitespace-only (see `isEmptyLlmOutput`).
  */
 export function shouldFallbackFor(error: unknown, text: string | null | undefined): boolean {
-  if (error !== undefined) return !isNonRetryableHostFailure(error) && isRetryableLlmError(error);
+  if (error !== undefined) {
+    return (
+      !isNonRetryableHostFailure(error) &&
+      (isUpstreamQuotaExhausted(error) || isRetryableLlmError(error))
+    );
+  }
   return isEmptyLlmOutput(text);
 }
 

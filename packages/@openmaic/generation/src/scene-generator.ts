@@ -113,8 +113,8 @@ export interface SceneContentOptions {
    * Only consumed by the slide branch alongside `editDirective`.
    */
   baselineContent?: GeneratedSlideContent;
-  /** Optional host fallback for the app-only loop planner. */
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  /** Optional host loop planner; receives the failure so it can decline another attempt. */
+  pblLoopFallback?: (input: PBLPlannerV2Input, error: unknown) => Promise<PBLProject>;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -1093,7 +1093,7 @@ async function generatePBLSceneContent(
   languageDirective?: string,
   targetLanguage?: string,
   userRequirements?: UserRequirements,
-  pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>,
+  pblLoopFallback?: SceneContentOptions['pblLoopFallback'],
   log: GenerationLogger = noopGenerationLogger,
 ): Promise<GeneratedPBLContent | null> {
   const pblConfig = outline.pblConfig;
@@ -1146,7 +1146,7 @@ async function generatePBLSceneContent(
 
     if (pblLoopFallback && !skipLoopFallback) {
       try {
-        const projectV2 = await pblLoopFallback(plannerInput);
+        const projectV2 = await pblLoopFallback(plannerInput, singleCallError);
         log.info(
           `PBL v2 generated (injected loop fallback): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
         );

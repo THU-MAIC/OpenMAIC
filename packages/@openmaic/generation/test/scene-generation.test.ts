@@ -191,6 +191,28 @@ describe('scene generation primitives', () => {
     expect(fallback).not.toHaveBeenCalled();
   });
 
+  it('hands the single-call failure to the host fallback so it can decline another attempt', async () => {
+    const refusal = new Error('Provider credit exhausted');
+    const fallback = vi.fn(async (_input, error: unknown) => {
+      throw error;
+    });
+    await expect(
+      generateSceneContent(
+        pblOutline(),
+        async () => {
+          throw refusal;
+        },
+        {
+          pblLoopFallback: fallback,
+        },
+      ),
+    ).rejects.toMatchObject({ name: 'PBLGenerationError', cause: refusal });
+    expect(fallback).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ outline: pblOutline() }),
+      refusal,
+    );
+  });
+
   it('skips the PBL loop fallback after an error-shaped single-call abort', async () => {
     const fallback = vi.fn();
 

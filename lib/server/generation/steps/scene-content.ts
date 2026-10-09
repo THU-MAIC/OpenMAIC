@@ -6,6 +6,7 @@
  * caller resolves the model for the scene type's stage.
  */
 import { callLLM } from '@/lib/ai/llm';
+import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
 import {
   applyOutlineFallbacks,
   generateSceneContent as generateContent,
@@ -304,14 +305,17 @@ export async function generateSceneContent(
     allowProceduralSkill: vocationalActive,
     ...(effectiveOutline.type === 'pbl'
       ? {
-          pblLoopFallback: (plannerInput) =>
-            generatePBLV2Project(
+          pblLoopFallback: async (plannerInput, error) => {
+            // The loop uses the same model; it cannot repair exhausted credit.
+            if (isUpstreamQuotaExhausted(error)) throw error;
+            return generatePBLV2Project(
               plannerInput,
               languageModel,
               callLLM,
               { logger: log },
               thinkingConfig,
-            ),
+            );
+          },
         }
       : {}),
   });

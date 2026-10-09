@@ -18,7 +18,8 @@ const fallbackMock = vi.hoisted(() => ({
   isEmptyLlmOutput: vi.fn((text: string | null | undefined) => !text || text.trim().length === 0),
 }));
 
-vi.mock('ai', () => ({
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
   generateText: aiMock.generateText,
   streamText: aiMock.streamText,
 }));

@@ -7,8 +7,8 @@
  * provider adapter that knows its native quota codes translates them into this
  * error: it throws it, or attaches it as the `cause` of the error it throws
  * when that error's own type has to stay (a rate-limit error a route answers
- * 429 for). The marker carries no HTTP status, so it changes no retry or
- * status decision.
+ * 429 for). The marker carries no HTTP status. Generation skips automatic
+ * retries of this provider but may still use a configured model fallback.
  */
 export class ProviderQuotaExhaustedError extends Error {
   constructor(
