@@ -829,7 +829,11 @@ async function generateSlideContent(
   const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
-    rotate: 0,
+    // Shape rotation is part of the model-facing geometry contract. Preserve
+    // finite angles while keeping the legacy zero default for other elements.
+    rotate: el.type === 'shape' && typeof el.rotate === 'number' && Number.isFinite(el.rotate)
+      ? el.rotate
+      : 0,
   })) as PPTElement[];
 
   // Process background

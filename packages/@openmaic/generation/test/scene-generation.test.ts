@@ -40,6 +40,30 @@ describe('scene generation primitives', () => {
     expect(aiCall).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves finite rotation supplied for generated shapes', async () => {
+    const aiCall: AICallFn = vi.fn(async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'shape',
+            left: 320,
+            top: 70,
+            width: 300,
+            height: 300,
+            path: 'M 0 0 L 1 0 L 1 1 L 0 1 Z',
+            viewBox: [1, 1],
+            fill: '#5b9bd5',
+            fixedRatio: false,
+            rotate: 36.5,
+          },
+        ],
+      }),
+    );
+
+    const content = await generateSceneContent(slideOutline(), aiCall);
+    expect(content?.elements[0]).toMatchObject({ type: 'shape', rotate: 36.5 });
+  });
+
   it('generates quiz content through the json-output-rules prompt path', async () => {
     let system = '';
     const aiCall: AICallFn = async (systemPrompt) => {
