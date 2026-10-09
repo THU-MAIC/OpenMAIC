@@ -682,6 +682,40 @@ describe('uploading from the page', () => {
     await page.dispose();
   });
 
+  it('shows an upload parsing, without a Parse click, and follows it to its final state', async () => {
+    let state: string | null = null;
+    library = () =>
+      json({
+        materials: state ? [source('m1', { extraction: { status: state } })] : [],
+        limits: LIMITS,
+      });
+    uploadMaterial = () => {
+      state = 'pending';
+      return json(
+        { materialId: 'm1', originalName: 'lesson.pdf', bytes: 4, extraction: { status: state } },
+        201,
+      );
+    };
+    const page = await openPage();
+    await chooseFiles(page, [file('lesson.pdf')]);
+    await settle();
+    expect(page.query('kb-status-m1')!.dataset.status).toBe('pending');
+    expect(page.query('kb-status-m1')!.textContent).toBe('workspace.knowledgeBase.status.parsing');
+    await openMenu('kb-material-menu-m1');
+    expect(inDocument('kb-material-menu-m1-parse')).toBeNull();
+    await act(async () =>
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    state = 'done';
+    await settle(MATERIAL_LIBRARY_TREE_POLL_MS + 100);
+    expect(page.query('kb-status-m1')!.dataset.status).toBe('done');
+    const settled = libraryCalls.length;
+    await settle(MATERIAL_LIBRARY_TREE_POLL_MS + 100);
+    expect(libraryCalls.length).toBe(settled);
+    expect(writeCalls).toEqual([]);
+    await page.dispose();
+  }, 12000);
+
   it('says why an upload was refused, with the shared messages, until dismissed', async () => {
     const pool = json(
       { success: false, errorCode: 'ASSET_QUOTA_EXCEEDED', error: 'asset storage quota exceeded' },

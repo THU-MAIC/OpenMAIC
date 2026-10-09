@@ -37,7 +37,7 @@ import {
 } from '@/app/api/materials/[id]/route';
 import { POST as extractionRoute } from '@/app/api/materials/[id]/extraction/route';
 import { GET as originalRoute } from '@/app/api/materials/[id]/original/route';
-import { GET as sessionMaterialsRoute } from '@/app/api/materials/route';
+import { GET as sessionMaterialsRoute, POST as uploadRoute } from '@/app/api/materials/route';
 import {
   DELETE as deleteFolderRoute,
   PATCH as renameFolderRoute,
@@ -1046,6 +1046,45 @@ describe('material library routes and tools (PGlite)', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('R8 starts parsing an upload: 201 pending, listed pending, then the scanner takes it to done', async () => {
+    const h = await boot();
+    const bytes = Buffer.from('%PDF-r8 upload');
+    const response = await uploadRoute(
+      new NextRequest('http://localhost/api/materials', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'r8.pdf' },
+        body: bytes as BodyInit,
+      }),
+    );
+    expect(response.status).toBe(201);
+    const uploaded = (await response.json()) as {
+      materialId: string;
+      extraction: { status: string };
+    };
+    expect(uploaded.extraction).toEqual({ status: 'pending' });
+    const id = uploaded.materialId;
+    const listedStatus = async () => {
+      const listed = (await (
+        await libraryRoute(request('GET', '/api/materials/library'))
+      ).json()) as {
+        materials: Array<{ materialId: string; extraction: { status: string } }>;
+      };
+      return listed.materials.find((material) => material.materialId === id)?.extraction.status;
+    };
+    expect(await listedStatus()).toBe('pending');
+    // Parse finds it already started.
+    const parse = await extractionRoute(
+      request('POST', `/api/materials/${id}/extraction`),
+      params(id),
+    );
+    expect(await parse.json()).toEqual({ status: 'pending', queued: false });
+    // No Parse click: the scanner claims it.
+    h.sources.set(id, bytes);
+    expect(await runNextOwnerExtraction(h.deps())).toBe(true);
+    expect(await listedStatus()).toBe('done');
+    expect(await runNextOwnerExtraction(h.deps())).toBe(false);
   });
 
   it('R6 queues idle/failed sources and leaves pending/running/done rows byte-for-byte unchanged', async () => {

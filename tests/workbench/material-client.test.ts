@@ -91,6 +91,29 @@ describe('workbench material client', () => {
     );
   });
 
+  it('keeps the pending extraction a composer upload now starts with', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          {
+            materialId: material.materialId,
+            originalName: material.name,
+            bytes: material.bytes,
+            mime: material.mimeType,
+            extraction: { status: 'pending' },
+          },
+          { status: 201 },
+        ),
+      ),
+    );
+    const file = new File(['hello'], material.name, { type: material.mimeType });
+    await expect(uploadWorkbenchMaterial(file)).resolves.toEqual({
+      ...material,
+      extractionStatus: 'pending',
+    });
+  });
+
   it('preserves the response status for retryable upload failures', async () => {
     vi.stubGlobal(
       'fetch',

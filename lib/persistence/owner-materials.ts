@@ -39,6 +39,7 @@ import type { WithTransaction } from '@openmaic/storage/document/pg';
 import type { AssetStore } from '@openmaic/storage';
 
 import { MATERIAL_ROOT_KIND, withMaterialRoots } from './material-roots';
+import { statusJson } from './owner-material-extraction';
 import { assetPrincipalForOwner } from './owner-assets';
 import { ensureOwnerMergeSchema, fenceOwnerWrite } from './owner-merges';
 
@@ -536,10 +537,11 @@ export async function allocateOwnerMaterialBytes(
 }
 
 /**
- * Publish an upload: its pool pointer, its `('material', id)` root and
- * `'ready'`, in one transaction (see `./material-roots.ts` for the fence and
- * lock order). Refused, writing nothing, unless the row is still this owner's
- * live reservation with room for the bytes and no pointer yet -- a publication
+ * Publish an upload: its pool pointer, its `('material', id)` root, `'ready'`
+ * and its extraction queued (`pending`, for the owner extraction scanner), in
+ * one transaction (see `./material-roots.ts` for the fence and lock order).
+ * Refused, writing nothing, unless the row is still this owner's live
+ * reservation with room for the bytes and no pointer yet -- a publication
  * never replaces a pointer. Reserved bytes may only shrink.
  *
  * Throws what the request fence throws for a retired or busy owner.
@@ -580,10 +582,11 @@ export async function publishOwnerMaterialUpload(
       await changeRoots({ add: [{ materialId, assetIds: [input.assetId] }] });
       const published = await tx.query<RawOwnerMaterialRow>(
         `UPDATE owner_material
-            SET bytes = $2, sha256 = $3, status = 'ready', asset_id = $4
+            SET bytes = $2, sha256 = $3, status = 'ready', asset_id = $4,
+                extraction = $5::jsonb
           WHERE id = $1
           RETURNING ${OWNER_MATERIAL_COLUMNS}`,
-        [materialId, input.bytes, input.sha256, input.assetId],
+        [materialId, input.bytes, input.sha256, input.assetId, statusJson('pending')],
       );
       return ownerMaterialRowToRecord(published.rows[0]!);
     },

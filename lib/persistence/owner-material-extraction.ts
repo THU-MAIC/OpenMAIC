@@ -172,7 +172,10 @@ interface ClaimRow extends Record<string, unknown> {
   bytes: number | string;
 }
 
-function statusJson(status: OwnerExtractionStatus, code?: MaterialExtractionReasonCode): string {
+export function statusJson(
+  status: OwnerExtractionStatus,
+  code?: MaterialExtractionReasonCode,
+): string {
   const reasonCode = status === 'failed' ? extractionReasonCodeOf(code) : undefined;
   return JSON.stringify({ status, ...(reasonCode ? { reasonCode } : {}) });
 }

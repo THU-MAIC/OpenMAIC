@@ -53,6 +53,7 @@ import {
   stateOf,
   supersededClaimScenario,
   twoConversationsOneExtractionScenario,
+  uploadQueuesExtractionScenario,
   withdrawnDonorScenario,
   type ExtractionHarness,
 } from './_owner-extraction-scenarios';
@@ -144,6 +145,10 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
 
   it('starts idle and failed sources once and leaves pending, running and done ones alone', async () => {
     await ensureStartedScenario(await boot());
+  });
+
+  it('queues an upload in the transaction that publishes it', async () => {
+    await uploadQueuesExtractionScenario(await boot());
   });
 
   it('extracts a source two conversations start exactly once', async () => {

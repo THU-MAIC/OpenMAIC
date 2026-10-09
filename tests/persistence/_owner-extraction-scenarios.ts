@@ -38,9 +38,11 @@ import {
   type OwnerExtractionResult,
 } from '@/lib/persistence/owner-material-extraction';
 import {
+  allocateOwnerMaterialBytes,
   ensureOwnerMaterialSchema,
   finalizeOwnerMaterial,
   publicMaterial,
+  publishOwnerMaterialUpload,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import {
@@ -318,6 +320,80 @@ export async function ensureStartedScenario(h: ExtractionHarness): Promise<void>
   expect(await ensure(h, 'src-a')).toEqual({ status: 'done', queued: false });
   expect(await drain(h)).toBe(0);
   expect((await stateOf(h, 'src-a')).extraction_result).toEqual(done.extraction_result);
+}
+
+/**
+ * An upload queues its extraction in the transaction that publishes it: the
+ * published row is pending with a fresh claim budget, a refused publication
+ * queues nothing, Parse finds it already started, the scanner takes it to
+ * done, and a second upload of the same bytes reuses that result.
+ */
+export async function uploadQueuesExtractionScenario(h: ExtractionHarness): Promise<void> {
+  const bytes = Buffer.from('%PDF-uploaded lesson');
+  const upload = async (id: string, owner = ACCOUNT) => {
+    await registerOwnerMaterial(
+      h.pool as unknown as ConnectableQueryable,
+      {
+        id,
+        ownerId: ACCOUNT,
+        kind: 'source',
+        mime: 'application/pdf',
+        bytes: bytes.byteLength,
+        originalName: `${id}.pdf`,
+        ossKey: '',
+        extraction: { status: 'idle' },
+      },
+      { maxCount: 100, maxTotalBytes: 1_000_000 },
+    );
+    const assetId = await allocateOwnerMaterialBytes(h.provider, ACCOUNT, bytes, 'application/pdf');
+    h.sources.set(id, bytes);
+    return publishOwnerMaterialUpload(h.provider, owner, id, {
+      assetId,
+      bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
+  };
+  const leaseOf = async (id: string) =>
+    (
+      await h.pool.query<{ status: string; lease: unknown }>(
+        'SELECT status, extraction_lease_at AS lease FROM owner_material WHERE id = $1',
+        [id],
+      )
+    ).rows[0];
+
+  const published = await upload('src-up');
+  if (published === 'refused') throw new Error('the upload was refused');
+  expect(published.extraction).toEqual({ status: 'pending' });
+  expect(publicMaterial(published).extraction).toEqual({ status: 'pending' });
+  expect(await stateOf(h, 'src-up')).toMatchObject({
+    status: 'pending',
+    extraction_claims: 0,
+    extraction_token: null,
+    extraction_error: null,
+  });
+  expect(await leaseOf('src-up')).toEqual({ status: 'ready', lease: null });
+
+  // A publication refused (here: another owner) writes nothing, the queue included.
+  expect(await upload('src-refused', OTHER)).toBe('refused');
+  expect((await stateOf(h, 'src-refused')).status).toBe('idle');
+  expect((await leaseOf('src-refused'))!.status).toBe('uploading');
+
+  // Parse of a just-uploaded source finds it started and changes nothing.
+  const queued = await stateOf(h, 'src-up');
+  expect(await ensure(h, 'src-up')).toEqual({ status: 'pending', queued: false });
+  expect(await stateOf(h, 'src-up')).toEqual(queued);
+
+  expect(await drain(h)).toBe(1);
+  expect((await stateOf(h, 'src-up')).status).toBe('done');
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
+
+  // The same bytes uploaded again: queued too, and served from the owner's cache.
+  await upload('src-up-again');
+  expect(await drain(h)).toBe(1);
+  const again = await stateOf(h, 'src-up-again');
+  expect(again.status).toBe('done');
+  expect(again.extraction_result).toMatchObject({ reusedFrom: 'src-up' });
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
 }
 
 /**
