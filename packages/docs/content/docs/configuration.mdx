@@ -173,7 +173,7 @@ A reference without `:model` means the provider's default model: the model a tok
 
 Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
 
-A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, quota exhaustion (429), capacity (503), or empty output. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
+A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, a rate limit (429), capacity (503), or empty output. An explicit quota refusal from the provider (an OpenAI-compatible code such as `insufficient_quota`, whatever its HTTP status) is not retried on the primary model: the call goes to the fallback at once. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
 
 The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
 

@@ -37,8 +37,10 @@ import type {
   ImageMapping,
 } from '@/lib/types/generation';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
-import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
-import { isNonRetryableHostFailure } from '@/lib/server/generation-run-hooks/runtime';
+import {
+  isNonRetryableHostFailure,
+  isProviderQuotaRefusal,
+} from '@/lib/server/generation-run-hooks/runtime';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 
@@ -584,7 +586,7 @@ async function streamOutlines(
     fellBack = true;
     logFallbackFired(
       'scene-outlines-stream',
-      error !== undefined ? 'retryable failure' : 'empty output',
+      error,
       model.modelString ?? '?',
       fallback.modelString,
     );
@@ -736,7 +738,8 @@ async function streamOutlines(
           `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
         );
 
-        if (attempt <= MAX_STREAM_RETRIES) {
+        // The fallback round is the last attempt: it is not retried.
+        if (!fellBack && attempt <= MAX_STREAM_RETRIES) {
           log.warn(`Empty outlines (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`);
           // Report that a retry is happening
           emit({ type: 'retry', attempt, maxAttempts: MAX_STREAM_RETRIES + 1 });
@@ -759,13 +762,16 @@ async function streamOutlines(
         `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
       );
 
-      if (!isUpstreamQuotaExhausted(error) && !fellBack && attempt <= MAX_STREAM_RETRIES) {
+      // No retry of this model serves an exhausted quota, and the fallback
+      // round is the last attempt.
+      if (!isProviderQuotaRefusal(error) && !fellBack && attempt <= MAX_STREAM_RETRIES) {
         log.warn(`Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`, error);
         emit({ type: 'retry', attempt, maxAttempts: MAX_STREAM_RETRIES + 1 });
         continue;
       }
 
-      // Quota refusals skip same-model retries but may use a configured fallback.
+      // Same-model retries exhausted or skipped: retry once on the fallback
+      // model when the failure allows it.
       if (await maybeFallback(error)) {
         attempt = 0;
         continue;

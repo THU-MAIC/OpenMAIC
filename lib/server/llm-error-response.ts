@@ -66,8 +66,9 @@ const QUOTA_CODES = new Set([
 
 function quotaResponse(body: unknown): boolean {
   if (!isRecord(body)) return false;
-  // OpenAI's stream adapter may retain a flat error frame, or a
-  // response.failed event whose error is nested under response.
+  // The error is nested as `{ error }` (an HTTP error body), flat (a stream's
+  // error event, as the SDK hands it on), or the `response.error` of a
+  // Responses API `response.failed` event.
   const error =
     body.type === 'response.failed' && isRecord(body.response)
       ? body.response.error

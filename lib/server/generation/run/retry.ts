@@ -11,9 +11,12 @@
  */
 import { isAbortError, withGenerationRetry, type GenerationRetryEvent } from '@openmaic/generation';
 
-import { classifyHostFailure } from '@/lib/server/generation-run-hooks/runtime';
+import {
+  classifyHostFailure,
+  isProviderQuotaRefusal,
+} from '@/lib/server/generation-run-hooks/runtime';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
-import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
+import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
 
 /** 1.1.x's browser retries for the first scene. */
 export const FIRST_SCENE_MAX_RETRIES = 2;
@@ -22,8 +25,9 @@ export const SCENE_MAX_RETRIES = 5;
 
 /**
  * A failure carrying the status the step's route would have answered, for
- * classification. Explicit quota refusals and host retry decisions override
- * the status-based retry policy.
+ * classification, and whether a retry is worthwhile when that is not the
+ * status's to decide: an explicit provider quota refusal is not retried, and
+ * the host answers for a failure that is its own (both override the status).
  */
 class RouteStatusError extends Error {
   readonly isRetryable?: boolean;
@@ -74,7 +78,7 @@ export async function withRouteRetry<T>(
           throw new RouteStatusError(
             error,
             routeStatus(error, options.refusalStatus),
-            isUpstreamQuotaExhausted(error) ? false : classifyHostFailure(error)?.retryable,
+            isProviderQuotaRefusal(error) ? false : classifyHostFailure(error)?.retryable,
           );
         }
       },

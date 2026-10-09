@@ -4,6 +4,7 @@
  * from corrupting a run.
  */
 import { createLogger } from '@/lib/logger';
+import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
 
 import { getGenerationRunHooks } from './registry';
 import type {
@@ -206,6 +207,16 @@ export function classifyHostFailure(error: unknown): GenerationFailureClassifica
 /** Whether the host says a failure is not worth an automatic retry. */
 export function isNonRetryableHostFailure(error: unknown): boolean {
   return classifyHostFailure(error)?.retryable === false;
+}
+
+/**
+ * Whether a failure is an explicit provider quota refusal
+ * (`lib/server/llm-error-response`): no automatic retry of the same provider
+ * can serve it, though a fallback model may. A failure the host classifies is
+ * the host's to decide, as any other.
+ */
+export function isProviderQuotaRefusal(error: unknown): boolean {
+  return isUpstreamQuotaExhausted(error) && classifyHostFailure(error) === undefined;
 }
 
 /**

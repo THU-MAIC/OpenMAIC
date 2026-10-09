@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import type { LanguageModel } from 'ai';
+import { APICallError, type LanguageModel } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -133,44 +133,49 @@ describe('explicit provider quota stops retries', () => {
     expect(unused.fetch).not.toHaveBeenCalled();
   });
 
-  it.each(['generate', 'stream', 'outline'] as const)(
-    'allows the configured fallback immediately (%s)',
-    async (mode) => {
-      const primary = provider(() => refusal());
-      const fallback = provider(() =>
-        success(
-          mode === 'outline' ? '{"outlines":[{"title":"Intro"}]}' : 'backup',
-          mode !== 'generate',
-        ),
-      );
-      attachModelFallback(primary.model, async () => ({
-        model: fallback.model,
-        modelString: 'openai:backup',
-      }));
-      if (mode === 'generate') {
-        expect(
-          (await callLLM({ model: primary.model, prompt: 'hello' }, 'quota-test', { retries: 2 }))
-            .text,
-        ).toBe('backup');
-      } else if (mode === 'stream') {
-        expect(await streamed(primary.model)).toBe('backup');
-      } else {
-        expect(
-          (
-            await generateOutlines(
-              {
-                requirements: { requirement: 'Teach plants' },
-                model: resolved(primary.model, true),
-              },
-              context,
-            )
-          ).outlines,
-        ).toHaveLength(1);
-      }
-      expect(primary.fetch).toHaveBeenCalledTimes(1);
-      expect(fallback.fetch).toHaveBeenCalledTimes(1);
-    },
-  );
+  // An explicit quota refusal falls back whatever its status, a 403 included.
+  it.each([
+    ['generate', 429],
+    ['generate', 403],
+    ['stream', 429],
+    ['stream', 403],
+    ['outline', 429],
+    ['outline', 403],
+  ] as const)('allows the configured fallback immediately (%s, HTTP %s)', async (mode, status) => {
+    const primary = provider(() => refusal(quota, status));
+    const fallback = provider(() =>
+      success(
+        mode === 'outline' ? '{"outlines":[{"title":"Intro"}]}' : 'backup',
+        mode !== 'generate',
+      ),
+    );
+    attachModelFallback(primary.model, async () => ({
+      model: fallback.model,
+      modelString: 'openai:backup',
+    }));
+    if (mode === 'generate') {
+      expect(
+        (await callLLM({ model: primary.model, prompt: 'hello' }, 'quota-test', { retries: 2 }))
+          .text,
+      ).toBe('backup');
+    } else if (mode === 'stream') {
+      expect(await streamed(primary.model)).toBe('backup');
+    } else {
+      expect(
+        (
+          await generateOutlines(
+            {
+              requirements: { requirement: 'Teach plants' },
+              model: resolved(primary.model, true),
+            },
+            context,
+          )
+        ).outlines,
+      ).toHaveLength(1);
+    }
+    expect(primary.fetch).toHaveBeenCalledTimes(1);
+    expect(fallback.fetch).toHaveBeenCalledTimes(1);
+  });
 
   it.each(['generate', 'stream', 'outline'] as const)(
     'does not retry either quota-exhausted model (%s)',
@@ -315,6 +320,32 @@ describe('explicit provider quota stops retries', () => {
     expect(fallback.fetch).not.toHaveBeenCalled();
   });
 
+  it('leaves a quota refusal the host classifies as retryable to its retries', async () => {
+    // A host that rotates provider keys, say: the failure is its own to decide.
+    configureGenerationRunHooks({
+      name: 'test',
+      classifyFailure: (error) =>
+        APICallError.isInstance(error) ? { errorCode: 'KEY_ROTATED', retryable: true } : undefined,
+    });
+    const primary = provider(() => refusal());
+    await expect(
+      callLLM({ model: primary.model, prompt: 'hello' }, 'quota-test'),
+    ).rejects.toThrow();
+    // The SDK's own retries, as for any retryable failure.
+    expect(primary.fetch).toHaveBeenCalledTimes(3);
+
+    const scene = provider(() => refusal());
+    const sleep = vi.fn(async () => {});
+    await expect(
+      withRouteRetry(
+        () => generateSceneContent({ outline, model: resolved(scene.model) }, context),
+        { label: 'content', maxRetries: 2, refusalStatus: 500, sleep },
+      ),
+    ).rejects.toThrow();
+    expect(scene.fetch).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
   it('allows fallback for a native provider quota marker', async () => {
     const primary = new MockLanguageModelV3({
       doGenerate: async () => {
@@ -331,34 +362,6 @@ describe('explicit provider quota stops retries', () => {
     ).toBe('backup');
     expect(primary.doGenerateCalls).toHaveLength(1);
     expect(fallback.fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not enter the same-model PBL loop after a native quota refusal', async () => {
-    const quotaError = new ProviderQuotaExhaustedError('Example', 'No credit');
-    const primary = new MockLanguageModelV3({
-      doGenerate: async () => {
-        throw quotaError;
-      },
-    });
-    const pblOutline: SceneOutline = {
-      ...outline,
-      type: 'pbl',
-      pblConfig: {
-        projectTopic: 'Leaves',
-        projectDescription: 'Study leaves',
-        targetSkills: ['observation'],
-        issueCount: 2,
-      },
-    };
-    const sleep = vi.fn(async () => {});
-    const failure = await withRouteRetry(
-      () => generateSceneContent({ outline: pblOutline, model: resolved(primary) }, context),
-      { label: 'pbl', maxRetries: 2, refusalStatus: 500, sleep },
-    ).catch((error: unknown) => error);
-    expect(runFailureCode(failure)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
-    expect(failure).toMatchObject({ cause: quotaError });
-    expect(primary.doGenerateCalls).toHaveLength(1);
-    expect(sleep).not.toHaveBeenCalled();
   });
 
   it.each(['content', 'actions'] as const)(

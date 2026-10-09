@@ -23,7 +23,6 @@ may supply `onFailure`; it receives `{ code: 'prompt-unavailable' }` or
 `generateWidgetContent` accepts the same callback in its options.
 
 PBL scenes use the same `AICallFn` seam for single-call planning. Hosts that
-need an agentic fallback may inject `pblLoopFallback(input, error)` and inspect
-the single-call failure before attempting another call; provider selection and
+need an agentic fallback may inject `pblLoopFallback`; provider selection and
 fallback execution remain caller-owned. The two planner templates ship under
 `prompts-pbl/` and resolve relative to the installed package.
