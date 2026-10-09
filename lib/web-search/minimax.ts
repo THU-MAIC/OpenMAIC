@@ -5,10 +5,18 @@
  * POST https://api.minimaxi.com/v1/coding_plan/search
  */
 
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 
 const MINIMAX_DEFAULT_BASE_URL = 'https://api.minimaxi.com';
+
+/**
+ * MiniMax plan and balance exhaustion, as opposed to its rate limits:
+ * 1008 insufficient balance, 2056 usage limit exceeded (the plan's window).
+ * https://platform.minimax.io/docs/api-reference/errorcode
+ */
+const MINIMAX_QUOTA_STATUS_CODES = new Set(['1008', '2056']);
 
 function buildMiniMaxWebSearchUrl(baseUrl?: string): string {
   const trimmed = (baseUrl || MINIMAX_DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -51,6 +59,22 @@ function formatMiniMaxError(status: number, statusText: string, errorText: strin
   }
 }
 
+/** The `base_resp.status_code` of an error response body, if it has one. */
+function errorBodyStatusCode(errorText: string): string | number | undefined {
+  try {
+    return getMiniMaxBaseResp(JSON.parse(errorText))?.status_code;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A failed search, as the provider-neutral quota error when MiniMax reports a quota code. */
+function searchError(statusCode: string | number | undefined, message: string): Error {
+  return statusCode !== undefined && MINIMAX_QUOTA_STATUS_CODES.has(String(statusCode))
+    ? new ProviderQuotaExhaustedError('MiniMax', message)
+    : new Error(message);
+}
+
 function getOrganicResults(raw: MiniMaxSearchResponse): MiniMaxOrganicResult[] {
   return raw.organic || raw.data?.organic || raw.results || [];
 }
@@ -81,13 +105,17 @@ export async function searchWithMiniMax(params: {
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => '');
-    throw new Error(formatMiniMaxError(res.status, res.statusText, errorText));
+    throw searchError(
+      errorBodyStatusCode(errorText),
+      formatMiniMaxError(res.status, res.statusText, errorText),
+    );
   }
 
   const raw = (await res.json()) as MiniMaxSearchResponse;
   const baseResp = getMiniMaxBaseResp(raw);
   if (baseResp?.status_code !== undefined && String(baseResp.status_code) !== '0') {
-    throw new Error(
+    throw searchError(
+      baseResp.status_code,
       `MiniMax Web Search API error (${baseResp.status_code}): ${
         baseResp.status_msg || 'Request failed'
       }`,

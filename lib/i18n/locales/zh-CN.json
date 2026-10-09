@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} 过大：单个素材最大为 {{size}}。"
   },
   "generation": {
+    "quotaExhausted": "生成额度已用尽。请检查套餐额度或账户余额，或联系管理员处理后重试。",
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",

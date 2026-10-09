@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} é grande demais: um material pode ter no máximo {{size}}."
   },
   "generation": {
+    "quotaExhausted": "A cota de geração foi esgotada. Verifique a cota do seu plano ou o saldo da sua conta, ou entre em contato com o administrador antes de tentar novamente.",
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
     "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",

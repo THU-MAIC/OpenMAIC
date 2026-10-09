@@ -3,7 +3,7 @@
  * same failure, so a client shows the same sentence for it as it did when it
  * called those routes itself.
  */
-import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
+import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
 import { WebSearchConfigError } from '@/lib/server/web-search-config';
 
@@ -23,6 +23,14 @@ export function runFailureCode(error: unknown): RunFailureCode {
   // actions routes answer it as GENERATION_FAILED.
   if (error instanceof StepRefusal) return { errorCode: 'GENERATION_FAILED' };
   const status = upstreamHttpStatus(error);
+  // The provider account's plan or balance, not the owner's quota: a host's
+  // own quota failure has the code its `classifyFailure` answers.
+  if (isUpstreamQuotaExhausted(error)) {
+    return {
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
+      ...(status !== undefined ? { statusCode: status } : {}),
+    };
+  }
   if (status !== undefined) {
     return { errorCode: status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR', statusCode: status };
   }

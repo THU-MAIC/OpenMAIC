@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} が大きすぎます。資料は最大 {{size}} までです。"
   },
   "generation": {
+    "quotaExhausted": "生成に利用できる上限に達しました。プランの利用枠やアカウント残高を確認するか、管理者に連絡し、解決後に再試行してください。",
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
     "pdfParseFailed": "PDFの解析に失敗しました",
     "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",

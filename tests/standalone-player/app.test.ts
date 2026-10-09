@@ -187,6 +187,22 @@ describe('standalone player static fallback', () => {
     return document;
   };
 
+  it('is hidden (but still in the DOM) as soon as the player starts', () => {
+    fallbackHost(true);
+    const el = host.querySelector('.openmaic-fallback')!;
+    expect(el.hasAttribute('hidden')).toBe(false);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // No act(): rendering has not been committed when mountPlayer returns.
+    const env = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    env.IS_REACT_ACT_ENVIRONMENT = false;
+    mountPlayer(document);
+    expect(el.isConnected).toBe(true);
+    expect(el.hasAttribute('hidden')).toBe(true);
+    env.IS_REACT_ACT_ENVIRONMENT = true;
+    spy.mockRestore();
+    root = createRoot(document.createElement('div'));
+  });
+
   it('is removed when the player mounts', () => {
     fallbackHost(true);
     act(() => mountPlayer(document));
@@ -203,12 +219,16 @@ describe('standalone player static fallback', () => {
     // A stage name that is not text makes the first render throw (after render() returned).
     fallbackHost(true, { ...data.manifest, stage: { name: { not: 'text' } } });
     mountPlayer(document);
-    expect(host.querySelector('.openmaic-fallback')?.textContent).toBe('needs JavaScript');
+    const pending = host.querySelector('.openmaic-fallback')!;
+    expect(pending.textContent).toBe('needs JavaScript');
+    // Hidden synchronously on start, before the (async) render has failed.
+    expect(pending.hasAttribute('hidden')).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 50));
     env.IS_REACT_ACT_ENVIRONMENT = true;
     const el = host.querySelector('.openmaic-fallback');
     expect(el).not.toBeNull();
     expect(el!.textContent).toBe('could not start');
+    expect(el!.hasAttribute('hidden')).toBe(false);
     spy.mockRestore();
     root = createRoot(document.createElement('div'));
   });
@@ -220,6 +240,7 @@ describe('standalone player static fallback', () => {
     const el = host.querySelector('.openmaic-fallback')!;
     expect(el.textContent).toBe('could not start');
     expect(el.hasAttribute('data-failed')).toBe(true);
+    expect(el.hasAttribute('hidden')).toBe(false);
     spy.mockRestore();
     root = createRoot(document.createElement('div'));
   });

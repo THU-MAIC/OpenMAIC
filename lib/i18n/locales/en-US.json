@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "quotaExhausted": "Generation quota has been exhausted. Check your plan allowance or account balance, or contact your administrator before retrying.",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
     "courseMaterialLoadFailed": "Failed to load course material, please try again",

@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} es demasiado grande: un material puede medir como máximo {{size}}."
   },
   "generation": {
+    "quotaExhausted": "Se ha agotado la cuota de generación. Revisa la cuota de tu plan o el saldo de tu cuenta, o contacta al administrador antes de volver a intentarlo.",
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
     "courseMaterialLoadFailed": "Error al cargar el material del curso, inténtalo de nuevo",

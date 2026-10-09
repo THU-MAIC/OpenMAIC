@@ -431,4 +431,122 @@ describe('HttpDocumentStore contract mapping', () => {
       details,
     });
   });
+
+  // The autosave keeps at most one save in flight and starts the next one only
+  // once that promise settles. A request that never settles therefore strands
+  // every later save for the life of the page — silently, because the store
+  // still reports the work as pending. The deadline is what turns that into an
+  // ordinary failure the backoff can retry.
+  test('rejects a stalled request at the deadline instead of holding its caller forever', async () => {
+    let aborted = false;
+    const stalledFetch = ((_input: string | URL | Request, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(init.signal?.reason ?? new Error('aborted'));
+        });
+      });
+    }) as typeof fetch;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: stalledFetch,
+      requestTimeoutMs: 30,
+    });
+
+    const started = Date.now();
+    await expect(client.saveDocument(makeDocument())).rejects.toMatchObject({
+      name: 'HttpDocumentStoreError',
+      status: 0,
+      code: 'HTTP_REQUEST_TIMEOUT',
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(aborted).toBe(true);
+  });
+
+  test('disarms the deadline once a request settles, so it cannot abort a completed one', async () => {
+    let signal: AbortSignal | undefined;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: async (_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Response(JSON.stringify([]), { status: 200 });
+      },
+      requestTimeoutMs: 30,
+    });
+
+    await expect(client.listDocuments()).resolves.toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(signal?.aborted).toBe(false);
+  });
+
+  test('a non-positive requestTimeoutMs leaves the wait unbounded', async () => {
+    let signal: AbortSignal | undefined;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: (_input, init) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      },
+      requestTimeoutMs: 0,
+    });
+
+    void client.listDocuments().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(signal).toBeUndefined();
+  });
+
+  // The deadline spans sending the body, so a budget that ignored the body
+  // would abort a large save on a slow link on every attempt — and because
+  // every retry meets the same budget, such a save could never complete at
+  // all, which is worse than the unbounded wait the deadline replaces.
+  const slowFetch = (
+    onRequest?: (init: RequestInit | undefined) => void,
+    delayMs = 300,
+  ): typeof fetch =>
+    ((_input: string | URL | Request, init?: RequestInit) => {
+      onRequest?.(init);
+      // Answers after `delayMs` unless the deadline aborts it first, the way a
+      // real fetch does. A fake that ignored the signal would prove nothing.
+      return new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(new Response(null, { status: 204 })), delayMs);
+        init?.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(init.signal?.reason ?? new Error('aborted'));
+        });
+      });
+    }) as typeof fetch;
+
+  test('lets a large, slow request finish when its body earns the extra time', async () => {
+    // ~200 KiB at the assumed 100 KiB/s earns roughly 2s on top of the 50ms
+    // floor, so a fetch answering in 300ms is slow, not stalled.
+    const document = makeDocument();
+    document.scenes[0] = slideScene('stage-1', 'scene-a', 0, 'x'.repeat(200 * 1024));
+    let bodyLength = 0;
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: slowFetch((init) => {
+        bodyLength = typeof init?.body === 'string' ? init.body.length : 0;
+      }),
+      requestTimeoutMs: 50,
+    });
+
+    await expect(client.saveDocument(document)).resolves.toBeUndefined();
+    // Guard the premise: without a body this large the test would pass for the
+    // wrong reason, by never coming near the deadline.
+    expect(bodyLength).toBeGreaterThan(200 * 1024);
+  });
+
+  test('aborts the same slow request when its body is too small to earn it', async () => {
+    const client = new HttpDocumentStore({
+      baseUrl: BASE_URL,
+      fetch: slowFetch(),
+      requestTimeoutMs: 50,
+    });
+
+    await expect(client.saveDocument(makeDocument())).rejects.toMatchObject({
+      name: 'HttpDocumentStoreError',
+      status: 0,
+      code: 'HTTP_REQUEST_TIMEOUT',
+    });
+  });
 });

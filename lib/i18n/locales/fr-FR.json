@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} est trop volumineux : un support peut faire au plus {{size}}."
   },
   "generation": {
+    "quotaExhausted": "Le quota de génération est épuisé. Vérifiez le quota de votre forfait ou le solde de votre compte, ou contactez l’administrateur avant de réessayer.",
     "pdfLoadFailed": "Échec du chargement du fichier PDF, veuillez réessayer",
     "pdfParseFailed": "Échec de l’analyse du PDF",
     "courseMaterialLoadFailed": "Échec du chargement du support de cours, veuillez réessayer",

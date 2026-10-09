@@ -1133,6 +1133,7 @@
     "materialTooLarge": "{{name}} 파일이 너무 큽니다. 자료는 최대 {{size}}까지 가능합니다."
   },
   "generation": {
+    "quotaExhausted": "생성 한도를 모두 사용했습니다. 요금제 한도나 계정 잔액을 확인하거나 관리자에게 문의한 후 다시 시도하세요.",
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
     "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
