@@ -5,6 +5,7 @@
  * its leases and event log, the owner-bound document store, the asset pool
  * and the run API routes.
  */
+import { createOpenAI } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,6 +64,9 @@ import type { MediaConnection } from '@/lib/server/model-config/media';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { createOwnerAgent } from '@/lib/server/agents/store';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
+import { generateOutlines } from '@/lib/server/generation/steps/outline';
+import { generateSceneContent } from '@/lib/server/generation/steps/scene-content';
+import { generateSceneActions } from '@/lib/server/generation/steps/scene-actions';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
@@ -879,6 +883,73 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     });
     // Another owner cannot command the run at all.
     expect(await confirm(run.id, OTHER, { commandId: 'x', outlineRevision: 2 })).toBeNull();
+  });
+
+  it.each([
+    ['outline', 'outline'],
+    ['content', 'scene:1:content'],
+    ['actions', 'scene:1:actions'],
+  ] as const)('pauses on the first provider quota refusal in %s', async (kind, step) => {
+    // Exercise the failing step and SDK through HTTP, then verify the run's
+    // persisted state. Other steps use the suite's existing successful fakes.
+    const request = vi.fn(async () =>
+      Response.json(
+        { error: { message: 'Provider quota exhausted', code: 'insufficient_quota' } },
+        { status: 429, headers: { 'retry-after-ms': '1' } },
+      ),
+    );
+    const model = {
+      model: createOpenAI({ apiKey: 'test-key', fetch: request }).chat('test'),
+      modelInfo: null,
+      modelString: 'openai:test',
+      thinkingConfig: undefined,
+      serverManaged: false,
+    };
+    const sleep = vi.fn(async () => undefined);
+    const { services } = fakeServices({
+      research: async () => null,
+      narrationTarget: async () => null,
+      sleep,
+    });
+    if (kind === 'outline') {
+      services.outline = (_owner, input, ctx) =>
+        generateOutlines(
+          { ...input, model },
+          { ...ctx, workspaceId: null, resolveVisionImages: async () => [] },
+        );
+    } else if (kind === 'content') {
+      const original = services.sceneContent;
+      services.sceneContent = (owner, input, ctx) =>
+        input.outline.id === 'o2'
+          ? generateSceneContent(
+              { ...input, model },
+              { ...ctx, resolveVisionImages: async () => [] },
+            )
+          : original(owner, input, ctx);
+    } else {
+      const original = services.sceneActions;
+      services.sceneActions = (owner, input, ctx) =>
+        input.outline.id === 'o2'
+          ? generateSceneActions({ ...input, model }, ctx)
+          : original(owner, input, ctx);
+    }
+    const run = await start(runInput({ outlineReview: 'auto' }));
+
+    expect(await drive(run.id, services)).toBe('paused');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(await readGenerationRun(run.id, OWNER)).toMatchObject({
+      state: 'paused',
+      step,
+      error: { step, errorCode: 'PROVIDER_QUOTA_EXHAUSTED', statusCode: 429 },
+      leaseWorkerId: null,
+      progress: { scenesCompleted: kind === 'outline' ? 0 : 1 },
+    });
+    const events = await readGenerationRunEvents(run.id, 0);
+    expect(
+      events.filter((event) => event.type === 'step_retry' && event.data.step === step),
+    ).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({ type: 'state', data: { state: 'paused', step } });
   });
 
   it('pauses at a step that fails after its retries, and Retry re-runs only that step', async () => {
