@@ -57,7 +57,10 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function collectGarbage(): () => void {
   setFlagsFromString('--expose-gc');
-  return runInNewContext('gc') as () => void;
+  const gc = runInNewContext('gc') as () => void;
+  // The context above already holds `gc`; restore the flag for the rest of the worker.
+  setFlagsFromString('--no-expose-gc');
+  return gc;
 }
 
 describe('owner-bound store operation scope', () => {

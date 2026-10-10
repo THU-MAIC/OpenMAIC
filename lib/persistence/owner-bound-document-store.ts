@@ -182,6 +182,7 @@ const NO_OPERATIONS: ReadonlyMap<OperationScope, PendingOperation> = new Map();
  */
 export class OperationScope {
   run<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
+    // The copy holds one entry per store in this causal context (1-2 on a request path).
     const operations = new Map(operationsByScope.getStore() ?? NO_OPERATIONS);
     return operationsByScope.run(operations.set(this, operation), body);
   }
