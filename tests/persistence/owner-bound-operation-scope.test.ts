@@ -1,4 +1,10 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
+
 import { describe, expect, it, vi } from 'vitest';
+
+import type { PendingOperation } from '@/lib/persistence/owner-bound-document-store';
 
 /**
  * The owner-bound store carries the operation its transaction gates in the
@@ -43,13 +49,16 @@ function recordingPool() {
   };
 }
 
-type Operation = Parameters<InstanceType<typeof OperationScope>['run']>[0];
-
-function op(stageId: string): Operation {
+function op(stageId: string): PendingOperation {
   return { stageId, mode: 'read' };
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function collectGarbage(): () => void {
+  setFlagsFromString('--expose-gc');
+  return runInNewContext('gc') as () => void;
+}
 
 describe('owner-bound store operation scope', () => {
   it('builds no AsyncLocalStorage per store, and each store gates its own operation', async () => {
@@ -131,5 +140,38 @@ describe('owner-bound store operation scope', () => {
     seen.forEach((pair, index) => {
       expect(pair).toEqual([`stage-${index}`, `stage-${index}`]);
     });
+  });
+
+  it('keeps no replaced operation alive in a context that outlives it', async () => {
+    const scopes = [new OperationScope(), new OperationScope()];
+    const operations: WeakRef<PendingOperation>[] = [];
+    const HOPS = 200;
+
+    // Fire-and-forget work that re-enters the same stores from the context
+    // of the previous hop, then keeps the context of the last one.
+    const lastContext = await new Promise<<T>(fn: () => T) => T>((resolve) => {
+      const hop = (index: number) => {
+        const operation = op(`stage-${index}`);
+        operations.push(new WeakRef(operation));
+        void scopes[index % 2].run(operation, async () => {
+          if (index === HOPS) resolve(AsyncLocalStorage.snapshot());
+          else setTimeout(() => hop(index + 1), 0);
+        });
+      };
+      hop(0);
+    });
+
+    const gc = collectGarbage();
+    for (let round = 0; round < 3; round += 1) {
+      await tick();
+      gc();
+    }
+
+    expect(lastContext(() => scopes[0].current()?.stageId)).toBe(`stage-${HOPS}`);
+    expect(lastContext(() => scopes[1].current()?.stageId)).toBe(`stage-${HOPS - 1}`);
+    const retained = operations
+      .slice(0, HOPS - 1)
+      .filter((operation) => operation.deref() !== undefined);
+    expect(retained).toHaveLength(0);
   });
 });

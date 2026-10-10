@@ -145,7 +145,7 @@ function sanitizedDocument<TScene extends SceneLike, TStage extends Stage>(
 }
 
 type OwnershipMode = 'create' | 'mutate' | 'read' | 'delete' | 'library';
-interface PendingOperation {
+export interface PendingOperation {
   stageId?: string;
   mode: OwnershipMode;
   /** A create that must insert: any existing course under the id refuses it. */
@@ -169,31 +169,25 @@ interface PendingOperation {
  * context. One storage serves every store: a server builds a store per
  * request, and each `AsyncLocalStorage` that has run stays registered with
  * `async_hooks` for good, so one per store would make every later promise
- * pay for every store ever built. A frame names the store it belongs to, and
- * a store sees only its own innermost frame -- never another store's.
+ * pay for every store ever built. A context holds an immutable snapshot of
+ * each store's current operation, so a store sees only its own, and a context
+ * keeps no operation a store has already replaced in it.
  */
-interface OperationFrame {
-  scope: OperationScope;
-  operation: PendingOperation;
-  parent: OperationFrame | undefined;
-}
+const operationsByScope = new AsyncLocalStorage<ReadonlyMap<OperationScope, PendingOperation>>();
+const NO_OPERATIONS: ReadonlyMap<OperationScope, PendingOperation> = new Map();
 
-const operationFrames = new AsyncLocalStorage<OperationFrame>();
-
-/** One store's view of {@link operationFrames}. */
+/**
+ * One store's view of {@link operationsByScope}.
+ * @internal Exported for tests.
+ */
 export class OperationScope {
   run<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
-    return operationFrames.run(
-      { scope: this, operation, parent: operationFrames.getStore() },
-      body,
-    );
+    const operations = new Map(operationsByScope.getStore() ?? NO_OPERATIONS);
+    return operationsByScope.run(operations.set(this, operation), body);
   }
 
   current(): PendingOperation | undefined {
-    for (let frame = operationFrames.getStore(); frame; frame = frame.parent) {
-      if (frame.scope === this) return frame.operation;
-    }
-    return undefined;
+    return operationsByScope.getStore()?.get(this);
   }
 }
 
