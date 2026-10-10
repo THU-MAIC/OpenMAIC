@@ -645,7 +645,7 @@ export function Roundtable({
           key={option}
           type="button"
           disabled={isSendCooldown}
-          className="rounded-full border border-current/20 px-2.5 py-1 text-xs hover:bg-current/10 disabled:opacity-50"
+          className="cursor-pointer rounded-full border border-purple-200 bg-white px-2.5 py-1 text-xs text-purple-800 shadow-sm transition-colors hover:border-purple-300 hover:bg-purple-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-purple-200 disabled:hover:bg-white"
           onClick={(event) => {
             event.stopPropagation();
             if (cueActionClaimedRef.current || isSendCooldownRef.current) return;
