@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { testComfyuiImageConnectivity } from '@/lib/media/adapters/comfyui-image-adapter';
+import { testGlmImageConnectivity } from '@/lib/media/adapters/glm-image-adapter';
 import { testGrokImageConnectivity } from '@/lib/media/adapters/grok-image-adapter';
 import { testGrokVideoConnectivity } from '@/lib/media/adapters/grok-video-adapter';
 import { testHappyHorseConnectivity } from '@/lib/media/adapters/happyhorse-adapter';
@@ -151,6 +152,31 @@ const authOnlyCases: AuthOnlyCase[] = [
             Authorization: 'Bearer grok-image-key',
           },
           body: JSON.stringify({ model: 'grok-image-test', prompt: '', n: 1 }),
+        },
+      );
+    },
+  },
+  {
+    name: 'GLM Image',
+    providerName: 'GLM Image',
+    probe: () =>
+      testGlmImageConnectivity({
+        providerId: 'glm-image',
+        apiKey: 'glm-image-key',
+        baseUrl: 'https://glm-image.example.com/api/paas/v4',
+        model: 'cogview-3-flash',
+      }),
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://glm-image.example.com/api/paas/v4/images/generations',
+        {
+          method: 'POST',
+          redirect: 'manual',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer glm-image-key',
+          },
+          body: JSON.stringify({ model: 'cogview-3-flash', prompt: '', n: 1 }),
         },
       );
     },

@@ -179,7 +179,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['deepseek', 2],
       ['kimi', 2],
       ['minimax', 13],
-      ['glm', 4],
+      ['glm', 6],
       ['siliconflow', 2],
       ['doubao', 6],
       ['openrouter', 6],

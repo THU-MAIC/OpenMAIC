@@ -615,7 +615,29 @@ slots:
 
 图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。支持的前缀包括：
 
-`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_GLM_` 和 `IMAGE_LEMONADE_`。
+
+GLM 图像（智谱 CogView）使用 CogView 模型（`cogview-3-flash`、`cogview-4`）生成图片：
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # 可选:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+也可以通过环境变量配置：
+
+```bash
+IMAGE_GLM_API_KEY=
+# 可选:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
 
 Lemonade 是本地服务，不需要 key：
 

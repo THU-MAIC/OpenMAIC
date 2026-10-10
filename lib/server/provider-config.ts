@@ -119,6 +119,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_NANO_BANANA: 'nano-banana',
   IMAGE_MINIMAX: 'minimax-image',
   IMAGE_GROK: 'grok-image',
+  IMAGE_GLM: 'glm-image',
   IMAGE_LEMONADE: 'lemonade',
   IMAGE_OPENROUTER: 'openrouter-image',
 };

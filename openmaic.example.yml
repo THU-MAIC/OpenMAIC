@@ -48,6 +48,11 @@ providers:
   #   preset: openai-image
   #   apiKey: ${OPENAI_API_KEY}
 
+  # Zhipu GLM CogView image generation:
+  # glm-image:
+  #   preset: glm-image
+  #   apiKey: ${IMAGE_GLM_API_KEY}
+
   # A token plan covers several capabilities with one key: chat, images,
   # video, text to speech and web search for MiniMax.
   # minimax:
