@@ -343,8 +343,8 @@ export type OutlineRefusal = 'prompt-unavailable';
 
 /** Every attempt failed to produce an outline; the message is the last failure. */
 export class OutlineGenerationError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'OutlineGenerationError';
   }
 }
@@ -600,12 +600,14 @@ async function streamOutlines(
   let languageDirective: string | null = null;
   let courseTitle: string | null = null;
   let lastError: string | undefined;
+  let lastCause: unknown;
 
   for (
     let attempt = 1;
     attempt <= MAX_STREAM_RETRIES + 1 && !(fellBack && attempt > 1);
     attempt++
   ) {
+    lastCause = undefined;
     try {
       let fullText = '';
       // In UTF-8 bytes, the unit of the cap (and of the outline normalizer's).
@@ -716,6 +718,7 @@ async function streamOutlines(
       // content-filter finish is a safety refusal — neither may reach
       // the empty-output fallback path.
       if (streamError !== undefined) {
+        lastCause = streamError;
         lastError = streamError instanceof Error ? streamError.message : String(streamError);
         log.warn(
           `Outlines attempt ${attempt} stream error: ${lastError}, finishReason=${finishReason ?? 'none'}`,
@@ -764,6 +767,7 @@ async function streamOutlines(
       // stop immediately, don't burn retries re-running generation.
       if (signal?.aborted) throw new StepAbortedError();
       if (isNonRetryableHostFailure(error)) throw error;
+      lastCause = error;
       lastError = error instanceof Error ? error.message : String(error);
       log.warn(
         `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
@@ -787,7 +791,9 @@ async function streamOutlines(
   if (parsedOutlines.length === 0) {
     // All retries exhausted, no outlines produced
     log.error(`Outline generation failed after ${MAX_STREAM_RETRIES + 1} attempts: ${lastError}`);
-    throw new OutlineGenerationError(lastError || 'Failed to generate outlines');
+    throw new OutlineGenerationError(lastError || 'Failed to generate outlines', {
+      cause: lastCause,
+    });
   }
 
   return {

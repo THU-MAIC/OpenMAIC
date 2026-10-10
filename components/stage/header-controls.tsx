@@ -22,7 +22,7 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
-import { useExportHtml } from '@/lib/export/use-export-html';
+import { classroomHasPlaybackMedia, useExportHtml } from '@/lib/export/use-export-html';
 import { isScriptExportReady, useExportScript } from '@/lib/export/use-export-script';
 import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { useVideoRenderStore } from '@/lib/store/video-render';
@@ -152,6 +152,8 @@ export function HeaderControls({
   const canExport = isScriptExportReady({ scenes, generatingOutlines, failedOutlines }, mediaTasks);
   const anyExporting = isExporting || isExportingZip || isExportingHtml || isExportingScript;
   const exportLabel = canExport ? t('export.pptx') : t('share.notReady');
+  // Only read while the menu is open: the scan walks every scene's actions.
+  const htmlHasPlaybackMedia = exportMenuOpen && classroomHasPlaybackMedia(scenes);
 
   const compact = variant === 'compact';
   const proChecked = proModeActive ?? mode === 'edit';
@@ -398,14 +400,48 @@ export function HeaderControls({
             label={t('export.classroomZip')}
             description={t('export.classroomZipDesc')}
           />
-          <ExportMenuItem
-            disabled={!canExport || isExportingHtml}
-            onSelect={exportStandaloneHtml}
-            title={canExport ? undefined : t('export.mediaPending')}
-            icon={<FileCode className="w-4 h-4 text-gray-400 shrink-0" />}
-            label={t('export.html')}
-            description={t('export.htmlDesc')}
-          />
+          {/* Standalone HTML: choose per export whether narration audio and
+              video clips are embedded. The option that fits the classroom
+              comes first: with narration and video when the classroom has narration
+              audio or slide video. */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger
+              disabled={!canExport}
+              title={canExport ? undefined : t('export.mediaPending')}
+              className="cursor-pointer gap-2.5"
+            >
+              <FileCode className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />
+              <div>
+                <div>{t('export.html')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('export.htmlDesc')}
+                </div>
+              </div>
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="min-w-[240px]">
+              {(htmlHasPlaybackMedia
+                ? (['narration', 'silent'] as const)
+                : (['silent', 'narration'] as const)
+              ).map((variant) => (
+                <ExportMenuItem
+                  key={variant}
+                  disabled={!canExport || isExportingHtml}
+                  onSelect={() =>
+                    exportStandaloneHtml({ includeNarration: variant === 'narration' })
+                  }
+                  icon={<FileCode className="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" />}
+                  label={t(
+                    variant === 'narration' ? 'export.htmlWithNarration' : 'export.htmlSilent',
+                  )}
+                  description={t(
+                    variant === 'narration'
+                      ? 'export.htmlWithNarrationDesc'
+                      : 'export.htmlSilentDesc',
+                  )}
+                />
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger
               disabled={!canExport}

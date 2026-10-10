@@ -1,5 +1,7 @@
 import { APICallError, RetryError } from 'ai';
 
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
+
 const HTTP_ERROR_MIN = 400;
 const HTTP_ERROR_MAX = 599;
 
@@ -48,4 +50,53 @@ function statusFromError(error: unknown, seen = new Set<unknown>()): number | un
   if (status !== undefined) return status;
 
   return statusFromError(error.cause, seen) ?? statusFromError(error.lastError, seen);
+}
+
+// Explicit billing/quota codes of the OpenAI-compatible wire format, not a
+// provider's generic rate-limit signal. A vendor's native codes are its
+// adapter's to translate into ProviderQuotaExhaustedError.
+// https://developers.openai.com/api/docs/guides/error-codes
+const QUOTA_CODES = new Set([
+  'insufficient_quota',
+  'credit_balance_exhausted',
+  'organization_usage_limit_exceeded',
+  'organization_spend_limit_exceeded',
+  'project_spend_limit_exceeded',
+]);
+
+function quotaResponse(body: unknown): boolean {
+  if (!isRecord(body)) return false;
+  const error = body.error;
+  if (!isRecord(error)) return false;
+  return (
+    (typeof error.code === 'string' && QUOTA_CODES.has(error.code)) ||
+    error.type === 'insufficient_quota'
+  );
+}
+
+/**
+ * An explicit quota refusal: an adapter's {@link ProviderQuotaExhaustedError},
+ * or an OpenAI-compatible quota code in the provider response. Never inferred
+ * from a 429 or a message.
+ */
+export function isUpstreamQuotaExhausted(error: unknown, seen = new Set<unknown>()): boolean {
+  if (!isRecord(error) || seen.has(error)) return false;
+  seen.add(error);
+
+  // The last attempt is what the run reports; an earlier quota failure must
+  // not replace a later provider failure with a different cause.
+  if (RetryError.isInstance(error)) return isUpstreamQuotaExhausted(error.lastError, seen);
+
+  if (error instanceof ProviderQuotaExhaustedError) return true;
+  if (quotaResponse(error) || quotaResponse(error.data)) return true;
+  if (typeof error.responseBody === 'string') {
+    try {
+      if (quotaResponse(JSON.parse(error.responseBody))) return true;
+    } catch {
+      // An unreadable/non-JSON response has no explicit quota signal.
+    }
+  }
+  return (
+    isUpstreamQuotaExhausted(error.cause, seen) || isUpstreamQuotaExhausted(error.lastError, seen)
+  );
 }

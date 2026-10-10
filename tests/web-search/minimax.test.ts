@@ -7,10 +7,46 @@ vi.mock('@/lib/server/proxy-fetch', () => ({
 }));
 
 import { searchWithMiniMax } from '@/lib/web-search/minimax';
+import { runFailureCode } from '@/lib/server/generation/run/failure-code';
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
 describe('searchWithMiniMax', () => {
   beforeEach(() => {
     proxyFetchMock.mockReset();
+  });
+
+  it.each([
+    [200, 1008],
+    [200, 2056],
+    [200, '2056'],
+    [429, 2056],
+  ])('translates quota code %s/%s into the provider quota error', async (status, status_code) => {
+    proxyFetchMock.mockResolvedValueOnce(
+      Response.json(
+        { base_resp: { status_code, status_msg: 'Request refused' } },
+        { status: status as number },
+      ),
+    );
+    const failure = await searchWithMiniMax({ query: 'q', apiKey: 'key' }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(ProviderQuotaExhaustedError);
+    expect(failure).toMatchObject({
+      provider: 'MiniMax',
+      message: `MiniMax Web Search API error (${status_code}): Request refused`,
+    });
+    expect(runFailureCode(failure)).toEqual({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
+  });
+
+  it('keeps an ordinary provider 429 distinct from exhausted plan quota', async () => {
+    proxyFetchMock.mockResolvedValueOnce(
+      Response.json({ base_resp: { status_code: 1002, status_msg: 'Slow down' } }, { status: 429 }),
+    );
+    const failure = await searchWithMiniMax({ query: 'q', apiKey: 'key' }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).not.toBeInstanceOf(ProviderQuotaExhaustedError);
+    expect(runFailureCode(failure)).toEqual({ errorCode: 'INTERNAL_ERROR' });
   });
 
   it('calls MiniMax Web Search API and maps organic results', async () => {
