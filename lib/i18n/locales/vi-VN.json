@@ -2071,7 +2071,9 @@
         "notMovable": "Không thể chuyển tài liệu này",
         "gone": "Mục này không còn tồn tại",
         "save": "Không thực hiện được. Hãy thử lại",
-        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước"
+        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước",
+        "notMovableBatch": "Một số tệp đã chọn không thể chuyển nên không tệp nào được chuyển",
+        "tooMany": "Quá nhiều tệp để chuyển cùng lúc. Hãy chọn ít hơn"
       },
       "actions": {
         "parse": "Phân tích",
@@ -2099,7 +2101,20 @@
         "materialCourses": "Nội dung đã lưu vào khóa học không bị ảnh hưởng.",
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
-        "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
+        "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa.",
+        "batchTitle": "Xóa {{count}} tệp?",
+        "batchTitle_one": "Xóa {{count}} tệp?",
+        "batchTitle_other": "Xóa {{count}} tệp?",
+        "batchLinks": "Các cuộc trò chuyện dùng những tài liệu này sẽ không đọc được chúng nữa; nội dung đã có trong các cuộc trò chuyện vẫn được giữ.",
+        "batchResult": "Đã xóa {{deleted}}/{{total}}. Chưa xóa:"
+      },
+      "selection": {
+        "select": "Chọn “{{name}}”",
+        "count": "Đã chọn {{count}}",
+        "count_one": "Đã chọn {{count}}",
+        "count_other": "Đã chọn {{count}}",
+        "clear": "Bỏ chọn",
+        "dragHint": "Kéo một tệp đã chọn vào thư mục để chuyển tất cả các tệp đã chọn"
       }
     },
     "untitledCourse": "未命名课堂",

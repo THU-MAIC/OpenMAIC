@@ -2071,7 +2071,9 @@
         "notMovable": "这份资料不能移动",
         "gone": "它已经不存在了",
         "save": "操作没有成功，请重试",
-        "notEmpty": "文件夹里还有资料，请先移走"
+        "notEmpty": "文件夹里还有资料，请先移走",
+        "notMovableBatch": "部分选中的文件不能移动，因此没有移动任何文件",
+        "tooMany": "一次移动的文件太多，请少选一些"
       },
       "actions": {
         "parse": "解析",
@@ -2099,7 +2101,20 @@
         "materialCourses": "已保存到课程中的内容不受影响。",
         "cannotUndo": "此操作不能撤销。",
         "folderTitle": "删除文件夹“{{name}}”？",
-        "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
+        "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。",
+        "batchTitle": "删除 {{count}} 个文件？",
+        "batchTitle_one": "删除 {{count}} 个文件？",
+        "batchTitle_other": "删除 {{count}} 个文件？",
+        "batchLinks": "删除后，对话里再读取这些资料会失败，对话里已有的文字保留。",
+        "batchResult": "已删除 {{deleted}}/{{total}} 个。以下文件未删除："
+      },
+      "selection": {
+        "select": "选择“{{name}}”",
+        "count": "已选 {{count}} 项",
+        "count_one": "已选 {{count}} 项",
+        "count_other": "已选 {{count}} 项",
+        "clear": "取消选择",
+        "dragHint": "把任一选中的文件拖到文件夹上，即可移动所有选中的文件"
       }
     },
     "untitledCourse": "未命名课堂",

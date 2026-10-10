@@ -2071,7 +2071,9 @@
         "notMovable": "この資料は移動できません",
         "gone": "すでに存在しません",
         "save": "うまくいきませんでした。もう一度お試しください",
-        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください"
+        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください",
+        "notMovableBatch": "移動できないファイルが含まれているため、何も移動しませんでした",
+        "tooMany": "一度に移動するファイルが多すぎます。選択を減らしてください"
       },
       "actions": {
         "parse": "解析",
@@ -2099,7 +2101,20 @@
         "materialCourses": "コースに保存済みの内容には影響しません。",
         "cannotUndo": "この操作は元に戻せません。",
         "folderTitle": "フォルダー「{{name}}」を削除しますか？",
-        "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。"
+        "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。",
+        "batchTitle": "{{count}} 件のファイルを削除しますか？",
+        "batchTitle_one": "{{count}} 件のファイルを削除しますか？",
+        "batchTitle_other": "{{count}} 件のファイルを削除しますか？",
+        "batchLinks": "削除すると、会話からこれらの資料を読み込めなくなります。会話にすでにある文章は残ります。",
+        "batchResult": "{{total}} 件中 {{deleted}} 件を削除しました。削除されなかったファイル："
+      },
+      "selection": {
+        "select": "「{{name}}」を選択",
+        "count": "{{count}} 件を選択中",
+        "count_one": "{{count}} 件を選択中",
+        "count_other": "{{count}} 件を選択中",
+        "clear": "選択を解除",
+        "dragHint": "選択したファイルをフォルダーにドラッグすると、選択中のファイルをすべて移動できます"
       }
     },
     "untitledCourse": "未命名课堂",

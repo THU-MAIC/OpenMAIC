@@ -2071,7 +2071,9 @@
         "notMovable": "Este material não pode ser movido",
         "gone": "Ele não existe mais",
         "save": "Não deu certo. Tente novamente",
-        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro",
+        "notMovableBatch": "Alguns arquivos selecionados não podem ser movidos, então nenhum foi movido",
+        "tooMany": "Arquivos demais para mover de uma vez. Selecione menos"
       },
       "actions": {
         "parse": "Analisar",
@@ -2099,7 +2101,20 @@
         "materialCourses": "O conteúdo já salvo em um curso não é afetado.",
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
-        "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+        "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído.",
+        "batchTitle": "Excluir {{count}} arquivos?",
+        "batchTitle_one": "Excluir {{count}} arquivo?",
+        "batchTitle_other": "Excluir {{count}} arquivos?",
+        "batchLinks": "As conversas que os usam não poderão mais lê-los; o texto que já está nessas conversas permanece.",
+        "batchResult": "Excluídos: {{deleted}} de {{total}}. Não excluídos:"
+      },
+      "selection": {
+        "select": "Selecionar “{{name}}”",
+        "count": "{{count}} selecionados",
+        "count_one": "{{count}} selecionado",
+        "count_other": "{{count}} selecionados",
+        "clear": "Limpar seleção",
+        "dragHint": "Arraste um arquivo selecionado para uma pasta para mover todos os arquivos selecionados"
       }
     },
     "untitledCourse": "未命名课堂",

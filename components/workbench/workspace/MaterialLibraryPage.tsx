@@ -72,6 +72,7 @@ import {
 } from '@/lib/workbench/use-material-library-tree';
 import { validateFolderName } from '@/lib/utils/folder-name-validation';
 import {
+  BatchDeleteDialog,
   DeleteDialog,
   LibraryItemMenu,
   menuIcons,
@@ -130,6 +131,11 @@ const ROW_ICON = {
 function RowChevron({ open }: { readonly open?: boolean }) {
   if (open === undefined) return <span className="size-4 shrink-0" aria-hidden="true" />;
   return open ? <ChevronDown {...ROW_ICON} /> : <ChevronRight {...ROW_ICON} />;
+}
+
+/** The checkbox slot every row keeps, so names line up: empty where nothing is selectable. */
+function RowSelectSlot() {
+  return <span className="size-4 shrink-0" aria-hidden="true" />;
 }
 
 function MaterialIcon({ mime }: { readonly mime?: string }) {
@@ -1002,26 +1008,69 @@ export function MaterialLibraryPage({
     />
   );
 
+  // ── Selection ───────────────────────────────────────────────────────
+  // Files only, and only files shown now: a new query starts with none
+  // checked, and a file that leaves the view (its folder collapsed, a refresh
+  // without it) leaves the selection, so no action reaches a file the teacher
+  // cannot see checked. "Load more" adds rows, never selections.
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    setSelected((current) => (current.size === 0 ? current : new Set()));
+  }, [query]);
+  const toggleSelected = (materialId: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (!next.delete(materialId)) next.add(materialId);
+      return next;
+    });
+  const unselect = (materialIds: readonly string[]) =>
+    setSelected((current) => {
+      if (!materialIds.some((id) => current.has(id))) return current;
+      const next = new Set(current);
+      for (const id of materialIds) next.delete(id);
+      return next;
+    });
+  const shownFiles = () =>
+    tree.mode === 'search'
+      ? tree.results.files
+      : [...tree.root.files, ...tree.expanded.flatMap((id) => tree.folder(id)?.files ?? [])];
+  const [batchDeleting, setBatchDeleting] = useState<{
+    readonly id: number;
+    readonly items: readonly { readonly materialId: string; readonly name: string }[];
+  } | null>(null);
+  const batchDeleteSeq = useRef(0);
+
   const moving = useRef(new Set<string>());
   const drag = useTreeDrag({
     scrollRef: scroller,
     onHoverFolder: (folderId) => tree.expand(folderId),
     onMoveToFolder: (materialId, destination) => {
-      if (moving.current.has(materialId)) return;
-      const row =
-        tree.root.files.find((file) => file.materialId === materialId) ??
-        tree.results.files.find((file) => file.materialId === materialId) ??
-        tree.folders
-          .flatMap((folder) => tree.folder(folder.id)?.files ?? [])
-          .find((file) => file.materialId === materialId);
+      // A checked file carries every checked file shown with it; any other, itself.
+      const files = shownFiles();
+      const ids = selected.has(materialId)
+        ? [...new Set(files.map((file) => file.materialId).filter((id) => selected.has(id)))]
+        : [materialId];
+      if (ids.some((id) => moving.current.has(id))) return;
+      const rows = ids.map((id) => files.find((file) => file.materialId === id));
       const folderId = destination ?? null;
-      if (!row || row.folderId === folderId) return;
-      moving.current.add(materialId);
-      void write(() => moveLibraryMaterials([materialId], folderId), {
+      if (rows.some((row) => !row) || rows.every((row) => row!.folderId === folderId)) return;
+      for (const id of ids) moving.current.add(id);
+      // One request: the server moves all of them or none.
+      void write(() => moveLibraryMaterials(ids, folderId), {
         retryRefreshOnSuccess: true,
       }).then((error) => {
-        moving.current.delete(materialId);
-        if (error) toast.error(t(error));
+        for (const id of ids) moving.current.delete(id);
+        if (!error) {
+          unselect(ids);
+          return;
+        }
+        toast.error(
+          t(
+            ids.length > 1 && error === 'workspace.knowledgeBase.error.notMovable'
+              ? 'workspace.knowledgeBase.error.notMovableBatch'
+              : error,
+          ),
+        );
       });
     },
   });
@@ -1125,8 +1174,13 @@ export function MaterialLibraryPage({
   const folderName = (material: LibraryMaterial) =>
     material.folderId === null ? null : (material.folderName ?? null);
 
-  const fileRow = (material: LibraryMaterial, options: { nested?: boolean; search?: boolean }) => {
+  const fileRow = (
+    material: LibraryMaterial,
+    options: { nested?: boolean; search?: boolean; selectable?: boolean },
+  ) => {
     const layout = options.search ? LAYOUT.search : LAYOUT.tree;
+    const selectable = options.selectable !== false;
+    const checked = selectable && selected.has(material.materialId);
     const size = formatMaterialBytes(material.bytes, locale);
     const date = formatLibraryDate(material.createdAt, locale);
     const edit =
@@ -1137,39 +1191,66 @@ export function MaterialLibraryPage({
         data-testid={`kb-material-${material.materialId}`}
         data-kb-row=""
         {...(!edit ? drag.rowProps('material', material.materialId) : {})}
+        data-selected={checked ? '' : undefined}
         className={cn(
           layout.row,
           layout.columns,
-          drag.dragId === material.materialId && 'opacity-50',
+          checked && 'bg-[color:var(--ws-accent-wash)]',
+          (drag.dragId === material.materialId ||
+            (checked && drag.dragId !== null && selected.has(drag.dragId))) &&
+            'opacity-50',
         )}
       >
-        <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
-          <RowChevron />
-          <MaterialIcon mime={material.mime} />
-          <div className="min-w-0 flex-1">
-            {edit ? (
-              renameField(edit, t('workspace.knowledgeBase.actions.rename'), nameStemEnd(edit.name))
-            ) : (
-              // Double-click the name to rename it; touch screens use the ⋯.
-              <span
-                className="block break-words text-[13px]"
-                title={material.name}
-                onDoubleClick={() => startRenaming('material', material.materialId, material.name)}
-              >
-                {material.name}
-              </span>
-            )}
-            <span
-              className={cn(
-                'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--ws-ink-mute)]',
-                layout.narrowOnly,
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          {selectable ? (
+            <input
+              type="checkbox"
+              data-ws-no-drag=""
+              data-testid={`kb-select-${material.materialId}`}
+              aria-label={t('workspace.knowledgeBase.selection.select', { name: material.name })}
+              checked={checked}
+              onChange={() => toggleSelected(material.materialId)}
+              className="size-4 shrink-0 accent-[color:var(--ws-accent)]"
+            />
+          ) : (
+            <RowSelectSlot />
+          )}
+          <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
+            <RowChevron />
+            <MaterialIcon mime={material.mime} />
+            <div className="min-w-0 flex-1">
+              {edit ? (
+                renameField(
+                  edit,
+                  t('workspace.knowledgeBase.actions.rename'),
+                  nameStemEnd(edit.name),
+                )
+              ) : (
+                // Double-click the name to rename it; touch screens use the ⋯.
+                <span
+                  className="block break-words text-[13px]"
+                  title={material.name}
+                  onDoubleClick={() =>
+                    startRenaming('material', material.materialId, material.name)
+                  }
+                >
+                  {material.name}
+                </span>
               )}
-            >
-              <StatusLabel material={material} t={t} />
-              <span>{size}</span>
-              {date ? <span>{date}</span> : null}
-              {options.search && folderName(material) ? <span>{folderName(material)}</span> : null}
-            </span>
+              <span
+                className={cn(
+                  'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--ws-ink-mute)]',
+                  layout.narrowOnly,
+                )}
+              >
+                <StatusLabel material={material} t={t} />
+                <span>{size}</span>
+                {date ? <span>{date}</span> : null}
+                {options.search && folderName(material) ? (
+                  <span>{folderName(material)}</span>
+                ) : null}
+              </span>
+            </div>
           </div>
         </div>
         {options.search ? <span className={layout.cell}>{folderName(material)}</span> : null}
@@ -1190,7 +1271,7 @@ export function MaterialLibraryPage({
     nested = false,
   ) =>
     node.hasMore ? (
-      <li className={cn('py-2 pl-9 pr-3', nested && 'pl-15')}>
+      <li className={cn('py-2 pl-15 pr-3', nested && 'pl-21')}>
         <button
           type="button"
           data-testid={testId}
@@ -1245,6 +1326,7 @@ export function MaterialLibraryPage({
                 LAYOUT.tree.nameSpan,
               )}
             >
+              <RowSelectSlot />
               <RowChevron open={open} />
               <Folder {...ROW_ICON} />
               {renameField(edit, t('workspace.knowledgeBase.actions.rename'))}
@@ -1265,6 +1347,7 @@ export function MaterialLibraryPage({
                 LAYOUT.tree.nameSpan,
               )}
             >
+              <RowSelectSlot />
               <RowChevron open={open} />
               <Folder {...ROW_ICON} />
               <span className="min-w-0 flex-1">
@@ -1287,11 +1370,11 @@ export function MaterialLibraryPage({
         {node ? (
           <ul data-testid={`kb-folder-files-${folder.id}`}>
             {node.status === 'loading' ? (
-              <li className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]">
+              <li className="py-2 pl-21 text-[12px] text-[color:var(--ws-ink-mute)]">
                 {t('workspace.knowledgeBase.loading')}
               </li>
             ) : node.status === 'error' ? (
-              <li className="flex items-center gap-2 py-2 pl-15 text-[12px]" role="alert">
+              <li className="flex items-center gap-2 py-2 pl-21 text-[12px]" role="alert">
                 <span>{t(materialLibraryErrorKey(node.error))}</span>
                 <button type="button" onClick={() => tree.reload()} className="ws-quiet underline">
                   {t('workspace.knowledgeBase.retry')}
@@ -1300,7 +1383,7 @@ export function MaterialLibraryPage({
             ) : node.files.length === 0 ? (
               <li
                 data-testid={`kb-folder-empty-${folder.id}`}
-                className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]"
+                className="py-2 pl-21 text-[12px] text-[color:var(--ws-ink-mute)]"
               >
                 {t('workspace.knowledgeBase.empty.folder')}
               </li>
@@ -1326,6 +1409,20 @@ export function MaterialLibraryPage({
       if (entry.material && listedIds.has(entry.material.materialId)) uploads.dismiss(entry.id);
     }
   });
+  // A file no longer shown leaves the selection: it does not come back checked
+  // when its folder opens again or the search returns to it.
+  const selectedFiles = [
+    ...new Map(
+      shownFiles()
+        .filter((file) => selected.has(file.materialId))
+        .map((file) => [file.materialId, file]),
+    ).values(),
+  ];
+  const selectedKey = selectedFiles.map((file) => file.materialId).join('\n');
+  useEffect(() => {
+    const shown = selectedKey ? selectedKey.split('\n') : [];
+    setSelected((current) => (shown.length === current.size ? current : new Set(shown)));
+  }, [selectedKey]);
   const uploadRows = uploads.entries
     .filter((entry) => !entry.material || !listedIds.has(entry.material.materialId))
     .map((entry) => {
@@ -1346,7 +1443,7 @@ export function MaterialLibraryPage({
             createdAt: '',
             extraction: { status: material.extractionStatus ?? 'pending' },
           },
-          { search: tree.mode === 'search' },
+          { search: tree.mode === 'search', selectable: false },
         );
       }
       return (
@@ -1355,6 +1452,7 @@ export function MaterialLibraryPage({
           data-testid={`kb-${entry.id}`}
           className="flex min-w-0 items-start gap-2 px-3 py-2 text-[13px]"
         >
+          <RowSelectSlot />
           <RowChevron />
           {entry.error === undefined ? (
             <LoaderCircle {...ROW_ICON} className={cn(ROW_ICON.className, 'animate-spin')} />
@@ -1396,6 +1494,7 @@ export function MaterialLibraryPage({
             LAYOUT.tree.nameSpan,
           )}
         >
+          <RowSelectSlot />
           <RowChevron open={false} />
           <Folder {...ROW_ICON} />
           <InlineName
@@ -1658,6 +1757,54 @@ export function MaterialLibraryPage({
               />
             ) : null}
           </div>
+          {/* Below the list, not above it: appearing moves no row the teacher
+              is about to click, and on a long list it stays in view. */}
+          {selectedFiles.length > 0 ? (
+            <div
+              data-testid="kb-selection-bar"
+              role="toolbar"
+              aria-label={t('workspace.knowledgeBase.selection.count', {
+                count: selectedFiles.length,
+              })}
+              className="sticky bottom-4 z-20 mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)] px-3 py-2 text-[13px] shadow-sm"
+            >
+              <span data-testid="kb-selection-count" className="font-medium">
+                {t('workspace.knowledgeBase.selection.count', { count: selectedFiles.length })}
+              </span>
+              {/* Moving is a drag (#1835 review); touch screens have none. */}
+              <span className="hidden text-[12px] text-[color:var(--ws-ink-mute)] md:inline">
+                {t('workspace.knowledgeBase.selection.dragHint')}
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="kb-selection-delete"
+                  onClick={(event) => {
+                    const items = selectedFiles.map((file) => ({
+                      materialId: file.materialId,
+                      name: file.name,
+                    }));
+                    batchDeleteSeq.current += 1;
+                    const id = batchDeleteSeq.current;
+                    openFrom(() => setBatchDeleting({ id, items }))(event.currentTarget);
+                  }}
+                  className="ws-new flex h-8 items-center gap-1.5 rounded-lg px-3 text-[13px] text-[color:var(--ws-fail)]"
+                >
+                  {menuIcons.delete}
+                  {t('workspace.knowledgeBase.actions.delete')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="kb-selection-clear"
+                  onClick={() => setSelected(new Set())}
+                  className="ws-quiet flex h-8 items-center gap-1.5 px-2 text-[13px]"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                  {t('workspace.knowledgeBase.selection.clear')}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
 
@@ -1700,6 +1847,23 @@ export function MaterialLibraryPage({
             opener.current = null;
           }}
           onClose={() => setDeleting(null)}
+          returnFocus={returnFocus}
+          t={t}
+        />
+      ) : null}
+      {batchDeleting ? (
+        <BatchDeleteDialog
+          key={batchDeleting.id}
+          items={batchDeleting.items}
+          remove={deleteLibraryMaterial}
+          onSettled={(goneIds) => {
+            unselect(goneIds);
+            reloadIfMounted.current();
+          }}
+          onDeleted={() => {
+            opener.current = null;
+          }}
+          onClose={() => setBatchDeleting(null)}
           returnFocus={returnFocus}
           t={t}
         />

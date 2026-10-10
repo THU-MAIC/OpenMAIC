@@ -1638,22 +1638,28 @@ describe('the rows’ columns', () => {
       child.className.includes('col-span-2') ? 'name×2' : child.tagName,
     );
 
-  it('keeps a chevron slot on every row and the folder count in the Size column', async () => {
+  it('keeps a checkbox and a chevron slot on every row and the folder count in the Size column', async () => {
     const page = await openPage();
     await expand('f1');
     const folderRow = page.query('kb-folder-f1')!.querySelector('[data-kb-row]')!;
     const fileRow = page.query('kb-material-a')!;
     const nested = page.query('kb-material-in-f1')!;
-    // A file's first slot is the empty chevron place, then its icon.
+    // A file's first slot is its checkbox, then the empty chevron place and its icon.
     for (const row of [fileRow, nested]) {
       const lead = row.firstElementChild!;
-      expect(lead.firstElementChild?.tagName).toBe('SPAN');
-      expect(lead.firstElementChild?.getAttribute('class')).toContain('size-4');
-      expect(lead.children[1]?.tagName.toLowerCase()).toBe('svg');
+      expect(lead.firstElementChild?.getAttribute('type')).toBe('checkbox');
+      const name = lead.children[1]!;
+      expect(name.firstElementChild?.tagName).toBe('SPAN');
+      expect(name.firstElementChild?.getAttribute('class')).toContain('size-4');
+      expect(name.children[1]?.tagName.toLowerCase()).toBe('svg');
     }
-    // Indented one level inside an open folder.
-    expect(nested.firstElementChild!.className).toContain('pl-6');
-    expect(fileRow.firstElementChild!.className).not.toContain('pl-6');
+    // A folder keeps the checkbox's room empty, so the names line up.
+    const folderLead = page.query('kb-folder-toggle-f1')!.firstElementChild!;
+    expect(folderLead.tagName).toBe('SPAN');
+    expect(folderLead.getAttribute('class')).toContain('size-4');
+    // Indented one level inside an open folder, after the checkbox.
+    expect(nested.firstElementChild!.children[1]!.className).toContain('pl-6');
+    expect(fileRow.firstElementChild!.children[1]!.className).not.toContain('pl-6');
     // Name over two columns, then Size ("N items"), Date and the ⋯: five columns as a file's.
     expect(gridChildren(folderRow)).toEqual(['name×2', 'SPAN', 'SPAN', 'SPAN']);
     expect(gridChildren(fileRow)).toEqual(['DIV', 'SPAN', 'SPAN', 'SPAN', 'SPAN']);
@@ -2387,4 +2393,289 @@ it('puts configuration guidance on unavailable parsing and keeps retry immediate
   expect(items.at(-1)?.textContent).toContain('workspace.knowledgeBase.actions.delete');
   await press(document.activeElement!, 'Escape');
   await page.dispose();
+});
+
+// ── Selecting several files (next phase after #1835) ───────────────────────
+
+describe('selecting several files', () => {
+  const check = (id: string) => choose(`kb-select-${id}`);
+  const isChecked = (id: string) => (inDocument(`kb-select-${id}`) as HTMLInputElement).checked;
+  const count = () => inDocument('kb-selection-count')?.textContent ?? null;
+  const deletes = () =>
+    writeCalls.filter((call) => call.method === 'DELETE').map((call) => call.path);
+  const noContent = () => new Response(null, { status: 204 });
+  /** Top level a, b, c; Unit 1 holds in-f1; ids in `gone` are no longer listed. */
+  const gone = new Set<string>();
+  beforeEach(() => {
+    gone.clear();
+    library = (params) => {
+      const folderId = params.get('folderId');
+      const query = params.get('query');
+      const files = query
+        ? [source('a'), inF1('in-f1')].filter((file) => file.materialId.includes(query))
+        : folderId === 'f1'
+          ? [inF1('in-f1')]
+          : folderId === 'unfiled'
+            ? [source('a'), source('b'), source('c')]
+            : [];
+      return json({
+        materials: files.filter((file) => !gone.has(file.materialId)),
+        ...(params.get('limits') === '0' ? {} : { limits: LIMITS }),
+      });
+    };
+  });
+
+  it('checks files, not folders, and says how many with Delete and Clear', async () => {
+    const page = await openPage();
+    expect(inDocument('kb-selection-bar')).toBeNull();
+    expect(page.query('kb-folder-f1')!.querySelector('input[type="checkbox"]')).toBeNull();
+    await check('a');
+    await check('b');
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":2}');
+    // Below the list: appearing moves no row above it.
+    expect(
+      page.query('kb-list')!.compareDocumentPosition(inDocument('kb-selection-bar')!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(page.query('kb-material-a')!.hasAttribute('data-selected')).toBe(true);
+    expect(page.query('kb-material-c')!.hasAttribute('data-selected')).toBe(false);
+    await check('b');
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+    await choose('kb-selection-clear');
+    expect(inDocument('kb-selection-bar')).toBeNull();
+    expect(isChecked('a')).toBe(false);
+    await page.dispose();
+  });
+
+  it('starts each query with none checked, and drops a file once it leaves the view', async () => {
+    const page = await openPage();
+    await expand('f1');
+    await check('in-f1');
+    await check('a');
+    await check('b');
+    // Collapsing its folder unchecks it; it does not come back checked.
+    await choose('kb-folder-toggle-f1');
+    await settle();
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":2}');
+    await expand('f1');
+    expect(isChecked('in-f1')).toBe(false);
+    // A new query starts with none checked, and so does leaving it.
+    await search('a');
+    expect(inDocument('kb-selection-bar')).toBeNull();
+    expect(isChecked('a')).toBe(false);
+    await check('a');
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+    await search('');
+    expect(inDocument('kb-selection-bar')).toBeNull();
+    await check('a');
+    await check('b');
+    // A refresh without it (deleted elsewhere) unchecks it.
+    gone.add('a');
+    await act(async () => window.dispatchEvent(new Event('focus')));
+    await settle();
+    expect(page.query('kb-material-a')).toBeNull();
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+    expect(isChecked('b')).toBe(true);
+    await page.dispose();
+  });
+
+  it('adds rows on "load more", never selections', async () => {
+    library = (params) =>
+      params.get('before')
+        ? json({ materials: [source('older')] })
+        : json({ materials: [source('a')], nextBefore: 'a', limits: LIMITS });
+    const page = await openPage();
+    await check('a');
+    await page.click('kb-load-more');
+    await settle();
+    expect(isChecked('older')).toBe(false);
+    expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+    await page.dispose();
+  });
+
+  describe('moving by dragging', () => {
+    const folderRow = () => inDocument('kb-folder-f1')!.firstElementChild!;
+
+    it('moves every checked file shown with a checked file, in one request, then unchecks them', async () => {
+      writeMaterial = () => json({ status: 'moved' });
+      const page = await openPage();
+      await check('a');
+      await check('c');
+      await dragFile('c', folderRow());
+      expect(writeCalls.at(-1)?.body).toEqual({ materialIds: ['a', 'c'], folderId: 'f1' });
+      expect(writeCalls).toHaveLength(1);
+      expect(inDocument('kb-selection-bar')).toBeNull();
+      await page.dispose();
+    });
+
+    it('moves only an unchecked file dragged, keeping the selection', async () => {
+      writeMaterial = () => json({ status: 'moved' });
+      const page = await openPage();
+      await check('a');
+      await dragFile('b', folderRow());
+      expect(writeCalls.at(-1)?.body).toEqual({ materialIds: ['b'], folderId: 'f1' });
+      expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+      await page.dispose();
+    });
+
+    it('keeps the selection and says nothing moved when the server refuses the batch', async () => {
+      writeMaterial = () =>
+        json({ success: false, reason: 'not_movable', materialIds: ['c'] }, 422);
+      const page = await openPage();
+      await check('a');
+      await check('c');
+      await dragFile('a', folderRow());
+      expect(parseToast.error).toHaveBeenCalledWith(
+        'workspace.knowledgeBase.error.notMovableBatch',
+      );
+      expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":2}');
+      writeMaterial = () => json({ success: false, reason: 'too_many' }, 400);
+      await dragFile('a', folderRow());
+      expect(parseToast.error).toHaveBeenLastCalledWith('workspace.knowledgeBase.error.tooMany');
+      expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":2}');
+      await page.dispose();
+    });
+
+    it('admits one move per file while a batch awaits its reply', async () => {
+      const answer = deferred<Response>();
+      writeMaterial = () => answer.promise;
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await dragFile('a', folderRow());
+      await dragFile('b', folderRow());
+      expect(writeCalls).toHaveLength(1);
+      await act(async () => answer.resolve(json({ status: 'moved' })));
+      await settle();
+      await page.dispose();
+    });
+  });
+
+  describe('deleting the checked files', () => {
+    const openBatchDelete = async () => {
+      await choose('kb-selection-delete');
+      await settle();
+    };
+    const confirm = async () => {
+      await choose('kb-batch-delete-dialog-confirm');
+      await settle();
+    };
+
+    it('names each file and how many before deleting, then deletes exactly those, one by one', async () => {
+      writeMaterial = ({ path }) => {
+        gone.add(path.split('/').at(-1)!);
+        return noContent();
+      };
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await openBatchDelete();
+      const dialog = inDocument('kb-batch-delete-dialog')!;
+      expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.batchTitle{"count":2}');
+      expect(inDocument('kb-batch-delete-dialog-items')!.textContent).toBe('a.pdfb.pdf');
+      expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.batchLinks');
+      expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.cannotUndo');
+      expect(deletes()).toEqual([]);
+      const reads = libraryCalls.length;
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b']);
+      expect(inDocument('kb-batch-delete-dialog')).toBeNull();
+      expect(libraryCalls.length).toBeGreaterThan(reads);
+      expect(page.query('kb-material-a')).toBeNull();
+      expect(page.query('kb-material-c')).not.toBeNull();
+      expect(inDocument('kb-selection-bar')).toBeNull();
+      await page.dispose();
+    });
+
+    it('deletes nothing checked after the confirmation opened', async () => {
+      writeMaterial = () => noContent();
+      const page = await openPage();
+      await check('a');
+      await openBatchDelete();
+      await check('c');
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a']);
+      await page.dispose();
+    });
+
+    it('cancels without deleting, keeping the selection', async () => {
+      const page = await openPage();
+      await check('a');
+      await openBatchDelete();
+      await choose('kb-batch-delete-dialog-cancel');
+      await settle();
+      expect(deletes()).toEqual([]);
+      expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+      await page.dispose();
+    });
+
+    it('says which were not deleted, keeps only those checked, and retries only them', async () => {
+      const answers: Record<string, Response[]> = {
+        '/api/materials/a': [noContent()],
+        '/api/materials/b': [
+          json({ success: false, errorCode: 'INTERNAL_ERROR', error: 'lost' }, 500),
+          // The first attempt committed after all: on the retry, a 404 is done.
+          new Response('Not found', { status: 404 }),
+        ],
+      };
+      writeMaterial = ({ path }) => {
+        const answer = answers[path].shift()!;
+        if (answer.status === 204) gone.add(path.split('/').at(-1)!);
+        return answer;
+      };
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await openBatchDelete();
+      await confirm();
+      expect(inDocument('kb-batch-delete-dialog-result')!.textContent).toContain(
+        'workspace.knowledgeBase.delete.batchResult{"deleted":1,"total":2}',
+      );
+      expect(inDocument('kb-batch-delete-failed-a')).toBeNull();
+      expect(inDocument('kb-batch-delete-failed-b')!.textContent).toBe(
+        'b.pdf · workspace.knowledgeBase.error.save',
+      );
+      // Behind the dialog: the deleted file is gone, the failed one still checked.
+      expect(page.query('kb-material-a')).toBeNull();
+      expect(count()).toBe('workspace.knowledgeBase.selection.count{"count":1}');
+      expect(isChecked('b')).toBe(true);
+      expect(inDocument('kb-batch-delete-dialog-confirm')!.textContent).toBe(
+        'workspace.knowledgeBase.retry',
+      );
+      gone.add('b');
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b', '/api/materials/b']);
+      expect(inDocument('kb-batch-delete-dialog')).toBeNull();
+      expect(inDocument('kb-selection-bar')).toBeNull();
+      await page.dispose();
+    });
+
+    it('reports a file gone elsewhere without a retry, and stops at a changed sign-in', async () => {
+      writeMaterial = ({ path }) =>
+        path === '/api/materials/a'
+          ? new Response('Not found', { status: 404 })
+          : json({ error: { code: 'INVALID_CREDENTIAL' } }, 401);
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await check('c');
+      await openBatchDelete();
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b']);
+      expect(inDocument('kb-batch-delete-dialog-result')!.textContent).toContain(
+        'workspace.knowledgeBase.delete.batchResult{"deleted":0,"total":3}',
+      );
+      expect(inDocument('kb-batch-delete-failed-a')!.textContent).toContain(
+        'workspace.knowledgeBase.error.gone',
+      );
+      expect(inDocument('kb-batch-delete-failed-c')!.textContent).toContain(
+        'workspace.knowledgeBase.error.identity',
+      );
+      expect(inDocument('kb-batch-delete-dialog-confirm')).toBeNull();
+      expect(inDocument('kb-batch-delete-dialog-cancel')!.textContent).toBe(
+        'workspace.knowledgeBase.dialog.close',
+      );
+      await page.dispose();
+    });
+  });
 });
