@@ -164,6 +164,39 @@ interface PendingOperation {
   completesGeneration?: boolean;
 }
 
+/**
+ * The operation a store's transaction gates, carried in the caller's async
+ * context. One storage serves every store: a server builds a store per
+ * request, and each `AsyncLocalStorage` that has run stays registered with
+ * `async_hooks` for good, so one per store would make every later promise
+ * pay for every store ever built. A frame names the store it belongs to, and
+ * a store sees only its own innermost frame -- never another store's.
+ */
+interface OperationFrame {
+  scope: OperationScope;
+  operation: PendingOperation;
+  parent: OperationFrame | undefined;
+}
+
+const operationFrames = new AsyncLocalStorage<OperationFrame>();
+
+/** One store's view of {@link operationFrames}. */
+export class OperationScope {
+  run<T>(operation: PendingOperation, body: () => Promise<T>): Promise<T> {
+    return operationFrames.run(
+      { scope: this, operation, parent: operationFrames.getStore() },
+      body,
+    );
+  }
+
+  current(): PendingOperation | undefined {
+    for (let frame = operationFrames.getStore(); frame; frame = frame.parent) {
+      if (frame.scope === this) return frame.operation;
+    }
+    return undefined;
+  }
+}
+
 /** Whether a document's outline records its generation as complete. */
 function outlineCompletesGeneration(outline: unknown): boolean {
   return (
@@ -263,7 +296,7 @@ class OwnerBoundDocumentStore<TScene extends SceneLike, TStage extends Stage>
 {
   constructor(
     private readonly inner: PgDocumentStore<TScene, TStage>,
-    private readonly operations: AsyncLocalStorage<PendingOperation>,
+    private readonly operations: OperationScope,
     private readonly runTransaction: WithTransaction,
     private readonly ownerId: string,
     /** The same store, pinned to one already-open transaction. See its use. */
@@ -512,7 +545,7 @@ export function createOwnerBoundDocumentStore<
 >(
   options: OwnerBoundDocumentStoreOptions,
 ): DocumentStore<TScene, TStage> & DocumentFolderStore & CreateOnlyDocumentStore<TScene, TStage> {
-  const operations = new AsyncLocalStorage<PendingOperation>();
+  const operations = new OperationScope();
   if (options.principal && options.principal.ownerId !== options.ownerId) {
     throw new Error('createOwnerBoundDocumentStore: principal does not match ownerId');
   }
@@ -523,7 +556,7 @@ export function createOwnerBoundDocumentStore<
 
   const withTransaction: WithTransaction = async (body) => {
     // Read before the first await, from this call's own context (see `tagged`).
-    const operation = operations.getStore();
+    const operation = operations.current();
     const client = await options.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
