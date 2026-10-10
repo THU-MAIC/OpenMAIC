@@ -2371,7 +2371,7 @@ it('keeps multiple successful uploads visible while the listing reply is pending
   await page.dispose();
 });
 
-it('puts configuration guidance on unavailable parsing and keeps retry after the file actions', async () => {
+it('puts configuration guidance on unavailable parsing and keeps retry immediately before Delete', async () => {
   library = () =>
     json({
       materials: [
@@ -2383,7 +2383,8 @@ it('puts configuration guidance on unavailable parsing and keeps retry after the
   await openMenu('kb-material-menu-a');
   const items = [...document.querySelectorAll('[role="menuitem"]')];
   expect(items[0]?.textContent).not.toContain('workspace.knowledgeBase.actions.reparse');
-  expect(items.at(-1)?.textContent).toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-2)?.textContent).toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-1)?.textContent).toContain('workspace.knowledgeBase.actions.delete');
   await press(document.activeElement!, 'Escape');
   await page.dispose();
 });

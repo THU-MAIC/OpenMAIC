@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Servicio de análisis no disponible",
-          "description": "No hay ningún servicio de análisis de documentos configurado. Pide a tu administrador que configure uno y vuelve a analizar el archivo."
+          "description": "No hay ningún servicio de análisis configurado para este tipo de archivo. Pide a tu administrador que configure uno y vuelve a analizar el archivo."
         },
         "media_too_long": {
           "label": "Audio o video demasiado largo",

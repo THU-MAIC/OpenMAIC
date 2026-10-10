@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Analysedienst nicht verfügbar",
-          "description": "Es ist kein Dienst zur Dokumentenanalyse konfiguriert. Bitten Sie Ihre Administration, einen einzurichten, und starten Sie dann die Analyse erneut."
+          "description": "Für diesen Dateityp ist kein Analysedienst konfiguriert. Bitten Sie Ihre Administration, einen einzurichten, und starten Sie dann die Analyse erneut."
         },
         "media_too_long": {
           "label": "Audio oder Video zu lang",

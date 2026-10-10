@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Parsing service unavailable",
-          "description": "No document parsing service is configured. Ask your administrator to configure one, then choose Parse again."
+          "description": "No parsing service is configured for this file type. Ask your administrator to configure one, then choose Parse again."
         },
         "media_too_long": {
           "label": "Audio or video too long",

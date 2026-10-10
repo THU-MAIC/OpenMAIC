@@ -676,8 +676,6 @@ export function MaterialLibraryPage({
   };
   /** The row control an ended edit gives the focus back to, once rendered. */
   const editHome = useRef<string | null>(null);
-  /** A ⋯ followed to its file's new row (Remove from folder), not to the heading. */
-  const followsItsFile = useRef<HTMLElement | null>(null);
   useEffect(() => {
     revealArrived();
     const home = editHome.current;
@@ -696,16 +694,9 @@ export function MaterialLibraryPage({
       return;
     }
     returnedTo.current = null;
-    const follow = followsItsFile.current === target;
-    followsItsFile.current = null;
     if (document.activeElement === null || document.activeElement === document.body) {
-      // A file taken out of its folder: the same ⋯ in its new row. Anything
-      // else whose row left the view: the heading.
-      const again =
-        follow && target.dataset.testid
-          ? list.current?.querySelector<HTMLElement>(`[data-testid="${target.dataset.testid}"]`)
-          : null;
-      (again ?? heading.current)?.focus();
+      // The row left the view: return to the heading.
+      heading.current?.focus();
     }
   });
 
@@ -1095,7 +1086,8 @@ export function MaterialLibraryPage({
       },
     ];
     if (material.extraction.reasonCode === 'service_unavailable' && items[0]?.id === 'parse') {
-      items.push(items.shift()!);
+      const parse = items.shift()!;
+      items.splice(items.length - 1, 0, parse);
     }
     return (
       <LibraryItemMenu
@@ -1160,7 +1152,7 @@ export function MaterialLibraryPage({
             ) : (
               // Double-click the name to rename it; touch screens use the ⋯.
               <span
-                className="block touch-none break-words text-[13px]"
+                className="block break-words text-[13px]"
                 title={material.name}
                 onDoubleClick={() => startRenaming('material', material.materialId, material.name)}
               >

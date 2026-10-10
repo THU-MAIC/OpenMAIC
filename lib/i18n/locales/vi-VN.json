@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Dịch vụ phân tích không khả dụng",
-          "description": "Chưa cấu hình dịch vụ phân tích tài liệu. Hãy nhờ quản trị viên cấu hình dịch vụ, rồi chọn phân tích lại."
+          "description": "Chưa cấu hình dịch vụ phân tích cho loại tệp này. Hãy nhờ quản trị viên cấu hình dịch vụ, rồi chọn phân tích lại."
         },
         "media_too_long": {
           "label": "Âm thanh hoặc video quá dài",

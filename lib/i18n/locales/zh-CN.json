@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "解析服务不可用",
-          "description": "尚未配置文档解析服务。请联系管理员完成配置，然后选择「重新解析」。"
+          "description": "尚未配置可处理此类文件的解析服务。请联系管理员完成配置，然后选择「重新解析」。"
         },
         "media_too_long": {
           "label": "音视频过长",

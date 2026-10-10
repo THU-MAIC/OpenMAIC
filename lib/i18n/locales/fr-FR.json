@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Service d’analyse indisponible",
-          "description": "Aucun service d’analyse de documents n’est configuré. Demandez à votre administrateur d’en configurer un, puis relancez l’analyse."
+          "description": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à votre administrateur d’en configurer un, puis relancez l’analyse."
         },
         "media_too_long": {
           "label": "Audio ou vidéo trop long",

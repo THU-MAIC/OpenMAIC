@@ -1998,7 +1998,7 @@
         },
         "service_unavailable": {
           "label": "解析服務無法使用",
-          "description": "尚未設定文件解析服務。請聯絡管理員完成設定，再選擇「重新解析」。"
+          "description": "尚未設定可處理此類檔案的解析服務。請聯絡管理員完成設定，再選擇「重新解析」。"
         },
         "media_too_long": {
           "label": "音訊或影片過長",
