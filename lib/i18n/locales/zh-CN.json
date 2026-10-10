@@ -1265,6 +1265,7 @@
     },
     "apiKey": "API密钥",
     "apiKeyDesc": "配置你的API密钥",
+    "credentialStorageHint": "凭据会加密保存在此实例的服务器上，并由服务器代你调用服务。此部署的运营者可能访问这些凭据，请只在你信任的实例上输入。",
     "apiBaseUrl": "API端点地址",
     "apiBaseUrlDesc": "配置你的API端点地址",
     "apiKeyRequired": "API密钥不能为空",

@@ -1265,6 +1265,7 @@
     },
     "apiKey": "API Key",
     "apiKeyDesc": "Configure your API key",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiBaseUrl": "API Endpoint URL",
     "apiBaseUrlDesc": "Configure your API endpoint URL",
     "apiKeyRequired": "API key cannot be empty",

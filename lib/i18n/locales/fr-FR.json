@@ -1264,6 +1264,7 @@
       "system": "Système"
     },
     "apiKey": "Clé d’API",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "Configurez votre clé d’API",
     "apiBaseUrl": "URL du point d’accès de l’API",
     "apiBaseUrlDesc": "Configurez l’URL du point d’accès de votre API",

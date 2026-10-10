@@ -26,6 +26,7 @@ import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers'
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
+  CredentialStorageHint,
   EndpointServerOnlyHint,
   RegionalEndpointField,
   ServerConfiguredNotice,
@@ -86,6 +87,7 @@ function DoubaoKeyFields({ onSave }: { onSave: (key: string) => Promise<unknown>
     <>
       {field(t('settings.doubaoAppId'), appId, setAppId, 'tts-app-id-doubao-tts')}
       {field(t('settings.doubaoAccessKey'), accessKey, setAccessKey, 'tts-access-key-doubao-tts')}
+      <CredentialStorageHint />
     </>
   );
 }

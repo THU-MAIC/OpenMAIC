@@ -1264,6 +1264,7 @@
       "system": "System"
     },
     "apiKey": "API-Schlüssel",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "API-Schlüssel konfigurieren",
     "apiBaseUrl": "API-Endpunkt-URL",
     "apiBaseUrlDesc": "API-Endpunkt-URL konfigurieren",

@@ -64,7 +64,12 @@ import {
   type PlanApplyMode,
   type PlanConflict,
 } from '@/lib/model-settings/token-plan';
-import { applyErrorText, reportApply, ServerOnlyNotice } from './server-settings';
+import {
+  applyErrorText,
+  CredentialStorageHint,
+  reportApply,
+  ServerOnlyNotice,
+} from './server-settings';
 import { MS, slotName } from './models/slot-meta';
 
 const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
@@ -537,9 +542,7 @@ export function TokenPlanSettings({
                           {t(editingKey ? `${tp}.updateKey` : `${tp}.saveKey`)}
                         </Button>
                       </div>
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        {t(`${tp}.keyStorage`)}
-                      </p>
+                      <CredentialStorageHint />
                     </form>
                   )}
 

@@ -7,7 +7,7 @@
  * write-only API key field, and saving a provider from a service panel.
  */
 import { useState, type ReactNode } from 'react';
-import { AlertCircle, Eye, EyeOff, Loader2, RefreshCw, Server } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, LockKeyhole, RefreshCw, Server } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -148,6 +148,16 @@ export function EndpointServerOnlyHint() {
   return <p className="text-xs text-muted-foreground">{t(`${SC}.endpointServerOnly`)}</p>;
 }
 
+export function CredentialStorageHint() {
+  const { t } = useI18n();
+  return (
+    <p className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+      <LockKeyhole className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span>{t('settings.credentialStorageHint')}</span>
+    </p>
+  );
+}
+
 /**
  * A write-only API key: the stored key is never shown, only its mask. Typing
  * a key and leaving the field (or pressing Enter) saves it; "Remove key"
@@ -242,6 +252,7 @@ export function ApiKeyField({
           )}
         </p>
       ) : null}
+      <CredentialStorageHint />
     </div>
   );
 }

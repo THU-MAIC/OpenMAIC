@@ -1250,6 +1250,7 @@
     },
     "apiKey": "API 金鑰",
     "apiKeyDesc": "設定你的API密鑰",
+    "credentialStorageHint": "憑據會加密保存在此執行個體的伺服器上，並由伺服器代你呼叫服務。此部署的運營者可能存取這些憑據，請只在你信任的執行個體上輸入。",
     "apiBaseUrl": "API 端點位址",
     "apiBaseUrlDesc": "設定你的 API 端點位址",
     "apiKeyRequired": "API密鑰不能為空",

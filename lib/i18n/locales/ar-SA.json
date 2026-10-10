@@ -1264,6 +1264,7 @@
       "system": "النظام"
     },
     "apiKey": "مفتاح API",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "تكوين مفتاح API الخاص بك",
     "apiBaseUrl": "عنوان نقطة نهاية API",
     "apiBaseUrlDesc": "تكوين عنوان نقطة نهاية API",
