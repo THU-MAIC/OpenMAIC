@@ -30,6 +30,7 @@ import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { workspaceHref } from '@/lib/workbench/workspace-panes';
 import { exitProPlaybackToStandalone } from '@/lib/workbench/pro-playback-exit';
+import { stageInteractiveRepairHandoff } from '@/lib/workbench/interactive-repair-handoff';
 
 /**
  * Stage — top-level classroom container. Standalone classrooms dispatch
@@ -125,6 +126,34 @@ export function Stage({
   // pane's answer being read back rather than a second derivation that could
   // disagree with it.
   const workbenchShowingClassroom = hosted && workbenchPanel.editPinned;
+  const handoffInteractiveRepair = useCallback(
+    (sceneId: string, runtimeError: string) => {
+      if (!stage?.id) return;
+      if (!stageInteractiveRepairHandoff({ courseId: stage.id, sceneId, error: runtimeError }))
+        return;
+
+      if (hosted) {
+        // Full-screen learning keeps the workspace mounted. Releasing playback
+        // lets its handoff listener reveal the staged draft in the chat pane.
+        useWorkbenchStore.getState().setPlaybackOn(false);
+        return;
+      }
+      router.replace(workspaceHref({ sessionId: null, courseId: stage.id }));
+    },
+    [hosted, router, stage?.id],
+  );
+
+  // Repair is a write capability, not an edit-chrome capability. Writable users
+  // may start it from standalone/playback and be handed into the workspace;
+  // read-only viewers never receive a mutation affordance. Inside an editable
+  // workspace pane, keep the direct handoff so no navigation is needed.
+  const requestInteractiveRepair = canEditOwnedStage
+    ? workbenchShowingClassroom && workbenchPanel.requestInteractiveRepair
+      ? workbenchPanel.requestInteractiveRepair
+      : proWorkbenchEntry && stage?.id
+        ? handoffInteractiveRepair
+        : undefined
+    : undefined;
 
   // Single decision for the classroom chrome's top-left back affordance:
   // plain classroom → home arrow; full-screen playback → "Back to workspace";
@@ -406,6 +435,7 @@ export function Stage({
         playbackPicker={playbackInteractivePicker}
         onPlaybackPick={handlePlaybackInteractivePick}
         onPlaybackCancel={handlePlaybackInteractiveCancel}
+        onRequestInteractiveRepair={requestInteractiveRepair}
       />
     </div>
   );

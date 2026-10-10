@@ -141,10 +141,12 @@ export function InteractiveIframeHost({
   playbackPicker,
   onPlaybackPick,
   onPlaybackCancel,
+  onRequestInteractiveRepair,
 }: {
   readonly playbackPicker?: PlaybackInteractivePickerState | null;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
   readonly onPlaybackCancel?: () => void;
+  readonly onRequestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
 }) {
   const entries = useInteractiveIframePool((s) => s.entries);
   const activeSceneId = useInteractiveIframePool((s) => s.activeSceneId);
@@ -189,6 +191,7 @@ export function InteractiveIframeHost({
           }
           onPlaybackPick={onPlaybackPick}
           onPlaybackCancel={onPlaybackCancel}
+          onRequestInteractiveRepair={onRequestInteractiveRepair}
         />
       ))}
     </>,
@@ -204,6 +207,7 @@ interface PooledIframeProps {
   readonly playbackSelectedSelector?: string;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
   readonly onPlaybackCancel?: () => void;
+  readonly onRequestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
 }
 
 /**
@@ -231,6 +235,7 @@ function PooledIframe({
   playbackSelectedSelector,
   onPlaybackPick,
   onPlaybackCancel,
+  onRequestInteractiveRepair,
 }: PooledIframeProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -454,6 +459,11 @@ function PooledIframe({
         <InteractiveRuntimeErrorBanner
           message={latestRuntimeError}
           onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
+          onFix={
+            onRequestInteractiveRepair
+              ? () => onRequestInteractiveRepair(sceneId, latestRuntimeError)
+              : undefined
+          }
         />
       ) : null}
       {playbackArmed && (
