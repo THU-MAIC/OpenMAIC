@@ -1104,6 +1104,36 @@ describe('chat RuntimeStore cutover', () => {
     ).resolves.toMatchObject([{ title: 'Updated', updatedAt: 3_000 }]);
   });
 
+  it('degrades to lock-free writes when the nested Web Locks request rejects before the work starts (iPadOS, #1800)', async () => {
+    // Mirror the iPadOS symptom in #1800: the outer whole-store shared lock
+    // succeeds, but the nested partition request rejects at runtime, so the
+    // API-absence gate never engages and every write used to fail forever.
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (
+          name: string,
+          optionsOrWork: LockOptions | (() => Promise<unknown>),
+          maybeWork?: () => Promise<unknown>,
+        ) => {
+          if (name === 'openmaic:chat-storage:all') {
+            return (typeof optionsOrWork === 'function' ? optionsOrWork : maybeWork!)();
+          }
+          throw new DOMException('nested Web Locks request rejected', 'InvalidStateError');
+        },
+      },
+    });
+    const backing = makeRuntimeStore();
+    const legacyStore = new MemoryLegacyChatStore();
+    await saveChatSessions(STAGE_ID, [{ ...session(), title: 'iPad save', updatedAt: 3_000 }], {
+      store: backing,
+      learnerKey: LEARNER_KEY,
+      legacyStore,
+    });
+    await expect(
+      loadChatSessions(STAGE_ID, { store: backing, learnerKey: LEARNER_KEY, legacyStore }),
+    ).resolves.toMatchObject([{ title: 'iPad save' }]);
+  });
+
   it('does not retain partial isolated generations when appends keep failing', async () => {
     const backing = makeRuntimeStore();
     const legacyStore = new MemoryLegacyChatStore();
