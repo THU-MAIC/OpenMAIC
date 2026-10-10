@@ -147,7 +147,11 @@ export async function slotLanguageModel(resolution: AssignedSlot): Promise<SlotR
     // A retry on a model that cannot do what the slot needs would only fail again.
     if (!fallback || fallbackUnmet) return null;
     const built = await languageModelFor(fallback, resolution.thinking);
-    return { model: built.model, modelString: built.modelString };
+    return {
+      model: built.model,
+      modelString: built.modelString,
+      outputWindow: built.modelInfo?.outputWindow,
+    };
   });
   return { ...resolved, resolution };
 }
