@@ -1264,6 +1264,7 @@
       "system": "Sistema"
     },
     "apiKey": "Chave de API",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "Configure sua chave de API",
     "apiBaseUrl": "URL do Endpoint da API",
     "apiBaseUrlDesc": "Configure a URL do endpoint da sua API",

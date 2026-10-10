@@ -1264,6 +1264,7 @@
       "system": "시스템"
     },
     "apiKey": "API 키",
+    "credentialStorageHint": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "API 키를 설정하세요",
     "apiBaseUrl": "API 엔드포인트 URL",
     "apiBaseUrlDesc": "API 엔드포인트 URL을 설정하세요",
