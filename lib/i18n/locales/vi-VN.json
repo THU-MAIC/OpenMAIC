@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Dịch vụ phân tích không khả dụng",
-          "description": "Hiện không thể sử dụng dịch vụ phân tích. Hãy thử lại sau; nếu tình trạng tiếp diễn, hãy liên hệ quản trị viên."
+          "description": "Chưa cấu hình dịch vụ phân tích cho loại tệp này. Hãy nhờ quản trị viên cấu hình dịch vụ, rồi chọn phân tích lại."
         },
         "media_too_long": {
           "label": "Âm thanh hoặc video quá dài",
@@ -2078,8 +2078,6 @@
         "reparse": "Phân tích lại",
         "more": "Thao tác khác cho {{name}}",
         "rename": "Đổi tên",
-        "move": "Chuyển đến…",
-        "removeFromFolder": "Bỏ khỏi thư mục",
         "delete": "Xóa",
         "open": "Mở",
         "downloadOriginal": "Tải xuống tệp gốc",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Hủy",
-        "moveTitle": "Chuyển “{{name}}”",
-        "moveConfirm": "Chuyển",
-        "noFolders": "Chưa có thư mục nào để chuyển đến. Hãy tạo một thư mục trước.",
         "close": "Đóng"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "Nội dung đã lưu vào khóa học không bị ảnh hưởng.",
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
-        "folderOnlyEmpty": "Chỉ có thể xóa thư mục trống. Hãy chuyển tài liệu trong đó đi trước."
+        "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Tìm lớp học và tài liệu",
+      "courseOrder": "Lớp đang mở trước, sau đó theo cập nhật gần nhất",
+      "materialOrder": "Tải lên mới nhất trước",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "Đính kèm {{name}} vào tin nhắn này",
       "materialAttached": "Đã có trong cuộc trò chuyện này",
       "materialStaged": "Đã có trong tin nhắn này",
-      "materialExtracting": "Đang bóc tách",
-      "materialFailed": "Bóc tách thất bại",
-      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
-      "materialNotExtracted": "Chưa bóc tách",
-      "materialExtracted": "Đã bóc tách"
+      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

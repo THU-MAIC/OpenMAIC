@@ -4,6 +4,7 @@
  * owner (routes) or the run's owner (tools). Only owner resolution and the
  * runtime gate are stubbed.
  */
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import { randomUUID } from 'node:crypto';
 
 import { PGlite } from '@electric-sql/pglite';
@@ -167,13 +168,6 @@ describe('material library routes and tools (PGlite)', () => {
     await moveRoute(
       request('POST', '/api/materials/move', { materialIds: ['src-a'], folderId: folder.id }),
     );
-    const notEmpty = await deleteFolderRoute(
-      request('DELETE', `/api/materials/folders/${folder.id}`),
-      params(folder.id),
-    );
-    expect(notEmpty.status).toBe(409);
-    expect(await notEmpty.json()).toMatchObject({ reason: 'not_empty' });
-
     // Another owner sees none of it.
     mocks.ownerId = OTHER;
     expect(
@@ -194,14 +188,18 @@ describe('material library routes and tools (PGlite)', () => {
     ).toBe(404);
     mocks.ownerId = ACCOUNT;
 
-    await moveRoute(
-      request('POST', '/api/materials/move', { materialIds: ['src-a'], folderId: null }),
-    );
     const deleted = await deleteFolderRoute(
       request('DELETE', `/api/materials/folders/${folder.id}`),
       params(folder.id),
     );
     expect(deleted.status).toBe(204);
+    expect(
+      (
+        await h.pool.query('SELECT folder_id, deleted_at FROM owner_material WHERE id = $1', [
+          'src-a',
+        ])
+      ).rows,
+    ).toEqual([{ folder_id: null, deleted_at: null }]);
   });
 
   it('moves all or nothing and renames sources only', async () => {
@@ -301,7 +299,10 @@ describe('material library routes and tools (PGlite)', () => {
     expect(listed.details.folders).toEqual([
       { folderId: folder.details.folderId, name: 'From the run', materialCount: 1 },
     ]);
-    const refused = await run('move_materials', { materialIds: ['missing'], folderId: null });
+    const refused = await run('move_materials', {
+      materialIds: ['missing'],
+      folderId: 'top-level',
+    });
     expect(refused).toMatchObject({ isError: true, details: { status: 'not_movable' } });
   });
 
@@ -457,7 +458,7 @@ describe('material library routes and tools (PGlite)', () => {
     await run('rename_material_folder', { folderId: folder.details.folderId, name: 'Unit 1' });
     await run('move_materials', { materialIds: ['src-a'], folderId: folder.details.folderId });
     await run('move_materials', { materialIds: ['src-a'], folderId: folder.details.folderId });
-    await run('move_materials', { materialIds: ['missing'], folderId: null });
+    await run('move_materials', { materialIds: ['missing'], folderId: 'top-level' });
     await run('rename_material', { materialId: 'src-a', name: 'src-a.pdf' });
     await run('rename_material', { materialId: 'src-a', name: 'Lesson' });
     expect(changes).toEqual([
@@ -1376,5 +1377,47 @@ describe('material library routes and tools (PGlite)', () => {
     expect(contentDisposition('attachment', "it's (1)*.png", 'mat-1')).toBe(
       `attachment; filename="it's (1)*.png"; filename*=UTF-8''it%27s%20%281%29%2A.png`,
     );
+  });
+  it('moves to and lists the top level through real pi-ai argument validation', async () => {
+    const h = await boot();
+    await seedSession(h, 'ses-validation');
+    await seedSource(h, 'validated-source');
+    const tools = [
+      ...buildMaterialLibraryTools({ ownerId: ACCOUNT, sessionId: 'ses-validation' }),
+      ...buildMaterialTools({ sessionId: 'ses-validation' }),
+    ];
+    const run = async (name: string, args: Record<string, unknown>) => {
+      const tool = tools.find((tool) => tool.name === name)!;
+      const validated = validateToolArguments(tool, {
+        type: 'toolCall',
+        id: 'call',
+        name,
+        arguments: args,
+      });
+      return tool.execute('call', validated as never) as Promise<{
+        details: Record<string, unknown>;
+      }>;
+    };
+    const folder = await run('create_material_folder', { name: 'Validation' });
+    await run('move_materials', {
+      materialIds: ['validated-source'],
+      folderId: folder.details.folderId,
+    });
+    expect(
+      (await run('list_materials', { scope: 'library', folderId: 'top-level' })).details.materials,
+    ).toEqual([]);
+    const moved = await run('move_materials', {
+      materialIds: ['validated-source'],
+      folderId: 'top-level',
+    });
+    expect(moved.details).toMatchObject({ status: 'moved', folderId: null });
+    expect(
+      (await run('list_materials', { scope: 'library', folderId: 'top-level' })).details.materials,
+    ).toEqual([expect.objectContaining({ materialId: 'validated-source', folderId: null })]);
+    expect(
+      (await run('list_materials', { scope: 'library', folderId: folder.details.folderId })).details
+        .materials,
+    ).toEqual([]);
+    expect((await run('list_materials', { scope: 'library' })).details.materials).toHaveLength(1);
   });
 });

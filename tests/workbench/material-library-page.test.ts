@@ -626,10 +626,7 @@ describe('staying fresh without moving the teacher', () => {
         await typeInto(renameInput()!, 'Later');
         await press(renameInput()!, 'Enter');
       } else {
-        await openMenu('kb-material-menu-a');
-        await choose('kb-material-menu-a-move');
-        await choose('kb-move-to-f1');
-        await choose('kb-move-confirm');
+        await dragFile('a', inDocument('kb-folder-f1')!.firstElementChild!);
       }
       expect(writeCalls, action).toHaveLength(1);
 
@@ -1163,11 +1160,11 @@ describe('a folder row', () => {
     await page.dispose();
   });
 
-  it('offers Delete only for an empty folder', async () => {
+  it('offers Delete for both empty and non-empty folders', async () => {
     const page = await openPage();
     await openMenu('kb-folder-menu-f1');
     expect(inDocument('kb-folder-menu-f1-rename')).not.toBeNull();
-    expect(inDocument('kb-folder-menu-f1-delete')).toBeNull();
+    expect(inDocument('kb-folder-menu-f1-delete')).not.toBeNull();
     await act(async () => {
       document.activeElement?.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
@@ -1635,118 +1632,6 @@ describe('renaming in place', () => {
 
 // ── Out of a folder, and the rows' columns (#1835 review §2, §3) ──────────
 
-describe('taking a file out of its folder', () => {
-  /** f1 holds in-f1 until a move answers; then in-f1 is at the top level. */
-  const movable = () => {
-    let out = false;
-    library = (params) =>
-      json({
-        materials:
-          params.get('folderId') === 'f1'
-            ? out
-              ? []
-              : [inF1('in-f1')]
-            : out
-              ? [source('a'), source('in-f1')]
-              : [source('a')],
-        limits: LIMITS,
-      });
-    return () => {
-      out = true;
-    };
-  };
-
-  it('offers Remove from folder only on a file in a folder, and puts it at the top level', async () => {
-    const moveOut = movable();
-    writeMaterial = () => {
-      moveOut();
-      return json({ status: 'moved', movedCount: 1 });
-    };
-    const page = await openPage();
-    await openMenu('kb-material-menu-a');
-    expect(inDocument('kb-material-menu-a-remove-from-folder')).toBeNull();
-    await act(async () =>
-      document.activeElement?.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-      ),
-    );
-    await settle();
-    await expand('f1');
-    await openMenu('kb-material-menu-in-f1');
-    expect(inDocument('kb-material-menu-in-f1-remove-from-folder')?.textContent).toContain(
-      'workspace.knowledgeBase.actions.removeFromFolder',
-    );
-    await choose('kb-material-menu-in-f1-remove-from-folder');
-    await settle();
-    expect(writeCalls).toEqual([
-      {
-        method: 'POST',
-        path: '/api/materials/move',
-        body: { materialIds: ['in-f1'], folderId: null },
-      },
-    ]);
-    expect(page.query('kb-folder-files-f1')?.contains(page.query('kb-material-in-f1'))).toBe(false);
-    expect(page.query('kb-tree')?.contains(page.query('kb-material-in-f1'))).toBe(true);
-    // The focus follows the file to its new row.
-    expect(document.activeElement).toBe(page.query('kb-material-menu-in-f1'));
-    await page.dispose();
-  });
-
-  it('says why it was refused, leaving the file where it was', async () => {
-    writeMaterial = () =>
-      json(
-        { success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'not_movable' },
-        409,
-      );
-    const page = await openPage();
-    await expand('f1');
-    await openMenu('kb-material-menu-in-f1');
-    await choose('kb-material-menu-in-f1-remove-from-folder');
-    await settle();
-    expect(parseToast.error).toHaveBeenCalledWith('workspace.knowledgeBase.error.notMovable');
-    expect(page.query('kb-folder-files-f1')?.contains(page.query('kb-material-in-f1'))).toBe(true);
-    await page.dispose();
-  });
-
-  it('asks once while a removal is answered, and leaves a focus the teacher moved', async () => {
-    const answer = deferred<Response>();
-    const moveOut = movable();
-    writeMaterial = () => answer.promise;
-    const page = await openPage();
-    await expand('f1');
-    await openMenu('kb-material-menu-in-f1');
-    await choose('kb-material-menu-in-f1-remove-from-folder');
-    await settle();
-    await openMenu('kb-material-menu-in-f1');
-    await choose('kb-material-menu-in-f1-remove-from-folder');
-    await settle();
-    expect(writeCalls).toHaveLength(1);
-    const searchBox = page.query('kb-search')!;
-    searchBox.focus();
-    moveOut();
-    await act(async () => answer.resolve(json({ status: 'moved', movedCount: 1 })));
-    await settle();
-    expect(page.query('kb-tree')?.contains(page.query('kb-material-in-f1'))).toBe(true);
-    expect(document.activeElement).toBe(searchBox);
-    await page.dispose();
-  });
-
-  it('says plainly when there is no other folder to move to', async () => {
-    folders = () => json({ folders: [{ id: 'f1', name: 'Unit 1', materialCount: 1 }] });
-    const page = await openPage();
-    await expand('f1');
-    await openMenu('kb-material-menu-in-f1');
-    await choose('kb-material-menu-in-f1-move');
-    expect(inDocument('kb-move-dialog')!.textContent).toContain(
-      'workspace.knowledgeBase.dialog.noFolders',
-    );
-    expect(
-      inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]'),
-    ).toHaveLength(0);
-    await page.dispose();
-  });
-});
-
 describe('the rows’ columns', () => {
   const gridChildren = (row: Element) =>
     [...row.children].map((child) =>
@@ -1833,224 +1718,7 @@ describe('opening or downloading the original', () => {
   });
 });
 
-describe('Move to…, chosen then confirmed', () => {
-  const pressed = () =>
-    [...inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]')]
-      .filter((target) => target.getAttribute('aria-pressed') === 'true')
-      .map((target) => target.getAttribute('data-testid'));
-  const confirmButton = () => inDocument('kb-move-confirm') as HTMLButtonElement;
-  const openMove = async () => {
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-move');
-    await settle();
-  };
-
-  it('opens with nothing chosen and the focus on no folder; a click chooses, Move moves', async () => {
-    const page = await openPage();
-    await openMove();
-    expect(pressed()).toEqual([]);
-    expect(confirmButton().disabled).toBe(true);
-    expect(document.activeElement?.getAttribute('data-testid')).not.toMatch(/^kb-move-to-/);
-    await choose('kb-move-to-f2');
-    expect(pressed()).toEqual(['kb-move-to-f2']);
-    expect(writeCalls).toEqual([]);
-    await choose('kb-move-to-f1');
-    expect(pressed()).toEqual(['kb-move-to-f1']);
-    expect(confirmButton().disabled).toBe(false);
-    await choose('kb-move-confirm');
-    await settle();
-    expect(writeCalls).toEqual([
-      { method: 'POST', path: '/api/materials/move', body: { materialIds: ['a'], folderId: 'f1' } },
-    ]);
-    expect(inDocument('kb-move-dialog')).toBeNull();
-    await page.dispose();
-  });
-
-  it('drops a choice the list no longer offers: a folder deleted elsewhere cannot be moved to', async () => {
-    const page = await openPage();
-    await openMove();
-    await choose('kb-move-to-f2');
-    expect(confirmButton().disabled).toBe(false);
-    folders = () => json({ folders: [{ id: 'f1', name: 'Unit 1', materialCount: 2 }] });
-    await act(async () => window.dispatchEvent(new Event('focus')));
-    await settle();
-    expect(inDocument('kb-move-to-f2')).toBeNull();
-    expect(pressed()).toEqual([]);
-    expect(confirmButton().disabled).toBe(true);
-    expect(writeCalls).toEqual([]);
-    await page.dispose();
-  });
-
-  it('a keyboard focus is not a choice; Cancel moves nothing', async () => {
-    const page = await openPage();
-    await openMove();
-    await act(async () => (inDocument('kb-move-to-f1') as HTMLElement).focus());
-    expect(pressed()).toEqual([]);
-    expect(confirmButton().disabled).toBe(true);
-    await choose('kb-move-cancel');
-    await settle();
-    expect(inDocument('kb-move-dialog')).toBeNull();
-    expect(writeCalls).toEqual([]);
-    await page.dispose();
-  });
-
-  it('keeps a refusal in the dialog to retry, and sends one move however often it is confirmed', async () => {
-    const answers = [
-      json(
-        { success: false, errorCode: 'INVALID_REQUEST', error: 'no', reason: 'not_movable' },
-        422,
-      ),
-    ];
-    const pending = deferred<Response>();
-    writeMaterial = () => answers.shift() ?? pending.promise;
-    const page = await openPage();
-    await openMove();
-    await choose('kb-move-to-f1');
-    await choose('kb-move-confirm');
-    await settle();
-    expect(inDocument('kb-move-dialog-error')?.textContent).toBe(
-      'workspace.knowledgeBase.error.notMovable',
-    );
-    expect(pressed()).toEqual(['kb-move-to-f1']);
-    // Retry: one request, however often Move is pressed while it is answered.
-    await act(async () => {
-      confirmButton().click();
-      confirmButton().click();
-    });
-    expect(confirmButton().disabled).toBe(true);
-    expect(writeCalls).toHaveLength(2);
-    await act(async () => pending.resolve(json({ status: 'moved', movedCount: 1 })));
-    await settle();
-    expect(inDocument('kb-move-dialog')).toBeNull();
-    expect(writeCalls).toHaveLength(2);
-    await page.dispose();
-  });
-});
-
-// ── Organizing ─────────────────────────────────────────────────────────────
-
 describe('organizing from the page', () => {
-  it.each([
-    ['before', false],
-    ['after', true],
-  ] as const)(
-    'gives the heading the focus after Move into an open folder, the list read %s the dialog closes',
-    async (_when, slowRead) => {
-      // As before R8: Move's ⋯ is gone with its row, so the heading takes the
-      // focus. Only Remove from folder follows the file to its new row.
-      const place: Record<string, string | null> = { a: null };
-      let moved = false;
-      const reread = deferred<void>();
-      library = async (params) => {
-        if (moved && slowRead) await reread.promise;
-        const folderId = params.get('folderId');
-        const here = folderId === 'unfiled' ? null : folderId;
-        return json({
-          materials: Object.entries(place)
-            .filter(([, at]) => at === here)
-            .map(([id, at]) => (at ? inF1(id) : source(id))),
-          limits: LIMITS,
-        });
-      };
-      writeMaterial = (call) => {
-        place.a = (call.body as { folderId: string }).folderId;
-        moved = true;
-        return json({ status: 'moved', movedCount: 1 });
-      };
-      const page = await openPage();
-      await expand('f1');
-      await openMenu('kb-material-menu-a');
-      await choose('kb-material-menu-a-move');
-      await choose('kb-move-to-f1');
-      await choose('kb-move-confirm');
-      await settle();
-      reread.resolve();
-      await settle();
-      expect(page.query('kb-folder-files-f1')!.contains(inDocument('kb-material-menu-a'))).toBe(
-        true,
-      );
-      expect(document.activeElement?.id).toBe('pro-workspace-library-title');
-      await page.dispose();
-    },
-  );
-
-  it('moves a source into another folder; Move to… lists folders only', async () => {
-    const page = await openPage();
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-move');
-    expect(inDocument('kb-move-to-unfiled')).toBeNull();
-    await choose('kb-move-to-f1');
-    await choose('kb-move-confirm');
-    await settle();
-    expect(writeCalls.at(-1)).toEqual({
-      method: 'POST',
-      path: '/api/materials/move',
-      body: { materialIds: ['a'], folderId: 'f1' },
-    });
-    expect(inDocument('kb-move-dialog')).toBeNull();
-
-    await expand('f1');
-    await openMenu('kb-material-menu-in-f1');
-    await choose('kb-material-menu-in-f1-move');
-    expect(inDocument('kb-move-to-f1')).toBeNull();
-    expect(inDocument('kb-move-to-unfiled')).toBeNull();
-    const targets = [
-      ...inDocument('kb-move-dialog')!.querySelectorAll('[data-testid^="kb-move-to-"]'),
-    ];
-    expect(targets.map((target) => target.getAttribute('data-testid'))).toEqual(['kb-move-to-f2']);
-    expect(inDocument('kb-move-dialog')!.textContent).not.toMatch(/unfiled/i);
-    await page.dispose();
-  });
-
-  it('says why a move was refused, never as a success', async () => {
-    writeMaterial = () =>
-      json(
-        {
-          success: false,
-          errorCode: 'INVALID_REQUEST',
-          error: 'no',
-          reason: 'not_movable',
-          materialIds: ['a'],
-        },
-        422,
-      );
-    const page = await openPage();
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-move');
-    await choose('kb-move-to-f1');
-    await choose('kb-move-confirm');
-    await settle();
-    expect(inDocument('kb-move-dialog-error')?.textContent).toBe(
-      'workspace.knowledgeBase.error.notMovable',
-    );
-    expect(inDocument('kb-move-dialog')).not.toBeNull();
-    await page.dispose();
-  });
-
-  it('gives the focus back to the control that opened a dialog', async () => {
-    const page = await openPage();
-    await renameFrom('kb-material-menu-a');
-    await typeInto(renameInput()!, 'Chapter 1');
-    await press(renameInput()!, 'Enter');
-    await settle();
-    expect(document.activeElement).toBe(inDocument('kb-material-menu-a'));
-
-    // Moved into a folder that is closed: its ⋯ is gone, the heading takes the focus.
-    await openMenu('kb-material-menu-a');
-    await choose('kb-material-menu-a-move');
-    library = (params) =>
-      json({
-        materials: params.get('folderId') === 'f1' ? [inF1('a')] : [],
-        limits: LIMITS,
-      });
-    await choose('kb-move-to-f1');
-    await choose('kb-move-confirm');
-    await settle();
-    expect(inDocument('kb-material-menu-a')).toBeNull();
-    expect(document.activeElement?.id).toBe('pro-workspace-library-title');
-    await page.dispose();
-  });
-
   describe('when the list read after a rename drops the source from the search', () => {
     let reread: ReturnType<typeof deferred<Response>>;
     beforeEach(() => {
@@ -2235,25 +1903,20 @@ describe('deleting from the page', () => {
     await page.dispose();
   });
 
-  it('still refuses an "empty" folder the server finds not empty, in its word', async () => {
-    writeMaterial = () =>
-      json({ success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'not_empty' }, 409);
+  it('confirms the file count before deleting a non-empty folder, without deleting files', async () => {
+    writeMaterial = () => noContent();
     const page = await openPage();
-    const reads = libraryCalls.length;
-    await openMenu('kb-folder-menu-f2');
-    await choose('kb-folder-menu-f2-delete');
+    await openMenu('kb-folder-menu-f1');
+    await choose('kb-folder-menu-f1-delete');
     expect(inDocument('kb-delete-dialog')?.textContent).toContain(
-      'workspace.knowledgeBase.delete.folderOnlyEmpty',
+      'workspace.knowledgeBase.delete.folderContents{"count":2}',
     );
+    expect(deletes()).toEqual([]);
     await confirm();
     expect(deletes()).toEqual([
-      { method: 'DELETE', path: '/api/materials/folders/f2', body: undefined },
+      { method: 'DELETE', path: '/api/materials/folders/f1', body: undefined },
     ]);
-    expect(inDocument('kb-delete-dialog-message')?.textContent).toBe(
-      'workspace.knowledgeBase.error.notEmpty',
-    );
-    expect(inDocument('kb-delete-dialog-confirm')).toBeNull();
-    expect(libraryCalls.length).toBe(reads + 1);
+    expect(inDocument('kb-delete-dialog')).toBeNull();
     await page.dispose();
   });
 
@@ -2560,4 +2223,168 @@ describe('R6 manual parsing', () => {
     expect(document.activeElement).toBe(page.query('kb-material-menu-bad'));
     await page.dispose();
   });
+});
+
+async function dragFile(id: string, target: Element, release = true) {
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => target });
+  await act(async () => {
+    inDocument(`kb-material-${id}`)!.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 10, clientY: 10 }),
+    );
+    window.dispatchEvent(
+      new PointerEvent('pointermove', { bubbles: true, clientX: 20, clientY: 20 }),
+    );
+    if (release) window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  await settle();
+}
+
+describe('dragging knowledge-base files with the shared tree gesture', () => {
+  it('files into a highlighted folder on drop and returns to the blank top-level ground', async () => {
+    let at: string | null = null;
+    library = (params) =>
+      json({
+        materials:
+          params.get('folderId') === (at ?? 'unfiled') ? [source('a', { folderId: at })] : [],
+        limits: LIMITS,
+      });
+    writeMaterial = (call) => {
+      at = (call.body as { folderId: string | null }).folderId;
+      return json({ status: 'moved' });
+    };
+    const page = await openPage();
+    await openMenu('kb-material-menu-a');
+    expect(inDocument('kb-material-menu-a-move')).toBeNull();
+    expect(inDocument('kb-material-menu-a-remove-from-folder')).toBeNull();
+    await press(document.activeElement!, 'Escape');
+    await settle();
+    await dragFile('a', inDocument('kb-folder-f1')!.firstElementChild!, false);
+    expect(writeCalls).toEqual([]);
+    expect(inDocument('kb-folder-f1')!.firstElementChild!.className).toContain('ws-drop-into');
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 550));
+    });
+    await settle();
+    expect(inDocument('kb-folder-files-f1')).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    });
+    await settle();
+    expect(writeCalls.at(-1)?.body).toEqual({ materialIds: ['a'], folderId: 'f1' });
+    expect(inDocument('kb-folder-files-f1')!.contains(inDocument('kb-material-a'))).toBe(true);
+    await dragFile('a', inDocument('kb-drop-top-level')!);
+    expect(writeCalls.at(-1)?.body).toEqual({ materialIds: ['a'], folderId: null });
+    expect(inDocument('kb-folder-files-f1')!.contains(inDocument('kb-material-a'))).toBe(false);
+    await page.dispose();
+  });
+
+  it('cancels with Escape and ignores a target outside this page', async () => {
+    const page = await openPage();
+    await dragFile('a', inDocument('kb-folder-f1')!.firstElementChild!, false);
+    await press(document.body, 'Escape');
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    });
+    expect(writeCalls).toEqual([]);
+    const otherTree = document.createElement('div');
+    otherTree.dataset.wsDropFolder = 'rail-folder';
+    document.body.append(otherTree);
+    await dragFile('a', otherTree);
+    expect(writeCalls).toEqual([]);
+    otherTree.remove();
+    await page.dispose();
+  });
+
+  it('reports a refused drop and admits only one move per file while awaiting a reply', async () => {
+    const answer = deferred<Response>();
+    writeMaterial = () => answer.promise;
+    const page = await openPage();
+    const folder = inDocument('kb-folder-f1')!.firstElementChild!;
+    await dragFile('a', folder);
+    await dragFile('a', folder);
+    expect(writeCalls).toHaveLength(1);
+    await act(async () => answer.resolve(json({ error: 'no', reason: 'not_movable' }, 409)));
+    await settle();
+    expect(parseToast.error).toHaveBeenCalledWith('workspace.knowledgeBase.error.notMovable');
+    expect(inDocument('kb-tree')!.contains(inDocument('kb-material-a'))).toBe(true);
+    await page.dispose();
+  });
+});
+
+it('keeps a refused new-folder name across a search and return to the tree', async () => {
+  writeMaterial = () => json({ folder: { id: 'f1' }, created: false });
+  const page = await openPage();
+  await page.click('kb-folder-new');
+  await typeInto(inDocument('kb-new-folder-input') as HTMLInputElement, 'Unit 1');
+  await press(inDocument('kb-new-folder-input')!, 'Enter');
+  await settle();
+  expect(inDocument('kb-new-folder-error')?.textContent).toBe(
+    'workspace.knowledgeBase.error.nameTaken',
+  );
+  await search('something');
+  await search('');
+  expect((inDocument('kb-new-folder-input') as HTMLInputElement).value).toBe('Unit 1');
+  await page.dispose();
+});
+
+it('keeps multiple successful uploads visible while the listing reply is pending', async () => {
+  const page = await openPage();
+  const reread = deferred<Response>();
+  library = () => reread.promise;
+  uploadMaterial = (file) =>
+    json(
+      {
+        materialId: file.name,
+        originalName: file.name,
+        bytes: 4,
+        extraction: { status: 'pending' },
+      },
+      201,
+    );
+  const input = page.query('kb-upload-input') as HTMLInputElement;
+  Object.defineProperty(input, 'files', {
+    configurable: true,
+    value: ['one.pdf', 'two.pdf'].map(
+      (name) => new File(['%PDF'], name, { type: 'application/pdf' }),
+    ),
+  });
+  await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+  await settle();
+  for (const id of ['one.pdf', 'two.pdf']) {
+    expect(inDocument(`kb-material-${id}`)?.textContent).toContain(
+      'workspace.knowledgeBase.status.parsing',
+    );
+  }
+  await act(async () =>
+    reread.resolve(
+      json({
+        materials: ['one.pdf', 'two.pdf'].map((id) =>
+          source(id, { extraction: { status: 'pending' } }),
+        ),
+        limits: LIMITS,
+      }),
+    ),
+  );
+  await settle();
+  for (const id of ['one.pdf', 'two.pdf'])
+    expect(page.container.querySelectorAll(`[data-testid="kb-material-${id}"]`)).toHaveLength(1);
+  await page.dispose();
+});
+
+it('puts configuration guidance on unavailable parsing and keeps retry immediately before Delete', async () => {
+  library = () =>
+    json({
+      materials: [
+        source('a', { extraction: { status: 'failed', reasonCode: 'service_unavailable' } }),
+      ],
+      limits: LIMITS,
+    });
+  const page = await openPage();
+  await openMenu('kb-material-menu-a');
+  const items = [...document.querySelectorAll('[role="menuitem"]')];
+  expect(items[0]?.textContent).not.toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-2)?.textContent).toContain('workspace.knowledgeBase.actions.reparse');
+  expect(items.at(-1)?.textContent).toContain('workspace.knowledgeBase.actions.delete');
+  await press(document.activeElement!, 'Escape');
+  await page.dispose();
 });

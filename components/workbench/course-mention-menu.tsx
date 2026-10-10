@@ -1,5 +1,7 @@
 'use client';
 
+import { extractionLabelKey } from '@/lib/workbench/material-library-client';
+
 /**
  * The classroom picker — how a turn gets a target.
  *
@@ -79,9 +81,12 @@ export function CourseMentionMenu({
   onClose,
   materials,
   onPickMaterial,
+  search,
 }: {
   /** The trigger's `aria-controls` target. */
   readonly id?: string;
+  /** Toolbar search uses the same candidate queries as the inline @ token. */
+  readonly search?: { query: string; onChange: (query: string) => void };
   readonly candidates: readonly CourseMentionCandidate[];
   /** Name a course for this turn — what EVERY row does. */
   readonly onPick: (candidate: CourseMentionCandidate) => void;
@@ -102,6 +107,11 @@ export function CourseMentionMenu({
   const { t } = useI18n();
   const titleId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const hasSearch = search !== undefined;
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, [hasSearch]);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const offersMaterials = materials !== undefined && onPickMaterial !== undefined;
@@ -114,15 +124,23 @@ export function CourseMentionMenu({
   // Filtering shortens the list under the highlight; the pick and the painted
   // row read the same clamped index rather than resetting state mid-typing —
   // the skill menu resolves its own highlight the same way.
-  const activeIndex = highlightedIndex < rows.length ? highlightedIndex : 0;
-  const pickRow = (row: MenuRow) =>
-    row.kind === 'course' ? onPick(row.candidate) : onPickMaterial?.(row.candidate);
+  const available = (row: MenuRow) =>
+    row.kind === 'course' || row.candidate.extractionStatus !== 'failed';
+  const enabledIndices = rows.flatMap((row, index) => (available(row) ? [index] : []));
+  const activeIndex = enabledIndices.includes(highlightedIndex)
+    ? highlightedIndex
+    : (enabledIndices[0] ?? -1);
+  const pickRow = (row: MenuRow | undefined) => {
+    if (!row || !available(row)) return;
+    if (row.kind === 'course') onPick(row.candidate);
+    else onPickMaterial?.(row.candidate);
+  };
 
   // Keep the highlighted row in view: the list scrolls now, so a keyboard walk
   // past the window's edge would otherwise move an invisible highlight.
   useEffect(() => {
-    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [highlightedIndex]);
+    optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
 
   /**
    * A press outside the menu puts it away — the transcript, the classroom pane,
@@ -165,25 +183,26 @@ export function CourseMentionMenu({
         onClose();
         return;
       }
-      // Everything below is the textarea's keyboard contract, unchanged.
-      if (!onTextarea) return;
+      // The toolbar search and inline textarea share the same keyboard contract.
+      if (!onTextarea && event.target !== searchRef.current) return;
       if (rows.length === 0) return;
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         event.stopPropagation();
         const direction = event.key === 'ArrowDown' ? 1 : -1;
-        setHighlightedIndex((current) => {
-          const from = current < rows.length ? current : 0;
-          return (from + direction + rows.length) % rows.length;
-        });
+        const position = enabledIndices.indexOf(activeIndex);
+        setHighlightedIndex(
+          enabledIndices[(position + direction + enabledIndices.length) % enabledIndices.length] ??
+            -1,
+        );
         return;
       }
 
       if (event.key === 'Enter') {
         event.preventDefault();
         event.stopPropagation();
-        pickRow(rows[activeIndex] ?? rows[0]!);
+        pickRow(rows[activeIndex]);
       }
     };
 
@@ -197,7 +216,6 @@ export function CourseMentionMenu({
       id={id}
       data-testid="workbench-course-menu"
       data-esc-owner=""
-      role="listbox"
       aria-label={t('workspace.courseMention.title')}
       aria-labelledby={titleId}
       className="pro-skill-slash-popover absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[340px] overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
@@ -205,7 +223,23 @@ export function CourseMentionMenu({
       <span id={titleId} className="sr-only">
         {t('workspace.courseMention.title')}
       </span>
+      {search ? (
+        <div className="p-2">
+          <input
+            ref={searchRef}
+            type="search"
+            data-testid="workbench-reference-search"
+            aria-label={t('workspace.courseMention.search')}
+            placeholder={t('workspace.courseMention.search')}
+            value={search.query}
+            onChange={(event) => search.onChange(event.target.value)}
+            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      ) : null}
       <div
+        role="listbox"
+        aria-labelledby={titleId}
         data-testid="workbench-course-scroll"
         // Its height is a whole number of rows (`workbench-chat.css`), so the
         // resting state cannot show half a row.
@@ -221,9 +255,12 @@ export function CourseMentionMenu({
           </p>
         ) : candidates.length === 0 ? null : (
           <>
-            {offersMaterials && materials.length > 0 ? (
+            {candidates.length > 0 ? (
               <p className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground">
                 {t('workspace.courseMention.classrooms')}
+                <span className="block font-normal">
+                  {t('workspace.courseMention.courseOrder')}
+                </span>
               </p>
             ) : null}
             <ul data-testid="workbench-course-all">
@@ -246,7 +283,7 @@ export function CourseMentionMenu({
                       onClick={() => onPick(candidate)}
                       onMouseEnter={() => setHighlightedIndex(index)}
                       className={cn(
-                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted',
+                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
                         index === activeIndex && 'bg-muted',
                       )}
                     >
@@ -287,25 +324,24 @@ export function CourseMentionMenu({
               className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground"
             >
               {t('workspace.courseMention.knowledgeBase')}
+              <span className="block font-normal">
+                {t('workspace.courseMention.materialOrder')}
+              </span>
             </p>
             <ul data-testid="workbench-material-all">
               {materials.map((candidate, materialIndex) => {
                 const index = candidates.length + materialIndex;
                 // Every state is named, so a material not yet extracted and one
                 // ready to read look different (RFC #1716 §4).
+                const unavailable = candidate.extractionStatus === 'failed';
                 const status = t(
-                  candidate.extractionStatus === 'failed'
-                    ? 'workspace.courseMention.materialFailed'
-                    : candidate.extractionStatus === 'pending' ||
-                        candidate.extractionStatus === 'running'
-                      ? 'workspace.courseMention.materialExtracting'
-                      : candidate.extractionStatus === 'done'
-                        ? 'workspace.courseMention.materialExtracted'
-                        : 'workspace.courseMention.materialNotExtracted',
+                  extractionLabelKey(candidate.extractionStatus, candidate.reasonCode),
                 );
                 // The folder only when it is in one; nothing, and no separator, at the top level.
                 const where = [candidate.folderName, status].filter(Boolean).join(' · ');
-                const label = t('workspace.courseMention.attachMaterial', { name: candidate.name });
+                const label = unavailable
+                  ? `${candidate.name} · ${status}`
+                  : t('workspace.courseMention.attachMaterial', { name: candidate.name });
                 return (
                   <li key={candidate.materialId}>
                     <button
@@ -319,10 +355,14 @@ export function CourseMentionMenu({
                       data-testid={`workbench-material-option-${candidate.materialId}`}
                       title={label}
                       aria-label={label}
-                      onClick={() => onPickMaterial(candidate)}
-                      onMouseEnter={() => setHighlightedIndex(index)}
+                      disabled={unavailable}
+                      aria-disabled={unavailable}
+                      onClick={() => pickRow(rows[index])}
+                      onMouseEnter={() => {
+                        if (!unavailable) setHighlightedIndex(index);
+                      }}
                       className={cn(
-                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted',
+                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
                         index === activeIndex && 'bg-muted',
                       )}
                     >

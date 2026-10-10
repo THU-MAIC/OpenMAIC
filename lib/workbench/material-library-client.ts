@@ -22,6 +22,26 @@ export const MATERIAL_NAME_MAX_LENGTH = 255;
 
 export type MaterialExtractionStatus = 'idle' | 'pending' | 'running' | 'done' | 'failed';
 
+/** The RFC #1716 §1 label for a source's extraction state. */
+export function extractionLabelKey(
+  status: MaterialExtractionStatus,
+  reasonCode?: MaterialExtractionReasonCode,
+): string {
+  if (status === 'failed' && reasonCode)
+    return `workspace.knowledgeBase.failure.${reasonCode}.label`;
+  switch (status) {
+    case 'pending':
+    case 'running':
+      return 'workspace.knowledgeBase.status.parsing';
+    case 'done':
+      return 'workspace.knowledgeBase.status.searchable';
+    case 'failed':
+      return 'workspace.knowledgeBase.status.failed';
+    default:
+      return 'workspace.knowledgeBase.status.stored';
+  }
+}
+
 /** One source as `GET /api/materials/library` returns it. */
 export interface LibraryMaterial {
   readonly materialId: string;
@@ -376,7 +396,7 @@ export async function deleteLibraryMaterial(materialId: string): Promise<void> {
   await libraryDelete(`/api/materials/${encodeURIComponent(materialId)}`);
 }
 
-/** Delete a folder; refused (409 `not_empty`) while anything is filed in it. */
+/** Delete a folder, moving its contents to the top level in the same transaction. */
 export async function deleteLibraryFolder(folderId: string): Promise<void> {
   await libraryDelete(`/api/materials/folders/${encodeURIComponent(folderId)}`);
 }

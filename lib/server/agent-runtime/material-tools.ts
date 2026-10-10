@@ -93,9 +93,10 @@ const SCOPE_SCHEMA = Type.Optional(
 const LIST_MATERIALS_SCHEMA = Type.Object({
   scope: SCOPE_SCHEMA,
   folderId: Type.Optional(
-    Type.Union([Type.String(), Type.Null()], {
+    Type.String({
+      minLength: 1,
       description:
-        'Only materials in this folder. null lists Unfiled materials only; omit it to list every folder.',
+        'Only materials in this folder. top-level lists materials not in any folder; omit it to list all materials.',
     }),
   ),
   query: Type.Optional(
@@ -534,9 +535,10 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
     execute: async (_callId, params, signal) => {
       throwIfAborted(signal);
       const query = params.query?.toLowerCase();
+      const folderId = params.folderId === 'top-level' ? null : params.folderId;
       if (scopeOf(params.scope) === 'library') {
         const entries = await listLibrary(deps.sessionId, {
-          ...(params.folderId !== undefined ? { folderId: params.folderId } : {}),
+          ...(folderId !== undefined ? { folderId } : {}),
           ...(params.query ? { query: params.query } : {}),
           ...(params.before ? { before: params.before } : {}),
         });
@@ -565,8 +567,8 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       throwIfAborted(signal);
       const counts = materialDerivativeCounts(all);
       const filtered = all.filter((material) => {
-        if (params.folderId !== undefined) {
-          if (material.origin !== 'owner' || material.entry.folderId !== params.folderId) {
+        if (folderId !== undefined) {
+          if (material.origin !== 'owner' || material.entry.folderId !== folderId) {
             return false;
           }
         }

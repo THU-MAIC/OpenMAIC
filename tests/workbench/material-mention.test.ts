@@ -595,6 +595,33 @@ describe('the @ menu with the knowledge base', () => {
       target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
     });
 
+  it('shows failed files as unavailable, with the page reason, and skips them on keyboard selection', async () => {
+    const onPickMaterial = vi.fn();
+    const mounted = await renderMenu({
+      materials: [
+        material('failed', { extractionStatus: 'failed', reasonCode: 'service_unavailable' }),
+        material('ready'),
+      ],
+      onPickMaterial,
+    });
+    const failed = mounted.container.querySelector<HTMLButtonElement>(
+      '[data-testid="workbench-material-option-failed"]',
+    )!;
+    expect(failed.disabled).toBe(true);
+    expect(failed.textContent).toContain(
+      'workspace.knowledgeBase.failure.service_unavailable.label',
+    );
+    await act(async () => failed.click());
+    expect(onPickMaterial).not.toHaveBeenCalled();
+    const textarea = mounted.container.querySelector('textarea')!;
+    await press(textarea, 'ArrowDown');
+    await press(textarea, 'Enter');
+    expect(onPickMaterial).toHaveBeenCalledWith(expect.objectContaining({ materialId: 'ready' }));
+    await press(textarea, 'ArrowUp');
+    expect(failed.getAttribute('aria-selected')).toBe('false');
+    await mounted.dispose();
+  });
+
   it('lists classrooms, then the knowledge base with folder and state', async () => {
     const mounted = await renderMenu({
       materials: [
@@ -614,10 +641,10 @@ describe('the @ menu with the knowledge base', () => {
     ).not.toBeNull();
     const b = mounted.container.querySelector('[data-testid="workbench-material-option-b"]')!;
     // At the top level: the state alone, no folder word and no stray separator.
-    expect(b.textContent).toContain('workspace.courseMention.materialExtracting');
+    expect(b.textContent).toContain('workspace.knowledgeBase.status.parsing');
     expect(b.textContent).not.toContain('·');
     expect(b.textContent).not.toMatch(/unfiled/i);
-    expect(a.textContent).toContain('Unit 1 · workspace.courseMention.materialExtracted');
+    expect(a.textContent).toContain('Unit 1 · workspace.knowledgeBase.status.searchable');
     expect(b.querySelector('[aria-label="workspace.courseMention.materialStaged"]')).not.toBeNull();
     await mounted.dispose();
   });
@@ -653,7 +680,7 @@ describe('the @ menu with the knowledge base', () => {
     expect(
       mounted.container.querySelector('[data-testid="workbench-material-section"]'),
     ).toBeNull();
-    expect(mounted.container.textContent).not.toContain('workspace.courseMention.classrooms');
+    expect(mounted.container.textContent).toContain('workspace.courseMention.courseOrder');
     await mounted.dispose();
   });
 });

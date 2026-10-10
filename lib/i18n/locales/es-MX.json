@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Servicio de análisis no disponible",
-          "description": "El análisis no está disponible por el momento. Inténtalo más tarde; si el problema continúa, contacta a tu administrador."
+          "description": "No hay ningún servicio de análisis configurado para este tipo de archivo. Pide a tu administrador que configure uno y vuelve a analizar el archivo."
         },
         "media_too_long": {
           "label": "Audio o video demasiado largo",
@@ -2078,8 +2078,6 @@
         "reparse": "Volver a analizar",
         "more": "Más acciones para {{name}}",
         "rename": "Cambiar nombre",
-        "move": "Mover a…",
-        "removeFromFolder": "Quitar de la carpeta",
         "delete": "Eliminar",
         "open": "Abrir",
         "downloadOriginal": "Descargar el original",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Cancelar",
-        "moveTitle": "Mover “{{name}}”",
-        "moveConfirm": "Mover",
-        "noFolders": "Aún no hay carpetas a donde moverlo. Crea una primero.",
         "close": "Cerrar"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "El contenido ya guardado en un curso no se ve afectado.",
         "cannotUndo": "Esta acción no se puede deshacer.",
         "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
-        "folderOnlyEmpty": "Solo se puede eliminar una carpeta vacía. Mueve primero sus materiales."
+        "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar aulas y materiales",
+      "courseOrder": "Aula abierta primero, luego actualizaciones recientes",
+      "materialOrder": "Cargas más recientes primero",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "Adjuntar {{name}} a este mensaje",
       "materialAttached": "Ya está en esta conversación",
       "materialStaged": "Ya está en este mensaje",
-      "materialExtracting": "Procesando",
-      "materialFailed": "Falló el procesamiento",
-      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
-      "materialNotExtracted": "Sin procesar",
-      "materialExtracted": "Procesado"
+      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

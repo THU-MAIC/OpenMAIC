@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Parsing service unavailable",
-          "description": "Parsing is currently unavailable. Try again later; contact your administrator if this continues."
+          "description": "No parsing service is configured for this file type. Ask your administrator to configure one, then choose Parse again."
         },
         "media_too_long": {
           "label": "Audio or video too long",
@@ -2078,8 +2078,6 @@
         "reparse": "Parse again",
         "more": "More actions for {{name}}",
         "rename": "Rename",
-        "move": "Move to…",
-        "removeFromFolder": "Remove from folder",
         "delete": "Delete",
         "open": "Open",
         "downloadOriginal": "Download original",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Cancel",
-        "moveTitle": "Move “{{name}}”",
-        "moveConfirm": "Move",
-        "noFolders": "There are no folders to move it to yet. Create one first.",
         "close": "Close"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "Content already saved into a course is not affected.",
         "cannotUndo": "This cannot be undone.",
         "folderTitle": "Delete the folder “{{name}}”?",
-        "folderOnlyEmpty": "Only an empty folder can be deleted. Move its materials out first."
+        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
       }
     },
     "untitledCourse": "Untitled course",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "Open {{name}} in the right pane",
     "courseLinkMore": "{{count}} more classroom(s)",
     "courseMention": {
+      "search": "Search classrooms and materials",
+      "courseOrder": "Open classroom first, then recently updated",
+      "materialOrder": "Newest uploads first",
       "title": "Reference a classroom for this message",
       "empty": "No classroom matches",
       "alreadyNamed": "Already referenced",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "Attach {{name}} to this message",
       "materialAttached": "Already in this conversation",
       "materialStaged": "Already on this message",
-      "materialExtracting": "Extracting",
-      "materialFailed": "Extraction failed",
-      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
-      "materialNotExtracted": "Not extracted",
-      "materialExtracted": "Extracted"
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

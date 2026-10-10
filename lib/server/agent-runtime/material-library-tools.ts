@@ -45,8 +45,9 @@ const MOVE_SCHEMA = Type.Object({
     description:
       'Source material ids. Their derivatives move with them; a derivative cannot be moved on its own.',
   }),
-  folderId: Type.Union([Type.String(), Type.Null()], {
-    description: 'The target folderId, or null to move the materials back to Unfiled.',
+  folderId: Type.String({
+    minLength: 1,
+    description: 'The target folderId, or top-level to move the materials out of any folder.',
   }),
 });
 const RENAME_MATERIAL_SCHEMA = Type.Object({
@@ -138,7 +139,7 @@ export function buildMaterialLibraryTools(
     label: 'List knowledge base folders',
     description:
       "List the folders of the user's knowledge base, with how many materials each holds. " +
-      'Materials outside every folder are Unfiled (folderId null).',
+      'Materials not in a folder are at the top level (use folderId: top-level in material tools).',
     parameters: LIST_FOLDERS_SCHEMA,
     execute: async (_callId, params, signal) => {
       throwIfAborted(signal);
@@ -241,15 +242,15 @@ export function buildMaterialLibraryTools(
     name: 'move_materials',
     label: 'Move knowledge base materials',
     description:
-      'Move source materials, with their derivatives, into a folder, or back to Unfiled with ' +
-      'folderId null. All or nothing: if one cannot move, none does.',
+      'Move source materials, with their derivatives, into a folder, or back to the top level with ' +
+      'folderId: top-level. All or nothing: if one cannot move, none does.',
     parameters: MOVE_SCHEMA,
     execute: async (_callId, params, signal) => {
       throwIfAborted(signal);
       const outcome = await moveMaterials(await persistence(), {
         ...write,
         materialIds: params.materialIds,
-        folderId: params.folderId,
+        folderId: params.folderId === 'top-level' ? null : params.folderId,
       });
       switch (outcome.status) {
         case 'folder_not_found':

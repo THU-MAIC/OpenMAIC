@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "분석 서비스 이용 불가",
-          "description": "현재 분석 서비스를 이용할 수 없습니다. 나중에 다시 시도하고, 문제가 계속되면 관리자에게 문의하세요."
+          "description": "이 파일 형식을 처리할 수 있는 분석 서비스가 설정되지 않았습니다. 관리자에게 설정을 요청한 후 다시 분석하세요."
         },
         "media_too_long": {
           "label": "오디오 또는 동영상이 너무 긺",
@@ -2078,8 +2078,6 @@
         "reparse": "다시 분석",
         "more": "{{name}} 추가 작업",
         "rename": "이름 변경",
-        "move": "이동…",
-        "removeFromFolder": "폴더에서 빼기",
         "delete": "삭제",
         "open": "열기",
         "downloadOriginal": "원본 파일 다운로드",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "취소",
-        "moveTitle": "“{{name}}” 이동",
-        "moveConfirm": "이동",
-        "noFolders": "옮길 폴더가 아직 없습니다. 먼저 폴더를 만드세요.",
         "close": "닫기"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "코스에 이미 저장된 내용에는 영향이 없습니다.",
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
-        "folderOnlyEmpty": "빈 폴더만 삭제할 수 있습니다. 자료가 있으면 먼저 옮기세요."
+        "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "교실 및 자료 검색",
+      "courseOrder": "열린 교실 우선, 나머지는 최근 수정순",
+      "materialOrder": "최근 업로드순",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "{{name}}을(를) 이 메시지에 첨부",
       "materialAttached": "이 대화에 이미 있습니다",
       "materialStaged": "이 메시지에 이미 있습니다",
-      "materialExtracting": "분석 중",
-      "materialFailed": "분석 실패",
-      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요",
-      "materialNotExtracted": "분석 전",
-      "materialExtracted": "분석 완료"
+      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

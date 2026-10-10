@@ -46,6 +46,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
+  extractionLabelKey,
   createLibraryFolder,
   deleteLibraryFolder,
   deleteLibraryMaterial,
@@ -74,9 +75,9 @@ import {
   DeleteDialog,
   LibraryItemMenu,
   menuIcons,
-  MoveDialog,
   type LibraryMenuItem,
 } from './MaterialLibraryDialogs';
+import { useTreeDrag } from './use-tree-drag';
 import { WORKBENCH_MATERIAL_ACCEPT } from '@/lib/workbench/material-upload-policy';
 import {
   createMaterialUploadIdentityGate,
@@ -94,21 +95,6 @@ import {
 const QUERY_DEBOUNCE_MS = 300;
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
-
-/** The RFC #1716 §1 label for a source's extraction state. */
-export function extractionLabelKey(status: MaterialExtractionStatus): string {
-  switch (status) {
-    case 'pending':
-    case 'running':
-      return 'workspace.knowledgeBase.status.parsing';
-    case 'done':
-      return 'workspace.knowledgeBase.status.searchable';
-    case 'failed':
-      return 'workspace.knowledgeBase.status.failed';
-    default:
-      return 'workspace.knowledgeBase.status.stored';
-  }
-}
 
 /** A day for the "Date" column: month and day this year, the year too otherwise. */
 export function formatLibraryDate(value: number | string | undefined, locale: string): string {
@@ -220,12 +206,13 @@ function StatusLabel({
           aria-hidden="true"
         />
       ) : null}
-      {t(failure ? failure.label : extractionLabelKey(status))}
+      {t(extractionLabelKey(status, reasonCode))}
       {failure ? (
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
+              data-ws-no-drag=""
               aria-label={t('workspace.knowledgeBase.failure.more', { reason: t(failure.label) })}
               className="inline-flex size-6 shrink-0 items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-2"
             >
@@ -295,6 +282,7 @@ function Usage({
 interface UploadEntry {
   readonly id: string;
   readonly name: string;
+  readonly material?: WorkbenchMaterial;
   /** Why it failed; absent while it is still uploading. */
   readonly error?: string;
 }
@@ -305,7 +293,7 @@ interface UploadEntry {
  * way the list is read again once the file is done.
  * Uploads are not cancelled by leaving the page; their rows go with it.
  */
-function useLibraryUploads(onUploaded: () => void) {
+function useLibraryUploads(onUploaded: (stored: boolean) => void) {
   const { t, locale } = useI18n();
   const [entries, setEntries] = useState<readonly UploadEntry[]>([]);
   const gate = useRef<MaterialUploadIdentityGate | null>(null);
@@ -322,9 +310,13 @@ function useLibraryUploads(onUploaded: () => void) {
     }));
     setEntries((current) => [...current, ...jobs.map((job) => job.entry)]);
     void scheduleMaterialUploadBatch(gate.current, jobs, async ({ file, entry }) => {
+      let stored = false;
       try {
-        await retryMaterialUpload(() => uploadWorkbenchMaterial(file));
-        setEntries((current) => current.filter((item) => item.id !== entry.id));
+        const material = await retryMaterialUpload(() => uploadWorkbenchMaterial(file));
+        stored = true;
+        setEntries((current) =>
+          current.map((item) => (item.id === entry.id ? { ...item, material } : item)),
+        );
         return true;
       } catch (error) {
         const message =
@@ -342,14 +334,14 @@ function useLibraryUploads(onUploaded: () => void) {
         // `retryMaterialUpload`), whatever the answer: a failed answer can
         // still follow a stored file -- the publication committed, then the
         // reply was lost -- and only the listing can say which.
-        onUploaded();
+        onUploaded(stored);
       }
     });
   };
 
   return {
     entries,
-    pending: entries.some((entry) => entry.error === undefined),
+    pending: entries.some((entry) => entry.error === undefined && !entry.material),
     start,
     dismiss: (id: string) => setEntries((current) => current.filter((item) => item.id !== id)),
   };
@@ -550,7 +542,7 @@ const STICKY_HEADER =
 const LAYOUT = {
   tree: {
     row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @2xl:grid @2xl:items-center @2xl:gap-3',
-    columns: '@2xl:grid-cols-[minmax(0,1fr)_9rem_5.5rem_5.5rem_2rem]',
+    columns: '@2xl:grid-cols-[minmax(0,1fr)_14rem_5.5rem_5.5rem_2rem]',
     cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @2xl:block',
     narrowOnly: '@2xl:hidden',
     wideOnly: 'hidden @2xl:block',
@@ -561,7 +553,7 @@ const LAYOUT = {
   },
   search: {
     row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @3xl:grid @3xl:items-center @3xl:gap-3',
-    columns: '@3xl:grid-cols-[minmax(0,1fr)_9rem_9rem_5.5rem_5.5rem_2rem]',
+    columns: '@3xl:grid-cols-[minmax(0,1fr)_9rem_14rem_5.5rem_5.5rem_2rem]',
     cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @3xl:block',
     narrowOnly: '@3xl:hidden',
     wideOnly: 'hidden @3xl:block',
@@ -599,7 +591,7 @@ export function MaterialLibraryPage({
   // page is still there: an upload or a write can answer after the teacher
   // left, and then there is nothing to refresh.
   const reloadIfMounted = useRef<MaterialLibraryTree['reload']>(() => {});
-  const uploads = useLibraryUploads(() => reloadIfMounted.current());
+  const uploads = useLibraryUploads((stored) => reloadIfMounted.current({ retryOnError: stored }));
   const tree = useMaterialLibraryTree({ query, uploading: uploads.pending });
   useEffect(() => {
     reloadIfMounted.current = tree.reload;
@@ -684,8 +676,6 @@ export function MaterialLibraryPage({
   };
   /** The row control an ended edit gives the focus back to, once rendered. */
   const editHome = useRef<string | null>(null);
-  /** A ⋯ followed to its file's new row (Remove from folder), not to the heading. */
-  const followsItsFile = useRef<HTMLElement | null>(null);
   useEffect(() => {
     revealArrived();
     const home = editHome.current;
@@ -704,16 +694,9 @@ export function MaterialLibraryPage({
       return;
     }
     returnedTo.current = null;
-    const follow = followsItsFile.current === target;
-    followsItsFile.current = null;
     if (document.activeElement === null || document.activeElement === document.body) {
-      // A file taken out of its folder: the same ⋯ in its new row. Anything
-      // else whose row left the view: the heading.
-      const again =
-        follow && target.dataset.testid
-          ? list.current?.querySelector<HTMLElement>(`[data-testid="${target.dataset.testid}"]`)
-          : null;
-      (again ?? heading.current)?.focus();
+      // The row left the view: return to the heading.
+      heading.current?.focus();
     }
   });
 
@@ -837,7 +820,6 @@ export function MaterialLibraryPage({
   };
 
   // ── Organizing (RFC #1716 §5) ───────────────────────────────────────
-  const [moving, setMoving] = useState<LibraryMaterial | null>(null);
   // Deletion is page-only, after confirmation (RFC #1716 §5, §4).
   type DeleteRequest =
     | { readonly kind: 'material'; readonly material: LibraryMaterial }
@@ -1020,24 +1002,29 @@ export function MaterialLibraryPage({
     />
   );
 
-  /** Sources being taken out of their folder: one request each, however often it is chosen. */
-  const removing = useRef(new Set<string>());
-  const removeFromFolder = (material: LibraryMaterial, trigger: HTMLElement | null) => {
-    if (removing.current.has(material.materialId)) return;
-    removing.current.add(material.materialId);
-    // Run once the menu has closed: the ⋯ gets the focus here, before the
-    // list can move its row, and once it does the focus follows the file to
-    // its new row (or goes to the heading) -- unless the teacher moved it on.
-    if (trigger?.isConnected) {
-      trigger.focus();
-      returnedTo.current = trigger;
-      followsItsFile.current = trigger;
-    }
-    void write(() => moveLibraryMaterials([material.materialId], null)).then((error) => {
-      removing.current.delete(material.materialId);
-      if (error) toast.error(t(error));
-    });
-  };
+  const moving = useRef(new Set<string>());
+  const drag = useTreeDrag({
+    scrollRef: scroller,
+    onHoverFolder: (folderId) => tree.expand(folderId),
+    onMoveToFolder: (materialId, destination) => {
+      if (moving.current.has(materialId)) return;
+      const row =
+        tree.root.files.find((file) => file.materialId === materialId) ??
+        tree.results.files.find((file) => file.materialId === materialId) ??
+        tree.folders
+          .flatMap((folder) => tree.folder(folder.id)?.files ?? [])
+          .find((file) => file.materialId === materialId);
+      const folderId = destination ?? null;
+      if (!row || row.folderId === folderId) return;
+      moving.current.add(materialId);
+      void write(() => moveLibraryMaterials([materialId], folderId), {
+        retryRefreshOnSuccess: true,
+      }).then((error) => {
+        moving.current.delete(materialId);
+        if (error) toast.error(t(error));
+      });
+    },
+  });
 
   const materialMenu = (material: LibraryMaterial) => {
     const items: LibraryMenuItem[] = [
@@ -1091,24 +1078,6 @@ export function MaterialLibraryPage({
         onSelect: () => startRenaming('material', material.materialId, material.name),
       },
       {
-        id: 'move',
-        label: t('workspace.knowledgeBase.actions.move'),
-        icon: menuIcons.move,
-        onSelect: openFrom(() => setMoving(material)),
-      },
-      // Out of its folder, to the top level (`folderId: null`); Move to… lists folders only.
-      ...(material.folderId !== null
-        ? [
-            {
-              id: 'remove-from-folder',
-              label: t('workspace.knowledgeBase.actions.removeFromFolder'),
-              icon: menuIcons.removeFromFolder,
-              afterClose: true,
-              onSelect: (trigger: HTMLElement | null) => removeFromFolder(material, trigger),
-            },
-          ]
-        : []),
-      {
         id: 'delete',
         label: t('workspace.knowledgeBase.actions.delete'),
         icon: menuIcons.delete,
@@ -1116,6 +1085,10 @@ export function MaterialLibraryPage({
         onSelect: openFrom(() => setDeleting({ kind: 'material', material })),
       },
     ];
+    if (material.extraction.reasonCode === 'service_unavailable' && items[0]?.id === 'parse') {
+      const parse = items.shift()!;
+      items.splice(items.length - 1, 0, parse);
+    }
     return (
       <LibraryItemMenu
         testId={`kb-material-menu-${material.materialId}`}
@@ -1136,18 +1109,13 @@ export function MaterialLibraryPage({
           afterClose: true,
           onSelect: () => startRenaming('folder', folder.id, folder.name),
         },
-        // Only an empty folder can go (the server still decides).
-        ...(folder.materialCount === 0
-          ? [
-              {
-                id: 'delete',
-                label: t('workspace.knowledgeBase.actions.delete'),
-                icon: menuIcons.delete,
-                destructive: true,
-                onSelect: openFrom(() => setDeleting({ kind: 'folder', folder })),
-              },
-            ]
-          : []),
+        {
+          id: 'delete',
+          label: t('workspace.knowledgeBase.actions.delete'),
+          icon: menuIcons.delete,
+          destructive: true,
+          onSelect: openFrom(() => setDeleting({ kind: 'folder', folder })),
+        },
       ]}
     />
   );
@@ -1168,7 +1136,12 @@ export function MaterialLibraryPage({
         key={material.materialId}
         data-testid={`kb-material-${material.materialId}`}
         data-kb-row=""
-        className={cn(layout.row, layout.columns)}
+        {...(!edit ? drag.rowProps('material', material.materialId) : {})}
+        className={cn(
+          layout.row,
+          layout.columns,
+          drag.dragId === material.materialId && 'opacity-50',
+        )}
       >
         <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
           <RowChevron />
@@ -1200,7 +1173,7 @@ export function MaterialLibraryPage({
           </div>
         </div>
         {options.search ? <span className={layout.cell}>{folderName(material)}</span> : null}
-        <span className={layout.wideOnly}>
+        <span className={cn(layout.wideOnly, 'whitespace-nowrap')}>
           <StatusLabel material={material} t={t} testId={`kb-status-${material.materialId}`} />
         </span>
         <span className={layout.cell}>{size}</span>
@@ -1253,7 +1226,15 @@ export function MaterialLibraryPage({
     );
     return (
       <li key={folder.id} data-testid={`kb-folder-${folder.id}`}>
-        <div data-kb-row="" className={cn(LAYOUT.tree.row, LAYOUT.tree.columns)}>
+        <div
+          data-kb-row=""
+          {...drag.folderProps(folder.id)}
+          className={cn(
+            LAYOUT.tree.row,
+            LAYOUT.tree.columns,
+            drag.folderTarget === folder.id && 'ws-drop-into',
+          )}
+        >
           {/* The toggle and the ⋯ are siblings: choosing from the menu never
               expands or collapses the folder. While the name is edited, the
               row holds the field instead of the toggle. */}
@@ -1333,41 +1314,77 @@ export function MaterialLibraryPage({
     );
   };
 
-  const uploadRows = uploads.entries.map((entry) => (
-    <li
-      key={entry.id}
-      data-testid={`kb-${entry.id}`}
-      className="flex min-w-0 items-start gap-2 px-3 py-2 text-[13px]"
-    >
-      <RowChevron />
-      {entry.error === undefined ? (
-        <LoaderCircle {...ROW_ICON} className={cn(ROW_ICON.className, 'animate-spin')} />
-      ) : (
-        <X {...ROW_ICON} className="size-4 shrink-0 text-[color:var(--ws-fail)]" />
-      )}
-      <span className="min-w-0 flex-1 break-words">
-        {entry.name}
-        {' · '}
-        {entry.error === undefined ? (
-          <span className="text-[color:var(--ws-ink-mute)]">
-            {t('workspace.knowledgeBase.status.uploading')}
-          </span>
-        ) : (
-          <span className="text-[color:var(--ws-fail)]">{entry.error}</span>
-        )}
-      </span>
-      {entry.error !== undefined ? (
-        <button
-          type="button"
-          data-testid={`kb-${entry.id}-dismiss`}
-          onClick={() => uploads.dismiss(entry.id)}
-          className="ws-quiet shrink-0 text-[12px] underline"
+  const listedIds = new Set(
+    [
+      ...tree.root.files,
+      ...tree.results.files,
+      ...tree.folders.flatMap((folder) => tree.folder(folder.id)?.files ?? []),
+    ].map((file) => file.materialId),
+  );
+  useEffect(() => {
+    for (const entry of uploads.entries) {
+      if (entry.material && listedIds.has(entry.material.materialId)) uploads.dismiss(entry.id);
+    }
+  });
+  const uploadRows = uploads.entries
+    .filter((entry) => !entry.material || !listedIds.has(entry.material.materialId))
+    .map((entry) => {
+      if (entry.material) {
+        const material = entry.material;
+        if (
+          query &&
+          !`${material.name} ${material.mimeType ?? ''}`.toLowerCase().includes(query.toLowerCase())
+        )
+          return null;
+        return fileRow(
+          {
+            materialId: material.materialId,
+            name: material.name,
+            bytes: material.bytes,
+            mime: material.mimeType,
+            folderId: null,
+            createdAt: '',
+            extraction: { status: material.extractionStatus ?? 'pending' },
+          },
+          { search: tree.mode === 'search' },
+        );
+      }
+      return (
+        <li
+          key={entry.id}
+          data-testid={`kb-${entry.id}`}
+          className="flex min-w-0 items-start gap-2 px-3 py-2 text-[13px]"
         >
-          {t('workspace.knowledgeBase.upload.dismiss')}
-        </button>
-      ) : null}
-    </li>
-  ));
+          <RowChevron />
+          {entry.error === undefined ? (
+            <LoaderCircle {...ROW_ICON} className={cn(ROW_ICON.className, 'animate-spin')} />
+          ) : (
+            <X {...ROW_ICON} className="size-4 shrink-0 text-[color:var(--ws-fail)]" />
+          )}
+          <span className="min-w-0 flex-1 break-words">
+            {entry.name}
+            {' · '}
+            {entry.error === undefined ? (
+              <span className="text-[color:var(--ws-ink-mute)]">
+                {t('workspace.knowledgeBase.status.uploading')}
+              </span>
+            ) : (
+              <span className="text-[color:var(--ws-fail)]">{entry.error}</span>
+            )}
+          </span>
+          {entry.error !== undefined ? (
+            <button
+              type="button"
+              data-testid={`kb-${entry.id}-dismiss`}
+              onClick={() => uploads.dismiss(entry.id)}
+              className="ws-quiet shrink-0 text-[12px] underline"
+            >
+              {t('workspace.knowledgeBase.upload.dismiss')}
+            </button>
+          ) : null}
+        </li>
+      );
+    });
 
   // The same row as a folder's, its name a field (#1835 review §1).
   const creatingRow = creating ? (
@@ -1389,8 +1406,8 @@ export function MaterialLibraryPage({
             initialName={creating.name}
             busy={creating.busy}
             error={creating.error ? t(creating.error) : null}
-            onEdit={() =>
-              setCreating((current) => (current?.error ? { ...current, error: null } : current))
+            onEdit={(name) =>
+              setCreating((current) => (current ? { ...current, name, error: null } : current))
             }
             onCommit={(name, cause) => void commitCreating(name, cause)}
             onCancel={() => cancelCreating(true)}
@@ -1633,6 +1650,13 @@ export function MaterialLibraryPage({
             className="@container overflow-clip rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)]"
           >
             {body}
+            {!searching && primary.status === 'ready' ? (
+              <div
+                {...drag.folderProps()}
+                data-testid="kb-drop-top-level"
+                className={cn('min-h-20', drag.folderTarget === '' && 'ws-drop-into')}
+              />
+            ) : null}
           </div>
         </section>
       </div>
@@ -1663,24 +1687,19 @@ export function MaterialLibraryPage({
           key={`folder-${deleting.folder.id}`}
           testId="kb-delete-dialog"
           title={t('workspace.knowledgeBase.delete.folderTitle', { name: deleting.folder.name })}
-          lines={[t('workspace.knowledgeBase.delete.folderOnlyEmpty')]}
+          lines={[
+            t('workspace.knowledgeBase.delete.folderContents', {
+              count:
+                tree.folders.find((folder) => folder.id === deleting.folder.id)?.materialCount ??
+                deleting.folder.materialCount,
+            }),
+          ]}
           remove={() => deleteLibraryFolder(deleting.folder.id)}
           onSettled={() => reloadIfMounted.current()}
           onDeleted={() => {
             opener.current = null;
           }}
           onClose={() => setDeleting(null)}
-          returnFocus={returnFocus}
-          t={t}
-        />
-      ) : null}
-      {moving ? (
-        <MoveDialog
-          key={moving.materialId}
-          material={moving}
-          folders={tree.folders}
-          move={(folderId) => write(() => moveLibraryMaterials([moving.materialId], folderId))}
-          onClose={() => setMoving(null)}
           returnFocus={returnFocus}
           t={t}
         />

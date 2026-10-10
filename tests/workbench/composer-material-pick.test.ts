@@ -179,6 +179,63 @@ const mentionButton = (container: HTMLElement, mode: Mode) =>
   );
 
 describe.each(['launch', 'new', 'follow'] as const)('the %s composer', (mode) => {
+  it('searches from the toolbar, picks with Enter, and leaves the draft unchanged', async () => {
+    const container = await mount(mode);
+    await type(container, 'Keep @literal');
+    await act(async () => mentionButton(container, mode)!.click());
+    const search = container.querySelector<HTMLInputElement>(
+      '[data-testid="workbench-reference-search"]',
+    )!;
+    expect(search).not.toBeNull();
+    expect(document.activeElement).toBe(search);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        search,
+        'document',
+      );
+      search.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await wait(230);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([url]) =>
+            String(url).startsWith('/api/materials/library?') &&
+            new URL(String(url), 'http://local').searchParams.get('query') === 'document',
+        ),
+    ).toBe(true);
+    expect(container.querySelector('[data-testid="workbench-course-option-stage-1"]')).toBeNull();
+    expect(container.textContent).toContain('workspace.courseMention.materialOrder');
+    await act(async () =>
+      search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
+    );
+    expect(posts).toEqual([]);
+    expect(container.querySelector('[data-testid="workbench-course-menu"]')).toBeNull();
+    expect(container.querySelector('textarea')!.value).toBe('Keep @literal');
+    expect(document.activeElement).toBe(container.querySelector('textarea'));
+    expect(container.textContent).toContain('document.pdf');
+  });
+
+  it('closes toolbar search with Escape and resets it when reopened', async () => {
+    const container = await mount(mode);
+    await type(container, 'Keep @literal');
+    await act(async () => mentionButton(container, mode)!.click());
+    const search = container.querySelector<HTMLInputElement>(
+      '[data-testid="workbench-reference-search"]',
+    )!;
+    await act(async () =>
+      search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(container.querySelector('[data-testid="workbench-course-menu"]')).toBeNull();
+    expect(container.querySelector('textarea')!.value).toBe('Keep @literal');
+    await act(async () => mentionButton(container, mode)!.click());
+    expect(
+      container.querySelector<HTMLInputElement>('[data-testid="workbench-reference-search"]')!
+        .value,
+    ).toBe('');
+  });
+
   it('stages a picked material without posting anything, then sends its id', async () => {
     const container = await mount(mode);
     const button = mentionButton(container, mode);
@@ -377,9 +434,9 @@ describe('the @ menu', () => {
       container
         .querySelector(`[data-testid="workbench-material-option-${id}"]`)!
         .querySelectorAll('span')[1]!.textContent;
-    expect(meta('m-idle')).toBe('Unit 1 · workspace.courseMention.materialNotExtracted');
-    expect(meta('m-done')).toBe('Unit 1 · workspace.courseMention.materialExtracted');
-    expect(meta('m-running')).toBe('Unit 1 · workspace.courseMention.materialExtracting');
-    expect(meta('m-failed')).toBe('Unit 1 · workspace.courseMention.materialFailed');
+    expect(meta('m-idle')).toBe('Unit 1 · workspace.knowledgeBase.status.stored');
+    expect(meta('m-done')).toBe('Unit 1 · workspace.knowledgeBase.status.searchable');
+    expect(meta('m-running')).toBe('Unit 1 · workspace.knowledgeBase.status.parsing');
+    expect(meta('m-failed')).toBe('Unit 1 · workspace.knowledgeBase.status.failed');
   });
 });

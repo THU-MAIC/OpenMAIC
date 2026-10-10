@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Analysedienst nicht verfügbar",
-          "description": "Die Analyse ist derzeit nicht verfügbar. Versuchen Sie es später erneut. Wenden Sie sich bei anhaltenden Problemen an die Administration."
+          "description": "Für diesen Dateityp ist kein Analysedienst konfiguriert. Bitten Sie Ihre Administration, einen einzurichten, und starten Sie dann die Analyse erneut."
         },
         "media_too_long": {
           "label": "Audio oder Video zu lang",
@@ -2078,8 +2078,6 @@
         "reparse": "Erneut analysieren",
         "more": "Weitere Aktionen für {{name}}",
         "rename": "Umbenennen",
-        "move": "Verschieben nach…",
-        "removeFromFolder": "Aus dem Ordner entfernen",
         "delete": "Löschen",
         "open": "Öffnen",
         "downloadOriginal": "Original herunterladen",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Abbrechen",
-        "moveTitle": "„{{name}}“ verschieben",
-        "moveConfirm": "Verschieben",
-        "noFolders": "Es gibt noch keinen Ordner, in den es verschoben werden kann. Lege zuerst einen an.",
         "close": "Schließen"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "Inhalte, die bereits in einem Kurs gespeichert sind, sind nicht betroffen.",
         "cannotUndo": "Das lässt sich nicht rückgängig machen.",
         "folderTitle": "Ordner „{{name}}“ löschen?",
-        "folderOnlyEmpty": "Nur ein leerer Ordner kann gelöscht werden. Verschiebe seine Materialien zuerst."
+        "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Klassenzimmer und Materialien suchen",
+      "courseOrder": "Geöffnetes Klassenzimmer zuerst, dann zuletzt aktualisiert",
+      "materialOrder": "Neueste Uploads zuerst",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "{{name}} an diese Nachricht anhängen",
       "materialAttached": "Schon in dieser Unterhaltung",
       "materialStaged": "Schon in dieser Nachricht",
-      "materialExtracting": "Wird aufbereitet",
-      "materialFailed": "Aufbereitung fehlgeschlagen",
-      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
-      "materialNotExtracted": "Nicht aufbereitet",
-      "materialExtracted": "Aufbereitet"
+      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

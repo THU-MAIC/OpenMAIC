@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Serviço de análise indisponível",
-          "description": "A análise está indisponível no momento. Tente mais tarde; se o problema persistir, contate o administrador."
+          "description": "Nenhum serviço de análise está configurado para este tipo de arquivo. Peça ao administrador para configurar um e analise o arquivo novamente."
         },
         "media_too_long": {
           "label": "Áudio ou vídeo muito longo",
@@ -2078,8 +2078,6 @@
         "reparse": "Analisar novamente",
         "more": "Mais ações para {{name}}",
         "rename": "Renomear",
-        "move": "Mover para…",
-        "removeFromFolder": "Remover da pasta",
         "delete": "Excluir",
         "open": "Abrir",
         "downloadOriginal": "Baixar o original",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Cancelar",
-        "moveTitle": "Mover “{{name}}”",
-        "moveConfirm": "Mover",
-        "noFolders": "Ainda não há pastas para onde movê-lo. Crie uma primeiro.",
         "close": "Fechar"
       },
       "delete": {
@@ -2104,7 +2099,7 @@
         "materialCourses": "O conteúdo já salvo em um curso não é afetado.",
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
-        "folderOnlyEmpty": "Só é possível excluir uma pasta vazia. Mova os materiais dela primeiro."
+        "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2109,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar salas de aula e materiais",
+      "courseOrder": "Sala aberta primeiro, depois atualizações recentes",
+      "materialOrder": "Envios mais recentes primeiro",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
@@ -2128,11 +2126,7 @@
       "attachMaterial": "Anexar {{name}} a esta mensagem",
       "materialAttached": "Já está nesta conversa",
       "materialStaged": "Já está nesta mensagem",
-      "materialExtracting": "Processando",
-      "materialFailed": "Falha no processamento",
-      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
-      "materialNotExtracted": "Não processado",
-      "materialExtracted": "Processado"
+      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
