@@ -2106,6 +2106,7 @@
         "batchTitle_one": "Supprimer {{count}} fichier ?",
         "batchTitle_other": "Supprimer {{count}} fichiers ?",
         "batchLinks": "Les conversations qui les utilisent ne pourront plus les lire ; le texte déjà présent dans ces conversations est conservé.",
+        "batchPartial": "Les fichiers sont supprimés un par un : certains peuvent échouer, et ceux déjà supprimés ne sont pas restaurés.",
         "batchResult": "Supprimés : {{deleted}} sur {{total}}. Non supprimés :"
       },
       "selection": {

@@ -2106,6 +2106,7 @@
         "batchTitle_one": "파일 {{count}}개를 삭제할까요?",
         "batchTitle_other": "파일 {{count}}개를 삭제할까요?",
         "batchLinks": "삭제하면 대화에서 이 자료들을 더 이상 읽을 수 없습니다. 대화에 이미 있는 내용은 그대로 남습니다.",
+        "batchPartial": "파일은 하나씩 삭제됩니다. 일부는 실패할 수 있으며, 이미 삭제된 파일은 복원되지 않습니다.",
         "batchResult": "{{total}}개 중 {{deleted}}개를 삭제했습니다. 삭제되지 않은 파일:"
       },
       "selection": {

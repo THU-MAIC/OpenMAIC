@@ -2106,6 +2106,7 @@
         "batchTitle_one": "Excluir {{count}} arquivo?",
         "batchTitle_other": "Excluir {{count}} arquivos?",
         "batchLinks": "As conversas que os usam não poderão mais lê-los; o texto que já está nessas conversas permanece.",
+        "batchPartial": "Os arquivos são excluídos um por um: alguns podem falhar, e os já excluídos não são restaurados.",
         "batchResult": "Excluídos: {{deleted}} de {{total}}. Não excluídos:"
       },
       "selection": {

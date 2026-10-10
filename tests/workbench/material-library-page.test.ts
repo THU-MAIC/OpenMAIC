@@ -2574,6 +2574,8 @@ describe('selecting several files', () => {
       expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.batchTitle{"count":2}');
       expect(inDocument('kb-batch-delete-dialog-items')!.textContent).toBe('a.pdfb.pdf');
       expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.batchLinks');
+      // Before confirming: one by one, so some may fail and the deleted stay deleted.
+      expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.batchPartial');
       expect(dialog.textContent).toContain('workspace.knowledgeBase.delete.cannotUndo');
       expect(deletes()).toEqual([]);
       const reads = libraryCalls.length;
@@ -2647,6 +2649,62 @@ describe('selecting several files', () => {
       expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b', '/api/materials/b']);
       expect(inDocument('kb-batch-delete-dialog')).toBeNull();
       expect(inDocument('kb-selection-bar')).toBeNull();
+      await page.dispose();
+    });
+
+    it('keeps the earlier results of files a retry does not ask again', async () => {
+      const answers: Record<string, Response[]> = {
+        '/api/materials/a': [new Response('Not found', { status: 404 })],
+        '/api/materials/b': [
+          json({ success: false, errorCode: 'INTERNAL_ERROR', error: 'lost' }, 500),
+          json({ success: false, errorCode: 'INTERNAL_ERROR', error: 'lost' }, 500),
+        ],
+      };
+      writeMaterial = ({ path }) => answers[path].shift()!;
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await openBatchDelete();
+      await confirm();
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b', '/api/materials/b']);
+      expect(inDocument('kb-batch-delete-failed-a')!.textContent).toContain(
+        'workspace.knowledgeBase.error.gone',
+      );
+      expect(inDocument('kb-batch-delete-failed-b')!.textContent).toContain(
+        'workspace.knowledgeBase.error.save',
+      );
+      expect(inDocument('kb-batch-delete-dialog-result')!.textContent).toContain(
+        'workspace.knowledgeBase.delete.batchResult{"deleted":0,"total":2}',
+      );
+      await page.dispose();
+    });
+
+    it('stays open for a file refused by a changed sign-in when the retried file goes through', async () => {
+      const answers: Record<string, Response[]> = {
+        '/api/materials/a': [
+          json({ success: false, errorCode: 'INTERNAL_ERROR', error: 'lost' }, 500),
+          noContent(),
+        ],
+        '/api/materials/b': [json({ error: { code: 'INVALID_CREDENTIAL' } }, 401)],
+      };
+      writeMaterial = ({ path }) => answers[path].shift()!;
+      const page = await openPage();
+      await check('a');
+      await check('b');
+      await openBatchDelete();
+      await confirm();
+      await confirm();
+      expect(deletes()).toEqual(['/api/materials/a', '/api/materials/b', '/api/materials/a']);
+      expect(inDocument('kb-batch-delete-dialog')).not.toBeNull();
+      expect(inDocument('kb-batch-delete-failed-a')).toBeNull();
+      expect(inDocument('kb-batch-delete-failed-b')!.textContent).toContain(
+        'workspace.knowledgeBase.error.identity',
+      );
+      expect(inDocument('kb-batch-delete-dialog-result')!.textContent).toContain(
+        'workspace.knowledgeBase.delete.batchResult{"deleted":1,"total":2}',
+      );
+      expect(inDocument('kb-batch-delete-dialog-confirm')).toBeNull();
       await page.dispose();
     });
 

@@ -2106,6 +2106,7 @@
         "batchTitle_one": "Delete {{count}} file?",
         "batchTitle_other": "Delete {{count}} files?",
         "batchLinks": "Conversations that use them can no longer read them; text already in those conversations stays.",
+        "batchPartial": "Files are deleted one by one: some may fail, and files already deleted are not restored.",
         "batchResult": "Deleted {{deleted}} of {{total}}. Not deleted:"
       },
       "selection": {

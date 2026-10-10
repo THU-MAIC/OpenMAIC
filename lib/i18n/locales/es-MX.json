@@ -2106,6 +2106,7 @@
         "batchTitle_one": "¿Eliminar {{count}} archivo?",
         "batchTitle_other": "¿Eliminar {{count}} archivos?",
         "batchLinks": "Las conversaciones que los usan ya no podrán leerlos; el texto que ya está en esas conversaciones se conserva.",
+        "batchPartial": "Los archivos se eliminan uno por uno: algunos pueden fallar, y los que ya se eliminaron no se restauran.",
         "batchResult": "Se eliminaron {{deleted}} de {{total}}. No se eliminaron:"
       },
       "selection": {

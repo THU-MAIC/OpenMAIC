@@ -2106,6 +2106,7 @@
         "batchTitle_one": "{{count}} Datei löschen?",
         "batchTitle_other": "{{count}} Dateien löschen?",
         "batchLinks": "Unterhaltungen, die sie verwenden, können sie danach nicht mehr lesen; Text, der schon in diesen Unterhaltungen steht, bleibt erhalten.",
+        "batchPartial": "Die Dateien werden einzeln gelöscht: Manche können fehlschlagen, bereits gelöschte Dateien werden nicht wiederhergestellt.",
         "batchResult": "{{deleted}} von {{total}} gelöscht. Nicht gelöscht:"
       },
       "selection": {

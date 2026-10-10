@@ -2106,6 +2106,7 @@
         "batchTitle_one": "删除 {{count}} 个文件？",
         "batchTitle_other": "删除 {{count}} 个文件？",
         "batchLinks": "删除后，对话里再读取这些资料会失败，对话里已有的文字保留。",
+        "batchPartial": "文件会逐个删除：部分文件可能删除失败，已删除的文件不会恢复。",
         "batchResult": "已删除 {{deleted}}/{{total}} 个。以下文件未删除："
       },
       "selection": {

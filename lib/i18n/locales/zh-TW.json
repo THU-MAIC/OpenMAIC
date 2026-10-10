@@ -2091,6 +2091,7 @@
         "batchTitle_one": "刪除 {{count}} 個檔案？",
         "batchTitle_other": "刪除 {{count}} 個檔案？",
         "batchLinks": "刪除後，對話裡再讀取這些資料會失敗，對話裡已有的文字保留。",
+        "batchPartial": "檔案會逐一刪除：部分檔案可能刪除失敗，已刪除的檔案不會復原。",
         "batchResult": "已刪除 {{deleted}}/{{total}} 個。以下檔案未刪除："
       },
       "selection": {

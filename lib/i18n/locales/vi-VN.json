@@ -2106,6 +2106,7 @@
         "batchTitle_one": "Xóa {{count}} tệp?",
         "batchTitle_other": "Xóa {{count}} tệp?",
         "batchLinks": "Các cuộc trò chuyện dùng những tài liệu này sẽ không đọc được chúng nữa; nội dung đã có trong các cuộc trò chuyện vẫn được giữ.",
+        "batchPartial": "Các tệp được xóa lần lượt: một số có thể không xóa được, và các tệp đã xóa sẽ không được khôi phục.",
         "batchResult": "Đã xóa {{deleted}}/{{total}}. Chưa xóa:"
       },
       "selection": {
