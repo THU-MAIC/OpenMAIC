@@ -128,7 +128,7 @@ export function computePlaybackView(raw: PlaybackRawState): PlaybackView {
   let sourceText: string;
   if (liveSpeech) {
     sourceText = liveSpeech;
-  } else if (isInLiveFlow) {
+  } else if (isCueUser || isInLiveFlow) {
     // In live flow but no text yet — show empty (loading dots handled by bubble)
     sourceText = '';
   } else if (lectureSpeech) {
@@ -154,7 +154,7 @@ export function computePlaybackView(raw: PlaybackRawState): PlaybackView {
   } else if (isBubbleLoading) {
     activeRole = 'teacher';
   } else if (isCueUser) {
-    activeRole = null;
+    activeRole = 'user';
   } else if (lectureSpeech) {
     activeRole = 'teacher';
   } else {
@@ -171,9 +171,9 @@ export function computePlaybackView(raw: PlaybackRawState): PlaybackView {
     bubbleRole = 'agent';
   } else if (isBubbleLoading) {
     bubbleRole = 'teacher';
-  } else if (isInLiveFlow) {
-    bubbleRole = null;
   } else if (isCueUser) {
+    bubbleRole = 'user';
+  } else if (isInLiveFlow) {
     bubbleRole = null;
   } else if (lectureSpeech || idleText) {
     bubbleRole = 'teacher';

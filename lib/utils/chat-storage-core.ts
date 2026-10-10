@@ -13,6 +13,9 @@ import { isEqual } from 'lodash';
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
 
+// The retired browser schema stays read-only; newer runtime metadata is optional on restore.
+type ChatRestoreRecord = ChatSessionRecord & Pick<ChatSession, 'cueUser' | 'directorState'>;
+
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_RUNTIME_RECORDS_PER_CHAT_SESSION = 256;
 const CHAT_PAYLOAD_VERSION = 1;
@@ -144,9 +147,9 @@ function isCueUserState(value: unknown): value is NonNullable<ChatSession['cueUs
   );
 }
 
-function isLegacyRecord(record: unknown): record is ChatSessionRecord {
+function isLegacyRecord(record: unknown): record is ChatRestoreRecord {
   if (typeof record !== 'object' || record === null) return false;
-  const candidate = record as Partial<ChatSessionRecord>;
+  const candidate = record as Partial<ChatRestoreRecord>;
   return (
     typeof candidate.id === 'string' &&
     (candidate.type === 'qa' || candidate.type === 'discussion' || candidate.type === 'lecture') &&
@@ -201,7 +204,7 @@ function legacyTimestamps(record: ChatSessionRecord): { createdAt: number; updat
   return { createdAt, updatedAt: Math.max(createdAt, updatedAt) };
 }
 
-export function fromLegacyRecord(record: ChatSessionRecord): ChatSession {
+export function fromLegacyRecord(record: ChatRestoreRecord): ChatSession {
   if (!isLegacyRecord(record)) throw new TypeError('invalid legacy chat row shape');
   const { createdAt, updatedAt } = legacyTimestamps(record);
   return {

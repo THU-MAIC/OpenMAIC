@@ -76,6 +76,8 @@ export interface SessionCleanupPayload {
 
 export interface EndSessionOptions {
   source?: CleanupSource;
+  /** Component teardown should release resources without completing a durable learner park. */
+  preserveWaitingUser?: boolean;
 }
 
 export const MANUAL_STOP_END_OPTIONS: EndSessionOptions = { source: 'manual_stop' };
@@ -599,7 +601,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const currentSceneIdRef = useRef(currentSceneId);
 
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    // Restore sessions from store (loaded from IndexedDB)
+    // Restore sessions loaded by the stage store from server persistence.
     const stored = useStageStore.getState().chats;
     return normalizeStoredSessionsForRestore(stored);
   });
@@ -638,7 +640,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   // Reload sessions when stage changes (course switch)
   // This synchronous setState is intentional: it resets derived state from
-  // an external store (IndexedDB) when the stageId dependency changes.
+  // the persisted stage store when the stageId dependency changes.
   useEffect(() => {
     if (stageId === stageIdRef.current) return;
     stageIdRef.current = stageId;
@@ -1609,7 +1611,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const endActiveSession = useCallback(
     async (options: EndSessionOptions = {}): Promise<void> => {
-      const active = sessionsRef.current.find(isOpenLiveSession);
+      const active = sessionsRef.current.find(
+        (session) =>
+          isOpenLiveSession(session) &&
+          !(options.preserveWaitingUser && session.status === 'waiting-user'),
+      );
       if (active) {
         await endSession(active.id, options);
       }

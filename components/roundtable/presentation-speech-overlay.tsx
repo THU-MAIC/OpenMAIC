@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Play, Pause, Repeat, Loader2, Volume2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -25,6 +25,7 @@ interface PresentationSpeechOverlayProps {
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
+  readonly children?: ReactNode;
 }
 
 export interface PresentationBubbleModel {
@@ -62,7 +63,8 @@ export function buildPresentationBubbleModel({
     phase === 'lecturePlaying' ||
     phase === 'lecturePaused' ||
     phase === 'discussionActive' ||
-    phase === 'discussionPaused';
+    phase === 'discussionPaused' ||
+    phase === 'cueUser';
   const isLoading = phase === 'discussionActive' && bubbleRole !== null && sourceText === '';
 
   if (!showDuringPhase) return null;
@@ -195,6 +197,7 @@ export function PresentationBubbleCard({
   audioIndicatorState,
   buttonState,
   isPaused,
+  children,
 }: {
   readonly bubble: PresentationBubbleModel;
   readonly onClick?: () => void;
@@ -202,10 +205,12 @@ export function PresentationBubbleCard({
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
+  readonly children?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
     <div
+      data-bubble-role={bubble.role}
       aria-live="polite"
       onClick={onClick}
       className={cn(
@@ -300,6 +305,7 @@ export function PresentationBubbleCard({
             )}
           </p>
         )}
+        {children}
       </div>
 
       {bubble.role !== 'user' &&
@@ -396,6 +402,7 @@ export function PresentationSpeechOverlay({
   audioIndicatorState,
   buttonState,
   isPaused,
+  children,
 }: PresentationSpeechOverlayProps) {
   const { t } = useI18n();
 
@@ -450,7 +457,9 @@ export function PresentationSpeechOverlay({
             audioIndicatorState={audioIndicatorState}
             buttonState={buttonState}
             isPaused={isPaused}
-          />
+          >
+            {children}
+          </PresentationBubbleCard>
         </motion.div>
       )}
     </AnimatePresence>

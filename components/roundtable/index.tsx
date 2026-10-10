@@ -63,6 +63,8 @@ interface RoundtableProps {
   readonly endFlashSessionType?: 'qa' | 'discussion';
   readonly thinkingState?: { stage: string; agentId?: string } | null;
   readonly isCueUser?: boolean;
+  readonly cueUserPrompt?: string;
+  readonly cueUserOptions?: readonly string[];
   /** Session entered the soft-closing grace window (client-side, ~15s). */
   readonly isSoftClosing?: boolean;
   readonly softCloseDeadline?: number;
@@ -118,6 +120,9 @@ interface RoundtableProps {
 // This must stay in sync with the non-presentation textarea's max-h-[100px] class.
 const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
 
+const CONTINUE_LESSON_OPTION_PATTERN =
+  /^(?:(?:不用|不需要|不了|先不用)[，,、。!！\s]*)?(?:继续(?:课程|上课|学习)|回到(?:课程|课堂)|返回(?:课程|课堂))[。!！\s]*$|^(?:(?:no thanks|not now)[,!.\s]*)?(?:(?:continue|resume)(?:\s+(?:the))?|return to|back to)\s+(?:lesson|course|class)[.!\s]*$/i;
+
 const VOICE_WAVE_BARS = [
   { peak: 18, duration: 0.55 },
   { peak: 24, duration: 0.72 },
@@ -172,6 +177,8 @@ export function Roundtable({
   endFlashSessionType = 'discussion',
   thinkingState,
   isCueUser,
+  cueUserPrompt,
+  cueUserOptions,
   isSoftClosing,
   softCloseDeadline,
   isTopicPending,
@@ -254,6 +261,10 @@ export function Roundtable({
   // Send cooldown: lock input from "message sent" until "agent bubble appears"
   const [isSendCooldown, setIsSendCooldown] = useState(false);
   const isSendCooldownRef = useRef(false);
+  const cueActionClaimedRef = useRef(false);
+  useEffect(() => {
+    if (!isCueUser) cueActionClaimedRef.current = false;
+  }, [isCueUser]);
 
   const teacherParticipant = initialParticipants.find((p) => p.role === 'teacher');
   const studentParticipants = initialParticipants.filter(
@@ -285,12 +296,14 @@ export function Roundtable({
   // Role-aware source text: userMessage overlay on top of playbackView
   const sourceText = userMessage
     ? userMessage
-    : (playbackView?.sourceText ??
-      (currentSpeech
-        ? currentSpeech
-        : isInLiveFlow
-          ? ''
-          : lectureSpeech || (playbackCompleted ? '' : idleText) || ''));
+    : isCueUser && !currentSpeech && !speakingAgentId && !thinkingState
+      ? cueUserPrompt?.trim() || t('roundtable.yourTurn')
+      : (playbackView?.sourceText ??
+        (currentSpeech
+          ? currentSpeech
+          : isInLiveFlow
+            ? ''
+            : lectureSpeech || (playbackCompleted ? '' : idleText) || ''));
   const hasAgentFeedback = Boolean(playbackView?.sourceText || thinkingState);
   const prevHasAgentFeedbackRef = useRef(hasAgentFeedback);
 
@@ -563,7 +576,7 @@ export function Roundtable({
             : isBubbleLoading
               ? 'teacher'
               : isCueUser
-                ? null
+                ? 'user'
                 : lectureSpeech
                   ? 'teacher'
                   : null));
@@ -579,9 +592,9 @@ export function Roundtable({
             ? 'agent'
             : isBubbleLoading
               ? 'teacher'
-              : isInLiveFlow
-                ? null
-                : isCueUser
+              : isCueUser
+                ? 'user'
+                : isInLiveFlow
                   ? null
                   : lectureSpeech || idleText
                     ? 'teacher'
@@ -623,7 +636,38 @@ export function Roundtable({
   // sessionType is only cleared in doSessionCleanup, so this stays stable through
   // brief loading gaps (e.g. between user message and agent SSE response).
   const showStopButton =
-    engineMode === 'live' || sessionType === 'qa' || sessionType === 'discussion';
+    isCueUser || engineMode === 'live' || sessionType === 'qa' || sessionType === 'discussion';
+
+  const quickReplies = isCueUser && bubbleRole === 'user' && !userMessage && (
+    <div data-testid="cue-user-options" className="mt-2 flex flex-wrap gap-1.5">
+      {cueUserOptions?.map((option) => (
+        <button
+          key={option}
+          type="button"
+          disabled={isSendCooldown}
+          className="rounded-full border border-current/20 px-2.5 py-1 text-xs hover:bg-current/10 disabled:opacity-50"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (cueActionClaimedRef.current || isSendCooldownRef.current) return;
+            if (CONTINUE_LESSON_OPTION_PATTERN.test(option.trim())) {
+              if (!onStopDiscussion) return;
+              cueActionClaimedRef.current = true;
+              onStopDiscussion();
+              return;
+            }
+            if (!onMessageSend || canSendMessage?.() === false) return;
+            cueActionClaimedRef.current = true;
+            isSendCooldownRef.current = true;
+            setIsSendCooldown(true);
+            showLocalUserMessage(option);
+            onMessageSend(option);
+          }}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
 
   const handleCycleSpeed = useCallback(() => {
     const currentIndex = PLAYBACK_SPEEDS.indexOf(playbackSpeed as (typeof PLAYBACK_SPEEDS)[number]);
@@ -645,6 +689,7 @@ export function Roundtable({
     : null;
 
   const handlePresentationBubbleClick = useCallback(() => {
+    if (isCueUser) return;
     if (isTopicPending) {
       onResumeTopic?.();
       return;
@@ -659,6 +704,7 @@ export function Roundtable({
     }
     onPlayPause?.();
   }, [
+    isCueUser,
     isTopicPending,
     isInLiveFlow,
     isDiscussionPaused,
@@ -974,7 +1020,9 @@ export function Roundtable({
             audioIndicatorState={audioIndicatorState ?? 'idle'}
             buttonState={enrichedPlaybackView?.buttonState}
             isPaused={isDiscussionPaused || engineMode === 'paused'}
-          />
+          >
+            {quickReplies}
+          </PresentationSpeechOverlay>
 
           {/* Dock */}
           <AnimatePresence>
@@ -1649,6 +1697,7 @@ export function Roundtable({
                     )}
                   >
                     <div
+                      data-bubble-role={bubbleRole}
                       onClick={(e) => {
                         e.stopPropagation();
                         if (bubbleRole === 'user') return;
@@ -1672,6 +1721,7 @@ export function Roundtable({
                       }}
                       className={cn(
                         'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
+                        isCueUser && bubbleRole === 'user' && 'max-h-[180px]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
@@ -1793,6 +1843,7 @@ export function Roundtable({
                             )}
                           </p>
                         )}
+                        {quickReplies}
                       </div>
 
                       {/* Playback state icon (hidden during loading — dots already indicate activity) */}

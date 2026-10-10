@@ -63,7 +63,6 @@ export interface ChatAreaRef {
   endSession: (sessionId: string, options?: EndSessionOptions) => Promise<void>;
   endActiveSession: (options?: EndSessionOptions) => Promise<void>;
   stopActiveSession: () => Promise<void>;
-  resumeLesson: () => Promise<boolean>;
   continueActiveSoftClosingSession: () => boolean;
   softPauseActiveSession: () => Promise<void>;
   resumeActiveSession: () => Promise<void>;
@@ -199,16 +198,28 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [softClosingChatSession, onSoftClosingChange]);
 
     // Wrap endSession for QA/Discussion: also notify parent for engine cleanup
+    const manualStopsRef = useRef(new Map<string, Promise<void>>());
     const handleEndSession = useCallback(
       async (sessionId: string) => {
-        const session = chatSessions.find((candidate) => candidate.id === sessionId);
-        if (session?.status === 'soft-closing') {
-          const payload = await confirmSoftClosingSession(sessionId);
-          if (payload) onStopSession?.(payload);
-          return;
+        const existing = manualStopsRef.current.get(sessionId);
+        if (existing) return existing;
+        const stop = (async () => {
+          const session = chatSessions.find((candidate) => candidate.id === sessionId);
+          if (session?.status === 'soft-closing') {
+            const payload = await confirmSoftClosingSession(sessionId);
+            if (payload) onStopSession?.(payload);
+            return;
+          }
+          await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
+          onStopSession?.({ sessionId, source: 'manual_stop' });
+        })();
+        manualStopsRef.current.set(sessionId, stop);
+        try {
+          await stop;
+        } catch (error) {
+          manualStopsRef.current.delete(sessionId);
+          throw error;
         }
-        await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
-        onStopSession?.({ sessionId, source: 'manual_stop' });
       },
       [chatSessions, confirmSoftClosingSession, endSession, onStopSession],
     );
@@ -222,24 +233,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       );
       if (active) await handleEndSession(active.id);
     }, [chatSessions, handleEndSession]);
-
-    const handleResumeLesson = useCallback(async (): Promise<boolean> => {
-      const active = chatSessions.find(
-        (session) =>
-          session.status === 'active' ||
-          session.status === 'waiting-user' ||
-          session.status === 'soft-closing',
-      );
-      if (!active) return false;
-
-      await endSession(active.id, { source: 'resume_lesson' });
-      onStopSession?.({
-        sessionId: active.id,
-        endReason: 'back_to_lesson',
-        source: 'resume_lesson',
-      });
-      return true;
-    }, [chatSessions, endSession, onStopSession]);
 
     const handleContinueActiveSoftClosingSession = useCallback((): boolean => {
       const softClosing = chatSessions.find((session) => session.status === 'soft-closing');
@@ -255,7 +248,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       endSession,
       endActiveSession,
       stopActiveSession: handleStopActiveSession,
-      resumeLesson: handleResumeLesson,
       continueActiveSoftClosingSession: handleContinueActiveSoftClosingSession,
       softPauseActiveSession,
       resumeActiveSession,
