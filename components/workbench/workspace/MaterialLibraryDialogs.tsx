@@ -311,8 +311,9 @@ export interface BatchDeleteItem {
  * one through the single-source route: each deletion is its own, so some can
  * succeed while others fail. The list is fixed when the dialog opens; nothing
  * selected later joins it. Afterwards the dialog says how many were deleted
- * and which were not, and why; "Retry" asks again only for those that may
- * still go through. A 404 is read per file as `deleteOutcomeOf` reads it.
+ * and which were not, and why, across every pass: "Retry" asks again only
+ * for those that may still go through, and the others keep their result.
+ * A 404 is read per file as `deleteOutcomeOf` reads it.
  * `onSettled` runs once after each pass, with the files that are now gone
  * (deleted, or already gone); `onDeleted` once all of them are.
  */
@@ -340,17 +341,17 @@ export function BatchDeleteDialog({
   >({ kind: 'confirm' });
   /** Files whose earlier attempt may have committed: a 404 now means done. */
   const failedBefore = useRef(new Set<string>());
-  const deleted = useRef(0);
+  /** Each file's latest result, over every pass: a retry replaces only its own. */
+  const outcomes = useRef(new Map<string, DeleteOutcome>());
 
   const attempt = async (batch: readonly BatchDeleteItem[]) => {
     setPhase({ kind: 'busy' });
-    const failures: Failure[] = [];
     const gone: string[] = [];
     let stopped: DeleteOutcome | null = null;
     for (const item of batch) {
       // A changed sign-in refuses every later request too: those are not sent.
       if (stopped) {
-        failures.push({ item, result: stopped });
+        outcomes.current.set(item.materialId, stopped);
         continue;
       }
       let error: unknown = null;
@@ -360,23 +361,26 @@ export function BatchDeleteDialog({
         error = caught;
       }
       const result = deleteOutcomeOf(error, failedBefore.current.has(item.materialId));
-      if (result.outcome === 'deleted') {
-        deleted.current += 1;
-        gone.push(item.materialId);
-        continue;
-      }
-      if (result.outcome === 'gone') gone.push(item.materialId);
+      outcomes.current.set(item.materialId, result);
+      if (result.outcome === 'deleted' || result.outcome === 'gone') gone.push(item.materialId);
       if (result.outcome === 'retry') failedBefore.current.add(item.materialId);
       if (result.outcome === 'identity') stopped = result;
-      failures.push({ item, result });
     }
     onSettled(gone);
+    // The whole confirmed list decides, not this pass.
+    const failures: Failure[] = [];
+    let deleted = 0;
+    for (const item of items) {
+      const result = outcomes.current.get(item.materialId);
+      if (result?.outcome === 'deleted') deleted += 1;
+      else if (result) failures.push({ item, result });
+    }
     if (failures.length === 0) {
       onDeleted();
       onClose();
       return;
     }
-    setPhase({ kind: 'result', deleted: deleted.current, failures });
+    setPhase({ kind: 'result', deleted, failures });
   };
 
   const busy = phase.kind === 'busy';
@@ -398,6 +402,7 @@ export function BatchDeleteDialog({
           <AlertDialogDescription asChild>
             <div className="flex flex-col gap-1">
               <p>{t('workspace.knowledgeBase.delete.batchLinks')}</p>
+              <p>{t('workspace.knowledgeBase.delete.batchPartial')}</p>
               <p>{t('workspace.knowledgeBase.delete.materialCourses')}</p>
               <p>{t('workspace.knowledgeBase.delete.cannotUndo')}</p>
             </div>
