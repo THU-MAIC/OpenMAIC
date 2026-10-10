@@ -42,3 +42,18 @@ it('pins representative system and user prompts for every scene kind', async () 
 
   expect(captured).toMatchSnapshot();
 });
+
+it('documents the ShapeElement rotation geometry contract in the generated prompt', async () => {
+  let systemPrompt = '';
+  const capture: AICallFn = async (system) => {
+    systemPrompt = system;
+    return JSON.stringify({ elements: [], background: { type: 'solid', color: '#fff' } });
+  };
+
+  await generateSceneContent(slideOutline(), capture);
+
+  expect(systemPrompt).toContain('"rotate": 30');
+  expect(systemPrompt).toContain(
+    '`rotate`: finite angle in degrees; positive values rotate clockwise around the centre of the unrotated bounding box',
+  );
+});
