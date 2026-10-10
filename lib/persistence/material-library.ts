@@ -446,6 +446,23 @@ export async function renameMaterial(
   });
 }
 
+/**
+ * A ready source's display name, for naming what it is served as; null when
+ * it was never renamed. Undefined when the owner has no such ready source.
+ */
+export async function materialDisplayName(
+  queryable: Queryable,
+  ownerId: string,
+  materialId: string,
+): Promise<string | null | undefined> {
+  const result = await queryable.query<{ display_name: string | null }>(
+    `SELECT display_name FROM owner_material
+      WHERE id = $1 AND owner_id = $2 AND status = 'ready' AND deleted_at IS NULL`,
+    [materialId, ownerId],
+  );
+  return result.rows.length === 0 ? undefined : result.rows[0].display_name;
+}
+
 export type DeleteMaterialOutcome =
   | { status: 'deleted'; materialIds: string[] }
   | { status: 'not_found' }

@@ -264,9 +264,14 @@ export interface MaterialUploadEntry {
   name: string;
 }
 
+/** What `addExisting` did: staged it, found it staged, or could not (cap, gate). */
+export type AddExistingOutcome = 'staged' | 'already' | 'full' | 'disabled';
+
 export interface ComposerMaterials {
   /** Runtime rollout gate shared by picker, paste, and drop entry points. */
   enabled: boolean;
+  /** The gate has answered, either way (`enabled` alone cannot tell "not yet" from "no"). */
+  enabledKnown: boolean;
   materials: WorkbenchMaterial[];
   /**
    * Files picked but not yet settled, in pick order. Every entry is rendered
@@ -281,13 +286,22 @@ export interface ComposerMaterials {
    * Stage a material the knowledge base already holds (the `@` picker): one
    * more pill, attached only when the message is sent. One already staged is
    * left as it is; the per-message cap applies as it does to uploads.
+   * Answers what happened, for a caller that must know (the knowledge base
+   * page's hand-over); `full` has already told the user.
    */
-  addExisting: (material: WorkbenchMaterial) => void;
+  addExisting: (material: WorkbenchMaterial) => AddExistingOutcome;
   remove: (materialId: string) => void;
   removeFailed: (id: string) => void;
   /** Remove only the staged objects accepted by this send. Later picks survive. */
   removeSent: (sent: readonly WorkbenchMaterial[]) => void;
   clear: () => void;
+  /**
+   * A new conversation in this composer: nothing staged, uploading or failed
+   * is kept, and an upload still in flight is no longer this draft's -- it
+   * may finish into the library, but its pill, failure and slot stay with
+   * the draft it was picked for. `clear` keeps such uploads.
+   */
+  startOver: () => void;
   /** True while any upload is in flight — submits should wait for it. */
   busy: boolean;
 }
@@ -325,26 +339,36 @@ async function probeMaterialsEnabled(): Promise<boolean> {
   return materialsProbe;
 }
 
-/** Runtime-delivered rollout gate; false until the server probe says true. */
-export function useMaterialUploadsEnabled(): boolean {
-  const [enabled, setEnabled] = useState(materialsEnabledCache === true);
+/** The rollout gate as this surface knows it: still asking, or the answer. */
+type MaterialUploadsGate = 'pending' | 'on' | 'off';
+
+function useMaterialUploadsGate(): MaterialUploadsGate {
+  const [gate, setGate] = useState<MaterialUploadsGate>(() =>
+    materialsEnabledCache === null ? 'pending' : materialsEnabledCache ? 'on' : 'off',
+  );
   useEffect(() => {
     let cancelled = false;
     void probeMaterialsEnabled().then((value) => {
-      if (!cancelled) setEnabled(value);
+      if (!cancelled) setGate(value ? 'on' : 'off');
     });
     return () => {
       cancelled = true;
     };
   }, []);
-  return enabled;
+  return gate;
+}
+
+/** Runtime-delivered rollout gate; false until the server probe says true. */
+export function useMaterialUploadsEnabled(): boolean {
+  return useMaterialUploadsGate() === 'on';
 }
 
 export function useComposerMaterials(
   initialMaterials: readonly WorkbenchMaterial[] = [],
 ): ComposerMaterials {
   const { t, locale } = useI18n();
-  const enabled = useMaterialUploadsEnabled();
+  const gate = useMaterialUploadsGate();
+  const enabled = gate === 'on';
   const initial = useRef<WorkbenchMaterial[] | null>(null);
   if (initial.current === null) {
     initial.current = initialMaterials.slice(0, MAX_COMPOSER_MATERIALS);
@@ -358,6 +382,8 @@ export function useComposerMaterials(
   const seq = useRef(0);
   const slotLedger = useRef(new MaterialSlotLedger(initial.current.length));
   const identityGate = useRef(createMaterialUploadIdentityGate());
+  /** Bumped by `startOver`; an upload belongs to the draft it was picked in. */
+  const draft = useRef(0);
 
   const addFiles = (files: FileList | File[]) => {
     if (!enabled) return;
@@ -366,7 +392,9 @@ export function useComposerMaterials(
       toast.error(t('workbench.material.maxSelected', { count: MAX_COMPOSER_MATERIALS }));
       return;
     }
-    slotLedger.current.reserve(selected.length);
+    const ledger = slotLedger.current;
+    const pickedIn = draft.current;
+    ledger.reserve(selected.length);
 
     // Register every picked file as a pending chip BEFORE any upload runs, so
     // a slow first upload never hides later selections. Uploads are settled
@@ -390,11 +418,14 @@ export function useComposerMaterials(
       let succeeded = false;
       try {
         const staged = await retryMaterialUpload(() => uploadWorkbenchMaterial(file));
-        stagedObjects.current.add(staged);
-        setMaterials((current) => [...current, staged]);
         succeeded = true;
+        if (draft.current === pickedIn) {
+          stagedObjects.current.add(staged);
+          setMaterials((current) => [...current, staged]);
+        }
         return true;
       } catch (err) {
+        if (draft.current !== pickedIn) return false;
         setFailed((items) => [...items, entry]);
         toast.error(
           err instanceof WorkbenchMaterialUploadError
@@ -405,7 +436,7 @@ export function useComposerMaterials(
         );
         return false;
       } finally {
-        slotLedger.current.settle(succeeded);
+        ledger.settle(succeeded);
         setUploading((items) => items.filter((item) => item.id !== entry.id));
       }
     };
@@ -413,12 +444,14 @@ export function useComposerMaterials(
     void scheduleMaterialUploadBatch(identityGate.current, jobs, upload);
   };
 
-  const addExisting = (material: WorkbenchMaterial) => {
-    if (!enabled) return;
-    if ([...stagedObjects.current].some((item) => item.materialId === material.materialId)) return;
+  const addExisting = (material: WorkbenchMaterial): AddExistingOutcome => {
+    if (!enabled) return 'disabled';
+    if ([...stagedObjects.current].some((item) => item.materialId === material.materialId)) {
+      return 'already';
+    }
     if (!slotLedger.current.canAccept(1)) {
       toast.error(t('workbench.material.maxSelected', { count: MAX_COMPOSER_MATERIALS }));
-      return;
+      return 'full';
     }
     slotLedger.current.reserve(1);
     stagedObjects.current.add(material);
@@ -428,10 +461,12 @@ export function useComposerMaterials(
         ? current
         : [...current, material],
     );
+    return 'staged';
   };
 
   return {
     enabled,
+    enabledKnown: gate !== 'pending',
     materials,
     uploading,
     failed,
@@ -465,8 +500,79 @@ export function useComposerMaterials(
       setMaterials([]);
       setFailed([]);
     },
+    startOver: () => {
+      draft.current += 1;
+      stagedObjects.current.clear();
+      // A fresh ledger: uploads in flight settle into the old one.
+      slotLedger.current = new MaterialSlotLedger(0);
+      setMaterials([]);
+      setUploading([]);
+      setFailed([]);
+    },
     busy: uploading.length > 0,
   };
+}
+
+/** Which composer a knowledge base hand-over is for, decided when it was asked. */
+export type MaterialSeedTarget =
+  | { readonly kind: 'home' }
+  /** A conversation's composer, by its owner key (`draft:<courseId>` for a new one). */
+  | { readonly kind: 'chat'; readonly ownerKey: string };
+
+/**
+ * "Chat with this material" from the knowledge base page: one material to
+ * stage in one composer, once. `key` tells one hand-over from the next.
+ */
+export interface MaterialSeed {
+  readonly key: number;
+  readonly material: WorkbenchMaterial;
+  readonly target: MaterialSeedTarget;
+}
+
+/**
+ * Stage a hand-over in this composer if it is the one the hand-over names,
+ * and say whether the composer must wait for it.
+ *
+ * While the materials gate has not answered, the hand-over waits -- and so
+ * must this composer's send (the answer is `true`): a message sent then would
+ * leave without the material the teacher chose. Once the gate answers yes it
+ * is staged -- only staged, nothing is uploaded or attached before the
+ * message is sent (RFC #1716 §4); answered no, nothing can be staged here and
+ * the hand-over is over. `onConsumed` hands the key back once, when the
+ * outcome is known: staged, already staged, refused by the per-message cap
+ * (which `addExisting` has already told the user; not kept to reappear
+ * later), or materials not offered.
+ *
+ * Call it AFTER any effect that resets the composer. A reset that runs again
+ * for the same hand-over -- React replaying effects in development -- is
+ * answered by staging it again (`addExisting` keeps one pill per material);
+ * a refused one is not tried twice.
+ */
+export function useMaterialSeed(input: {
+  readonly seed: MaterialSeed | null | undefined;
+  /** This composer is the seed's target. */
+  readonly targeted: boolean;
+  readonly materials: Pick<ComposerMaterials, 'enabled' | 'enabledKnown' | 'addExisting'>;
+  readonly onConsumed?: (key: number) => void;
+}): boolean {
+  const { seed, targeted, materials, onConsumed } = input;
+  /** The hand-over this composer answered, and how. */
+  const handled = useRef<{ readonly key: number; readonly outcome: AddExistingOutcome } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (!seed || !targeted || !materials.enabledKnown) return;
+    const earlier = handled.current?.key === seed.key ? handled.current.outcome : null;
+    if (earlier === 'full' || earlier === 'disabled') return;
+    const outcome = materials.enabled ? materials.addExisting(seed.material) : 'disabled';
+    if (earlier !== null) return;
+    handled.current = { key: seed.key, outcome };
+    onConsumed?.(seed.key);
+    // `materials` is a fresh object each render; the gate is what can change
+    // the outcome, and `handled` keeps the answer to one per key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed, targeted, materials.enabled, materials.enabledKnown]);
+  return Boolean(seed && targeted && !materials.enabledKnown);
 }
 
 export function AttachButton({

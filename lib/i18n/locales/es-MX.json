@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de conocimientos",
+      "back": "Volver",
+      "search": "Buscar por nombre o tipo de archivo",
+      "loading": "Cargando…",
+      "retry": "Reintentar",
+      "loadMore": "Cargar más",
+      "failure": {
+        "more": "Información del error: {{reason}}",
+        "storage_full": {
+          "label": "Espacio insuficiente",
+          "description": "No hay espacio suficiente para guardar los resultados. Libera espacio e inténtalo de nuevo."
+        },
+        "source_unavailable": {
+          "label": "Archivo original no disponible",
+          "description": "No se pudo leer el archivo original. Súbelo de nuevo y vuelve a intentarlo."
+        },
+        "service_unavailable": {
+          "label": "Servicio de análisis no disponible",
+          "description": "El análisis no está disponible por el momento. Inténtalo más tarde; si el problema continúa, contacta a tu administrador."
+        },
+        "media_too_long": {
+          "label": "Audio o video demasiado largo",
+          "description": "Este método de análisis procesa audio o video de hasta {{minutes}} minutos. Acórtalo o divídelo y vuelve a subirlo."
+        },
+        "no_text_extracted": {
+          "label": "No se extrajo texto",
+          "description": "Esta vez no se extrajo texto utilizable. Revisa el contenido o prueba con otro archivo."
+        },
+        "processing_interrupted": {
+          "label": "Análisis sin completar",
+          "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        }
+      },
+      "status": {
+        "uploading": "Subiendo",
+        "stored": "Guardado · sin analizar",
+        "parsing": "Analizando",
+        "searchable": "Consultable",
+        "failed": "Error al analizar"
+      },
+      "column": {
+        "name": "Nombre",
+        "status": "Estado",
+        "folder": "Carpeta",
+        "size": "Tamaño",
+        "date": "Fecha"
+      },
+      "limits": {
+        "perFile": "Hasta {{document}} por documento o imagen, {{media}} por audio o video"
+      },
+      "usage": {
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} archivos"
+      },
+      "empty": {
+        "title": "Tu base de conocimientos está vacía",
+        "body": "Sube tus materiales didácticos, deja que el asistente los organice y analice, y elígelos con @ al preparar un curso.",
+        "folder": "Esta carpeta aún no tiene materiales",
+        "query": "Ningún material coincide con “{{query}}”"
+      },
+      "upload": {
+        "button": "Subir materiales",
+        "dismiss": "Descartar"
+      },
+      "error": {
+        "load": "No se pudo cargar la base de conocimientos",
+        "busy": "Tu cuenta se está actualizando. Inténtalo de nuevo en un momento",
+        "identity": "Tu inicio de sesión cambió. Vuelve a cargar la página",
+        "stale": "lo que se muestra podría no estar actualizado",
+        "nameTaken": "Ya existe otra carpeta con este nombre",
+        "invalidName": "Escribe un nombre de 255 caracteres como máximo",
+        "folderNameEmpty": "Escribe un nombre de carpeta",
+        "folderNameTooLong": "El nombre de la carpeta es demasiado largo",
+        "folderLimit": "Llegaste al límite de carpetas",
+        "notMovable": "Este material no se puede mover",
+        "gone": "Ya no existe",
+        "save": "No funcionó. Inténtalo de nuevo",
+        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero"
+      },
+      "actions": {
+        "parse": "Analizar",
+        "reparse": "Volver a analizar",
+        "more": "Más acciones para {{name}}",
+        "rename": "Cambiar nombre",
+        "move": "Mover a…",
+        "removeFromFolder": "Quitar de la carpeta",
+        "delete": "Eliminar",
+        "open": "Abrir",
+        "downloadOriginal": "Descargar el original",
+        "chat": "Conversar sobre este material"
+      },
+      "folder": {
+        "new": "Nueva carpeta",
+        "items": "{{count}} elementos",
+        "items_one": "{{count}} elemento",
+        "items_other": "{{count}} elementos"
+      },
+      "dialog": {
+        "cancel": "Cancelar",
+        "moveTitle": "Mover “{{name}}”",
+        "moveConfirm": "Mover",
+        "noFolders": "Aún no hay carpetas a donde moverlo. Crea una primero.",
+        "close": "Cerrar"
+      },
+      "delete": {
+        "materialTitle": "¿Eliminar “{{name}}”?",
+        "materialLinks": "Las conversaciones que lo usan ya no podrán leerlo; el texto que ya está en esas conversaciones se conserva.",
+        "materialCourses": "El contenido ya guardado en un curso no se ve afectado.",
+        "cannotUndo": "Esta acción no se puede deshacer.",
+        "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
+        "folderOnlyEmpty": "Solo se puede eliminar una carpeta vacía. Mueve primero sus materiales."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Ya está en este mensaje",
       "materialExtracting": "Procesando",
       "materialFailed": "Falló el procesamiento",
-      "unfiled": "Sin carpeta",
       "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
       "materialNotExtracted": "Sin procesar",
       "materialExtracted": "Procesado"

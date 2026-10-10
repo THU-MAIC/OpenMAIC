@@ -9,6 +9,9 @@ import { afterEach, describe, it, vi } from 'vitest';
 
 import {
   bootExtractionHarness,
+  failureReasonScenario,
+  documentFallbackScenario,
+  documentServiceUnavailableScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -29,6 +32,7 @@ import {
   schemaCompatibilityScenario,
   supersededClaimScenario,
   twoConversationsOneExtractionScenario,
+  uploadQueuesExtractionScenario,
   withdrawnDonorScenario,
   type ExtractionHarness,
   type ExtractionScenarioPool,
@@ -74,8 +78,24 @@ describe('owner-level material extraction (PGlite)', () => {
     await ensureStartedScenario(await boot());
   });
 
+  it('queues an upload in the transaction that publishes it', async () => {
+    await uploadQueuesExtractionScenario(await boot());
+  });
+
   it('extracts a source two conversations start exactly once', async () => {
     await twoConversationsOneExtractionScenario(await boot());
+  });
+
+  it('says the parsing service is unavailable only when no document candidate is configured', async () => {
+    await documentServiceUnavailableScenario(await boot());
+  });
+
+  it('keeps document fallback, and a PDF’s own failure, free of that reason', async () => {
+    await documentFallbackScenario(await boot());
+  });
+
+  it('keeps public failure reasons on current terminal claims only', async () => {
+    await failureReasonScenario(await boot());
   });
 
   it('spends the claim budget on takeovers and keeps a heartbeating lease', async () => {

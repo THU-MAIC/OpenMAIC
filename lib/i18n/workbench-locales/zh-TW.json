@@ -45,7 +45,8 @@
     "fileTooLarge": "檔案過大，請壓縮或分割後重試。",
     "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
     "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
-    "quotaExceeded": "已達到材料上傳限額。"
+    "quotaExceeded": "已達到材料上傳限額。",
+    "storageFull": "儲存空間已達上限，無法上傳這份資料。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "仍在解析",
       "folderExisted": "資料夾已存在",
       "unchanged": "沒有變化",
-      "movedToUnfiled": "已移回未歸檔"
+      "movedOutOfFolder": "已移出資料夾"
     },
     "error": {
       "materialExtraction": "材料解析失敗",

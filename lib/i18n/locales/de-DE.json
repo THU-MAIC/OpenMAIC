@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Wissensbasis",
+      "back": "Zurück",
+      "search": "Namen und Dateitypen durchsuchen",
+      "loading": "Wird geladen…",
+      "retry": "Erneut versuchen",
+      "loadMore": "Mehr laden",
+      "failure": {
+        "more": "Hinweis zum Fehler: {{reason}}",
+        "storage_full": {
+          "label": "Nicht genügend Speicherplatz",
+          "description": "Die Analyseergebnisse können wegen Platzmangels nicht gespeichert werden. Geben Sie Speicherplatz frei und versuchen Sie es erneut."
+        },
+        "source_unavailable": {
+          "label": "Originaldatei nicht verfügbar",
+          "description": "Die Originaldatei konnte nicht gelesen werden. Laden Sie sie erneut hoch und versuchen Sie es noch einmal."
+        },
+        "service_unavailable": {
+          "label": "Analysedienst nicht verfügbar",
+          "description": "Die Analyse ist derzeit nicht verfügbar. Versuchen Sie es später erneut. Wenden Sie sich bei anhaltenden Problemen an die Administration."
+        },
+        "media_too_long": {
+          "label": "Audio oder Video zu lang",
+          "description": "Diese Analysemethode verarbeitet Audio und Video bis zu {{minutes}} Minuten. Kürzen oder teilen Sie die Datei und laden Sie sie erneut hoch."
+        },
+        "no_text_extracted": {
+          "label": "Kein Text extrahiert",
+          "description": "Diesmal wurde kein nutzbarer Text extrahiert. Prüfen Sie den Inhalt oder versuchen Sie eine andere Datei."
+        },
+        "processing_interrupted": {
+          "label": "Analyse nicht abgeschlossen",
+          "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        }
+      },
+      "status": {
+        "uploading": "Wird hochgeladen",
+        "stored": "Gespeichert · nicht analysiert",
+        "parsing": "Wird analysiert",
+        "searchable": "Durchsuchbar",
+        "failed": "Analyse fehlgeschlagen"
+      },
+      "column": {
+        "name": "Name",
+        "status": "Status",
+        "folder": "Ordner",
+        "size": "Größe",
+        "date": "Datum"
+      },
+      "limits": {
+        "perFile": "Bis {{document}} pro Dokument oder Bild, {{media}} pro Audio oder Video"
+      },
+      "usage": {
+        "summary": "{{used}} von {{max}} belegt · {{count}} von {{maxCount}} Dateien"
+      },
+      "empty": {
+        "title": "Deine Wissensbasis ist leer",
+        "body": "Lade Unterrichtsmaterialien hoch, lass den Assistenten sie ordnen und analysieren, und wähle sie bei der Kursvorbereitung mit @ aus.",
+        "folder": "In diesem Ordner sind noch keine Materialien",
+        "query": "Keine Materialien passen zu „{{query}}“"
+      },
+      "upload": {
+        "button": "Materialien hochladen",
+        "dismiss": "Ausblenden"
+      },
+      "error": {
+        "load": "Die Wissensbasis konnte nicht geladen werden",
+        "busy": "Dein Konto wird gerade aktualisiert. Versuche es gleich noch einmal",
+        "identity": "Deine Anmeldung hat sich geändert. Lade die Seite neu",
+        "stale": "die Anzeige ist möglicherweise nicht aktuell",
+        "nameTaken": "Ein anderer Ordner hat bereits diesen Namen",
+        "invalidName": "Gib einen Namen mit höchstens 255 Zeichen ein",
+        "folderNameEmpty": "Gib einen Ordnernamen ein",
+        "folderNameTooLong": "Dieser Ordnername ist zu lang",
+        "folderLimit": "Die maximale Anzahl an Ordnern ist erreicht",
+        "notMovable": "Dieses Material kann nicht verschoben werden",
+        "gone": "Es existiert nicht mehr",
+        "save": "Das hat nicht geklappt. Versuche es erneut",
+        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst"
+      },
+      "actions": {
+        "parse": "Analysieren",
+        "reparse": "Erneut analysieren",
+        "more": "Weitere Aktionen für {{name}}",
+        "rename": "Umbenennen",
+        "move": "Verschieben nach…",
+        "removeFromFolder": "Aus dem Ordner entfernen",
+        "delete": "Löschen",
+        "open": "Öffnen",
+        "downloadOriginal": "Original herunterladen",
+        "chat": "Mit diesem Material chatten"
+      },
+      "folder": {
+        "new": "Neuer Ordner",
+        "items": "{{count}} Elemente",
+        "items_one": "{{count}} Element",
+        "items_other": "{{count}} Elemente"
+      },
+      "dialog": {
+        "cancel": "Abbrechen",
+        "moveTitle": "„{{name}}“ verschieben",
+        "moveConfirm": "Verschieben",
+        "noFolders": "Es gibt noch keinen Ordner, in den es verschoben werden kann. Lege zuerst einen an.",
+        "close": "Schließen"
+      },
+      "delete": {
+        "materialTitle": "„{{name}}“ löschen?",
+        "materialLinks": "Unterhaltungen, die es verwenden, können es danach nicht mehr lesen; Text, der schon in diesen Unterhaltungen steht, bleibt erhalten.",
+        "materialCourses": "Inhalte, die bereits in einem Kurs gespeichert sind, sind nicht betroffen.",
+        "cannotUndo": "Das lässt sich nicht rückgängig machen.",
+        "folderTitle": "Ordner „{{name}}“ löschen?",
+        "folderOnlyEmpty": "Nur ein leerer Ordner kann gelöscht werden. Verschiebe seine Materialien zuerst."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Schon in dieser Nachricht",
       "materialExtracting": "Wird aufbereitet",
       "materialFailed": "Aufbereitung fehlgeschlagen",
-      "unfiled": "Ohne Ordner",
       "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
       "materialNotExtracted": "Nicht aufbereitet",
       "materialExtracted": "Aufbereitet"

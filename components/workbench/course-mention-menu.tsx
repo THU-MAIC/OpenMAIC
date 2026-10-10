@@ -303,7 +303,8 @@ export function CourseMentionMenu({
                         ? 'workspace.courseMention.materialExtracted'
                         : 'workspace.courseMention.materialNotExtracted',
                 );
-                const where = candidate.folderName ?? t('workspace.courseMention.unfiled');
+                // The folder only when it is in one; nothing, and no separator, at the top level.
+                const where = [candidate.folderName, status].filter(Boolean).join(' · ');
                 const label = t('workspace.courseMention.attachMaterial', { name: candidate.name });
                 return (
                   <li key={candidate.materialId}>
@@ -329,7 +330,7 @@ export function CourseMentionMenu({
                         {candidate.name}
                       </span>
                       <span className="shrink-0 truncate text-[10.5px] text-muted-foreground">
-                        {`${where} · ${status}`}
+                        {where}
                       </span>
                       {/* Already in this conversation, or already on this message. */}
                       {candidate.attached || candidate.staged ? (

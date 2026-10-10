@@ -131,8 +131,10 @@ beforeEach(() => {
   mocks.registerOwnerMaterial.mockResolvedValue(ownerMaterial());
   mocks.reclaimStaleOwnerMaterialUploads.mockResolvedValue(undefined);
   mocks.allocateOwnerMaterialBytes.mockResolvedValue('ast_00000000000000000000000000');
+  // A publication queues the source's extraction in the same transaction.
   mocks.publishOwnerMaterialUpload.mockImplementation(
-    async (_provider: unknown, _owner: string, id: string) => ownerMaterial({ id }),
+    async (_provider: unknown, _owner: string, id: string) =>
+      ownerMaterial({ id, extraction: { status: 'pending' } }),
   );
   mocks.abandonOwnerMaterial.mockResolvedValue(undefined);
   mocks.byteStore.put.mockResolvedValue(undefined);
@@ -174,6 +176,18 @@ describe('GET /api/materials', () => {
       limit: 10,
       before: 'mat_prev',
     });
+  });
+
+  it('drops the backend error of a legacy row whose retryable failure went back to pending', async () => {
+    mocks.listSessionMaterials.mockResolvedValue([
+      material({ extraction: { status: 'pending', attempts: 1, error: 'PRIVATE_UPSTREAM_BODY' } }),
+    ]);
+    const response = await GET(
+      new NextRequest(`http://localhost/api/materials?sessionId=${SESSION_ID}`),
+    );
+    const body = await response.json();
+    expect(body.materials[0].extraction).toEqual({ status: 'pending', attempts: 1 });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
   });
 
   it('rejects a missing sessionId', async () => {
@@ -236,7 +250,7 @@ describe('POST /api/materials', () => {
       originalName: '讲义.pdf',
       bytes: 5,
       mime: 'application/pdf',
-      extraction: { status: 'idle' },
+      extraction: { status: 'pending' },
     });
     // The uploader's error pairing header is echoed.
     expect(response.headers.get('x-request-id')).toBeTruthy();

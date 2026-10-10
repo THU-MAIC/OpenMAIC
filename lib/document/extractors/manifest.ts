@@ -40,6 +40,11 @@ export interface DocumentExtractorManifestEntry {
   version: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /**
+   * A parsing service the deployment has to configure before it can run
+   * (`false`: runs here with nothing to configure).
+   */
+  requiresConfiguration: boolean;
 }
 
 /** One media extractor's metadata, exactly as the server registry serves it. */
@@ -62,6 +67,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'plain-text',
     displayName: 'Plain Text',
     version: '1',
+    requiresConfiguration: false,
     supportedMimeTypes: PLAIN_TEXT_MIMES,
     capabilities: {
       text: true,
@@ -77,6 +83,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'unpdf',
     displayName: 'unpdf',
     version: '1',
+    requiresConfiguration: false,
     supportedMimeTypes: [DOCUMENT_MIME_TYPES.pdf],
     capabilities: {
       text: true,
@@ -92,6 +99,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'mineru',
     displayName: 'MinerU',
     version: '1',
+    requiresConfiguration: true,
     supportedMimeTypes: MINERU_SELFHOST_MIMES,
     capabilities: {
       text: true,
@@ -107,6 +115,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'mineru-cloud',
     displayName: 'MinerU (Cloud)',
     version: '1',
+    requiresConfiguration: true,
     supportedMimeTypes: MINERU_CLOUD_MIMES,
     capabilities: {
       text: true,
@@ -122,6 +131,7 @@ const DOCUMENT_EXTRACTOR_MANIFEST: Record<string, DocumentExtractorManifestEntry
     id: 'alidocmind',
     displayName: 'AliDocMind',
     version: '1',
+    requiresConfiguration: true,
     supportedMimeTypes: ALIDOCMIND_MIMES,
     capabilities: {
       text: true,

@@ -1970,13 +1970,40 @@
   user-select: none !important;
 }
 
+/* ── Knowledge base rows ─────────────────────────────────────────────────
+   A row's ⋯ waits for the pointer where the pointer can hover (#1835 review
+   §2): hidden by opacity, never by visibility, so the keyboard still reaches
+   it, and shown while the row is hovered, while anything in the row (its
+   toggle, a field, the ⋯ itself) has focus and while its menu is open.
+   Any coarse pointer on the device -- a touch screen beside a mouse
+   included -- keeps it always shown. */
+@media (hover: hover) and (pointer: fine) {
+  .ws-kb-row-menu {
+    opacity: 0;
+    transition: opacity 120ms var(--ws-ease);
+  }
+
+  [data-kb-row]:hover .ws-kb-row-menu,
+  [data-kb-row]:focus-within .ws-kb-row-menu,
+  .ws-kb-row-menu:has([data-state='open']) {
+    opacity: 1;
+  }
+}
+
+@media (any-pointer: coarse) {
+  .ws-kb-row-menu {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ws-pop {
     animation: none;
   }
 
   .ws-home,
-  .ws-util-btn {
+  .ws-util-btn,
+  .ws-kb-row-menu {
     transition: none;
   }
 

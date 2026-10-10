@@ -45,7 +45,8 @@
     "fileTooLarge": "Fichier trop volumineux. Compressez-le ou divisez-le, puis réessayez.",
     "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum.",
     "unsupportedType": "Type de fichier non pris en charge. Choisissez un fichier compatible.",
-    "quotaExceeded": "Limite de téléversement de ressources atteinte."
+    "quotaExceeded": "Limite de téléversement de ressources atteinte.",
+    "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource."
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "Extraction en cours",
       "folderExisted": "Le dossier existait déjà",
       "unchanged": "Aucun changement",
-      "movedToUnfiled": "Déplacé vers Non classés"
+      "movedOutOfFolder": "Sorti du dossier"
     },
     "error": {
       "materialExtraction": "L'extraction du document a échoué",

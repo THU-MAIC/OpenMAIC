@@ -127,6 +127,11 @@ export type SourceExtractionPlan =
       kind: 'document';
       candidates: DocumentExtractorProvider[];
       input: Omit<DocumentExtractorInput, 'config'>;
+      /**
+       * Every candidate is a parsing service the deployment has not
+       * configured: if they all fail, the reason is `service_unavailable`.
+       */
+      noServiceConfigured?: boolean;
     };
 
 /** An image the extractor returned, not yet decoded or stored. */
@@ -156,7 +161,10 @@ function wrapProviderError(error: unknown): MaterialExtractionError {
   return new MaterialExtractionError(
     error instanceof Error ? error.message : String(error),
     isTransientExtractionError(error),
-    { cause: error },
+    {
+      cause: error,
+      reasonCode: error instanceof MaterialExtractionError ? error.reasonCode : undefined,
+    },
   );
 }
 
@@ -195,10 +203,19 @@ export async function planSourceExtraction(
   const configuredIds =
     dependencies.configuredProviderIds?.() ?? Object.keys(getServerPDFProviders());
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
+  // No extractor for this type is not a missing service: no reason code.
   if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
+  // Only parsing services the deployment has not configured: a provider
+  // that runs as is (`plain-text`, every PDF's local `unpdf`) is no missing
+  // service, whatever made it fail.
+  const configured = new Set(configuredIds);
+  const noServiceConfigured = candidates.every(
+    (provider) => provider.requiresConfiguration === true && !configured.has(provider.id),
+  );
   return {
     kind: 'document',
     candidates,
+    ...(noServiceConfigured ? { noServiceConfigured } : {}),
     input: {
       buffer: raw.bytes,
       fileName: title ?? undefined,
@@ -234,6 +251,7 @@ export async function runSourceExtraction(
       throw new MaterialExtractionError(
         'media extraction produced no transcript; configure a working local ASR provider or a cloud media extractor',
         false,
+        { reasonCode: 'no_text_extracted' },
       );
     }
     const images: ExtractedSourceImage[] = [];
@@ -278,7 +296,7 @@ export async function runSourceExtraction(
     }
     return documentOutcome(artifact, provider);
   }
-  throw documentExtractionFailure(errors, failures);
+  throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
 /** Run one document provider on a planned input; a failure is the provider's own error. */
@@ -303,14 +321,20 @@ export function documentFailureLine(provider: DocumentExtractorProvider, error: 
   return `${provider.id}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-/** The failure once every document provider failed: retryable if any failure was transient. */
+/**
+ * The failure once every document provider failed: retryable if any failure
+ * was transient, and `service_unavailable` when no candidate was a service
+ * the deployment configured (any other failure keeps no reason code).
+ */
 export function documentExtractionFailure(
   errors: string[],
   failures: unknown[],
+  noServiceConfigured = false,
 ): MaterialExtractionError {
   return new MaterialExtractionError(
     `document extraction failed (${errors.join('; ')})`,
     failures.some(isTransientExtractionError),
+    noServiceConfigured ? { reasonCode: 'service_unavailable' } : undefined,
   );
 }
 

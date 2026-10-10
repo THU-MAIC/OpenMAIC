@@ -2184,6 +2184,9 @@ export class WorkbenchMaterialUploadError extends Error {
   userMessage(t: WorkbenchTranslator, locale: string): string {
     if (this.status === 415) return t('workbench.material.unsupportedType');
     if (this.status === 429) return t('workbench.material.quotaExceeded');
+    // The owner's asset pool is full (`ASSET_QUOTA_EXCEEDED`): not the
+    // per-owner material limits of a 429.
+    if (this.status === 507) return t('workbench.material.storageFull');
     if (this.status !== 413) return this.message;
     const limit = formatMaterialUploadLimit(this.maxBytes, locale);
     return limit === undefined

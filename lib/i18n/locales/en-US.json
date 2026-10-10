@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Knowledge base",
+      "back": "Back",
+      "search": "Search names and file types",
+      "loading": "Loading…",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "failure": {
+        "more": "About this failure: {{reason}}",
+        "storage_full": {
+          "label": "Not enough storage",
+          "description": "There is not enough space to save the parsed results. Free up space and try again."
+        },
+        "source_unavailable": {
+          "label": "Original file unavailable",
+          "description": "The original file could not be read. Upload it again and retry."
+        },
+        "service_unavailable": {
+          "label": "Parsing service unavailable",
+          "description": "Parsing is currently unavailable. Try again later; contact your administrator if this continues."
+        },
+        "media_too_long": {
+          "label": "Audio or video too long",
+          "description": "This parsing method handles audio or video up to {{minutes}} minutes. Shorten or split the file and upload it again."
+        },
+        "no_text_extracted": {
+          "label": "No text extracted",
+          "description": "No usable text was extracted this time. Check the content or try another file."
+        },
+        "processing_interrupted": {
+          "label": "Parsing did not finish",
+          "description": "Parsing could not be completed. You can try again later."
+        }
+      },
+      "status": {
+        "uploading": "Uploading",
+        "stored": "Stored · not parsed",
+        "parsing": "Parsing",
+        "searchable": "Searchable",
+        "failed": "Parse failed"
+      },
+      "column": {
+        "name": "Name",
+        "status": "Status",
+        "folder": "Folder",
+        "size": "Size",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Up to {{document}} per document or image, {{media}} per audio or video"
+      },
+      "usage": {
+        "summary": "Used {{used}} of {{max}} · {{count}} of {{maxCount}} files"
+      },
+      "empty": {
+        "title": "Your knowledge base is empty",
+        "body": "Upload your teaching materials, let the assistant organize and parse them, then pick them with @ while you prepare a course.",
+        "folder": "No materials in this folder yet",
+        "query": "No materials match “{{query}}”"
+      },
+      "upload": {
+        "button": "Upload materials",
+        "dismiss": "Dismiss"
+      },
+      "error": {
+        "load": "The knowledge base could not be loaded",
+        "busy": "Your account is being updated. Try again in a moment",
+        "identity": "Your sign-in changed. Reload the page",
+        "stale": "what is shown may be out of date",
+        "nameTaken": "Another folder already has this name",
+        "invalidName": "Enter a name of at most 255 characters",
+        "folderNameEmpty": "Enter a folder name",
+        "folderNameTooLong": "This folder name is too long",
+        "folderLimit": "You have reached the folder limit",
+        "notMovable": "This material cannot be moved",
+        "gone": "It no longer exists",
+        "save": "That did not work. Try again",
+        "notEmpty": "This folder still holds materials. Move them out first"
+      },
+      "actions": {
+        "parse": "Parse",
+        "reparse": "Parse again",
+        "more": "More actions for {{name}}",
+        "rename": "Rename",
+        "move": "Move to…",
+        "removeFromFolder": "Remove from folder",
+        "delete": "Delete",
+        "open": "Open",
+        "downloadOriginal": "Download original",
+        "chat": "Chat with this material"
+      },
+      "folder": {
+        "new": "New folder",
+        "items": "{{count}} items",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} items"
+      },
+      "dialog": {
+        "cancel": "Cancel",
+        "moveTitle": "Move “{{name}}”",
+        "moveConfirm": "Move",
+        "noFolders": "There are no folders to move it to yet. Create one first.",
+        "close": "Close"
+      },
+      "delete": {
+        "materialTitle": "Delete “{{name}}”?",
+        "materialLinks": "Conversations that use it can no longer read it; text already in those conversations stays.",
+        "materialCourses": "Content already saved into a course is not affected.",
+        "cannotUndo": "This cannot be undone.",
+        "folderTitle": "Delete the folder “{{name}}”?",
+        "folderOnlyEmpty": "Only an empty folder can be deleted. Move its materials out first."
+      }
+    },
     "untitledCourse": "Untitled course",
     "sceneCount": "{{count}} pages",
     "sceneCount_one": "{{count}} page",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Already on this message",
       "materialExtracting": "Extracting",
       "materialFailed": "Extraction failed",
-      "unfiled": "Unfiled",
       "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
       "materialNotExtracted": "Not extracted",
       "materialExtracted": "Extracted"

@@ -613,9 +613,11 @@ describe('the @ menu with the knowledge base', () => {
       a.querySelector('[aria-label="workspace.courseMention.materialAttached"]'),
     ).not.toBeNull();
     const b = mounted.container.querySelector('[data-testid="workbench-material-option-b"]')!;
-    expect(b.textContent).toContain(
-      'workspace.courseMention.unfiled · workspace.courseMention.materialExtracting',
-    );
+    // At the top level: the state alone, no folder word and no stray separator.
+    expect(b.textContent).toContain('workspace.courseMention.materialExtracting');
+    expect(b.textContent).not.toContain('·');
+    expect(b.textContent).not.toMatch(/unfiled/i);
+    expect(a.textContent).toContain('Unit 1 · workspace.courseMention.materialExtracted');
     expect(b.querySelector('[aria-label="workspace.courseMention.materialStaged"]')).not.toBeNull();
     await mounted.dispose();
   });

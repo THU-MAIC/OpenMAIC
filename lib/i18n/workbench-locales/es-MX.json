@@ -45,7 +45,8 @@
     "fileTooLarge": "El archivo es demasiado grande. Comprímelo o divídelo e inténtalo de nuevo.",
     "fileTooLargeWithLimit": "El archivo es demasiado grande. Selecciona uno de {{limit}} MB como máximo.",
     "unsupportedType": "Tipo de archivo no compatible. Elige un archivo compatible.",
-    "quotaExceeded": "Se alcanzó el límite de carga de materiales."
+    "quotaExceeded": "Se alcanzó el límite de carga de materiales.",
+    "storageFull": "El almacenamiento está lleno. No se pudo subir este material."
   },
   "skill": {
     "listFailed": "No se pudo cargar la lista de skills",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "Aún en procesamiento",
       "folderExisted": "La carpeta ya existía",
       "unchanged": "Sin cambios",
-      "movedToUnfiled": "Movido a Sin carpeta"
+      "movedOutOfFolder": "Sacado de la carpeta"
     },
     "error": {
       "materialExtraction": "Falló el procesamiento del material",

@@ -45,7 +45,8 @@
     "fileTooLarge": "Tệp quá lớn. Hãy nén hoặc chia nhỏ tệp rồi thử lại.",
     "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB.",
     "unsupportedType": "Loại tệp không được hỗ trợ. Vui lòng chọn tệp được hỗ trợ.",
-    "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên."
+    "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên.",
+    "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên."
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "Vẫn đang bóc tách",
       "folderExisted": "Thư mục đã có sẵn",
       "unchanged": "Không thay đổi",
-      "movedToUnfiled": "Đã chuyển về Chưa phân loại"
+      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục"
     },
     "error": {
       "materialExtraction": "Bóc tách tài liệu thất bại",

@@ -4,11 +4,16 @@
  * (RFC #1716 §8). Pool pointers, object keys and digests never leave the
  * server.
  */
+import {
+  extractionReasonCodeOf,
+  type MaterialExtractionReasonCode,
+} from '@/lib/types/material-extraction-failure';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 import { ownerLibraryUsage } from '@/lib/persistence/material-library';
 import type { OwnerMaterialEntry } from '@/lib/persistence/session-material-links';
 import type { ResolvedMaterial } from '@/lib/server/agent-runtime/material-resolver';
 import { publicMaterialView } from '@/lib/server/agent-runtime/session-materials';
+import { opensInline } from '@/lib/server/materials/original-response';
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
@@ -26,11 +31,13 @@ export interface LibraryMaterialView {
   folderName?: string;
   /** Attached to the conversation the listing was asked about, when it was asked. */
   attached?: boolean;
+  /** A source's original opens in the tab rather than downloading (the page's label). */
+  opensInline?: boolean;
   derivedFrom?: string;
   pageNumber?: number;
   timeMs?: number;
-  /** A source's extraction; `reason` says why it failed, quota refusals included. */
-  extraction?: { status: string; reason?: string };
+  /** Only stable public reasons leave the server; diagnostic text stays private. */
+  extraction?: { status: string; reasonCode?: MaterialExtractionReasonCode };
   createdAt: string;
 }
 
@@ -39,6 +46,8 @@ export function libraryMaterialView(
   context: { folderNames?: ReadonlyMap<string, string>; attached?: ReadonlySet<string> } = {},
 ): LibraryMaterialView {
   const status = entry.extraction?.status ?? 'idle';
+  const reasonCode =
+    status === 'failed' ? extractionReasonCodeOf(entry.extraction?.reasonCode) : undefined;
   const folderName = entry.folderId ? context.folderNames?.get(entry.folderId) : undefined;
   return {
     materialId: entry.id,
@@ -52,13 +61,12 @@ export function libraryMaterialView(
     ...(context.attached ? { attached: context.attached.has(entry.id) } : {}),
     ...(entry.derivedFrom ? { derivedFrom: entry.derivedFrom } : {}),
     ...(entry.lineage ?? {}),
+    ...(entry.kind === 'source' ? { opensInline: opensInline(entry.mime) } : {}),
     ...(entry.kind === 'source'
       ? {
           extraction: {
             status,
-            ...(status === 'failed' && entry.extractionError
-              ? { reason: entry.extractionError }
-              : {}),
+            ...(reasonCode ? { reasonCode } : {}),
           },
         }
       : {}),
@@ -72,9 +80,13 @@ export function libraryMaterialView(
  * library shows it.
  */
 export function sessionScopeMaterialView(material: ResolvedMaterial): Record<string, unknown> {
-  return material.origin === 'session'
-    ? publicMaterialView(material.record)
-    : { ...libraryMaterialView(material.entry) };
+  if (material.origin !== 'session') return { ...libraryMaterialView(material.entry) };
+  const view = publicMaterialView(material.record);
+  // Keep legacy HTTP metadata without diagnostics, whatever the status: a
+  // retryable failure goes back to pending with its error. Model tools are unchanged.
+  const extraction = { ...material.record.extraction };
+  delete extraction.error;
+  return { ...view, extraction };
 }
 
 export interface LibraryLimits {

@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Kho kiến thức",
+      "back": "Quay lại",
+      "search": "Tìm theo tên hoặc loại tệp",
+      "loading": "Đang tải…",
+      "retry": "Thử lại",
+      "loadMore": "Tải thêm",
+      "failure": {
+        "more": "Thông tin lỗi: {{reason}}",
+        "storage_full": {
+          "label": "Không đủ dung lượng",
+          "description": "Không đủ dung lượng để lưu kết quả phân tích. Hãy giải phóng dung lượng rồi thử lại."
+        },
+        "source_unavailable": {
+          "label": "Không đọc được tệp gốc",
+          "description": "Không thể đọc tệp gốc. Hãy tải tệp lên lại rồi thử lại."
+        },
+        "service_unavailable": {
+          "label": "Dịch vụ phân tích không khả dụng",
+          "description": "Hiện không thể sử dụng dịch vụ phân tích. Hãy thử lại sau; nếu tình trạng tiếp diễn, hãy liên hệ quản trị viên."
+        },
+        "media_too_long": {
+          "label": "Âm thanh hoặc video quá dài",
+          "description": "Phương thức phân tích này xử lý được âm thanh hoặc video dài tối đa {{minutes}} phút. Hãy rút ngắn hoặc chia nhỏ tệp rồi tải lên lại."
+        },
+        "no_text_extracted": {
+          "label": "Không trích xuất được văn bản",
+          "description": "Lần phân tích này không thu được văn bản có thể sử dụng. Hãy kiểm tra nội dung hoặc thử tệp khác."
+        },
+        "processing_interrupted": {
+          "label": "Phân tích chưa hoàn tất",
+          "description": "Không thể hoàn tất phân tích. Bạn có thể thử lại sau."
+        }
+      },
+      "status": {
+        "uploading": "Đang tải lên",
+        "stored": "Đã lưu · chưa phân tích",
+        "parsing": "Đang phân tích",
+        "searchable": "Có thể tìm kiếm",
+        "failed": "Phân tích thất bại"
+      },
+      "column": {
+        "name": "Tên",
+        "status": "Trạng thái",
+        "folder": "Thư mục",
+        "size": "Kích thước",
+        "date": "Ngày"
+      },
+      "limits": {
+        "perFile": "Tối đa {{document}} cho mỗi tài liệu hoặc hình ảnh, {{media}} cho mỗi âm thanh hoặc video"
+      },
+      "usage": {
+        "summary": "Đã dùng {{used}} / {{max}} · {{count}} / {{maxCount}} tệp"
+      },
+      "empty": {
+        "title": "Kho kiến thức của bạn đang trống",
+        "body": "Tải lên tài liệu giảng dạy, để trợ lý sắp xếp và phân tích, rồi chọn chúng bằng @ khi soạn bài.",
+        "folder": "Thư mục này chưa có tài liệu",
+        "query": "Không có tài liệu nào khớp với “{{query}}”"
+      },
+      "upload": {
+        "button": "Tải tài liệu lên",
+        "dismiss": "Bỏ qua"
+      },
+      "error": {
+        "load": "Không thể tải kho kiến thức",
+        "busy": "Tài khoản đang được cập nhật. Vui lòng thử lại sau giây lát",
+        "identity": "Trạng thái đăng nhập đã thay đổi. Hãy tải lại trang",
+        "stale": "nội dung hiển thị có thể chưa mới nhất",
+        "nameTaken": "Đã có thư mục khác dùng tên này",
+        "invalidName": "Nhập tên không quá 255 ký tự",
+        "folderNameEmpty": "Nhập tên thư mục",
+        "folderNameTooLong": "Tên thư mục quá dài",
+        "folderLimit": "Bạn đã đạt giới hạn số thư mục",
+        "notMovable": "Không thể chuyển tài liệu này",
+        "gone": "Mục này không còn tồn tại",
+        "save": "Không thực hiện được. Hãy thử lại",
+        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước"
+      },
+      "actions": {
+        "parse": "Phân tích",
+        "reparse": "Phân tích lại",
+        "more": "Thao tác khác cho {{name}}",
+        "rename": "Đổi tên",
+        "move": "Chuyển đến…",
+        "removeFromFolder": "Bỏ khỏi thư mục",
+        "delete": "Xóa",
+        "open": "Mở",
+        "downloadOriginal": "Tải xuống tệp gốc",
+        "chat": "Trò chuyện với tài liệu này"
+      },
+      "folder": {
+        "new": "Thư mục mới",
+        "items": "{{count}} mục",
+        "items_one": "{{count}} mục",
+        "items_other": "{{count}} mục"
+      },
+      "dialog": {
+        "cancel": "Hủy",
+        "moveTitle": "Chuyển “{{name}}”",
+        "moveConfirm": "Chuyển",
+        "noFolders": "Chưa có thư mục nào để chuyển đến. Hãy tạo một thư mục trước.",
+        "close": "Đóng"
+      },
+      "delete": {
+        "materialTitle": "Xóa “{{name}}”?",
+        "materialLinks": "Các cuộc trò chuyện dùng tài liệu này sẽ không đọc được nó nữa; nội dung đã có trong các cuộc trò chuyện vẫn được giữ.",
+        "materialCourses": "Nội dung đã lưu vào khóa học không bị ảnh hưởng.",
+        "cannotUndo": "Không thể hoàn tác thao tác này.",
+        "folderTitle": "Xóa thư mục “{{name}}”?",
+        "folderOnlyEmpty": "Chỉ có thể xóa thư mục trống. Hãy chuyển tài liệu trong đó đi trước."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Đã có trong tin nhắn này",
       "materialExtracting": "Đang bóc tách",
       "materialFailed": "Bóc tách thất bại",
-      "unfiled": "Chưa phân loại",
       "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
       "materialNotExtracted": "Chưa bóc tách",
       "materialExtracted": "Đã bóc tách"

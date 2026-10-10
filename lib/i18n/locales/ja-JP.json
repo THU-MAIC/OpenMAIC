@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "ナレッジベース",
+      "back": "戻る",
+      "search": "名前やファイル形式で検索",
+      "loading": "読み込み中…",
+      "retry": "再試行",
+      "loadMore": "さらに読み込む",
+      "failure": {
+        "more": "失敗の説明：{{reason}}",
+        "storage_full": {
+          "label": "保存容量が不足しています",
+          "description": "解析結果を保存する空き容量がありません。容量を確保してから再試行してください。"
+        },
+        "source_unavailable": {
+          "label": "元のファイルを読み取れません",
+          "description": "元のファイルを読み取れませんでした。もう一度アップロードして再試行してください。"
+        },
+        "service_unavailable": {
+          "label": "解析サービスを利用できません",
+          "description": "現在、解析サービスを利用できません。しばらくしてから再試行し、問題が続く場合は管理者にお問い合わせください。"
+        },
+        "media_too_long": {
+          "label": "音声・動画が長すぎます",
+          "description": "この解析方法で処理できるのは {{minutes}} 分までの音声・動画です。短くするか分割して、もう一度アップロードしてください。"
+        },
+        "no_text_extracted": {
+          "label": "テキストを抽出できませんでした",
+          "description": "今回の解析では利用可能なテキストを抽出できませんでした。内容を確認するか、別のファイルをお試しください。"
+        },
+        "processing_interrupted": {
+          "label": "解析が完了しませんでした",
+          "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        }
+      },
+      "status": {
+        "uploading": "アップロード中",
+        "stored": "保存済み · 未解析",
+        "parsing": "解析中",
+        "searchable": "検索可能",
+        "failed": "解析失敗"
+      },
+      "column": {
+        "name": "名前",
+        "status": "状態",
+        "folder": "フォルダー",
+        "size": "サイズ",
+        "date": "日付"
+      },
+      "limits": {
+        "perFile": "文書・画像は {{document}} まで、音声・動画は {{media}} まで"
+      },
+      "usage": {
+        "summary": "{{max}} 中 {{used}} を使用 · {{count}} / {{maxCount}} ファイル"
+      },
+      "empty": {
+        "title": "ナレッジベースはまだ空です",
+        "body": "教材をアップロードすると、アシスタントが整理・解析します。授業準備のときに @ で選べます。",
+        "folder": "このフォルダーにはまだ資料がありません",
+        "query": "「{{query}}」に一致する資料はありません"
+      },
+      "upload": {
+        "button": "資料をアップロード",
+        "dismiss": "閉じる"
+      },
+      "error": {
+        "load": "ナレッジベースを読み込めませんでした",
+        "busy": "アカウントを更新中です。しばらくしてからもう一度お試しください",
+        "identity": "ログイン状態が変わりました。ページを再読み込みしてください",
+        "stale": "表示内容が最新でない可能性があります",
+        "nameTaken": "同じ名前のフォルダーがすでにあります",
+        "invalidName": "255 文字以内の名前を入力してください",
+        "folderNameEmpty": "フォルダー名を入力してください",
+        "folderNameTooLong": "フォルダー名が長すぎます",
+        "folderLimit": "フォルダー数の上限に達しました",
+        "notMovable": "この資料は移動できません",
+        "gone": "すでに存在しません",
+        "save": "うまくいきませんでした。もう一度お試しください",
+        "notEmpty": "このフォルダーにはまだ資料があります。先に移動してください"
+      },
+      "actions": {
+        "parse": "解析",
+        "reparse": "再解析",
+        "more": "{{name}} のその他の操作",
+        "rename": "名前を変更",
+        "move": "移動…",
+        "removeFromFolder": "フォルダーの外に移動",
+        "delete": "削除",
+        "open": "開く",
+        "downloadOriginal": "元のファイルをダウンロード",
+        "chat": "この資料で会話する"
+      },
+      "folder": {
+        "new": "新しいフォルダー",
+        "items": "{{count}} 件",
+        "items_one": "{{count}} 件",
+        "items_other": "{{count}} 件"
+      },
+      "dialog": {
+        "cancel": "キャンセル",
+        "moveTitle": "「{{name}}」を移動",
+        "moveConfirm": "移動",
+        "noFolders": "移動先のフォルダーがまだありません。先に作成してください。",
+        "close": "閉じる"
+      },
+      "delete": {
+        "materialTitle": "「{{name}}」を削除しますか？",
+        "materialLinks": "削除すると、会話からこの資料を読み込めなくなります。会話にすでにある文章は残ります。",
+        "materialCourses": "コースに保存済みの内容には影響しません。",
+        "cannotUndo": "この操作は元に戻せません。",
+        "folderTitle": "フォルダー「{{name}}」を削除しますか？",
+        "folderOnlyEmpty": "削除できるのは空のフォルダーだけです。資料がある場合は先に移動してください。"
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "このメッセージにすでにあります",
       "materialExtracting": "解析中",
       "materialFailed": "解析に失敗しました",
-      "unfiled": "未分類",
       "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
       "materialNotExtracted": "未解析",
       "materialExtracted": "解析済み"

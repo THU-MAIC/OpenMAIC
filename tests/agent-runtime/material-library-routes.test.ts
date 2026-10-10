@@ -13,22 +13,31 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   runtimeConfigured: true,
   ownerId: 'user:alice',
+  invalidCredential: false,
 }));
 
 vi.mock('@/lib/config/feature-flags', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/config/feature-flags')>()),
   isAgentRuntimeConfigured: () => mocks.runtimeConfigured,
 }));
-vi.mock('@/lib/server/identity/resolve', async () =>
-  (await import('../helpers/owner-resolution-mock')).ownerResolveModule(() => mocks.ownerId),
-);
+vi.mock('@/lib/server/identity/resolve', async () => {
+  const actual = (await import('../helpers/owner-resolution-mock')).ownerResolveModule(
+    () => mocks.ownerId,
+  );
+  return {
+    resolveRequestOwner: (req: NextRequest) =>
+      mocks.invalidCredential ? Promise.resolve({ ok: false }) : actual.resolveRequestOwner(req),
+  };
+});
 
 import {
   DELETE as deleteMaterialRoute,
   GET as sessionMaterialRoute,
   PATCH as renameMaterialRoute,
 } from '@/app/api/materials/[id]/route';
-import { GET as sessionMaterialsRoute } from '@/app/api/materials/route';
+import { POST as extractionRoute } from '@/app/api/materials/[id]/extraction/route';
+import { GET as originalRoute } from '@/app/api/materials/[id]/original/route';
+import { GET as sessionMaterialsRoute, POST as uploadRoute } from '@/app/api/materials/route';
 import {
   DELETE as deleteFolderRoute,
   PATCH as renameFolderRoute,
@@ -50,6 +59,7 @@ import { buildMaterialTools } from '@/lib/server/agent-runtime/material-tools';
 import { startExtractionWatcher } from '@/lib/server/agent-runtime/extraction-watcher';
 import { runNextOwnerExtraction } from '@/lib/server/material-extraction/owner-extraction';
 import { buildMaterialLibraryTools } from '@/lib/server/agent-runtime/material-library-tools';
+import { contentDisposition } from '@/lib/server/materials/original-response';
 import { presentTool } from '@/components/workbench/chat/tool-presentation';
 import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
 import type { ChatNode } from '@/lib/workbench/session-store';
@@ -61,6 +71,7 @@ import {
   bootLibraryHarness,
   seedCopy,
   seedDerivative,
+  seedPoolSource,
   seedSession,
   type ExtractionScenarioPool,
   type LibraryHarness,
@@ -111,6 +122,7 @@ describe('material library routes and tools (PGlite)', () => {
     vi.unstubAllEnvs();
     mocks.runtimeConfigured = true;
     mocks.ownerId = ACCOUNT;
+    mocks.invalidCredential = false;
     await db?.close();
     db = undefined;
   });
@@ -670,6 +682,37 @@ describe('material library routes and tools (PGlite)', () => {
     expect((await read('src-a', 'ses-other')).status).toBe(404);
   });
 
+  it('returns only whitelisted extraction codes on all owner HTTP projections', async () => {
+    const h = await boot();
+    await seedLinkedConversation(h);
+    for (const [status, code, expected] of [
+      ['failed', 'storage_full', { status: 'failed', reasonCode: 'storage_full' }],
+      ['failed', 'future_code', { status: 'failed' }],
+      ['failed', undefined, { status: 'failed' }],
+      ['pending', 'storage_full', { status: 'pending' }],
+    ] as const) {
+      await h.pool.query(
+        `UPDATE owner_material SET extraction = $1::jsonb, extraction_error = 'PRIVATE_UPSTREAM_BODY' WHERE id = 'src-a'`,
+        [JSON.stringify({ status, reasonCode: code, reason: 'PRIVATE_UPSTREAM_BODY' })],
+      );
+      const library = await libraryRoute(request('GET', '/api/materials/library'));
+      const session = await sessionMaterialsRoute(request('GET', '/api/materials?sessionId=ses-1'));
+      const detail = await sessionMaterialRoute(
+        request('GET', '/api/materials/src-a?sessionId=ses-1'),
+        params('src-a'),
+      );
+      for (const response of [library, session, detail]) {
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
+        const material =
+          body.material ??
+          body.materials.find((item: { materialId: string }) => item.materialId === 'src-a');
+        expect(material.extraction).toEqual(expected);
+      }
+    }
+  });
+
   it('lists the owner’s library with the limits and usage uploads are held to', async () => {
     const h = await boot();
     await seedSource(h, 'src-a', { bytes: Buffer.from('12345') });
@@ -727,9 +770,11 @@ describe('material library routes and tools (PGlite)', () => {
     expect(body.materials.find((m) => m.materialId === 'src-a')).toMatchObject({
       name: 'src-a.pdf',
       folderId: null,
-      extraction: { status: 'failed', reason: 'the asset store has no room for this extraction' },
+      extraction: { status: 'failed' },
     });
-    expect(JSON.stringify(body)).not.toMatch(/ossKey|assetId|sha256|objects\//);
+    expect(JSON.stringify(body)).not.toMatch(
+      /ossKey|assetId|sha256|objects\/|the asset store has no room/,
+    );
     expect(body.limits).toMatchObject({
       usedCount: 3,
       usedBytes: 19,
@@ -920,8 +965,9 @@ describe('material library routes and tools (PGlite)', () => {
       renameMaterialRoute(request('PATCH', '/api/materials/m', { name: 'X' }), params('m')),
       deleteMaterialRoute(request('DELETE', '/api/materials/m'), params('m')),
       libraryRoute(request('GET', '/api/materials/library')),
+      originalRoute(request('GET', '/api/materials/m/original'), params('m')),
     ]);
-    expect(answers.map((answer) => answer.status)).toEqual([404, 404, 404, 404, 404, 404]);
+    expect(answers.map((answer) => answer.status)).toEqual([404, 404, 404, 404, 404, 404, 404]);
   });
   it('deletes only a ready source for the request owner, with an empty 204', async () => {
     const h = await boot();
@@ -1000,5 +1046,335 @@ describe('material library routes and tools (PGlite)', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('R8 starts parsing an upload: 201 pending, listed pending, then the scanner takes it to done', async () => {
+    const h = await boot();
+    const bytes = Buffer.from('%PDF-r8 upload');
+    const response = await uploadRoute(
+      new NextRequest('http://localhost/api/materials', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'r8.pdf' },
+        body: bytes as BodyInit,
+      }),
+    );
+    expect(response.status).toBe(201);
+    const uploaded = (await response.json()) as {
+      materialId: string;
+      extraction: { status: string };
+    };
+    expect(uploaded.extraction).toEqual({ status: 'pending' });
+    const id = uploaded.materialId;
+    const listedStatus = async () => {
+      const listed = (await (
+        await libraryRoute(request('GET', '/api/materials/library'))
+      ).json()) as {
+        materials: Array<{ materialId: string; extraction: { status: string } }>;
+      };
+      return listed.materials.find((material) => material.materialId === id)?.extraction.status;
+    };
+    expect(await listedStatus()).toBe('pending');
+    // Parse finds it already started.
+    const parse = await extractionRoute(
+      request('POST', `/api/materials/${id}/extraction`),
+      params(id),
+    );
+    expect(await parse.json()).toEqual({ status: 'pending', queued: false });
+    // No Parse click: the scanner claims it.
+    h.sources.set(id, bytes);
+    expect(await runNextOwnerExtraction(h.deps())).toBe(true);
+    expect(await listedStatus()).toBe('done');
+    expect(await runNextOwnerExtraction(h.deps())).toBe(false);
+  });
+
+  it('R6 queues idle/failed sources and leaves pending/running/done rows byte-for-byte unchanged', async () => {
+    const h = await boot();
+    for (const status of ['idle', 'failed', 'pending', 'running', 'done']) {
+      await seedSource(h, `r6-${status}`);
+      await h.pool.query(
+        `UPDATE owner_material SET extraction = $2::jsonb, extraction_error = 'private', extraction_claims = 2 WHERE id = $1`,
+        [`r6-${status}`, JSON.stringify({ status, reasonCode: 'storage_full' })],
+      );
+      const before = (
+        await h.pool.query('SELECT * FROM owner_material WHERE id = $1', [`r6-${status}`])
+      ).rows[0];
+      const result = await extractionRoute(
+        request('POST', `/api/materials/r6-${status}/extraction`),
+        params(`r6-${status}`),
+      );
+      expect(result.status).toBe(200);
+      const queued = status === 'idle' || status === 'failed';
+      expect(await result.json()).toEqual({ status: queued ? 'pending' : status, queued });
+      const after = (
+        await h.pool.query('SELECT * FROM owner_material WHERE id = $1', [`r6-${status}`])
+      ).rows[0];
+      if (queued) {
+        expect(after).toMatchObject({
+          extraction: { status: 'pending' },
+          extraction_error: null,
+          extraction_claims: 0,
+        });
+        expect((after as { extraction: unknown }).extraction).toEqual({ status: 'pending' });
+      } else expect(after).toEqual(before);
+      const again = await extractionRoute(
+        request('POST', `/api/materials/r6-${status}/extraction`),
+        params(`r6-${status}`),
+      );
+      expect(await again.json()).toEqual({ status: queued ? 'pending' : status, queued: false });
+    }
+  });
+
+  it('R6 isolates owners and refuses absent, derivative, uploading and deleted sources uniformly', async () => {
+    const h = await boot();
+    await seedSource(h, 'r6-owned');
+    await seedSource(h, 'r6-foreign', { owner: OTHER });
+    await seedSource(h, 'r6-deleted');
+    await h.pool.query("UPDATE owner_material SET deleted_at = 1 WHERE id = 'r6-deleted'");
+    await seedDerivative(h, 'r6-image', 'r6-owned');
+    await registerOwnerMaterial(
+      h.pool as never,
+      { id: 'r6-uploading', ownerId: ACCOUNT, kind: 'source', bytes: 1, ossKey: 'pending' },
+      { maxCount: 100, maxTotalBytes: 1000000 },
+    );
+    for (const id of ['missing', 'r6-foreign', 'r6-deleted', 'r6-image', 'r6-uploading']) {
+      const response = await extractionRoute(
+        request('POST', `/api/materials/${id}/extraction`),
+        params(id),
+      );
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe('Not found');
+    }
+    mocks.ownerId = OTHER;
+    expect(
+      (
+        await extractionRoute(
+          request('POST', '/api/materials/r6-owned/extraction'),
+          params('r6-owned'),
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await extractionRoute(
+          request('POST', '/api/materials/r6-foreign/extraction'),
+          params('r6-foreign'),
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it('R6 gates extraction like adjacent routes and fences retired request owners', async () => {
+    const h = await boot();
+    await seedSource(h, 'r6-gated');
+    mocks.invalidCredential = true;
+    expect(
+      (
+        await extractionRoute(
+          request('POST', '/api/materials/r6-gated/extraction'),
+          params('r6-gated'),
+        )
+      ).status,
+    ).toBe(401);
+    mocks.invalidCredential = false;
+    mocks.runtimeConfigured = false;
+    const response = await extractionRoute(
+      request('POST', '/api/materials/r6-gated/extraction'),
+      params('r6-gated'),
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe('Not found');
+    mocks.runtimeConfigured = true;
+    expect(
+      (
+        await extractionRoute(
+          request('POST', '/api/materials/r6-gated/extraction'),
+          params('r6-gated'),
+        )
+      ).status,
+    ).toBe(200);
+    await seedSource(h, 'r6-anon', { owner: ANON });
+    await claimOwner(ANON, ACCOUNT, { provider: h.provider });
+    mocks.ownerId = ANON;
+    expect(
+      (
+        await extractionRoute(
+          request('POST', '/api/materials/r6-anon/extraction'),
+          params('r6-anon'),
+        )
+      ).status,
+    ).toBe(403);
+  });
+
+  it.each([
+    ['upload.txt', 'Renamed.txt', 'Renamed.txt'],
+    ['upload.txt', 'Renamed', 'Renamed.txt'],
+    ['upload.PDF', 'Renamed.pdf', 'Renamed.pdf'],
+    ['upload.txt', '中文 讲义', '中文 讲义.txt'],
+    ['upload.txt', 'Lesson notes.txt', 'Lesson notes.txt'],
+    ['README', 'Updated notes', 'Updated notes'],
+  ])(
+    'R6 serves renamed original %s as %s, preserving its extension',
+    async (original, display, expected) => {
+      const h = await boot();
+      const bytes = Buffer.from('source contents');
+      await seedPoolSource(h, 'r6-file', bytes, 'text/plain');
+      await h.pool.query('UPDATE owner_material SET original_name = $1 WHERE id = $2', [
+        original,
+        'r6-file',
+      ]);
+      const renamed = await renameMaterialRoute(
+        request('PATCH', '/api/materials/r6-file', { name: display }),
+        params('r6-file'),
+      );
+      expect(renamed.status).toBe(200);
+      const response = await originalRoute(
+        request('GET', '/api/materials/r6-file/original'),
+        params('r6-file'),
+      );
+      expect(response.headers.get('content-disposition')).toBe(
+        contentDisposition('attachment', expected, 'r6-file'),
+      );
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes);
+      expect(
+        (
+          await h.pool.query<{ original_name: string }>(
+            'SELECT original_name FROM owner_material WHERE id = $1',
+            ['r6-file'],
+          )
+        ).rows[0].original_name,
+      ).toBe(original);
+    },
+  );
+
+  it('R8.5 labels each original with the decision its response is served by', async () => {
+    const h = await boot();
+    const cases: Array<[string, string | null, boolean]> = [
+      ['r85-png', 'image/png', true],
+      ['r85-mp3', 'audio/mpeg', true],
+      ['r85-mp4', 'video/mp4', true],
+      ['r85-pdf', 'application/pdf', false],
+      ['r85-txt', 'text/plain', false],
+      ['r85-svg', 'image/svg+xml', false],
+      ['r85-unknown', 'application/x-unknown', false],
+      ['r85-none', null, false],
+    ];
+    for (const [id, mime] of cases) {
+      await seedPoolSource(h, id, Buffer.from(id), mime ?? 'application/octet-stream');
+      if (mime === null) {
+        await h.pool.query('UPDATE owner_material SET mime = NULL WHERE id = $1', [id]);
+      }
+    }
+    const listed = (await (
+      await libraryRoute(request('GET', '/api/materials/library'))
+    ).json()) as {
+      materials: Array<{ materialId: string; opensInline?: boolean }>;
+    };
+    for (const [id, mime, inline] of cases) {
+      const view = listed.materials.find((material) => material.materialId === id)!;
+      const response = await originalRoute(
+        request('GET', `/api/materials/${id}/original`),
+        params(id),
+      );
+      const disposition = response.headers.get('content-disposition') ?? '';
+      // The label's field and the response come from the one decision.
+      expect(view.opensInline, String(mime)).toBe(disposition.startsWith('inline;'));
+      expect(view.opensInline, String(mime)).toBe(inline);
+    }
+  });
+
+  it('serves a source’s original to its owner, inline only for media the pool serves inline', async () => {
+    const h = await boot();
+    const video = Buffer.from('fake-mp4');
+    await seedPoolSource(h, 'src-pool', video, 'video/mp4');
+    // From before the pool: read from the byte store, checked against its digest.
+    await seedSource(h, 'src-old', { bytes: Buffer.from('%PDF-old') });
+    await h.pool.query('UPDATE owner_material SET original_name = $2 WHERE id = $1', [
+      'src-old',
+      '教案 "第1课"\r\n.pdf',
+    ]);
+    const open = (id: string) =>
+      originalRoute(request('GET', `/api/materials/${id}/original`), params(id));
+
+    const pooled = await open('src-pool');
+    expect(pooled.status).toBe(200);
+    expect(Buffer.from(await pooled.arrayBuffer())).toEqual(video);
+    expect(pooled.headers.get('content-type')).toBe('video/mp4');
+    expect(pooled.headers.get('content-length')).toBe(String(video.byteLength));
+    expect(pooled.headers.get('content-disposition')).toMatch(/^inline; /);
+    expect(pooled.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(pooled.headers.get('cache-control')).toBe('private, no-store');
+
+    // A PDF is never inline: it downloads under its uploaded name, CR/LF dropped.
+    const old = await open('src-old');
+    expect(old.status).toBe(200);
+    expect(Buffer.from(await old.arrayBuffer())).toEqual(Buffer.from('%PDF-old'));
+    expect(old.headers.get('content-type')).toBe('application/octet-stream');
+    expect(old.headers.get('content-disposition')).toBe(
+      `attachment; filename="__ __1__.pdf"; filename*=UTF-8''${encodeURIComponent('教案 "第1课".pdf')}`,
+    );
+
+    // An anonymous owner reads its own; the account does not reach it.
+    await seedSource(h, 'src-anon', { owner: ANON });
+    expect((await open('src-anon')).status).toBe(404);
+    mocks.ownerId = ANON;
+    expect((await open('src-anon')).status).toBe(200);
+  });
+
+  it('answers the plain 404 for another owner’s, a deleted, a derived, an uploading or a missing material', async () => {
+    const h = await boot();
+    await seedSource(h, 'src-theirs', { owner: OTHER });
+    await seedSource(h, 'src-mine');
+    await seedDerivative(h, 'img-1', 'src-mine');
+    await seedSource(h, 'src-gone');
+    await h.pool.query('UPDATE owner_material SET deleted_at = 1 WHERE id = $1', ['src-gone']);
+    // An upload reservation that has not finished is not readable yet.
+    await registerOwnerMaterial(
+      h.pool as never,
+      {
+        id: 'src-uploading',
+        ownerId: ACCOUNT,
+        kind: 'source',
+        bytes: 3,
+        originalName: 'uploading.pdf',
+        mime: 'application/pdf',
+        ossKey: 'pending-upload',
+      },
+      { maxCount: 100, maxTotalBytes: 1_000_000 },
+    );
+    for (const id of ['src-theirs', 'img-1', 'src-gone', 'src-uploading', 'src-missing']) {
+      const answer = await originalRoute(
+        request('GET', `/api/materials/${id}/original`),
+        params(id),
+      );
+      expect(answer.status, id).toBe(404);
+      expect(await answer.text(), id).toBe('Not found');
+    }
+  });
+
+  it('answers 503 unavailable, without storage details, when no trusted bytes can be read', async () => {
+    const h = await boot();
+    await seedSource(h, 'src-bad', { bytes: Buffer.from('%PDF-bad') });
+    // The stored object no longer matches the digest recorded at upload.
+    h.sources.set('src-bad', Buffer.from('tampered'));
+    const answer = await originalRoute(
+      request('GET', '/api/materials/src-bad/original'),
+      params('src-bad'),
+    );
+    expect(answer.status).toBe(503);
+    const body = await answer.text();
+    expect(JSON.parse(body)).toMatchObject({ success: false, reason: 'unavailable' });
+    expect(body).not.toContain('objects/');
+  });
+
+  it('names the file safely whatever the uploaded name holds', () => {
+    expect(contentDisposition('attachment', '../a\\b/c.txt', 'mat-1')).toBe(
+      `attachment; filename=".._a_b_c.txt"; filename*=UTF-8''.._a_b_c.txt`,
+    );
+    expect(contentDisposition('inline', ' \r\n ', 'mat-1')).toBe(
+      `inline; filename="mat-1"; filename*=UTF-8''mat-1`,
+    );
+    expect(contentDisposition('attachment', "it's (1)*.png", 'mat-1')).toBe(
+      `attachment; filename="it's (1)*.png"; filename*=UTF-8''it%27s%20%281%29%2A.png`,
+    );
   });
 });

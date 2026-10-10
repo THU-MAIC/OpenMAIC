@@ -84,6 +84,7 @@ export const workbenchEn = {
     fileTooLargeWithLimit: 'File too large. Please select a file no larger than {{limit}} MB.',
     unsupportedType: 'Unsupported file type. Please choose a supported file.',
     quotaExceeded: 'Material upload limit reached.',
+    storageFull: 'Storage is full. This material could not be uploaded.',
   },
   /**
    * The installed skills, as the product names them.
@@ -302,7 +303,7 @@ export const workbenchEn = {
       extractionStillRunning: 'Still extracting',
       folderExisted: 'Folder already existed',
       unchanged: 'No change',
-      movedToUnfiled: 'Moved to Unfiled',
+      movedOutOfFolder: 'Moved out of folder',
     },
     error: {
       materialExtraction: 'Material extraction failed',
@@ -426,6 +427,7 @@ export const workbenchZh = {
     fileTooLargeWithLimit: '文件过大，请选择不超过 {{limit}}MB 的文件。',
     unsupportedType: '不支持此文件类型，请选择受支持的文件。',
     quotaExceeded: '已达到材料上传限额。',
+    storageFull: '存储空间已达上限，无法上传这份资料。',
   },
   skill: {
     listFailed: 'Skill 列表加载失败',
@@ -620,7 +622,7 @@ export const workbenchZh = {
       extractionStillRunning: '仍在解析',
       folderExisted: '文件夹已存在',
       unchanged: '没有变化',
-      movedToUnfiled: '已移回未归档',
+      movedOutOfFolder: '已移出文件夹',
     },
     error: {
       materialExtraction: '材料解析失败',

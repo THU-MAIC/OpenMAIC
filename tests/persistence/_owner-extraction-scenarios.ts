@@ -9,6 +9,8 @@
  * owner materials directly, and drives the service with counting fake
  * extractors. Leases are decided by an injected clock, not by waiting.
  */
+import { OwnerMaterialBytesUnavailableError } from '@/lib/server/materials/owner-material-bytes';
+import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -20,6 +22,7 @@ import { expect, vi } from 'vitest';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
 
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
+import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
 import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
 import { claimOwner, resetClaimParticipantsForTests } from '@/lib/persistence/owner-claims';
@@ -36,9 +39,11 @@ import {
   type OwnerExtractionResult,
 } from '@/lib/persistence/owner-material-extraction';
 import {
+  allocateOwnerMaterialBytes,
   ensureOwnerMaterialSchema,
   finalizeOwnerMaterial,
   publicMaterial,
+  publishOwnerMaterialUpload,
   registerOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import {
@@ -222,6 +227,7 @@ export async function seedSource(
 }
 
 interface StateRow {
+  reason_code: string | null;
   owner_id: string;
   status: string | null;
   extraction_token: string | null;
@@ -234,7 +240,7 @@ interface StateRow {
 
 export async function stateOf(h: ExtractionHarness, id: string): Promise<StateRow> {
   const result = await h.pool.query<StateRow>(
-    `SELECT owner_id, (extraction->>'status') AS status, extraction_token,
+    `SELECT owner_id, (extraction->>'status') AS status, (extraction->>'reasonCode') AS reason_code, extraction_token,
             extraction_claims::int AS extraction_claims, extraction_error, extraction_result,
             extraction_cache_key, folder_id
        FROM owner_material WHERE id = $1`,
@@ -318,6 +324,80 @@ export async function ensureStartedScenario(h: ExtractionHarness): Promise<void>
 }
 
 /**
+ * An upload queues its extraction in the transaction that publishes it: the
+ * published row is pending with a fresh claim budget, a refused publication
+ * queues nothing, Parse finds it already started, the scanner takes it to
+ * done, and a second upload of the same bytes reuses that result.
+ */
+export async function uploadQueuesExtractionScenario(h: ExtractionHarness): Promise<void> {
+  const bytes = Buffer.from('%PDF-uploaded lesson');
+  const upload = async (id: string, owner = ACCOUNT) => {
+    await registerOwnerMaterial(
+      h.pool as unknown as ConnectableQueryable,
+      {
+        id,
+        ownerId: ACCOUNT,
+        kind: 'source',
+        mime: 'application/pdf',
+        bytes: bytes.byteLength,
+        originalName: `${id}.pdf`,
+        ossKey: '',
+        extraction: { status: 'idle' },
+      },
+      { maxCount: 100, maxTotalBytes: 1_000_000 },
+    );
+    const assetId = await allocateOwnerMaterialBytes(h.provider, ACCOUNT, bytes, 'application/pdf');
+    h.sources.set(id, bytes);
+    return publishOwnerMaterialUpload(h.provider, owner, id, {
+      assetId,
+      bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
+  };
+  const leaseOf = async (id: string) =>
+    (
+      await h.pool.query<{ status: string; lease: unknown }>(
+        'SELECT status, extraction_lease_at AS lease FROM owner_material WHERE id = $1',
+        [id],
+      )
+    ).rows[0];
+
+  const published = await upload('src-up');
+  if (published === 'refused') throw new Error('the upload was refused');
+  expect(published.extraction).toEqual({ status: 'pending' });
+  expect(publicMaterial(published).extraction).toEqual({ status: 'pending' });
+  expect(await stateOf(h, 'src-up')).toMatchObject({
+    status: 'pending',
+    extraction_claims: 0,
+    extraction_token: null,
+    extraction_error: null,
+  });
+  expect(await leaseOf('src-up')).toEqual({ status: 'ready', lease: null });
+
+  // A publication refused (here: another owner) writes nothing, the queue included.
+  expect(await upload('src-refused', OTHER)).toBe('refused');
+  expect((await stateOf(h, 'src-refused')).status).toBe('idle');
+  expect((await leaseOf('src-refused'))!.status).toBe('uploading');
+
+  // Parse of a just-uploaded source finds it started and changes nothing.
+  const queued = await stateOf(h, 'src-up');
+  expect(await ensure(h, 'src-up')).toEqual({ status: 'pending', queued: false });
+  expect(await stateOf(h, 'src-up')).toEqual(queued);
+
+  expect(await drain(h)).toBe(1);
+  expect((await stateOf(h, 'src-up')).status).toBe('done');
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
+
+  // The same bytes uploaded again: queued too, and served from the owner's cache.
+  await upload('src-up-again');
+  expect(await drain(h)).toBe(1);
+  const again = await stateOf(h, 'src-up-again');
+  expect(again.status).toBe('done');
+  expect(again.extraction_result).toMatchObject({ reusedFrom: 'src-up' });
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
+}
+
+/**
  * Two conversations starting the same source, at once and again after it is
  * done: one extraction, one result (T13). A failed source restarts under a
  * fresh token.
@@ -381,6 +461,7 @@ export async function claimBudgetScenario(h: ExtractionHarness): Promise<void> {
     status: 'failed',
     extraction_token: null,
     extraction_error: 'extraction did not finish within its claim budget',
+    reason_code: 'processing_interrupted',
   });
 
   await seedSource(h, 'src-alive');
@@ -853,7 +934,11 @@ export async function quotaFailureScenario(h: ExtractionHarness): Promise<void> 
   await ensure(h, 'vid-big');
   await drain(h);
   const state = await stateOf(h, 'vid-big');
-  expect(state).toMatchObject({ status: 'failed', extraction_result: null });
+  expect(state).toMatchObject({
+    status: 'failed',
+    extraction_result: null,
+    reason_code: 'storage_full',
+  });
   expect(state.extraction_error).toMatch(/no room/);
   expect(await rootCount(h)).toBe(0);
   // The transcript's entry fitted, then the keyframe's was refused: the run
@@ -1357,4 +1442,200 @@ export async function parserFailureScenario(h: ExtractionHarness): Promise<void>
   } finally {
     parser.mockRestore();
   }
+}
+
+/** Document candidates for the service-unavailable scenarios: a service fails unless given work. */
+function documentCandidates(h: ExtractionHarness) {
+  const failing = (message: string) =>
+    vi.fn(async () => {
+      throw new Error(message);
+    });
+  const provider = (
+    id: string,
+    mimes: string[],
+    extract: ReturnType<typeof vi.fn> = failing(`API key required for PDF provider: ${id}`),
+  ): DocumentExtractorProvider => ({
+    ...documentProvider(extract),
+    id: id as never,
+    supportedMimeTypes: mimes,
+    // Whether it is a service to configure, as the real manifest says.
+    requiresConfiguration: getDocumentExtractorManifestEntry(id)?.requiresConfiguration ?? false,
+  });
+  const run = async (
+    id: string,
+    mime: string,
+    providers: DocumentExtractorProvider[],
+    configured: string[] = [],
+  ) => {
+    await seedSource(h, id, { mime });
+    await ensure(h, id);
+    await drain(h, h.deps({ providers: () => providers, configuredProviderIds: () => configured }));
+    return stateOf(h, id);
+  };
+  return { failing, provider, run };
+}
+
+/**
+ * "Parsing service unavailable" (#1835 review §6) only when every document
+ * candidate is a service the deployment has not configured -- an image, say,
+ * that only MinerU or AliDocMind take. A configured service that fails, or a
+ * type no extractor takes, keeps no reason code.
+ */
+export async function documentServiceUnavailableScenario(h: ExtractionHarness): Promise<void> {
+  const { failing, provider, run } = documentCandidates(h);
+  const png = ['image/png'];
+  expect(
+    await run('img-no-service', 'image/png', [
+      provider('mineru', png),
+      provider('alidocmind', png),
+    ]),
+  ).toMatchObject({ status: 'failed', reason_code: 'service_unavailable', extraction_claims: 1 });
+  expect(
+    await run(
+      'img-configured',
+      'image/png',
+      [provider('mineru', png, failing('HTTP 500'))],
+      ['mineru'],
+    ),
+  ).toMatchObject({ status: 'failed', reason_code: null });
+  expect(await run('img-unsupported', 'image/tiff', [provider('mineru', png)])).toMatchObject({
+    status: 'failed',
+    reason_code: null,
+  });
+}
+
+/**
+ * A PDF always has the local `unpdf`: no service configured, it is parsed
+ * there, and a PDF unpdf cannot read is a real failure, with no reason code.
+ * An unconfigured service that fails still falls back to the next candidate.
+ */
+export async function documentFallbackScenario(h: ExtractionHarness): Promise<void> {
+  const { failing, provider, run } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  expect(
+    await run('pdf-local', 'application/pdf', [
+      provider('mineru', pdf),
+      provider('unpdf', pdf, h.documentExtract),
+    ]),
+  ).toMatchObject({ status: 'done', reason_code: null });
+  expect(
+    await run('pdf-broken', 'application/pdf', [
+      provider('mineru', pdf),
+      provider('unpdf', pdf, failing('Invalid PDF structure')),
+    ]),
+  ).toMatchObject({ status: 'failed', reason_code: null });
+  expect(
+    await run('img-fallback', 'image/png', [
+      provider('mineru', ['image/png']),
+      provider('alidocmind', ['image/png'], h.documentExtract),
+    ]),
+  ).toMatchObject({ status: 'done', reason_code: null });
+}
+
+/** Public failure reasons survive only a terminal, current claim. */
+export async function failureReasonScenario(h: ExtractionHarness): Promise<void> {
+  await seedSource(h, 'src-unavailable');
+  await ensure(h, 'src-unavailable');
+  await drain(
+    h,
+    h.deps({
+      readSource: async (claim) => {
+        throw new OwnerMaterialBytesUnavailableError(claim.materialId);
+      },
+    }),
+  );
+  expect(await stateOf(h, 'src-unavailable')).toMatchObject({
+    status: 'failed',
+    reason_code: 'source_unavailable',
+  });
+  await ensure(h, 'src-unavailable');
+  expect(await stateOf(h, 'src-unavailable')).toMatchObject({
+    status: 'pending',
+    reason_code: null,
+  });
+  const old = await claim(h);
+  expect(await stateOf(h, 'src-unavailable')).toMatchObject({
+    status: 'running',
+    reason_code: null,
+  });
+  await settleOwnerMaterialExtractionFailure(h.pool as never, old!, {
+    reason: 'temporary private detail',
+    retryable: true,
+    reasonCode: 'storage_full',
+  });
+  expect(await stateOf(h, 'src-unavailable')).toMatchObject({
+    status: 'pending',
+    reason_code: null,
+  });
+  const current = await claim(h);
+  expect(
+    await settleOwnerMaterialExtractionFailure(h.pool as never, old!, {
+      reason: 'late private detail',
+      retryable: false,
+      reasonCode: 'storage_full',
+    }),
+  ).toBeNull();
+  await runClaimedOwnerExtraction(current!, h.deps());
+  expect(await stateOf(h, 'src-unavailable')).toMatchObject({
+    status: 'done',
+    reason_code: null,
+    extraction_error: null,
+  });
+
+  await seedSource(h, 'vid-no-service', { mime: 'video/mp4' });
+  await ensure(h, 'vid-no-service');
+  await drain(
+    h,
+    h.deps({
+      mediaProviders: () => [
+        {
+          ...mediaProvider(h.mediaExtract),
+          availability: async () => ({ available: false, reason: 'private config' }),
+        },
+      ],
+    }),
+  );
+  expect(await stateOf(h, 'vid-no-service')).toMatchObject({
+    status: 'failed',
+    reason_code: 'service_unavailable',
+    extraction_claims: 1,
+  });
+
+  await seedSource(h, 'vid-empty', { mime: 'video/mp4' });
+  await ensure(h, 'vid-empty');
+  await drain(
+    h,
+    h.deps({
+      mediaProviders: () => [mediaProvider(vi.fn(async () => ({ metadata: {}, transcript: [] })))],
+    }),
+  );
+  expect(await stateOf(h, 'vid-empty')).toMatchObject({
+    status: 'failed',
+    reason_code: 'no_text_extracted',
+    extraction_claims: 1,
+  });
+
+  await seedSource(h, 'src-unknown');
+  await ensure(h, 'src-unknown');
+  await drain(
+    h,
+    h.deps({
+      readSource: async () => {
+        throw new Error('quota exceeded: private detail');
+      },
+    }),
+  );
+  expect(await stateOf(h, 'src-unknown')).toMatchObject({
+    status: 'failed',
+    reason_code: null,
+    extraction_error: 'quota exceeded: private detail',
+  });
+
+  await seedSource(h, 'doc-failed');
+  await ensure(h, 'doc-failed');
+  h.documentExtract.mockRejectedValueOnce(
+    new MaterialExtractionError('private document failure', false, { reasonCode: 'storage_full' }),
+  );
+  await drain(h);
+  expect(await stateOf(h, 'doc-failed')).toMatchObject({ status: 'failed', reason_code: null });
 }

@@ -45,7 +45,8 @@
     "fileTooLarge": "파일이 너무 큽니다. 압축하거나 분할한 후 다시 시도해 주세요.",
     "fileTooLargeWithLimit": "파일이 너무 큽니다. {{limit}} MB 이하의 파일을 선택해 주세요.",
     "unsupportedType": "지원하지 않는 파일 형식입니다. 지원되는 파일을 선택해 주세요.",
-    "quotaExceeded": "자료 업로드 한도에 도달했습니다."
+    "quotaExceeded": "자료 업로드 한도에 도달했습니다.",
+    "storageFull": "저장 공간이 한도에 도달해 이 자료를 업로드할 수 없습니다."
   },
   "skill": {
     "listFailed": "스킬 목록을 불러오지 못했습니다",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "아직 분석 중입니다",
       "folderExisted": "폴더가 이미 있습니다",
       "unchanged": "변경 없음",
-      "movedToUnfiled": "미분류로 옮겼습니다"
+      "movedOutOfFolder": "폴더 밖으로 옮겼습니다"
     },
     "error": {
       "materialExtraction": "자료 분석에 실패했습니다",

@@ -7,6 +7,7 @@ import {
   agentOwnsActiveCourse,
   agentOwnsPaneCourse,
   clampChatWidth,
+  closeAllCourseTabs,
   closeCourseTab,
   legacyWorkspaceHref,
   NO_PANES,
@@ -20,6 +21,7 @@ import {
   restoreCourseTabs,
   samePanes,
   withCourse,
+  withLibrary,
   withSession,
   workspaceHref,
   workspaceLayout,
@@ -425,6 +427,7 @@ describe('what the shell renders', () => {
       classroom: true,
       classroomTab: false,
       home: false,
+      library: false,
     });
   });
 
@@ -460,5 +463,63 @@ describe('persisted pane preferences', () => {
     expect(parseCollapsed('0')).toBe(false);
     expect(parseCollapsed(null)).toBe(false);
     expect(parseCollapsed('true')).toBe(false);
+  });
+});
+
+describe('the knowledge base page', () => {
+  it('reads, writes and compares `view=library` beside the panes it covers', () => {
+    const panes = { sessionId: 's', courseId: 'c', library: true };
+    const href = workspaceHref(panes);
+    expect(href).toBe('/workspace?session=s&course=c&view=library');
+    expect(readWorkspacePanes(new URL(`http://x${href}`).searchParams)).toEqual(panes);
+    expect(workspaceHref({ ...NO_PANES, library: true })).toBe('/workspace?view=library');
+    expect(readWorkspacePanes(search('?view=other'))).toEqual(NO_PANES);
+    expect(samePanes({ ...NO_PANES, library: true }, NO_PANES)).toBe(false);
+    expect(samePanes({ ...NO_PANES, library: false }, NO_PANES)).toBe(true);
+  });
+
+  it('stays open while the panes underneath change, and closes only on request', () => {
+    const open = { sessionId: 's', courseId: null, library: true };
+    expect(withCourse(open, 'c')).toEqual({ sessionId: 's', courseId: 'c', library: true });
+    expect(withSession(open, null)).toEqual({ sessionId: null, courseId: null, library: true });
+    expect(withLibrary(open, false)).toEqual({ sessionId: 's', courseId: null });
+    expect(withLibrary(NO_PANES, true)).toEqual({ ...NO_PANES, library: true });
+    expect(withLibrary(open, true)).toBe(open);
+  });
+
+  it('covers the whole main area, ahead of full-screen playback', () => {
+    const render = resolveWorkspaceRender({
+      panes: { sessionId: 's', courseId: 'c', library: true },
+      collapse: { nav: true, chat: true, classroom: true },
+      playback: true,
+      draftConversation: true,
+    });
+    expect(render).toEqual({
+      navRail: true,
+      chat: false,
+      chatTab: false,
+      classroom: false,
+      classroomTab: false,
+      home: false,
+      library: true,
+    });
+  });
+});
+
+describe('the URL dropping the classroom', () => {
+  it('counts every open tab as closed, and opening one again un-closes it', () => {
+    const tabs = { courseIds: ['a', 'b'], activeCourseId: 'b', closedCourseIds: ['z'] };
+    const closed = closeAllCourseTabs(tabs);
+    expect(closed).toEqual({
+      courseIds: [],
+      activeCourseId: null,
+      closedCourseIds: ['z', 'a', 'b'],
+    });
+    expect(closeAllCourseTabs(closed)).toBe(closed);
+    expect(restoreCourseTabs(closed, 'b')).toEqual({
+      courseIds: ['b'],
+      activeCourseId: 'b',
+      closedCourseIds: ['z', 'a'],
+    });
   });
 });

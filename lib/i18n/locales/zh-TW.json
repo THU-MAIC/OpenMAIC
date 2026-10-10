@@ -1979,6 +1979,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "知識庫",
+      "back": "返回",
+      "search": "搜尋名稱或檔案類型",
+      "loading": "載入中…",
+      "retry": "重試",
+      "loadMore": "載入更多",
+      "failure": {
+        "more": "失敗說明：{{reason}}",
+        "storage_full": {
+          "label": "儲存空間不足",
+          "description": "沒有足夠空間儲存解析結果，請釋放空間後重試。"
+        },
+        "source_unavailable": {
+          "label": "原始檔案無法使用",
+          "description": "無法讀取這份資料的原始檔案，請重新上傳後再試。"
+        },
+        "service_unavailable": {
+          "label": "解析服務無法使用",
+          "description": "目前無法使用解析服務，請稍後再試；若持續發生，請聯絡管理員。"
+        },
+        "media_too_long": {
+          "label": "音訊或影片過長",
+          "description": "目前的解析方式最長支援 {{minutes}} 分鐘的音訊或影片，請縮短或分段後重新上傳。"
+        },
+        "no_text_extracted": {
+          "label": "未擷取到文字",
+          "description": "這次解析未取得可用文字，請檢查資料內容，或嘗試其他檔案。"
+        },
+        "processing_interrupted": {
+          "label": "解析未完成",
+          "description": "本次解析未能完成，可以稍後重試。"
+        }
+      },
+      "status": {
+        "uploading": "上傳中",
+        "stored": "已存入 · 未解析",
+        "parsing": "解析中",
+        "searchable": "可檢索",
+        "failed": "解析失敗"
+      },
+      "column": {
+        "name": "名稱",
+        "status": "狀態",
+        "folder": "資料夾",
+        "size": "大小",
+        "date": "日期"
+      },
+      "limits": {
+        "perFile": "單一文件或圖片不超過 {{document}}，音訊與影片不超過 {{media}}"
+      },
+      "usage": {
+        "summary": "已用 {{used}} / {{max}} · {{count}} / {{maxCount}} 個檔案"
+      },
+      "empty": {
+        "title": "知識庫還是空的",
+        "body": "上傳教學資料，讓助理幫你整理與解析，備課時用 @ 選用。",
+        "folder": "這個資料夾裡還沒有資料",
+        "query": "找不到與「{{query}}」相符的資料"
+      },
+      "upload": {
+        "button": "上傳資料",
+        "dismiss": "移除"
+      },
+      "error": {
+        "load": "知識庫載入失敗",
+        "busy": "帳號正在更新，請稍後再試",
+        "identity": "登入狀態已變更，請重新整理頁面",
+        "stale": "顯示的內容可能不是最新的",
+        "nameTaken": "已有同名資料夾",
+        "invalidName": "請輸入不超過 255 個字元的名稱",
+        "folderNameEmpty": "請輸入資料夾名稱",
+        "folderNameTooLong": "資料夾名稱太長",
+        "folderLimit": "資料夾數量已達上限",
+        "notMovable": "這份資料不能移動",
+        "gone": "它已經不存在了",
+        "save": "操作沒有成功，請重試",
+        "notEmpty": "資料夾裡還有資料，請先移走"
+      },
+      "actions": {
+        "parse": "解析",
+        "reparse": "重新解析",
+        "more": "{{name}} 的更多操作",
+        "rename": "重新命名",
+        "move": "移動到…",
+        "removeFromFolder": "移出資料夾",
+        "delete": "刪除",
+        "open": "開啟",
+        "downloadOriginal": "下載原始檔案",
+        "chat": "用這份資料對話"
+      },
+      "folder": {
+        "new": "新增資料夾",
+        "items": "{{count}} 項",
+        "items_one": "{{count}} 項",
+        "items_other": "{{count}} 項"
+      },
+      "dialog": {
+        "cancel": "取消",
+        "moveTitle": "移動「{{name}}」",
+        "moveConfirm": "移動",
+        "noFolders": "還沒有可以移入的資料夾，請先新增一個。",
+        "close": "關閉"
+      },
+      "delete": {
+        "materialTitle": "刪除「{{name}}」？",
+        "materialLinks": "刪除後，對話裡再讀取這份資料會失敗，對話裡已有的文字保留。",
+        "materialCourses": "已儲存到課程中的內容不受影響。",
+        "cannotUndo": "此操作無法復原。",
+        "folderTitle": "刪除資料夾「{{name}}」？",
+        "folderOnlyEmpty": "只能刪除空資料夾。裡面還有資料時，請先把它們移走。"
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2002,7 +2115,6 @@
       "materialStaged": "已在這則訊息裡",
       "materialExtracting": "解析中",
       "materialFailed": "解析失敗",
-      "unfiled": "未歸檔",
       "materialsCapped": "只顯示前 {{count}} 份材料，繼續輸入可縮小範圍",
       "materialNotExtracted": "未解析",
       "materialExtracted": "已解析"

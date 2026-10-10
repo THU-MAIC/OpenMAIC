@@ -63,7 +63,10 @@ import type { ServerPersistenceProvider } from '@/lib/persistence/server-provide
 import { getMinerUBackend } from '@/lib/pdf/pdf-providers';
 import { DocumentImageParseError } from './document-image-parser';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
-import { readOwnerMaterialBytes } from '@/lib/server/materials/owner-material-bytes';
+import {
+  OwnerMaterialBytesUnavailableError,
+  readOwnerMaterialBytes,
+} from '@/lib/server/materials/owner-material-bytes';
 import {
   resolveASRBaseUrl,
   resolveASRModel,
@@ -262,7 +265,7 @@ async function allocate(
       throw new MaterialExtractionError(
         'the asset store has no room for this extraction; free space and start it again',
         false,
-        { cause: error },
+        { cause: error, reasonCode: 'storage_full' },
       );
     }
     // The registry reports every other failure without its cause, so a
@@ -473,7 +476,7 @@ async function extractOrReuse(
       failures.push(error);
     }
   }
-  throw documentExtractionFailure(errors, failures);
+  throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
 }
 
 /**
@@ -570,6 +573,12 @@ export async function runNextOwnerExtraction(
       await settleOwnerMaterialExtractionFailure(pool, claim, {
         reason: error instanceof Error ? error.message : String(error),
         retryable: isTransientExtractionError(error),
+        reasonCode:
+          error instanceof OwnerMaterialBytesUnavailableError
+            ? 'source_unavailable'
+            : error instanceof MaterialExtractionError
+              ? error.reasonCode
+              : undefined,
       });
     }
   } finally {

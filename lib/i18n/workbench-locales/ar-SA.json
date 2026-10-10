@@ -45,7 +45,8 @@
     "fileTooLarge": "الملف كبير جدًا. اضغطه أو قسّمه ثم حاول مرة أخرى.",
     "fileTooLargeWithLimit": "الملف كبير جدًا. اختر ملفًا لا يتجاوز حجمه {{limit}} ميجابايت.",
     "unsupportedType": "نوع الملف غير مدعوم. اختر ملفًا من نوع مدعوم.",
-    "quotaExceeded": "تم بلوغ حد رفع المواد."
+    "quotaExceeded": "تم بلوغ حد رفع المواد.",
+    "storageFull": "مساحة التخزين ممتلئة. تعذّر رفع هذه المادة."
   },
   "skill": {
     "listFailed": "تعذّر تحميل قائمة المهارات",
@@ -237,7 +238,7 @@
       "extractionStillRunning": "لا يزال التحليل جاريًا",
       "folderExisted": "المجلد موجود بالفعل",
       "unchanged": "لا تغيير",
-      "movedToUnfiled": "نُقلت إلى غير مصنّف"
+      "movedOutOfFolder": "نُقل خارج المجلد"
     },
     "error": {
       "materialExtraction": "فشل تحليل المادة",

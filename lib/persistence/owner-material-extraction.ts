@@ -56,6 +56,10 @@
  * marking it, cancelling its work and withdrawing its roots together -- is
  * the library's deletion operation, not this module's.
  */
+import {
+  extractionReasonCodeOf,
+  type MaterialExtractionReasonCode,
+} from '@/lib/types/material-extraction-failure';
 import type { Queryable, WithTransaction } from '@openmaic/storage/document/pg';
 import { encodeJson } from '@openmaic/storage/pg-json';
 
@@ -168,8 +172,12 @@ interface ClaimRow extends Record<string, unknown> {
   bytes: number | string;
 }
 
-function statusJson(status: OwnerExtractionStatus): string {
-  return JSON.stringify({ status });
+export function statusJson(
+  status: OwnerExtractionStatus,
+  code?: MaterialExtractionReasonCode,
+): string {
+  const reasonCode = status === 'failed' ? extractionReasonCodeOf(code) : undefined;
+  return JSON.stringify({ status, ...(reasonCode ? { reasonCode } : {}) });
 }
 
 /**
@@ -269,7 +277,14 @@ export async function claimNextOwnerMaterialExtraction(
                   material.extraction_token, material.extraction_claims, material.mime,
                   material.original_name, material.oss_key, material.asset_id, material.sha256,
                   material.bytes`,
-      [staleBefore, token, options.now, maxClaims, statusJson('running'), statusJson('failed')],
+      [
+        staleBefore,
+        token,
+        options.now,
+        maxClaims,
+        statusJson('running'),
+        statusJson('failed', 'processing_interrupted'),
+      ],
     );
     const row = result.rows[0];
     if (!row) return null;
@@ -314,7 +329,12 @@ export async function heartbeatOwnerMaterialExtraction(
 export async function settleOwnerMaterialExtractionFailure(
   queryable: Queryable,
   claim: Pick<OwnerExtractionClaim, 'materialId' | 'token'>,
-  failure: { reason: string; retryable: boolean; maxClaims?: number },
+  failure: {
+    reason: string;
+    retryable: boolean;
+    maxClaims?: number;
+    reasonCode?: MaterialExtractionReasonCode;
+  },
 ): Promise<OwnerExtractionStatus | null> {
   const maxClaims = failure.maxClaims ?? MAX_OWNER_EXTRACTION_CLAIMS;
   const result = await queryable.query<{ status: string }>(
@@ -331,7 +351,7 @@ export async function settleOwnerMaterialExtractionFailure(
       failure.retryable,
       maxClaims,
       statusJson('pending'),
-      statusJson('failed'),
+      statusJson('failed', failure.reasonCode),
     ],
   );
   const status = result.rows[0]?.status;

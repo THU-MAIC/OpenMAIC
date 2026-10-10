@@ -398,8 +398,9 @@ export function presentTool(
           if (moved !== undefined) {
             chips.push({ label: t('workbench.tool.chip.materials', { count: moved }) });
           }
+          // The action, not a state; the result names no source folder.
           if (d.folderId === null) {
-            chips.push({ label: t('workbench.tool.chip.movedToUnfiled'), tone: 'neutral' });
+            chips.push({ label: t('workbench.tool.chip.movedOutOfFolder'), tone: 'neutral' });
           }
         }
       }

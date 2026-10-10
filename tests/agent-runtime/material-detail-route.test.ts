@@ -127,3 +127,43 @@ describe('GET /api/materials/[id]', () => {
     expect((await call()).status).toBe(404);
   });
 });
+
+it('removes legacy failed diagnostics from HTTP without changing model projections', async () => {
+  const record = material({
+    extraction: { status: 'failed', attempts: 3, error: 'PRIVATE_UPSTREAM_BODY' },
+  });
+  mocks.getSessionMaterial.mockResolvedValue(record);
+  const response = await call();
+  const body = await response.json();
+  expect(body.material.extraction).toEqual({ status: 'failed', attempts: 3 });
+  expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
+  const { publicMaterialView } = await import('@/lib/server/agent-runtime/session-materials');
+  expect(publicMaterialView(record).extraction).toEqual(record.extraction);
+});
+
+it.each(['pending', 'running', 'done'] as const)(
+  'removes legacy diagnostics from HTTP whatever the status (%s), keeping the other extraction metadata',
+  async (status) => {
+    // A retryable failure goes back to pending with its error kept until the retry is claimed.
+    const record = material({
+      extraction: {
+        status,
+        attempts: 1,
+        error: 'PRIVATE_UPSTREAM_BODY',
+        stats: { chars: 42, pages: 1, imageCount: 0 },
+        extractorVersion: 'v1',
+      },
+    });
+    mocks.getSessionMaterial.mockResolvedValue(record);
+    const body = await (await call()).json();
+    expect(body.material.extraction).toEqual({
+      status,
+      attempts: 1,
+      stats: { chars: 42, pages: 1, imageCount: 0 },
+      extractorVersion: 'v1',
+    });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
+    const { publicMaterialView } = await import('@/lib/server/agent-runtime/session-materials');
+    expect(publicMaterialView(record).extraction).toEqual(record.extraction);
+  },
+);

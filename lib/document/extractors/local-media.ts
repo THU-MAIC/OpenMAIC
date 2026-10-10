@@ -14,6 +14,8 @@ import {
   resolveServerASRProviderId,
 } from '@/lib/server/provider-config';
 
+import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
+
 import { LOCAL_FFMPEG_MEDIA_MIMES } from '../mime';
 import type {
   DocumentAsset,
@@ -34,7 +36,6 @@ const MEDIA_COMMAND_TIMEOUT_MS = 20 * 60 * 1000;
 const FFPROBE_TIMEOUT_MS = 30_000;
 const MEDIA_JOB_TIMEOUT_MS = 45 * 60 * 1000;
 const MEDIA_ASR_TIMEOUT_MS = 8 * 60 * 1000;
-const MEDIA_MAX_DURATION_SEC = 90 * 60;
 const COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 const MAX_KEYFRAME_CANDIDATES = 50_000;
 const KEYFRAME_END_SAFETY_MS = 1500;
@@ -563,6 +564,7 @@ export async function extractMediaMaterial(
       throw new MaterialExtractionError(
         `Media duration ${Math.ceil(durationSec)} seconds exceeds the ${MEDIA_MAX_DURATION_SEC}-second limit; trim it before uploading`,
         false,
+        { reasonCode: 'media_too_long' },
       );
     }
 

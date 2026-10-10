@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de conhecimento",
+      "back": "Voltar",
+      "search": "Pesquisar por nome ou tipo de arquivo",
+      "loading": "Carregando…",
+      "retry": "Tentar novamente",
+      "loadMore": "Carregar mais",
+      "failure": {
+        "more": "Sobre esta falha: {{reason}}",
+        "storage_full": {
+          "label": "Espaço insuficiente",
+          "description": "Não há espaço suficiente para salvar os resultados. Libere espaço e tente novamente."
+        },
+        "source_unavailable": {
+          "label": "Arquivo original indisponível",
+          "description": "Não foi possível ler o arquivo original. Envie-o novamente e tente outra vez."
+        },
+        "service_unavailable": {
+          "label": "Serviço de análise indisponível",
+          "description": "A análise está indisponível no momento. Tente mais tarde; se o problema persistir, contate o administrador."
+        },
+        "media_too_long": {
+          "label": "Áudio ou vídeo muito longo",
+          "description": "Este método de análise processa áudio ou vídeo de até {{minutes}} minutos. Encurte ou divida o arquivo e envie-o novamente."
+        },
+        "no_text_extracted": {
+          "label": "Nenhum texto extraído",
+          "description": "Nenhum texto utilizável foi extraído desta vez. Confira o conteúdo ou tente outro arquivo."
+        },
+        "processing_interrupted": {
+          "label": "Análise não concluída",
+          "description": "Não foi possível concluir a análise. Você pode tentar novamente mais tarde."
+        }
+      },
+      "status": {
+        "uploading": "Enviando",
+        "stored": "Armazenado · não analisado",
+        "parsing": "Analisando",
+        "searchable": "Pesquisável",
+        "failed": "Falha na análise"
+      },
+      "column": {
+        "name": "Nome",
+        "status": "Status",
+        "folder": "Pasta",
+        "size": "Tamanho",
+        "date": "Data"
+      },
+      "limits": {
+        "perFile": "Até {{document}} por documento ou imagem, {{media}} por áudio ou vídeo"
+      },
+      "usage": {
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} arquivos"
+      },
+      "empty": {
+        "title": "Sua base de conhecimento está vazia",
+        "body": "Envie seus materiais didáticos, deixe o assistente organizá-los e analisá-los, e escolha-os com @ ao preparar um curso.",
+        "folder": "Ainda não há materiais nesta pasta",
+        "query": "Nenhum material corresponde a “{{query}}”"
+      },
+      "upload": {
+        "button": "Enviar materiais",
+        "dismiss": "Dispensar"
+      },
+      "error": {
+        "load": "Não foi possível carregar a base de conhecimento",
+        "busy": "Sua conta está sendo atualizada. Tente novamente em instantes",
+        "identity": "Seu login mudou. Recarregue a página",
+        "stale": "o conteúdo exibido pode estar desatualizado",
+        "nameTaken": "Já existe outra pasta com este nome",
+        "invalidName": "Digite um nome com no máximo 255 caracteres",
+        "folderNameEmpty": "Digite um nome de pasta",
+        "folderNameTooLong": "Este nome de pasta é muito longo",
+        "folderLimit": "Você atingiu o limite de pastas",
+        "notMovable": "Este material não pode ser movido",
+        "gone": "Ele não existe mais",
+        "save": "Não deu certo. Tente novamente",
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+      },
+      "actions": {
+        "parse": "Analisar",
+        "reparse": "Analisar novamente",
+        "more": "Mais ações para {{name}}",
+        "rename": "Renomear",
+        "move": "Mover para…",
+        "removeFromFolder": "Remover da pasta",
+        "delete": "Excluir",
+        "open": "Abrir",
+        "downloadOriginal": "Baixar o original",
+        "chat": "Conversar sobre este material"
+      },
+      "folder": {
+        "new": "Nova pasta",
+        "items": "{{count}} itens",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} itens"
+      },
+      "dialog": {
+        "cancel": "Cancelar",
+        "moveTitle": "Mover “{{name}}”",
+        "moveConfirm": "Mover",
+        "noFolders": "Ainda não há pastas para onde movê-lo. Crie uma primeiro.",
+        "close": "Fechar"
+      },
+      "delete": {
+        "materialTitle": "Excluir “{{name}}”?",
+        "materialLinks": "As conversas que o usam não poderão mais lê-lo; o texto que já está nessas conversas permanece.",
+        "materialCourses": "O conteúdo já salvo em um curso não é afetado.",
+        "cannotUndo": "Esta ação não pode ser desfeita.",
+        "folderTitle": "Excluir a pasta “{{name}}”?",
+        "folderOnlyEmpty": "Só é possível excluir uma pasta vazia. Mova os materiais dela primeiro."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Já está nesta mensagem",
       "materialExtracting": "Processando",
       "materialFailed": "Falha no processamento",
-      "unfiled": "Sem pasta",
       "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
       "materialNotExtracted": "Não processado",
       "materialExtracted": "Processado"

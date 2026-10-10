@@ -8,6 +8,7 @@ import {
 } from '@/lib/document';
 import {
   getDocumentExtractorManifestEntries,
+  getDocumentExtractorManifestEntry,
   getMediaExtractorManifestEntries,
 } from '@/lib/document/extractors/manifest';
 import { PROVIDER_SUPPORTED_MIME_TYPES } from '@/lib/document/mime';
@@ -37,6 +38,21 @@ describe('document extractor registry', () => {
         .filter((provider) => provider.id !== 'plain-text')
         .every((provider) => provider.supportedMimeTypes.includes('application/pdf')),
     ).toBe(true);
+  });
+
+  it('marks the parsing services a deployment configures, not the local extractors', () => {
+    const providers = getDocumentExtractorProviders();
+
+    expect(
+      providers
+        .filter((provider) => !provider.requiresConfiguration)
+        .map((provider) => provider.id),
+    ).toEqual(['plain-text', 'unpdf']);
+    for (const provider of providers) {
+      expect(provider.requiresConfiguration, `provider ${provider.id}`).toBe(
+        getDocumentExtractorManifestEntry(provider.id)?.requiresConfiguration,
+      );
+    }
   });
 
   it('exposes a local plain-text extractor for TXT and Markdown', () => {

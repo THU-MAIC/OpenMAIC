@@ -1994,6 +1994,119 @@
     }
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de connaissances",
+      "back": "Retour",
+      "search": "Rechercher par nom ou type de fichier",
+      "loading": "Chargement…",
+      "retry": "Réessayer",
+      "loadMore": "Charger plus",
+      "failure": {
+        "more": "À propos de cet échec : {{reason}}",
+        "storage_full": {
+          "label": "Espace de stockage insuffisant",
+          "description": "L’espace disponible ne permet pas d’enregistrer les résultats. Libérez de l’espace et réessayez."
+        },
+        "source_unavailable": {
+          "label": "Fichier original indisponible",
+          "description": "Le fichier original n’a pas pu être lu. Importez-le à nouveau et réessayez."
+        },
+        "service_unavailable": {
+          "label": "Service d’analyse indisponible",
+          "description": "L’analyse est actuellement indisponible. Réessayez plus tard ; si le problème persiste, contactez votre administrateur."
+        },
+        "media_too_long": {
+          "label": "Audio ou vidéo trop long",
+          "description": "Cette méthode d’analyse traite les médias jusqu’à {{minutes}} minutes. Raccourcissez ou divisez le fichier, puis importez-le à nouveau."
+        },
+        "no_text_extracted": {
+          "label": "Aucun texte extrait",
+          "description": "Aucun texte exploitable n’a été extrait cette fois. Vérifiez le contenu ou essayez un autre fichier."
+        },
+        "processing_interrupted": {
+          "label": "Analyse non terminée",
+          "description": "L’analyse n’a pas pu être terminée. Vous pouvez réessayer plus tard."
+        }
+      },
+      "status": {
+        "uploading": "Importation",
+        "stored": "Enregistré · non analysé",
+        "parsing": "Analyse en cours",
+        "searchable": "Consultable",
+        "failed": "Échec de l’analyse"
+      },
+      "column": {
+        "name": "Nom",
+        "status": "État",
+        "folder": "Dossier",
+        "size": "Taille",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Jusqu’à {{document}} par document ou image, {{media}} par audio ou vidéo"
+      },
+      "usage": {
+        "summary": "{{used}} utilisés sur {{max}} · {{count}} fichiers sur {{maxCount}}"
+      },
+      "empty": {
+        "title": "Votre base de connaissances est vide",
+        "body": "Importez vos supports de cours, laissez l’assistant les organiser et les analyser, puis choisissez-les avec @ en préparant un cours.",
+        "folder": "Aucun document dans ce dossier pour l’instant",
+        "query": "Aucun document ne correspond à « {{query}} »"
+      },
+      "upload": {
+        "button": "Importer des documents",
+        "dismiss": "Masquer"
+      },
+      "error": {
+        "load": "Impossible de charger la base de connaissances",
+        "busy": "Votre compte est en cours de mise à jour. Réessayez dans un instant",
+        "identity": "Votre connexion a changé. Rechargez la page",
+        "stale": "l’affichage n’est peut-être pas à jour",
+        "nameTaken": "Un autre dossier porte déjà ce nom",
+        "invalidName": "Saisissez un nom de 255 caractères maximum",
+        "folderNameEmpty": "Saisissez un nom de dossier",
+        "folderNameTooLong": "Ce nom de dossier est trop long",
+        "folderLimit": "Vous avez atteint le nombre maximal de dossiers",
+        "notMovable": "Ce document ne peut pas être déplacé",
+        "gone": "Il n’existe plus",
+        "save": "L’opération a échoué. Réessayez",
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord"
+      },
+      "actions": {
+        "parse": "Analyser",
+        "reparse": "Analyser à nouveau",
+        "more": "Autres actions pour {{name}}",
+        "rename": "Renommer",
+        "move": "Déplacer vers…",
+        "removeFromFolder": "Retirer du dossier",
+        "delete": "Supprimer",
+        "open": "Ouvrir",
+        "downloadOriginal": "Télécharger l’original",
+        "chat": "Discuter de ce document"
+      },
+      "folder": {
+        "new": "Nouveau dossier",
+        "items": "{{count}} éléments",
+        "items_one": "{{count}} élément",
+        "items_other": "{{count}} éléments"
+      },
+      "dialog": {
+        "cancel": "Annuler",
+        "moveTitle": "Déplacer « {{name}} »",
+        "moveConfirm": "Déplacer",
+        "noFolders": "Aucun dossier où le déplacer pour l’instant. Créez-en un d’abord.",
+        "close": "Fermer"
+      },
+      "delete": {
+        "materialTitle": "Supprimer « {{name}} » ?",
+        "materialLinks": "Les conversations qui l’utilisent ne pourront plus le lire ; le texte déjà présent dans ces conversations est conservé.",
+        "materialCourses": "Le contenu déjà enregistré dans un cours n’est pas concerné.",
+        "cannotUndo": "Cette action est irréversible.",
+        "folderTitle": "Supprimer le dossier « {{name}} » ?",
+        "folderOnlyEmpty": "Seul un dossier vide peut être supprimé. Déplacez d’abord ses documents."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2017,7 +2130,6 @@
       "materialStaged": "Déjà dans ce message",
       "materialExtracting": "Extraction en cours",
       "materialFailed": "L'extraction a échoué",
-      "unfiled": "Non classés",
       "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner",
       "materialNotExtracted": "Non extrait",
       "materialExtracted": "Extrait"
