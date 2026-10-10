@@ -2071,7 +2071,9 @@
         "notMovable": "이 자료는 이동할 수 없습니다",
         "gone": "더 이상 존재하지 않습니다",
         "save": "처리하지 못했습니다. 다시 시도하세요",
-        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요"
+        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요",
+        "notMovableBatch": "이동할 수 없는 파일이 있어 아무 파일도 이동하지 않았습니다",
+        "tooMany": "한 번에 이동할 파일이 너무 많습니다. 더 적게 선택하세요"
       },
       "actions": {
         "parse": "분석",
@@ -2099,7 +2101,21 @@
         "materialCourses": "코스에 이미 저장된 내용에는 영향이 없습니다.",
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
-        "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
+        "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다.",
+        "batchTitle": "파일 {{count}}개를 삭제할까요?",
+        "batchTitle_one": "파일 {{count}}개를 삭제할까요?",
+        "batchTitle_other": "파일 {{count}}개를 삭제할까요?",
+        "batchLinks": "삭제하면 대화에서 이 자료들을 더 이상 읽을 수 없습니다. 대화에 이미 있는 내용은 그대로 남습니다.",
+        "batchPartial": "파일은 하나씩 삭제됩니다. 일부는 실패할 수 있으며, 이미 삭제된 파일은 복원되지 않습니다.",
+        "batchResult": "{{total}}개 중 {{deleted}}개를 삭제했습니다. 삭제되지 않은 파일:"
+      },
+      "selection": {
+        "select": "‘{{name}}’ 선택",
+        "count": "{{count}}개 선택됨",
+        "count_one": "{{count}}개 선택됨",
+        "count_other": "{{count}}개 선택됨",
+        "clear": "선택 해제",
+        "dragHint": "선택한 파일을 폴더로 끌어 놓으면 선택한 파일이 모두 이동합니다"
       }
     },
     "untitledCourse": "未命名课堂",

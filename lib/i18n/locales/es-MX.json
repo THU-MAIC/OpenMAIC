@@ -2071,7 +2071,9 @@
         "notMovable": "Este material no se puede mover",
         "gone": "Ya no existe",
         "save": "No funcionó. Inténtalo de nuevo",
-        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero"
+        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero",
+        "notMovableBatch": "Algunos archivos seleccionados no se pueden mover, así que no se movió ninguno",
+        "tooMany": "Demasiados archivos para mover a la vez. Selecciona menos"
       },
       "actions": {
         "parse": "Analizar",
@@ -2099,7 +2101,21 @@
         "materialCourses": "El contenido ya guardado en un curso no se ve afectado.",
         "cannotUndo": "Esta acción no se puede deshacer.",
         "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
-        "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
+        "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo.",
+        "batchTitle": "¿Eliminar {{count}} archivos?",
+        "batchTitle_one": "¿Eliminar {{count}} archivo?",
+        "batchTitle_other": "¿Eliminar {{count}} archivos?",
+        "batchLinks": "Las conversaciones que los usan ya no podrán leerlos; el texto que ya está en esas conversaciones se conserva.",
+        "batchPartial": "Los archivos se eliminan uno por uno: algunos pueden fallar, y los que ya se eliminaron no se restauran.",
+        "batchResult": "Se eliminaron {{deleted}} de {{total}}. No se eliminaron:"
+      },
+      "selection": {
+        "select": "Seleccionar «{{name}}»",
+        "count": "{{count}} seleccionados",
+        "count_one": "{{count}} seleccionado",
+        "count_other": "{{count}} seleccionados",
+        "clear": "Borrar selección",
+        "dragHint": "Arrastra un archivo seleccionado a una carpeta para mover todos los archivos seleccionados"
       }
     },
     "untitledCourse": "未命名课堂",

@@ -2071,7 +2071,9 @@
         "notMovable": "Ce document ne peut pas être déplacé",
         "gone": "Il n’existe plus",
         "save": "L’opération a échoué. Réessayez",
-        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord"
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord",
+        "notMovableBatch": "Certains fichiers sélectionnés ne peuvent pas être déplacés ; aucun n’a été déplacé",
+        "tooMany": "Trop de fichiers à déplacer en une fois. Sélectionnez-en moins"
       },
       "actions": {
         "parse": "Analyser",
@@ -2099,7 +2101,21 @@
         "materialCourses": "Le contenu déjà enregistré dans un cours n’est pas concerné.",
         "cannotUndo": "Cette action est irréversible.",
         "folderTitle": "Supprimer le dossier « {{name}} » ?",
-        "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+        "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé.",
+        "batchTitle": "Supprimer {{count}} fichiers ?",
+        "batchTitle_one": "Supprimer {{count}} fichier ?",
+        "batchTitle_other": "Supprimer {{count}} fichiers ?",
+        "batchLinks": "Les conversations qui les utilisent ne pourront plus les lire ; le texte déjà présent dans ces conversations est conservé.",
+        "batchPartial": "Les fichiers sont supprimés un par un : certains peuvent échouer, et ceux déjà supprimés ne sont pas restaurés.",
+        "batchResult": "Supprimés : {{deleted}} sur {{total}}. Non supprimés :"
+      },
+      "selection": {
+        "select": "Sélectionner « {{name}} »",
+        "count": "{{count}} sélectionnés",
+        "count_one": "{{count}} sélectionné",
+        "count_other": "{{count}} sélectionnés",
+        "clear": "Effacer la sélection",
+        "dragHint": "Faites glisser un fichier sélectionné sur un dossier pour déplacer tous les fichiers sélectionnés"
       }
     },
     "untitledCourse": "未命名课堂",
