@@ -211,8 +211,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       agentId?: string;
     } | null>(null);
 
-    // Cue user state (Issue 7)
-    const [isCueUser, setIsCueUser] = useState(false);
+    // Durable learner hand-off metadata. The session hook rehydrates this
+    // after reload, while live cue_user events update it immediately.
+    const [cueUser, setCueUser] = useState<{
+      fromAgentId?: string;
+      prompt?: string;
+      options?: string[];
+    } | null>(null);
+    const isCueUser = cueUser !== null;
 
     // End flash state (Issue 3)
     const [showEndFlash, setShowEndFlash] = useState(false);
@@ -305,7 +311,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const lectureSessionIdRef = useRef<string | null>(null);
     const lectureActionCounterRef = useRef(0);
     const currentPlaybackActionIndexRef = useRef<number | null>(currentPlaybackActionIndex);
-    const activeSceneIdRef = useRef<string | null>(currentSceneId);
+    const activeSceneIdRef = useRef<string | null>(null);
     const discussionAbortRef = useRef<AbortController | null>(null);
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -441,23 +447,27 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     }, []);
 
     /** Reset all live/discussion state (shared by doSessionCleanup & onDiscussionEnd) */
-    const resetLiveState = useCallback(() => {
+    const resetLiveState = useCallback((preserveCueUser = false) => {
       setLiveSpeech(null);
       setSpeakingAgentId(null);
       setSpeechProgress(null);
       setThinkingState(null);
-      setIsCueUser(false);
+      setCueUser((current) => (preserveCueUser ? current : null));
       setIsTopicPending(false);
       setChatIsStreaming(false);
       setChatIsSoftClosing(false);
-      setChatSessionType(null);
+      setChatSessionType((current) => (preserveCueUser ? current : null));
       setIsDiscussionPaused(false);
     }, []);
 
     /** Full scene reset (scene switch) — resetLiveState + lecture/visual state */
     const resetSceneState = useCallback(
-      (initial?: { actionIndex?: number | null; lectureSpeech?: string | null }) => {
-        resetLiveState();
+      (initial?: {
+        actionIndex?: number | null;
+        lectureSpeech?: string | null;
+        preserveCueUser?: boolean;
+      }) => {
+        resetLiveState(initial?.preserveCueUser);
         setPlaybackCompleted(false);
         setLectureSpeech(initial?.lectureSpeech ?? null);
         updateCurrentPlaybackActionIndex(initial?.actionIndex ?? 0);
@@ -694,7 +704,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         previousEngine?.stop();
 
         const previousSceneId = activeSceneIdRef.current;
-        if (previousSceneId && previousSceneId !== currentScene?.id) {
+        const isSceneSwitch = !!previousSceneId && previousSceneId !== currentScene?.id;
+        if (isSceneSwitch) {
           saveSceneResumePosition(previousSceneId, currentPlaybackActionIndexRef.current);
         }
 
@@ -703,7 +714,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
         // Wait for an in-flight presentation action before initializing the next
         // scene against shared whiteboard state.
-        await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        if (isSceneSwitch) {
+          await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        }
         if (cancelled) return;
 
         // Also abort the engine-level discussion controller
@@ -748,6 +761,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         // saved action cursor immediately so mount/refresh cannot persist the
         // default first-speech cursor before the async engine jump finishes.
         resetSceneState({
+          preserveCueUser: !isSceneSwitch,
           actionIndex: savedResumeActionIndex,
           lectureSpeech:
             savedResumeAction?.type === 'speech' ? (savedResumeAction as SpeechAction).text : null,
@@ -1017,7 +1031,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           discussionAbortRef.current.abort();
         }
         discussionTTS.cleanup();
-        chatArea?.endActiveSession();
+        chatArea?.endActiveSession({ preserveWaitingUser: true });
         clearPresentationIdleTimer();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup, clearPresentationIdleTimer is stable
@@ -1758,6 +1772,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               isPresenting={isPresenting}
               onTogglePresentation={togglePresentation}
               showStopDiscussion={
+                isCueUser ||
                 engineMode === 'live' ||
                 ((chatIsStreaming || chatIsSoftClosing) &&
                   (chatSessionType === 'qa' || chatSessionType === 'discussion'))
@@ -1828,6 +1843,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 endFlashSessionType={endFlashSessionType}
                 thinkingState={thinkingState}
                 isCueUser={isCueUser}
+                cueUserPrompt={cueUser?.prompt}
+                cueUserOptions={cueUser?.options}
                 isSoftClosing={chatIsSoftClosing}
                 softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
@@ -1879,7 +1896,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   }
                   // Auto-switch to chat tab when user sends a message
                   chatAreaRef.current?.switchToTab('chat');
-                  setIsCueUser(false);
+                  setCueUser(null);
                   // Immediately mark streaming for synchronized stop button
                   setChatIsStreaming(true);
                   setChatSessionType(chatSessionType || 'qa');
@@ -2031,14 +2048,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 setThinkingState(state);
               });
             }}
-            onCueUser={(_fromAgentId, _prompt) => {
-              setIsCueUser(true);
+            onCueUser={(fromAgentId, prompt, options) => {
+              setCueUser({ fromAgentId, prompt: prompt?.trim() || undefined, options });
+              setChatSessionType(chatAreaRef.current?.getActiveSessionType?.() ?? null);
             }}
             onLiveSessionError={handleLiveSessionError}
             onSoftCloseSession={() => {
               setThinkingState(null);
               setSpeechProgress(null);
-              setIsCueUser(false);
+              setCueUser(null);
               setActiveBubbleId(null);
             }}
             onSoftClosingChange={(softClosing, deadline) => {

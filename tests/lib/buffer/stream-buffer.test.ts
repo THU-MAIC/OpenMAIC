@@ -2,6 +2,53 @@ import { describe, expect, it } from 'vitest';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 
 describe('StreamBuffer Pi wrap-up ordering', () => {
+  it.each(['drain', 'flush'] as const)(
+    'propagates cue prompt/options after the last visible turn via %s',
+    async (mode) => {
+      const lifecycle: string[] = [];
+      const cues: unknown[] = [];
+      const prompt = 'Which example should we try?';
+      const options = ['Show an example', 'Let me practice', '不用，继续课程'];
+      const buffer = new StreamBuffer(
+        {
+          onAgentStart() {},
+          onAgentEnd() {},
+          onTextReveal(_messageId, _partId, text, complete) {
+            if (complete) lifecycle.push(text);
+          },
+          onActionReady() {},
+          onLiveSpeech() {},
+          onSpeechProgress() {},
+          onThinking() {},
+          onCueUser(...cue) {
+            cues.push(cue);
+            lifecycle.push('cue');
+          },
+          onDone() {
+            lifecycle.push('done');
+          },
+          onError(message) {
+            throw new Error(message);
+          },
+        },
+        { tickMs: 1, charsPerTick: 100 },
+      );
+      buffer.pushAgentStart({ messageId: 'answer', agentId: 'teacher-1', agentName: 'Teacher' });
+      buffer.pushText('answer', prompt);
+      buffer.pushAgentEnd({ messageId: 'answer', agentId: 'teacher-1' });
+      buffer.pushCueUser({ fromAgentId: 'teacher-1', prompt, options });
+      buffer.pushDone({ totalAgents: 1, totalActions: 0, cueUserReceived: true });
+      if (mode === 'flush') await buffer.flush();
+      else {
+        buffer.start();
+        await buffer.waitUntilDrained();
+      }
+      expect(cues).toEqual([['teacher-1', prompt, options]]);
+      expect(lifecycle).toEqual([prompt, 'cue', 'done']);
+      buffer.shutdown();
+    },
+  );
+
   it('resolves immediately when done was processed before the drain waiter was registered', async () => {
     const lifecycle: string[] = [];
     const buffer = new StreamBuffer({

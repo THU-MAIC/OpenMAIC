@@ -39,7 +39,7 @@ interface ChatAreaProps {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (fromAgentId?: string, prompt?: string) => void;
+  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onLiveSessionError?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
@@ -113,6 +113,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   ) => {
     const { t } = useI18n();
     const scenes = useStageStore((s) => s.scenes);
+    const onCueUserRef = useRef(onCueUser);
+    useEffect(() => {
+      onCueUserRef.current = onCueUser;
+    }, [onCueUser]);
     const {
       sessions,
       activeSessionType,
@@ -161,9 +165,25 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
-      () => chatSessions.some((s) => s.status === 'active'),
+      () => chatSessions.some((s) => s.status === 'active' || s.status === 'waiting-user'),
       [chatSessions],
     );
+
+    const waitingUserSession = useMemo(
+      () => chatSessions.find((session) => session.status === 'waiting-user'),
+      [chatSessions],
+    );
+
+    // Re-hydrate the learner hand-off after a reload/course restore. The
+    // stream callback handles the live path; this effect handles persistence.
+    useEffect(() => {
+      if (!waitingUserSession) return;
+      onCueUserRef.current?.(
+        waitingUserSession.cueUser?.fromAgentId,
+        waitingUserSession.cueUser?.prompt,
+        waitingUserSession.cueUser?.options,
+      );
+    }, [waitingUserSession]);
 
     const softClosingChatSession = useMemo(
       () => chatSessions.find((s) => s.status === 'soft-closing'),
@@ -178,23 +198,38 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [softClosingChatSession, onSoftClosingChange]);
 
     // Wrap endSession for QA/Discussion: also notify parent for engine cleanup
+    const manualStopsRef = useRef(new Map<string, Promise<void>>());
     const handleEndSession = useCallback(
       async (sessionId: string) => {
-        const session = chatSessions.find((candidate) => candidate.id === sessionId);
-        if (session?.status === 'soft-closing') {
-          const payload = await confirmSoftClosingSession(sessionId);
-          if (payload) onStopSession?.(payload);
-          return;
+        const existing = manualStopsRef.current.get(sessionId);
+        if (existing) return existing;
+        const stop = (async () => {
+          const session = chatSessions.find((candidate) => candidate.id === sessionId);
+          if (session?.status === 'soft-closing') {
+            const payload = await confirmSoftClosingSession(sessionId);
+            if (payload) onStopSession?.(payload);
+            return;
+          }
+          await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
+          onStopSession?.({ sessionId, source: 'manual_stop' });
+        })();
+        manualStopsRef.current.set(sessionId, stop);
+        try {
+          await stop;
+        } catch (error) {
+          manualStopsRef.current.delete(sessionId);
+          throw error;
         }
-        await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
-        onStopSession?.({ sessionId, source: 'manual_stop' });
       },
       [chatSessions, confirmSoftClosingSession, endSession, onStopSession],
     );
 
     const handleStopActiveSession = useCallback(async () => {
       const active = chatSessions.find(
-        (session) => session.status === 'active' || session.status === 'soft-closing',
+        (session) =>
+          session.status === 'active' ||
+          session.status === 'waiting-user' ||
+          session.status === 'soft-closing',
       );
       if (active) await handleEndSession(active.id);
     }, [chatSessions, handleEndSession]);
