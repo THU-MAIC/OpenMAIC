@@ -52,6 +52,11 @@ one of:
 - `capacity_busy` — all preview execution slots are occupied by other previews.
   Previews never queue for these slots; retry later.
 
+An aborted or timed-out preview keeps its execution slot until Chromium launch
+settles and any browser it returns finishes bounded cleanup. Cancellation is
+also passed to the launcher, so a browser still starting is killed rather than
+left running behind a released slot.
+
 The opt-in per-task resource mode does not expose `/preview`: it returns `503`
 with `reason: resource_mode_unsupported` before reading the request body. Preview
 Chromium runs in the HTTP process on the default path and is not part of the
@@ -96,8 +101,8 @@ caller-side preparation (tracked separately).
 | `RENDER_MAX_QUEUE`                       | `20`                                           | Max jobs in the system (reserved+queued+running) before new submits get `429`.                                                                                                                                                                    |
 | `RENDER_JOB_TTL_MS`                      | `1800000`                                      | How long finished jobs + artifacts live before cleanup.                                                                                                                                                                                           |
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                                      | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                     |
-| `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                                        | Hard wall-clock deadline for a synchronous preview, including body parsing and Chromium cleanup.                                                                                                                                                  |
-| `RENDER_PREVIEW_MAX_CONCURRENCY`         | `1`                                            | Maximum executing previews, independent of video export concurrency. Each slot can launch one Chromium browser; provision memory for both workloads before increasing it.                                                                         |
+| `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                                        | Deadline for preview work, including body parsing; launch settlement and bounded browser cleanup complete before the slot is reused.                                                                                                                                                  |
+| `RENDER_PREVIEW_MAX_CONCURRENCY`         | `1`                                            | Maximum executing previews, independent of video exports. At most 2 in `standard`, 1 in `low-memory`; exceeding the profile limit fails startup. Each slot can launch one Chromium browser.                                                                         |
 | `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                                            | Maximum admitted previews across buffering and execution.                                                                                                                                                                                         |
 | `RENDER_PREVIEW_MAX_PER_USER`            | `2`                                            | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                              |
 | `RENDER_PREVIEW_MAX_JSON_BYTES`          | `33554432`                                     | Maximum preview JSON body size (32 MiB), enforced on declared length and streamed bytes independently of the ZIP upload cap.                                                                                                                      |
@@ -253,7 +258,9 @@ the video export and extraction. The existing startup minima remain 8 GiB for
 `standard` and 4 GiB for `low-memory`; these are shared by both workloads, not
 separate allowances for each. Preview pixels remain limited to 3840 × 2160 in
 `standard` and 1920 × 1080 in `low-memory` (including device scale factor).
-Increasing `RENDER_PREVIEW_MAX_CONCURRENCY` adds concurrent Chromium browsers
+`RENDER_PREVIEW_MAX_CONCURRENCY` may be raised to 2 in `standard`; `low-memory`
+is capped at 1. A value above the selected profile limit fails startup, just
+like an oversized chunk-concurrency setting. Raising concurrency adds browsers
 without increasing the container memory limit. Measure combined peak memory
 with representative scenes and provision additional RAM before raising it,
 especially when also enabling parallel export chunks.
@@ -267,10 +274,12 @@ not a memory ceiling or latency guarantee for arbitrary scenes or higher
 preview concurrency.
 
 Both `/health` and `GET /render/:jobId` make the selection observable. Health
-reports the capture policy, requested mode, worker/concurrency bounds, minimum
-memory, and observed Node, producer, Chromium, and FFmpeg versions. A completed
-job reports requested versus actual capture mode and worker count with the same
-version record, so a standard-profile screenshot fallback remains explicit.
+reports the configured `previewMaxConcurrency` and the profile ceiling as
+`resourceProfile.maxPreviewConcurrency`, alongside the capture policy, requested
+mode, worker/concurrency bounds, minimum memory, and observed Node, producer,
+Chromium, and FFmpeg versions. A completed job reports requested versus actual
+capture mode and worker count with the same version record, so a
+standard-profile screenshot fallback remains explicit.
 
 The previous fixed 720p short-sample comparison that motivated these profiles was:
 
