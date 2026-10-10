@@ -31,7 +31,7 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 图像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 视频 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 联网搜索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| 联网搜索 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
 | 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
@@ -131,6 +131,7 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | ------------ | ----------- |
 | Tavily       | `tavily`    |
 | Exa          | `exa`       |
+| Firecrawl    | `firecrawl` |
 | Bocha        | `bocha`     |
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |

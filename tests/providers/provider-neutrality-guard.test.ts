@@ -206,6 +206,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['happyhorse', 2],
       ['tavily', 7],
       ['exa', 5],
+      ['firecrawl', 5],
       ['bocha', 5],
       ['brave', 3],
       ['baidu', 5],
@@ -282,6 +283,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['searxng', 4],
       ['tavily', 4],
       ['exa', 4],
+      ['firecrawl', 4],
     ],
   ),
   ...groupedDebt(
@@ -298,6 +300,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['doubao', 1],
       ['searxng', 2],
       ['exa', 3],
+      ['firecrawl', 3],
     ],
   ),
   ...groupedDebt(

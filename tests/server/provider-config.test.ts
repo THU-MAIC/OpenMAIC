@@ -56,6 +56,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
   'EXA',
+  'FIRECRAWL',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_CLAUDE',
@@ -457,6 +458,17 @@ providers:
       expect(resolveWebSearchApiKey('exa', undefined)).toBe('exa-env-key');
       expect(resolveWebSearchBaseUrl('exa')).toBe('https://proxy.example.com/exa');
       expect(getServerWebSearchProviders().exa).toEqual({});
+    });
+
+    it('resolves Firecrawl API key and base URL from env vars', async () => {
+      vi.stubEnv('FIRECRAWL_API_KEY', 'fc-env-key');
+      vi.stubEnv('FIRECRAWL_BASE_URL', 'https://firecrawl.internal');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('firecrawl', undefined)).toBe('fc-env-key');
+      expect(resolveWebSearchBaseUrl('firecrawl')).toBe('https://firecrawl.internal');
+      expect(getServerWebSearchProviders().firecrawl).toEqual({});
     });
 
     it('ignores client key and base URL for a server-managed Bocha provider', async () => {
@@ -950,6 +962,13 @@ video:
       expect(getServerWebSearchProviders().exa).toEqual({ disabled: true });
     });
 
+    it('web-search: force-disables Firecrawl through FIRECRAWL_ENABLED=false', async () => {
+      vi.stubEnv('FIRECRAWL_API_KEY', 'fc-key');
+      vi.stubEnv('FIRECRAWL_ENABLED', 'false');
+      const { getServerWebSearchProviders } = await import('@/lib/server/provider-config');
+      expect(getServerWebSearchProviders().firecrawl).toEqual({ disabled: true });
+    });
+
     it('web-search: force-disables the keyless SearXNG provider via env', async () => {
       vi.stubEnv('SEARXNG_BASE_URL', 'http://searxng.internal');
       vi.stubEnv('SEARXNG_ENABLED', 'false');
@@ -1023,6 +1042,14 @@ video:
       vi.stubEnv('BOCHA_API_KEY', 'bocha');
       const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
       expect(resolveServerWebSearchProviderId()).toBe('tavily');
+    });
+
+    it('web-search preference chain keeps existing providers ahead of Firecrawl', async () => {
+      vi.stubEnv('FIRECRAWL_API_KEY', 'fc');
+      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBe('claude');
+      expect(resolveServerWebSearchProviderId('firecrawl')).toBe('firecrawl');
     });
 
     it('web-search preference chain skips a disabled client-preferred provider', async () => {

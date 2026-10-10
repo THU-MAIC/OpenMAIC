@@ -670,7 +670,7 @@ AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, B
 
 ### Web search
 
-Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+Configure Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -678,6 +678,9 @@ TAVILY_BASE_URL=           # optional override
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # optional override
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # optional override
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
@@ -738,6 +741,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```

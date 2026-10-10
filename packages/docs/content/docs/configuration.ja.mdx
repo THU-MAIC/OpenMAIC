@@ -670,7 +670,7 @@ AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/J
 
 ### Web 検索
 
-Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
 
 ```bash
 TAVILY_API_KEY=
@@ -678,6 +678,9 @@ TAVILY_BASE_URL=           # 任意の上書き
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # 任意の上書き
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 任意の上書き
@@ -738,6 +741,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```

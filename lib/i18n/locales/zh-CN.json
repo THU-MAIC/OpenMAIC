@@ -1342,6 +1342,7 @@
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "博查",
       "brave": "Brave Search",
       "baidu": "百度",

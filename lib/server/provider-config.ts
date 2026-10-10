@@ -136,6 +136,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   EXA: 'exa',
+  FIRECRAWL: 'firecrawl',
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
@@ -1068,6 +1069,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (enabled('baidu') && webSearch.baidu?.apiKey) return 'baidu';
   if (enabled('minimax') && webSearch.minimax?.apiKey) return 'minimax';
   if (enabled('claude') && webSearch.claude?.apiKey) return 'claude';
+  if (enabled('firecrawl') && webSearch.firecrawl?.apiKey) return 'firecrawl';
   return Object.keys(webSearch).find(enabled);
 }
 

@@ -31,7 +31,7 @@ All preset IDs:
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
+| Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -131,6 +131,7 @@ Most web search providers have no model selector, so slots usually name them by 
 | ------------ | ----------- |
 | Tavily       | `tavily`    |
 | Exa          | `exa`       |
+| Firecrawl    | `firecrawl` |
 | Bocha        | `bocha`     |
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
