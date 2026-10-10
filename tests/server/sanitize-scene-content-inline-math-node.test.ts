@@ -90,11 +90,13 @@ describe('sanitizeSceneContent — hostile inline formulas stay cheap', () => {
     expect(sanitizeProseHtml(html)).toBe(`<p><span data-inline-math="${bomb}">${bomb}</span></p>`);
   });
 
-  it('keeps a 100 KB flat formula as plain text, quickly', () => {
+  it('keeps a 100 KB flat formula as a formula, quickly', () => {
     const latex = 'x+'.repeat(50_000);
     const html = `<p><span data-inline-math="${latex}"></span></p>`;
     expect(fastest(() => sanitizeProseHtml(html))).toBeLessThan(50);
-    expect(sanitizeProseHtml(html)).toBe(`<p>${latex}</p>`);
+    expect(sanitizeProseHtml(html)).toBe(
+      `<p><span data-inline-math="${latex}">${latex}</span></p>`,
+    );
   });
 
   it('stays linear on deep nesting that mentions a formula marker', () => {
