@@ -156,6 +156,8 @@ export function materialLibraryWriteErrorKey(error: unknown): string {
         return 'workspace.knowledgeBase.error.folderLimit';
       case 'not_movable':
         return 'workspace.knowledgeBase.error.notMovable';
+      case 'too_many':
+        return 'workspace.knowledgeBase.error.tooMany';
     }
     if (error.status === 404) return 'workspace.knowledgeBase.error.gone';
     if (error.status === 503) return 'workspace.knowledgeBase.error.busy';
