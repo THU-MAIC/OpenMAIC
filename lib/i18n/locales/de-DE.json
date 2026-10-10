@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Analysedienst nicht verfügbar",
-          "description": "Die Analyse ist derzeit nicht verfügbar. Versuchen Sie es später erneut. Wenden Sie sich bei anhaltenden Problemen an die Administration."
+          "description": "Es ist kein Dienst zur Dokumentenanalyse konfiguriert. Bitten Sie Ihre Administration, einen einzurichten, und starten Sie dann die Analyse erneut."
         },
         "media_too_long": {
           "label": "Audio oder Video zu lang",
@@ -2078,8 +2078,6 @@
         "reparse": "Erneut analysieren",
         "more": "Weitere Aktionen für {{name}}",
         "rename": "Umbenennen",
-        "move": "Verschieben nach…",
-        "removeFromFolder": "Aus dem Ordner entfernen",
         "delete": "Löschen",
         "open": "Öffnen",
         "downloadOriginal": "Original herunterladen",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Abbrechen",
-        "moveTitle": "„{{name}}“ verschieben",
-        "moveConfirm": "Verschieben",
-        "noFolders": "Es gibt noch keinen Ordner, in den es verschoben werden kann. Lege zuerst einen an.",
         "close": "Schließen"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "{{name}} an diese Nachricht anhängen",
       "materialAttached": "Schon in dieser Unterhaltung",
       "materialStaged": "Schon in dieser Nachricht",
-      "materialExtracting": "Wird aufbereitet",
-      "materialFailed": "Aufbereitung fehlgeschlagen",
-      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
-      "materialNotExtracted": "Nicht aufbereitet",
-      "materialExtracted": "Aufbereitet"
+      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

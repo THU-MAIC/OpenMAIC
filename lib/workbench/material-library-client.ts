@@ -22,6 +22,26 @@ export const MATERIAL_NAME_MAX_LENGTH = 255;
 
 export type MaterialExtractionStatus = 'idle' | 'pending' | 'running' | 'done' | 'failed';
 
+/** The RFC #1716 §1 label for a source's extraction state. */
+export function extractionLabelKey(
+  status: MaterialExtractionStatus,
+  reasonCode?: MaterialExtractionReasonCode,
+): string {
+  if (status === 'failed' && reasonCode)
+    return `workspace.knowledgeBase.failure.${reasonCode}.label`;
+  switch (status) {
+    case 'pending':
+    case 'running':
+      return 'workspace.knowledgeBase.status.parsing';
+    case 'done':
+      return 'workspace.knowledgeBase.status.searchable';
+    case 'failed':
+      return 'workspace.knowledgeBase.status.failed';
+    default:
+      return 'workspace.knowledgeBase.status.stored';
+  }
+}
+
 /** One source as `GET /api/materials/library` returns it. */
 export interface LibraryMaterial {
   readonly materialId: string;

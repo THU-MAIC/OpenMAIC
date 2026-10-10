@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Parsing service unavailable",
-          "description": "Parsing is currently unavailable. Try again later; contact your administrator if this continues."
+          "description": "No document parsing service is configured. Ask your administrator to configure one, then choose Parse again."
         },
         "media_too_long": {
           "label": "Audio or video too long",
@@ -2078,8 +2078,6 @@
         "reparse": "Parse again",
         "more": "More actions for {{name}}",
         "rename": "Rename",
-        "move": "Move to…",
-        "removeFromFolder": "Remove from folder",
         "delete": "Delete",
         "open": "Open",
         "downloadOriginal": "Download original",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Cancel",
-        "moveTitle": "Move “{{name}}”",
-        "moveConfirm": "Move",
-        "noFolders": "There are no folders to move it to yet. Create one first.",
         "close": "Close"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "Attach {{name}} to this message",
       "materialAttached": "Already in this conversation",
       "materialStaged": "Already on this message",
-      "materialExtracting": "Extracting",
-      "materialFailed": "Extraction failed",
-      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
-      "materialNotExtracted": "Not extracted",
-      "materialExtracted": "Extracted"
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

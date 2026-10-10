@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Сервис обработки недоступен",
-          "description": "Обработка сейчас недоступна. Повторите попытку позже; если проблема сохраняется, обратитесь к администратору."
+          "description": "Сервис обработки документов не настроен. Попросите администратора настроить его, затем запустите обработку повторно."
         },
         "media_too_long": {
           "label": "Слишком длинная запись",
@@ -2078,8 +2078,6 @@
         "reparse": "Обработать заново",
         "more": "Другие действия: {{name}}",
         "rename": "Переименовать",
-        "move": "Переместить в…",
-        "removeFromFolder": "Убрать из папки",
         "delete": "Удалить",
         "open": "Открыть",
         "downloadOriginal": "Скачать оригинал",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Отмена",
-        "moveTitle": "Переместить «{{name}}»",
-        "moveConfirm": "Переместить",
-        "noFolders": "Пока нет папок, куда его можно переместить. Сначала создайте папку.",
         "close": "Закрыть"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "Прикрепить {{name}} к этому сообщению",
       "materialAttached": "Уже в этой беседе",
       "materialStaged": "Уже в этом сообщении",
-      "materialExtracting": "Идёт разбор",
-      "materialFailed": "Разбор не удался",
-      "materialsCapped": "Показаны первые {{count}} материалов — продолжайте ввод, чтобы сузить список",
-      "materialNotExtracted": "Не разобран",
-      "materialExtracted": "Разобран"
+      "materialsCapped": "Показаны первые {{count}} материалов — продолжайте ввод, чтобы сузить список"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

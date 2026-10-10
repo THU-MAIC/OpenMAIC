@@ -317,6 +317,5 @@ it('R8.5 states the media duration limit by interpolation in all twelve locales'
     for (const key of ['open', 'downloadOriginal']) {
       expect(resource.workspace.knowledgeBase.actions[key].trim(), code).not.toBe('');
     }
-    expect(resource.workspace.knowledgeBase.dialog.moveConfirm.trim(), code).not.toBe('');
   }
 });

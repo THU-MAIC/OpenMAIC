@@ -9,16 +9,12 @@
  */
 import { useRef, useState, type ReactNode } from 'react';
 import {
-  Check,
   Download,
   ExternalLink,
   FileText,
-  FolderInput,
-  FolderOutput,
   MessageSquarePlus,
   MoreHorizontal,
   Pencil,
-  Folder,
   Trash2,
 } from 'lucide-react';
 import {
@@ -32,24 +28,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils/cn';
-import {
-  MaterialLibraryRequestError,
-  type LibraryFolder,
-  type LibraryMaterial,
-} from '@/lib/workbench/material-library-client';
+import { MaterialLibraryRequestError } from '@/lib/workbench/material-library-client';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -95,6 +79,7 @@ export function LibraryItemMenu({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          data-ws-no-drag=""
           ref={trigger}
           type="button"
           data-testid={testId}
@@ -154,146 +139,11 @@ export function LibraryItemMenu({
 export const menuIcons = {
   parse: <FileText className="size-3.5" aria-hidden="true" />,
   rename: <Pencil className="size-3.5" aria-hidden="true" />,
-  move: <FolderInput className="size-3.5" aria-hidden="true" />,
-  removeFromFolder: <FolderOutput className="size-3.5" aria-hidden="true" />,
   delete: <Trash2 className="size-3.5" aria-hidden="true" />,
   open: <ExternalLink className="size-3.5" aria-hidden="true" />,
   download: <Download className="size-3.5" aria-hidden="true" />,
   chat: <MessageSquarePlus className="size-3.5" aria-hidden="true" />,
 };
-
-/**
- * Move one source to another folder: folders only, the one it is in not
- * offered (taking it out of a folder is the row menu's Remove from folder).
- * Choosing a folder selects it; Move moves (#1835 review §6). Nothing is
- * selected when it opens, and the focus is not a selection: a folder looks
- * chosen only once it is. `move` answers with the i18n key of a refusal, or
- * `null`; a refusal stays here, to retry or cancel. Mounted per request (the
- * page keys it), so each one starts fresh.
- */
-export function MoveDialog({
-  material,
-  folders,
-  move,
-  onClose,
-  returnFocus,
-  t,
-}: {
-  readonly material: LibraryMaterial;
-  readonly folders: readonly LibraryFolder[];
-  readonly move: (folderId: string) => Promise<string | null>;
-  readonly onClose: () => void;
-  readonly returnFocus: ReturnFocus;
-  readonly t: Translate;
-}) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  /** One move at a time, whatever is clicked meanwhile. */
-  const moving = useRef(false);
-  const content = useRef<HTMLDivElement>(null);
-
-  const targets = folders.filter((folder) => folder.id !== material.folderId);
-  // A choice the list no longer offers (deleted elsewhere) is no choice.
-  const chosenId = targets.some((folder) => folder.id === selected) ? selected : null;
-
-  const confirm = async () => {
-    if (!chosenId || moving.current) return;
-    moving.current = true;
-    setBusy(true);
-    setError(null);
-    const refusal = await move(chosenId);
-    moving.current = false;
-    setBusy(false);
-    if (refusal) setError(refusal);
-    else onClose();
-  };
-
-  return (
-    <Dialog open onOpenChange={(next) => (!next && !busy ? onClose() : undefined)}>
-      <DialogContent
-        ref={content}
-        data-testid="kb-move-dialog"
-        aria-describedby={undefined}
-        // Not onto the first folder: a focus ring there reads as a choice made.
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          content.current?.focus();
-        }}
-        onCloseAutoFocus={returnFocus}
-        className="sm:max-w-[400px]"
-      >
-        <DialogHeader>
-          <DialogTitle>
-            {t('workspace.knowledgeBase.dialog.moveTitle', { name: material.name })}
-          </DialogTitle>
-        </DialogHeader>
-        {targets.length === 0 ? (
-          <p className="text-[13px] text-muted-foreground">
-            {t('workspace.knowledgeBase.dialog.noFolders')}
-          </p>
-        ) : (
-          <ul className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-            {targets.map((folder) => {
-              const chosen = chosenId === folder.id;
-              return (
-                <li key={folder.id}>
-                  <button
-                    type="button"
-                    data-testid={`kb-move-to-${folder.id}`}
-                    // A dialog renders outside `.ws-root`: the app's own tokens, not `--ws-*`.
-                    aria-pressed={chosen}
-                    disabled={busy}
-                    onClick={() => {
-                      setSelected(folder.id);
-                      setError(null);
-                    }}
-                    className={cn(
-                      'flex h-9 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-[13px] outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
-                      chosen && 'bg-primary/10 font-medium hover:bg-primary/10',
-                    )}
-                  >
-                    <Folder className="size-4 shrink-0 opacity-60" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                    {chosen ? (
-                      <Check className="size-4 shrink-0 text-primary" aria-hidden="true" />
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {error ? (
-          <p data-testid="kb-move-dialog-error" role="alert" className="text-[12px] text-red-600">
-            {t(error)}
-          </p>
-        ) : null}
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            data-testid="kb-move-cancel"
-            disabled={busy}
-            onClick={onClose}
-          >
-            {t('workspace.knowledgeBase.dialog.cancel')}
-          </Button>
-          {targets.length > 0 ? (
-            <Button
-              type="button"
-              data-testid="kb-move-confirm"
-              disabled={!chosenId || busy}
-              onClick={() => void confirm()}
-            >
-              {t('workspace.knowledgeBase.dialog.moveConfirm')}
-            </Button>
-          ) : null}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /**
  * How one delete attempt ended.

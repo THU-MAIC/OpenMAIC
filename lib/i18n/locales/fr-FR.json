@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "Service d’analyse indisponible",
-          "description": "L’analyse est actuellement indisponible. Réessayez plus tard ; si le problème persiste, contactez votre administrateur."
+          "description": "Aucun service d’analyse de documents n’est configuré. Demandez à votre administrateur d’en configurer un, puis relancez l’analyse."
         },
         "media_too_long": {
           "label": "Audio ou vidéo trop long",
@@ -2078,8 +2078,6 @@
         "reparse": "Analyser à nouveau",
         "more": "Autres actions pour {{name}}",
         "rename": "Renommer",
-        "move": "Déplacer vers…",
-        "removeFromFolder": "Retirer du dossier",
         "delete": "Supprimer",
         "open": "Ouvrir",
         "downloadOriginal": "Télécharger l’original",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "Annuler",
-        "moveTitle": "Déplacer « {{name}} »",
-        "moveConfirm": "Déplacer",
-        "noFolders": "Aucun dossier où le déplacer pour l’instant. Créez-en un d’abord.",
         "close": "Fermer"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "Joindre {{name}} à ce message",
       "materialAttached": "Déjà dans cette conversation",
       "materialStaged": "Déjà dans ce message",
-      "materialExtracting": "Extraction en cours",
-      "materialFailed": "L'extraction a échoué",
-      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner",
-      "materialNotExtracted": "Non extrait",
-      "materialExtracted": "Extrait"
+      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

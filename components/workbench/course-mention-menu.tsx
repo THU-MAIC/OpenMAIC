@@ -1,5 +1,7 @@
 'use client';
 
+import { extractionLabelKey } from '@/lib/workbench/material-library-client';
+
 /**
  * The classroom picker — how a turn gets a target.
  *
@@ -122,15 +124,23 @@ export function CourseMentionMenu({
   // Filtering shortens the list under the highlight; the pick and the painted
   // row read the same clamped index rather than resetting state mid-typing —
   // the skill menu resolves its own highlight the same way.
-  const activeIndex = highlightedIndex < rows.length ? highlightedIndex : 0;
-  const pickRow = (row: MenuRow) =>
-    row.kind === 'course' ? onPick(row.candidate) : onPickMaterial?.(row.candidate);
+  const available = (row: MenuRow) =>
+    row.kind === 'course' || row.candidate.extractionStatus !== 'failed';
+  const enabledIndices = rows.flatMap((row, index) => (available(row) ? [index] : []));
+  const activeIndex = enabledIndices.includes(highlightedIndex)
+    ? highlightedIndex
+    : (enabledIndices[0] ?? -1);
+  const pickRow = (row: MenuRow | undefined) => {
+    if (!row || !available(row)) return;
+    if (row.kind === 'course') onPick(row.candidate);
+    else onPickMaterial?.(row.candidate);
+  };
 
   // Keep the highlighted row in view: the list scrolls now, so a keyboard walk
   // past the window's edge would otherwise move an invisible highlight.
   useEffect(() => {
-    optionRefs.current[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [highlightedIndex]);
+    optionRefs.current[activeIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex]);
 
   /**
    * A press outside the menu puts it away — the transcript, the classroom pane,
@@ -181,17 +191,18 @@ export function CourseMentionMenu({
         event.preventDefault();
         event.stopPropagation();
         const direction = event.key === 'ArrowDown' ? 1 : -1;
-        setHighlightedIndex((current) => {
-          const from = current < rows.length ? current : 0;
-          return (from + direction + rows.length) % rows.length;
-        });
+        const position = enabledIndices.indexOf(activeIndex);
+        setHighlightedIndex(
+          enabledIndices[(position + direction + enabledIndices.length) % enabledIndices.length] ??
+            -1,
+        );
         return;
       }
 
       if (event.key === 'Enter') {
         event.preventDefault();
         event.stopPropagation();
-        pickRow(rows[activeIndex] ?? rows[0]!);
+        pickRow(rows[activeIndex]);
       }
     };
 
@@ -272,7 +283,7 @@ export function CourseMentionMenu({
                       onClick={() => onPick(candidate)}
                       onMouseEnter={() => setHighlightedIndex(index)}
                       className={cn(
-                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted',
+                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
                         index === activeIndex && 'bg-muted',
                       )}
                     >
@@ -322,19 +333,15 @@ export function CourseMentionMenu({
                 const index = candidates.length + materialIndex;
                 // Every state is named, so a material not yet extracted and one
                 // ready to read look different (RFC #1716 §4).
+                const unavailable = candidate.extractionStatus === 'failed';
                 const status = t(
-                  candidate.extractionStatus === 'failed'
-                    ? 'workspace.courseMention.materialFailed'
-                    : candidate.extractionStatus === 'pending' ||
-                        candidate.extractionStatus === 'running'
-                      ? 'workspace.courseMention.materialExtracting'
-                      : candidate.extractionStatus === 'done'
-                        ? 'workspace.courseMention.materialExtracted'
-                        : 'workspace.courseMention.materialNotExtracted',
+                  extractionLabelKey(candidate.extractionStatus, candidate.reasonCode),
                 );
                 // The folder only when it is in one; nothing, and no separator, at the top level.
                 const where = [candidate.folderName, status].filter(Boolean).join(' · ');
-                const label = t('workspace.courseMention.attachMaterial', { name: candidate.name });
+                const label = unavailable
+                  ? `${candidate.name} · ${status}`
+                  : t('workspace.courseMention.attachMaterial', { name: candidate.name });
                 return (
                   <li key={candidate.materialId}>
                     <button
@@ -348,10 +355,14 @@ export function CourseMentionMenu({
                       data-testid={`workbench-material-option-${candidate.materialId}`}
                       title={label}
                       aria-label={label}
-                      onClick={() => onPickMaterial(candidate)}
-                      onMouseEnter={() => setHighlightedIndex(index)}
+                      disabled={unavailable}
+                      aria-disabled={unavailable}
+                      onClick={() => pickRow(rows[index])}
+                      onMouseEnter={() => {
+                        if (!unavailable) setHighlightedIndex(index);
+                      }}
                       className={cn(
-                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted',
+                        'ws-cmenu-row flex w-full min-w-0 items-center gap-2 px-3 text-left transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
                         index === activeIndex && 'bg-muted',
                       )}
                     >

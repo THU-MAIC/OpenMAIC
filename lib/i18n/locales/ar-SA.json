@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "خدمة التحليل غير متاحة",
-          "description": "خدمة التحليل غير متاحة حاليًا. حاول لاحقًا، وتواصل مع المسؤول إذا استمرت المشكلة."
+          "description": "لم يتم إعداد خدمة لتحليل المستندات. اطلب من المسؤول إعدادها، ثم أعد التحليل."
         },
         "media_too_long": {
           "label": "المقطع الصوتي أو المرئي طويل جدًا",
@@ -2078,8 +2078,6 @@
         "reparse": "إعادة التحليل",
         "more": "إجراءات أخرى لـ {{name}}",
         "rename": "إعادة التسمية",
-        "move": "نقل إلى…",
-        "removeFromFolder": "إزالة من المجلد",
         "delete": "حذف",
         "open": "فتح",
         "downloadOriginal": "تنزيل الملف الأصلي",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "إلغاء",
-        "moveTitle": "نقل «{{name}}»",
-        "moveConfirm": "نقل",
-        "noFolders": "لا توجد مجلدات لنقلها إليها بعد. أنشئ مجلدًا أولًا.",
         "close": "إغلاق"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "إرفاق {{name}} بهذه الرسالة",
       "materialAttached": "موجودة بالفعل في هذه المحادثة",
       "materialStaged": "موجودة بالفعل في هذه الرسالة",
-      "materialExtracting": "جارٍ التحليل",
-      "materialFailed": "فشل التحليل",
-      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج",
-      "materialNotExtracted": "لم تُحلَّل",
-      "materialExtracted": "حُلِّلت"
+      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

@@ -8,6 +8,7 @@
  * hit caps, Unicode case folding mapped back to original offsets, and the
  * execution budgets.
  */
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { AgentSessionMaterial } from '@openmaic/storage';
@@ -610,7 +611,14 @@ describe('material agent tools', () => {
       }),
       'list_materials',
     );
-    const result = await list.execute('call_1', { scope: 'library', folderId: null } as never);
+    const args = validateToolArguments(list, {
+      type: 'toolCall',
+      id: 'call_1',
+      name: list.name,
+      arguments: { scope: 'library', folderId: 'top-level' },
+    });
+    expect(args.folderId).toBe('top-level');
+    const result = await list.execute('call_1', args as never);
     expect(listLibrary).toHaveBeenCalledWith('ses_1', { folderId: null });
     expect(result.details).toMatchObject({
       scope: 'library',

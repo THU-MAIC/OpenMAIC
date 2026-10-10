@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "解析服务不可用",
-          "description": "当前无法使用解析服务，请稍后再试；若持续发生，请联系管理员。"
+          "description": "尚未配置文档解析服务。请联系管理员完成配置，然后选择「重新解析」。"
         },
         "media_too_long": {
           "label": "音视频过长",
@@ -2078,8 +2078,6 @@
         "reparse": "重新解析",
         "more": "{{name}} 的更多操作",
         "rename": "改名",
-        "move": "移动到…",
-        "removeFromFolder": "移出文件夹",
         "delete": "删除",
         "open": "打开",
         "downloadOriginal": "下载原文件",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "取消",
-        "moveTitle": "移动“{{name}}”",
-        "moveConfirm": "移动",
-        "noFolders": "还没有可以移入的文件夹，请先新建一个。",
         "close": "关闭"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "把 {{name}} 附加到这条消息",
       "materialAttached": "本会话已有",
       "materialStaged": "已在这条消息里",
-      "materialExtracting": "解析中",
-      "materialFailed": "解析失败",
-      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
-      "materialNotExtracted": "未解析",
-      "materialExtracted": "已解析"
+      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围"
     },
     "heroTitle": "今天想创造点什么？",
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",

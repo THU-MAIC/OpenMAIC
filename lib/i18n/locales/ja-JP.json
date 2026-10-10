@@ -2013,7 +2013,7 @@
         },
         "service_unavailable": {
           "label": "解析サービスを利用できません",
-          "description": "現在、解析サービスを利用できません。しばらくしてから再試行し、問題が続く場合は管理者にお問い合わせください。"
+          "description": "文書解析サービスが設定されていません。管理者に設定を依頼してから、再解析してください。"
         },
         "media_too_long": {
           "label": "音声・動画が長すぎます",
@@ -2078,8 +2078,6 @@
         "reparse": "再解析",
         "more": "{{name}} のその他の操作",
         "rename": "名前を変更",
-        "move": "移動…",
-        "removeFromFolder": "フォルダーの外に移動",
         "delete": "削除",
         "open": "開く",
         "downloadOriginal": "元のファイルをダウンロード",
@@ -2093,9 +2091,6 @@
       },
       "dialog": {
         "cancel": "キャンセル",
-        "moveTitle": "「{{name}}」を移動",
-        "moveConfirm": "移動",
-        "noFolders": "移動先のフォルダーがまだありません。先に作成してください。",
         "close": "閉じる"
       },
       "delete": {
@@ -2131,11 +2126,7 @@
       "attachMaterial": "{{name}} をこのメッセージに添付",
       "materialAttached": "この会話にすでにあります",
       "materialStaged": "このメッセージにすでにあります",
-      "materialExtracting": "解析中",
-      "materialFailed": "解析に失敗しました",
-      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます",
-      "materialNotExtracted": "未解析",
-      "materialExtracted": "解析済み"
+      "materialsCapped": "最初の {{count}} 件の素材を表示中 — 入力を続けて絞り込めます"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

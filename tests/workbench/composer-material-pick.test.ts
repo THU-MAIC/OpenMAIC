@@ -434,9 +434,9 @@ describe('the @ menu', () => {
       container
         .querySelector(`[data-testid="workbench-material-option-${id}"]`)!
         .querySelectorAll('span')[1]!.textContent;
-    expect(meta('m-idle')).toBe('Unit 1 · workspace.courseMention.materialNotExtracted');
-    expect(meta('m-done')).toBe('Unit 1 · workspace.courseMention.materialExtracted');
-    expect(meta('m-running')).toBe('Unit 1 · workspace.courseMention.materialExtracting');
-    expect(meta('m-failed')).toBe('Unit 1 · workspace.courseMention.materialFailed');
+    expect(meta('m-idle')).toBe('Unit 1 · workspace.knowledgeBase.status.stored');
+    expect(meta('m-done')).toBe('Unit 1 · workspace.knowledgeBase.status.searchable');
+    expect(meta('m-running')).toBe('Unit 1 · workspace.knowledgeBase.status.parsing');
+    expect(meta('m-failed')).toBe('Unit 1 · workspace.knowledgeBase.status.failed');
   });
 });

@@ -17,6 +17,10 @@
  *
  * Pure apart from the fetch, so the rules are testable without a DOM.
  */
+import {
+  extractionReasonCodeOf,
+  type MaterialExtractionReasonCode,
+} from '@/lib/types/material-extraction-failure';
 import type { WorkbenchMaterial } from './session-store';
 
 /** How many knowledge-base rows the menu paints at once. */
@@ -31,6 +35,7 @@ export interface MaterialMentionCandidate {
   readonly mimeType?: string;
   readonly bytes: number;
   readonly extractionStatus: ExtractionStatus;
+  readonly reasonCode?: MaterialExtractionReasonCode;
   /** This conversation already has it (attached by an earlier message). */
   readonly attached: boolean;
   /** Already a pill on this message: picking it again changes nothing. */
@@ -44,7 +49,7 @@ interface LibraryListing {
   folderName?: string;
   mime?: string;
   bytes: number;
-  extraction?: { status?: string };
+  extraction?: { status?: string; reasonCode?: unknown };
   attached?: boolean;
 }
 
@@ -70,6 +75,7 @@ export function materialMentionCandidates(
     ...(material.mime ? { mimeType: material.mime } : {}),
     bytes: material.bytes,
     extractionStatus: extractionStatusOf(material.extraction?.status),
+    reasonCode: extractionReasonCodeOf(material.extraction?.reasonCode),
     attached: material.attached === true,
     staged: stagedIds.has(material.materialId),
   }));
