@@ -19,6 +19,7 @@
  * Runs where a DOM is available (the browser export; jsdom in tests).
  */
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import parseSrcset from 'parse-srcset';
 import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
@@ -225,12 +226,14 @@ function stripFormulas(doc: Document, html: string): { html: string; discarded: 
 function renderFormula(doc: Document, latex: string): Element | null {
   if (!latex.trim()) return null;
   const host = doc.createElement('template');
-  host.innerHTML = katex.renderToString(latex, {
-    displayMode: false,
-    output: 'html',
-    throwOnError: false,
-    trust: false,
-  });
+  host.innerHTML = katex.renderToString(
+    latex,
+    safeKatexOptions({
+      displayMode: false,
+      output: 'html',
+      throwOnError: false,
+    }),
+  );
   return host.content.firstElementChild;
 }
 

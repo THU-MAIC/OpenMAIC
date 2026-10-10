@@ -13,6 +13,39 @@ export const STANDALONE_MANIFEST_ELEMENT_ID = 'openmaic-classroom';
 /** `<script type="application/json">` holding the {@link StandalonePlayerConfig}. */
 export const STANDALONE_CONFIG_ELEMENT_ID = 'openmaic-player-config';
 
+/**
+ * `<script type="application/json">` holding the {@link StandaloneMediaTable}:
+ * the playback media (narration audio, video clips) the actions and video
+ * elements name by key. Absent in files exported without narration.
+ */
+export const STANDALONE_MEDIA_TABLE_ELEMENT_ID = 'openmaic-media';
+
+/**
+ * Element id prefix of the `<script type="application/octet-stream">` blocks
+ * carrying embedded media bytes as base64. Data blocks are never executed and
+ * the browser keeps them as text; the player decodes one only when it is
+ * first needed (a narration clip when it first plays, a slide video when its
+ * slide is first shown), so a large file never holds every clip twice.
+ */
+export const STANDALONE_MEDIA_BLOCK_ID_PREFIX = 'openmaic-media-';
+
+/**
+ * Where the bytes of one playback media key live. Exactly one of `embedded`
+ * (the id of a base64 data block in this document) or `src` (a URL, e.g. a
+ * relative path for an export that ships its media next to the page) is set.
+ */
+export interface StandaloneMediaEntry {
+  mimeType?: string;
+  embedded?: string;
+  src?: string;
+}
+
+/** Playback media key (the archive path the manifest names) → its bytes. */
+export type StandaloneMediaTable = Record<string, StandaloneMediaEntry>;
+
+/** Class of the static "needs JavaScript" message the player removes on mount. */
+export const STANDALONE_FALLBACK_CLASS = 'openmaic-fallback';
+
 /** Mount point of the player app. */
 export const STANDALONE_ROOT_ELEMENT_ID = 'openmaic-player';
 
@@ -74,6 +107,17 @@ export const STANDALONE_PLAYER_STRING_KEYS = [
   'pblMilestones',
   'pblOnlineOnly',
   'pblContinueOnline',
+  'play',
+  'pause',
+  'playbackStart',
+  'playbackContinue',
+  'captions',
+  'discussionTitle',
+  'discussionContinueOnline',
+  'discussionDismiss',
+  'linkedFilesUnavailable',
+  'scriptRequired',
+  'startFailed',
 ] as const;
 
 export type StandalonePlayerStringKey = (typeof STANDALONE_PLAYER_STRING_KEYS)[number];

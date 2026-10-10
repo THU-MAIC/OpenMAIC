@@ -8,6 +8,7 @@ import {
 } from 'pptxtojson';
 import { nanoid } from 'nanoid';
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import type {
   Slide,
   SlideTheme,
@@ -773,10 +774,13 @@ export async function transformParsedToSlides(
               // path+viewBox 的 SVG 回退。此前这里只把 renderToString 当作
               // "能否渲染" 的探测、丢掉了 HTML，导致 latex 元素既无 html 又
               // 是空 path → 渲染为空白（slide 27/29 的算式、公式整段不见）。
-              const html = katex.renderToString(el.latex, {
-                throwOnError: true,
-                displayMode: true,
-              });
+              const html = katex.renderToString(
+                el.latex,
+                safeKatexOptions({
+                  throwOnError: true,
+                  displayMode: true,
+                }),
+              );
               const latexElement: PPTLatexElement = {
                 type: 'latex',
                 id: nanoid(10),
@@ -1238,7 +1242,10 @@ export async function transformParsedToSlides(
                     )?.textContent;
                     if (latex) {
                       try {
-                        out += katex.renderToString(latex, { throwOnError: true, trust: false });
+                        out += katex.renderToString(
+                          latex,
+                          safeKatexOptions({ throwOnError: true }),
+                        );
                       } catch {
                         out += escapeText(latex);
                       }

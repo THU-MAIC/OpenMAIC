@@ -84,6 +84,17 @@ export interface ClassroomExportSnapshotOptions {
    * and are always collected.
    */
   videoBytes?: boolean;
+  /**
+   * Collect the bytes of slide audio elements. When false, only narration
+   * (speech audio) is collected and counted; formats that cannot play audio
+   * elements skip them.
+   */
+  audioElements?: boolean;
+  /**
+   * Fetch the audio and video sources of interactive pages while inlining
+   * their assets. When false, those sources are left as they are.
+   */
+  interactiveMedia?: boolean;
 }
 
 /** The archive a classroom export produces, ready to save. */
@@ -129,6 +140,8 @@ export async function buildClassroomExportSnapshot(
 ): Promise<ClassroomExportSnapshot> {
   const includeAudio = options.audio !== false;
   const includeVideoBytes = options.videoBytes !== false;
+  const includeAudioElements = options.audioElements !== false;
+  const inlineMedia = options.interactiveMedia !== false;
 
   // 1. Access the authoritative document and prepare the working scenes.
   const [freshDocument, documentScenes] = await Promise.all([
@@ -157,8 +170,18 @@ export async function buildClassroomExportSnapshot(
   const assetManifest = await buildStageAssetManifest(exportStage, exportScenes, stage.id, {
     includeStageWhiteboard: false,
   });
+  const speechAudioRefs = new Set(
+    exportScenes.flatMap((scene) =>
+      (scene.actions ?? []).flatMap((action) =>
+        action.type === 'speech' && action.audioId ? [action.audioId] : [],
+      ),
+    ),
+  );
   const audioEntries = includeAudio
-    ? assetManifest.entries.filter((entry) => entry.kind === 'audio')
+    ? assetManifest.entries.filter(
+        (entry) =>
+          entry.kind === 'audio' && (includeAudioElements || speechAudioRefs.has(entry.ref)),
+      )
     : [];
   const mediaEntries = assetManifest.entries.filter(
     (entry) => entry.kind !== 'audio' && (includeVideoBytes || entry.kind !== 'video'),
@@ -217,6 +240,7 @@ export async function buildClassroomExportSnapshot(
     exportScenes.map(async (scene) => {
       const { content, report } = await inlineSceneContent(scene.content, {
         fetcher: sharedFetcher,
+        skipMedia: !inlineMedia,
       });
       for (const u of report.inlined)
         if (!aggregateReport.inlined.includes(u)) aggregateReport.inlined.push(u);

@@ -72,10 +72,13 @@ const EXTENSION_BY_MIME: Readonly<Record<string, string>> = {
  * The returned extension and MIME are one inseparable pair: a valid hint must
  * belong to the kind's allowlist, and every other value falls back by kind.
  *
- * This is label coherence, not byte validation. Exporters deliberately neither
- * inspect nor transcode payload bytes; like runtime and renderer consumers, they
- * trust the authoritative kind metadata. Bytes that do not match that kind are
- * already-corrupt store state outside the archive/export contract.
+ * This is label coherence, not byte validation: this function never inspects
+ * payload bytes, and exporters never transcode them. Narration collectors pass
+ * the container sniffed from the bytes as the hint when they recognize one
+ * (see `lib/media/sniff-audio-container.ts`), since stored audio labels are
+ * known to be wrong; otherwise consumers trust the authoritative kind
+ * metadata, and bytes that do not match that kind are already-corrupt store
+ * state outside the archive/export contract.
  */
 export function canonicalArchiveMedia(
   kind: ArchiveMediaKind,

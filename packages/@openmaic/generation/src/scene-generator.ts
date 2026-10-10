@@ -15,7 +15,7 @@ import type {
   SlideBackground,
   WidgetType,
 } from '@openmaic/dsl';
-import { isWidgetType, normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement, safeKatexOptions } from '@openmaic/dsl';
 import { MAX_VISION_IMAGES } from './constants.js';
 import {
   formatImageDescription,
@@ -578,11 +578,14 @@ function processLatexElements(
       }
 
       try {
-        const html = katex.renderToString(latexStr, {
-          throwOnError: false,
-          displayMode: true,
-          output: 'html',
-        });
+        const html = katex.renderToString(
+          latexStr,
+          safeKatexOptions({
+            throwOnError: false,
+            displayMode: true,
+            output: 'html',
+          }),
+        );
 
         return {
           ...el,
@@ -826,7 +829,12 @@ async function generateSlideContent(
   const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
-    rotate: 0,
+    // Shape rotation is part of the model-facing geometry contract. Preserve
+    // finite angles while keeping the legacy zero default for other elements.
+    rotate:
+      el.type === 'shape' && typeof el.rotate === 'number' && Number.isFinite(el.rotate)
+        ? el.rotate
+        : 0,
   })) as PPTElement[];
 
   // Process background

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   applyNavigation,
   clampSceneIndex,
+  isMediaToggleKey,
+  isPlaybackToggleKey,
   navigationActionForKey,
   sceneHash,
   sceneIndexFromHash,
@@ -94,5 +96,33 @@ describe('standalone player PBL briefing', () => {
     );
     expect(safeClassroomUrl('javascript:alert(1)')).toBeUndefined();
     expect(safeClassroomUrl(undefined)).toBeUndefined();
+  });
+});
+
+describe('standalone player playback key', () => {
+  it('toggles playback on Space outside anything Space already activates', () => {
+    expect(isPlaybackToggleKey({ key: ' ', target: { tagName: 'BODY' } })).toBe(true);
+    expect(isPlaybackToggleKey({ key: ' ', target: { tagName: 'MAIN' } })).toBe(true);
+    for (const tagName of ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY']) {
+      expect(isPlaybackToggleKey({ key: ' ', target: { tagName } })).toBe(false);
+    }
+    expect(isPlaybackToggleKey({ key: ' ', target: { isContentEditable: true } })).toBe(false);
+    expect(isPlaybackToggleKey({ key: ' ', shiftKey: true })).toBe(false);
+    expect(isPlaybackToggleKey({ key: 'Enter' })).toBe(false);
+    expect(navigationActionForKey({ key: ' ' })).toBeNull();
+  });
+});
+
+describe('standalone player media key', () => {
+  it('lets the player toggle a focused video or audio element on Space', () => {
+    expect(isMediaToggleKey({ key: ' ', target: { tagName: 'VIDEO' } })).toBe(true);
+    expect(isMediaToggleKey({ key: ' ', target: { tagName: 'AUDIO' } })).toBe(true);
+    expect(isMediaToggleKey({ key: ' ', target: { tagName: 'BUTTON' } })).toBe(false);
+    expect(isMediaToggleKey({ key: ' ', shiftKey: true, target: { tagName: 'VIDEO' } })).toBe(
+      false,
+    );
+    expect(isMediaToggleKey({ key: 'k', target: { tagName: 'VIDEO' } })).toBe(false);
+    // The playback toggle never handles the same press.
+    expect(isPlaybackToggleKey({ key: ' ', target: { tagName: 'VIDEO' } })).toBe(false);
   });
 });
