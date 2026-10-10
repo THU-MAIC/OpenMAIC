@@ -20,7 +20,6 @@ describe('model-routes', () => {
         'agent-profiles',
         'quiz-grade',
         'chat-adapter',
-        'generate-classroom',
         'web-search-query-rewrite',
         'maic-agent-driver',
         'conversation-title',
@@ -32,6 +31,7 @@ describe('model-routes', () => {
     const { LLM_STAGES } = await import('@/lib/server/model-routes');
     expect(LLM_STAGES).not.toContain('pbl-chat');
     expect(LLM_STAGES).not.toContain('maic-agent');
+    expect(LLM_STAGES).not.toContain('generate-classroom');
   });
 
   it('parses a user route object with the full thinking config', async () => {

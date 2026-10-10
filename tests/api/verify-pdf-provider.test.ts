@@ -22,6 +22,7 @@ import type { NextRequest } from 'next/server';
 
 import { POST } from '@/app/api/verify-pdf-provider/route';
 import { destroyAudioProviderDispatchersForTests } from '@/lib/server/provider-fetch';
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 const mocks = vi.hoisted(() => ({
   isServerConfiguredProvider: vi.fn(),
@@ -153,6 +154,8 @@ describe('POST /api/verify-pdf-provider', () => {
   beforeEach(() => {
     for (const mock of Object.values(mocks)) mock.mockReset();
     destroyAudioProviderDispatchersForTests();
+    // No deployment configuration: the body form is allowed (user keys on).
+    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
     delete process.env.ALLOW_LOCAL_NETWORKS;
 
     mocks.isServerConfiguredProvider.mockReturnValue(false);
@@ -171,6 +174,7 @@ describe('POST /api/verify-pdf-provider', () => {
   });
 
   afterEach(async () => {
+    setDeploymentConfigForTests();
     // Every probe must have gone through the pinned undici transport.
     expect(globalFetch).not.toHaveBeenCalled();
     vi.unstubAllGlobals();

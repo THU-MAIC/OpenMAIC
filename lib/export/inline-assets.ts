@@ -25,7 +25,9 @@ import {
   cssImportReference,
   cssUrlReferences,
   parseCss,
+  parseFontSrcEntry,
   rewriteCssValue,
+  splitCssCommaList,
 } from './css-asset-parser';
 import { createLogger } from '@/lib/logger';
 
@@ -47,6 +49,16 @@ export { collectAssetRefs } from './html-asset-inventory';
 export type { AssetRef, AssetRefKind } from './html-asset-inventory';
 
 const HTTP_URL = /^https?:\/\//i;
+
+/** An audio/video source: `<video src>`, `<audio src>`, or a `<source>` inside either. */
+function isMediaSource(asset: { kind: AssetRefKind; parentTagName?: string }): boolean {
+  return (
+    asset.kind === 'video' ||
+    asset.kind === 'audio' ||
+    (asset.kind === 'source' &&
+      (asset.parentTagName === 'video' || asset.parentTagName === 'audio'))
+  );
+}
 
 interface CssImportConditions {
   layer?: string | null;
@@ -210,11 +222,76 @@ function guessMime(url: string): string {
 const NON_WOFF2_FONT_EXT = /\.(woff|ttf|otf|eot)(\?|#|$)/i;
 const WOFF2_EXT = /\.woff2(\?|#|$)/i;
 
+const isWoff2Url = (url: string) => WOFF2_EXT.test(url) || /^data:font\/woff2/i.test(url);
+
+/** `format()` hints of the fallback formats this optimisation may remove. */
+const NON_WOFF2_FORMAT =
+  /^(?:woff|truetype|opentype|embedded-opentype|collection|svg)(?:-variations)?$/;
+
+/**
+ * A `src` entry every browser that can run the exported page will load: a
+ * single woff2 url() whose only hint is a plain `format("woff2")` /
+ * `format(woff2)` (or none, with a woff2 URL). Anything that makes support
+ * conditional (a `tech()` condition, `supports` inside `format()`, a
+ * `woff2-variations` or multi-format hint, `local()`) disqualifies it, and so
+ * does anything that does not strictly parse (empty or comma-only `format()`,
+ * a trailing comma, an unclosed function or string, stray tokens): browsers
+ * skip a malformed entry, so it still needs the fallbacks behind it.
+ */
+function isUnconditionalWoff2Entry(entry: string): boolean {
+  const { urls, format, extra } = parseFontSrcEntry(entry);
+  if (extra || urls.length !== 1) return false;
+  if (format === null) return isWoff2Url(urls[0]);
+  return format.length === 1 && format[0] === 'woff2';
+}
+
+/** A remote woff/ttf/otf/eot `src` entry, by URL extension or `format()` hint. */
+function isNonWoff2FontEntry(entry: string): boolean {
+  const { urls, format } = parseFontSrcEntry(entry);
+  if (format?.some((hint) => hint.startsWith('woff2'))) return false;
+  const remote = urls.filter((url) => !/^data:/i.test(url));
+  if (remote.length === 0 || remote.some(isWoff2Url)) return false;
+  return (
+    remote.some((url) => NON_WOFF2_FONT_EXT.test(url)) ||
+    !!format?.some((hint) => NON_WOFF2_FORMAT.test(hint))
+  );
+}
+
+/**
+ * Woff2-preference optimisation. A browser uses the first `src` entry it
+ * supports and never reaches the ones after it, so once an entry is an
+ * unconditional woff2 (see `isUnconditionalWoff2Entry`) the woff/ttf/otf/eot
+ * fallbacks that follow it in the same list are removed instead of being
+ * inlined. Entries before it, `local()` entries and every entry of a list
+ * whose woff2 sources are all conditional are kept (and inlined as usual).
+ *
+ * Fallbacks are removed, not pointed at a placeholder URL: Chromium and
+ * WebKit check every `src` URL against the page's `font-src` CSP when the
+ * rule is parsed, whether or not the face is ever used, so any non-`data:`
+ * placeholder logs a CSP violation per entry in the standalone HTML export.
+ *
+ * Each `src` declaration is judged on its own: the last valid one wins the
+ * cascade, so a declaration without an unconditional woff2 of its own is
+ * left whole even when another `src` in the rule offers one.
+ */
+function pruneNonWoff2FontFallbacks(root: Root): void {
+  root.walkAtRules((rule) => {
+    if (rule.name.toLowerCase() !== 'font-face') return;
+    rule.each((node) => {
+      if (node.type !== 'decl' || node.prop.toLowerCase() !== 'src') return;
+      const entries = splitCssCommaList(node.value);
+      const first = entries.findIndex(isUnconditionalWoff2Entry);
+      if (first < 0) return;
+      const kept = entries.filter((entry, i) => i <= first || !isNonWoff2FontEntry(entry));
+      if (kept.length !== entries.length) node.value = kept.join(',');
+    });
+  });
+}
+
 async function inlineParsedCssUrls(
   root: Root,
   cssUrl: string,
   fetchAsset: FetchAsset,
-  dropRefs: ReadonlySet<string>,
 ): Promise<{ failed: { url: string; reason: string }[]; inlined: string[] }> {
   const failed: { url: string; reason: string }[] = [];
   const inlined: string[] = [];
@@ -222,7 +299,7 @@ async function inlineParsedCssUrls(
   root.walkDecls((declaration) => {
     for (const ref of cssUrlReferences(declaration.value)) {
       const raw = ref.raw.trim();
-      if (/^(?:data:|blob:|about:|#)/i.test(raw) || dropRefs.has(raw)) continue;
+      if (/^(?:data:|blob:|about:|#)/i.test(raw)) continue;
       try {
         const resolved = new URL(raw, cssUrl);
         const fragment = resolved.hash;
@@ -250,23 +327,17 @@ async function inlineParsedCssUrls(
   });
 
   root.walkDecls((declaration) => {
-    declaration.value = rewriteCssValue(declaration.value, (raw) => {
-      const key = raw.trim();
-      if (replacements.has(key)) return replacements.get(key);
-      if (dropRefs.has(key)) return 'about:invalid';
-      return undefined;
-    });
+    declaration.value = rewriteCssValue(declaration.value, (raw) => replacements.get(raw.trim()));
   });
   return { failed, inlined };
 }
 
 /** Inline every url(...) inside a CSS text, resolving relative URLs against cssUrl.
  *
- * Woff2-preference optimisation: within any @font-face block that contains a
- * woff2 url(), only the woff2 is inlined; sibling woff/ttf/otf/eot urls are
- * rewritten to `url(about:invalid)` so browsers never fetch them (they use the
- * first matching format — woff2 — and never reach the fallbacks). @font-face
- * blocks with NO woff2 fall back to the normal inline-everything behaviour.
+ * In an @font-face `src` list with an unconditional woff2, the woff/ttf/otf/eot
+ * fallbacks after it are removed instead of inlined (see
+ * `pruneNonWoff2FontFallbacks`); every other source keeps the normal
+ * inline-everything behaviour.
  */
 export async function inlineCssUrls(
   css: string,
@@ -343,22 +414,8 @@ export async function inlineCssUrls(
     }
   }
 
-  // 1. Find @font-face blocks; build dropRefs (non-woff2 fonts in blocks that have a woff2).
-  const dropRefs = new Set<string>();
-  root.walkAtRules((rule) => {
-    if (rule.name.toLowerCase() !== 'font-face') return;
-    const blockUrls: string[] = [];
-    rule.walkDecls((declaration) => {
-      blockUrls.push(...cssUrlReferences(declaration.value).map((ref) => ref.raw.trim()));
-    });
-    const hasWoff2 = blockUrls.some((u) => WOFF2_EXT.test(u) || /^data:font\/woff2/i.test(u));
-    if (!hasWoff2) return;
-    for (const u of blockUrls) {
-      if (!/^data:/i.test(u) && NON_WOFF2_FONT_EXT.test(u)) dropRefs.add(u);
-    }
-  });
-
-  const rewritten = await inlineParsedCssUrls(root, cssUrl, fetchAsset, dropRefs);
+  pruneNonWoff2FontFallbacks(root);
+  const rewritten = await inlineParsedCssUrls(root, cssUrl, fetchAsset);
   failed.push(...rewritten.failed);
   inlined.push(...rewritten.inlined);
 
@@ -378,7 +435,7 @@ async function inlineStyleAttributeUrls(
 ): Promise<{ css: string; failed: { url: string; reason: string }[]; inlined: string[] }> {
   const root = tryParseCss(`.openmaic-style{${css}}`, 'style-attribute');
   if (!root) return { css, failed: unresolvedCssRefs(css), inlined: [] };
-  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
+  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset);
   const serialized = root.toString();
   return {
     css: serialized.slice(serialized.indexOf('{') + 1, serialized.lastIndexOf('}')),
@@ -397,7 +454,7 @@ async function inlineSvgPresentationAttributeUrls(
   );
   if (!root) return { cssValue, failed: unresolvedCssRefs(cssValue), inlined: [] };
   let declarationValue = cssValue;
-  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset, new Set());
+  const result = await inlineParsedCssUrls(root, 'about:blank', fetchAsset);
   root.walkDecls((declaration) => {
     if (declaration.prop === attributeName) declarationValue = declaration.value;
   });
@@ -555,10 +612,21 @@ export async function inlineHtmlAssets(
   // Pre-warm non-importmap asset fetches in parallel so the sequential
   // structured rewrite phases hit a warm cache (fonts are parallelized inside
   // inlineCssUrls; importmap modules are handled in buildInlinedImportmap).
+  const skippedMediaUrls = new Set(
+    options?.skipMedia
+      ? analyzeHtmlAssetInventory(html)
+          .attributeAssets.filter(isMediaSource)
+          .map((asset) => asset.url)
+      : [],
+  );
   await Promise.all(
     collectAssetRefs(html)
       .filter(
         (ref) =>
+          !(
+            (ref.kind === 'video' || ref.kind === 'audio' || ref.kind === 'source') &&
+            skippedMediaUrls.has(ref.url)
+          ) &&
           ref.kind !== 'importmap' &&
           ref.kind !== 'iframe-src' &&
           ref.kind !== 'iframe-srcdoc' &&
@@ -586,6 +654,7 @@ export async function inlineHtmlAssets(
     const patches: SourcePatch[] = [];
     for (const asset of analyzeHtmlAssetInventory(out).attributeAssets) {
       if (!kinds.has(asset.kind) || !HTTP_URL.test(asset.url)) continue;
+      if (options?.skipMedia && isMediaSource(asset)) continue;
       const isSvgReference = asset.kind === 'svg-image' || asset.kind === 'svg-use';
       const hashIndex = isSvgReference ? asset.url.indexOf('#') : -1;
       const fetchUrl = hashIndex === -1 ? asset.url : asset.url.slice(0, hashIndex);

@@ -1,14 +1,12 @@
 import type { NextConfig } from 'next';
 
-const isVercelBuild = Boolean(process.env.VERCEL);
-
 const nextConfig: NextConfig = {
   env: {
     // Pin even the unset/default value in both client and server bundles.
     // A runtime-only override must not disable the route the built client uses.
     NEXT_PUBLIC_PI_CHAT_ENABLED: process.env.NEXT_PUBLIC_PI_CHAT_ENABLED ?? '',
   },
-  output: process.env.VERCEL ? undefined : 'standalone',
+  output: 'standalone',
   outputFileTracingIncludes: {
     '/*': [
       'lib/server/agent-runtime/import-pptx-worker.mjs',
@@ -25,12 +23,8 @@ const nextConfig: NextConfig = {
       // and the runtime dlopen of sharp 0.35.4 failed with
       // "libvips-cpp.so.8.18.6: No such file or directory" on self-hosted
       // Docker (Alpine/musl) deployments. Force-include every sharp-libvips
-      // native lib dir for standalone builds. Vercel packages its runtime
-      // dependencies itself; including every native variant there bloats each
-      // traced function and can push Hobby deployments past 12 bundles.
-      ...(!isVercelBuild
-        ? ['node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/sharp-libvips-*/lib/**']
-        : []),
+      // native lib dir.
+      'node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/sharp-libvips-*/lib/**',
     ],
   },
   typescript: {

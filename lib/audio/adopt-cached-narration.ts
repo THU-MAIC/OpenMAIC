@@ -77,8 +77,8 @@ const log = createLogger('NarrationAdoption');
  * should: it is no protection against a stalled upload. The queued rescan is
  * chained off the run in flight, so a `putAsset` that never settles leaves the
  * rescan unstarted and every waiting caller pending, exactly as a chain would.
- * That is the same uncancellable tail the media pass has, recorded as a known
- * limitation rather than solved here.
+ * That is the same uncancellable tail every pool commit has, recorded as a
+ * known limitation rather than solved here.
  */
 const runsByStage = new Map<string, Promise<unknown>>();
 
@@ -328,20 +328,11 @@ async function adoptCachedNarrationRun(
   const actions = derivedNarrationRefs(useStageStore.getState().scenes);
   if (actions.length === 0) return idle;
 
-  // No marker is read here, and none is written. The store checks each write
-  // against the headroom it has left, so "refused for want of room" is a fact
-  // about one blob; adoption pays no provider for a refusal, so it needs no
-  // deck-wide memory of one either. It attempts, every load, every clip it
-  // holds that an earlier refusal in the same run has not already answered for,
-  // and lets the ones that do not fit wait for a bigger ceiling.
-  //
-  // Sharing the media pass's marker was tried across several rounds and the
-  // coupling is what kept failing: the flag means "do not spend money here",
-  // which is a claim adoption is in no position to make. One clip larger than
-  // current headroom was enough to stand a course's whole image pass down
-  // indefinitely -- on a store that had just accepted adoption's other clips.
-  // The marker is now written only by the paths whose refusal cost a provider
-  // call.
+  // The store checks each write against the headroom it has left, so "refused
+  // for want of room" is a fact about one blob; adoption pays no provider for a
+  // refusal, so it needs no deck-wide memory of one. It attempts, every load,
+  // every clip it holds that an earlier refusal in the same run has not already
+  // answered for, and lets the ones that do not fit wait for a bigger ceiling.
   //
   // What keeps a load bounded is not memory of an earlier load but the store's
   // own arithmetic, applied within this one. The rule is
@@ -417,16 +408,6 @@ async function adoptCachedNarrationRun(
     // where the next load looks for them. A refusal here loses nothing and
     // costs no provider call.
     const outcome = await commitToPool<NarrationPlacement>({
-      // A write that goes through retires this course's "no room" note, at the
-      // seam rather than here. Together with generated narration this is the
-      // only path that can establish that for a course whose media needs
-      // nothing, and it is worth naming what it costs: a few hundred bytes of
-      // narration fit in headroom an image does not, so retiring the note can
-      // let the next pass pay a provider for an image that is refused again.
-      // Bounded at one such generation, because that pass re-marks and adoption
-      // converts everything that fits in a single load, and the alternative is
-      // a course whose media never generates again.
-      stageId,
       slot: action.derivedRef,
       bytes: row.blob,
       mimeType: row.blob.type || `audio/${row.format}`,

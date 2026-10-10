@@ -48,7 +48,7 @@ async function configureSlots(slots: Record<string, unknown>) {
         slots,
       } as never,
     },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
 }
@@ -111,7 +111,7 @@ describe('GET /api/generate-classroom/capabilities', () => {
           slots: { document: 'mc' },
         },
       },
-      defaults: null,
+      legacy: false,
       notices: [],
     });
     const body = await (await getCapabilities(capabilitiesRequest())).json();

@@ -30,6 +30,8 @@ This is a replaced data projection, not history, storage or a new global state m
 
 Use this publication helper in the generated HTML; constructing the application state is your responsibility.
 
+Never call `publishState()` without an observation: it rejects `undefined` and aborts the current script. Use one canonical `publishCurrentState()` that constructs the complete observation from the current application state and passes it to `publishState(observation)`. Call that projection directly from the initial render, every semantic change, reset, and programmatic or timer-driven updates. Do not wrap or monkey-patch update functions after the fact to add publication; a late wrapper cannot repair a failure in the original update path.
+
 ```javascript
 function publishState(observation) {
   const root = document.getElementById('experiment');
@@ -51,6 +53,38 @@ function publishState(observation) {
     throw error;
   }
 }
+```
+
+For example, a reveal activity can use this single projection path. Adapt the state and summary to the lesson; construct the state before the first render and reset it before rendering again.
+
+```javascript
+let activityState = { step: 1 };
+
+function publishCurrentState() {
+  publishState({
+    summary: 'Step ' + activityState.step,
+    state: { step: activityState.step }
+  });
+}
+
+function updateReveal() {
+  document.getElementById('step').textContent = activityState.step;
+  publishCurrentState();
+}
+
+function advanceStep() {
+  activityState.step++;
+  updateReveal();
+}
+
+function resetActivity() {
+  activityState = { step: 1 };
+  updateReveal();
+}
+
+updateReveal(); // Initial state, before any user action.
+// Buttons, programmatic actions, and timers call advanceStep/resetActivity
+// directly; each path renders and publishes its current state.
 ```
 
 If the activity has an apply/run step, capture the inputs a run actually used when it starts, and write them to `rendered` only after that run has successfully become the displayed result. A cancelled or superseded run must not update `rendered`, and a parameter edit alone must never advance it.

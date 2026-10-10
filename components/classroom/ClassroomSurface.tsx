@@ -4,7 +4,7 @@
  * ClassroomSurface — the classroom, wherever it is mounted.
  *
  * This is the body `/classroom/[id]` has always had: the load pipeline, the
- * generation-resume policy and the `Stage` dispatch under `ThemeProvider` /
+ * generation run it follows and the `Stage` dispatch under `ThemeProvider` /
  * `MediaStageProvider`. It moved out of the route file for exactly one reason
  * — the Pro workspace's third pane hosts the REAL classroom, not a preview and
  * not an iframe, so both surfaces must run the same code rather than two
@@ -22,8 +22,8 @@
  * three depend on server-side machinery this workspace does not have, so they
  * are dropped and the load follows the ordinary path
  * (`app/classroom/[id]/page.tsx`). The stage-meta sidecar is still consulted:
- * both variants gate generation on ownership, and the standalone page also
- * applies its viewer-specific edit access.
+ * both variants gate the run's Retry on ownership, and the standalone page
+ * also applies its viewer-specific edit access.
  */
 
 import { Stage } from '@/components/stage';
@@ -31,13 +31,10 @@ import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { useSettingsStore } from '@/lib/store/settings';
 import { claimStageSceneLoadToken, isCurrentStageSceneLoadToken } from '@/lib/store/stage';
-import { loadImageMapping } from '@/lib/utils/image-storage';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { useNarrationAdoption } from '@/lib/audio/use-narration-adoption';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
-import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { FileQuestion, Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -46,9 +43,12 @@ import { defaultClassroomLoadDeps, runClassroomLoad } from '@/lib/classroom/load
 import {
   paneAvailabilityRetryDelay,
   resolveClassroomSurfaceView,
-  shouldResumeClassroomGeneration,
 } from '@/lib/classroom/progressive-load-policy';
 import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
+import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
+import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
+import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
+import { CourseGeneratingPlaceholder } from './CourseGeneratingPlaceholder';
 
 const log = createLogger('Classroom');
 
@@ -81,21 +81,10 @@ export function ClassroomSurface({
    * deleted or never existed.
    */
   const [notFound, setNotFound] = useState(false);
-  const generationStartedRef = useRef(false);
   const activeClassroomIdRef = useRef<string | null>(null);
   const loadEpochRef = useRef(0);
 
-  const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
-    onComplete: () => {
-      log.info('[Classroom] All scenes generated');
-    },
-  });
-
-  const { mayGenerate, refreshOwnership } = useClassroomSession({
-    classroomId,
-    variant,
-    stopGeneration: stop,
-  });
+  const { mayGenerate, refreshOwnership } = useClassroomSession({ classroomId, variant });
 
   const loadClassroom = useCallback(
     async (isEffectCurrent: () => boolean): Promise<ClassroomLoadOutcome> => {
@@ -107,7 +96,16 @@ export function ClassroomSurface({
           classroomId,
           loadToken,
           isCurrent,
-          loadFromStorage,
+          loadFromStorage: async (id, token) => {
+            await loadFromStorage(id, token);
+            // `?scene=<id>` opens the page at that scene (links from exported
+            // decks). Applied before the rest of the load so the opening
+            // scene's media is the one hydrated first. The pane lives inside
+            // the workspace URL, so only the standalone page reads it.
+            if (variant === 'page' && isCurrent()) {
+              applySceneDeepLink(window.location.search, id, useStageStore);
+            }
+          },
           getCurrentStage: () => useStageStore.getState().stage,
           loadRestoredMediaTasks: defaultClassroomLoadDeps.loadRestoredMediaTasks,
           applyRestoredMediaTasks: (restored) =>
@@ -118,6 +116,7 @@ export function ClassroomSurface({
           applyGeneratedAgents: defaultClassroomLoadDeps.applyGeneratedAgents,
           getSettings: () => useSettingsStore.getState(),
           getAgent: (id) => useAgentRegistry.getState().getAgent(id),
+          agentsReady: defaultClassroomLoadDeps.agentsReady,
           restoreAgentSelection: defaultClassroomLoadDeps.restoreAgentSelection,
           setError,
           setLoading,
@@ -209,7 +208,6 @@ export function ClassroomSurface({
     setLoadUnavailable(false);
     setNotFound(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-    generationStartedRef.current = false;
 
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let availabilityAttempt = 0;
@@ -260,7 +258,6 @@ export function ClassroomSurface({
     };
     void loadUntilAvailable();
 
-    // Cancel ongoing generation when classroomId changes or component unmounts
     return () => {
       cancelled = true;
       if (loadEpochRef.current === loadEpoch) {
@@ -279,112 +276,13 @@ export function ClassroomSurface({
   // narration exactly as the standalone page does.
   useNarrationAdoption(classroomId, { ready: !loading && !error, mayGenerate });
 
-  // Auto-resume generation for pending outlines (owner only). Two independent
-  // ownership facts gate it. The sidecar's per-viewer answer decides whether
-  // this browser may spend the operator's provider budget at all, and fails
-  // closed while unanswered; `generationStartedRef` is deliberately NOT
-  // latched while it refuses, so the effect starts once the answer arrives.
-  // `outlineProducer` then decides whether the browser is the producer: a
-  // course whose document a server job produced is server-owned, not
-  // client-authored, and therefore not this browser's to regenerate. The
-  // reference's transport-persistence UI fence has no counterpart here, so it
-  // stays a constant false.
-  useEffect(() => {
-    if (
-      !shouldResumeClassroomGeneration({
-        loading,
-        error,
-        transportPersistenceFenced: false,
-        generationStarted: generationStartedRef.current,
-        mayGenerate,
-      })
-    ) {
-      return;
-    }
-    const state = useStageStore.getState();
-    // Producer ownership is document data, not conversation status. A
-    // server-job course never starts a second browser-side generator no matter
-    // which chat is open (or whether any chat is open).
-    if (state.outlineProducer === 'server-job') {
-      generationStartedRef.current = true;
-      log.info('[Classroom] A server-side job owns this course; the browser will not generate.');
-      return;
-    }
-
-    const { outlines, scenes, stage, generationComplete } = state;
-
-    // Check if there are pending outlines. A finished deck is frozen for
-    // editing: deleting a slide leaves its outline orphaned, but that must not
-    // be treated as an interrupted generation and regenerated. Only resume
-    // when generation has not completed.
-    const completedOrders = new Set(scenes.map((s) => s.order));
-    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
-
-    if (hasPending && stage) {
-      generationStartedRef.current = true;
-
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
-
-      // Reconstruct imageMapping for the resumed generation. The mapping may
-      // MIX allocated asset ids and IndexedDB data URLs — a source whose cache
-      // write failed materialized its own images — so the resume mapping merges
-      // both, instead of choosing one transport for the whole set and silently
-      // dropping the other half.
-      const pdfImages = (params.pdfImages || []) as Array<
-        { id: string; assetId?: string; storageId?: string } & Record<string, unknown>
-      >;
-      const finishResume = (imageMapping: Record<string, string>) =>
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            style: stage.style,
-          },
-          agents: params.agents,
-          userProfile: params.userProfile,
-          languageDirective: params.languageDirective || stage.languageDirective,
-          taskEngineMode: stage.taskEngineMode,
-        });
-
-      const imageMapping: Record<string, string> = {};
-      for (const img of pdfImages) {
-        if (img.assetId) imageMapping[img.id] = img.assetId;
-      }
-      const storageIds = pdfImages
-        .filter((img) => !img.assetId && img.storageId)
-        .map((img) => img.storageId as string);
-      void (async () => {
-        if (storageIds.length > 0) {
-          Object.assign(imageMapping, await loadImageMapping(storageIds));
-        }
-        finishResume(imageMapping);
-      })();
-    } else if (outlines.length > 0 && stage) {
-      // All scenes are generated, but some media may not have finished.
-      // Resume media generation for any tasks not yet in IndexedDB.
-      // generateMediaForOutlines skips already-completed tasks automatically.
-      generationStartedRef.current = true;
-      // The deck reached the classroom already fully materialized (e.g. a
-      // single-slide course, or a deck whose last slide finished in
-      // generation-preview), so generateRemaining's completion path never
-      // ran. Record completion now so a later edit/delete is not treated as
-      // an interrupted generation. No-op if already complete or not all
-      // outlines have scenes.
-      useStageStore.getState().markGenerationCompleteIfDone();
-      // Resume media only for outlines that still have a scene. On a finished
-      // deck the user may have deleted a slide, leaving an orphaned outline;
-      // generating its media would waste API calls on a slide that is gone.
-      const materializedOrders = new Set(scenes.map((s) => s.order));
-      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
-      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
-      });
-    }
-  }, [loading, error, mayGenerate, generateRemaining]);
+  // A course a server-side generation run produces: the classroom follows the
+  // run (its scenes, media and pauses) and sends it Retry.
+  const runCourse = useRunCourse({ classroomId, ready: !loading && !error });
+  // The pending scene's failure card shows the first outline not yet produced;
+  // the run's guidance belongs there only when that is the scene it stopped at.
+  const pendingOutlineId = useStageStore((s) => s.generatingOutlines[0]?.id);
+  const failureKey = pendingSceneFailureKey(runCourse.failure, pendingOutlineId);
 
   const view = resolveClassroomSurfaceView({
     variant,
@@ -466,10 +364,20 @@ export function ClassroomSurface({
                 </button>
               </div>
             </div>
+          ) : variant === 'pane' && runCourse.generation ? (
+            // The pane is edit-locked and a course being generated is
+            // read-only until its run completes: say so rather than show an
+            // edit chrome that cannot resolve. The run completing clears
+            // `generation` and the course mounts here by itself.
+            <CourseGeneratingPlaceholder
+              status={runCourse.generation.status}
+              href={runCourse.generation.href}
+            />
           ) : (
             <Stage
               classroomId={classroomId}
-              onRetryOutline={mayGenerate ? retrySingleOutline : undefined}
+              generationFailureMessage={failureKey ? t(failureKey) : undefined}
+              onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
             />
           )}
         </div>

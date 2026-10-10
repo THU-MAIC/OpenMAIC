@@ -362,35 +362,65 @@ document.addEventListener('DOMContentLoaded', function() {
 
 ```javascript
 // CORRECT: Define function globally (outside DOMContentLoaded)
-function startGame() {
-  document.getElementById('start-screen').classList.add('hidden');
-  gameActive = true;
-  initLevel();
+let state = null;
+function init() {
+  state = { gameActive: false, startTime: null };
 }
 
-// If using DOMContentLoaded, expose function to window
-document.addEventListener('DOMContentLoaded', function() {
-  // ... other setup ...
-});
-// Define startGame outside or assign to window
-window.startGame = function() { ... };
+function startGame() {
+  init(); // Construct state before any field access or level setup.
+  document.getElementById('start-screen').classList.add('hidden');
+  state.gameActive = true;
+  state.startTime = Date.now();
+  initLevel();
+  render(); // Render paths call publishCurrentState() directly.
+}
+
+function resetGame() {
+  init();
+  initLevel();
+  render();
+}
+
+init();
+render(); // Publish initial state even before Start.
 ```
+
+If defining these functions inside DOMContentLoaded instead, expose the handlers with `window.startGame = startGame` and `window.resetGame = resetGame` inside that callback.
 
 ### 5. Simple Initialization Flow
 **The game initialization should be simple and direct:**
 
+**Construct the state object before any field access**, including the first render, Start, and reset. Separate construction (for example, `init()`) from transitions on an already constructed state and from level setup (`initLevel()`). If level setup uses state, it also runs after construction. Reset must construct a fresh state before reading or writing its fields. Every render or semantic update path must call `publishCurrentState()` directly, including initialization and reset.
+
 ```javascript
+let state = null;
+function init() {
+  state = { gameActive: false, startTime: null };
+}
+
 function startGame() {
-  // 1. Hide start overlay
+  // 1. Construct state, before reading or writing its fields
+  init();
+  // 2. Hide start overlay
   document.getElementById('start-screen').classList.add('hidden');
-  // 2. Set game state
-  gameActive = true;
-  startTime = Date.now();
-  // 3. Initialize first level
+  // 3. Transition the constructed state and initialize the first level
+  state.gameActive = true;
+  state.startTime = Date.now();
   initLevel();
-  // 4. Start game loop
+  // 4. Render and publish, then start the game loop
+  render();
   requestAnimationFrame(gameLoop);
 }
+
+function resetGame() {
+  init();
+  initLevel();
+  render();
+}
+
+init();
+render(); // Render paths publish the current state, including before Start.
 ```
 
 **Avoid**: Complex dependencies like reading localStorage before events are bound, multiple async operations during init, or chained promises for game start.

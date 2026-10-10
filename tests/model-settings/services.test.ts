@@ -72,6 +72,7 @@ describe('thinkingChange', () => {
     capability: 'chat',
     configOnly: false,
     locked: false,
+    source: { kind: 'workspace' },
     assignment,
     effective: { status: 'unassigned' },
   });

@@ -4,13 +4,13 @@
  * The one client-side sequence that turns bytes into something a shared
  * document may name.
  *
- * Three paths reach the asset pool from this browser — the media generation
- * pass, narration adoption, and fresh TTS synthesis — and all three run the
+ * Three paths reach the asset pool from this browser — a media retry,
+ * narration adoption, and fresh TTS synthesis — and all three run the
  * same four steps in the same order: store the bytes at the pool seam, write
  * the allocated id back into the document, mirror the bytes locally under that
  * id, and decide what a refusal means. The first three steps were already
  * spelled the same way at each caller. The fourth was not, and that is what
- * this module exists to fix: the media pass kept the bytes a full store
+ * this module exists to fix: the media path kept the bytes a full store
  * refused, adoption had nothing to keep because the bytes were already local,
  * and fresh TTS threw them away — re-billing the provider on every later
  * attempt for audio this browser had already paid for. Fixing that in place
@@ -19,7 +19,7 @@
  *
  * What this owns:
  *
- * - The pool write, through `putAsset` and therefore through its stage seam.
+ * - The pool write, through `putAsset`.
  * - The classification of a failure as "the store had no room for THIS write"
  *   versus anything else. It was written twice before, once per caller, under
  *   slightly different conditions.
@@ -38,13 +38,6 @@
  *
  * What this deliberately does NOT own:
  *
- * - The store-full marker. Clearing it lives inside `putAsset`'s stage seam and
- *   nowhere else, so a successful write retires the course's "no room" note in
- *   one place rather than one per caller; and *setting* it is a claim that
- *   calling a provider for this course is a waste of money, which only the
- *   paths that spend provider money may make. Adoption spends none, so it must
- *   not write the marker — a fact several review rounds re-established. This
- *   module therefore neither reads nor writes it.
  * - The write-back funnel and the local table. Generated media and narration
  *   carry different references in different document shapes and mirror into
  *   different tables, and each already has exactly one funnel
@@ -56,7 +49,6 @@ import type { AssetMeta } from '@openmaic/dsl';
 
 import { createLogger } from '@/lib/logger';
 import { putAsset } from '@/lib/media/asset-pool';
-import { clearAssetStorageFull } from '@/lib/media/asset-storage-full';
 import { ASSET_QUOTA_EXCEEDED, isStorageFullFailure } from '@/lib/media/media-failure';
 
 const log = createLogger('PoolCommit');
@@ -102,14 +94,6 @@ export type PoolCommitOutcome<TPlacement> =
   | { readonly status: 'failed'; readonly error: unknown };
 
 export interface PoolCommitPlan<TPlacement> {
-  /**
-   * The course these bytes belong to.
-   *
-   * Handed to the pool seam, which is where a write that goes through retires
-   * this course's "no room" note. Optional only because one caller (fresh TTS
-   * outside a course) genuinely has no course to retire it for.
-   */
-  readonly stageId?: string;
   /**
    * The placeholder or derived key this element's bytes are known by locally.
    *
@@ -200,17 +184,8 @@ export async function commitToPool<TPlacement>(
     const meta = { contentType: plan.mimeType, ...plan.meta };
     if (plan.put) {
       assetId = await plan.put(plan.bytes, meta);
-      if (plan.stageId) await clearAssetStorageFull(plan.stageId);
     } else {
-      assetId = await putAsset(
-        plan.bytes,
-        meta,
-        // The stage goes to the seam, which is the one place a successful write
-        // retires this course's "no room" note. A write-back that fails for its
-        // own reasons afterwards therefore does not leave the course standing
-        // down.
-        { ...(plan.stageId ? { stageId: plan.stageId } : {}) },
-      );
+      assetId = await putAsset(plan.bytes, meta);
     }
   } catch (error) {
     if (!poolRefusedForRoom(error)) return { status: 'failed', error };

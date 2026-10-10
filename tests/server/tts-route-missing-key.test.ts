@@ -191,20 +191,27 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
 
   it('refuses a client-supplied localhost base URL even with ALLOW_LOCAL_NETWORKS=true', async () => {
     // The local-network opt-in is for the operator's own providers, never for a
-    // client-chosen BYOK endpoint.
+    // client-chosen BYOK endpoint. A loopback literal is refused at the URL
+    // preflight, and the 403 must not tell the caller to set the flag; the
+    // supported alternative is an operator-managed provider.
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     const { POST } = await import('@/app/api/generate/tts/route');
     const res = await POST(
       ttsRequest({
         ttsProviderId: 'voxcpm-tts',
         ttsVoice: 'auto',
-        ttsBaseUrl: 'http://localhost:8000/v1',
+        ttsBaseUrl: 'http://127.0.0.1:8000/v1',
       }),
     );
     const json = await res.json();
 
     expect(res.status).toBe(403);
-    expect(json).toMatchObject({ success: false, errorCode: 'INVALID_URL' });
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_URL',
+      error:
+        'Local/private network URLs are not allowed for a client-supplied endpoint. ALLOW_LOCAL_NETWORKS does not apply to this path. The endpoint must be a provider configured by the operator in openmaic.yml.',
+    });
     expect(mocks.generateTTS).not.toHaveBeenCalled();
   });
 

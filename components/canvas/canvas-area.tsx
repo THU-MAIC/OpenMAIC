@@ -25,6 +25,9 @@ interface CanvasAreaProps extends CanvasToolbarProps {
   readonly isPendingScene?: boolean;
   readonly isCourseComplete?: boolean;
   readonly isGenerationFailed?: boolean;
+  readonly generationFailureMessage?: string;
+  /** The pending scene will never be produced (its generation was interrupted). */
+  readonly isGenerationInterrupted?: boolean;
   readonly onRetryGeneration?: () => void;
   readonly elementPickActive?: boolean;
   readonly whiteboardElementReference?: WhiteboardElementReference;
@@ -60,6 +63,8 @@ export function CanvasArea({
   isPendingScene,
   isCourseComplete,
   isGenerationFailed,
+  generationFailureMessage,
+  isGenerationInterrupted,
   onRetryGeneration,
   elementPickActive,
   whiteboardElementReference,
@@ -182,7 +187,7 @@ export function CanvasArea({
                 transition={{ duration: 0.4, ease: 'easeOut' }}
                 className="absolute inset-0 z-[105] flex flex-col items-center justify-center bg-white dark:bg-gray-800"
               >
-                {isGenerationFailed ? (
+                {isGenerationFailed || isGenerationInterrupted ? (
                   <div className="flex flex-col items-center gap-3">
                     <div className="w-12 h-12 rounded-full bg-red-50 dark:bg-red-900/20 flex items-center justify-center">
                       <svg
@@ -199,10 +204,12 @@ export function CanvasArea({
                         />
                       </svg>
                     </div>
-                    <span className="text-sm text-red-500 dark:text-red-400 font-medium">
-                      {t('stage.generationFailed')}
+                    <span className="max-w-md px-4 text-center text-sm text-red-500 dark:text-red-400 font-medium">
+                      {isGenerationInterrupted
+                        ? t('stage.generationInterrupted')
+                        : (generationFailureMessage ?? t('stage.generationFailed'))}
                     </span>
-                    {onRetryGeneration && (
+                    {onRetryGeneration && !isGenerationInterrupted && (
                       <button
                         onClick={onRetryGeneration}
                         className="mt-1 px-4 py-1.5 text-xs font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95"

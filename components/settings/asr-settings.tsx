@@ -23,7 +23,6 @@ import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { modelChange, modelRef } from '@/lib/model-settings/edit';
 import {
   ApiKeyField,
-  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   RegionalEndpointField,
   ServerConfiguredNotice,
@@ -178,15 +177,12 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability="asr" />}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* API Key & Base URL — the server's services are the operator's. */}
       {editable && (
         <>
-          <ApiKeySecurityNotice />
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.asrApiKey')}</Label>

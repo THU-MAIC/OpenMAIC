@@ -3,9 +3,10 @@
  *
  * `openmaic.yml` (or the file named by OPENMAIC_CONFIG) is the deployment
  * layer when it exists. Otherwise providers, DEFAULT_MODEL and MODEL_FALLBACK
- * are translated into one (see legacy-config.ts). MODEL_ROUTES is not: a
- * deployment that sets it without openmaic.yml gets an error asking for the
- * file.
+ * are translated into one (see legacy-config.ts): its assignments are server
+ * defaults, exactly as `slots` in the file are, and it locks nothing.
+ * MODEL_ROUTES is not translated: a deployment that sets it without
+ * openmaic.yml gets an error asking for the file.
  */
 import { getServerProviderConfig } from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
@@ -13,15 +14,14 @@ import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
-  /** Providers and locked assignments: openmaic.yml, or the legacy providers. */
+  /** Providers, server defaults and locks: openmaic.yml, or the legacy configuration. */
   layer: ModelConfigLayer | null;
   /**
-   * Assignments translated from DEFAULT_MODEL and MODEL_FALLBACK. They lock
-   * nothing and rank below the workspace, as DEFAULT_MODEL used to rank below
-   * the model a user picked.
+   * The layer was translated from the legacy variables: media routes keep
+   * applying the legacy model pins to what it assigns.
    */
-  defaults: ModelConfigLayer | null;
-  /** How the layers were built, and what did not carry over. */
+  legacy: boolean;
+  /** How the layer was built, and what did not carry over. */
   notices: string[];
 }
 
@@ -65,7 +65,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
   if (file) {
     return {
       layer: { source: 'deployment', config: file },
-      defaults: null,
+      legacy: false,
       notices: legacy
         ? [
             'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
@@ -73,7 +73,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
         : [],
     };
   }
-  if (!legacy) return { layer: null, defaults: null, notices: [] };
+  if (!legacy) return { layer: null, legacy: false, notices: [] };
   if (process.env.MODEL_ROUTES?.trim()) throw new LegacyRoutesError();
   const { config, notices } = translateLegacyConfig(getServerProviderConfig(), {
     defaultModel: process.env.DEFAULT_MODEL?.trim() || undefined,
@@ -81,10 +81,8 @@ export function loadDeploymentLayer(): DeploymentLayer {
     defaultImageProvider: process.env.DEFAULT_IMAGE_PROVIDER?.trim() || undefined,
   });
   return {
-    layer: config.providers
-      ? { source: 'deployment', config: { providers: config.providers } }
-      : null,
-    defaults: config.slots ? { source: 'default', config: { slots: config.slots } } : null,
+    layer: config.providers || config.slots ? { source: 'deployment', config } : null,
+    legacy: true,
     notices: [
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,

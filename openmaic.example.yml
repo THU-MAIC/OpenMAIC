@@ -10,10 +10,10 @@
 # optional; uncomment the ones you want and set the variables they name.
 #
 # - providers: the accounts the server can call.
-# - slots: which provider and model each use of AI gets. Every slot written
-#   here is locked: Settings > Models marks it "Set by the server" and
-#   cannot change it. Slots left out can be chosen there.
-# - policy: what the web settings may add.
+# - slots: which provider and model each use of AI gets by default. Users
+#   may change them in the model settings; slots left out are theirs to set.
+# - lock: the slots fixed for everyone, each with its whole subtree.
+# - allowUserKeys: whether users may add providers and keys of their own.
 #
 # Secrets stay in the environment (.env.local, a Docker or Kubernetes secret)
 # and are referenced as ${VAR}. An unset variable, an unknown preset or slot,
@@ -47,6 +47,11 @@ providers:
   # openai-image:
   #   preset: openai-image
   #   apiKey: ${OPENAI_API_KEY}
+
+  # Zhipu GLM CogView image generation:
+  # glm-image:
+  #   preset: glm-image
+  #   apiKey: ${IMAGE_GLM_API_KEY}
 
   # A token plan covers several capabilities with one key: chat, images,
   # video, text to speech and web search for MiniMax.
@@ -95,10 +100,14 @@ slots:
   # image: openai-image:gpt-image-2
   # tts: minimax:speech-2.8-turbo
 
-  # null turns a capability off, and locks it off.
+  # null turns a capability off by default; users may still turn it on
+  # unless lock names it.
   # video: null
 
-# policy:
-#   # false: the web settings cannot add providers; users only choose among
-#   # the providers declared above, for slots this file leaves open.
-#   allowWorkspaceProviders: true
+# Slots fixed for everyone, with every slot below them ("lock: all" fixes
+# every slot). Each must be written under slots above (null counts).
+# lock: [video]
+
+# false: users cannot add providers, keys or token plans; they only choose
+# among the providers declared above, for the slots lock leaves open.
+# allowUserKeys: true

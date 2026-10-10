@@ -1,5 +1,5 @@
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
-import type { PdfImage, SessionDocumentSource } from '@/lib/types/generation';
+import type { DocumentSource, PdfImage } from '@/lib/types/generation';
 
 export const MAX_DOCUMENT_BUNDLE_FILES = 5;
 export const MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES = 150 * 1024 * 1024;
@@ -8,12 +8,12 @@ const BASE_BUDGET_PER_DOCUMENT = 1500;
 const RESERVED_BUDGET_RATIO = 0.4;
 const SECTION_SEPARATOR = '\n\n---\n\n';
 
-export interface ParsedDocumentImage extends Omit<PdfImage, 'storageId' | 'visionPriority'> {
+export interface ParsedDocumentImage extends Omit<PdfImage, 'visionPriority'> {
   src: string;
 }
 
 export interface ParsedDocumentPart {
-  source: Omit<SessionDocumentSource, 'storageKey'>;
+  source: DocumentSource;
   text: string;
   rawTextLength: number;
   pageCount?: number;

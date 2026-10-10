@@ -1,6 +1,8 @@
 'use client';
 
+import { useRef } from 'react';
 import type { PPTTextElement } from '@openmaic/dsl';
+import { useInlineMath, useInnerHtml } from '@openmaic/renderer';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
 
@@ -15,6 +17,9 @@ export interface BaseTextElementProps {
  */
 export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
+  const proseRef = useRef<HTMLDivElement>(null);
+  const innerHtml = useInnerHtml(elementInfo.content);
+  useInlineMath(proseRef, elementInfo.content);
 
   return (
     <div
@@ -55,8 +60,10 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
             outline={elementInfo.outline}
           />
           <div
+            ref={proseRef}
+            data-inline-math-root=""
             className={`text ProseMirror-static relative ${target === 'thumbnail' ? 'pointer-events-none' : ''}`}
-            dangerouslySetInnerHTML={{ __html: elementInfo.content }}
+            dangerouslySetInnerHTML={innerHtml}
           />
         </div>
       </div>

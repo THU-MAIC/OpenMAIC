@@ -44,7 +44,7 @@ export const agentRuntimeConfig = {
   skillsDir: process.env.OPENMAIC_AGENT_SKILLS_DIR ?? `${process.cwd()}/skills/agent-runtime`,
   /** Audio/video upload safety ceiling; defaults to the same 50 MiB cap as documents/images. */
   maxUploadBytes: numberFromEnv(process.env.OPENMAIC_AGENT_MAX_UPLOAD_BYTES, 50 * 1024 * 1024),
-  /** Document/image cap, aligned with the classic `/api/extract-document` route. */
+  /** Document/image cap, aligned with the course material cap of generation runs. */
   maxDocumentBytes: numberFromEnv(process.env.MATERIALS_MAX_DOCUMENT_BYTES, 50 * 1024 * 1024),
   /** Maximum number of active material records retained by one owner. */
   maxMaterialsPerOwner: numberFromEnv(process.env.MATERIALS_MAX_COUNT_PER_OWNER, 100),

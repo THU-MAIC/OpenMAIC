@@ -119,6 +119,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_NANO_BANANA: 'nano-banana',
   IMAGE_MINIMAX: 'minimax-image',
   IMAGE_GROK: 'grok-image',
+  IMAGE_GLM: 'glm-image',
   IMAGE_LEMONADE: 'lemonade',
   IMAGE_OPENROUTER: 'openrouter-image',
 };
@@ -561,7 +562,13 @@ function getConfig(): ServerConfig {
 
   const yamlData = loadYamlFile(DEFAULT_FILENAME);
   const config = buildConfig(yamlData);
-  logConfig(config, DEFAULT_FILENAME);
+  // Environment variables are always read; the file only when it has content.
+  logConfig(
+    config,
+    Object.keys(yamlData).length > 0
+      ? `${DEFAULT_FILENAME} and environment variables`
+      : 'environment variables',
+  );
   _configs.set('', config);
   return config;
 }

@@ -47,14 +47,9 @@ const callers = (call: RegExp) => files.filter(({ text }) => call.test(text));
 const EXEMPT: Record<string, string> = {
   // Server Action: `requireContextOwner` renews through next/headers itself.
   [join('lib', 'workbench', 'workspace-actions.ts')]: 'Server Action (renews via next/headers)',
-  // Resolves image ids into a generation prompt and returns no response of
-  // its own; its routes are generation streams that never answered with owner
-  // cookies. Renewal there is left to the owner-scoped routes the same page
-  // calls (the library, persistence), which every session uses.
-  [join('lib', 'persistence', 'resolve-vision-images.ts')]: 'prompt helper, no response',
-  // Picks the workspace whose model settings a generation call uses, and
-  // returns no response of its own; the same generation routes as above. An
-  // owner minted by the request gets no workspace, so nothing depends on it.
+  // Picks the workspace whose model settings a call uses, and returns no
+  // response of its own. An owner minted by the request gets no workspace, so
+  // nothing depends on it.
   [join('lib', 'server', 'model-config', 'runtime.ts')]: 'model settings lookup, no response',
 };
 
@@ -66,7 +61,6 @@ describe('owner resolution cookies are forwarded', () => {
       expect.arrayContaining([
         join('app', 'api', 'chat', 'pi', 'route.ts'),
         join('app', 'api', 'chat', 'pi', 'whiteboard-visibility', 'route.ts'),
-        join('lib', 'persistence', 'resolve-server-asset.ts'),
       ]),
     );
   });
@@ -91,19 +85,10 @@ describe('owner resolution cookies are forwarded', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('every resolveServerAsset caller attaches the cookies it hands back', () => {
-    const offenders = callers(/\bresolveServerAsset\(/)
-      .filter(({ file }) => file !== join('lib', 'persistence', 'resolve-server-asset.ts'))
-      .filter(({ file }) => !(file in EXEMPT))
-      .filter(({ text }) => !(/attachOwnerCookies\(/.test(text) && /\.setCookies\b/.test(text)))
-      .map(({ file }) => file);
-    expect(offenders).toEqual([]);
-  });
-
   it('lists no exemption that no longer calls the resolution', () => {
     for (const file of Object.keys(EXEMPT)) {
       const text = readFileSync(join(ROOT, file), 'utf8');
-      expect(text).toMatch(/resolveRequestOwner\(|requireContextOwner\(|resolveServerAsset\(/);
+      expect(text).toMatch(/resolveRequestOwner\(|requireContextOwner\(/);
     }
   });
 });

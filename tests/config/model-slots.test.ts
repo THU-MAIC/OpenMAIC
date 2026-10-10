@@ -33,7 +33,6 @@ const EXPECTED_STAGE_SLOTS: Record<LlmStage, SlotId> = {
   'pbl-v2-runtime:evaluate': 'classroom',
   'pbl-v2-runtime:simulator': 'classroom',
   'chat-adapter': 'classroom',
-  'generate-classroom': 'llm',
   'web-search-query-rewrite': 'course.research',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',

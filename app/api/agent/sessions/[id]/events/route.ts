@@ -41,10 +41,8 @@ import { authenticateRequestOwner } from '@/lib/server/identity/with-owner';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 
 export const runtime = 'nodejs';
-// Self-hosted `next start` does not enforce maxDuration; it remains useful to
-// Vercel's build adapter. EventSource resumes durable events with Last-Event-ID.
-// The 25s heartbeat prevents idle intermediaries from ending the stream early.
-export const maxDuration = 300;
+// EventSource resumes durable events with Last-Event-ID. The 25s heartbeat
+// prevents idle intermediaries from ending the stream early.
 
 // LISTEN/NOTIFY supplies low latency. Polling remains an explicit correctness
 // fallback for notifications lost during disconnects; terminal streams retain

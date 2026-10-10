@@ -3,14 +3,19 @@
  *
  * Monotonically marks an existing stage outline as generation-complete.
  * Owner-only. This route deliberately performs a narrow UPDATE so a stale
- * load-time repair cannot overwrite newer classroom content.
+ * load-time repair cannot overwrite newer classroom content. A course its
+ * generation run is still producing answers 409 `COURSE_GENERATING`: the run
+ * decides when it is complete.
  */
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
 import { isServerPersistenceConfigured } from '@/lib/config/feature-flags';
 import { markStageGenerationComplete } from '@/lib/persistence/stage-meta';
-import { getStageAccessDb, resolveStageAccess } from '@/lib/server/stage-access';
+import { ownerWriteErrorResponse } from '@/lib/persistence/owner-merges';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { assertCourseWritableIn } from '@/lib/server/generation/run/store';
+import { resolveStageAccess } from '@/lib/server/stage-access';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 
 export const runtime = 'nodejs';
@@ -37,8 +42,16 @@ export async function POST(req: NextRequest, { params }: Params) {
         return NextResponse.json({ error: 'forbidden' }, { status: 403, headers: responseHeaders });
       }
 
-      const db = await getStageAccessDb();
-      const touched = await markStageGenerationComplete(db, stageId);
+      const { withTransaction } = await getServerPersistenceProvider(
+        process.env.DATABASE_URL ?? '',
+      );
+      // Under the course's ownership row, which every run commit into the
+      // course takes too, so the guard's answer holds for the update.
+      const touched = await withTransaction(async (tx) => {
+        await tx.query('SELECT 1 FROM stage_meta WHERE stage_id = $1 FOR UPDATE', [stageId]);
+        await assertCourseWritableIn(tx, stageId);
+        return markStageGenerationComplete(tx, stageId);
+      });
 
       if (!touched) {
         return NextResponse.json({ error: 'not_found' }, { status: 404, headers: responseHeaders });
@@ -47,6 +60,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       console.info('Stage generation marked complete', { stageId, ownerId });
       return NextResponse.json({ ok: true }, { status: 200, headers: responseHeaders });
     } catch (error) {
+      const refused = ownerWriteErrorResponse(error, responseHeaders);
+      if (refused) return refused;
       console.error('Failed to mark stage generation complete', {
         stageId,
         error: error instanceof Error ? error.message : String(error),

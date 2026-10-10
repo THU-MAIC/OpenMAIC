@@ -57,13 +57,19 @@ import { tokenPlanPresetId } from '@/lib/config/preset-ids';
 import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
 import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
 import { planProvider } from '@/lib/model-settings/services';
+import { tokenPlanListed } from '@/lib/model-settings/shape';
 import {
   connectConflicts,
   connectTokenPlan,
   type PlanApplyMode,
   type PlanConflict,
 } from '@/lib/model-settings/token-plan';
-import { applyErrorText, reportApply, ServerOnlyNotice } from './server-settings';
+import {
+  applyErrorText,
+  CredentialStorageHint,
+  reportApply,
+  ServerOnlyNotice,
+} from './server-settings';
 import { MS, slotName } from './models/slot-meta';
 
 const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
@@ -181,7 +187,13 @@ export function TokenPlanSettings({
 }) {
   const { t } = useI18n();
 
-  const [selectedId, setSelectedId] = useState<string>(TOKEN_PLAN_PRESETS[0]?.id ?? '');
+  // The plans connecting can still change something with, and the ones
+  // already connected (to manage or disconnect); see tokenPlanListed.
+  const plans = TOKEN_PLAN_PRESETS.filter((plan) => {
+    const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
+    return !!preset && tokenPlanListed(view, preset);
+  });
+  const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
@@ -196,8 +208,7 @@ export function TokenPlanSettings({
   const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
-  const selected =
-    TOKEN_PLAN_PRESETS.find((p) => p.id === selectedId) ?? TOKEN_PLAN_PRESETS[0] ?? null;
+  const selected = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
 
   /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
   const presetOf = (preset: TokenPlanPreset) =>
@@ -311,7 +322,7 @@ export function TokenPlanSettings({
           role="tablist"
           aria-label={t(`${tp}.selectPlan`)}
         >
-          {TOKEN_PLAN_PRESETS.map((preset, index) => {
+          {plans.map((preset, index) => {
             const enabled = isPresetEnabled(preset);
             const active = selected?.id === preset.id;
             return (
@@ -336,12 +347,12 @@ export function TokenPlanSettings({
                   if (!delta && event.key !== 'Home' && event.key !== 'End') return;
                   event.preventDefault();
                   const next =
-                    TOKEN_PLAN_PRESETS[
+                    plans[
                       event.key === 'Home'
                         ? 0
                         : event.key === 'End'
-                          ? TOKEN_PLAN_PRESETS.length - 1
-                          : (index + delta + TOKEN_PLAN_PRESETS.length) % TOKEN_PLAN_PRESETS.length
+                          ? plans.length - 1
+                          : (index + delta + plans.length) % plans.length
                     ];
                   selectPreset(next);
                   tabRefs.current.get(next.id)?.focus();
@@ -491,9 +502,7 @@ export function TokenPlanSettings({
                   </div>
 
                   {/* 密钥表单：未连接或更新密钥时显示；保存即连接 */}
-                  {!enabled && !canConnect && (
-                    <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-                  )}
+                  {!enabled && !canConnect && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
                   {(canConnect || (own && editingKey)) && (
                     <form
                       className="space-y-2"
@@ -533,9 +542,7 @@ export function TokenPlanSettings({
                           {t(editingKey ? `${tp}.updateKey` : `${tp}.saveKey`)}
                         </Button>
                       </div>
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        {t(`${tp}.keyStorage`)}
-                      </p>
+                      <CredentialStorageHint />
                     </form>
                   )}
 
@@ -671,6 +678,7 @@ export function TokenPlanSettings({
                     <span className="font-medium">{slotName(t, conflict.slot.slot)}</span>
                     <span className="min-w-0 break-all text-muted-foreground">
                       {assignmentLabel(conflict, current, preset)}
+                      {conflict.from === 'default' && ` (${t(`${MS}.source.default`)})`}
                       {' → '}
                       <span className="text-foreground">
                         {assignmentLabel(conflict, conflict.recommended, preset)}

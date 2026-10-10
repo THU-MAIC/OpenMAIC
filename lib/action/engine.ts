@@ -54,6 +54,7 @@ import {
   wbClearMs,
 } from '@/lib/choreography';
 import katex from 'katex';
+import { safeKatexOptions } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ActionEngine');
@@ -571,11 +572,14 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     try {
-      const html = katex.renderToString(action.latex, {
-        throwOnError: false,
-        displayMode: true,
-        output: 'html',
-      });
+      const html = katex.renderToString(
+        action.latex,
+        safeKatexOptions({
+          throwOnError: false,
+          displayMode: true,
+          output: 'html',
+        }),
+      );
 
       this.stageAPI.whiteboard.addElement(
         {

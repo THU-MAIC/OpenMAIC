@@ -6,9 +6,10 @@
  * saving a new key for it) assigns the preset's recommendations — the default
  * model, the course stages it names, and its image, video, speech and search
  * services — to the slots, as one `slots` change against the view's revision.
- * Assignments the workspace already made for those slots are replaced when
- * the user chooses the plan's setup, and kept otherwise (only empty slots are
- * filled). Slots the deployment locks are never touched.
+ * What those slots use now (the workspace's own assignments and the server's
+ * defaults written on them) is replaced when the user chooses the plan's
+ * setup, and kept otherwise (only slots with neither are filled). Slots the
+ * deployment locks are never touched.
  *
  * When several plans are connected, a plan does not take the slots a
  * higher-priority plan recommends (priority is the order of
@@ -123,24 +124,41 @@ export function tokenPlanRecommendation(
   return recommendation;
 }
 
-/** A slot whose own assignment the plan's recommendation would replace. */
+/** A slot whose current choice the plan's recommendation would replace. */
 export interface PlanConflict {
   slot: SlotView;
-  /** What the workspace assigned (null: turned off). */
+  /** What the slot uses now (null: turned off). */
   current: SlotAssignment;
+  /** Whose choice that is: the workspace's own, or the server's default on the slot. */
+  from: 'workspace' | 'default';
   recommended: string;
+}
+
+/**
+ * What a slot itself is set to now: the workspace's own assignment, else the
+ * server's default written on it (while nothing of the workspace replaces
+ * it); undefined when it only follows its parent or has nothing.
+ */
+function currentChoice(
+  slot: SlotView,
+): { current: SlotAssignment; from: PlanConflict['from'] } | undefined {
+  if (slot.assignment !== undefined) return { current: slot.assignment, from: 'workspace' };
+  if (slot.serverDefault !== undefined && slot.source.kind === 'default') {
+    return { current: slot.serverDefault, from: 'default' };
+  }
+  return undefined;
 }
 
 /** Whether a slot already holds the recommended model. */
 function holds(slot: SlotView, ref: string): boolean {
-  return assignmentRefs(slot.assignment).model === ref;
+  return assignmentRefs(currentChoice(slot)?.current).model === ref;
 }
 
 /**
- * The slots where applying the recommendation would replace something the
- * workspace chose: they have an assignment of their own (a model, or off)
- * that differs from the plan's. Empty slots and slots that already match are
- * not conflicts.
+ * The slots where applying the recommendation would replace a current choice:
+ * the workspace's own assignment, or the server's default on the slot, that
+ * differs from the plan's. Slots that only follow their parent, and slots
+ * that already match, are not conflicts.
  */
 export function tokenPlanConflicts(
   view: ModelSettingsView,
@@ -149,17 +167,19 @@ export function tokenPlanConflicts(
   const conflicts: PlanConflict[] = [];
   for (const slot of view.slots) {
     const recommended = recommendation[slot.slot];
-    if (recommended === undefined || slot.assignment === undefined) continue;
+    const choice = currentChoice(slot);
+    if (recommended === undefined || !choice) continue;
     if (holds(slot, recommended)) continue;
-    conflicts.push({ slot, current: slot.assignment, recommended });
+    conflicts.push({ slot, ...choice, recommended });
   }
   return conflicts;
 }
 
 /**
- * How connecting treats the slots the workspace already set:
+ * How connecting treats the slots that already have a choice (the
+ * workspace's, or the server's default on the slot):
  * - `overwrite`: the plan's recommended setup replaces them;
- * - `keep`: they stay; only the slots with nothing of their own are filled.
+ * - `keep`: they stay; only the slots with no choice of their own are filled.
  */
 export type PlanApplyMode = 'overwrite' | 'keep';
 
@@ -179,7 +199,7 @@ export function tokenPlanAssignments(
   for (const slot of view.slots) {
     const recommended = recommendation[slot.slot];
     if (recommended === undefined || holds(slot, recommended)) continue;
-    if (slot.assignment !== undefined && mode === 'keep') continue;
+    if (currentChoice(slot) && mode === 'keep') continue;
     const { fallback } = assignmentRefs(slot.assignment);
     const change = slotChange(slot, {
       kind: 'model',

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { generateWithComfyuiImage } from '@/lib/media/adapters/comfyui-image-adapter';
+import { generateWithGlmImage } from '@/lib/media/adapters/glm-image-adapter';
 import { generateWithGrokImage } from '@/lib/media/adapters/grok-image-adapter';
 import { generateWithGrokVideo } from '@/lib/media/adapters/grok-video-adapter';
 import { generateWithHappyHorse } from '@/lib/media/adapters/happyhorse-adapter';
@@ -78,6 +79,10 @@ const cases: RedirectCase[] = [
   {
     name: 'Grok image generation',
     run: () => generateWithGrokImage(imageConfig('grok-image'), imageOptions),
+  },
+  {
+    name: 'GLM image generation',
+    run: () => generateWithGlmImage(imageConfig('glm-image'), imageOptions),
   },
   {
     name: 'Lemonade image generation',

@@ -79,10 +79,9 @@ export type SlotId = (typeof MODEL_SLOTS)[number]['id'];
 /**
  * Every LLM stage key and the one slot it resolves through.
  *
- * `generate-classroom` is the `llm` root. The browserless API resolves each of
- * its steps through the same slots as the browser UI (its outline through
- * `course.outline`). `maic-agent-driver` belongs to `agent`, which the agent
- * runtime resolves directly.
+ * No stage resolves through the `llm` root itself: every slot without a model
+ * of its own inherits it. `maic-agent-driver` belongs to `agent`, which the
+ * agent runtime resolves directly.
  */
 export const STAGE_SLOTS = {
   'scene-outlines-stream': 'course.outline',
@@ -100,7 +99,6 @@ export const STAGE_SLOTS = {
   'pbl-v2-runtime:evaluate': 'classroom',
   'pbl-v2-runtime:simulator': 'classroom',
   'chat-adapter': 'classroom',
-  'generate-classroom': 'llm',
   'web-search-query-rewrite': 'course.research',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',

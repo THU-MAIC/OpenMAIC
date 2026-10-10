@@ -12,7 +12,6 @@ import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   ApiKeyField,
-  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -79,14 +78,11 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability="document" />}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {editable && (
         <>
-          <ApiKeySecurityNotice />
           <div className="space-y-2">
             <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
             <ApiKeyField

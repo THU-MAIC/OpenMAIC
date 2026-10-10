@@ -73,7 +73,7 @@ describe('packaged prompt assets', () => {
       ...listFiles(join(PACKAGE_ROOT, 'templates')),
       ...listFiles(join(PACKAGE_ROOT, 'snippets')),
     ]
-      .map((file) => relative(PACKAGE_ROOT, file))
+      .map((file) => relative(PACKAGE_ROOT, file).replace(/\\/g, '/'))
       .sort();
 
     expect(actualFiles).toEqual(expectedFiles);

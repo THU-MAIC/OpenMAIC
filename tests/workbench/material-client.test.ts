@@ -55,7 +55,7 @@ describe('workbench material client', () => {
     const file = new File(['hello'], 'slides.pptx', { type: 'application/vnd.ms-office' });
     await expect(uploadWorkbenchMaterial(file)).resolves.toMatchObject({ mimeType: pptxMime });
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/materials',
+      '/api/materials?extract=false',
       expect.objectContaining({
         headers: expect.objectContaining({
           'content-type': pptxMime,
@@ -79,7 +79,7 @@ describe('workbench material client', () => {
     const file = new File(['hello'], material.name, { type: material.mimeType });
     await expect(uploadWorkbenchMaterial(file)).resolves.toEqual(material);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/materials',
+      '/api/materials?extract=false',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({

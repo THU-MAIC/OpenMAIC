@@ -52,7 +52,7 @@ slots:
 
 with `ANTHROPIC_API_KEY=sk-ant-...` in `.env.local`.
 
-Slots written in `openmaic.yml` are locked for the web UI; slots left out follow their parent (`llm` for chat slots) and can be changed in the model settings.
+Slots written in `openmaic.yml` are server defaults that users may still change in the model settings; slots left out follow their parent (`llm` for chat slots). To fix slots for everyone, list them under `lock` (`lock: all` fixes every slot); `allowUserKeys: false` keeps users from adding keys or token plans of their own.
 
 ## Recommendation Paths
 

@@ -1,19 +1,20 @@
 /**
- * Retryable-failure model fallback (PR #1614).
+ * Generation model fallback (PR #1614).
  *
  * A small, operator-configured safety net for generation calls: when a call
  * fails with a retryable failure (SDK-classified transient error, timeout,
- * empty output, network error, quota 429, capacity 503), retry once on a
- * different model. The retry model is the `fallback` of the capability slot's
- * assignment (RFC #1701), which the resolved model carries with it
- * (lib/ai/model-fallbacks.ts); a model from the older request path retries on
- * `MODEL_FALLBACK`.
+ * empty output, network error, rate limit 429, capacity 503) or an explicit
+ * provider quota refusal, retry once on a different model. The retry model is
+ * the `fallback` of the capability slot's assignment (RFC #1701), which the
+ * resolved model carries with it (lib/ai/model-fallbacks.ts); a model from the
+ * older request path retries on `MODEL_FALLBACK`.
  *
  * `verify-model` opts out (option in callLLM): it probes the exact model the
  * user typed in, and answering from a different model would report a dead or
  * mis-keyed model as healthy. Content-safety rejections and other 4xx failures
  * never fall back — retrying a rejected prompt on a second model would spend
- * that model's quota to reproduce the same rejection.
+ * that model's quota to reproduce the same rejection. A quota refusal is the
+ * exception: another provider may still have credit.
  *
  * This module is imported (top-level) from lib/ai/llm.ts for the shared
  * callLLM decision helpers, and from the outlines stream route for its
@@ -27,6 +28,11 @@ import { getModel, parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { createLogger } from '@/lib/logger';
+import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
+import {
+  isNonRetryableHostFailure,
+  isProviderQuotaRefusal,
+} from '@/lib/server/generation-run-hooks/runtime';
 
 const log = createLogger('LLM Fallback');
 
@@ -154,27 +160,45 @@ export function isEmptyLlmOutput(text: string | null | undefined): boolean {
 }
 
 /**
- * Single, shared retryable-failure decision for both call paths.
+ * Single, shared fallback decision for both call paths.
  *
- * - `error` set: retryable iff `isRetryableLlmError(error)`.
+ * - `error` set: retryable iff `isRetryableLlmError(error)`, or an explicit
+ *   provider quota refusal (`isProviderQuotaRefusal`): no retry of the same
+ *   model serves it, but a different provider may still have credit. Never
+ *   for a failure the host classified as its own that no retry helps
+ *   (`lib/server/generation-run-hooks`).
  * - `error` undefined (validation path): retryable iff the output is
  *   empty/whitespace-only (see `isEmptyLlmOutput`).
  */
 export function shouldFallbackFor(error: unknown, text: string | null | undefined): boolean {
-  if (error !== undefined) return isRetryableLlmError(error);
+  if (error !== undefined) {
+    return (
+      !isNonRetryableHostFailure(error) &&
+      (isProviderQuotaRefusal(error) || isRetryableLlmError(error))
+    );
+  }
   return isEmptyLlmOutput(text);
 }
 
 /**
  * One log line per fired fallback, shared by callLLM and the outlines stream.
+ * `cause` is the failure that fired it, `undefined` for an empty output. An
+ * exhausted quota is named as such: with a fallback configured it is the
+ * operator's only sign that the primary account is out of credit.
  *
  * Format: `[source] <reason> on <primary>; falling back once to <fallback>`
  */
 export function logFallbackFired(
   source: string,
-  reason: 'retryable failure' | 'empty output',
+  cause: unknown,
   primary: string,
   fallback: string,
 ): void {
+  const reason =
+    cause === undefined
+      ? 'empty output'
+      : isUpstreamQuotaExhausted(cause)
+        ? 'quota exhausted'
+        : 'retryable failure';
   log.warn(`[${source}] ${reason} on ${primary}; falling back once to ${fallback}`);
 }

@@ -375,6 +375,36 @@
   color: var(--ws-ink);
 }
 
+/* A course a generation run is still producing: read-only until the run
+   completes, so its row is quieter than an openable one and states the run's
+   progress where the page count goes. Not a link to nowhere — the pointer
+   says so. */
+.ws-course-generating .ws-course-name {
+  color: var(--ws-ink-mute);
+}
+
+.ws-course-generating .ws-row-meta {
+  color: var(--ws-accent);
+  min-width: 0;
+}
+
+.ws-row[aria-disabled='true'] {
+  cursor: default;
+}
+
+.ws-row-run-icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  color: var(--ws-accent);
+}
+
+.ws-row-run-icon-paused,
+.ws-course-generating:has(.ws-row-run-icon-paused) .ws-row-meta {
+  color: #d97706; /* amber-600, the home card's paused tone */
+}
+
 .ws-meta-sep {
   color: var(--ws-ink-faint);
 }

@@ -11,10 +11,6 @@
  *  - with the operator opt-in enabled the first hop actually reaches the
  *    client-supplied local API root, while a response-supplied private upload
  *    URL is still refused under the strict public policy and never requested.
- *
- * The complementary "opt-in unset" case is a route-level decision: the route
- * rejects the local baseUrl with `validateUrlForSSRF` before the parser runs,
- * which `extract-document-route.test.ts` covers.
  */
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';

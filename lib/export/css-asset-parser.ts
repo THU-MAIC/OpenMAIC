@@ -107,6 +107,71 @@ export function rewriteCssValue(
     }, value);
 }
 
+/**
+ * Split a declaration value at its top-level commas; commas inside functions
+ * (`format("woff2", "woff")`, `url(a,b)`) or strings do not split. Each entry
+ * is returned as its trimmed source text.
+ */
+export function splitCssCommaList(value: string): string[] {
+  const entries: string[] = [];
+  let start = 0;
+  for (const node of valueParser(value).nodes) {
+    if (node.type !== 'div' || node.value !== ',') continue;
+    entries.push(value.slice(start, node.sourceIndex).trim());
+    start = node.sourceEndIndex;
+  }
+  entries.push(value.slice(start).trim());
+  return entries;
+}
+
+/** The parts of one `@font-face` `src` entry that decide whether a browser will use it. */
+export interface FontSrcEntry {
+  /** Raw values of the entry's url() references. */
+  urls: string[];
+  /**
+   * Lower-cased tokens inside the entry's `format()` hint, in source order:
+   * strings and keywords by value, separators (`,`, `/`) as themselves, and
+   * anything else (nested functions, unclosed strings) as `''`. So
+   * `format("woff2" supports variations)` yields three tokens and the
+   * malformed `format("woff2",)` yields `['woff2', ',']`. `null` when the
+   * entry has no `format()`.
+   */
+  format: string[] | null;
+  /**
+   * The entry has top-level parts beyond one url() and at most one format():
+   * a `tech()` condition, `local()`, repeated functions, stray tokens or an
+   * unclosed function.
+   */
+  extra: boolean;
+}
+
+type CssValueSourceNode = CssValueNode & { unclosed?: boolean };
+
+export function parseFontSrcEntry(entry: string): FontSrcEntry {
+  let urlCount = 0;
+  let format: string[] | null = null;
+  let extra = false;
+  for (const node of valueParser(entry).nodes as CssValueSourceNode[]) {
+    if (node.type === 'space' || node.type === 'comment') continue;
+    const name = node.type === 'function' && !node.unclosed ? node.value.toLowerCase() : '';
+    if (name === 'url' && urlCount === 0) {
+      urlCount++;
+    } else if (name === 'format' && format === null && node.type === 'function') {
+      format = [];
+      for (const arg of node.nodes as CssValueSourceNode[]) {
+        if (arg.type === 'space' || arg.type === 'comment') continue;
+        if (arg.type === 'div') format.push(arg.value);
+        else if ((arg.type === 'string' || arg.type === 'word') && !arg.unclosed)
+          format.push(arg.value.toLowerCase());
+        else format.push('');
+      }
+    } else {
+      extra = true;
+    }
+  }
+  return { urls: cssUrlReferences(entry).map((ref) => ref.raw.trim()), format, extra };
+}
+
 export function cssImportReference(rule: AtRule): { url: string; conditions: string } | null {
   const parsed = valueParser(rule.params);
   const node = parsed.nodes.find(

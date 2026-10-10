@@ -38,6 +38,7 @@ import { getFontEmbedCSS, toBlob, toPng } from 'html-to-image';
 import { SlideCanvas } from '../SlideCanvas';
 import type { Slide } from '@openmaic/dsl';
 import { KATEX_FONT_EMBED_CSS } from './katex-fonts-embed';
+import { completeInlineMath } from '../utils/inlineMath';
 
 export { measureSlideElementGeometry, type MeasuredGeometry, type MeasureOptions } from './measure';
 
@@ -134,6 +135,10 @@ export async function slideToPng(
     flushSync(() => {
       root!.render(createElement(SlideCanvas, { slide, chrome: false }));
     });
+    // Typeset every inline formula now, root by root: the live renderer
+    // leaves what its per-pass budget does not cover to idle time, after this
+    // capture.
+    completeInlineMath(container);
 
     // BaseImageElement renders <img loading="lazy">, and this container sits
     // permanently outside the viewport — lazy images would never fetch, and

@@ -108,24 +108,9 @@ export class RenderCoordinator {
     this.onEvent = options.onEvent ?? emitRenderEvent;
   }
 
-  /** Run Chromium-backed work within the service-wide execution budget. */
-  runWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  /** Run video exports within their execution budget. */
+  private runWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     return this.executionGate.run(task, signal);
-  }
-
-  /** Run work only when an execution slot is available now; never queue. */
-  tryRunWithExecutionSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> | undefined {
-    signal?.throwIfAborted();
-    const release = this.executionGate.tryAcquire();
-    if (!release) return undefined;
-    return (async () => {
-      try {
-        signal?.throwIfAborted();
-        return await task();
-      } finally {
-        release();
-      }
-    })();
   }
 
   /** Total jobs occupying the system: reserved + queued + running. */

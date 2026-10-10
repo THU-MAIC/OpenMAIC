@@ -40,7 +40,7 @@ export interface ModelSettingsOptions {
   providers?: Record<string, string[]>;
   /** The course model, `provider:model`; omitted: no language model. */
   llm?: string;
-  /** Whether the llm root is locked by the deployment. */
+  /** Whether the deployment locks llm (and so every language model slot under it). */
   locked?: boolean;
   /** Media roots that resolve to a provider (registry ids). */
   media?: Partial<Record<'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'document', string>>;
@@ -62,7 +62,7 @@ export function createModelSettingsView(options: ModelSettingsOptions = {}) {
   });
   return {
     revision: 1 as number | null,
-    policy: { allowWorkspaceProviders: true },
+    allowUserKeys: true,
     presets: Object.keys(providers).map((id) => ({
       id,
       name: PRESET_NAMES[id] ?? id,
@@ -75,38 +75,46 @@ export function createModelSettingsView(options: ModelSettingsOptions = {}) {
     providers: Object.entries(providers).map(([id, models]) => ({
       id,
       preset: id,
+      presetName: PRESET_NAMES[id] ?? id,
+      presetKind: 'single',
       source: 'workspace',
       capabilities: { chat: { models: models.map((model) => ({ id: model, name: model })) } },
       key: { set: true, mask: '…' },
     })),
     slots: SLOTS.map(({ slot, parent, capability }) => {
+      const locked = capability === 'chat' && !!options.locked;
       let effective: Record<string, unknown> = { status: 'unassigned' };
+      let source: Record<string, unknown> = { kind: 'unconfigured' };
       if (capability === 'chat' && llmProvider) {
+        const from = locked ? 'locked' : 'workspace';
         effective = {
           status: 'assigned',
           resolvedAt: 'llm',
-          source: 'workspace',
+          source: from,
           requirements: [],
           ...target(llmProvider, llmProvider, llmModel),
         };
+        source = slot === 'llm' ? { kind: from } : { kind: 'inherited', from: 'llm' };
       }
       const media = options.media?.[slot as keyof NonNullable<ModelSettingsOptions['media']>];
       if (media) {
         effective = {
           status: 'assigned',
           resolvedAt: slot,
-          source: 'deployment',
+          source: 'default',
           requirements: [],
           ...target(media, media),
         };
+        source = { kind: 'default' };
       }
       return {
         slot,
         parent,
         capability,
         configOnly: slot === 'agent.title',
-        locked: slot === 'llm' && !!options.locked,
-        ...(slot === 'llm' && options.llm ? { assignment: options.llm } : {}),
+        locked,
+        source,
+        ...(slot === 'llm' && options.llm && !locked ? { assignment: options.llm } : {}),
         effective,
       };
     }),

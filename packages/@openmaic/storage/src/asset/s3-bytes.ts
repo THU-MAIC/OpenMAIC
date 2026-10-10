@@ -79,8 +79,25 @@ export interface S3AssetByteStoreOptions {
 const AWS_S3_CLIENT_PACKAGE = '@aws-sdk/client-s3';
 const AWS_S3_PRESIGNER_PACKAGE = '@aws-sdk/s3-request-presigner';
 
+/**
+ * The slice of the AWS SDK client config this package passes through.
+ *
+ * The SDK still owns region, endpoint, and credential resolution. Hosts may
+ * override path-style addressing explicitly; otherwise the loader reads the
+ * adapter-specific environment opt-in.
+ */
+export interface S3AssetByteStoreClientConfig {
+  /** Use endpoint/bucket/key addressing for S3-compatible object stores. */
+  forcePathStyle?: boolean;
+}
+
+function forcePathStyleFromEnvironment(): boolean | undefined {
+  const value = typeof process === 'undefined' ? undefined : process.env.AWS_S3_FORCE_PATH_STYLE;
+  return value === 'true' || value === '1' ? true : undefined;
+}
+
 interface S3Sdk {
-  S3Client: new (options: Record<string, never>) => S3AssetByteStoreClient;
+  S3Client: new (options: S3AssetByteStoreClientConfig) => S3AssetByteStoreClient;
   PutObjectCommand: new (input: S3PutObjectInput) => unknown;
   GetObjectCommand: new (input: S3GetObjectInput) => unknown;
   DeleteObjectCommand: new (input: S3ObjectInput) => unknown;
@@ -158,12 +175,17 @@ function missingPresigner(error: unknown): Error {
  * never runs for it. A host that wants resolution deferred to first use can
  * construct `new S3AssetByteStore({ client, bucket })` itself instead.
  */
-export async function loadS3AssetByteStore(bucket: string): Promise<AssetByteStore> {
+export async function loadS3AssetByteStore(
+  bucket: string,
+  options: S3AssetByteStoreClientConfig = {},
+): Promise<AssetByteStore> {
   try {
     const sdk = await importS3Sdk();
     return new S3AssetByteStore({
       bucket,
-      client: new sdk.S3Client({}),
+      client: new sdk.S3Client({
+        forcePathStyle: options.forcePathStyle ?? forcePathStyleFromEnvironment(),
+      }),
       commands: sdkCommands(sdk),
     });
   } catch (error) {

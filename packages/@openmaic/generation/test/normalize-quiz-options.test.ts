@@ -146,6 +146,25 @@ describe('findQuizOptionsContractFailure', () => {
     ).toBeNull();
   });
 
+  it('rejects duplicate option values within one question', () => {
+    expect(
+      findQuizOptionsContractFailure([
+        {
+          id: 'q-duplicate',
+          type: 'single',
+          question: 'What is the benefit of diversification?',
+          options: [
+            { value: 'A', label: 'Option A' },
+            { value: 'B', label: 'Correct option' },
+            { value: 'B', label: 'Different option with duplicate value' },
+            { value: 'D', label: 'Option D' },
+          ],
+          answer: ['B'],
+        },
+      ]),
+    ).toBe('question 1 (q-duplicate): option 3 repeats value "B"');
+  });
+
   it('rejects a swapped value, a missing option list, and an answer that misses every value', () => {
     expect(
       findQuizOptionsContractFailure([

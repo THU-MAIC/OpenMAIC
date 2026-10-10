@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import katex from 'katex';
 import { textSchema } from '../../../src/react/text/prosemirror/schema';
 import { EditorState } from 'prosemirror-state';
+import { MAX_INLINE_MATH_SOURCE } from '@openmaic/renderer';
 import {
   createTextDocument,
   serializeTextDocument,
@@ -62,6 +63,27 @@ it('falls back to escaped source if the formula renderer throws', () => {
     host.innerHTML = serializeTextDocument(doc);
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toBe(latex);
+    expect(createTextDocument(host.innerHTML).eq(doc)).toBe(true);
+  } finally {
+    render.mockRestore();
+  }
+});
+
+it('keeps an over-long formula as an atom with its source, shown as text rather than typeset', () => {
+  const latex = 'x+'.repeat(MAX_INLINE_MATH_SOURCE);
+  const render = vi.spyOn(katex, 'render');
+  try {
+    const doc = textSchema.nodes.doc.create(
+      null,
+      textSchema.nodes.paragraph.create(null, textSchema.nodes.inline_math.create({ latex })),
+    );
+    const host = document.createElement('div');
+    host.innerHTML = serializeTextDocument(doc);
+    expect(render).not.toHaveBeenCalled();
+    expect(host.querySelector('.katex')).toBeNull();
+    const formula = host.querySelector('span[data-inline-math]');
+    expect(formula?.getAttribute('data-inline-math')).toBe(latex);
+    expect(formula?.textContent).toBe(latex);
     expect(createTextDocument(host.innerHTML).eq(doc)).toBe(true);
   } finally {
     render.mockRestore();

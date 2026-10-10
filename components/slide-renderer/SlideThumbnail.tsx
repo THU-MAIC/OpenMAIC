@@ -37,9 +37,15 @@ interface SlideThumbnailProps {
  * rotated wrapper, so this only paints the inner content. The `src` it receives
  * is already media-store-resolved by `useResolvedSlide`.
  *
- * The play-badge (`thumbnail-video-indicator`) always shows; the `<video>` only
+ * The play-badge (`thumbnail-video-indicator`) always shows; the frame only
  * renders for a real (resolved, non-placeholder) src so unresolved media falls
  * through to the badge-only frame instead of an empty `<video>`.
+ *
+ * A video with a poster is drawn as that image, never as a `<video>`: a media
+ * element reads its source (whatever `preload` says, for an object URL in
+ * Chromium) and drops the rest of the read once it has a frame, which the
+ * browser records as an aborted request per thumbnail per page load. Only a
+ * video without a poster falls back to a `<video>` for its opening frame.
  */
 function renderThumbnailVideo(
   element: PPTVideoElement,
@@ -81,12 +87,20 @@ function renderThumbnailVideo(
           // to say -- which is every failure browser-only mode can produce.
           <div className="h-full w-full rounded bg-red-50" data-media-state="failed" />
         )
+      ) : src && element.poster ? (
+        <img
+          className="w-full h-full"
+          style={{ objectFit: 'contain' }}
+          src={element.poster}
+          alt=""
+          draggable={false}
+          data-thumbnail-video-poster=""
+        />
       ) : src ? (
         <video
           className="w-full h-full"
           style={{ objectFit: 'contain' }}
           src={src}
-          poster={element.poster}
           preload="metadata"
           muted
           playsInline

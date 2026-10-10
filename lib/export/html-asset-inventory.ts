@@ -41,6 +41,8 @@ export interface SourcePatch {
 
 export interface HtmlAttributeAsset extends AssetRef {
   tagName: string;
+  /** Tag name of the element's parent, e.g. `video` for a `<source>` inside one. */
+  parentTagName?: string;
   attributeName: string;
   attributes: Readonly<Record<string, string>>;
   attributeRange?: SourceRange;
@@ -193,6 +195,10 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
         kind,
         url: attribute.value,
         tagName: element.tagName,
+        parentTagName:
+          element.parentNode && 'tagName' in element.parentNode
+            ? element.parentNode.tagName
+            : undefined,
         attributeName: name,
         attributes: attrs,
         attributeRange: attributeRange(element, attribute),

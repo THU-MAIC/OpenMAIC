@@ -151,6 +151,16 @@ import {
   type RailTab,
 } from '@/lib/workbench/workspace-rail-tab';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
+import {
+  CourseRunStatusIcon,
+  courseRunStatusText,
+} from '@/components/generation/course-run-status-label';
+import {
+  courseRunHref,
+  courseRunStatus,
+  pendingCourseName,
+} from '@/lib/generation-run-client/course-card';
+import type { RunSnapshot } from '@/lib/generation-run-client/types';
 import { PaneFoldButton } from './PaneFoldButton';
 import { deleteWorkspaceSession } from '@/lib/workbench/workspace-actions';
 import { apiRenameStage, StageRenameError, STAGE_NAME_MAX_LENGTH } from '@/lib/live/server-api';
@@ -179,8 +189,13 @@ type StageListItem = Discovery['classrooms'][number];
  */
 const SESSION_ROW_LIMIT = 12;
 
+const NO_PENDING_RUNS: readonly RunSnapshot[] = [];
+
 export function WorkspaceRail({
   courses,
+  courseRuns,
+  pendingRuns = NO_PENDING_RUNS,
+  onDiscardRun,
   sessions,
   sessionState,
   onReloadSessions,
@@ -199,6 +214,23 @@ export function WorkspaceRail({
   resizeHandle,
 }: {
   readonly courses: Discovery;
+  /**
+   * The runs producing courses, by course id (the owner's active runs). A
+   * course in here is read-only until its run completes: its row shows the
+   * run's progress and is neither opened, dragged, renamed nor deleted from
+   * here. A paused run's row opens the classroom where its Retry lives.
+   */
+  readonly courseRuns?: ReadonlyMap<string, RunSnapshot>;
+  /**
+   * The runs whose course is not listed yet, in the home page's order (see
+   * `pendingCourseRuns`). Each is a placeholder row at the top of the loose
+   * courses, where its course row appears once the course is listed — the
+   * home page's pending card, from the moment the run starts. It opens what
+   * that card opens (the run's preview, or its classroom), in a new tab.
+   */
+  readonly pendingRuns?: readonly RunSnapshot[];
+  /** Discard a pending run — the home card's delete, confirmed the same way as a row delete. */
+  readonly onDiscardRun?: (runId: string) => Promise<void> | void;
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
   readonly onReloadSessions: () => void;
@@ -702,6 +734,32 @@ export function WorkspaceRail({
 
   const renderCourseRow = (course: StageListItem, siblings: readonly string[]) => {
     const label = course.name || t('workspace.untitledCourse');
+    const run = courseRuns?.get(course.id);
+    const runStatus = run ? courseRunStatus(run) : null;
+    if (run && runStatus) {
+      const paused = runStatus.kind === 'paused';
+      return (
+        <RailRow
+          key={course.id}
+          testId={`pro-nav-course-${course.id}`}
+          label={label}
+          labelClassName="ws-course-name"
+          course
+          generating
+          hint={paused ? t('workspace.openToRetry') : t('workspace.courseGeneratingRowHint')}
+          active={course.id === activeCourseId}
+          meta={courseRunStatusText(runStatus, t)}
+          metaTestId={`pro-nav-course-meta-${course.id}`}
+          trailingMark={
+            <CourseRunStatusIcon
+              status={runStatus}
+              className={cn('ws-row-run-icon', paused && 'ws-row-run-icon-paused')}
+            />
+          }
+          onClick={paused ? () => window.open(courseRunHref(run), '_blank', 'noopener') : undefined}
+        />
+      );
+    }
     // Being renamed: the row IS the input, in place, at the row's own height.
     // Not a dialog — the thing being edited is the row you are looking at.
     if (course.id === renamingCourseId) {
@@ -750,6 +808,44 @@ export function WorkspaceRail({
       />
     );
   };
+
+  const renderPendingRunRow = (run: RunSnapshot) => {
+    const status = courseRunStatus(run);
+    if (!status) return null;
+    const label = pendingCourseName(run) || t('workspace.untitledCourse');
+    return (
+      <RailRow
+        key={run.id}
+        testId={`pro-nav-run-${run.id}`}
+        label={label}
+        labelClassName="ws-course-name"
+        course
+        generating
+        hint={t('workspace.viewGenerationProgress')}
+        meta={courseRunStatusText(status, t)}
+        metaTestId={`pro-nav-run-meta-${run.id}`}
+        trailingMark={
+          <CourseRunStatusIcon
+            status={status}
+            className={cn('ws-row-run-icon', status.kind === 'paused' && 'ws-row-run-icon-paused')}
+          />
+        }
+        onClick={() => window.open(courseRunHref(run), '_blank', 'noopener')}
+        trailing={
+          onDiscardRun ? (
+            <WorkspaceRowMenu
+              testId={`pro-nav-run-more-${run.id}`}
+              label={label}
+              onDelete={() => onDiscardRun(run.id)}
+            />
+          ) : undefined
+        }
+      />
+    );
+  };
+
+  // The home page lists pending runs only at its top level and not in a search.
+  const renderPendingRuns = () => pendingRuns.map(renderPendingRunRow);
 
   const renderCourseList = (list: readonly StageListItem[], listId: string) => {
     // The sibling sequence the keyboard move walks: the whole sub-list, not
@@ -1024,13 +1120,16 @@ export function WorkspaceRail({
           <RailList
             id="courses"
             title={t('workspace.sections.courses')}
-            count={orderedCourses.length}
+            count={orderedCourses.length + pendingRuns.length}
             state={courses.state}
             emptyLabel={t('workspace.coursesEmpty')}
             onRetry={courses.reload}
           >
             {!foldersAvailable ? (
-              renderCourseList(matchedOwned, 'unfiled')
+              <>
+                {searchingCourses ? null : renderPendingRuns()}
+                {renderCourseList(matchedOwned, 'unfiled')}
+              </>
             ) : searchingCourses ? (
               // Flattened: folders are not a filter, they are a location, and a
               // search that only looked inside the open one would lie. It stays
@@ -1159,6 +1258,7 @@ export function WorkspaceRail({
                     retired head was good for. A hair of space says "different
                     kind of row" without claiming a container. */}
                 <div className={cn('space-y-px', tree.groups.length > 0 && 'ws-loose')}>
+                  {renderPendingRuns()}
                   {renderCourseList(tree.ungrouped, 'unfiled')}
                 </div>
               </>
@@ -1920,6 +2020,8 @@ function RailRow({
   rowClassName,
   labelClassName,
   active = false,
+  generating = false,
+  hint,
   onClick,
   dragProps,
   dragging = false,
@@ -1939,7 +2041,12 @@ function RailRow({
   readonly rowClassName?: string;
   readonly labelClassName?: string;
   readonly active?: boolean;
-  readonly onClick: () => void;
+  /** A course a generation run is still producing (see `courseRuns`). */
+  readonly generating?: boolean;
+  /** Said after the label in the tooltip — why the row does what it does. */
+  readonly hint?: string;
+  /** Absent: the row is shown but cannot be acted on (`aria-disabled`). */
+  readonly onClick?: () => void;
   /** `useTreeDrag`'s row hooks — data attributes plus the pointer-down. */
   readonly dragProps?: Record<string, unknown>;
   readonly dragging?: boolean;
@@ -1980,8 +2087,10 @@ function RailRow({
           onMove(event.key === 'ArrowUp' ? -1 : 1);
         }}
         data-testid={testId}
-        title={label}
+        data-generating={generating || undefined}
+        title={hint ? `${label} · ${hint}` : label}
         aria-current={active ? 'page' : undefined}
+        aria-disabled={onClick ? undefined : true}
         className={cn(
           'ws-row flex min-w-0 flex-1 items-center px-2 text-left',
           // NO flex gap, on either row kind: the leading slot's own width is the
@@ -1990,6 +2099,7 @@ function RailRow({
           // chat's name lands in the same column as a course's.
           'ws-tree-row',
           course && 'ws-course',
+          generating && 'ws-course-generating',
           rowClassName,
           active && 'ws-row-active',
         )}

@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   accessDocument: vi.fn(),
   mediaToArray: vi.fn(),
   withAssetUrl: vi.fn(async (_ref: string, fn: (url: string | null) => unknown) => fn(null)),
+  captureVideoFirstFrame: vi.fn(
+    async (_video: Blob, _signal?: AbortSignal) => undefined as Blob | undefined,
+  ),
 }));
 
 vi.mock('@/lib/document-store', () => ({
@@ -25,6 +28,9 @@ vi.mock('@/lib/device-storage/database', () => ({
 vi.mock('@/lib/media/use-asset-url', () => ({
   withAssetUrl: mocks.withAssetUrl,
 }));
+vi.mock('@/lib/media/video-first-frame', () => ({
+  captureVideoFirstFrame: mocks.captureVideoFirstFrame,
+}));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
   saveChatSessions: vi.fn(),
@@ -43,7 +49,11 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
   preparePBLScenesForDocumentPersistence: vi.fn(),
 }));
 
-import { getFirstSlideByStages, revokeThumbnailSlideMediaUrls } from '@/lib/utils/stage-storage';
+import {
+  getFirstSlideForStage,
+  loadFirstSlideThumbnail,
+  revokeThumbnailSlideMediaUrls,
+} from '@/lib/utils/stage-storage';
 
 describe('stage thumbnail allocated assets', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -101,15 +111,35 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
     mocks.withAssetUrl.mockReset().mockImplementation(async (_ref, fn) => fn(null));
+    mocks.captureVideoFirstFrame.mockReset().mockResolvedValue(undefined);
   });
 
   it('resolves an allocated ref through its same-key Dexie compatibility row', async () => {
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
     expect(mocks.mediaToArray).toHaveBeenCalledOnce();
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
     });
+  });
+
+  it('reports a thumbnail whose media all resolved as complete', async () => {
+    const { slide, complete } = await loadFirstSlideThumbnail('stage-1');
+
+    expect(slide?.elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    expect(complete).toBe(true);
+  });
+
+  it('reports a thumbnail as incomplete when reading a media asset failed', async () => {
+    mocks.withAssetUrl.mockImplementationOnce(async () => {
+      throw new Error('network down');
+    });
+    mocks.mediaToArray.mockResolvedValueOnce([]);
+
+    const { slide, complete } = await loadFirstSlideThumbnail('stage-1');
+
+    expect(slide).not.toBeNull();
+    expect(complete).toBe(false);
   });
 
   it('hydrates and revokes an allocated image background', async () => {
@@ -153,10 +183,10 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].background?.image?.src).toBe('blob:thumbnail-asset');
-    revokeThumbnailSlideMediaUrls(slides);
+    expect(slide.background?.image?.src).toBe('blob:thumbnail-asset');
+    revokeThumbnailSlideMediaUrls(slide);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumbnail-asset');
   });
 
@@ -169,9 +199,9 @@ describe('stage thumbnail allocated assets', () => {
       vi.fn(async () => new Response(new Blob(['pool-new'], { type: 'image/png' }))),
     );
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    expect(slide.elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
     const hydrated = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
     expect(await hydrated.text()).toBe('pool-new');
   });
@@ -239,9 +269,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-1',
       poster: 'blob:thumbnail-2',
     });
@@ -299,9 +329,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: 'blob:thumbnail-asset',
       poster: 'blob:thumbnail-asset',
       mediaRef: 'gen_vid_1',
@@ -359,9 +389,9 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements).toMatchObject([
+    expect(slide.elements).toMatchObject([
       { src: '', mediaRef: 'gen_vid_1' },
       { src: '', mediaRef: 'gen_vid_2' },
     ]);
@@ -428,11 +458,116 @@ describe('stage thumbnail allocated assets', () => {
       },
     ]);
 
-    const slides = await getFirstSlideByStages(['stage-1']);
+    const slide = (await getFirstSlideForStage('stage-1'))!;
 
-    expect(slides['stage-1'].elements[0]).toMatchObject({
+    expect(slide.elements[0]).toMatchObject({
       src: '',
       mediaRef: 'gen_vid_1',
     });
+  });
+
+  function videoOnlyDocument(video: Record<string, unknown>) {
+    return {
+      document: {
+        scenes: [
+          {
+            id: 'scene-1',
+            stageId: 'stage-1',
+            type: 'slide',
+            title: 'Slide',
+            order: 1,
+            content: {
+              type: 'slide',
+              canvas: {
+                id: 'slide-1',
+                viewportSize: 1000,
+                viewportRatio: 0.5625,
+                elements: [
+                  {
+                    id: 'video-1',
+                    type: 'video',
+                    src: 'ast_allocated_video',
+                    mediaRef: 'ast_allocated_video',
+                    left: 0,
+                    top: 0,
+                    width: 100,
+                    height: 56,
+                    rotate: 0,
+                    ...video,
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  const storedVideoRow = {
+    id: 'stage-1:ast_allocated_video',
+    stageId: 'stage-1',
+    type: 'video',
+    blob: new Blob(['video'], { type: 'video/mp4' }),
+    mimeType: 'video/mp4',
+    size: 5,
+    prompt: 'Thumbnail',
+    params: '{}',
+    createdAt: 1,
+  };
+
+  it('gives a video without a poster its opening frame as one', async () => {
+    // The thumbnail draws a video by its poster: a <video> loading the bytes
+    // leaves aborted requests behind on every page load, and generated videos
+    // usually come without a poster.
+    let objectUrl = 0;
+    vi.mocked(URL.createObjectURL).mockImplementation(() => `blob:thumbnail-${++objectUrl}`);
+    mocks.accessDocument.mockResolvedValueOnce(videoOnlyDocument({}));
+    mocks.mediaToArray.mockResolvedValueOnce([storedVideoRow]);
+    const frame = new Blob(['frame'], { type: 'image/jpeg' });
+    mocks.captureVideoFirstFrame.mockResolvedValueOnce(frame);
+    const controller = new AbortController();
+
+    const { slide, complete } = await loadFirstSlideThumbnail('stage-1', controller.signal);
+
+    expect(complete).toBe(true);
+    expect(slide!.elements[0]).toMatchObject({
+      src: 'blob:thumbnail-1',
+      poster: 'blob:thumbnail-2',
+    });
+    const [decoded, signal] = mocks.captureVideoFirstFrame.mock.calls[0];
+    expect(await decoded.text()).toBe('video');
+    expect(decoded.type).toBe('video/mp4');
+    expect(signal).toBe(controller.signal);
+    expect(vi.mocked(URL.createObjectURL).mock.calls[1][0]).toBe(frame);
+
+    // The frame is one of the thumbnail's object URLs, released with it.
+    revokeThumbnailSlideMediaUrls(slide!);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:thumbnail-2');
+  });
+
+  it('keeps a video without a poster when its opening frame cannot be decoded', async () => {
+    mocks.accessDocument.mockResolvedValueOnce(videoOnlyDocument({}));
+    mocks.mediaToArray.mockResolvedValueOnce([storedVideoRow]);
+
+    const slide = (await getFirstSlideForStage('stage-1'))!;
+
+    expect(mocks.captureVideoFirstFrame).toHaveBeenCalledTimes(1);
+    expect(slide.elements[0]).toMatchObject({ src: 'blob:thumbnail-asset' });
+    expect((slide.elements[0] as { poster?: string }).poster).toBeUndefined();
+  });
+
+  it('decodes no frame for a video that has a poster or no bytes', async () => {
+    mocks.accessDocument.mockResolvedValueOnce(
+      videoOnlyDocument({ poster: 'https://cdn.test/poster.jpg' }),
+    );
+    mocks.mediaToArray.mockResolvedValueOnce([storedVideoRow]);
+    await getFirstSlideForStage('stage-1');
+
+    mocks.accessDocument.mockResolvedValueOnce(videoOnlyDocument({}));
+    mocks.mediaToArray.mockResolvedValueOnce([]);
+    await getFirstSlideForStage('stage-1');
+
+    expect(mocks.captureVideoFirstFrame).not.toHaveBeenCalled();
   });
 });

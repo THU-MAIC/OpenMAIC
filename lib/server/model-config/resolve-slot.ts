@@ -2,14 +2,22 @@
  * Slot resolution (RFC #1701, tracked in #1725).
  *
  * `resolveSlot` walks from a slot up to its capability root and returns the
- * first assignment it meets. At each node the layers are consulted in order:
- * the deployment layer (openmaic.yml, which locks what it sets) before the
- * workspace layer (the web UI). An explicit `null` stops the walk and disables
- * the subtree; reaching the root without an assignment leaves the capability
- * unassigned. There is no fallback to any vendor.
+ * first assignment it meets; an explicit `null` stops the walk and disables
+ * the subtree, and reaching the root without an assignment leaves the
+ * capability unassigned. There is no fallback to any vendor.
+ *
+ * Two layers take part. The deployment layer (openmaic.yml, or what the legacy
+ * variables translate to) holds the server's defaults and names what is
+ * locked; the workspace layer holds the web settings.
+ * - A slot in a locked subtree (the slot or an ancestor is named by `lock`, or
+ *   `lock: all`) resolves from the deployment alone, walking up to the locked
+ *   node: nothing a workspace sets there counts.
+ * - Any other slot walks the workspace's assignments from the slot up to
+ *   the root first, and only when it finds none, the deployment's defaults
+ *   the same way: the user's choice anywhere up the tree beats a server
+ *   default, even one written nearer the slot. `null` stops either walk.
  *
  * This is pure: it takes the layers as input and builds no SDK clients.
- * Nothing calls it yet.
  */
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
 import { PROVIDERS } from '@/lib/ai/providers';
@@ -31,12 +39,14 @@ import {
   type SlotAssignment,
 } from '@/lib/server/model-config/openmaic-yml';
 
+/** Where a layer comes from: the deployment (openmaic.yml) or the web settings. */
+export type ConfigSource = 'deployment' | 'workspace';
+
 /**
- * `deployment`: openmaic.yml, which locks what it sets. `workspace`: the web
- * settings. `default`: what an older deployment configured through
- * DEFAULT_MODEL and friends; it locks nothing and ranks below both.
+ * Where a slot's value comes from: the deployment's default, the workspace's
+ * own assignment, or the deployment inside a locked subtree.
  */
-export type ConfigSource = 'deployment' | 'workspace' | 'default';
+export type SlotSource = 'default' | 'workspace' | 'locked';
 
 export interface ModelConfigLayer {
   source: ConfigSource;
@@ -79,13 +89,9 @@ interface ResolvedNode {
   slot: SlotId;
   /** The node that held the assignment: the slot itself or an ancestor. */
   resolvedAt: SlotId;
-  /** The layer that held the assignment. */
-  source: ConfigSource;
-  /**
-   * Whether the requested slot itself is written in the deployment layer, so
-   * the web UI cannot change it. Inheriting a deployment value does not lock a
-   * slot: the workspace may still assign it.
-   */
+  /** Where the assignment came from. */
+  source: SlotSource;
+  /** Whether the slot is in a locked subtree, so the web UI cannot change it. */
   locked: boolean;
 }
 
@@ -103,7 +109,8 @@ export type SlotResolution =
         fallbackRequirements?: RequirementCheck[];
       })
   | (ResolvedNode & { status: 'disabled' })
-  | { status: 'unassigned'; slot: SlotId };
+  /** `locked`: in a locked subtree (`lock: all` over a root the deployment leaves unset). */
+  | { status: 'unassigned'; slot: SlotId; locked?: true };
 
 export class SlotResolutionError extends Error {
   constructor(message: string) {
@@ -112,15 +119,24 @@ export class SlotResolutionError extends Error {
   }
 }
 
-function findAssignment(
+function assignmentIn(
+  layer: ModelConfigLayer | undefined,
   node: SlotId,
-  layers: readonly ModelConfigLayer[],
-): { assignment: SlotAssignment; layer: ModelConfigLayer } | undefined {
-  for (const layer of layers) {
-    const slots = layer.config.slots;
-    if (slots && Object.hasOwn(slots, node)) return { assignment: slots[node], layer };
-  }
-  return undefined;
+): { assignment: SlotAssignment } | undefined {
+  const slots = layer?.config.slots;
+  return slots && Object.hasOwn(slots, node) ? { assignment: slots[node] } : undefined;
+}
+
+/**
+ * The node whose lock covers a slot: the slot itself or the nearest ancestor
+ * `lock` names (with `lock: all`, the capability root), else undefined.
+ */
+export function lockingNode(config: ModelConfigFile | undefined, slot: SlotId): SlotId | undefined {
+  const lock = config?.lock;
+  if (!lock) return undefined;
+  const lineage = slotLineage(slot);
+  if (lock === 'all') return lineage[lineage.length - 1];
+  return lineage.find((node) => lock.includes(node));
 }
 
 /**
@@ -231,20 +247,45 @@ function checkRequirement(
 
 type ModelLike = { id: string; capabilities?: { tools?: boolean } };
 
-function isLockedByDeployment(slot: SlotId, layers: readonly ModelConfigLayer[]): boolean {
-  return layers.some(
-    (layer) =>
-      layer.source === 'deployment' &&
-      !!layer.config.slots &&
-      Object.hasOwn(layer.config.slots, slot),
-  );
-}
+const SOURCE_RANK: Record<ConfigSource, number> = { deployment: 0, workspace: 1 };
 
-const SOURCE_RANK: Record<ConfigSource, number> = { deployment: 0, workspace: 1, default: 2 };
-
-/** Deployment, then workspace, then default layers, whatever order the caller passed them in. */
+/** The deployment before the workspace, whatever order the caller passed them in. */
 function inPrecedence(layers: readonly ModelConfigLayer[]): ModelConfigLayer[] {
   return [...layers].sort((a, b) => SOURCE_RANK[a.source] - SOURCE_RANK[b.source]);
+}
+
+/**
+ * The assignment a slot resolves through: the node that holds it, where it
+ * comes from, and the value; undefined when nothing up to the root (or the
+ * locked node) assigns it. No provider is looked up.
+ */
+export function findAssignment(
+  slot: SlotId,
+  deployment: ModelConfigLayer | undefined,
+  workspace: ModelConfigLayer | undefined,
+): { node: SlotId; source: SlotSource; assignment: SlotAssignment } | undefined {
+  const lineage = slotLineage(slot);
+  const lockedAt = lockingNode(deployment?.config, slot);
+  if (lockedAt !== undefined) {
+    // Inside a locked subtree only the deployment counts, up to the locked node.
+    for (const node of lineage.slice(0, lineage.indexOf(lockedAt) + 1)) {
+      const found = assignmentIn(deployment, node);
+      if (found) return { node, source: 'locked', ...found };
+    }
+    return undefined;
+  }
+  // The user's choice anywhere up the tree beats the server's defaults: only
+  // when the workspace assigns nothing from the slot to the root do the
+  // defaults count.
+  for (const node of lineage) {
+    const own = assignmentIn(workspace, node);
+    if (own) return { node, source: 'workspace', ...own };
+  }
+  for (const node of lineage) {
+    const fallback = assignmentIn(deployment, node);
+    if (fallback) return { node, source: 'default', ...fallback };
+  }
+  return undefined;
 }
 
 export function resolveSlot(
@@ -252,17 +293,18 @@ export function resolveSlot(
   givenLayers: readonly ModelConfigLayer[],
 ): SlotResolution {
   const layers = inPrecedence(givenLayers);
+  const deployment = layers.find((layer) => layer.source === 'deployment');
+  const workspace = layers.find((layer) => layer.source === 'workspace');
   const capability = getSlot(slot).capability;
-  for (const node of slotLineage(slot)) {
-    const found = findAssignment(node, layers);
-    if (!found) continue;
+  const found = findAssignment(slot, deployment, workspace);
+  if (found) {
+    const { node, assignment } = found;
     const base: ResolvedNode = {
       slot,
       resolvedAt: node,
-      source: found.layer.source,
-      locked: isLockedByDeployment(slot, layers),
+      source: found.source,
+      locked: lockingNode(deployment?.config, slot) !== undefined,
     };
-    const { assignment } = found;
     if (assignment === null) return { ...base, status: 'disabled' };
 
     const at = `slots.${node}`;
@@ -306,5 +348,9 @@ export function resolveSlot(
       ...(fallbackRequirements ? { fallbackRequirements } : {}),
     };
   }
-  return { status: 'unassigned', slot };
+  return {
+    status: 'unassigned',
+    slot,
+    ...(lockingNode(deployment?.config, slot) !== undefined ? { locked: true as const } : {}),
+  };
 }

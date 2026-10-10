@@ -24,9 +24,6 @@ import { parseUserStageRoutes } from '@/lib/server/model-routes';
 import type { ThinkingConfig } from '@/lib/types/provider';
 const log = createLogger('Chat API');
 
-// Allow streaming responses up to 60 seconds
-export const maxDuration = 60;
-
 /**
  * POST /api/chat
  * Send a message and receive SSE stream of generation events

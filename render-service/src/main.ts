@@ -83,6 +83,8 @@ export interface AppDeps {
   extractionGate: Semaphore;
   /** Independent preview admission, injectable for focused route tests. */
   previewGate?: PreviewGate;
+  /** Preview execution capacity, independent of the video render queue. */
+  previewExecutionGate?: Semaphore;
   /** Render one validated persisted scene to PNG. */
   previewRenderer?: PreviewRenderer;
   /** Preview wall-clock deadline, injectable for focused route tests. */
@@ -249,6 +251,8 @@ export function createApp(deps: AppDeps): Hono {
   const onEvent = deps.onEvent ?? emitRenderEvent;
   const previewGate =
     deps.previewGate ?? new PreviewGate(config.previewMaxInFlight, config.previewMaxPerUser);
+  const previewExecutionGate =
+    deps.previewExecutionGate ?? new Semaphore(config.previewMaxConcurrency);
 
   const app = new Hono();
 
@@ -258,6 +262,7 @@ export function createApp(deps: AppDeps): Hono {
       // Aggregate-only by design — the full rationale lives on
       // RenderCoordinator#accepting (never queue depths or per-identity data).
       accepting: coordinator.accepting,
+      previewMaxConcurrency: config.previewMaxConcurrency,
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
     }),
@@ -432,24 +437,26 @@ export function createApp(deps: AppDeps): Hono {
       if (typeof payload === 'string') throw new BadRequestError(payload);
       const unpreviewable = previewabilityError(payload.scene);
       if (unpreviewable) throw new UnprocessablePreviewError(unpreviewable);
-      const execution = coordinator.tryRunWithExecutionSlot(
-        () =>
-          previewRenderer.render({
-            scene: payload.scene,
-            stage: payload.stage,
-            viewport: payload.viewport,
-            signal,
-            deadlineMs: previewDeadlineMs,
-          }),
-        signal,
-      );
-      if (!execution) {
+      signal.throwIfAborted();
+      const releaseExecution = previewExecutionGate.tryAcquire();
+      if (!releaseExecution) {
         throw new PreviewRejectedError(
-          'Preview capacity is busy with another render; retry shortly.',
+          'Preview capacity is busy with another preview; retry shortly.',
           'capacity_busy',
         );
       }
-      const png = await execution;
+      let png: Uint8Array;
+      try {
+        png = await previewRenderer.render({
+          scene: payload.scene,
+          stage: payload.stage,
+          viewport: payload.viewport,
+          signal,
+          deadlineMs: previewDeadlineMs,
+        });
+      } finally {
+        releaseExecution();
+      }
       if (png.byteLength === 0) throw new Error('Preview renderer returned an empty image');
 
       const body = new Uint8Array(png.byteLength);

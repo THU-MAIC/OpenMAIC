@@ -242,11 +242,20 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     });
   }
 
-  test('schema is idempotent and has one PGlite-compatible statement per entry', async () => {
-    const statements: string[] = [];
-    await ensureAssetSchema(recordingQueryable(db, statements));
-    await ensureAssetSchema(recordingQueryable(db, statements));
-    expect(statements).toEqual([...ASSET_PG_SCHEMA, ...ASSET_PG_SCHEMA].map(normalizeSql));
+  test('schema is applied once and has one PGlite-compatible statement per entry', async () => {
+    const fresh = new PGlite();
+    await fresh.waitReady;
+    const schema = new Set(ASSET_PG_SCHEMA.map(normalizeSql));
+    const first: string[] = [];
+    const second: string[] = [];
+    await ensureAssetSchema(recordingQueryable(fresh, first));
+    await ensureAssetSchema(recordingQueryable(fresh, second));
+    await fresh.close();
+    expect(first.filter((statement) => schema.has(statement))).toEqual(
+      ASSET_PG_SCHEMA.map(normalizeSql),
+    );
+    // Recorded as applied: a later start issues no schema statement at all.
+    expect(second.filter((statement) => schema.has(statement))).toEqual([]);
     expect(ASSET_PG_SCHEMA).toHaveLength(15);
     expect(ASSET_PG_SCHEMA.every((statement) => !statement.includes(';'))).toBe(true);
   });

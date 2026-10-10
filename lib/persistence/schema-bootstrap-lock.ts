@@ -1,4 +1,5 @@
 import type { Queryable } from '@openmaic/storage/document/pg';
+import { withSessionAdvisoryLock } from '@openmaic/storage/pg-migrations';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 /**
@@ -23,24 +24,37 @@ export const SCHEMA_BOOTSTRAP_LOCK_KEY = 71_310_523;
  * The lock is session-level and taken on one dedicated connection, which runs
  * every statement of `body` and is released in `finally`: the lock cannot be
  * held by a connection that went back to the pool, and a connection that dies
- * mid-bootstrap releases it with the session. It lives here, at the
- * application's bootstrap, rather than in each package `ensure*Schema`
- * function, because what must be serialized is the whole sequence -- package
- * tables and this application's own (`stage_meta`, owner materials) alike --
- * and every caller that provisions schema goes through this one helper.
+ * mid-bootstrap releases it with the session. Each store's versioned
+ * migrations (`applySchemaMigrations` in `@openmaic/storage/pg-migrations`)
+ * are serialized on their own as well; this lock, at the application's
+ * bootstrap, serializes the whole sequence -- package tables and this
+ * application's own (`stage_meta`, owner materials) alike, where one store's
+ * migrations depend on another's tables -- and every caller that provisions
+ * schema goes through this one helper.
+ *
+ * Session-level advisory locks need a direct or session-pooled connection; a
+ * pooler in transaction mode (PgBouncer `pool_mode = transaction`) is not
+ * supported.
  */
 export async function withSchemaBootstrapLock<T>(
   pool: ConnectableQueryable,
   body: (queryable: Queryable) => Promise<T>,
+  options: { lockTimeoutMs?: number } = {},
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query('SELECT pg_advisory_lock($1::bigint)', [SCHEMA_BOOTSTRAP_LOCK_KEY]);
-    try {
-      return await body(client);
-    } finally {
-      await client.query('SELECT pg_advisory_unlock($1::bigint)', [SCHEMA_BOOTSTRAP_LOCK_KEY]);
-    }
+    // Bounded: a holder that never finishes fails this start with an error
+    // naming the lock (SchemaLockTimeoutError) instead of hanging it. A failed
+    // unlock after a failed body is logged; the body's error is the one thrown.
+    return await withSessionAdvisoryLock(
+      client,
+      SCHEMA_BOOTSTRAP_LOCK_KEY,
+      {
+        name: 'schema bootstrap lock',
+        ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
+      },
+      () => body(client),
+    );
   } finally {
     client.release();
   }

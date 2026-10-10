@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
-import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import { seedServerDocument, setCurrentScene, uniqueStageId } from '../fixtures/server-seed';
 
 /**

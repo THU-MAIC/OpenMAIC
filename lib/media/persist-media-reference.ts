@@ -52,10 +52,6 @@ import {
   recordPendingMediaAllocation,
   type PendingMediaAllocation,
 } from './pending-media-allocations';
-import {
-  applyPendingMediaAllocationsToScene,
-  sceneHasPendingMediaAllocation,
-} from './reconcile-scene-media';
 
 const log = createLogger('MediaReferenceWriteBack');
 
@@ -127,35 +123,6 @@ function applyToLiveStage(stageId: string, rewrite: GeneratedMediaReferenceRewri
   // Order matters: the store must already hold the rewrite when the mark
   // schedules the next flush, so the snapshot that flush captures carries it.
   useStageStore.setState({ scenes, stage });
-  markStagePersistenceDirty(dirty);
-  return true;
-}
-
-/**
- * Hand every parked allocation to the open course's scene that now wants it.
- *
- * A scene can be committed while a write-back's round trip is in flight; its
- * own reconciliation ran against a registry that did not yet hold the entry, so
- * the entry would otherwise sit there for a scene that will never be added
- * again — and, worse, answer the skip test as "already handled". This is the
- * second look that keeps that from happening; it is also what makes a parked
- * allocation converge on a later generation pass rather than only at commit.
- */
-export function placePendingMediaAllocations(stageId: string): boolean {
-  const state = useStageStore.getState();
-  if (state.stage?.id !== stageId) return false;
-
-  const dirty: PendingChange[] = [];
-  const scenes = state.scenes.map((scene) => {
-    if (!sceneHasPendingMediaAllocation(scene)) return scene;
-    const next = cloneScene(scene);
-    if (!applyPendingMediaAllocationsToScene(next)) return scene;
-    dirty.push({ kind: 'scene', sceneId: next.id });
-    return next;
-  });
-
-  if (dirty.length === 0) return false;
-  useStageStore.setState({ scenes });
   markStagePersistenceDirty(dirty);
   return true;
 }

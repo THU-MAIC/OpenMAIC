@@ -476,7 +476,9 @@ async function launchWithAbort(launch: Promise<Browser>, signal: AbortSignal): P
     return await raceWithAbort(launch, signal);
   } catch (error) {
     if (signal.aborted) {
-      void launch
+      // Keep the caller's execution permit until the launch settles and any
+      // browser it returns is closed; abort must not start background Chromiums.
+      await launch
         .then(async (browser) => {
           forceKillBrowser(browser);
           await closeBrowserBounded(browser);
@@ -533,6 +535,8 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
       this.browserLauncher.launch({
         executablePath,
         headless: true,
+        signal: request.signal,
+        timeout: request.deadlineMs,
         protocolTimeout: request.deadlineMs + PREVIEW_PROTOCOL_TIMEOUT_BUFFER_MS,
         args: ['--no-sandbox', '--disable-dev-shm-usage'],
       }),

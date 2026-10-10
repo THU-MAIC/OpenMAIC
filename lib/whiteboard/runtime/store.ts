@@ -88,9 +88,20 @@ async function selectSession(
   stageId: string,
   learnerKey: string,
 ): Promise<RuntimeSession | undefined> {
-  const sessions = (await store.listSessions(stageId, learnerKey)).filter(
-    (session) => session.kind === WHITEBOARD_RUNTIME_KIND,
+  // The partition listing is the only read: an absent session is the normal
+  // state of a board nobody has drawn on yet, and a point read of the
+  // deterministic id would answer it with a 404 on every hydration. A corrupt
+  // row the listing omits still fails loud on the next append, whose create
+  // collides with it and re-reads it through `getSession`.
+  const listed = await store.listSessions(stageId, learnerKey);
+  const deterministicId = whiteboardRuntimeSessionId(stageId, learnerKey);
+  const squatter = listed.find(
+    (session) => session.id === deterministicId && session.kind !== WHITEBOARD_RUNTIME_KIND,
   );
+  if (squatter) {
+    assertSessionIdentity(squatter, { id: deterministicId, stageId, learnerKey });
+  }
+  const sessions = listed.filter((session) => session.kind === WHITEBOARD_RUNTIME_KIND);
   const active = sessions.filter((session) => session.status === 'active');
   if (active.length > 1) {
     throw new WhiteboardRuntimeSessionAmbiguousError(
@@ -105,15 +116,6 @@ async function selectSession(
   if (active.length === 1) {
     assertSessionIdentity(active[0]!, { stageId, learnerKey });
     return active[0];
-  }
-  const deterministic = await store.getSession(whiteboardRuntimeSessionId(stageId, learnerKey));
-  if (deterministic) {
-    assertSessionIdentity(deterministic, {
-      id: whiteboardRuntimeSessionId(stageId, learnerKey),
-      stageId,
-      learnerKey,
-    });
-    return deterministic;
   }
   return undefined;
 }

@@ -67,6 +67,7 @@ import {
   stillWaiting,
   type ImportLedger,
 } from './ledger';
+import { withImportLock } from './lock';
 import { connectImportServer, type ImportClients } from './server';
 import {
   legacyMediaCourseIndex,
@@ -101,6 +102,12 @@ export interface LegacyImportOptions {
   listOwnedStages?: () => Promise<OwnedStage[]>;
   folders?: FolderApi;
   log?: (message: string, ...details: unknown[]) => void;
+  /**
+   * The access code was just accepted: a run the last refusal paused as
+   * unauthorized starts now rather than after its backoff. Any other backoff
+   * still holds.
+   */
+  accessGranted?: boolean;
 }
 
 export type LegacyImportStatus =
@@ -157,16 +164,6 @@ function quizKeySceneIds(storage: Storage): Set<string> {
   return scenes;
 }
 
-async function withImportLock<T>(
-  locks: LockManager | null | undefined,
-  work: () => Promise<T>,
-): Promise<T | 'busy-elsewhere'> {
-  if (!locks) return work();
-  return locks.request(IMPORT_LOCK_NAME, { ifAvailable: true }, async (lock) =>
-    lock ? work() : ('busy-elsewhere' as const),
-  );
-}
-
 async function runLocked(
   storage: Storage,
   options: LegacyImportOptions,
@@ -176,6 +173,9 @@ async function runLocked(
   // Re-read inside the lock: another tab may have finished meanwhile.
   const ledger = ensureLedger(storage);
   if (ledger.completedAt) return { status: 'already-complete', ledger };
+  // Set again below when this run is refused as unauthorized too; every exit
+  // saves the ledger.
+  delete ledger.pausedUnauthorized;
   const checkpoint = () => saveLedger(storage, ledger);
   const connected = (options.connect ?? connectImportServer)(ledger.browserId);
   const clients: ImportClients = {
@@ -335,6 +335,7 @@ async function runLocked(
       // come back, so this is a pause with backoff, never an end.
       ledger.failedRuns += 1;
       ledger.nextRunAt = now() + backoffMs(ledger.failedRuns);
+      ledger.pausedUnauthorized = true;
       log(`Paused: the server refused the credential (${failure.reason}); retrying later`);
     } else if (failure.kind === 'not-bound') {
       // Every request that can answer this follows this run's own successful
@@ -410,7 +411,8 @@ export async function runLegacyBrowserImport(
     const now = options.now ?? Date.now;
     const early = loadLedger(storage);
     if (early?.completedAt) return { status: 'already-complete', ledger: early };
-    if (stillWaiting(early?.nextRunAt, now(), MAX_BACKOFF_MS)) {
+    const retryNow = options.accessGranted === true && early?.pausedUnauthorized === true;
+    if (!retryNow && stillWaiting(early?.nextRunAt, now(), MAX_BACKOFF_MS)) {
       return { status: 'deferred', ledger: early };
     }
 
@@ -420,7 +422,26 @@ export async function runLegacyBrowserImport(
           ? navigator.locks
           : undefined
         : options.locks;
-    const outcome = await withImportLock(locks, () => runLocked(storage, options));
+    // A resume after the access code was accepted waits for another tab's
+    // run instead of being dropped: that run may be the one the gate refuses.
+    // Once it holds the lock it decides again on what that run left.
+    const accessGranted = options.accessGranted === true;
+    const outcome = await withImportLock(
+      IMPORT_LOCK_NAME,
+      locks,
+      async (): Promise<LegacyImportOutcome> => {
+        if (accessGranted) {
+          const current = loadLedger(storage);
+          if (current?.completedAt) return { status: 'already-complete', ledger: current };
+          const paused = current?.pausedUnauthorized === true;
+          if (!paused && stillWaiting(current?.nextRunAt, now(), MAX_BACKOFF_MS)) {
+            return { status: 'deferred', ledger: current };
+          }
+        }
+        return runLocked(storage, options);
+      },
+      { wait: accessGranted },
+    );
     return outcome === 'busy-elsewhere' ? { status: 'busy-elsewhere' } : outcome;
   } catch (error) {
     // Defensive: nothing above should throw, but an importer bug must never
@@ -428,6 +449,36 @@ export async function runLegacyBrowserImport(
     log('Import run failed:', classifyFailure(error).reason, error);
     return { status: 'unavailable' };
   }
+}
+
+/** This page's runs, one after another (see {@link runSerialized}). */
+let lastRun: Promise<unknown> = Promise.resolve();
+
+/**
+ * Run the import after whatever run this page already started has ended. Web
+ * Locks keep tabs apart, but a page whose runs overlapped would see its own
+ * lock taken and skip the later one; queued, the later run starts once the
+ * earlier one saved its ledger, and its own checks decide (finished, backing
+ * off, or retrying).
+ */
+function runSerialized(options: LegacyImportOptions): Promise<LegacyImportOutcome> {
+  const run = lastRun.then(() => runLegacyBrowserImport(options));
+  lastRun = run;
+  return run;
+}
+
+/**
+ * Called once the access code is accepted. On an ACCESS_CODE-gated
+ * deployment the page's first run is answered 401 before the visitor enters
+ * the code, which pauses it with a backoff; this runs it again now, so the
+ * library fills on the first visit. It queues behind this page's run in
+ * progress, waits for another tab's (rather than giving up on the lock), and
+ * skips no other backoff, so it can neither run twice nor alongside one.
+ */
+export function resumeLegacyBrowserImportAfterAccess(
+  options: Omit<LegacyImportOptions, 'accessGranted'> = {},
+): Promise<LegacyImportOutcome> {
+  return runSerialized({ ...options, accessGranted: true });
 }
 
 let scheduled = false;
@@ -440,7 +491,7 @@ export function scheduleLegacyBrowserImport(): void {
   if (scheduled || typeof window === 'undefined') return;
   scheduled = true;
   const start = () => {
-    void runLegacyBrowserImport();
+    void runSerialized({});
   };
   const whenIdle = () => {
     if (typeof window.requestIdleCallback === 'function') {

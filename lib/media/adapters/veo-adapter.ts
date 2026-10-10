@@ -34,7 +34,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
-import { runPolledTask, type TerminalResult } from '../polled-task';
+import { runPolledTask, type TerminalResult, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -297,6 +297,7 @@ export async function testVeoConnectivity(
 export async function generateWithVeo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   const model = requireModel(config.model, 'Veo');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -331,6 +332,7 @@ export async function generateWithVeo(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'Veo video generation',
+    control,
     formatTimeout: () => 'Veo video generation timed out after 10 minutes',
   });
 }

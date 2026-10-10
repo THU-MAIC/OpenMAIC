@@ -9,6 +9,7 @@ import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { mapWithConcurrency } from '@/lib/utils/concurrency';
 import { resolveStoredBytes } from '@/lib/media/resolve-stored-bytes';
 import { canonicalArchiveMedia } from '@/lib/video-export/archive-media';
+import { sniffAudioBlob } from '@/lib/media/sniff-audio-container';
 
 // ─── Export: Collect Media ─────────────────────────────────────
 
@@ -154,7 +155,10 @@ export async function collectAudioFiles(
     // resolve) -- must not ship an empty audio file.
     if (!blob || blob.size === 0) return null;
     const record = await db.audioFiles.get(audioId);
-    const canonical = canonicalArchiveMedia('audio', { extension: record?.format });
+    // The container the bytes actually are wins over the stored label, which
+    // can be wrong (WAV recorded as mp3); an unrecognized payload keeps it.
+    const sniffed = await sniffAudioBlob(blob);
+    const canonical = canonicalArchiveMedia('audio', { extension: sniffed ?? record?.format });
     const ext = canonical.extension;
     const resolved = (
       record ? { ...record, blob, format: ext } : { id: audioId, blob, format: ext }
@@ -227,6 +231,25 @@ export async function collectMediaFiles(
     });
   }
   return collected;
+}
+
+/**
+ * The poster frames captured for generated videos, without their video bytes,
+ * for exports that show a video as its poster only. The poster comes from the
+ * same compatibility row {@link collectMediaFiles} reads it from.
+ */
+export async function collectVideoPosters(
+  stageId: string,
+  entries: readonly AssetManifestEntry[],
+): Promise<Array<{ sourceRef: string; poster: Blob }>> {
+  const posters: Array<{ sourceRef: string; poster: Blob }> = [];
+  for (const entry of entries) {
+    const record = await db.mediaFiles.get(mediaFileKey(stageId, entry.ref)).catch(() => undefined);
+    if (record?.poster && record.poster.size > 0 && !record.error) {
+      posters.push({ sourceRef: entry.ref, poster: record.poster });
+    }
+  }
+  return posters;
 }
 
 // ─── Export: Action Serialization ──────────────────────────────
@@ -320,7 +343,10 @@ export async function collectLegacyAudioForExport(
     if (!result) continue;
     const { url, blob } = result;
     if (!blob) continue;
-    const canonical = canonicalArchiveMedia('audio', { mimeType: blob.type });
+    const sniffed = await sniffAudioBlob(blob);
+    const canonical = sniffed
+      ? canonicalArchiveMedia('audio', { extension: sniffed })
+      : canonicalArchiveMedia('audio', { mimeType: blob.type });
     const format = canonical.extension;
     const zipPath = legacyAudioArchivePath(blobs.length, format);
     audioUrlToPath.set(url, zipPath);

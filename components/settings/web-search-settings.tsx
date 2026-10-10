@@ -18,7 +18,6 @@ import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { modelChange, modelRef } from '@/lib/model-settings/edit';
 import {
   ApiKeyField,
-  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -47,14 +46,16 @@ export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
+      {entry.state === 'deployment' && (
+        <ServerConfiguredNotice view={view} capability="webSearch" />
+      )}
       {entry.state === 'server-only' &&
-        (entry.registryId === 'searxng' && view.policy.allowWorkspaceProviders ? (
+        (entry.registryId === 'searxng' && view.allowUserKeys ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
             {t('settings.searxngServerOnlyNotice')}
           </div>
         ) : (
-          <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
+          <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />
         ))}
 
       {editable && provider && !provider.requiresApiKey && (
@@ -67,7 +68,6 @@ export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
       {editable && provider && (
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <ApiKeySecurityNotice />
             <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
             <ApiKeyField
               name={`web-search-api-key-${entry.id}`}

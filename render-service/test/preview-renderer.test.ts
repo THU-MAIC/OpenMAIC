@@ -192,7 +192,11 @@ describe('preview renderer browser readiness', () => {
     await expect(rendered).rejects.toThrow(PreviewTimeoutError);
 
     expect(Date.now() - started).toBeLessThan(800);
-    expect(launch.mock.calls[0]?.[0]).toMatchObject({ protocolTimeout: 1_040 });
+    expect(launch.mock.calls[0]?.[0]).toMatchObject({
+      protocolTimeout: 1_040,
+      timeout: 40,
+      signal: abort.signal,
+    });
     expect(kill).toHaveBeenCalledWith('SIGKILL');
     expect(close).toHaveBeenCalledOnce();
   });

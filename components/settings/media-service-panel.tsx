@@ -9,7 +9,6 @@ import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { cn } from '@/lib/utils';
 import {
   ApiKeyField,
-  ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   ServerConfiguredNotice,
   ServerOnlyNotice,
@@ -92,14 +91,11 @@ export function MediaServicePanel({
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability={kind} />}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {editable && (
         <>
-          <ApiKeySecurityNotice />
           {/* API Key + Test inline */}
           <div className="space-y-2">
             <Label>API Key</Label>

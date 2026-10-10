@@ -1,10 +1,11 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import { useRef, type CSSProperties, type ReactNode } from 'react';
 import type { PPTTextElement } from '@openmaic/dsl';
 import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
+import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
 
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
@@ -14,6 +15,9 @@ export interface BaseTextElementProps {
 
 export function BaseTextElement({ elementInfo, target, renderContent }: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
+  const proseRef = useRef<HTMLDivElement>(null);
+  const innerHtml = useInnerHtml(elementInfo.content);
+  useInlineMath(proseRef, elementInfo.content);
   // Imported OOXML text carries its own bodyPr insets on the outer div.
   // Adding the editor's default inset again shifts vertical text left and
   // reduces the available line width for horizontal text.
@@ -30,13 +34,15 @@ export function BaseTextElement({ elementInfo, target, renderContent }: BaseText
     vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start';
   const defaultContent = (
     <div
+      ref={proseRef}
+      data-inline-math-root=""
       className="text ProseMirror-static"
       style={{
         position: 'relative',
         pointerEvents: target === 'thumbnail' ? 'none' : undefined,
         whiteSpace: preservesPlainTextLineBreaks(elementInfo.content) ? 'pre-line' : undefined,
       }}
-      dangerouslySetInnerHTML={{ __html: elementInfo.content }}
+      dangerouslySetInnerHTML={innerHtml}
     />
   );
 

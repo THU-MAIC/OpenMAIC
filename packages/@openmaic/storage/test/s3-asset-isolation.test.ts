@@ -4,6 +4,7 @@ import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
 afterEach(() => {
   vi.doUnmock('@aws-sdk/client-s3');
   vi.doUnmock('@aws-sdk/s3-request-presigner');
+  vi.unstubAllEnvs();
   vi.resetModules();
 });
 
@@ -39,6 +40,28 @@ test('loading the S3 byte-store module does not resolve the optional AWS SDK', a
 
   await expect(import('../src/asset/s3-bytes.js')).resolves.toHaveProperty('S3AssetByteStore');
   expect(sdkModuleResolved).not.toHaveBeenCalled();
+});
+
+test('the loader reads path-style addressing from the environment', async () => {
+  const clientOptions: unknown[] = [];
+  vi.doMock('@aws-sdk/client-s3', () => ({
+    S3Client: class {
+      constructor(options: unknown) {
+        clientOptions.push(options);
+      }
+    },
+    PutObjectCommand: class {},
+    GetObjectCommand: class {},
+    DeleteObjectCommand: class {},
+  }));
+  const { loadS3AssetByteStore } = await import('../src/asset/s3-bytes.js');
+
+  vi.stubEnv('AWS_S3_FORCE_PATH_STYLE', '1');
+  await loadS3AssetByteStore('compatible-store');
+  vi.stubEnv('AWS_S3_FORCE_PATH_STYLE', 'true');
+  await loadS3AssetByteStore('compatible-store');
+
+  expect(clientOptions).toEqual([{ forcePathStyle: true }, { forcePathStyle: true }]);
 });
 
 test('a { client, bucket } store resolves the SDK on first use, not at construction', async () => {

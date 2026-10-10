@@ -15,7 +15,7 @@ import type {
   SlideBackground,
   WidgetType,
 } from '@openmaic/dsl';
-import { isWidgetType, normalizeElement } from '@openmaic/dsl';
+import { isWidgetType, normalizeElement, safeKatexOptions } from '@openmaic/dsl';
 import { MAX_VISION_IMAGES } from './constants.js';
 import {
   formatImageDescription,
@@ -578,11 +578,14 @@ function processLatexElements(
       }
 
       try {
-        const html = katex.renderToString(latexStr, {
-          throwOnError: false,
-          displayMode: true,
-          output: 'html',
-        });
+        const html = katex.renderToString(
+          latexStr,
+          safeKatexOptions({
+            throwOnError: false,
+            displayMode: true,
+            output: 'html',
+          }),
+        );
 
         return {
           ...el,
@@ -826,7 +829,12 @@ async function generateSlideContent(
   const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
-    rotate: 0,
+    // Shape rotation is part of the model-facing geometry contract. Preserve
+    // finite angles while keeping the legacy zero default for other elements.
+    rotate:
+      el.type === 'shape' && typeof el.rotate === 'number' && Number.isFinite(el.rotate)
+        ? el.rotate
+        : 0,
   })) as PPTElement[];
 
   // Process background
@@ -938,12 +946,20 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
       return `${where}: choice question has no options`;
     }
 
+    const optionValues = new Set<string>();
+
     for (let optionIndex = 0; optionIndex < options.length; optionIndex += 1) {
       const value = options[optionIndex]?.value;
       if (typeof value !== 'string' || !QUIZ_OPTION_VALUE.test(value)) {
         const shown = JSON.stringify(value);
         return `${where}: option ${optionIndex + 1} value ${shown} is not a single letter A-Z`;
       }
+
+      if (optionValues.has(value)) {
+        return `${where}: option ${optionIndex + 1} repeats value ${JSON.stringify(value)}`;
+      }
+
+      optionValues.add(value);
     }
 
     const answer = question.answer;
@@ -951,9 +967,8 @@ export function findQuizOptionsContractFailure(questions: readonly QuizQuestion[
       return `${where}: answer key does not reference an option value`;
     }
 
-    const values = new Set(options.map((option) => option.value));
     for (const entry of answer) {
-      if (!values.has(entry)) {
+      if (!optionValues.has(entry)) {
         return `${where}: answer ${JSON.stringify(entry)} does not match an option value`;
       }
     }

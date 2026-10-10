@@ -7,8 +7,8 @@ OpenMAIC has three configuration sources, and each has one job:
 
 | Source | Written by | Holds | Takes effect |
 | --- | --- | --- | --- |
-| `openmaic.yml` | The operator | Providers, slot assignments and policy for AI models | At startup (restart to apply) |
-| Model settings in the web app | Users of a workspace | The providers and assignments `openmaic.yml` leaves open, stored in the database | Immediately |
+| `openmaic.yml` | The operator | Providers, the server's default assignments, what is locked, and whether users may add keys | At startup (restart to apply) |
+| Model settings in the web app | Users of a workspace | Their own providers, and assignments for every slot `openmaic.yml` does not lock, stored in the database | Immediately |
 | Environment variables (`.env.local`, a container secret) | The operator | Secrets that `openmaic.yml` references, and every other server option | At startup |
 
 Every environment variable is optional except `DATABASE_URL` (see [Deployment](./deployment.mdx)). See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for all of them, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a model configuration to start from, and [Supported models](./supported-models.mdx) for preset and model IDs.
@@ -80,13 +80,13 @@ slots:
   tts: minimax:speech-2.8-turbo
   image: openai-image:gpt-image-2
   webSearch: tavily                # provider only: its default model
-  video: null                      # off, and locked off
+  video: null                      # off by default; users may turn it on
 
-policy:
-  allowWorkspaceProviders: false   # users cannot add providers of their own
+lock: [tts]                        # fixed for everyone, with its subtree
+allowUserKeys: false               # users choose among these providers and add none
 ```
 
-With this file, every slot listed is fixed for all users. A chat slot it leaves out, such as `course.agents`, follows its parent (`llm`); a capability root it leaves out, such as `asr` or `document`, stays unconfigured. Users can assign either in the model settings, choosing among the declared providers.
+With this file, the slots written under `slots` are the server's defaults: users may change each of them in the model settings, except `tts`, which `lock` fixes for everyone. A chat slot it leaves out, such as `course.agents`, follows its parent (`llm`); a capability root it leaves out, such as `asr` or `document`, stays unconfigured until a user assigns it. With `allowUserKeys: false`, users choose only among the providers declared here.
 
 ### Providers
 
@@ -110,7 +110,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 
 | Slot | Capability | Parent | What it drives |
 | --- | --- | --- | --- |
-| `llm` | chat | — | The default chat model: every chat call no slot below covers, including the steps of the browserless `/api/generate-classroom` API that have no slot of their own |
+| `llm` | chat | — | The default chat model: every chat call no slot below covers |
 | `course.research` | chat | `llm` | Rewriting the web search query while researching a course |
 | `course.outline` | chat | `llm` | Scene outlines |
 | `course.agents` | chat | `llm` | Teacher and classmate agent profiles |
@@ -133,7 +133,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 How a slot resolves:
 
 - Resolution starts at the slot of the call and walks up to its capability root. The first assignment found wins, so a parent's assignment is the default for its whole subtree. Changing a parent changes every child without its own assignment.
-- At each slot, `openmaic.yml` is consulted before the workspace's model settings.
+- Inside a locked subtree (the slot or an ancestor is named by `lock`, or `lock: all`), only `openmaic.yml` counts: the walk goes up to the locked slot and the first assignment the file writes wins. Everywhere else the user's choice wins: the walk first looks for the workspace's own assignment from the slot up to the root, and only when there is none, for the defaults `openmaic.yml` writes, again from the slot up. So a slot whose server default the workspace has not changed follows the workspace's choice on a parent; server values are only defaults.
 - `null` stops the walk: the slot and every slot below it that has no assignment of its own are off.
 - Reaching the root without an assignment leaves the capability unconfigured. Calls fail with an error that names the slot; there is no fallback to any vendor.
 - Requirements belong to the slot that declares them and are checked against the model it resolves to, assigned or inherited. `agent` requires tool calling; if the built-in catalogue says its model lacks it, the agent refuses to run instead of making do. A model the catalogue does not know is allowed. `agent.title` has no requirement, so it can use a smaller model.
@@ -173,36 +173,55 @@ A reference without `:model` means the provider's default model: the model a tok
 
 Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
 
-A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, quota exhaustion (429), capacity (503), or empty output. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
+A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, a rate limit (429), capacity (503), or empty output. An explicit quota refusal from the provider (an OpenAI-compatible code such as `insufficient_quota`, whatever its HTTP status) is not retried on the primary model: the call goes to the fallback at once. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
 
 The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
 
 ### Turning a capability off
 
-Write `null` on its slot. `video: null` turns video generation off for every workspace and locks it off; `course.content.pbl: null` turns off project-based learning scene generation while the rest of `course.content` keeps working. A call on a slot that is off fails immediately, and the media routes answer `403` instead of choosing another vendor.
+Write `null` on its slot. `video: null` turns video generation off by default, and users may still turn it on in the model settings; add `lock: [video]` to keep it off for everyone. `course.content.pbl: null` turns off project-based learning scene generation while the rest of `course.content` keeps working. A call on a slot that is off fails immediately, and the media routes answer `403` instead of choosing another vendor.
 
-### Locks and the model settings
+### Defaults, locks and the model settings
 
-Everything written under `slots` in `openmaic.yml` is **locked**: the model settings mark it **Set by the server** and cannot change it. Only the slots that are written are locked. A workspace can still assign a child of a locked slot, which overrides the locked value for that child's subtree. To fix a whole subtree, write each of its slots.
+What `openmaic.yml` writes under `slots` is the server's **default**: users may change it in the model settings, where the card says **Server default**, and **Reset to server default** removes their change. What it names under `lock` is **fixed by the administrator** for everyone, together with its whole subtree:
+
+```yaml
+lock: [llm, video]   # these slots and every slot below them
+# lock: all          # every slot
+```
+
+- Every slot `lock` names must be written under `slots` (`null` counts: `video: null` with `lock: [video]` keeps video off for everyone). An unknown slot, or a locked slot `slots` does not write, stops the server at startup with its position (`lock.1: ...`).
+- A locked slot fixes its children too: with `lock: [llm]`, no user can set `course.outline` or any other language model slot, and all of them resolve from `openmaic.yml` alone.
+- `lock: all` fixes every slot, written or not; a capability root `slots` leaves out is then unconfigured for everyone.
+- `null`, a server default and a lock combine as you would expect: `video: null` alone is off until a user turns it on; with `lock: [video]` it stays off.
+
+The settings take one of three shapes, derived from the configuration:
+
+| Shape | When | What is shown |
+| --- | --- | --- |
+| **Set it up yourself** | `allowUserKeys` is on (the default) | Token Plan, Model Services and Course Model Config |
+| **Choose a model** | `allowUserKeys: false` | Only Course Model Config, choosing among the providers `openmaic.yml` declares |
+| **Configured by the administrator** | Every slot is locked (`lock: all`) | The course model diagram, every card read-only (each shows its model, or that it is off or not set) |
+
+One rule decides every control: it is shown only if using it can change something. A Model Services tab, and adding a service there, appears only while its capability has a slot a user may set; Token Plan appears only while a plan can still fill a slot that is not locked, and connecting a plan never touches a locked slot. A locked card in Course Model Config is one read-only line marked **Fixed by the administrator**. The home page model picker appears only when the default model can be changed (`llm` is not locked and a provider offers a language model).
 
 The model settings in the web app read and edit the same tree for the current workspace:
 
 - **Token Plan**: connecting a plan adds its provider with the key and fills the slots the plan recommends that are still unassigned. Disconnecting removes the provider; the slots that used it follow their parents again.
 - **Model Services**: one tab per capability (language models, images, video, text to speech, speech recognition, document parsing, web search) lists its services. Providers from `openmaic.yml` are shown read-only and without anything about their keys. A service the workspace sets up becomes a workspace provider: its key is write-only and shown only as a mask such as `…abcd`, a custom endpoint is possible for language models only (Azure Speech takes its official regional endpoint, such as `https://<region>.tts.speech.microsoft.com`), and self-hosted services and key pairs are configured in `openmaic.yml`. The test buttons check the saved provider on the server.
-- **Course Model Config**: the main model is the `llm` slot and each pipeline stage is its own slot (following the main model means the stage has no assignment of its own); the image, video, speech, search and transcription switches set their slot to `null`. Slots written in `openmaic.yml` are shown but cannot be changed there.
+- **Course Model Config**: the main model is the `llm` slot and each pipeline stage is its own slot (following the main model means the stage has no assignment of its own); the image, video, speech, search and transcription switches set their slot to `null`. A locked slot is one read-only line, and a slot on a server default offers **Reset to server default** once a user has changed it.
 
-Provider settings that a browser stored in earlier versions (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once. The import never replaces an existing workspace setting or a slot `openmaic.yml` locks, and it skips items that the policy or validation refuses. After a 2xx answer, only what the workspace now holds leaves the browser: every item the server skipped (a custom endpoint for a media service, a preset a workspace may not use, a provider id the deployment declares, ...) is kept in this browser with its key, never sent again, announced once, and listed in Settings → Model Services with the reason until it is set up again or discarded. An Azure Speech provider with its regional endpoint is imported. A 400 refuses the whole proposal: it is not sent again, and its items are kept in this browser with their keys and listed like the skipped ones. An unreadable proposal is dropped. The proposal stays in the browser for a later attempt only on 401, 404, 409, a 5xx or a network error. Speech input that was explicitly switched off becomes `asr: null`, and narration, images or video switched off while a usable provider for them was set up become `tts: null`, `image: null` or `video: null` (a slot `openmaic.yml` locks is left as it is). These have to be set up again by hand: per-stage models (in Course Model Config, or `slots` in `openmaic.yml`), thinking settings (`thinking` on a slot), custom speech and transcription providers and AliDocMind's key pair (in `openmaic.yml`; they are kept in the browser and listed with the skipped items), the VoxCPM backend (`options.backend`), and Baidu search sub-sources (the server's defaults apply). Research switched off is not carried over (it only stopped course research; chat and the agent kept searching), nor is a switch that was off only by default: each capability now runs whenever its slot resolves.
+Provider settings that a browser stored in earlier versions (providers with their keys and base URLs, the chosen model, token plan enrollment and each capability's selection) are imported into the workspace once. The import never replaces an existing workspace setting or a slot in a subtree `openmaic.yml` locks, and it skips items that `allowUserKeys: false` or validation refuses. After a 2xx answer, only what the workspace now holds leaves the browser: every item the server skipped (a custom endpoint for a media service, a preset a workspace may not use, a provider id the deployment declares, ...) is kept in this browser with its key, never sent again, announced once, and listed in Settings → Model Services with the reason until it is set up again or discarded. An Azure Speech provider with its regional endpoint is imported. A 400 refuses the whole proposal: it is not sent again, and its items are kept in this browser with their keys and listed like the skipped ones. An unreadable proposal is dropped. The proposal stays in the browser for a later attempt only on 401, 404, 409, a 5xx or a network error. Speech input that was explicitly switched off becomes `asr: null`, and narration, images or video switched off while a usable provider for them was set up become `tts: null`, `image: null` or `video: null` (a slot `openmaic.yml` locks is left as it is). These have to be set up again by hand: per-stage models (in Course Model Config, or `slots` in `openmaic.yml`), thinking settings (`thinking` on a slot), custom speech and transcription providers and AliDocMind's key pair (in `openmaic.yml`; they are kept in the browser and listed with the skipped items), the VoxCPM backend (`options.backend`), and Baidu search sub-sources (the server's defaults apply). Research switched off is not carried over (it only stopped course research; chat and the agent kept searching), nor is a switch that was off only by default: each capability now runs whenever its slot resolves.
 
 A workspace is an owner in the sense of the [persistence documentation](./deployment.mdx#server-side-persistence-postgresql): with the default Docker Compose setup (single-user mode) there is one workspace, and in a multi-user deployment each signed-in account has its own.
 
-### Policy
+### allowUserKeys
 
 ```yaml
-policy:
-  allowWorkspaceProviders: false
+allowUserKeys: false
 ```
 
-`allowWorkspaceProviders` (default `true`) decides whether workspaces may add providers of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it leaves open. Requests that still name their own model, key or endpoint (the deprecated `x-model`, `x-api-key` and `x-base-url` headers, and the provider fields of the media routes) are ignored then, and the header form of the provider test buttons is refused. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
+`allowUserKeys` (default `true`) decides whether users may add providers, keys and token plans of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it does not lock: Token Plan and adding services are not shown, and providers a workspace added earlier are no longer used. Requests that still name their own model, key or endpoint (the deprecated `x-model`, `x-api-key` and `x-base-url` headers, and the provider fields of the media routes) are ignored then, and the header form of the provider test buttons is refused. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
 
 ### Secrets and OPENMAIC_SECRET_KEY
 
@@ -210,7 +229,7 @@ policy:
 - Keys a workspace enters in the model settings are stored in the database, encrypted with AES-256-GCM under the instance secret `OPENMAIC_SECRET_KEY`.
 - When `OPENMAIC_SECRET_KEY` is unset, the server creates a random secret on first use in `data/instance-secret.key` (inside the `openmaic-data` volume with Docker Compose) and uses it from then on.
 
-Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or on hosts without a persistent data directory such as Vercel; any string works, for example the output of `openssl rand -base64 32`.
+Keep the secret with the database backups: keys saved under a lost or changed secret cannot be read and have to be entered again (the model settings mark them). Set `OPENMAIC_SECRET_KEY` explicitly when more than one instance shares the database, or when the server has no persistent data directory (a container without the data volume); any string works, for example the output of `openssl rand -base64 32`.
 
 Without it, a data directory that does not survive a restart (a container without a volume, an ephemeral disk) means a new secret on every start, and several replicas each generate their own; on a read-only working directory no secret can be created and saving a key in the model settings fails. At startup the server warns when `OPENMAIC_SECRET_KEY` is unset and the data directory is not writable, and when the database holds keys sealed under a different secret than the current one (for example because `data/instance-secret.key` was lost); it starts anyway.
 
@@ -237,7 +256,7 @@ A deployment that wants users to reach internal services declares those provider
 
 Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
 
-The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has no assignment in `openmaic.yml` or the workspace; once it has one, the configuration wins, and a slot set to `null` refuses the request whatever it names. Under `policy.allowWorkspaceProviders: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has nothing assigned or, on a server still configured through the legacy variables, only a default those translate to (as `DEFAULT_MODEL` always ranked below the model a request named); a default in `openmaic.yml`, the workspace's own choice and a locked slot win, and a slot set to `null` refuses the request whatever it names. With `allowUserKeys: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
 
 ### Migrating from the legacy configuration
 
@@ -291,7 +310,7 @@ slots:
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. Unlike the translated `DEFAULT_MODEL`, the `llm` written here is locked; leave it out of `slots` to let workspaces choose. And unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
 
 **server-providers.yml.** Before:
 
@@ -356,6 +375,7 @@ Per-stage routes do not map one to one onto slots, so they are not translated. R
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`, `maic-agent` | None: these stages were removed. Drop them |
 
 Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
 
@@ -385,6 +405,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+Once `openmaic.yml` exists, the provider variables configure nothing on their own: a TTS, image, document or web search provider that had only its variables (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …) is no longer used, and no capability gets a default provider. Declare each provider you use under `providers` and assign `tts`, `image`, `document`, `webSearch` (and `asr`, `video`) in `slots`, as in the environment-variable example above; a slot left unassigned stays unconfigured unless a workspace assigns it in the model settings.
 
 Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
 
@@ -593,7 +615,29 @@ slots:
 
 Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
-`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, and `IMAGE_LEMONADE_`.
+`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, `IMAGE_GLM_`, and `IMAGE_LEMONADE_`.
+
+GLM Image (Zhipu CogView) generates images with CogView models (`cogview-3-flash`, `cogview-4`):
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # Optional:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+Or configure via environment variables:
+
+```bash
+IMAGE_GLM_API_KEY=
+# Optional:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
 
 Lemonade is a local service and does not require a key:
 

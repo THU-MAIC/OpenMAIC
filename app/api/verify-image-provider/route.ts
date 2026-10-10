@@ -39,11 +39,6 @@ import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('VerifyImageProvider');
 
-// Connectivity probes are lightweight and each underlying request is bounded by
-// its own AbortSignal, but the route had no ceiling at all — cap it so a stalled
-// upstream can't tie up the function indefinitely.
-export const maxDuration = 30;
-
 export async function POST(request: NextRequest) {
   try {
     // The settings test a saved provider by its id (JSON body `provider`, with
@@ -75,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
 
     // The old header form tests a provider the request names: not under
-    // `policy.allowWorkspaceProviders: false`, which leaves only the
+    // `allowUserKeys: false`, which leaves only the
     // configuration's providers (tested by id above).
     if (!requestProvidersAllowed()) {
       return apiError('PROVIDER_DISABLED', 403, REQUEST_PROVIDERS_REFUSED);

@@ -7,8 +7,8 @@ OpenMAIC 有三个配置来源，各自只负责一件事：
 
 | 来源 | 由谁编写 | 内容 | 何时生效 |
 | --- | --- | --- | --- |
-| `openmaic.yml` | 运维人员 | AI 模型的服务商、槽位分配和策略 | 启动时（修改后需重启） |
-| Web 端的模型设置 | 工作区的用户 | `openmaic.yml` 没有写死的服务商和分配，保存在数据库中 | 立即生效 |
+| `openmaic.yml` | 运维人员 | 服务商、服务端默认分配、锁定的槽位，以及用户能否添加自己的 Key | 启动时（修改后需重启） |
+| Web 端的模型设置 | 工作区的用户 | 用户自己的服务商，以及 `openmaic.yml` 未锁定槽位的分配，保存在数据库中 | 立即生效 |
 | 环境变量（`.env.local`、容器 Secret） | 运维人员 | `openmaic.yml` 引用的密钥，以及其他所有服务端选项 | 启动时 |
 
 除 `DATABASE_URL` 外，所有环境变量都是可选的（见[部署](./deployment.mdx)）。全部环境变量见 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以从 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 开始编写模型配置，预设和模型 ID 见[支持的模型](./supported-models.mdx)。
@@ -80,13 +80,13 @@ slots:
   tts: minimax:speech-2.8-turbo
   image: openai-image:gpt-image-2
   webSearch: tavily                # 只写服务商：使用它的默认模型
-  video: null                      # 关闭，并锁定为关闭
+  video: null                      # 默认关闭；用户可以自行开启
 
-policy:
-  allowWorkspaceProviders: false   # 用户不能自行添加服务商
+lock: [tts]                        # 对所有人固定，连同其子树
+allowUserKeys: false               # 用户只能在这些服务商中选择，不能自行添加
 ```
 
-使用这份文件时，列出的每个槽位对所有用户都是固定的。文件没写的对话槽位（例如 `course.agents`）沿用父槽位（`llm`）；没写的能力根槽位（例如 `asr` 或 `document`）保持未配置。用户可以在模型设置里为这两类槽位分配模型，但只能从已声明的服务商中选择。
+使用这份文件时，`slots` 下写出的槽位是服务端默认值：用户可以在模型设置中逐一修改，只有被 `lock` 固定的 `tts` 对所有人不可更改。文件没写的对话槽位（例如 `course.agents`）沿用父槽位（`llm`）；没写的能力根槽位（例如 `asr` 或 `document`）在用户分配之前保持未配置。设置 `allowUserKeys: false` 后，用户只能在这里声明的服务商中选择。
 
 ### 服务商
 
@@ -110,7 +110,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 
 | 槽位 | 能力 | 父槽位 | 作用 |
 | --- | --- | --- | --- |
-| `llm` | chat | — | 默认对话模型：下面任何槽位都不覆盖的对话调用，包括无浏览器 `/api/generate-classroom` API 中没有专属槽位的步骤 |
+| `llm` | chat | — | 默认对话模型：下面任何槽位都不覆盖的对话调用 |
 | `course.research` | chat | `llm` | 课程调研时改写联网搜索查询 |
 | `course.outline` | chat | `llm` | 场景大纲 |
 | `course.agents` | chat | `llm` | 老师和同学智能体的人设 |
@@ -133,7 +133,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 槽位的解析方式：
 
 - 从调用所在的槽位开始，逐级向上直到能力根槽位，遇到的第一个分配生效。因此父槽位的分配就是整棵子树的默认值；修改父槽位，会同时改变所有没有自己分配的子槽位。
-- 在每个槽位上，先看 `openmaic.yml`，再看工作区的模型设置。
+- 在锁定的子树内（该槽位或其祖先被 `lock` 列出，或使用 `lock: all`），只看 `openmaic.yml`：向上查找到被锁定的槽位为止，文件中写出的第一个分配生效。其他位置以用户的选择为准：先从该槽位向上直到根槽位查找工作区自己的分配，只有完全没有时，才同样从该槽位向上查找 `openmaic.yml` 写的默认值。因此，工作区设置了父槽位时，没有被工作区改过的子槽位会跟随它，即使服务端在子槽位上写了默认值；服务端的值只是默认值。
 - `null` 会停止向上查找：该槽位，以及它下面所有没有自己分配的槽位，都会被关闭。
 - 一直到根槽位都没有分配时，该能力处于未配置状态。调用会报错并指出槽位名，不会回退到任何厂商。
 - 要求（requirement）属于声明它的槽位，按该槽位最终解析到的模型检查，无论是自己分配的还是继承的。`agent` 要求支持工具调用；如果内置模型目录表明它的模型不支持，智能体会拒绝运行，而不是勉强凑合。目录里没有的模型允许使用。`agent.title` 没有要求，因此可以用更小的模型。
@@ -173,36 +173,55 @@ slots:
 
 回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
 
-当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、额度用尽（429）、容量不足（503）或输出为空。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
+当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、限流（429）、容量不足（503）或输出为空。服务商明确返回额度用尽时（OpenAI 兼容格式的额度错误码，例如 `insufficient_quota`，不论 HTTP 状态码），不会在主模型上重试，调用会直接换用回退模型。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
 
 回退模型属于分配，随分配一起被继承：没有自己分配的 `course.content.slide` 会使用 `course.content` 的模型及其回退模型。有要求的槽位不会换用不满足要求的回退模型。
 
 ### 关闭某项能力
 
-在它的槽位上写 `null`。`video: null` 会对所有工作区关闭视频生成，并锁定为关闭；`course.content.pbl: null` 只关闭 PBL 场景生成，`course.content` 的其余部分照常工作。对已关闭槽位的调用会立即失败，媒体相关接口返回 `403`，而不是换用其他厂商。
+在它的槽位上写 `null`。`video: null` 默认关闭视频生成，用户仍可在模型设置中开启；再加上 `lock: [video]` 即对所有人保持关闭。`course.content.pbl: null` 只关闭 PBL 场景生成，`course.content` 的其余部分照常工作。对已关闭槽位的调用会立即失败，媒体相关接口返回 `403`，而不是换用其他厂商。
 
-### 锁定与模型设置
+### 默认值、锁定与模型设置
 
-`openmaic.yml` 中 `slots` 下写出的内容都会被**锁定**：模型设置会标注为 **Set by the server**（由服务端设置），且无法修改。只有写出的槽位会被锁定。工作区仍然可以给被锁定槽位的子槽位分配模型，从而覆盖该子树的值。要固定整棵子树，需要把其中每个槽位都写出来。
+`openmaic.yml` 在 `slots` 下写出的内容是服务端的**默认值**：用户可以在模型设置中修改，卡片上会标注**服务端默认**，**恢复服务端默认**会撤销用户的修改。在 `lock` 下列出的槽位由**管理员固定**，对所有人生效，并连同整棵子树一起固定：
+
+```yaml
+lock: [llm, video]   # 这些槽位及其下所有槽位
+# lock: all          # 所有槽位
+```
+
+- `lock` 列出的每个槽位都必须在 `slots` 中写出（`null` 也算：`video: null` 加 `lock: [video]` 会对所有人关闭视频）。未知槽位，或 `slots` 中没有写出的锁定槽位，会让服务在启动时拒绝运行，并指出其位置（`lock.1: ...`）。
+- 锁定的槽位同时固定其子槽位：使用 `lock: [llm]` 时，任何用户都不能设置 `course.outline` 或其他语言模型槽位，它们全部只按 `openmaic.yml` 解析。
+- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。
+- `null`、服务端默认值与锁定可以组合：只写 `video: null` 时默认关闭，用户可以开启；加上 `lock: [video]` 后保持关闭。
+
+设置界面会根据配置呈现三种形态之一：
+
+| 形态 | 条件 | 显示内容 |
+| --- | --- | --- |
+| **自己配置** | 开启 `allowUserKeys`（默认） | Token Plan、模型服务和课程模型配置 |
+| **选择模型** | `allowUserKeys: false` | 只显示课程模型配置，在 `openmaic.yml` 声明的服务商中选择 |
+| **由管理员配置** | 所有槽位都被锁定（`lock: all`） | 课程模型图，每张卡片均为只读（显示其模型，或已关闭、未设置） |
+
+所有控件遵循同一条规则：只有使用它能改变什么时才显示。模型服务中某个能力的标签页及其添加服务入口，只在该能力还有用户可设置的槽位时出现；Token Plan 只在某个套餐还能填入未锁定的槽位时出现，接入套餐也绝不会改动锁定的槽位。课程模型配置中被锁定的卡片显示为一行只读内容，并标注**由管理员固定**。首页的模型选择器只在默认模型可以修改时出现（`llm` 未被锁定，且有服务商提供语言模型）。
 
 Web 端的模型设置读写当前工作区的同一棵树：
 
 - **Token Plan**：接入套餐会用该 key 添加套餐的服务商，并为套餐推荐、且仍未分配的槽位填入模型。解除接入会删除该服务商，原本使用它的槽位重新跟随父槽位。
 - **模型服务**：每种能力一个标签页（语言模型、图像、视频、语音合成、语音识别、文档解析、联网搜索），列出各自的服务。来自 `openmaic.yml` 的服务商以只读方式显示，不显示任何关于 key 的信息。工作区配置的服务会成为工作区服务商：key 只能写入，只显示类似 `…abcd` 的掩码；自定义地址仅限语言模型（Azure 语音服务使用其官方区域地址，例如 `https://<region>.tts.speech.microsoft.com`）；自托管服务与密钥对需在 `openmaic.yml` 中配置。测试按钮在服务端检查已保存的服务商。
-- **课程模型配置**：主线模型就是 `llm` 槽位，管线的每个环节对应自己的槽位（跟随主线即该环节没有自己的分配）；图像、视频、语音、搜索和转写的开关会把对应槽位设为 `null`。`openmaic.yml` 中写出的槽位在这里只展示、不可修改。
+- **课程模型配置**：主线模型就是 `llm` 槽位，管线的每个环节对应自己的槽位（跟随主线即该环节没有自己的分配）；图像、视频、语音、搜索和转写的开关会把对应槽位设为 `null`。被锁定的槽位显示为一行只读内容；使用服务端默认值的槽位在用户修改后提供**恢复服务端默认**。
 
-早期版本保存在浏览器中的服务商设置（服务商及其 key 和 Base URL、所选模型、Token Plan 接入状态，以及每种能力的选择）会一次性导入工作区。导入不会替换工作区已有的设置或 `openmaic.yml` 锁定的槽位，并会跳过被策略或校验拒绝的条目。收到 2xx 响应后，只有工作区已持有的内容会从浏览器中删除：服务端跳过的每个条目（媒体服务的自定义地址、工作区不可使用的预设、与部署声明重名的服务商 id 等）都会连同 key 保留在此浏览器中，不会再次发送，提示一次，并在「设置 → 模型服务」中连同原因列出，直到重新设置或被丢弃。带官方区域地址的 Azure 语音服务商会被导入。收到 400 时整份导入内容被拒绝：不会再次发送，其中各条目会连同 key 保留在此浏览器中，并与被跳过的条目一起列出；导入内容无法读取时会被丢弃。只有在 401、404、409、5xx 或网络错误时，导入内容才会保留在浏览器中，供之后重试。明确关闭过的语音输入会变为 `asr: null`；在已有可用服务商时关闭的语音讲解、图像或视频会变为 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 锁定的槽位保持不变）。以下内容需要手动重新设置：按阶段设置的模型（在课程模型配置中，或在 `openmaic.yml` 的 `slots` 中）、推理设置（槽位上的 `thinking`）、自定义语音合成与语音识别服务商以及 AliDocMind 的密钥对（在 `openmaic.yml` 中；它们会保留在浏览器中，与被跳过的条目一起列出）、VoxCPM 后端（`options.backend`），以及百度搜索子来源（使用服务端默认值）。关闭的调研开关不会迁移（它只停止课程调研，对话和智能体仍会搜索），仅因默认值而处于关闭的开关也不会迁移：每项能力只要其槽位能解析就会运行。
+早期版本保存在浏览器中的服务商设置（服务商及其 key 和 Base URL、所选模型、Token Plan 接入状态，以及每种能力的选择）会一次性导入工作区。导入不会替换工作区已有的设置或 `openmaic.yml` 锁定子树中的槽位，并会跳过被 `allowUserKeys: false` 或校验拒绝的条目。收到 2xx 响应后，只有工作区已持有的内容会从浏览器中删除：服务端跳过的每个条目（媒体服务的自定义地址、工作区不可使用的预设、与部署声明重名的服务商 id 等）都会连同 key 保留在此浏览器中，不会再次发送，提示一次，并在「设置 → 模型服务」中连同原因列出，直到重新设置或被丢弃。带官方区域地址的 Azure 语音服务商会被导入。收到 400 时整份导入内容被拒绝：不会再次发送，其中各条目会连同 key 保留在此浏览器中，并与被跳过的条目一起列出；导入内容无法读取时会被丢弃。只有在 401、404、409、5xx 或网络错误时，导入内容才会保留在浏览器中，供之后重试。明确关闭过的语音输入会变为 `asr: null`；在已有可用服务商时关闭的语音讲解、图像或视频会变为 `tts: null`、`image: null` 或 `video: null`（`openmaic.yml` 锁定的槽位保持不变）。以下内容需要手动重新设置：按阶段设置的模型（在课程模型配置中，或在 `openmaic.yml` 的 `slots` 中）、推理设置（槽位上的 `thinking`）、自定义语音合成与语音识别服务商以及 AliDocMind 的密钥对（在 `openmaic.yml` 中；它们会保留在浏览器中，与被跳过的条目一起列出）、VoxCPM 后端（`options.backend`），以及百度搜索子来源（使用服务端默认值）。关闭的调研开关不会迁移（它只停止课程调研，对话和智能体仍会搜索），仅因默认值而处于关闭的开关也不会迁移：每项能力只要其槽位能解析就会运行。
 
 工作区即[持久化文档](./deployment.mdx)中所说的所有者（owner）：默认的 Docker Compose 部署（单用户模式）只有一个工作区；多用户部署中，每个已登录账号各有一个工作区。
 
-### 策略
+### allowUserKeys
 
 ```yaml
-policy:
-  allowWorkspaceProviders: false
+allowUserKeys: false
 ```
 
-`allowWorkspaceProviders`（默认 `true`）决定工作区能否添加自己的服务商。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为文件没有写死的槽位选择模型；请求自带的模型、密钥或端点（已弃用的 `x-model`、`x-api-key`、`x-base-url` 请求头以及媒体接口的服务商字段）也会被忽略，服务商测试按钮的请求头形式会被拒绝。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
+`allowUserKeys`（默认 `true`）决定用户能否添加自己的服务商、Key 和 Token Plan。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为未锁定的槽位选择模型：不显示 Token Plan 和添加服务入口，工作区之前添加的服务商也不再使用。请求自带的模型、密钥或端点（已弃用的 `x-model`、`x-api-key`、`x-base-url` 请求头以及媒体接口的服务商字段）也会被忽略，服务商测试按钮的请求头形式会被拒绝。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
 
 ### 密钥与 OPENMAIC_SECRET_KEY
 
@@ -210,7 +229,7 @@ policy:
 - 工作区在模型设置中填写的 key 保存在数据库中，使用实例密钥 `OPENMAIC_SECRET_KEY` 以 AES-256-GCM 加密。
 - 未设置 `OPENMAIC_SECRET_KEY` 时，服务端会在首次使用时于 `data/instance-secret.key`（Docker Compose 中位于 `openmaic-data` 数据卷内）生成一个随机密钥，之后一直使用它。
 
-请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或在没有持久化数据目录的平台（例如 Vercel）上，请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
+请把该密钥和数据库备份放在一起：密钥丢失或更换后，之前保存的 key 无法读取，需要重新填写（模型设置会标出这些 key）。多个实例共用同一数据库时，或服务没有持久化数据目录时（例如未挂载数据卷的容器），请显式设置 `OPENMAIC_SECRET_KEY`；任意字符串都可以，例如 `openssl rand -base64 32` 的输出。
 
 不设置它时，如果数据目录不能跨重启保留（没有挂载卷的容器、临时磁盘），每次启动都会生成新密钥；多个副本也会各自生成一个；工作目录只读时则无法创建密钥，在模型设置中保存 key 会失败。启动时，若 `OPENMAIC_SECRET_KEY` 未设置且数据目录不可写，或数据库中已有 key 是用与当前不同的密钥加密的（例如 `data/instance-secret.key` 丢失），服务端会记录警告，但仍会正常启动。
 
@@ -237,7 +256,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他�
 
 生成请求不再需要携带 key 或模型选择：`/api/generate-classroom` 等无浏览器 API 调用会按调用方所在的工作区，通过与 Web 端相同的槽位解析模型。
 
-旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位在 `openmaic.yml` 和工作区中都没有分配时才会生效；槽位一旦有分配，以配置为准；设为 `null` 的槽位无论请求写了什么都会拒绝。在 `policy.allowWorkspaceProviders: false` 下，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
+旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位没有分配，或者在仍通过旧变量配置的服务端上只有由旧变量转换得到的默认值时（`DEFAULT_MODEL` 一直排在请求指定的模型之后），才会生效；`openmaic.yml` 中的默认值、工作区自己的选择和锁定的槽位优先，设为 `null` 的槽位无论请求写了什么都会拒绝。设置 `allowUserKeys: false` 时，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
 
 ### 从旧配置迁移
 
@@ -291,7 +310,7 @@ slots:
   webSearch: tavily
 ```
 
-之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。与转换得到的 `DEFAULT_MODEL` 不同，这里写出的 `llm` 是锁定的；如果希望工作区自行选择，就不要把它写进 `slots`。另外，与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
+之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 一样，这里写出的 `llm` 是工作区可以修改的服务端默认值；如需对所有人固定，请加上 `lock: [llm]`。与转换结果不同，`agent` 现在会沿用 `llm`：如需保持 Pro 智能体关闭，请写 `agent: null`。
 
 **server-providers.yml。** 迁移前：
 
@@ -356,6 +375,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `pbl-chat`、`maic-agent` | 无：这些阶段已移除，直接删掉 |
 
 多个阶段共用一个槽位时，为该槽位指定它们应当共同使用的那个模型。路由里的 `thinking` 移到槽位的 `thinking`，`maic-agent-driver` 路由的 `api` 和 `contextWindow` 移到 `agent` 槽位。迁移前：
 
@@ -385,6 +405,8 @@ slots:
     model: openai:gpt-5.5
     api: openai-completions
 ```
+
+一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的槽位保持未配置，除非某个工作区在模型设置中为它指定。
 
 然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -593,7 +615,29 @@ slots:
 
 图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。支持的前缀包括：
 
-`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_` 和 `IMAGE_LEMONADE_`。
+`IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_GLM_` 和 `IMAGE_LEMONADE_`。
+
+GLM 图像（智谱 CogView）使用 CogView 模型（`cogview-3-flash`、`cogview-4`）生成图片：
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # 可选:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+也可以通过环境变量配置：
+
+```bash
+IMAGE_GLM_API_KEY=
+# 可选:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
 
 Lemonade 是本地服务，不需要 key：
 

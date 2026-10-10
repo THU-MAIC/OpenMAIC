@@ -98,13 +98,16 @@ describe('workspace model configuration store', () => {
     );
   });
 
-  it('refuses shapes the file schema refuses, and policy', async () => {
+  it('refuses shapes the file schema refuses, and deployment-only keys', async () => {
     await expect(
       saveWorkspaceModelConfig(pool, OWNER, { slots: { nope: null } } as never, null),
     ).rejects.toThrow(WorkspaceConfigInvalidError);
     await expect(
-      saveWorkspaceModelConfig(pool, OWNER, { policy: { allowWorkspaceProviders: true } }, null),
-    ).rejects.toThrow(/only the deployment configuration sets policy/);
+      saveWorkspaceModelConfig(pool, OWNER, { allowUserKeys: true }, null),
+    ).rejects.toThrow(/only the deployment configuration sets allowUserKeys/);
+    await expect(
+      saveWorkspaceModelConfig(pool, OWNER, { slots: { video: null }, lock: ['video'] }, null),
+    ).rejects.toThrow(/only the deployment configuration sets lock/);
     expect(await readWorkspaceModelConfig(pool, OWNER)).toBeNull();
   });
 

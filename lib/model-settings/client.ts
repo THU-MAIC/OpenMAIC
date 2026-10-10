@@ -284,9 +284,12 @@ export function isLlmConfigured(view: ModelSettingsView | null): boolean {
   return view ? findSlot(view, 'llm')?.effective.status === 'assigned' : false;
 }
 
-/** Whether the first-run setup applies: no language model and nothing locks `llm`. */
+/**
+ * Whether the first-run setup applies: no language model, nothing locks
+ * `llm`, and users may add the provider the setup asks for.
+ */
 export function needsFirstRunSetup(view: ModelSettingsView | null): boolean {
-  if (!view) return false;
+  if (!view?.allowUserKeys) return false;
   const llm = findSlot(view, 'llm');
   return !!llm && !llm.locked && llm.effective.status === 'unassigned';
 }

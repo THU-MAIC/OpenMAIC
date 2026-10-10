@@ -140,7 +140,6 @@ export const LLM_STAGES = [
   'pbl-v2-runtime:evaluate',
   'pbl-v2-runtime:simulator',
   'chat-adapter',
-  'generate-classroom',
   'web-search-query-rewrite',
   'maic-agent-driver',
   'conversation-title',

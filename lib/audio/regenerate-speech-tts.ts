@@ -7,7 +7,7 @@
  */
 import { db } from '@/lib/device-storage/database';
 import { serverTTSAvailable } from '@/lib/audio/tts-selection';
-import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
+import { generateAndStoreTTS } from '@/lib/audio/narration-tts';
 import { useStageStore } from '@/lib/store/stage';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';

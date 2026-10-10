@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
 import { useElementOutline } from '../shared/useElementOutline';
 import { useElementShadow } from '../shared/useElementShadow';
@@ -9,6 +9,7 @@ import { useElementFill } from '../shared/useElementFill';
 import { GradientDefs } from './GradientDefs';
 import { PatternDefs } from './PatternDefs';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
+import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
@@ -106,6 +107,10 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
     defaultColor: '#333333',
   };
 
+  const proseRef = useRef<HTMLDivElement>(null);
+  const innerHtml = useInnerHtml(text.content);
+  useInlineMath(proseRef, text.content);
+
   const justifyContent =
     text.align === 'top' ? 'flex-start' : text.align === 'bottom' ? 'flex-end' : 'center';
   const defaultLabelContent = (
@@ -127,13 +132,15 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
       }}
     >
       <div
+        ref={proseRef}
+        data-inline-math-root=""
         className="ProseMirror-static slide-renderer-prose"
         style={{
           // @ts-expect-error CSS custom properties
           '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
           whiteSpace: preservesPlainTextLineBreaks(text.content) ? 'pre-line' : undefined,
         }}
-        dangerouslySetInnerHTML={{ __html: text.content }}
+        dangerouslySetInnerHTML={innerHtml}
       />
     </div>
   );

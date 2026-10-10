@@ -51,9 +51,8 @@ export function buildPiDriverModel(
 }
 
 /**
- * Resolve the driver through the `agent` slot for `workspaceId`: the configured
- * slot, else the deployment's defaults (where an older deployment's agent is
- * off). The slot requires tool calling; a model the catalogue says lacks it is
+ * Resolve the driver through the `agent` slot for `workspaceId` (where an
+ * older deployment's translated defaults leave the agent off). The slot requires tool calling; a model the catalogue says lacks it is
  * refused. The transport dialect defaults to openai-completions.
  */
 export async function resolveAgentDriverModel(workspaceId: string | null = null): Promise<{
@@ -64,9 +63,7 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
   /** Internal compaction output-space estimate; never used as a conversation API limit. */
   reservedOutputTokens: number;
 }> {
-  const lookup = await lookupSlot('agent', workspaceId);
-  const resolution =
-    lookup.configured.status === 'unassigned' ? lookup.defaults() : lookup.configured;
+  const resolution = await lookupSlot('agent', workspaceId);
   if (resolution.status === 'disabled') throw new SlotDisabledError('agent');
   if (resolution.status === 'unassigned') throw new SlotUnassignedError('agent');
   if (resolution.requirements.some((check) => check.status === 'unmet')) {

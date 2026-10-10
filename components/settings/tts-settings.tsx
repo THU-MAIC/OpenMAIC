@@ -26,6 +26,7 @@ import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers'
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
+  CredentialStorageHint,
   ApiKeySecurityNotice,
   EndpointServerOnlyHint,
   RegionalEndpointField,
@@ -87,6 +88,7 @@ function DoubaoKeyFields({ onSave }: { onSave: (key: string) => Promise<unknown>
     <>
       {field(t('settings.doubaoAppId'), appId, setAppId, 'tts-app-id-doubao-tts')}
       {field(t('settings.doubaoAccessKey'), accessKey, setAccessKey, 'tts-access-key-doubao-tts')}
+      <CredentialStorageHint />
     </>
   );
 }
@@ -233,15 +235,12 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
         </div>
       )}
 
-      {entry.state === 'deployment' && <ServerConfiguredNotice />}
-      {entry.state === 'server-only' && (
-        <ServerOnlyNotice policy={!view.policy.allowWorkspaceProviders} />
-      )}
+      {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability="tts" />}
+      {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* API Key & Base URL — the server's services are the operator's. */}
       {editable && (
         <>
-          {!isVoxCPM && <ApiKeySecurityNotice />}
           <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
             {isDoubao ? (
               <DoubaoKeyFields onSave={save} />

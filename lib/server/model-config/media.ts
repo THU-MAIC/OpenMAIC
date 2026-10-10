@@ -3,11 +3,12 @@
  * #1725): text to speech, speech recognition, images, video, web search and
  * document extraction.
  *
- * The order matches language models: the configured slot (deployment, then
- * workspace); else the provider the request names the old way (deprecated);
- * else the defaults an older deployment set by configuring providers; else a
- * loud error. A slot turned off fails whatever the request names, and under
- * `policy.allowWorkspaceProviders: false` the request's provider is ignored.
+ * The order matches language models: the configured slot (a lock, the
+ * workspace's choice, or the server's default); the provider a request names
+ * the old way (deprecated) only where nothing is assigned, or over a default
+ * translated from the legacy variables; else a loud error. A slot turned off fails
+ * whatever the request names, and under `allowUserKeys: false` the request's
+ * provider is ignored.
  *
  * A connection is `managed` when its endpoint is operator configuration
  * (deployment or legacy providers), which media routes already trust. A
@@ -24,10 +25,12 @@ import { isServerProviderDisabled } from '@/lib/server/provider-config';
 import { isIP } from 'node:net';
 import { isPrivateIP } from '@/lib/server/ssrf-guard';
 
-import type { ResolvedModelTarget, SlotResolution } from './resolve-slot';
+import type { ResolvedModelTarget } from './resolve-slot';
 import {
   backgroundWorkspaceId,
+  deploymentConfig,
   lookupSlot,
+  requestMayChoose,
   requestProvidersAllowed,
   SlotDisabledError,
   SlotUnassignedError,
@@ -85,11 +88,13 @@ export interface MediaConnection {
    * it runs under the strict public-network policy.
    */
   userEndpoint: boolean;
-  /** Where the connection came from. */
+  /**
+   * Where the connection came from: the configuration, the request (the
+   * deprecated fields), or a server default translated from the legacy
+   * variables (to which the legacy model pins still apply).
+   */
   origin: 'configuration' | 'request' | 'default';
 }
-
-type Assigned = Extract<SlotResolution, { status: 'assigned' }>;
 
 /**
  * Whether an endpoint names this server's own network by its spelling
@@ -182,7 +187,7 @@ export interface MediaSlotOptions {
   workspaceId: string | null;
   /**
    * The provider the request names the old way, or undefined when it names
-   * none. Consulted only when the configuration leaves the slot unassigned.
+   * none. Consulted only where requestMayChoose says so.
    */
   legacyRequest?: () => Promise<MediaConnection | undefined>;
 }
@@ -192,18 +197,19 @@ export async function resolveMediaSlot(
   slot: MediaSlot,
   { workspaceId, legacyRequest }: MediaSlotOptions,
 ): Promise<MediaConnection> {
-  const lookup = await lookupSlot(slot, workspaceId);
-  const { configured } = lookup;
-  if (configured.status === 'assigned') return fromTarget(slot, configured, 'configuration');
-  if (configured.status === 'disabled') throw new SlotDisabledError(slot);
-  // Under `policy.allowWorkspaceProviders: false` the provider a request names
-  // is ignored: only the configuration decides.
-  const requested = requestProvidersAllowed() ? await legacyRequest?.() : undefined;
-  if (requested) return requested;
-  const fallback = lookup.defaults();
-  if (fallback.status === 'assigned') return fromTarget(slot, fallback as Assigned, 'default');
-  if (fallback.status === 'disabled') throw new SlotDisabledError(slot);
-  throw new SlotUnassignedError(slot);
+  const resolution = await lookupSlot(slot, workspaceId);
+  // Under `allowUserKeys: false` the provider a request names is ignored:
+  // only the configuration decides.
+  if (requestMayChoose(resolution) && requestProvidersAllowed()) {
+    const requested = await legacyRequest?.();
+    if (requested) return requested;
+  }
+  if (resolution.status === 'assigned') {
+    const legacyDefault = resolution.source === 'default' && deploymentConfig().legacy;
+    return fromTarget(slot, resolution, legacyDefault ? 'default' : 'configuration');
+  }
+  if (resolution.status === 'disabled') throw new SlotDisabledError(slot);
+  throw new SlotUnassignedError(slot, resolution.status === 'unassigned' && !!resolution.locked);
 }
 
 /**
@@ -214,9 +220,7 @@ export async function mediaSlotAvailable(
   slot: MediaSlot,
   workspaceId: string | null,
 ): Promise<boolean> {
-  const lookup = await lookupSlot(slot, workspaceId);
-  if (lookup.configured.status !== 'unassigned') return lookup.configured.status === 'assigned';
-  return lookup.defaults().status === 'assigned';
+  return (await lookupSlot(slot, workspaceId)).status === 'assigned';
 }
 
 /** A provider the request named (deprecated path) was refused with `response`. */
@@ -246,6 +250,18 @@ export function mediaResolutionResponse(error: unknown, what: string): Response 
 }
 
 /**
+ * The workspace background work on behalf of `storedOwnerId` resolves for:
+ * the owner it belongs to now when `forward` (see serverMediaConnection).
+ */
+export async function mediaWorkspaceId(
+  storedOwnerId: string | undefined,
+  { forward = true }: { forward?: boolean } = {},
+): Promise<string | null> {
+  if (!storedOwnerId) return null;
+  return forward ? backgroundWorkspaceId(storedOwnerId) : storedOwnerId;
+}
+
+/**
  * The connection for background work on behalf of a stored owner (an agent
  * run, a generation job): 'off' when the slot is turned off, null when
  * nothing is assigned. Requests do not name providers here.
@@ -264,13 +280,10 @@ export async function serverMediaConnection(
     forward?: boolean;
   } = {},
 ): Promise<MediaConnection | 'off' | null> {
-  const workspaceId = storedOwnerId
-    ? forward
-      ? await backgroundWorkspaceId(storedOwnerId)
-      : storedOwnerId
-    : null;
   try {
-    return await resolveMediaSlot(slot, { workspaceId });
+    return await resolveMediaSlot(slot, {
+      workspaceId: await mediaWorkspaceId(storedOwnerId, { forward }),
+    });
   } catch (error) {
     if (error instanceof SlotDisabledError) return 'off';
     if (error instanceof SlotUnassignedError) return null;

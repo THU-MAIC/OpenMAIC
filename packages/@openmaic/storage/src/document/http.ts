@@ -25,6 +25,22 @@ export interface HttpDocumentStoreOptions {
   baseUrl: string;
   /** Fetch implementation. Defaults to `globalThis.fetch`. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * The floor of a request's deadline, in milliseconds: what a request with
+   * no body gets, and the size-independent part of any other request's
+   * budget. A request that carries a body is given additional time
+   * proportional to that body, at a conservative upload throughput and up to
+   * a ceiling — both fixed in this module — so a large document on a slow
+   * link is not mistaken for a stall.
+   *
+   * The deadline covers the request round trip — sending the body and
+   * receiving the response headers — so an endpoint that stops answering
+   * fails like any other transport error instead of holding its caller
+   * forever. Reading the response body is deliberately outside the bound.
+   * `<= 0` disables the deadline entirely. Defaults to
+   * `DEFAULT_REQUEST_TIMEOUT_MS`.
+   */
+  requestTimeoutMs?: number;
   /** Called for every request so deployments can attach authentication headers. */
   headers?: HttpDocumentHeadersHook;
   /** Client-side scene validator. Defaults to the DSL validator. */
@@ -52,6 +68,92 @@ export class HttpDocumentStoreError extends Error {
     super(message);
     this.name = 'HttpDocumentStoreError';
   }
+}
+
+/**
+ * The floor of a request's budget: how long a request that carries no body
+ * may go without settling before it is aborted.
+ *
+ * What this bound exists to stop is not slowness but a request that never
+ * settles at all — the autosave holds at most one save in flight and starts
+ * the next one only once that promise settles, so a request that hangs
+ * forever strands every later save for the life of the page, silently.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * The upload throughput a request's budget is sized against, in bytes per
+ * second. Deliberately pessimistic — below a 1 Mbps link — so the budget errs
+ * towards waiting: waiting too long costs one late retry, while giving up too
+ * early costs the save entirely, because every retry meets the same budget.
+ */
+const ASSUMED_UPLOAD_BYTES_PER_SECOND = 100 * 1024;
+
+/**
+ * The ceiling on any one request's budget, in milliseconds. Comfortably above
+ * what the largest body the server accepts (32 MiB) needs at
+ * `ASSUMED_UPLOAD_BYTES_PER_SECOND`, so the ceiling catches a pathological
+ * body rather than a legitimately large one.
+ */
+const MAX_REQUEST_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * The deadline for one request: `floorMs` plus the time a body of
+ * `bodyBytes` needs at `ASSUMED_UPLOAD_BYTES_PER_SECOND`, capped at
+ * `MAX_REQUEST_TIMEOUT_MS`.
+ *
+ * The deadline spans sending the body as well as waiting for the response
+ * headers, so a single absolute budget would abort a large save on a slow
+ * link on every attempt — and, because each retry meets the same budget, such
+ * a save could never complete at all, which is worse than the unbounded wait
+ * this bound replaces. Sizing the budget from the body keeps the bound
+ * meaningful without putting the documents the server accepts out of reach.
+ */
+function requestBudgetMs(floorMs: number, bodyBytes: number): number {
+  const uploadMs = Math.ceil((bodyBytes / ASSUMED_UPLOAD_BYTES_PER_SECOND) * 1000);
+  return Math.min(MAX_REQUEST_TIMEOUT_MS, floorMs + uploadMs);
+}
+
+/**
+ * The UTF-8 length of `value`, without materialising the encoded bytes —
+ * `String#length` counts UTF-16 code units, which undercounts every non-ASCII
+ * character, and the body of a save is full of them.
+ */
+function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      // A surrogate pair: two code units encoding one four-byte character.
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/** One absolute deadline for one request; `settle()` clears the timer. */
+interface RequestDeadline {
+  readonly signal: AbortSignal;
+  settle(): void;
+}
+
+/**
+ * Start a request's deadline, mirroring the asset store's bounded-operation
+ * budget (`asset/http.ts`) so both HTTP stores treat a stalled persistence
+ * endpoint the same way. A non-positive budget returns null: no deadline.
+ */
+function startRequestDeadline(timeoutMs: number): RequestDeadline | null {
+  if (timeoutMs <= 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, settle: () => clearTimeout(timer) };
 }
 
 function assertAddressableSegment(value: string): void {
@@ -122,6 +224,7 @@ export class HttpDocumentStore<
 > implements DocumentStore<TScene, TStage> {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly requestTimeoutMs: number;
   private readonly headersHook: HttpDocumentHeadersHook | undefined;
   private readonly validateSceneFn: SceneValidator;
   private readonly validateStageFn: StageValidator;
@@ -143,6 +246,7 @@ export class HttpDocumentStore<
     const fetchImpl = selectedFetch.bind(globalThis);
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = fetchImpl;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.headersHook = options.headers;
     this.validateSceneFn = options.validateScene ?? validateScene;
     this.validateStageFn = options.validateStage ?? validateStage;
@@ -160,11 +264,37 @@ export class HttpDocumentStore<
       headers['content-type'] ??= 'application/json';
       serializedBody = JSON.stringify(body);
     }
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      ...(serializedBody === undefined ? {} : { body: serializedBody }),
-    });
+    // A non-positive floor means "no deadline at all"; anything else is a
+    // floor the body may extend.
+    const budgetMs =
+      this.requestTimeoutMs <= 0
+        ? 0
+        : requestBudgetMs(this.requestTimeoutMs, utf8ByteLength(serializedBody ?? ''));
+    const deadline = startRequestDeadline(budgetMs);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        ...(deadline === null ? {} : { signal: deadline.signal }),
+        ...(serializedBody === undefined ? {} : { body: serializedBody }),
+      });
+    } catch (error) {
+      // The deadline ended this wait, not the peer. Rejecting is the whole
+      // point: the autosave's single-flight guard releases on rejection and its
+      // backoff retries, so a stalled save costs one retry — but a promise that
+      // never settles is never released, and every later save queues behind it.
+      if (deadline !== null && deadline.signal.aborted) {
+        throw new HttpDocumentStoreError(
+          0,
+          'HTTP_REQUEST_TIMEOUT',
+          `@openmaic/storage: DocumentStore HTTP request did not settle within ${budgetMs}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      deadline?.settle();
+    }
     if (!response.ok) {
       let errorBody: ErrorResponseBody | undefined;
       try {

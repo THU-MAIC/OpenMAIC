@@ -67,7 +67,7 @@ beforeEach(() => {
       source: 'deployment',
       config: { providers: { operator: { preset: 'openai', apiKey: 'sk-operator' } } },
     },
-    defaults: null,
+    legacy: false,
     notices: [],
   });
   runtime.setWorkspaceLayerLoaderForTests(async (ownerId) => {
@@ -116,8 +116,8 @@ describe('savedProviderTarget', () => {
 
   it("does not use the workspace's providers when the policy forbids them", async () => {
     runtime.setDeploymentConfigForTests({
-      layer: { source: 'deployment', config: { policy: { allowWorkspaceProviders: false } } },
-      defaults: null,
+      layer: { source: 'deployment', config: { allowUserKeys: false } },
+      legacy: false,
       notices: [],
     });
     workspaces.set('user:alice', {

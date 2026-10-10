@@ -9,6 +9,11 @@ export interface InlineOptions {
   fetcher?: FetchAsset;
   /** Keep original remote import-map entries as an online fallback. Default true. */
   keepImportmapFallbacks?: boolean;
+  /**
+   * Leave audio and video sources (`<video src>`, `<audio src>` and their
+   * `<source src>` children) unfetched, for exports that carry no media.
+   */
+  skipMedia?: boolean;
 }
 
 export type FetchAsset = (

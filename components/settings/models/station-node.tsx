@@ -9,8 +9,9 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ModelSettingsView, SlotView, ApplyChange } from '@/lib/model-settings/client';
 import { stationLit, type PlacedStation, type StationLine } from '@/lib/model-settings/diagram';
-import { providersFor, type OffMemory } from '@/lib/model-settings/edit';
+import { providersFor, setOnSlot, type OffMemory } from '@/lib/model-settings/edit';
 import { flipSwitch, switchChecked } from '@/lib/model-settings/services';
+import { slotEditable } from '@/lib/model-settings/shape';
 import { cn } from '@/lib/utils';
 
 import { SlotPicker } from './slot-picker';
@@ -27,10 +28,54 @@ export interface NodeContext {
   t: T;
   openKey: string | null;
   setOpenKey: (key: string | null) => void;
-  /** Open Model Services, where the services the slots use are set up. */
-  onManageProviders: () => void;
+  /** Open Model Services, where the services the slots use are set up; absent when it is not shown. */
+  onManageProviders?: () => void;
   /** What each switched-off slot held, to restore when it is switched on. */
   offMemory: OffMemory;
+}
+
+/**
+ * A slot the administrator fixed: one read-only line with its value and a
+ * lock, nothing to open or switch.
+ */
+function LockedLine({ slot, ctx, label }: { slot: SlotView; ctx: NodeContext; label?: string }) {
+  const { view, t } = ctx;
+  const text = lineText(view, slot, t);
+  const fixed = t(`${MS}.source.locked`);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className={cn(
+            'grid min-w-0 items-baseline gap-x-1.5 rounded-md px-1.5 py-1 text-left',
+            label ? 'grid-cols-[auto_minmax(0,1fr)]' : 'grid-cols-[minmax(0,1fr)]',
+          )}
+          data-locked-slot={slot.slot}
+          tabIndex={0}
+          aria-label={`${slotName(t, slot.slot)}: ${text.value} · ${fixed}`}
+        >
+          {label && (
+            <span className="row-span-2 min-w-6 self-center text-[11px] text-muted-foreground/80">
+              {label}
+            </span>
+          )}
+          <span
+            className={cn(
+              'min-w-0 truncate text-[12.5px]',
+              text.tone === 'own' ? 'font-semibold' : 'text-muted-foreground/70',
+            )}
+          >
+            {text.value}
+          </span>
+          <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground/80">
+            <Lock className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">{fixed}</span>
+          </span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-56 text-xs">{t(`${MS}.card.lockedHint`)}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function SlotLine({
@@ -55,7 +100,6 @@ function SlotLine({
   // or one some service could serve.
   const toggleable =
     !!line.toggle &&
-    !slot.locked &&
     (slot.effective.status === 'assigned' ||
       (slot.effective.status === 'disabled' && slot.assignment === null) ||
       (slot.effective.status === 'unassigned' &&
@@ -81,16 +125,14 @@ function SlotLine({
       >
         {text.value}
       </span>
-      {!slot.locked && (
-        <ChevronDown
-          className={cn(
-            'row-start-1 size-3.5 self-center text-muted-foreground/70 opacity-0 transition-opacity group-hover/line:opacity-100',
-            open && 'opacity-100',
-            key ? 'col-start-3' : 'col-start-2',
-          )}
-          aria-hidden="true"
-        />
-      )}
+      <ChevronDown
+        className={cn(
+          'row-start-1 size-3.5 self-center text-muted-foreground/70 opacity-0 transition-opacity group-hover/line:opacity-100',
+          open && 'opacity-100',
+          key ? 'col-start-3' : 'col-start-2',
+        )}
+        aria-hidden="true"
+      />
       {text.source && (
         <span
           className={cn(
@@ -110,57 +152,54 @@ function SlotLine({
 
   return (
     <div className="flex items-center gap-1.5">
-      {slot.locked ? (
-        <div className={grid} title={`${text.value}${text.source ? ` · ${text.source}` : ''}`}>
-          {content}
-        </div>
-      ) : (
-        <Popover open={open} onOpenChange={(next) => setOpenKey(next ? slot.slot : null)}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              data-slot-id={slot.slot}
-              aria-label={t(`${MS}.card.edit`, { name, value: text.value })}
-              className={cn(
-                grid,
-                'cursor-pointer transition-colors hover:bg-muted/70 focus-visible:outline-2 focus-visible:outline-primary',
-                open && 'bg-muted/70',
-              )}
-            >
-              {content}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            side="bottom"
-            sideOffset={6}
-            collisionPadding={12}
-            className="w-[272px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl p-0"
-            onWheelCapture={(event) => event.stopPropagation()}
-            // Open on the picker's Tab stop: the current choice, else the first row.
-            onOpenAutoFocus={(event) => {
-              const row = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
-                '[data-picker-row][tabindex="0"]',
-              );
-              if (!row) return;
-              event.preventDefault();
-              row.focus();
-            }}
+      <Popover open={open} onOpenChange={(next) => setOpenKey(next ? slot.slot : null)}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-slot-id={slot.slot}
+            aria-label={t(`${MS}.card.edit`, { name, value: text.value })}
+            className={cn(
+              grid,
+              'cursor-pointer transition-colors hover:bg-muted/70 focus-visible:outline-2 focus-visible:outline-primary',
+              open && 'bg-muted/70',
+            )}
           >
-            <SlotPicker
-              view={view}
-              slot={slot}
-              apply={apply}
-              onDone={() => setOpenKey(null)}
-              onManageProviders={() => {
+            {content}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          collisionPadding={12}
+          className="w-[272px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl p-0"
+          onWheelCapture={(event) => event.stopPropagation()}
+          // Open on the picker's Tab stop: the current choice, else the first row.
+          onOpenAutoFocus={(event) => {
+            const row = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>(
+              '[data-picker-row][tabindex="0"]',
+            );
+            if (!row) return;
+            event.preventDefault();
+            row.focus();
+          }}
+        >
+          <SlotPicker
+            view={view}
+            slot={slot}
+            apply={apply}
+            onDone={() => setOpenKey(null)}
+            onManageProviders={
+              ctx.onManageProviders &&
+              (() => {
                 setOpenKey(null);
-                ctx.onManageProviders();
-              }}
-              t={t}
-            />
-          </PopoverContent>
-        </Popover>
-      )}
+                ctx.onManageProviders?.();
+              })
+            }
+            t={t}
+          />
+        </PopoverContent>
+      </Popover>
       {toggleable && (
         <Switch
           checked={switchChecked(slot)}
@@ -184,7 +223,10 @@ function SlotLine({
   );
 }
 
-/** A card on the map: a station's title and one line per slot it holds. */
+/**
+ * A card on the map: a station's title and one line per slot it holds. A slot
+ * the administrator fixed is one read-only line.
+ */
 export const StationNode = forwardRef<
   HTMLDivElement,
   {
@@ -204,14 +246,13 @@ export const StationNode = forwardRef<
   const { t } = ctx;
   const first = station.lines[0].view;
   const lit = stationLit(station);
-  const locked = station.lines.some((line) => line.view.locked);
   const root = station.kind === 'root';
   const title = station.labelKey
     ? t(`${MS}.stations.${station.labelKey}`)
     : slotName(t, first.slot);
-  const ownChildren = station.children.filter(
-    (slot) => slot.assignment !== undefined || slot.locked,
-  ).length;
+  const ownChildren = station.children.filter(setOnSlot).length;
+  // Children that are all fixed (with their parent, say) have nothing to open.
+  const childrenEditable = station.children.some(slotEditable);
   // With nothing that offers a language model, the root's line has nothing to pick from.
   const showLines = !root || !empty;
 
@@ -250,42 +291,34 @@ export const StationNode = forwardRef<
         >
           {title}
         </span>
-        {locked && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="shrink-0 text-muted-foreground/70"
-                role="img"
-                tabIndex={0}
-                aria-label={t(`${MS}.card.locked`)}
-              >
-                <Lock className="size-3.5" />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-56 text-xs">
-              {t(`${MS}.card.lockedHint`)}
-            </TooltipContent>
-          </Tooltip>
-        )}
       </div>
 
       {showLines &&
-        station.lines.map((line) => (
-          <SlotLine
-            key={line.slot}
-            line={line}
-            slot={line.view}
-            ctx={ctx}
-            size={root ? 'root' : 'station'}
-          />
-        ))}
+        station.lines.map((line) =>
+          line.view.locked ? (
+            <LockedLine
+              key={line.slot}
+              slot={line.view}
+              ctx={ctx}
+              label={line.labelKey ? t(`${MS}.stations.lines.${line.labelKey}`) : undefined}
+            />
+          ) : (
+            <SlotLine
+              key={line.slot}
+              line={line}
+              slot={line.view}
+              ctx={ctx}
+              size={root ? 'root' : 'station'}
+            />
+          ),
+        )}
 
       {root && empty === 'workspace' && (
         <div className="flex flex-col items-start gap-2 px-1.5 pb-0.5 pt-2">
           <p className="text-xs leading-relaxed text-muted-foreground">{t(`${MS}.empty.prompt`)}</p>
           <button
             type="button"
-            onClick={ctx.onManageProviders}
+            onClick={() => ctx.onManageProviders?.()}
             className="text-xs font-medium text-primary underline-offset-2 hover:underline"
           >
             {t(`${MS}.empty.open`)}
@@ -298,13 +331,16 @@ export const StationNode = forwardRef<
         </p>
       )}
 
-      {root && followers !== undefined && first.effective.status === 'assigned' && (
-        <p className="px-1.5 pt-0.5 text-[11.5px] text-muted-foreground">
-          {t(`${MS}.card.followers`, { count: followers })}
-        </p>
-      )}
+      {root &&
+        followers !== undefined &&
+        !first.locked &&
+        first.effective.status === 'assigned' && (
+          <p className="px-1.5 pt-0.5 text-[11.5px] text-muted-foreground">
+            {t(`${MS}.card.followers`, { count: followers })}
+          </p>
+        )}
 
-      {onExpand && station.children.length > 0 && (
+      {onExpand && childrenEditable && (
         <button
           type="button"
           aria-expanded={expanded}

@@ -44,6 +44,11 @@ export interface PDFParserConfig {
    * local network without ALLOW_LOCAL_NETWORKS (cloud metadata stays refused).
    */
   managed?: boolean;
+  /**
+   * The caller stopped waiting (a deleted material, a deadline, shutdown): the
+   * extractor aborts its requests, polls and commands and rejects.
+   */
+  signal?: AbortSignal;
 }
 
 // Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication

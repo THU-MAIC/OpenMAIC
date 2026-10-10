@@ -19,7 +19,7 @@ import {
   runFirstRunSetup,
   slotChange,
   slotKey,
-  slotSource,
+  setOnSlot,
   splitRef,
   switchOffChange,
   switchOnChange,
@@ -41,6 +41,7 @@ function slot(overrides: Partial<SlotView> & Pick<SlotView, 'slot'>): SlotView {
     capability: 'chat',
     configOnly: false,
     locked: false,
+    source: { kind: 'unconfigured' },
     effective: { status: 'unassigned' },
     ...overrides,
   };
@@ -157,38 +158,14 @@ describe('slot changes', () => {
 });
 
 describe('where a slot comes from', () => {
-  const target = {
-    providerId: 'acme',
-    providerSource: 'deployment' as const,
-    presetId: 'acme',
-    registryId: 'openai',
-    modelId: 'acme-large',
-  };
-
-  it('tells inherited, own, deployment and default apart', () => {
-    const effective = (resolvedAt: string, source: string) => ({
-      status: 'assigned' as const,
-      resolvedAt: resolvedAt as SlotView['slot'],
-      source,
-      requirements: [],
-      ...target,
-    });
-    expect(
-      slotSource(slot({ slot: 'classroom', effective: effective('llm', 'workspace') })),
-    ).toEqual({ kind: 'inherited', from: 'llm' });
-    expect(
-      slotSource(slot({ slot: 'classroom', effective: effective('classroom', 'workspace') })),
-    ).toEqual({ kind: 'own' });
-    expect(
-      slotSource(slot({ slot: 'llm', parent: null, effective: effective('llm', 'deployment') })),
-    ).toEqual({ kind: 'deployment' });
-    expect(
-      slotSource(slot({ slot: 'llm', parent: null, effective: effective('llm', 'default') })),
-    ).toEqual({ kind: 'default' });
-    expect(slotSource(slot({ slot: 'course.outline' }))).toEqual({
-      kind: 'inherited',
-      from: 'llm',
-    });
+  it('tells a setting on the slot itself from one it inherits', () => {
+    for (const kind of ['workspace', 'default', 'locked'] as const) {
+      expect(setOnSlot(slot({ slot: 'classroom', source: { kind } }))).toBe(true);
+    }
+    expect(setOnSlot(slot({ slot: 'classroom', source: { kind: 'inherited', from: 'llm' } }))).toBe(
+      false,
+    );
+    expect(setOnSlot(slot({ slot: 'llm', parent: null }))).toBe(false);
   });
 
   it('names i18n keys without dots', () => {
@@ -331,7 +308,7 @@ describe('first-run setup', () => {
     const assigned = {
       status: 'assigned' as const,
       resolvedAt: 'tts' as const,
-      source: 'deployment',
+      source: 'default' as const,
       requirements: [],
       providerId: 'srv',
       providerSource: 'deployment' as const,

@@ -24,23 +24,9 @@ import {
   stageMediaPlaceholders,
   type GeneratedMediaReferenceRewrite,
 } from './generated-media-references';
-import {
-  allocatedMediaReference,
-  pendingMediaAllocation,
-  takePendingMediaAllocations,
-} from './pending-media-allocations';
+import { allocatedMediaReference, takePendingMediaAllocations } from './pending-media-allocations';
 import { allocatedNarrationReference } from '@/lib/audio/narration-allocations';
 import { rewriteSceneNarrationReference } from '@/lib/audio/persist-narration-reference';
-
-/** Whether any placeholder this scene carries has bytes waiting for it. */
-export function sceneHasPendingMediaAllocation(scene: Scene): boolean {
-  const stageId = scene.stageId;
-  if (!stageId) return false;
-  for (const ref of sceneMediaPlaceholders(scene)) {
-    if (pendingMediaAllocation(stageId, ref)) return true;
-  }
-  return false;
-}
 
 export function reconcileSceneMediaAllocations(scene: Scene): void {
   applyPendingMediaAllocationsToScene(scene);
@@ -50,7 +36,7 @@ export function reconcileSceneMediaAllocations(scene: Scene): void {
  * Drain every allocation this scene's placeholders claim, rewriting the scene
  * in place. Returns whether anything changed.
  */
-export function applyPendingMediaAllocationsToScene(scene: Scene): boolean {
+function applyPendingMediaAllocationsToScene(scene: Scene): boolean {
   const stageId = scene.stageId;
   if (!stageId) return false;
 

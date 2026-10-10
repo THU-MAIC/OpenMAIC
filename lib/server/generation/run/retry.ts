@@ -1,0 +1,96 @@
+/**
+ * 1.1.x's per-request browser retries, applied to a step called in process.
+ *
+ * 1.1.x's browser retried a scene request (content, actions, narration) with
+ * `withGenerationRetry`, classifying a failure by the HTTP status its API route
+ * answered. A run calls the step directly, so the failure is classified by the
+ * status that route would have answered: a
+ * provider's own HTTP status, else 500 (retried); a step's refusal is the
+ * route's 500 for content and actions (retried) and its 400 for narration
+ * (not retried).
+ */
+import { isAbortError, withGenerationRetry, type GenerationRetryEvent } from '@openmaic/generation';
+
+import {
+  classifyHostFailure,
+  isProviderQuotaRefusal,
+} from '@/lib/server/generation-run-hooks/runtime';
+import { StepRefusal } from '@/lib/server/generation/steps/context';
+import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
+
+/** 1.1.x's browser retries for the first scene. */
+export const FIRST_SCENE_MAX_RETRIES = 2;
+/** 1.1.x's browser retries for every later scene (the withGenerationRetry default). */
+export const SCENE_MAX_RETRIES = 5;
+
+/**
+ * A failure carrying the status the step's route would have answered, for
+ * classification, and whether a retry is worthwhile when that is not the
+ * status's to decide: an explicit provider quota refusal is not retried, and
+ * the host answers for a failure that is its own (both override the status).
+ */
+class RouteStatusError extends Error {
+  readonly isRetryable?: boolean;
+
+  constructor(
+    readonly original: unknown,
+    readonly statusCode: number,
+    retryable: boolean | undefined,
+  ) {
+    super(original instanceof Error ? original.message : String(original));
+    this.name = 'RouteStatusError';
+    if (retryable !== undefined) this.isRetryable = retryable;
+  }
+}
+
+function routeStatus(error: unknown, refusalStatus: number): number {
+  if (error instanceof StepRefusal) return refusalStatus;
+  const own = (error as { httpStatus?: unknown } | null)?.httpStatus;
+  if (typeof own === 'number' && own >= 400 && own <= 599) return own;
+  return upstreamHttpStatus(error) ?? 500;
+}
+
+export interface RouteRetryOptions {
+  label: string;
+  maxRetries: number;
+  /** The status the route answers a StepRefusal with. */
+  refusalStatus: 400 | 500;
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
+  signal?: AbortSignal;
+  /** `cause` is the failure being retried, as the step reported it. */
+  onRetry?: (event: GenerationRetryEvent & { cause: string }) => Promise<void> | void;
+}
+
+/** Run `operation`, retried as the browser retries the route it replaces; throws the last failure. */
+export async function withRouteRetry<T>(
+  operation: () => Promise<T>,
+  options: RouteRetryOptions,
+): Promise<T> {
+  let cause = '';
+  try {
+    return await withGenerationRetry(
+      async () => {
+        try {
+          return await operation();
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+          throw new RouteStatusError(
+            error,
+            routeStatus(error, options.refusalStatus),
+            isProviderQuotaRefusal(error) ? false : classifyHostFailure(error)?.retryable,
+          );
+        }
+      },
+      {
+        label: options.label,
+        maxRetries: options.maxRetries,
+        sleep: options.sleep,
+        signal: options.signal,
+        onRetry: options.onRetry && ((event) => options.onRetry!({ ...event, cause })),
+      },
+    );
+  } catch (error) {
+    throw error instanceof RouteStatusError ? error.original : error;
+  }
+}

@@ -1,17 +1,14 @@
 ---
 title: 部署
-description: 部署 OpenMAIC 到 Vercel、Docker，或你自己的主機。
+description: 用 Docker 部署 OpenMAIC，或在你自己的主機上用 pnpm start 執行。
 ---
 
-OpenMAIC 是一個標準的 Next.js 應用程式，任何能執行 Next.js 的環境都可以部署。
+OpenMAIC 是一個 Next.js 應用程式，需要一個常駐的 Node.js 行程和 PostgreSQL。課程產生在伺服器端進行：每次產生都以紀錄的形式儲存在資料庫中，由伺服器行程內的 worker 執行；瀏覽器離開頁面後產生仍會繼續，行程結束後由另一個行程（或重新啟動後的同一行程）從最近完成的步驟接手。支援兩種部署方式：
 
-## Vercel（一鍵）
+- **Docker Compose**（建議）：應用程式和 PostgreSQL 兩個容器。
+- **Docker 映像檔或 `pnpm start`**，搭配你自己執行的 PostgreSQL。
 
-最快的方式是點選[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC) 中的 Deploy 按鈕，fork 儲存庫，並依照提示填入至少一個 LLM 的 API key。
-
-Vercel 會在每次提交後重新建置並部署 Next.js 應用程式。首次部署後，開啟應用程式，在模型設定中連接模型服務；也可以在專案設定中透過環境變數設定供應商（[舊版變數](./configuration.mdx#從舊設定遷移)仍然有效）。Vercel 沒有持久化資料目錄，因此在模型設定中儲存 key 之前，請先在專案設定中設定 `OPENMAIC_SECRET_KEY`，請見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
-
-Vercel 以 Serverless 函式執行 OpenMAIC，無法自帶資料庫。請在專案設定中把 `DATABASE_URL` 指向外部 PostgreSQL 資料庫（託管服務；有連線池端點時優先使用）；沒有它服務會拒絕啟動。
+從 1.2.0 起不再支援 Vercel 等 Serverless 平台：隨請求結束的函式無法執行一次產生。請見下文「Vercel（1.1.x 及以前）」。
 
 ## Docker
 
@@ -20,7 +17,7 @@ Vercel 以 Serverless 函式執行 OpenMAIC，無法自帶資料庫。請在專�
 ```bash
 docker build -t openmaic .
 
-docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -p 3000:3000 openmaic
+docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -v openmaic-data:/app/data -p 3000:3000 openmaic
 ```
 
 建議使用儲存庫中的 Docker Compose 設定：
@@ -74,7 +71,41 @@ pnpm build
 DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # 預設監聽 3000 連接埠
 ```
 
-可在前方使用 nginx 或 Caddy 終止 TLS。課程、執行階段資料和產生的媒體都儲存在 PostgreSQL 中，多個實例可以共用同一個資料庫。
+請用行程管理器（systemd、pm2 或容器）保持服務執行並在結束後自動重新啟動，可在前方使用 nginx 或 Caddy 終止 TLS。課程和產生的課程媒體儲存在 PostgreSQL（或 S3）中，因此多個實例可以共用同一個資料庫，前提是它們同時共用資料目錄和相同的 `OPENMAIC_SECRET_KEY`（見下文）。
+
+`pnpm start` 執行的是 `next start`，它會警告自己不適用於 `output: standalone` 設定。這個警告可以忽略：`next start` 會從 `.next` 提供完整的建置產物。Docker 映像檔執行的是 standalone 伺服器（`node server.js`），但該伺服器會把工作目錄切換到它自己所在的目錄，所以在 VM 上請繼續使用 `pnpm start`，它會從啟動目錄讀取 `data/` 和 `openmaic.yml`。
+
+## 必要設定
+
+| 設定 | Docker Compose | Docker 映像檔或 `pnpm start` |
+| --- | --- | --- |
+| `DATABASE_URL` | 已指向內建的 PostgreSQL | 必填；沒有它服務會在啟動時結束 |
+| 身分模式 | 單一使用者（`docker-compose.defaults.env` 中的 `OWNER_SINGLE_USER=true`） | 未設定時，每個瀏覽器是一個匿名擁有者 |
+| `OPENMAIC_SECRET_KEY` | 選用：產生的金鑰儲存在 `openmaic-data` 卷中 | 多個實例，或沒有持久化 `data/` 目錄時必填 |
+| 資料目錄 | 掛載在 `/app/data` 的 `openmaic-data` 卷 | 工作目錄下持久化的 `data/` 目錄，所有實例共用 |
+| 模型 | `openmaic.yml` 或 **設定 → 模型** | 同左 |
+
+**身分模式**決定課程歸誰所有。未設定時，每個瀏覽器都是獨立的匿名擁有者，換一個瀏覽器看到的是空的課程庫。個人安裝請設定 `OWNER_SINGLE_USER=true`；一個團隊共用一個課程庫時，設定 `PERSISTENCE_SHARED_OWNER_ID` 並搭配 `ACCESS_CODE`；需要真實帳號時，註冊擁有者驗證方法。詳見 [Owner identity](./hosting.mdx#owner-identity) 和 `.env.example`。
+
+匿名模式下，擁有者 cookie 在正式環境中帶有 `Secure` 標記，`ACCESS_CODE` 的 cookie 也是如此。瀏覽器只在 HTTPS 或 `http://localhost` 上儲存 `Secure` cookie（Safari 連 localhost 也不儲存），因此透過純 HTTP 提供服務的部署必須設定 `COOKIE_SECURE=0`（必須正好是 `0`）：否則每個請求都會成為新的擁有者，寫入以 `403` 失敗，存取碼也會被反覆要求輸入。沒有 TLS 時 cookie 以明文傳輸，只應在可信任的網路中這樣做。
+
+**`OPENMAIC_SECRET_KEY`** 用於加密在模型設定中儲存的供應商 key。未設定時，每個實例會在 `data/instance-secret.key` 中產生自己的金鑰，共用資料庫的實例之間就無法讀取彼此儲存的 key。請把它和資料庫備份放在一起，見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
+
+**多個實例**共用資料庫時，還需要共用同一個持久化資料目錄（工作目錄下的 `data/`，映像檔中為 `/app/data`；例如在每個實例上掛載同一個卷或網路檔案系統）。課程文件和產生的課程媒體儲存在 PostgreSQL（設定 `ASSET_S3_BUCKET` 時為 S3）中，但每個行程會把以下檔案放在自己的資料目錄裡：上傳的資料檔案及其擷取結果、由智慧體編輯的課程的講解與資料媒體（`data/classrooms`，或 `OPENMAIC_CLASSROOMS_DIR`）、用量紀錄（`data/usage`）以及自動產生的實例金鑰。由另一個實例接手的產生任務會從這裡讀取上傳的資料。
+
+## 產生任務
+
+每個伺服器行程都執行一個產生 worker，與 `OPENMAIC_AGENT_RUNTIME_ENABLED` 無關。以下變數用於調整它（取值為正整數）：
+
+| 變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `OPENMAIC_MAX_ACTIVE_RUNS_PER_OWNER` | `2` | 每個擁有者同時進行中的產生數。等待確認大綱、或因步驟失敗而暫停的產生不計入。超出時，開始、確認大綱或重試會回傳 `429 ACTIVE_RUN_LIMIT`。 |
+| `OPENMAIC_MAX_WAITING_RUNS_PER_OWNER` | `10` | 每個擁有者同時等待確認大綱的產生數。 |
+| `OPENMAIC_GENERATION_RUN_MAX_CONCURRENT` | `4` | 單一行程同時執行的產生數。 |
+| `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 每個擁有者在單一行程上可同時開啟的產生事件串流數。 |
+| `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 已結束的產生保留完整事件紀錄的時長（小時），之後會被壓縮。 |
+
+產生任務與 agent 執行階段共用租約時間設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`，見 `.env.example`）。服務停止或重新啟動時（包括滾動更新），其中的產生會由另一個實例或重新啟動的同一實例從最後完成的步驟繼續：進度會暫停約一個租約有效期（預設 10 秒），進行中的步驟會重新產生。一個產生連續被中斷 `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 次（預設 5 次）且期間沒有完成任何步驟時，會在該步驟暫停並提供重試；如果多實例滾動更新會達到這個次數，請調大它。
 
 ## 伺服器端持久化（PostgreSQL）
 
@@ -93,6 +124,26 @@ PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 除非設定了 `OPENMAIC_SECRET_KEY`，`openmaic-data` 資料卷中還儲存著 `instance-secret.key`，也就是自動產生的實例金鑰，用於加密模型設定中儲存的供應商 key。請把它和資料庫一起備份：沒有它，已儲存的 key 需要重新填寫。如果執行多個副本、沒有持久化資料卷或檔案系統唯讀，請改為設定 `OPENMAIC_SECRET_KEY`（所有副本使用同一個值）；參見 [金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
 
 早期版本可以把課程儲存在瀏覽器（IndexedDB）中。該模式已移除，`NEXT_PUBLIC_PERSISTENCE` 建置變數會被忽略。以這種方式儲存在瀏覽器中的課程，會在該瀏覽器首次開啟升級後的應用程式時自動搬到伺服器：單向匯入器把它們（連同對話、學習進度、資料夾和媒體）複製給伺服器為該瀏覽器解析出的擁有者，瀏覽器中的原始資料保持不變。每個瀏覽器只匯入一次：伺服器把該瀏覽器綁定給第一個載入升級後應用程式的擁有者，認領會把綁定帶到帳號（匿名擁有者在登入時被認領進帳號）。伺服器會拒絕匯入器為其他擁有者發出的請求，因此之後在同一瀏覽器中使用的其他擁有者不會得到任何匯入。整個過程無需操作，也沒有介面提示；如有問題，會以 `[legacy-browser-import]` 前綴記錄在瀏覽器主控台中。
+
+## 從 1.1.x 升級
+
+| 部署方式 | 操作 |
+| --- | --- |
+| `docker compose` | 拉取新版本，執行 `docker compose up --build`。把模型設定移到 `openmaic.yml` 或 **設定 → 模型**（沒有 `openmaic.yml` 時，供應商環境變數仍然有效），並把 `MODEL_ROUTES` 改寫為插槽：設定了它卻沒有 `openmaic.yml` 的服務會拒絕啟動。在每個存有本機課程的瀏覽器中開啟一次應用程式，完成匯入。 如果 `.env.local` 設定了 `PERSISTENCE_SHARED_OWNER_ID`，還要設定 `OWNER_SINGLE_USER=false`：Compose 現在預設以單一使用者模式啟動。先前的伺服器端部署中屬於匿名擁有者的課程不會自動合併給單一使用者，需要在建立它們的每個瀏覽器中用 `POST /api/identity/claim` 認領（開啟瀏覽器只會匯入它在本機儲存的資料）。 |
+| `pnpm start` + 自己的 PostgreSQL | 停止服務，拉取新版本，執行 `pnpm install` 和 `pnpm build`，然後在同一個工作目錄裡用 `pnpm start` 重新啟動，這樣會保留 `data/`。設定 `DATABASE_URL`、身分模式；多個實例共用資料庫時設定 `OPENMAIC_SECRET_KEY`，並且多個實例還需要共用同一個資料目錄（見[必要設定](#必要設定)）。模型設定、`MODEL_ROUTES` 和瀏覽器中的課程同上一列。 |
+| Vercel | 留在 1.1.x，或遷移到使用同一資料庫的常駐主機（見下文）。 |
+| Skill / API | 依更新後的 `openmaic` skill 操作：以同一擁有者上傳資料、提交並輪詢。 |
+
+首次啟動 1.2.0 之前：
+
+- **保留資料目錄。** 啟動 1.2.0 時，工作目錄裡要有原本的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 時沿用同一個 `openmaic-data` 卷。1.1.x 以檔案形式儲存在 `data/classrooms` 下的課堂，會在啟動後於背景匯入資料庫一次；沒有這個目錄的伺服器沒有可匯入的內容。
+- **先設定身分模式。** 匯入時，這些課堂歸屬於那次啟動時設定的擁有者：設定了單一使用者（`OWNER_SINGLE_USER=true`）或團隊共用擁有者（`PERSISTENCE_SHARED_OWNER_ID`）時歸它們所有；否則（匿名模式）歸專用擁有者 `system:legacy-classrooms`，此時它們只能透過原連結以唯讀方式開啟，也不會出現在任何課程庫中。每個課堂只匯入一次，所以在匿名模式下匯入的課堂，之後即使再設定身分模式，也仍然屬於 `system:legacy-classrooms`。
+
+瀏覽器中的資料（課程、模型設定、自訂智慧體）會在每個瀏覽器首次開啟升級後的應用程式時匯入一次。遷移模型設定請見[設定](./configuration.mdx#從舊設定遷移)，完整的破壞性變更清單請見 [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md)。
+
+## Vercel（1.1.x 及以前）
+
+Serverless 部署支援到 OpenMAIC 1.1.x，[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 中的 Deploy 按鈕部署的是 `release/1.1.x` 分支。這樣的部署之後可以遷移到常駐主機而不遺失資料：把新主機的 `DATABASE_URL` 指向原本使用的資料庫（如果有用），並沿用同一個存取位址——瀏覽器按網站儲存資料，訪客瀏覽器中的課程會在每個瀏覽器首次開啟升級後的應用程式時匯入。
 
 ## 選用：MP4 影片匯出
 

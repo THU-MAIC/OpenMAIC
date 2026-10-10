@@ -261,8 +261,14 @@ describe('resolveModel with a client-supplied base URL', () => {
   it('keeps an operator-selected default model on the operator transport', async () => {
     const runtime = await import('@/lib/server/model-config/runtime');
     runtime.setDeploymentConfigForTests({
-      layer: { source: 'deployment', config: { providers: { ollama: { preset: 'ollama' } } } },
-      defaults: { source: 'default', config: { slots: { llm: 'ollama:llama3.3' } } },
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { ollama: { preset: 'ollama' } },
+          slots: { llm: 'ollama:llama3.3' },
+        },
+      },
+      legacy: true,
       notices: [],
     });
     try {

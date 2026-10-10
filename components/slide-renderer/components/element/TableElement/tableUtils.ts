@@ -25,11 +25,18 @@ export function getTextStyle(style?: TableCellStyle): CSSProperties {
 }
 
 /**
- * Format text: convert \n to <br/> and spaces to &nbsp;
+ * Format text: convert \n to <br/> and spaces to &nbsp; in the text between
+ * tags. Tags are left as they are, so cell markup (an inline formula's
+ * `<span data-inline-math="…">`) keeps its attributes.
  */
 export function formatText(text: unknown): string {
   if (typeof text !== 'string') return '';
-  return text.replace(/\n/g, '<br/>').replace(/ /g, '&nbsp;');
+  return text
+    .split(/(<[^>]*>)/)
+    .map((part, index) =>
+      index % 2 === 1 ? part : part.replace(/\n/g, '<br/>').replace(/ /g, '&nbsp;'),
+    )
+    .join('');
 }
 
 /**

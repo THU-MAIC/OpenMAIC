@@ -1,5 +1,6 @@
 import { APICallError, RetryError } from 'ai';
-import { apiError } from '@/lib/server/api-response';
+
+import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
 const HTTP_ERROR_MIN = 400;
 const HTTP_ERROR_MAX = 599;
@@ -51,29 +52,57 @@ function statusFromError(error: unknown, seen = new Set<unknown>()): number | un
   return statusFromError(error.cause, seen) ?? statusFromError(error.lastError, seen);
 }
 
-function messageForStatus(status: number): string {
-  if (status === 401 || status === 403) {
-    return 'Upstream authentication or authorization failed.';
-  }
-  if (status === 404) return 'Upstream endpoint not found.';
-  if (status === 429) return 'Upstream rate limit reached. Please try again shortly.';
-  if (status >= 500) return 'Upstream model provider is temporarily unavailable. Please try again.';
-  return 'Upstream provider rejected the request.';
+// Explicit billing/quota codes of the OpenAI-compatible wire format, not a
+// provider's generic rate-limit signal. A vendor's native codes are its
+// adapter's to translate into ProviderQuotaExhaustedError.
+// https://developers.openai.com/api/docs/guides/error-codes
+const QUOTA_CODES = new Set([
+  'insufficient_quota',
+  'credit_balance_exhausted',
+  'organization_usage_limit_exceeded',
+  'organization_spend_limit_exceeded',
+  'project_spend_limit_exceeded',
+]);
+
+function quotaResponse(body: unknown): boolean {
+  if (!isRecord(body)) return false;
+  // The error is nested as `{ error }` (an HTTP error body), flat (a stream's
+  // error event, as the SDK hands it on), or the `response.error` of a
+  // Responses API `response.failed` event.
+  const error =
+    body.type === 'response.failed' && isRecord(body.response)
+      ? body.response.error
+      : (body.error ?? body);
+  if (!isRecord(error)) return false;
+  return (
+    (typeof error.code === 'string' && QUOTA_CODES.has(error.code)) ||
+    error.type === 'insufficient_quota'
+  );
 }
 
 /**
- * Preserve a provider's HTTP semantics for client retry classification without
- * exposing provider response bodies, URLs, or credential-adjacent details.
+ * An explicit quota refusal: an adapter's {@link ProviderQuotaExhaustedError},
+ * or an OpenAI-compatible quota code in the provider response. Never inferred
+ * from a 429 or a message.
  */
-export function llmApiError(error: unknown) {
-  const status = statusFromError(error);
-  if (status === undefined) {
-    return apiError('INTERNAL_ERROR', 500, 'Scene generation failed. Please try again.');
-  }
+export function isUpstreamQuotaExhausted(error: unknown, seen = new Set<unknown>()): boolean {
+  if (!isRecord(error) || seen.has(error)) return false;
+  seen.add(error);
 
-  return apiError(
-    status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_ERROR',
-    status,
-    messageForStatus(status),
+  // The last attempt is what the run reports; an earlier quota failure must
+  // not replace a later provider failure with a different cause.
+  if (RetryError.isInstance(error)) return isUpstreamQuotaExhausted(error.lastError, seen);
+
+  if (error instanceof ProviderQuotaExhaustedError) return true;
+  if (quotaResponse(error) || quotaResponse(error.data)) return true;
+  if (typeof error.responseBody === 'string') {
+    try {
+      if (quotaResponse(JSON.parse(error.responseBody))) return true;
+    } catch {
+      // An unreadable/non-JSON response has no explicit quota signal.
+    }
+  }
+  return (
+    isUpstreamQuotaExhausted(error.cause, seen) || isUpstreamQuotaExhausted(error.lastError, seen)
   );
 }

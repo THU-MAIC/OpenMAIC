@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 import {
   collectAssetRefs,
@@ -6,6 +8,7 @@ import {
   inlineCssUrls,
   inlineHtmlAssets,
 } from '@/lib/export/inline-assets';
+import { parseFontSrcEntry } from '@/lib/export/css-asset-parser';
 
 describe('collectAssetRefs', () => {
   it('collects stylesheet link hrefs', () => {
@@ -402,24 +405,171 @@ describe('inlineCssUrls', () => {
     expect(calls).toBe(2);
   });
 
-  it('inlines only woff2 and drops sibling woff/ttf to about:invalid within an @font-face that has woff2', async () => {
+  /** Inlines every fetch as a one-byte font of the type its extension names. */
+  const fontFetcher = (calls: string[] = []) => {
+    const fetchAsset = async (url: string) => {
+      calls.push(url);
+      const ext = url.split('.').pop();
+      return { bytes: new Uint8Array([1]), contentType: `font/${ext}` };
+    };
+    return fetchAsset;
+  };
+  const W2 = 'data:font/woff2;base64,AQ==';
+
+  it('keeps only the woff2 in the src list of an @font-face that has woff2', async () => {
     const css =
       '@font-face{font-family:K;src:url(K.woff2) format("woff2"),url(K.woff) format("woff"),url(K.ttf) format("truetype")}';
     const calls: string[] = [];
-    const fetchAsset = async (url: string) => {
-      calls.push(url);
-      return { bytes: new Uint8Array([1]), contentType: 'font/woff2' };
-    };
-    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fetchAsset);
-    expect(out).toContain('url(data:font/woff2;base64,'); // woff2 inlined
-    expect(out).toContain('url(about:invalid) format("woff")'); // woff dropped
-    expect(out).toContain('url(about:invalid) format("truetype")'); // ttf dropped
-    expect(out).not.toContain('K.woff2');
-    expect(out).not.toContain('K.woff)');
-    expect(out).not.toContain('K.ttf');
-    // only the woff2 was fetched
-    expect(calls.filter((u) => u.endsWith('.woff') || u.endsWith('.ttf'))).toEqual([]);
-    expect(calls.some((u) => u.endsWith('.woff2'))).toBe(true);
+    const { css: out, failed } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(`@font-face{font-family:K;src:url(${W2}) format("woff2")}`);
+    expect(out).not.toContain('about:invalid');
+    // only the woff2 was fetched, and nothing is reported missing
+    expect(calls).toEqual(['https://x/K.woff2']);
+    expect(failed).toEqual([]);
+  });
+
+  it('removes fallbacks after the first woff2 and keeps the entries before it, quoted or unquoted', async () => {
+    const css =
+      "@font-face{font-family:K;src:url('K.ttf') format('truetype'), url(\"K.woff2\") format('woff2'), url(K.woff) format('woff'), url( 'K-alt.woff2' ) format(\"woff2\"), url(\"K.otf\") format('opentype')}";
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher());
+    expect(out).toBe(
+      `@font-face{font-family:K;src:url(data:font/ttf;base64,AQ==) format('truetype'),url(${W2}) format('woff2'),url(${W2}) format("woff2")}`,
+    );
+  });
+
+  it('accepts unquoted, upper-case and spaced format(woff2) hints as unconditional', async () => {
+    const css =
+      '@font-face{font-family:K;src:url(K.woff2) FORMAT( WOFF2 ),url(K.ttf) format(truetype)}';
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(`@font-face{font-family:K;src:url(${W2}) FORMAT( WOFF2 )}`);
+    expect(calls).toEqual(['https://x/K.woff2']);
+  });
+
+  it('keeps local() entries in a pruned src list', async () => {
+    const css =
+      '@font-face{font-family:K;src:local("K Regular"), local(K-Regular), url(K.woff2) format("woff2"), url(K.ttf) format("truetype")}';
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher());
+    expect(out).toBe(
+      `@font-face{font-family:K;src:local("K Regular"),local(K-Regular),url(${W2}) format("woff2")}`,
+    );
+  });
+
+  it.each([
+    ['a tech() condition', 'format("woff2") tech(color-COLRv1)'],
+    ['an unquoted, upper-case tech() condition', 'format(woff2) TECH(variations)'],
+    ['a tech() list', 'format("woff2") tech(color-COLRv1, variations)'],
+    ['format(... supports ...)', 'format("woff2" supports variations)'],
+    ['a woff2-variations hint', 'format("woff2-variations")'],
+    ['a multi-format hint', 'format("woff2", "woff")'],
+    ['a trailing comma in format()', 'format("woff2",)'],
+    ['a leading comma in format()', 'format(, woff2)'],
+    ['an empty format()', 'format()'],
+    ['a comma-only format()', 'format(,)'],
+    ['a space-separated format() list', 'format("woff2" "woff2")'],
+    ['a nested function in format()', 'format(var(--f))'],
+    ['a stray token after format()', 'format("woff2") x'],
+    ['a second format()', 'format("woff2") format("woff2")'],
+    ['a slash in format()', 'format("woff2" / "woff2")'],
+  ])('keeps and inlines the fallbacks of a woff2 source with %s', async (_label, hint) => {
+    const css = `@font-face{font-family:K;src:url(https://fonts.example/k?id=1) ${hint},url(fallback.ttf) format("truetype")}`;
+    const calls: string[] = [];
+    const { css: out, failed } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toContain('url(data:font/ttf;base64,AQ==) format("truetype")');
+    expect(out).not.toContain('fallback.ttf');
+    expect(calls.sort()).toEqual(['https://fonts.example/k?id=1', 'https://x/fallback.ttf']);
+    expect(failed).toEqual([]);
+  });
+
+  it.each([
+    ['a quoted url() with trailing tokens', 'url("K.woff2" x) format("woff2")'],
+    ['an unquoted url() followed by a stray token', 'url(K.woff2)x'],
+    ['two url()s in one entry', 'url(K.woff2) url(K-alt.woff2) format("woff2")'],
+    ['an empty url()', 'url() format("woff2")'],
+  ])('keeps the fallbacks behind a malformed woff2 entry with %s', async (_label, entry) => {
+    const css = `@font-face{font-family:K;src:${entry},url(fallback.ttf) format("truetype")}`;
+    const { css: out, failed } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher());
+    expect(out).toContain('url(data:font/ttf;base64,AQ==) format("truetype")');
+    expect(failed).toEqual([]);
+  });
+
+  it('prunes only after a later unconditional woff2 in a mixed list', async () => {
+    const css =
+      '@font-face{font-family:K;src:local(K),url(K-color.woff2) format("woff2") tech(color-COLRv1),url(K-color.ttf) format("truetype") tech(color-COLRv1),url(K.woff2) format("woff2"),url(K.woff) format("woff"),url(K.ttf) format("truetype")}';
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(
+      `@font-face{font-family:K;src:local(K),url(${W2}) format("woff2") tech(color-COLRv1),url(data:font/ttf;base64,AQ==) format("truetype") tech(color-COLRv1),url(${W2}) format("woff2")}`,
+    );
+    expect(calls.sort()).toEqual([
+      'https://x/K-color.ttf',
+      'https://x/K-color.woff2',
+      'https://x/K.woff2',
+    ]);
+  });
+
+  it('prunes extensionless fallbacks named by a format() hint after an unconditional woff2', async () => {
+    const css =
+      '@font-face{font-family:K;src:url(K.woff2) format("woff2"),url(https://fonts.example/k?fmt=ttf) format("truetype")}';
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(`@font-face{font-family:K;src:url(${W2}) format("woff2")}`);
+    expect(calls).toEqual(['https://x/K.woff2']);
+  });
+
+  it('judges each src declaration on its own: an earlier non-woff2 src stays whole', async () => {
+    const css =
+      '@font-face{font-family:K;src:url(K.eot);src:url(K.woff2) format("woff2"),url(K.woff) format("woff")}';
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(
+      `@font-face{font-family:K;src:url(data:font/eot;base64,AQ==);src:url(${W2}) format("woff2")}`,
+    );
+    expect(calls.sort()).toEqual(['https://x/K.eot', 'https://x/K.woff2']);
+  });
+
+  it('keeps a later non-woff2 src declaration so it still wins the cascade', async () => {
+    const css = '@font-face{font-family:K;src:url(A.woff2);src:url(B.ttf) format("truetype")}';
+    const { css: out, failed } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher());
+    expect(out).toBe(
+      `@font-face{font-family:K;src:url(${W2});src:url(data:font/ttf;base64,AQ==) format("truetype")}`,
+    );
+    expect(failed).toEqual([]);
+  });
+
+  it('honours format("woff2") hints on extensionless and mis-named font URLs', async () => {
+    const css =
+      "@font-face{font-family:K;src:url(https://fonts.example/k?id=1) format('woff2'),url(K-legacy.woff) format(\"woff2\"),url(K.ttf) format('truetype')}";
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).not.toContain('truetype');
+    expect(out.match(/format\(['"]woff2['"]\)/g)).toHaveLength(2);
+    expect(calls.sort()).toEqual(['https://fonts.example/k?id=1', 'https://x/K-legacy.woff']);
+  });
+
+  it('prunes fallbacks next to an already-inlined woff2 data URI', async () => {
+    const css = `@font-face{font-family:K;src:url(${W2}) format("woff2"),url(https://cdn/K.ttf) format("truetype")}`;
+    const calls: string[] = [];
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher(calls));
+    expect(out).toBe(`@font-face{font-family:K;src:url(${W2}) format("woff2")}`);
+    expect(calls).toEqual([]);
+  });
+
+  it('leaves the fallbacks of another @font-face untouched', async () => {
+    const css =
+      '@font-face{font-family:A;src:url(A.woff2) format("woff2"),url(A.ttf)}@font-face{font-family:B;src:url(B.woff) format("woff"),url(B.ttf) format("truetype")}';
+    const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fontFetcher());
+    expect(out).toBe(
+      `@font-face{font-family:A;src:url(${W2}) format("woff2")}@font-face{font-family:B;src:url(data:font/woff;base64,AQ==) format("woff"),url(data:font/ttf;base64,AQ==) format("truetype")}`,
+    );
+  });
+
+  it('reports a failed woff2 and still drops its fallbacks without a placeholder URL', async () => {
+    const css =
+      '@font-face{font-family:K;src:url(K.woff2) format("woff2"),url(K.woff) format("woff")}';
+    const { css: out, failed } = await inlineCssUrls(css, 'https://x/base.css', async () => null);
+    expect(out).toBe('@font-face{font-family:K;src:url(K.woff2) format("woff2")}');
+    expect(failed).toEqual([{ url: 'https://x/K.woff2', reason: 'fetch failed' }]);
   });
 
   it('falls back to inlining a ttf-only @font-face (no woff2 present)', async () => {
@@ -440,7 +590,8 @@ describe('inlineCssUrls', () => {
     const { css: out } = await inlineCssUrls(css, 'https://x/base.css', fetchAsset);
     expect(out).toContain('url(data:image/png;base64,'); // image inlined
     expect(out).toContain('url(data:font/woff2;base64,'); // woff2 inlined
-    expect(out).toContain('url(about:invalid) format("truetype")'); // ttf dropped
+    expect(out).not.toContain('truetype'); // ttf fallback removed
+    expect(out).not.toContain('about:invalid');
   });
 
   it('reports nested url() assets that fail to fetch', async () => {
@@ -738,6 +889,60 @@ describe('inlineHtmlAssets', () => {
     expect(out).toContain('data:font/woff2;base64,');
     expect(out).not.toContain('katex.min.css');
     expect(report.inlined).toContain('https://cdn/x/katex.min.css');
+  });
+
+  it('ships the real KaTeX stylesheet with woff2-only font sources and no placeholder URLs', async () => {
+    const dist = path.join(process.cwd(), 'node_modules/katex/dist');
+    const base = 'https://cdn.jsdelivr.net/npm/katex/dist/';
+    const fetched: string[] = [];
+    const fetcher = async (url: string) => {
+      fetched.push(url);
+      if (!url.startsWith(base)) return null;
+      const bytes = new Uint8Array(await readFile(path.join(dist, url.slice(base.length))));
+      return { bytes, contentType: url.endsWith('.css') ? 'text/css' : 'font/woff2' };
+    };
+    const { html: out, report } = await inlineHtmlAssets(
+      `<head><link rel="stylesheet" href="${base}katex.min.css"></head>`,
+      { fetcher },
+    );
+
+    const faces = out.match(/@font-face\{[^}]*\}/g) ?? [];
+    expect(faces.length).toBeGreaterThan(10);
+    for (const face of faces) {
+      // KaTeX declares `src` last; the data URI itself contains `;`.
+      const src = /src:(.*)\}$/.exec(face)?.[1] ?? '';
+      expect(src).toMatch(/^url\(data:font\/woff2;base64,[^)]+\) format\("woff2"\)$/);
+    }
+    expect(out).not.toContain('about:invalid');
+    expect(report.failed).toEqual([]);
+    expect(fetched.filter((url) => /\.(woff|ttf)$/.test(url))).toEqual([]);
+  });
+
+  it('inlines the real TTF fallback of a tech()-conditional woff2 KaTeX font', async () => {
+    const fonts = path.join(process.cwd(), 'node_modules/katex/dist/fonts');
+    const ttf = await readFile(path.join(fonts, 'KaTeX_Main-Regular.ttf'));
+    const woff2 = await readFile(path.join(fonts, 'KaTeX_Main-Regular.woff2'));
+    const css =
+      '@font-face{font-family:K;src:url(https://fonts.example/k?id=1) format("woff2") tech(color-COLRv1),url(https://fonts.example/fallback.ttf) format("truetype")}';
+    const files: Record<string, { bytes: Uint8Array; contentType: string }> = {
+      'https://fonts.example/k.css': {
+        bytes: new TextEncoder().encode(css),
+        contentType: 'text/css',
+      },
+      'https://fonts.example/k?id=1': { bytes: new Uint8Array(woff2), contentType: 'font/woff2' },
+      'https://fonts.example/fallback.ttf': { bytes: new Uint8Array(ttf), contentType: 'font/ttf' },
+    };
+    const { html: out, report } = await inlineHtmlAssets(
+      '<head><link rel="stylesheet" href="https://fonts.example/k.css"></head>',
+      { fetcher: async (url) => files[url] ?? null },
+    );
+
+    expect(out).toContain(
+      `url(data:font/woff2;base64,${woff2.toString('base64')}) format("woff2") tech(color-COLRv1)`,
+    );
+    expect(out).toContain(`url(data:font/ttf;base64,${ttf.toString('base64')}) format("truetype")`);
+    expect(out).not.toContain('fonts.example');
+    expect(report.failed).toEqual([]);
   });
 
   it('inlines a script src as a data: URI (preserving type=module)', async () => {
@@ -1174,5 +1379,32 @@ ${tail}`),
       url: 'https://cdn.test/bad.css',
       reason: 'css parse failed',
     });
+  });
+});
+
+describe('parseFontSrcEntry', () => {
+  it('reads a well-formed url() + format() entry', () => {
+    expect(parseFontSrcEntry('url("K.woff2")  FORMAT( "WOFF2" )')).toEqual({
+      urls: ['K.woff2'],
+      format: ['woff2'],
+      extra: false,
+    });
+  });
+
+  it.each([
+    ['format("woff2",)', ['woff2', ',']],
+    ['format(,woff2)', [',', 'woff2']],
+    ['format()', []],
+    ['format(,)', [',']],
+    ['format("woff2" / woff2)', ['woff2', '/', 'woff2']],
+    ['format(var(--f))', ['']],
+  ])('keeps every token of %s so malformed hints never look like a plain woff2', (hint, format) => {
+    expect(parseFontSrcEntry(`url(K.woff2) ${hint}`).format).toEqual(format);
+  });
+
+  it('flags unclosed functions and strings', () => {
+    expect(parseFontSrcEntry('url(K.woff2) format("woff2"').extra).toBe(true);
+    expect(parseFontSrcEntry('url(K.woff2').extra).toBe(true);
+    expect(parseFontSrcEntry('url(K.woff2) format("woff2)').extra).toBe(true);
   });
 });

@@ -36,6 +36,20 @@ describe('embedded persistence route', () => {
     vi.doMock('@/lib/persistence/owner-materials', () => ({
       ensureOwnerMaterialSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    // The provider's remaining schema stores: their migrations need a real
+    // database (the advisory lock), which the fakes here are not.
+    vi.doMock('@/lib/persistence/legacy-classroom-imports', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensureLegacyClassroomImportSchema: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('@/lib/persistence/workspace-model-config', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensureWorkspaceModelConfigSchema: vi.fn().mockResolvedValue(undefined),
+    }));
+    vi.doMock('@/lib/server/agents/store', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensureOwnerAgentSchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

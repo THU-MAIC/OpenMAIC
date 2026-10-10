@@ -26,7 +26,7 @@ import type {
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
 import { probeAuth } from '../probe-auth';
-import { runPolledTask } from '../polled-task';
+import { runPolledTask, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
@@ -243,6 +243,7 @@ async function pollTask(
 export async function generateWithKling(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
+  control?: PolledTaskControl,
 ): Promise<VideoGenerationResult> {
   const model = requireModel(config.model, 'Kling');
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -286,6 +287,7 @@ export async function generateWithKling(
     intervalMs: POLL_INTERVAL_MS,
     maxAttempts: MAX_POLL_ATTEMPTS,
     label: 'Kling video generation',
+    control,
     formatTimeout: ({ taskId, elapsedMs }) =>
       `Kling video generation timed out after ${elapsedMs / 1000}s (task: ${taskId})`,
   });

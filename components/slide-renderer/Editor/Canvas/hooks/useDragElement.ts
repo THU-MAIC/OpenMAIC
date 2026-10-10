@@ -10,6 +10,7 @@ import {
   type AlignLine,
 } from '@/lib/utils/element';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { isTouchEvent } from './touch-event';
 
 /**
  * Drag element hook
@@ -37,8 +38,8 @@ export function useDragElement(
   const dragElement = useCallback(
     (e: React.MouseEvent | React.TouchEvent, element: PPTElement) => {
       const native = e.nativeEvent;
-      const isTouchEvent = native instanceof TouchEvent;
-      if (isTouchEvent && !native.changedTouches?.length) return;
+      const isTouch = isTouchEvent(native);
+      if (isTouch && !native.changedTouches?.length) return;
 
       if (!activeElementIdList.includes(element.id)) return;
 
@@ -57,8 +58,8 @@ export function useDragElement(
       const elOriginLeft = element.left;
       const elOriginTop = element.top;
 
-      const startPageX = isTouchEvent ? native.changedTouches[0].pageX : native.pageX;
-      const startPageY = isTouchEvent ? native.changedTouches[0].pageY : native.pageY;
+      const startPageX = isTouch ? native.changedTouches[0].pageX : native.pageX;
+      const startPageY = isTouch ? native.changedTouches[0].pageY : native.pageY;
 
       let isMisoperation: boolean | null = null;
 
@@ -296,7 +297,7 @@ export function useDragElement(
         addHistorySnapshot();
       };
 
-      if (isTouchEvent) {
+      if (isTouch) {
         document.ontouchmove = handleMouseMove;
         document.ontouchend = handleMouseUp;
       } else {

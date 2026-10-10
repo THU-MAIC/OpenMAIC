@@ -1,11 +1,11 @@
 /**
- * Server-backed generation ordering.
+ * Server-backed media Retry ordering, for a course no generation run follows.
  *
  * A durable, shared document may only ever name bytes that were already
  * stored, so the order inside one task is fixed: provider, then pool, then the
  * document, then the task. These tests pin each hinge of that order — including
  * both failure modes, where the placeholder must survive and the provider must
- * not be called a second time within the run.
+ * not be called a second time for bytes already held.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,7 +24,6 @@ const mocks = vi.hoisted(() => ({
   forgetAllocation: vi.fn(),
   takeAllocations: vi.fn(),
   mediaWhere: vi.fn(),
-  placeAllocations: vi.fn(),
 }));
 
 vi.mock('@/lib/store/stage', () => ({
@@ -39,19 +38,14 @@ vi.mock('@/lib/device-storage/database', () => ({
       delete: mocks.mediaDelete,
       get: mocks.mediaGet,
       // The stage-scoped fallback the placeholder-keyed lookup falls back to.
-      // A spy, because how OFTEN a pass reaches for it is the subject of one of
+      // A spy, because whether a retry reaches for it is the subject of one of
       // the cases below.
       where: mocks.mediaWhere,
     },
   },
 }));
 
-/**
- * The pool is doubled at the store rather than at `putAsset`, so the real
- * wrapper runs: retiring this course's "store is full" note on a successful
- * write lives there now, and a suite that replaced `putAsset` wholesale would
- * be asserting that behaviour against its own double.
- */
+/** The pool is doubled at the store rather than at `putAsset`, so the real wrapper runs. */
 vi.mock('@/lib/media/asset-pool-config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/media/asset-pool-config')>();
   return {
@@ -70,7 +64,6 @@ vi.mock('@/lib/media/persist-media-reference', async () => {
   return {
     ...actual,
     persistGeneratedMediaReference: mocks.persistReference,
-    placePendingMediaAllocations: mocks.placeAllocations,
   };
 });
 
@@ -80,41 +73,18 @@ vi.mock('@/lib/media/pending-media-allocations', () => ({
   takePendingMediaAllocations: mocks.takeAllocations,
 }));
 
-import {
-  generateMediaForOutlines,
-  resetMediaPassesForTests,
-  retryMediaTask,
-} from '@/lib/media/media-orchestrator';
+import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { offerOutstandingMediaRetries } from '@/lib/classroom/load-classroom';
 import { noteStageGenerationOwnership } from '@/lib/classroom/generation-permission';
-import {
-  isAssetStorageFull,
-  setAssetStorageFullStoreForTests,
-} from '@/lib/media/asset-storage-full';
 import { isRetryableMediaFailure } from '@/lib/media/media-failure';
 import { MediaReferenceWriteBackError } from '@/lib/media/persist-media-reference';
 import { resetProxyMediaFailureCache } from '@/lib/media/proxy-media-cache';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
-import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
 const stageId = 'server-stage';
 const imageRef = 'gen_img_server';
 const videoRef = 'gen_vid_server';
-
-function outlineWith(
-  order: number,
-  ...mediaGenerations: NonNullable<SceneOutline['mediaGenerations']>
-): SceneOutline {
-  return {
-    id: `outline-${order}`,
-    type: 'slide',
-    title: 'Scene',
-    description: 'Scene',
-    keyPoints: ['media'],
-    order,
-    mediaGenerations,
-  };
-}
 
 function sceneWithImage(order: number, src: string): Scene {
   return {
@@ -144,32 +114,10 @@ function sceneWithImage(order: number, src: string): Scene {
   } as unknown as Scene;
 }
 
-/** The device KV the storage-full marker lives in, in memory. */
-function memoryKv() {
-  const entries = new Map<string, unknown>();
-  return {
-    entries,
-    store: {
-      get: async <T>(key: string) => (entries.get(key) as T) ?? null,
-      set: async (key: string, value: unknown) => {
-        entries.set(key, value);
-      },
-      remove: async (key: string) => {
-        entries.delete(key);
-      },
-      keys: async (prefix = '') => [...entries.keys()].filter((key) => key.startsWith(prefix)),
-    },
-  };
-}
-
-describe('server-backed classic media orchestrator', () => {
+describe('server-backed media retry', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
-  let kv: ReturnType<typeof memoryKv>;
 
   beforeEach(() => {
-    kv = memoryKv();
-    setAssetStorageFullStoreForTests(kv.store);
-    resetMediaPassesForTests();
     resetProxyMediaFailureCache();
     mocks.mediaPut.mockReset().mockResolvedValue(undefined);
     mocks.mediaDelete.mockReset().mockResolvedValue(undefined);
@@ -187,7 +135,6 @@ describe('server-backed classic media orchestrator', () => {
           mocks.mediaRows.filter((row) => (row as Record<string, unknown>)[index] === value),
       }),
     }));
-    mocks.placeAllocations.mockReset().mockReturnValue(false);
     mocks.stageState.mockReset().mockReturnValue({
       stage: { id: stageId },
       scenes: [sceneWithImage(1, imageRef)],
@@ -209,9 +156,7 @@ describe('server-backed classic media orchestrator', () => {
   });
 
   afterEach(() => {
-    resetMediaPassesForTests();
     resetProxyMediaFailureCache();
-    setAssetStorageFullStoreForTests(undefined);
     vi.unstubAllGlobals();
   });
 
@@ -269,11 +214,16 @@ describe('server-backed classic media orchestrator', () => {
     return fetchMock.mock.calls.filter(([input]) => String(input) === '/api/generate/image').length;
   }
 
+  /**
+   * Generate the image element as its Retry does: the owner's Retry of a
+   * failed, retryable task (one is seeded when the case has none).
+   */
   async function runImageGeneration(): Promise<void> {
-    await generateMediaForOutlines(
-      [outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef })],
-      stageId,
-    );
+    noteStageGenerationOwnership(stageId, 'owner');
+    if (!useMediaGenerationStore.getState().tasks[imageRef]) {
+      useMediaGenerationStore.setState({ tasks: { [imageRef]: failedTask() } });
+    }
+    await retryMediaTask(imageRef);
   }
 
   it('stores bytes, then the reference, then finishes the task', async () => {
@@ -351,97 +301,6 @@ describe('server-backed classic media orchestrator', () => {
       status: 'failed',
       error: 'document write rejected',
     });
-  });
-
-  it('issues no generation call for a scene whose reference is already allocated', async () => {
-    serveImage();
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: [sceneWithImage(1, 'ast_already_generated')],
-      generationComplete: false,
-    });
-
-    await runImageGeneration();
-
-    expect(providerCallCount()).toBe(0);
-    expect(mocks.putAsset).not.toHaveBeenCalled();
-    expect(useMediaGenerationStore.getState().tasks).toEqual({});
-  });
-
-  it('still generates while the scene that will carry the placeholder does not exist yet', async () => {
-    serveImage();
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: [],
-      generationComplete: false,
-    });
-
-    await runImageGeneration();
-
-    expect(providerCallCount()).toBe(1);
-    expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-  });
-
-  it('ignores a locally completed task whose document reference is still a placeholder', async () => {
-    serveImage();
-    useMediaGenerationStore.setState({
-      tasks: {
-        [imageRef]: {
-          elementId: imageRef,
-          type: 'image',
-          status: 'done',
-          prompt: 'A diagram',
-          params: {},
-          retryCount: 0,
-          stageId,
-        },
-      },
-    });
-
-    await runImageGeneration();
-
-    expect(providerCallCount()).toBe(1);
-    expect(mocks.persistReference).toHaveBeenCalledTimes(1);
-  });
-
-  // The document is the authority, and here it cannot be read: the live store
-  // has moved to another course. Falling back to the task table would demote
-  // "the document decides" to "this browser's table decides" on exactly the
-  // path where that table has just been cleared, so every element the previous
-  // pass committed would be generated again. Not deciding is the safe answer.
-  it('stands down when it cannot read the document for its own stage', async () => {
-    serveImage();
-    mocks.stageState.mockReturnValue({
-      stage: { id: 'another-stage' },
-      scenes: [sceneWithImage(1, 'ast_already_generated')],
-      generationComplete: false,
-    });
-
-    await runImageGeneration();
-
-    expect(providerCallCount()).toBe(0);
-    expect(mocks.putAsset).not.toHaveBeenCalled();
-    // Nothing was seeded into the arriving course's task table either.
-    expect(useMediaGenerationStore.getState().tasks).toEqual({});
-  });
-
-  // A pass deferred behind its predecessor can wake up after the user has left.
-  // Enqueueing then would seed the ARRIVING course's table — placeholder ids
-  // are not unique across courses — with tasks carrying this course's stage id,
-  // and a Retry routes by that id, into the wrong document.
-  it('touches nothing when it wakes up aborted', async () => {
-    serveImage();
-    const aborted = new AbortController();
-    aborted.abort();
-
-    await generateMediaForOutlines(
-      [outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef })],
-      stageId,
-      aborted.signal,
-    );
-
-    expect(providerCallCount()).toBe(0);
-    expect(useMediaGenerationStore.getState().tasks).toEqual({});
   });
 
   // A browser may not delete from the shared asset partition: the principal it
@@ -587,40 +446,6 @@ describe('server-backed classic media orchestrator', () => {
     expect(providerCallCount()).toBe(1);
   });
 
-  // Reading the cache is cheap; everything after it is not. A `put` cannot be
-  // cancelled and its write-back cannot be half-undone, so a pass whose course
-  // has already been left must stop at the read.
-  it('does not commit adopted bytes once the pass has been aborted', async () => {
-    serveImage();
-    const controller = new AbortController();
-    mocks.mediaGet.mockImplementation(async () => {
-      controller.abort();
-      return {
-        id: `${stageId}:${imageRef}`,
-        stageId,
-        type: 'image',
-        blob: new Blob(['cached-bytes'], { type: 'image/png' }),
-        mimeType: 'image/png',
-        size: 12,
-        prompt: 'A diagram',
-        params: '{}',
-        createdAt: 0,
-      };
-    });
-
-    await generateMediaForOutlines(
-      [outlineWith(1, { type: 'image', prompt: 'A diagram', elementId: imageRef })],
-      stageId,
-      controller.signal,
-    );
-
-    expect(mocks.putAsset).not.toHaveBeenCalled();
-    expect(mocks.persistReference).not.toHaveBeenCalled();
-    expect(providerCallCount()).toBe(0);
-    // Retryable, not stuck: the element was never committed anywhere.
-    expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('failed');
-  });
-
   // A full store is a refusal, not a hiccup. Offering Retry for it invites the
   // author to buy the same generation over and over, each attempt paying a
   // provider before failing in exactly the same way.
@@ -720,54 +545,6 @@ describe('server-backed classic media orchestrator', () => {
       await expect((record.blob as Blob).text()).resolves.toBe('legacy-bytes');
     });
 
-    it('stops the pass instead of spending the rest of the deck on the same wall', async () => {
-      serveImage();
-      const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3'];
-      mocks.stageState.mockReturnValue({
-        stage: { id: stageId },
-        scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-        generationComplete: false,
-      });
-      mocks.putAsset.mockRejectedValue(quotaRefusal());
-
-      await generateMediaForOutlines(
-        refs.map((ref, index) =>
-          outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
-        ),
-        stageId,
-      );
-
-      // One element paid for a provider and was refused; the other two were
-      // never asked for.
-      expect(providerCallCount()).toBe(1);
-      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-      const tasks = useMediaGenerationStore.getState().tasks;
-      for (const ref of refs) {
-        expect(tasks[ref]?.status).toBe('failed');
-        expect(tasks[ref]?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
-      }
-      // Only the element that actually reached the store has a persisted
-      // record: the others were never attempted, so a later load may still
-      // generate them once.
-      const persisted = mocks.mediaPut.mock.calls
-        .map(([row]) => row as { id: string })
-        .filter((row) => row.id.startsWith(`${stageId}:gen_img_`));
-      expect(persisted.map((row) => row.id)).toEqual([`${stageId}:gen_img_1`]);
-    });
-
-    it('is not retried by a later pass on its own', async () => {
-      serveImage();
-      mocks.putAsset.mockRejectedValue(quotaRefusal());
-      await runImageGeneration();
-      expect(providerCallCount()).toBe(1);
-
-      resetMediaPassesForTests();
-      await runImageGeneration();
-
-      expect(providerCallCount()).toBe(1);
-      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-    });
-
     // The way back. After the operator raises the ceiling, the author's Retry
     // re-attempts the upload with the bytes that were kept -- no provider, no
     // second bill -- and the document converges.
@@ -793,88 +570,6 @@ describe('server-backed classic media orchestrator', () => {
         expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_after_raise' }),
       );
       expect(useMediaGenerationStore.getState().tasks.ast_after_raise?.status).toBe('done');
-    });
-
-    // Without a per-course record of the condition, the next load has nothing
-    // to stop it: it finds the placeholders the stopped pass left, calls a
-    // provider for the next one, and is refused at exactly the same point --
-    // one wasted generation per reload, forever.
-    it('stands down on the next load instead of buying one more refusal', async () => {
-      serveImage();
-      const refs = ['gen_img_1', 'gen_img_2'];
-      const outlines = refs.map((ref, index) =>
-        outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
-      );
-      mocks.stageState.mockReturnValue({
-        stage: { id: stageId },
-        scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-        generationComplete: false,
-      });
-      mocks.putAsset.mockRejectedValue(quotaRefusal());
-
-      await generateMediaForOutlines(outlines, stageId);
-      expect(providerCallCount()).toBe(1);
-
-      // A reload: the task table is gone, the document still holds both
-      // placeholders, and nothing about them says the store was full.
-      resetMediaPassesForTests();
-      useMediaGenerationStore.setState({ tasks: {} });
-
-      await generateMediaForOutlines(outlines, stageId);
-
-      expect(providerCallCount()).toBe(1);
-      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-      // Every placeholder still says what it is waiting on, and still offers
-      // the way out.
-      const tasks = useMediaGenerationStore.getState().tasks;
-      for (const ref of refs) {
-        expect(tasks[ref]?.status).toBe('failed');
-        expect(tasks[ref]?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
-      }
-    });
-
-    it('resumes normally once an upload succeeds again', async () => {
-      serveImage();
-      noteStageGenerationOwnership(stageId, 'owner');
-      const refs = ['gen_img_1', 'gen_img_2'];
-      const outlines = refs.map((ref, index) =>
-        outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
-      );
-      mocks.stageState.mockReturnValue({
-        stage: { id: stageId },
-        scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-        generationComplete: false,
-      });
-      mocks.putAsset.mockRejectedValue(quotaRefusal());
-      await generateMediaForOutlines(outlines, stageId);
-      expect(providerCallCount()).toBe(1);
-
-      // The operator raises the ceiling and the author retries the element
-      // whose bytes were kept.
-      const [refusedRow] = mocks.mediaPut.mock.calls.at(-1) as [Record<string, unknown>];
-      mocks.mediaGet.mockResolvedValue(refusedRow);
-      mocks.putAsset.mockReset().mockResolvedValue('ast_after_raise');
-      await retryMediaTask(refs[0]);
-      expect(providerCallCount()).toBe(1);
-
-      // The marker is gone, so the next load's pass generates what is left --
-      // once. (Within this session the untouched elements keep the failed task
-      // the stopped pass left them, and their own Retry; a load is what clears
-      // that table, so the reload is what this simulates.)
-      resetMediaPassesForTests();
-      useMediaGenerationStore.setState({ tasks: {} });
-      mocks.mediaGet.mockResolvedValue(undefined);
-      mocks.stageState.mockReturnValue({
-        stage: { id: stageId },
-        scenes: [sceneWithImage(1, 'ast_after_raise'), sceneWithImage(2, refs[1])],
-        generationComplete: false,
-      });
-      mocks.putAsset.mockResolvedValue('ast_second');
-
-      await generateMediaForOutlines(outlines, stageId);
-
-      expect(providerCallCount()).toBe(2);
-      expect(useMediaGenerationStore.getState().tasks.ast_second?.status).toBe('done');
     });
 
     // A retry that was handed bytes and then failed for some OTHER reason must
@@ -994,10 +689,9 @@ describe('server-backed classic media orchestrator', () => {
       await expect((rows.get(rowKey)?.blob as Blob).text()).resolves.toBe('server-image');
     });
 
-    // A deliberate Retry is allowed to try on a store this browser believes is
-    // full -- the ceiling is exactly the kind of thing an operator has just
-    // changed -- and when the bytes were kept, trying costs nothing at all.
-    it('retries from the kept bytes on a store it believes is full, and lifts the marker', async () => {
+    // When the bytes were kept, a Retry after the ceiling is raised costs no
+    // provider call at all.
+    it('retries from the kept bytes without generating again', async () => {
       serveImage();
       noteStageGenerationOwnership(stageId, 'owner');
       modelLocalMediaTable();
@@ -1005,7 +699,6 @@ describe('server-backed classic media orchestrator', () => {
       mocks.putAsset.mockRejectedValue(quotaRefusal());
       await runImageGeneration();
       expect(providerCallCount()).toBe(1);
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
 
       mocks.putAsset.mockReset().mockResolvedValue('ast_after_raise');
 
@@ -1020,22 +713,15 @@ describe('server-backed classic media orchestrator', () => {
       expect(mocks.persistReference).toHaveBeenCalledWith(
         expect.objectContaining({ placeholderRef: imageRef, assetId: 'ast_after_raise' }),
       );
-      // The store took a write, so the next pass has no reason to stand down.
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
     });
 
-    // The other kind of element: one the stopped pass never reached, so it has
-    // a failed task and no bytes anywhere. Its Retry is one ordinary
-    // generation, and if the store refuses it the deck's remaining elements
-    // must not each pay a provider to rediscover that.
-    it('re-sets the marker when a retry with no bytes to re-upload is refused again', async () => {
+    // An element with a failed task and no bytes anywhere: its Retry is one
+    // ordinary generation.
+    it('leaves a refused retry with no bytes to re-upload failed and retryable', async () => {
       serveImage();
       noteStageGenerationOwnership(stageId, 'owner');
       modelLocalMediaTable();
       restoreFailedTask(imageRef);
-      // Lifted by some earlier successful write; the condition has to be
-      // rediscovered, and remembered again.
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(false);
       mocks.putAsset.mockRejectedValue(quotaRefusal());
 
       await retryMediaTask(imageRef);
@@ -1044,37 +730,12 @@ describe('server-backed classic media orchestrator', () => {
       // request.
       expect(providerCallCount()).toBe(1);
       expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-      await expect(isAssetStorageFull(stageId)).resolves.toBe(true);
 
       // And the element is back where it was, with the reason and the way out.
       const task = useMediaGenerationStore.getState().tasks[imageRef];
       expect(task?.status).toBe('failed');
       expect(task?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
       expect(isRetryableMediaFailure(task!)).toBe(true);
-    });
-
-    it('leaves the next pass standing down after a refused retry', async () => {
-      serveImage();
-      noteStageGenerationOwnership(stageId, 'owner');
-      modelLocalMediaTable();
-      restoreFailedTask(imageRef);
-      mocks.putAsset.mockRejectedValue(quotaRefusal());
-
-      await retryMediaTask(imageRef);
-      expect(providerCallCount()).toBe(1);
-
-      // A reload: the task table is gone and the document still holds the
-      // placeholder. Only the marker the retry left behind stops the pass.
-      resetMediaPassesForTests();
-      useMediaGenerationStore.setState({ tasks: {} });
-
-      await runImageGeneration();
-
-      expect(providerCallCount()).toBe(1);
-      expect(mocks.putAsset).toHaveBeenCalledTimes(1);
-      const task = useMediaGenerationStore.getState().tasks[imageRef];
-      expect(task?.status).toBe('failed');
-      expect(task?.errorCode).toBe('ASSET_QUOTA_EXCEEDED');
     });
 
     // Two independent defences keep the retained bytes: the row is not removed
@@ -1213,31 +874,7 @@ describe('server-backed classic media orchestrator', () => {
     expect(isRetryableMediaFailure(task!)).toBe(true);
   });
 
-  // `placeholderRef` is not indexed, and the keyed lookup misses for every row
-  // the commit path writes, so the fallback is a stage-scoped scan. Doing it per
-  // element made a pass materialize and sort the course's whole media table once
-  // per element.
-  it('reads the stage’s media table once for a whole pass, not once per element', async () => {
-    serveImage();
-    const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3'];
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-      generationComplete: false,
-    });
-
-    await generateMediaForOutlines(
-      refs.map((ref, index) =>
-        outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
-      ),
-      stageId,
-    );
-
-    expect(providerCallCount()).toBe(3);
-    expect(mocks.mediaWhere).toHaveBeenCalledTimes(1);
-  });
-
-  it('reads it not at all when every element has a keyed row', async () => {
+  it('reads the stage’s media table not at all when the element has a keyed row', async () => {
     serveImage();
     mocks.mediaGet.mockResolvedValue({
       id: `${stageId}:${imageRef}`,
@@ -1296,7 +933,6 @@ describe('server-backed classic media orchestrator', () => {
   it.each([
     ['an empty blob', { blob: new Blob([]) }],
     ['a row that records only a hosted URL', { blob: new Blob([]), ossKey: 'https://cdn/x.png' }],
-    ['a persisted failure', { blob: new Blob(['bytes']), error: 'content policy' }],
   ])('treats %s as no cached bytes', async (_name, overrides) => {
     serveImage();
     mocks.mediaGet.mockResolvedValue({
@@ -1314,201 +950,6 @@ describe('server-backed classic media orchestrator', () => {
     await runImageGeneration();
 
     expect(providerCallCount()).toBe(1);
-  });
-
-  it('hands parked allocations to their slides before deciding what to generate', async () => {
-    serveImage();
-
-    await runImageGeneration();
-
-    expect(mocks.placeAllocations).toHaveBeenCalledWith(stageId);
-  });
-
-  // Passes for one course are serial, and serialization is an ordering property:
-  // the assertion is that a second pass issues nothing at all while the first
-  // is still working. Counting calls at the end cannot distinguish waiting from
-  // being skipped for some other reason, so this observes the timing directly.
-  it('issues nothing while another pass for the same course is still working', async () => {
-    const refs = ['gen_img_1', 'gen_img_2'];
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-      generationComplete: false,
-    });
-    const outlines = refs.map((ref, index) =>
-      outlineWith(index + 1, { type: 'image', prompt: `p${index}`, elementId: ref }),
-    );
-    serveImage();
-
-    let releaseCommit: (() => void) | undefined;
-    const commitInFlight = new Promise<void>((resolve) => {
-      releaseCommit = resolve;
-    });
-    let commitEntered: (() => void) | undefined;
-    const firstCommitEntered = new Promise<void>((resolve) => {
-      commitEntered = resolve;
-    });
-    let overlapping: Promise<void> | undefined;
-    let callsWhenOverlappingStarted = 0;
-    // The retry path re-enters generation while the first pass is mid-commit.
-    mocks.putAsset.mockImplementation(async () => {
-      if (!overlapping) {
-        // Captured BEFORE the second pass is launched: without serialization its
-        // collection loop would call the provider as soon as it has read the
-        // workspace's capabilities.
-        callsWhenOverlappingStarted = providerCallCount();
-        overlapping = generateMediaForOutlines(outlines, stageId);
-        commitEntered?.();
-        await commitInFlight;
-      }
-      return 'ast_generated';
-    });
-
-    const first = generateMediaForOutlines(outlines, stageId);
-    try {
-      // The first pass is mid-commit and the second has been launched.
-      await firstCommitEntered;
-      // Give the second pass every chance to run (every pending microtask,
-      // however many awaits it takes): if it were not waiting, it would have
-      // called the provider for element two by now.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      expect(providerCallCount()).toBe(callsWhenOverlappingStarted);
-    } finally {
-      releaseCommit?.();
-      await first.catch(() => undefined);
-      await firstCommitEntered;
-      await overlapping?.catch(() => undefined);
-    }
-  });
-
-  // The handoff the retry path actually performs: abort the live pass and start
-  // its replacement in the same synchronous block, long before the aborted
-  // pass's cleanup can run. Kept alongside the timing test above because it
-  // catches a different rule — `pending` being read as answered, which is what
-  // stranded elements in earlier designs and which nothing else here covers.
-  it('picks up every element an aborted pass never reached', async () => {
-    const refs = ['gen_img_1', 'gen_img_2', 'gen_img_3'];
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-      generationComplete: false,
-    });
-    const outlines = refs.map((ref, index) =>
-      outlineWith(index + 1, { type: 'image', prompt: 'A diagram', elementId: ref }),
-    );
-
-    let allocated = 0;
-    mocks.putAsset.mockImplementation(async () => `ast_${(allocated += 1)}`);
-    let releaseFirst: (() => void) | undefined;
-    const firstInFlight = new Promise<void>((resolve) => {
-      releaseFirst = resolve;
-    });
-    let calls = 0;
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/generate/image') {
-        calls += 1;
-        if (calls === 1) {
-          await firstInFlight;
-          throw Object.assign(new Error('Aborted'), { name: 'AbortError' });
-        }
-        return new Response(
-          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      if (url === '/api/proxy-media') {
-        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-
-    const first = new AbortController();
-    const pass1 = generateMediaForOutlines(outlines, stageId, first.signal).catch(() => undefined);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    // Verbatim what the retry path does, in one synchronous block.
-    first.abort();
-    const second = new AbortController();
-    const pass2 = generateMediaForOutlines(outlines, stageId, second.signal).catch(() => undefined);
-
-    releaseFirst?.();
-    await pass1;
-    await pass2;
-
-    // The replacement waited for the aborted pass to settle, then took the two
-    // elements it never reached. The one whose call was actually cancelled is
-    // failed and retryable — an affordance, not a strand — and nothing is left
-    // waiting on a pass that no longer exists.
-    expect(mocks.putAsset).toHaveBeenCalledTimes(2);
-    const tasks = useMediaGenerationStore.getState().tasks;
-    expect(Object.values(tasks).some((task) => task.status === 'pending')).toBe(false);
-    expect(tasks[refs[0]]).toMatchObject({ status: 'failed' });
-    expect(tasks[refs[0]]?.errorCode).toBeUndefined();
-  });
-
-  it('honours a Retry clicked while the pass that failed the element is still running', async () => {
-    const refs = ['gen_img_1', 'gen_img_2'];
-    mocks.stageState.mockReturnValue({
-      stage: { id: stageId },
-      scenes: refs.map((ref, index) => sceneWithImage(index + 1, ref)),
-      generationComplete: false,
-    });
-    let allocated = 0;
-    mocks.putAsset.mockImplementation(async () => `ast_${(allocated += 1)}`);
-    noteStageGenerationOwnership(stageId, 'owner');
-
-    let releaseSecond: (() => void) | undefined;
-    const secondInFlight = new Promise<void>((resolve) => {
-      releaseSecond = resolve;
-    });
-    const prompts: string[] = [];
-    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/generate/image') {
-        const { prompt } = JSON.parse(String(init?.body)) as { prompt: string };
-        prompts.push(prompt);
-        // The first element fails transiently; the second holds the pass open.
-        if (prompt === 'one' && prompts.filter((p) => p === 'one').length === 1) {
-          return new Response(JSON.stringify({ success: false, error: 'transient' }), {
-            status: 500,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
-        if (prompt === 'two') await secondInFlight;
-        return new Response(
-          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      if (url === '/api/proxy-media') {
-        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-
-    const pass = generateMediaForOutlines(
-      [
-        outlineWith(1, { type: 'image', prompt: 'one', elementId: refs[0] }),
-        outlineWith(2, { type: 'image', prompt: 'two', elementId: refs[1] }),
-      ],
-      stageId,
-    );
-    // Let element one fail and element two start.
-    for (let tick = 0; tick < 40; tick += 1) await Promise.resolve();
-    expect(useMediaGenerationStore.getState().tasks[refs[0]]?.status).toBe('failed');
-
-    const retried = retryMediaTask(refs[0]);
-    releaseSecond?.();
-    await Promise.all([pass, retried]);
-
-    // The click produced exactly one extra provider call, and the element ended
-    // stored rather than stuck.
-    expect(prompts.filter((prompt) => prompt === 'one')).toHaveLength(2);
-    const tasks = useMediaGenerationStore.getState().tasks;
-    expect(Object.values(tasks).some((task) => task.status === 'pending')).toBe(false);
-    expect(Object.values(tasks).filter((task) => task.status === 'done')).toHaveLength(2);
   });
 
   // The retry reads the task again after its own await, and refuses BEFORE
@@ -1544,56 +985,6 @@ describe('server-backed classic media orchestrator', () => {
     expect(useMediaGenerationStore.getState().tasks[imageRef]?.status).toBe('generating');
   });
 
-  // A retry that is actually running must be visible to a pass starting
-  // alongside it, or both call the provider for the same element.
-  it('does not let an overlapping pass duplicate a retry already in flight', async () => {
-    let releaseRetry: (() => void) | undefined;
-    const retryInFlight = new Promise<void>((resolve) => {
-      releaseRetry = resolve;
-    });
-    let calls = 0;
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === '/api/generate/image') {
-        calls += 1;
-        await retryInFlight;
-        return new Response(
-          JSON.stringify({ success: true, result: { url: 'https://media.test/image' } }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
-        );
-      }
-      if (url === '/api/proxy-media') {
-        return new Response(new Blob(['image'], { type: 'image/png' }), { status: 200 });
-      }
-      throw new Error(`Unexpected fetch: ${url}`);
-    });
-    useMediaGenerationStore.setState({
-      tasks: {
-        [imageRef]: {
-          elementId: imageRef,
-          type: 'image',
-          status: 'failed',
-          prompt: 'A diagram',
-          params: {},
-          error: 'transient',
-          retryCount: 0,
-          stageId,
-        },
-      },
-    });
-    noteStageGenerationOwnership(stageId, 'owner');
-
-    const retrying = retryMediaTask(imageRef);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    await runImageGeneration();
-    releaseRetry?.();
-    await retrying;
-
-    expect(calls).toBe(1);
-  });
-
   it('does not call the provider again for a placeholder whose bytes are already held', async () => {
     serveImage();
     mocks.pendingAllocation.mockReturnValue({
@@ -1621,10 +1012,13 @@ describe('server-backed classic media orchestrator', () => {
         : 'ast_video',
     );
 
-    await generateMediaForOutlines(
-      [outlineWith(1, { type: 'video', prompt: 'A clip', elementId: videoRef })],
-      stageId,
-    );
+    noteStageGenerationOwnership(stageId, 'owner');
+    useMediaGenerationStore.setState({
+      tasks: {
+        [videoRef]: { ...failedTask(), elementId: videoRef, type: 'video', prompt: 'A clip' },
+      },
+    });
+    await retryMediaTask(videoRef);
 
     // The most expensive call in the system must not be thrown away by a
     // decorative poster.
@@ -1656,26 +1050,43 @@ describe('server-backed classic media orchestrator', () => {
     expect(mocks.putAsset.mock.calls[0]![1]).toEqual({ contentType: 'image/png' });
   });
 
-  it('honours a permanently failed task as a refusal to call the provider again', async () => {
+  // A course generated in the browser before 1.2.0 whose media pass never
+  // reached an element: no record, no cached bytes. Reopening it offers Retry,
+  // and nothing is generated until the author clicks it.
+  it('offers Retry for media a pre-run course never generated, and the Retry generates', async () => {
     serveImage();
-    useMediaGenerationStore.setState({
-      tasks: {
-        [imageRef]: {
-          elementId: imageRef,
-          type: 'image',
-          status: 'failed',
-          errorCode: 'CONTENT_SENSITIVE',
-          prompt: 'A diagram',
-          params: {},
-          retryCount: 0,
-          stageId,
+    mocks.stageState.mockReturnValue({
+      stage: { id: stageId },
+      scenes: [sceneWithImage(1, imageRef)],
+      outlines: [
+        {
+          id: 'outline-1',
+          type: 'slide',
+          title: 'Scene',
+          description: 'Scene',
+          keyPoints: ['media'],
+          order: 1,
+          mediaGenerations: [{ type: 'image', prompt: 'A diagram', elementId: imageRef }],
         },
-      },
+      ],
+      outlineProducer: null,
+      generationComplete: true,
     });
 
-    await runImageGeneration();
+    offerOutstandingMediaRetries(stageId);
 
+    const offered = useMediaGenerationStore.getState().tasks[imageRef];
+    expect(offered).toMatchObject({ status: 'failed', prompt: 'A diagram', stageId });
+    expect(isRetryableMediaFailure(offered!)).toBe(true);
     expect(providerCallCount()).toBe(0);
-    expect(mocks.putAsset).not.toHaveBeenCalled();
+
+    noteStageGenerationOwnership(stageId, 'owner');
+    await retryMediaTask(imageRef);
+
+    expect(providerCallCount()).toBe(1);
+    expect(mocks.persistReference).toHaveBeenCalledWith(
+      expect.objectContaining({ stageId, placeholderRef: imageRef, assetId: 'ast_generated' }),
+    );
+    expect(useMediaGenerationStore.getState().tasks.ast_generated?.status).toBe('done');
   });
 });
