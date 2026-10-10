@@ -1337,6 +1337,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
+      "iflytek": "讯飞星火",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）",
@@ -1364,7 +1365,9 @@
       "xiaomiPayg": "按量付费",
       "xiaomiTokenPlanCN": "Token Plan 中国",
       "xiaomiTokenPlanSGP": "Token Plan 新加坡",
-      "xiaomiTokenPlanEU": "Token Plan 欧洲"
+      "xiaomiTokenPlanEU": "Token Plan 欧洲",
+      "iflytekPayg": "按量付费",
+      "iflytekTokenPlan": "Token Plan"
     },
     "contextShort": "上下文",
     "resetToDefaultDescription": "将模型列表恢复到默认状态（保留 API 密钥和 Base URL）",

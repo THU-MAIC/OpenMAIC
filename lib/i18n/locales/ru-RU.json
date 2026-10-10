@@ -1337,6 +1337,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade (Локальный)",
       "ollama": "Ollama (Локальный)",
@@ -1364,7 +1365,9 @@
       "xiaomiPayg": "Оплата по факту",
       "xiaomiTokenPlanCN": "Token Plan Китай",
       "xiaomiTokenPlanSGP": "Token Plan Сингапур",
-      "xiaomiTokenPlanEU": "Token Plan Европа"
+      "xiaomiTokenPlanEU": "Token Plan Европа",
+      "iflytekPayg": "Оплата по факту",
+      "iflytekTokenPlan": "Token Plan"
     },
     "contextShort": "кнткс",
     "resetToDefaultDescription": "Восстановить список моделей по умолчанию (API-ключ и Base URL будут сохранены)",

@@ -1337,6 +1337,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade (로컬)",
       "ollama": "Ollama (로컬)",
@@ -1364,7 +1365,9 @@
       "xiaomiPayg": "종량제",
       "xiaomiTokenPlanCN": "토큰 플랜 CN",
       "xiaomiTokenPlanSGP": "토큰 플랜 SG",
-      "xiaomiTokenPlanEU": "토큰 플랜 EU"
+      "xiaomiTokenPlanEU": "토큰 플랜 EU",
+      "iflytekPayg": "종량제",
+      "iflytekTokenPlan": "토큰 플랜"
     },
     "contextShort": "ctx",
     "resetToDefaultDescription": "모델 목록을 기본 설정으로 복원합니다 (API 키 및 Base URL은 유지됩니다)",

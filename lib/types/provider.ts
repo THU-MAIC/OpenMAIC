@@ -23,6 +23,7 @@ export type BuiltInProviderId =
   | 'grok'
   | 'tencent-hunyuan'
   | 'xiaomi'
+  | 'iflytek'
   | 'tokendance'
   | 'lemonade'
   | 'ollama';
@@ -65,6 +66,7 @@ export type ThinkingRequestAdapter =
   | 'openrouter'
   | 'hunyuan'
   | 'xiaomi'
+  | 'iflytek'
   | 'lemonade';
 
 /**

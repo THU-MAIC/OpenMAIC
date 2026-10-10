@@ -1337,6 +1337,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade（ローカル）",
       "ollama": "Ollama（ローカルモデル）",
@@ -1364,7 +1365,9 @@
       "xiaomiPayg": "従量課金",
       "xiaomiTokenPlanCN": "Token Plan 中国",
       "xiaomiTokenPlanSGP": "Token Plan シンガポール",
-      "xiaomiTokenPlanEU": "Token Plan 欧州"
+      "xiaomiTokenPlanEU": "Token Plan 欧州",
+      "iflytekPayg": "従量課金",
+      "iflytekTokenPlan": "Token Plan"
     },
     "contextShort": "ctx",
     "resetToDefaultDescription": "モデルリストをデフォルト設定に復元します（APIキーとベースURLは保持されます）",

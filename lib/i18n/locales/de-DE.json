@@ -1337,6 +1337,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "iflytek": "iFlytek Spark",
       "tokendance": "TokenDance",
       "lemonade": "Lemonade (Lokal)",
       "ollama": "Ollama (Lokal)",
@@ -1364,7 +1365,9 @@
       "xiaomiPayg": "Nutzungsabhängige Abrechnung",
       "xiaomiTokenPlanCN": "Token-Tarif CN",
       "xiaomiTokenPlanSGP": "Token-Tarif SG",
-      "xiaomiTokenPlanEU": "Token-Tarif EU"
+      "xiaomiTokenPlanEU": "Token-Tarif EU",
+      "iflytekPayg": "Nutzungsabhängige Abrechnung",
+      "iflytekTokenPlan": "Token-Tarif"
     },
     "contextShort": "ctx",
     "resetToDefaultDescription": "Modellliste auf die Standardkonfiguration zurücksetzen (API-Schlüssel und Basis-URL bleiben erhalten)",
