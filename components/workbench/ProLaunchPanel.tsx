@@ -176,6 +176,7 @@ export function ProLaunchPanel({
    */
   const [courseRefs, setCourseRefs] = useState<readonly CourseRef[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
   // One popover at a time, one rule for both composers. The `@` menu's two
   // ways in: the keystroke and the `@` button.
   const {
@@ -191,6 +192,7 @@ export function ProLaunchPanel({
     // Classrooms, or the knowledge base when materials are enabled.
     courseMenuAvailable: courseOptions.length > 0 || materials.enabled,
   });
+  const mentionQuery = mentionOpen ? pickerQuery : (mention?.query ?? '');
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
   /**
@@ -203,10 +205,11 @@ export function ProLaunchPanel({
     setMentionDismissed(prompt);
     textareaRef.current?.focus();
   }, [prompt]);
-  /** The `@` button's way in. Focus first: the picker's keys live on the textarea. */
+  /** The toolbar opens the same picker with a dedicated search field. */
   const openMention = useCallback(() => {
     textareaRef.current?.focus();
     setMentionDismissed(null);
+    setPickerQuery('');
     setMentionOpen(true);
   }, []);
   /**
@@ -215,21 +218,22 @@ export function ProLaunchPanel({
    * `WorkbenchChat.finishMentionPick`.
    */
   const finishMentionPick = () => {
-    const removal = mention ? replaceCourseMention(prompt, mention) : null;
+    const removal = !mentionOpen && mention ? replaceCourseMention(prompt, mention) : null;
     if (removal) {
       pendingCaret.current = removal.caret;
       setCaret(removal.caret);
       setPrompt(removal.draft);
     }
-    setMentionDismissed(null);
+    setMentionDismissed(mentionOpen ? prompt : null);
     setMentionOpen(false);
     setSlashDismissed(removal?.draft ?? prompt);
+    textareaRef.current?.focus();
   };
   // No conversation yet: nothing is attached, so no row is marked as such.
   const materialMentions = useMaterialMentions({
     open: mentionMenuOpen,
     enabled: materials.enabled,
-    query: mention?.query ?? '',
+    query: mentionQuery,
     sessionId: null,
     staged: materials.materials,
   });
@@ -239,7 +243,7 @@ export function ProLaunchPanel({
       !mentionMenuOpen
         ? []
         : orderCourseMentionCandidates({
-            query: mention?.query ?? '',
+            query: mentionQuery,
             // No classroom pane on this surface, so the ordering falls through
             // to "recent".
             activeCourseId: null,
@@ -247,7 +251,7 @@ export function ProLaunchPanel({
             referencedIds: courseRefs.map((ref) => ref.stageId),
             untitled: untitledCourse,
           }),
-    [courseOptions, courseRefs, mention?.query, mentionMenuOpen, untitledCourse],
+    [courseOptions, courseRefs, mentionQuery, mentionMenuOpen, untitledCourse],
   );
   const hasComposerExtras =
     courseRefs.length > 0 ||
@@ -426,6 +430,7 @@ export function ProLaunchPanel({
           // entry point (the `@` keystroke).
           <CourseMentionMenu
             id={mentionMenuId}
+            search={mentionOpen ? { query: pickerQuery, onChange: setPickerQuery } : undefined}
             candidates={mentionCandidates}
             onClose={closeMention}
             onPick={(candidate) => {

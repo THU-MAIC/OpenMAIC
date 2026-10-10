@@ -376,7 +376,7 @@ export async function deleteLibraryMaterial(materialId: string): Promise<void> {
   await libraryDelete(`/api/materials/${encodeURIComponent(materialId)}`);
 }
 
-/** Delete a folder; refused (409 `not_empty`) while anything is filed in it. */
+/** Delete a folder, moving its contents to the top level in the same transaction. */
 export async function deleteLibraryFolder(folderId: string): Promise<void> {
   await libraryDelete(`/api/materials/folders/${encodeURIComponent(folderId)}`);
 }

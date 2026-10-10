@@ -2104,7 +2104,7 @@
         "materialCourses": "Le contenu déjà enregistré dans un cours n’est pas concerné.",
         "cannotUndo": "Cette action est irréversible.",
         "folderTitle": "Supprimer le dossier « {{name}} » ?",
-        "folderOnlyEmpty": "Seul un dossier vide peut être supprimé. Déplacez d’abord ses documents."
+        "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Rechercher des classes et des documents",
+      "courseOrder": "Classe ouverte en premier, puis mises à jour récentes",
+      "materialOrder": "Envois les plus récents en premier",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

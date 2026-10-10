@@ -1,21 +1,14 @@
 /**
  * PATCH/DELETE /api/materials/folders/[id] — rename a material folder, or
- * delete it while it is empty.
- *
- * PATCH `{ name }`: `renamed`, or `unchanged` when it already has that name;
- * 409 `name_taken` when another folder has it. DELETE: 204, or 409
- * `not_empty` while a live material is filed in it (contents are never moved
- * out by a deletion). A missing or another owner's folder answers 404. Thin
- * adapters over `lib/persistence/material-library.ts`; the agent can rename a
+ * delete it and move its contents to the top level in one transaction.
+ * PATCH returns renamed/unchanged, or 409 name_taken. DELETE returns 204.
+ * A missing or another owner's folder answers 404. The agent can rename a
  * folder but never delete one.
  */
 import type { NextRequest } from 'next/server';
 
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
-import {
-  deleteEmptyMaterialFolder,
-  renameMaterialFolder,
-} from '@/lib/persistence/material-library';
+import { deleteMaterialFolder, renameMaterialFolder } from '@/lib/persistence/material-library';
 import { ownerJson, withOwnerResponseHeaders } from '@/lib/server/agent-runtime/route-response';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
 import {
@@ -68,15 +61,12 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const { id } = await params;
   return withRequestOwner(req, async ({ ownerId }, headers) => {
     try {
-      const outcome = await deleteEmptyMaterialFolder(await libraryPersistence(), {
+      const outcome = await deleteMaterialFolder(await libraryPersistence(), {
         ownerId,
         folderId: id,
         fence: 'request',
       });
       if (outcome.status === 'not_found') return libraryNotFound(headers);
-      if (outcome.status === 'not_empty') {
-        return libraryRefusal(409, 'not_empty', 'The folder still holds materials', headers);
-      }
       return withOwnerResponseHeaders(new NextResponse(null, { status: 204 }), headers);
     } catch (error) {
       return libraryWriteError(error, headers);

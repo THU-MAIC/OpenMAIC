@@ -382,6 +382,7 @@ export function WorkbenchChat({
    * and typing anything else brings it back.
    */
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
   const {
     menu: openMenu,
     slash,
@@ -397,7 +398,7 @@ export function WorkbenchChat({
     // Classrooms, or the knowledge base when materials are enabled.
     courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled,
   });
-  const mentionQuery = mention?.query ?? null;
+  const mentionQuery = mentionOpen ? pickerQuery : (mention?.query ?? '');
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
   const untitledCourse = t('workspace.untitledCourse');
@@ -429,13 +430,12 @@ export function WorkbenchChat({
     composerRef.current?.focus();
   }, [draft]);
   /**
-   * The `@` button's way in. Focus FIRST: the picker's keyboard contract
-   * (↑/↓/Enter) lives on the textarea, so the button has to hand the keys over
-   * to it.
+   * The toolbar opens the shared picker; its search field takes focus on mount.
    */
   const openMention = useCallback(() => {
     composerRef.current?.focus();
     setMentionDismissed(null);
+    setPickerQuery('');
     setMentionOpen(true);
   }, []);
   /**
@@ -447,19 +447,20 @@ export function WorkbenchChat({
   const finishMentionPick = useCallback(() => {
     // The splice can land mid-sentence now, so the caret goes back where the
     // token was rather than wherever a shrinking controlled value leaves it.
-    const removal = mention ? replaceCourseMention(draft, mention) : null;
+    const removal = !mentionOpen && mention ? replaceCourseMention(draft, mention) : null;
     const next = removal?.draft ?? draft;
     if (removal) {
       pendingCaret.current = removal.caret;
       setCaret(removal.caret);
       setDraft(removal.draft);
     }
-    setMentionDismissed(null);
+    setMentionDismissed(mentionOpen ? draft : null);
     setMentionOpen(false);
     // The other direction of the same rule: what the splice leaves behind may
     // be a live `/handle`, and finishing with one menu must not open another.
     setSlashDismissed(next);
-  }, [draft, mention]);
+    composerRef.current?.focus();
+  }, [draft, mention, mentionOpen]);
   const pickMention = useCallback(
     (candidate: CourseMentionCandidate) => {
       const ref = makeCourseRef(candidate.stageId, candidate.title);
@@ -1046,6 +1047,9 @@ export function WorkbenchChat({
                 {mentionMenuOpen ? (
                   <CourseMentionMenu
                     id={mentionMenuId}
+                    search={
+                      mentionOpen ? { query: pickerQuery, onChange: setPickerQuery } : undefined
+                    }
                     candidates={mentionCandidates}
                     onClose={closeMention}
                     onPick={pickMention}

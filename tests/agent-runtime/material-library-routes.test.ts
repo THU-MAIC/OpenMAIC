@@ -167,13 +167,6 @@ describe('material library routes and tools (PGlite)', () => {
     await moveRoute(
       request('POST', '/api/materials/move', { materialIds: ['src-a'], folderId: folder.id }),
     );
-    const notEmpty = await deleteFolderRoute(
-      request('DELETE', `/api/materials/folders/${folder.id}`),
-      params(folder.id),
-    );
-    expect(notEmpty.status).toBe(409);
-    expect(await notEmpty.json()).toMatchObject({ reason: 'not_empty' });
-
     // Another owner sees none of it.
     mocks.ownerId = OTHER;
     expect(
@@ -194,14 +187,18 @@ describe('material library routes and tools (PGlite)', () => {
     ).toBe(404);
     mocks.ownerId = ACCOUNT;
 
-    await moveRoute(
-      request('POST', '/api/materials/move', { materialIds: ['src-a'], folderId: null }),
-    );
     const deleted = await deleteFolderRoute(
       request('DELETE', `/api/materials/folders/${folder.id}`),
       params(folder.id),
     );
     expect(deleted.status).toBe(204);
+    expect(
+      (
+        await h.pool.query('SELECT folder_id, deleted_at FROM owner_material WHERE id = $1', [
+          'src-a',
+        ])
+      ).rows,
+    ).toEqual([{ folder_id: null, deleted_at: null }]);
   });
 
   it('moves all or nothing and renames sources only', async () => {

@@ -2104,7 +2104,7 @@
         "materialCourses": "Nội dung đã lưu vào khóa học không bị ảnh hưởng.",
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
-        "folderOnlyEmpty": "Chỉ có thể xóa thư mục trống. Hãy chuyển tài liệu trong đó đi trước."
+        "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Tìm lớp học và tài liệu",
+      "courseOrder": "Lớp đang mở trước, sau đó theo cập nhật gần nhất",
+      "materialOrder": "Tải lên mới nhất trước",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

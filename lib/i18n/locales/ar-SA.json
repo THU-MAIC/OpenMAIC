@@ -2104,7 +2104,7 @@
         "materialCourses": "لا يتأثر المحتوى المحفوظ بالفعل في أي مقرر.",
         "cannotUndo": "لا يمكن التراجع عن هذا الإجراء.",
         "folderTitle": "حذف المجلد «{{name}}»؟",
-        "folderOnlyEmpty": "لا يمكن حذف إلا المجلد الفارغ. انقل المواد منه أولًا."
+        "folderContents": "سيتم نقل {{count}} من الملفات إلى المستوى الأعلى. لن يتم حذف أي ملف."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "البحث عن الفصول والمواد",
+      "courseOrder": "الفصل المفتوح أولاً، ثم الأحدث تحديثاً",
+      "materialOrder": "الأحدث رفعاً أولاً",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

@@ -45,12 +45,13 @@
  *
  * ## Deleting a folder
  *
- * Only an empty folder is deleted; one that still holds a live material is
- * refused. A move into the folder locks it `FOR KEY SHARE` first and a
- * deletion `FOR UPDATE`, so whichever comes second sees what the first did:
- * no material is filed in a folder that is gone, and no folder is deleted
- * with a material in it. A deleted material (a tombstone) no longer counts;
- * its filing is cleared so the folder's foreign key lets the row go.
+ * Deletion holds the folder FOR NO KEY UPDATE, blocking moves into it (FOR
+ * SHARE) while allowing extraction's foreign-key checks (FOR KEY SHARE).
+ * It then locks sources in id order before updating any derivatives, clears
+ * all filing and deletes the folder in the same transaction. Publications
+ * that finish first are included; later publications read the cleared folder.
+ * This avoids holding a folder's FOR UPDATE lock while waiting for a source
+ * whose publication needs to check that folder's foreign key.
  */
 import { randomUUID } from 'node:crypto';
 
@@ -273,38 +274,35 @@ export async function renameMaterialFolder(
   }
 }
 
-export type DeleteMaterialFolderOutcome =
-  | { status: 'deleted' }
-  | { status: 'not_found' }
-  | { status: 'not_empty'; materialCount: number };
+export type DeleteMaterialFolderOutcome = { status: 'deleted' } | { status: 'not_found' };
 
 /**
- * Delete a folder only while it holds no live material (see the module
- * docstring for the race with a move into it). Page-only: no agent tool
- * calls this.
+ * Delete a folder and move all its materials to the top level atomically.
+ * Source bytes, extraction, derivatives and roots are preserved. Page-only.
  */
-export async function deleteEmptyMaterialFolder(
+export async function deleteMaterialFolder(
   persistence: { withTransaction: WithTransaction },
   input: { ownerId: string; folderId: string; fence: LibraryFence },
 ): Promise<DeleteMaterialFolderOutcome> {
   return persistence.withTransaction(async (tx) => {
     const ownerId = await fence(tx, input.ownerId, input.fence);
     const folder = await tx.query<{ id: string }>(
-      'SELECT id FROM material_folders WHERE owner_id = $1 AND id = $2 FOR UPDATE',
+      'SELECT id FROM material_folders WHERE owner_id = $1 AND id = $2 FOR NO KEY UPDATE',
       [ownerId, input.folderId],
     );
     if (!folder.rows[0]) return { status: 'not_found' as const };
-    const live = await tx.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM owner_material
-        WHERE owner_id = $1 AND folder_id = $2 AND deleted_at IS NULL`,
+    // Match move/publication lock order: sources first, then their derivatives.
+    // The folder lock prevents new moves into this set while it is acquired.
+    await tx.query(
+      `SELECT id FROM owner_material
+        WHERE owner_id = $1 AND folder_id = $2 AND derived_from IS NULL
+        ORDER BY id FOR UPDATE`,
       [ownerId, input.folderId],
     );
-    const materialCount = Number(live.rows[0]?.count ?? 0);
-    if (materialCount > 0) return { status: 'not_empty' as const, materialCount };
-    // Tombstones keep their row but no longer their folder.
+    // Includes derivatives published before the source locks, and tombstones.
     await tx.query(
       `UPDATE owner_material SET folder_id = NULL
-        WHERE owner_id = $1 AND folder_id = $2 AND deleted_at IS NOT NULL`,
+        WHERE owner_id = $1 AND folder_id = $2`,
       [ownerId, input.folderId],
     );
     await tx.query('DELETE FROM material_folders WHERE owner_id = $1 AND id = $2', [
@@ -350,9 +348,9 @@ export async function moveMaterials(
   return persistence.withTransaction(async (tx) => {
     const ownerId = await fence(tx, input.ownerId, input.fence);
     if (input.folderId !== null) {
-      // Held to commit: a deletion of the folder waits, and then sees the move.
+      // Held to commit: folder deletion waits, then moves these sources out too.
       const folder = await tx.query(
-        'SELECT id FROM material_folders WHERE owner_id = $1 AND id = $2 FOR KEY SHARE',
+        'SELECT id FROM material_folders WHERE owner_id = $1 AND id = $2 FOR SHARE',
         [ownerId, input.folderId],
       );
       if (folder.rows.length === 0) return { status: 'folder_not_found' as const };

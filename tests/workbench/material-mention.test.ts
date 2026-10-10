@@ -653,7 +653,7 @@ describe('the @ menu with the knowledge base', () => {
     expect(
       mounted.container.querySelector('[data-testid="workbench-material-section"]'),
     ).toBeNull();
-    expect(mounted.container.textContent).not.toContain('workspace.courseMention.classrooms');
+    expect(mounted.container.textContent).toContain('workspace.courseMention.courseOrder');
     await mounted.dispose();
   });
 });

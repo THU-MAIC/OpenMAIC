@@ -2104,7 +2104,7 @@
         "materialCourses": "コースに保存済みの内容には影響しません。",
         "cannotUndo": "この操作は元に戻せません。",
         "folderTitle": "フォルダー「{{name}}」を削除しますか？",
-        "folderOnlyEmpty": "削除できるのは空のフォルダーだけです。資料がある場合は先に移動してください。"
+        "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。"
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "教室と資料を検索",
+      "courseOrder": "表示中の教室を先頭に、更新日時の新しい順",
+      "materialOrder": "アップロード日時の新しい順",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

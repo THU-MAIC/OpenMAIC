@@ -18,7 +18,7 @@ import {
   createMaterialFolder,
   deleteMaterial,
   ownerLibraryUsage,
-  deleteEmptyMaterialFolder,
+  deleteMaterialFolder,
   listMaterialFolders,
   moveMaterials,
   renameMaterial,
@@ -1617,7 +1617,7 @@ export async function renameMaterialScenario(h: ExtractionHarness): Promise<void
   expect(await rename('src-a', '')).toEqual({ status: 'invalid_name' });
 }
 
-/** Deleting a folder: refused while a live material is in it; tombstones do not count. */
+/** Folder deletion preserves sources, derivatives and tombstones, clearing only filing. */
 export async function deleteFolderScenario(h: ExtractionHarness): Promise<void> {
   const folder = await createMaterialFolder(h.provider, {
     ownerId: ACCOUNT,
@@ -1636,17 +1636,39 @@ export async function deleteFolderScenario(h: ExtractionHarness): Promise<void> 
   });
   await deleteMaterial(h.provider, { ownerId: ACCOUNT, materialId: 'src-old', fence: 'request' });
   const remove = (owner = ACCOUNT) =>
-    deleteEmptyMaterialFolder(h.provider, { ownerId: owner, folderId: id, fence: 'request' });
+    deleteMaterialFolder(h.provider, { ownerId: owner, folderId: id, fence: 'request' });
 
-  expect(await remove()).toEqual({ status: 'not_empty', materialCount: 1 });
+  await seedDerivative(h, 'img-folder-delete', 'src-a');
+  await h.pool.query('UPDATE owner_material SET folder_id = $1 WHERE id = $2', [
+    id,
+    'img-folder-delete',
+  ]);
+  const before = await h.pool.query('SELECT * FROM owner_material ORDER BY id');
   expect(await remove(OTHER)).toEqual({ status: 'not_found' });
-  await moveMaterials(h.provider, {
-    ownerId: ACCOUNT,
-    materialIds: ['src-a'],
-    folderId: null,
-    fence: 'request',
-  });
+  // A failure after the move must roll it back together with the folder deletion.
+  const failing = {
+    withTransaction: ((body: (tx: unknown) => Promise<unknown>) =>
+      h.provider.withTransaction((tx) =>
+        body({
+          query: (text: string, params?: unknown[]) => {
+            if (/DELETE FROM material_folders/.test(text))
+              throw new Error('injected folder failure');
+            return tx.query(text, params);
+          },
+        } as never),
+      )) as typeof h.provider.withTransaction,
+  };
+  await expect(
+    deleteMaterialFolder(failing, { ownerId: ACCOUNT, folderId: id, fence: 'request' }),
+  ).rejects.toThrow('injected folder failure');
+  expect((await h.pool.query('SELECT * FROM owner_material ORDER BY id')).rows).toEqual(
+    before.rows,
+  );
+  expect(await listMaterialFolders(h.pool as never, ACCOUNT)).toHaveLength(1);
   expect(await remove()).toEqual({ status: 'deleted' });
+  expect((await h.pool.query('SELECT * FROM owner_material ORDER BY id')).rows).toEqual(
+    before.rows.map((row) => ({ ...row, folder_id: null })),
+  );
   expect(await folderOfMaterial(h, 'src-old')).toBeNull();
   expect(await listMaterialFolders(h.pool as never, ACCOUNT)).toEqual([]);
   expect(await remove()).toEqual({ status: 'not_found' });

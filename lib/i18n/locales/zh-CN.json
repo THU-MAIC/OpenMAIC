@@ -2104,7 +2104,7 @@
         "materialCourses": "已保存到课程中的内容不受影响。",
         "cannotUndo": "此操作不能撤销。",
         "folderTitle": "删除文件夹“{{name}}”？",
-        "folderOnlyEmpty": "只能删除空文件夹。里面还有资料时，请先把它们移走。"
+        "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "搜索课堂和资料",
+      "courseOrder": "当前课堂优先，其余按最近更新时间排序",
+      "materialOrder": "按上传时间从新到旧",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

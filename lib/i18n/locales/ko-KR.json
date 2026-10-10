@@ -2104,7 +2104,7 @@
         "materialCourses": "코스에 이미 저장된 내용에는 영향이 없습니다.",
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
-        "folderOnlyEmpty": "빈 폴더만 삭제할 수 있습니다. 자료가 있으면 먼저 옮기세요."
+        "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "교실 및 자료 검색",
+      "courseOrder": "열린 교실 우선, 나머지는 최근 수정순",
+      "materialOrder": "최근 업로드순",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

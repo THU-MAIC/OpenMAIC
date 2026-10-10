@@ -24,7 +24,7 @@ import { readOwnerMaterialText } from '@/lib/server/materials/owner-material-tex
 import {
   createMaterialFolder,
   renameMaterialFolder,
-  deleteEmptyMaterialFolder,
+  deleteMaterialFolder,
   moveMaterials,
   deleteMaterial,
 } from '@/lib/persistence/material-library';
@@ -617,7 +617,7 @@ describe.skipIf(!contractUrl)('material library on PostgreSQL', { timeout: 20_00
       });
       expect(
         await withinBudget(
-          deleteEmptyMaterialFolder(deleting, {
+          deleteMaterialFolder(deleting, {
             ownerId: ACCOUNT,
             folderId: folder,
             fence: 'request',
@@ -628,14 +628,80 @@ describe.skipIf(!contractUrl)('material library on PostgreSQL', { timeout: 20_00
       expect((await stateOf(h, 'src-a')).folder_id).toBeNull();
     });
 
-    it('a move into a folder first makes a deletion that waited find it not empty', async () => {
+    it.each(['publication', 'deletion'] as const)(
+      'preserves extraction derivatives when %s holds its lock first during folder deletion',
+      async (first) => {
+        const h = await boot();
+        const folder = await newFolder(h, 'Parsing');
+        const claim = await claimedVideo(h, 'folder-publish-race');
+        await moveMaterials(h.provider, {
+          ownerId: ACCOUNT,
+          materialIds: [claim.materialId],
+          folderId: folder,
+          fence: 'request',
+        });
+        let second: Promise<unknown> | undefined;
+        if (first === 'publication') {
+          const publishing = pausingBefore(h, /^\s*INSERT INTO owner_material/, async () => {
+            second = deleteMaterialFolder(h.provider, {
+              ownerId: ACCOUNT,
+              folderId: folder,
+              fence: 'request',
+            });
+            await untilSomeoneWaits();
+          });
+          expect(
+            await withinBudget(
+              runClaimedOwnerExtraction(
+                claim,
+                h.deps({ persistence: { ...h.provider, ...publishing } }),
+              ),
+            ),
+          ).toBe('published');
+          expect(await withinBudget(second!)).toEqual({ status: 'deleted' });
+        } else {
+          const deleting = pausingBefore(h, /^\s*UPDATE owner_material SET folder_id/, async () => {
+            second = runClaimedOwnerExtraction(claim, h.deps());
+            await untilSomeoneWaits();
+          });
+          expect(
+            await withinBudget(
+              deleteMaterialFolder(deleting, {
+                ownerId: ACCOUNT,
+                folderId: folder,
+                fence: 'request',
+              }),
+            ),
+          ).toEqual({ status: 'deleted' });
+          expect(await withinBudget(second!)).toBe('published');
+        }
+        const result = (await stateOf(h, claim.materialId)).extraction_result!;
+        expect(result.derivatives.length).toBeGreaterThan(0);
+        const ids = [claim.materialId, ...result.derivatives.map((d) => d.id)];
+        const rows = await h.pool.query(
+          'SELECT folder_id, deleted_at FROM owner_material WHERE id = ANY($1::text[])',
+          [ids],
+        );
+        expect(rows.rows).toHaveLength(ids.length);
+        for (const row of rows.rows) expect(row).toEqual({ folder_id: null, deleted_at: null });
+        expect(
+          (
+            await h.pool.query('SELECT * FROM asset_root_refs WHERE root_id = ANY($1::text[])', [
+              ids,
+            ])
+          ).rows.length,
+        ).toBeGreaterThan(0);
+      },
+    );
+
+    it('a move into a folder first is included by the deletion that waited', async () => {
       const h = await boot();
       const folder = await newFolder(h, 'Soon full');
       await seedSource(h, 'src-a');
       await seedDerivative(h, 'img-a1', 'src-a');
       let deletion: Promise<unknown> | undefined;
       const moving = pausingBefore(h, /^\s*UPDATE owner_material SET folder_id/, async () => {
-        deletion = deleteEmptyMaterialFolder(h.provider, {
+        deletion = deleteMaterialFolder(h.provider, {
           ownerId: ACCOUNT,
           folderId: folder,
           fence: 'request',
@@ -652,8 +718,9 @@ describe.skipIf(!contractUrl)('material library on PostgreSQL', { timeout: 20_00
           }),
         ),
       ).toMatchObject({ status: 'moved' });
-      expect(await withinBudget(deletion!)).toEqual({ status: 'not_empty', materialCount: 2 });
-      expect((await stateOf(h, 'img-a1')).folder_id).toBe(folder);
+      expect(await withinBudget(deletion!)).toEqual({ status: 'deleted' });
+      expect((await stateOf(h, 'img-a1')).folder_id).toBeNull();
+      expect((await stateOf(h, 'src-a')).folder_id).toBeNull();
     });
   });
 
@@ -875,7 +942,7 @@ describe.skipIf(!contractUrl)('material library on PostgreSQL', { timeout: 20_00
       await renameMaterialScenario(await boot());
     });
 
-    it('deletes only an empty folder, tombstones aside', async () => {
+    it('deletes a non-empty folder without deleting files, and rolls back a failed deletion', async () => {
       await deleteFolderScenario(await boot());
     });
 

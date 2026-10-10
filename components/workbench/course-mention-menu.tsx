@@ -79,9 +79,12 @@ export function CourseMentionMenu({
   onClose,
   materials,
   onPickMaterial,
+  search,
 }: {
   /** The trigger's `aria-controls` target. */
   readonly id?: string;
+  /** Toolbar search uses the same candidate queries as the inline @ token. */
+  readonly search?: { query: string; onChange: (query: string) => void };
   readonly candidates: readonly CourseMentionCandidate[];
   /** Name a course for this turn — what EVERY row does. */
   readonly onPick: (candidate: CourseMentionCandidate) => void;
@@ -102,6 +105,11 @@ export function CourseMentionMenu({
   const { t } = useI18n();
   const titleId = useId();
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const hasSearch = search !== undefined;
+  useEffect(() => {
+    searchRef.current?.focus();
+  }, [hasSearch]);
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const offersMaterials = materials !== undefined && onPickMaterial !== undefined;
@@ -165,8 +173,8 @@ export function CourseMentionMenu({
         onClose();
         return;
       }
-      // Everything below is the textarea's keyboard contract, unchanged.
-      if (!onTextarea) return;
+      // The toolbar search and inline textarea share the same keyboard contract.
+      if (!onTextarea && event.target !== searchRef.current) return;
       if (rows.length === 0) return;
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -197,7 +205,6 @@ export function CourseMentionMenu({
       id={id}
       data-testid="workbench-course-menu"
       data-esc-owner=""
-      role="listbox"
       aria-label={t('workspace.courseMention.title')}
       aria-labelledby={titleId}
       className="pro-skill-slash-popover absolute bottom-full left-0 z-30 mb-1.5 w-full max-w-[340px] overflow-hidden rounded-xl border border-border bg-popover shadow-lg"
@@ -205,7 +212,23 @@ export function CourseMentionMenu({
       <span id={titleId} className="sr-only">
         {t('workspace.courseMention.title')}
       </span>
+      {search ? (
+        <div className="p-2">
+          <input
+            ref={searchRef}
+            type="search"
+            data-testid="workbench-reference-search"
+            aria-label={t('workspace.courseMention.search')}
+            placeholder={t('workspace.courseMention.search')}
+            value={search.query}
+            onChange={(event) => search.onChange(event.target.value)}
+            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+      ) : null}
       <div
+        role="listbox"
+        aria-labelledby={titleId}
         data-testid="workbench-course-scroll"
         // Its height is a whole number of rows (`workbench-chat.css`), so the
         // resting state cannot show half a row.
@@ -221,9 +244,12 @@ export function CourseMentionMenu({
           </p>
         ) : candidates.length === 0 ? null : (
           <>
-            {offersMaterials && materials.length > 0 ? (
+            {candidates.length > 0 ? (
               <p className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground">
                 {t('workspace.courseMention.classrooms')}
+                <span className="block font-normal">
+                  {t('workspace.courseMention.courseOrder')}
+                </span>
               </p>
             ) : null}
             <ul data-testid="workbench-course-all">
@@ -287,6 +313,9 @@ export function CourseMentionMenu({
               className="px-3 pb-1 pt-2 text-[10.5px] font-medium text-muted-foreground"
             >
               {t('workspace.courseMention.knowledgeBase')}
+              <span className="block font-normal">
+                {t('workspace.courseMention.materialOrder')}
+              </span>
             </p>
             <ul data-testid="workbench-material-all">
               {materials.map((candidate, materialIndex) => {

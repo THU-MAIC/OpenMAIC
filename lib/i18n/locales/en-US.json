@@ -2104,7 +2104,7 @@
         "materialCourses": "Content already saved into a course is not affected.",
         "cannotUndo": "This cannot be undone.",
         "folderTitle": "Delete the folder “{{name}}”?",
-        "folderOnlyEmpty": "Only an empty folder can be deleted. Move its materials out first."
+        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
       }
     },
     "untitledCourse": "Untitled course",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "Open {{name}} in the right pane",
     "courseLinkMore": "{{count}} more classroom(s)",
     "courseMention": {
+      "search": "Search classrooms and materials",
+      "courseOrder": "Open classroom first, then recently updated",
+      "materialOrder": "Newest uploads first",
       "title": "Reference a classroom for this message",
       "empty": "No classroom matches",
       "alreadyNamed": "Already referenced",

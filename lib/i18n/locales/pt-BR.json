@@ -2104,7 +2104,7 @@
         "materialCourses": "O conteúdo já salvo em um curso não é afetado.",
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
-        "folderOnlyEmpty": "Só é possível excluir uma pasta vazia. Mova os materiais dela primeiro."
+        "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2114,6 +2114,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar salas de aula e materiais",
+      "courseOrder": "Sala aberta primeiro, depois atualizações recentes",
+      "materialOrder": "Envios mais recentes primeiro",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

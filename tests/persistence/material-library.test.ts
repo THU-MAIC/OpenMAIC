@@ -194,7 +194,7 @@ describe('material library (PGlite)', { timeout: 20_000 }, () => {
       await renameMaterialScenario(await boot());
     });
 
-    it('deletes only an empty folder, tombstones aside', async () => {
+    it('deletes a non-empty folder without deleting files, and rolls back a failed deletion', async () => {
       await deleteFolderScenario(await boot());
     });
 

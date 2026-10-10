@@ -2089,7 +2089,7 @@
         "materialCourses": "已儲存到課程中的內容不受影響。",
         "cannotUndo": "此操作無法復原。",
         "folderTitle": "刪除資料夾「{{name}}」？",
-        "folderOnlyEmpty": "只能刪除空資料夾。裡面還有資料時，請先把它們移走。"
+        "folderContents": "{{count}} 個檔案將移到頂層，不會刪除任何檔案。"
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2099,6 +2099,9 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "搜尋課堂和資料",
+      "courseOrder": "目前課堂優先，其餘依最近更新時間排序",
+      "materialOrder": "依上傳時間由新到舊",
       "title": "为这条消息引用课堂",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",

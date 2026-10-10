@@ -1136,18 +1136,13 @@ export function MaterialLibraryPage({
           afterClose: true,
           onSelect: () => startRenaming('folder', folder.id, folder.name),
         },
-        // Only an empty folder can go (the server still decides).
-        ...(folder.materialCount === 0
-          ? [
-              {
-                id: 'delete',
-                label: t('workspace.knowledgeBase.actions.delete'),
-                icon: menuIcons.delete,
-                destructive: true,
-                onSelect: openFrom(() => setDeleting({ kind: 'folder', folder })),
-              },
-            ]
-          : []),
+        {
+          id: 'delete',
+          label: t('workspace.knowledgeBase.actions.delete'),
+          icon: menuIcons.delete,
+          destructive: true,
+          onSelect: openFrom(() => setDeleting({ kind: 'folder', folder })),
+        },
       ]}
     />
   );
@@ -1663,7 +1658,13 @@ export function MaterialLibraryPage({
           key={`folder-${deleting.folder.id}`}
           testId="kb-delete-dialog"
           title={t('workspace.knowledgeBase.delete.folderTitle', { name: deleting.folder.name })}
-          lines={[t('workspace.knowledgeBase.delete.folderOnlyEmpty')]}
+          lines={[
+            t('workspace.knowledgeBase.delete.folderContents', {
+              count:
+                tree.folders.find((folder) => folder.id === deleting.folder.id)?.materialCount ??
+                deleting.folder.materialCount,
+            }),
+          ]}
           remove={() => deleteLibraryFolder(deleting.folder.id)}
           onSettled={() => reloadIfMounted.current()}
           onDeleted={() => {

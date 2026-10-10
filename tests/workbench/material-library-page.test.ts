@@ -1163,11 +1163,11 @@ describe('a folder row', () => {
     await page.dispose();
   });
 
-  it('offers Delete only for an empty folder', async () => {
+  it('offers Delete for both empty and non-empty folders', async () => {
     const page = await openPage();
     await openMenu('kb-folder-menu-f1');
     expect(inDocument('kb-folder-menu-f1-rename')).not.toBeNull();
-    expect(inDocument('kb-folder-menu-f1-delete')).toBeNull();
+    expect(inDocument('kb-folder-menu-f1-delete')).not.toBeNull();
     await act(async () => {
       document.activeElement?.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
@@ -2235,25 +2235,20 @@ describe('deleting from the page', () => {
     await page.dispose();
   });
 
-  it('still refuses an "empty" folder the server finds not empty, in its word', async () => {
-    writeMaterial = () =>
-      json({ success: false, errorCode: 'INVALID_REQUEST', error: 'x', reason: 'not_empty' }, 409);
+  it('confirms the file count before deleting a non-empty folder, without deleting files', async () => {
+    writeMaterial = () => noContent();
     const page = await openPage();
-    const reads = libraryCalls.length;
-    await openMenu('kb-folder-menu-f2');
-    await choose('kb-folder-menu-f2-delete');
+    await openMenu('kb-folder-menu-f1');
+    await choose('kb-folder-menu-f1-delete');
     expect(inDocument('kb-delete-dialog')?.textContent).toContain(
-      'workspace.knowledgeBase.delete.folderOnlyEmpty',
+      'workspace.knowledgeBase.delete.folderContents{"count":2}',
     );
+    expect(deletes()).toEqual([]);
     await confirm();
     expect(deletes()).toEqual([
-      { method: 'DELETE', path: '/api/materials/folders/f2', body: undefined },
+      { method: 'DELETE', path: '/api/materials/folders/f1', body: undefined },
     ]);
-    expect(inDocument('kb-delete-dialog-message')?.textContent).toBe(
-      'workspace.knowledgeBase.error.notEmpty',
-    );
-    expect(inDocument('kb-delete-dialog-confirm')).toBeNull();
-    expect(libraryCalls.length).toBe(reads + 1);
+    expect(inDocument('kb-delete-dialog')).toBeNull();
     await page.dispose();
   });
 
