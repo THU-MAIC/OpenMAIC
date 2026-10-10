@@ -1,5 +1,6 @@
 import katex from 'katex';
 import { safeKatexOptions } from '@openmaic/dsl';
+import { MAX_INLINE_MATH_SOURCE } from '@openmaic/renderer';
 import type { NodeSpec } from 'prosemirror-model';
 
 /** Keep rendered formulas opaque to the prose parser, including hidden MathML. */
@@ -35,7 +36,11 @@ export const inlineMath: NodeSpec = {
     // Empty/malformed source must not prevent the surrounding text from saving.
     // Preserve the atom and source even when KaTeX cannot produce markup.
     let formula = host;
-    if (latex.trim()) {
+    if (latex.length > MAX_INLINE_MATH_SOURCE) {
+      // Same bound as the slide renderer: an over-long source stays a formula
+      // atom with its source, shown as text instead of being typeset.
+      host.textContent = latex;
+    } else if (latex.trim()) {
       try {
         // Rebuild trusted markup rather than storing arbitrary imported HTML.
         katex.render(

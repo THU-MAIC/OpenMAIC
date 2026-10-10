@@ -12,7 +12,7 @@ import {
   createTextDocument,
   serializeTextDocument,
 } from '../../packages/@openmaic/editor/src/react/text/prosemirror/document';
-import { MAX_INLINE_MATH_SOURCE } from '@/lib/sanitize/inline-math';
+import { MAX_INLINE_MATH_SOURCE } from '@openmaic/renderer';
 import { sanitizeProseHtml, sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 
 const LATEX = '\\sqrt{x}+\\frac{a}{b}';
@@ -167,11 +167,11 @@ describe('sanitizeSceneContent — inline formulas', () => {
     expect(editorFormulas(empty)).toEqual(['']);
   });
 
-  it('keeps an over-long formula as plain LaTeX text', () => {
+  it('keeps an over-long formula as a formula: the length bound applies to typesetting only', () => {
     const latex = 'x+'.repeat(MAX_INLINE_MATH_SOURCE);
     const once = sanitizeProseHtml(editorHtmlFor(latex));
-    expect(once).toBe(`<p>Area: ${latex} units</p>`);
-    expect(editorFormulas(once)).toEqual([]);
+    expect(once).toBe(`<p>Area: ${stored(latex)} units</p>`);
+    expect(editorFormulas(once)).toEqual([latex]);
     expect(sanitizeProseHtml(once)).toBe(once);
     const atLimit = 'x'.repeat(MAX_INLINE_MATH_SOURCE);
     expect(sanitizeProseHtml(stored(atLimit))).toBe(stored(atLimit));

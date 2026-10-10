@@ -26,15 +26,6 @@ import { Parser } from 'htmlparser2';
 export const INLINE_MATH_ATTRIBUTE = 'data-inline-math';
 
 /**
- * Longest formula source kept as a formula, in characters. Inline formulas
- * are short (the longest in the repo's fixtures is under 30 characters); 2000
- * leaves room for inline matrices and aligned expressions. A longer source is
- * kept as plain text instead, so no client is ever asked to typeset it and the
- * LaTeX is still there to read or re-enter.
- */
-export const MAX_INLINE_MATH_SOURCE = 2_000;
-
-/**
  * Cheap pre-check: a formula is a `data-inline-math` attribute or a KaTeX
  * root with an `<annotation>` element. Element and attribute names cannot be
  * written as character references (unlike the `katex` class value), so prose
@@ -55,8 +46,11 @@ function escapeHtml(value: string): string {
 
 /** The stored form of one formula. */
 function storedFormula(latex: string): string {
+  // Any length is kept as a formula. Typesetting is bounded where it happens
+  // (`MAX_INLINE_MATH_SOURCE` in @openmaic/renderer, shared by the editor):
+  // a longer source is shown as its LaTeX text there, and the stored form
+  // keeps the marker so the formula is never lost.
   const escaped = escapeHtml(latex);
-  if (latex.length > MAX_INLINE_MATH_SOURCE) return escaped;
   return `<span ${INLINE_MATH_ATTRIBUTE}="${escaped}">${escaped}</span>`;
 }
 
