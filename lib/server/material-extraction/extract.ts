@@ -90,14 +90,6 @@ export function mediaArtifactText(artifact: MediaArtifact): string {
     .join('\n\n');
 }
 
-/**
- * The document extractors that are services a deployment configures (its
- * `pdf` providers). `plain-text` and `unpdf` run here with nothing to
- * configure -- `unpdf` is every PDF's unconditional local fallback, as in
- * `fetch-url.ts` -- so a PDF always has a candidate that is not a service.
- */
-const DOCUMENT_EXTRACTION_SERVICES = new Set(['mineru', 'mineru-cloud', 'alidocmind']);
-
 function extractorCandidates(
   mime: string,
   providers: DocumentExtractorProvider[],
@@ -213,9 +205,12 @@ export async function planSourceExtraction(
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
   // No extractor for this type is not a missing service: no reason code.
   if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
+  // Only parsing services the deployment has not configured: a provider
+  // that runs as is (`plain-text`, every PDF's local `unpdf`) is no missing
+  // service, whatever made it fail.
   const configured = new Set(configuredIds);
   const noServiceConfigured = candidates.every(
-    (provider) => DOCUMENT_EXTRACTION_SERVICES.has(provider.id) && !configured.has(provider.id),
+    (provider) => provider.requiresConfiguration === true && !configured.has(provider.id),
   );
   return {
     kind: 'document',

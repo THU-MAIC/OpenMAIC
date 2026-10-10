@@ -21,6 +21,7 @@ import {
 import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runner';
 import { LocalMediaExtractionError } from '@/lib/document/extractors/local-media';
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
+import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
 
 function mediaProvider(
   extract: MediaExtractorProvider['extract'],
@@ -372,6 +373,7 @@ describe('document parsing service unavailable (session chain)', () => {
     displayName: id,
     version: '1',
     supportedMimeTypes: mimes,
+    requiresConfiguration: getDocumentExtractorManifestEntry(id)?.requiresConfiguration ?? false,
     capabilities: {
       text: true,
       images: false,
@@ -418,5 +420,24 @@ describe('document parsing service unavailable (session chain)', () => {
     );
     const failure = await runSourceExtraction(plan, 'broken.pdf').catch((error) => error);
     expect(failure.reasonCode).toBeUndefined();
+  });
+
+  it('reads whether a candidate is a service from its metadata, not its id', async () => {
+    const reasonFor = async (requiresConfiguration: boolean) => {
+      const plan = await planSourceExtraction(
+        { bytes: Buffer.from('png'), mime: 'image/png' },
+        'board.png',
+        {
+          providers: () => [
+            { ...documentService('another-parser', ['image/png']), requiresConfiguration },
+          ],
+          configuredProviderIds: () => [],
+        },
+      );
+      const failure = await runSourceExtraction(plan, 'board.png').catch((error) => error);
+      return failure.reasonCode;
+    };
+    expect(await reasonFor(true)).toBe('service_unavailable');
+    expect(await reasonFor(false)).toBeUndefined();
   });
 });

@@ -42,6 +42,8 @@ export interface DocumentExtractorProvider {
   displayName: string;
   supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
+  /** A parsing service the deployment must configure; absent means it runs as is. */
+  requiresConfiguration?: boolean;
   /**
    * Provider version. Bump it whenever this provider's extraction output
    * shape or quality changes; it is the version half of the

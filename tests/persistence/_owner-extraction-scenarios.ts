@@ -22,6 +22,7 @@ import { expect, vi } from 'vitest';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
 
 import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
+import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
 import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 import { assetReferencePrincipalsForOwner } from '@/lib/persistence/owner-assets';
 import { claimOwner, resetClaimParticipantsForTests } from '@/lib/persistence/owner-claims';
@@ -1457,6 +1458,8 @@ function documentCandidates(h: ExtractionHarness) {
     ...documentProvider(extract),
     id: id as never,
     supportedMimeTypes: mimes,
+    // Whether it is a service to configure, as the real manifest says.
+    requiresConfiguration: getDocumentExtractorManifestEntry(id)?.requiresConfiguration ?? false,
   });
   const run = async (
     id: string,
