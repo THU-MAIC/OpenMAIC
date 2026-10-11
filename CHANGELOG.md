@@ -4,10 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.1.4] - Unreleased
+## [Unreleased]
 
 ### Security
 
+- Legacy classroom media stops being served when its course is deleted. Media responses use private caching with revalidation, and lifecycle lookup failures fail closed.
 - Providers using server credentials now authorize the selected model before provider access across chat, generation, media, voice, transcription, search and connection tests. Unknown and unauthorized models return the same HTTP 403 `PROVIDER_DISABLED` response. Users' own credentials and keyless providers are unaffected.
 
 ### Breaking change: server-managed model authorization
