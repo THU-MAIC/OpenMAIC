@@ -107,6 +107,18 @@ describe('interactive repair composer effect', () => {
     expect(useCourseRefsStore.getState().refs.map((r) => r.stageId)).toEqual(['course-flink']);
   });
 
+  it('stages an unsent repair against a new draft owner when no session exists', async () => {
+    const request = vi.spyOn(globalThis, 'fetch');
+    await render({ owner: null, expected: 'draft:course-flink' });
+    expect(onConsumed).not.toHaveBeenCalled();
+    await render({ owner: 'draft:course-flink', expected: 'draft:course-flink' });
+    expect(useCourseRefsStore.getState().ownerSessionId).toBe('draft:course-flink');
+    expect(useCourseRefsStore.getState().refs.map((r) => r.stageId)).toEqual(['course-flink']);
+    expect(replaceDraft).toHaveBeenCalledExactlyOnceWith(prefill.text);
+    expect(onConsumed).toHaveBeenCalledExactlyOnceWith(prefill.id);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('does not overwrite an occupied draft or attach a ref', async () => {
     await render({ owner: 'session', expected: 'session', draft: 'Keep my own text' });
     expect(replaceDraft).not.toHaveBeenCalled();
