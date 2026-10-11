@@ -1,3 +1,4 @@
+import { deploymentAuthorizedModels, ModelAuthorizationError } from './model-authorization';
 /**
  * The model settings a workspace sees and edits (RFC #1701, tracked in #1725,
  * P2). This is the service behind `/api/model-config`: it reads the slot tree
@@ -266,7 +267,10 @@ function maskKey(key: string): string {
 function capabilityModels(
   preset: ProviderPreset | undefined,
   pinned?: string[],
-  { chatOnly = false }: { chatOnly?: boolean } = {},
+  {
+    chatOnly = false,
+    strictChatModels = false,
+  }: { chatOnly?: boolean; strictChatModels?: boolean } = {},
 ): CapabilityModels {
   const result: CapabilityModels = {};
   if (!preset) return result;
@@ -278,8 +282,8 @@ function capabilityModels(
     const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
     const models =
-      capability === 'chat' && pinned?.length
-        ? pinned.map(
+      capability === 'chat' && (pinned?.length || strictChatModels)
+        ? (pinned ?? []).map(
             (id) =>
               offered.find((model) => model.id === id) ??
               catalogueModel(capability, registryId!, id),
@@ -404,7 +408,8 @@ function effectiveFor(
     }
     return effectiveView(resolution);
   } catch (error) {
-    if (error instanceof SlotResolutionError) return { status: 'invalid', message: error.message };
+    if (error instanceof SlotResolutionError || error instanceof ModelAuthorizationError)
+      return { status: 'invalid', message: error.message };
     throw error;
   }
 }
@@ -447,7 +452,11 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
-      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models),
+      capabilities: capabilityModels(
+        getProviderPreset(provider.preset),
+        deploymentAuthorizedModels(deployment?.config, id),
+        { strictChatModels: true },
+      ),
     })),
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
       id,
@@ -759,7 +768,7 @@ export async function applyModelSettingsChange(
         }
       }
     } catch (error) {
-      if (error instanceof SlotResolutionError) {
+      if (error instanceof SlotResolutionError || error instanceof ModelAuthorizationError) {
         throw new ModelSettingsError('INVALID_ASSIGNMENT', error.message);
       }
       throw error;

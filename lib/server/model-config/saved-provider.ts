@@ -5,6 +5,7 @@
  * or endpoint comes from the browser.
  */
 import { getProvider } from '@/lib/ai/providers';
+import { ModelAuthorizationError } from './model-authorization';
 import { getSlot } from '@/lib/config/model-slots';
 import { apiError } from '@/lib/server/api-response';
 import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
@@ -71,6 +72,9 @@ export async function savedMediaConnection(
 
 /** The response for a saved provider that cannot be tested, or undefined for any other error. */
 export function savedProviderResponse(error: unknown, what: string): Response | undefined {
+  if (error instanceof ModelAuthorizationError) {
+    return apiError('PROVIDER_DISABLED', 403, error.message);
+  }
   if (error instanceof SavedProviderError) return apiError('INVALID_REQUEST', 400, error.message);
   // The message names a path, never a value from the request.
   if (error instanceof SlotResolutionError) {

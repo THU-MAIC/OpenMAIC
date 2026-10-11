@@ -1,4 +1,5 @@
 import { attachInteractiveState } from '@/lib/chat/pi/interactive-state-evidence';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 /**
  * Pi Director Chat API Endpoint
  *
@@ -350,6 +351,9 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       },
     });
   } catch (error) {
+    if (error instanceof ModelAuthorizationError) {
+      return apiError('PROVIDER_DISABLED', 403, error.message);
+    }
     log.error(
       `Pi chat request failed [model=${chatModel ?? 'unknown'}, messages=${chatMessageCount ?? 0}]:`,
       error,

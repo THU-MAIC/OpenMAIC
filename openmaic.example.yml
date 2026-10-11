@@ -10,6 +10,12 @@
 # optional; uncomment the ones you want and set the variables they name.
 #
 # - providers: the accounts the server can call.
+#   For chat, models is an authorization allowlist, not just a picker list.
+#   Explicit deployment slot models and fallbacks are also authorized.
+#   A provider with neither has no authorized chat models. SDK catalogues and
+#   workspace assignments never grant access to additional server-paid models.
+#   These rules also apply to connection tests. With legacy configuration,
+#   use <PREFIX>_MODELS and/or DEFAULT_MODEL / MODEL_FALLBACK.
 # - slots: which provider and model each use of AI gets by default. Users
 #   may change them in the model settings; slots left out are theirs to set.
 # - lock: the slots fixed for everyone, each with its whole subtree.

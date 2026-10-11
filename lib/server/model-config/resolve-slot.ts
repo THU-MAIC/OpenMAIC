@@ -20,6 +20,7 @@
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
+import { assertDeploymentModelAuthorized } from './model-authorization';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
@@ -191,6 +192,13 @@ function resolveTarget(
   // into the provider position must not end up in a log.
   if (!found) throw new SlotResolutionError(`${at}: the provider is not declared`);
   const { provider } = found;
+  if (found.source === 'deployment' && capability === 'chat' && !providerOnly) {
+    assertDeploymentModelAuthorized(
+      layers.find((layer) => layer.source === 'deployment')?.config,
+      providerId,
+      modelId!,
+    );
+  }
   const preset = getProviderPreset(provider.preset);
   if (!preset) throw new SlotResolutionError(`${at}: the provider has an unknown preset`);
   const target = preset.capabilities[capability];

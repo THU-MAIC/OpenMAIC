@@ -1,4 +1,9 @@
 import { NextRequest } from 'next/server';
+import { resolveRequestOwner } from '@/lib/server/identity/resolve';
+import {
+  attachOwnerCookies,
+  invalidOwnerCredentialResponse,
+} from '@/lib/server/identity/with-owner';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -12,13 +17,19 @@ import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
 const log = createLogger('Verify Model');
 
 export async function POST(req: NextRequest) {
+  const owner = await resolveRequestOwner(req);
+  if (!owner.ok) return invalidOwnerCredentialResponse();
+  return attachOwnerCookies(await verify(req), owner.setCookies);
+}
+
+async function verify(req: NextRequest) {
   let model: string | undefined;
   try {
     const body = await req.json();
     const { apiKey, baseUrl, providerType } = body;
     model = body.model;
 
-    if (!model) {
+    if (typeof model !== 'string' || !model.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Model name is required');
     }
 
@@ -51,6 +62,8 @@ export async function POST(req: NextRequest) {
         });
         languageModel = result.model;
       } catch (error) {
+        const refused = savedProviderResponse(error, 'language model');
+        if (refused) return refused;
         return apiError(
           'INVALID_REQUEST',
           401,

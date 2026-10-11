@@ -40,6 +40,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
   requestProvidersAllowed: () => true,
+  deploymentConfig: () => ({
+    legacy: true,
+    layer: {
+      source: 'deployment',
+      config: {
+        providers: {
+          openai: { preset: 'openai', models: ['gpt-4o'] },
+          'custom-gateway': { preset: 'openai-compatible', models: ['test-model'] },
+        },
+      },
+    },
+  }),
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
