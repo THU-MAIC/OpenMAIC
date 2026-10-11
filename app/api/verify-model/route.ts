@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { callLLM } from '@/lib/ai/llm';
 import { upstreamHttpStatus } from '@/lib/server/llm-error-response';
@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
       });
       languageModel = result.model;
     } catch (error) {
+      const refusal = modelAuthorizationResponse(error);
+      if (refusal) return refusal;
       return apiError(
         'INVALID_REQUEST',
         401,
@@ -53,6 +55,8 @@ export async function POST(req: NextRequest) {
       response: text,
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(`Model verification failed [model="${model ?? 'unknown'}"]:`, error);
 
     // Classify by the provider's HTTP status only. Error messages can carry the

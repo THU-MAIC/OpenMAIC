@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/server/provider-config', () => ({
+  authorizeServerModel: () => {},
   isServerConfiguredProvider: () => mocks.serverManaged,
   resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
   resolveBaseUrl: (_id: string, clientBaseUrl?: string) => clientBaseUrl ?? mocks.managedBaseUrl,

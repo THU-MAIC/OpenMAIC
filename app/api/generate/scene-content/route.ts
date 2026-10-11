@@ -22,7 +22,7 @@ import type {
   UserRequirements,
 } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
@@ -354,6 +354,8 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ content, effectiveOutline });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

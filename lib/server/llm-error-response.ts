@@ -1,5 +1,5 @@
 import { APICallError, RetryError } from 'ai';
-import { apiError } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError } from '@/lib/server/api-response';
 
 const HTTP_ERROR_MIN = 400;
 const HTTP_ERROR_MAX = 599;
@@ -66,6 +66,8 @@ function messageForStatus(status: number): string {
  * exposing provider response bodies, URLs, or credential-adjacent details.
  */
 export function llmApiError(error: unknown) {
+  const refusal = modelAuthorizationResponse(error);
+  if (refusal) return refusal;
   const status = statusFromError(error);
   if (status === undefined) {
     return apiError('INTERNAL_ERROR', 500, 'Scene generation failed. Please try again.');

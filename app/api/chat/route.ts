@@ -16,7 +16,7 @@ import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
-import { apiError } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { parseUserStageRoutes } from '@/lib/server/model-routes';
@@ -198,6 +198,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Chat request failed [model=${chatModel ?? 'unknown'}, messages=${chatMessageCount ?? 0}]:`,
       error,

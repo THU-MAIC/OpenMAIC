@@ -20,11 +20,10 @@ import {
   isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
-  resolveQwenVoiceCloneModel,
-  resolveTTSModel,
+  authorizeServerModel,
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
 import {
@@ -144,10 +143,7 @@ export async function POST(req: NextRequest) {
       publicOnly,
       // A server-configured provider's endpoint may be on a local network.
       managed,
-      model:
-        providerId === 'qwen-tts'
-          ? resolveQwenVoiceCloneModel()
-          : resolveTTSModel(providerId, body.ttsModelId),
+      model: adapter.resolveRegistrationModel(body.ttsModelId?.trim() || undefined),
     };
 
     if (deleting) {
@@ -170,6 +166,8 @@ export async function POST(req: NextRequest) {
       await adapter.deleteVoice(cfg, voiceId, deadline.signal);
       return apiSuccess({ voiceId, deleted: true, vendorDeleted: true, localOnly: false });
     }
+
+    authorizeServerModel('tts', providerId, cfg.model);
 
     // Already registered → no-op (also avoids a redundant re-register when the
     // client offered a cached clip but the voice is still live on the backend).
@@ -236,6 +234,8 @@ export async function POST(req: NextRequest) {
       mimeType: clip.mimeType,
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Voice registration failed [provider=${providerId ?? 'unknown'}, voiceId=${voiceId ?? 'unknown'}]:`,
       error,

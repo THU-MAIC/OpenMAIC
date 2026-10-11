@@ -26,7 +26,7 @@ import {
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
@@ -172,6 +172,8 @@ export async function POST(req: NextRequest) {
       format,
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `TTS generation failed [provider=${ttsProviderId ?? 'unknown'}, voice=${ttsVoice ?? 'unknown'}, audioId=${audioId ?? 'unknown'}]:`,
       error,

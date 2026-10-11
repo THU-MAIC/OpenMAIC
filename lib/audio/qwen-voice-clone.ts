@@ -137,7 +137,7 @@ function resolveConfig(config: QwenVoiceCloneConfig): {
   managed?: boolean;
 } {
   const apiKey = config.apiKey?.trim() || '';
-  const targetModel = config.targetModel?.trim() || '';
+  const targetModel = config.targetModel || '';
   if (!apiKey || !targetModel) throw new QwenVoiceCloneError('QWEN_VC_CONFIG_MISSING', 400);
 
   let baseUrl: URL;

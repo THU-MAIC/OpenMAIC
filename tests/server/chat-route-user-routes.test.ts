@@ -24,6 +24,7 @@ vi.mock('@/lib/ai/providers', async (importOriginal) => {
 });
 
 vi.mock('@/lib/server/provider-config', () => ({
+  authorizeServerModel: () => {},
   isServerConfiguredProvider: () => false,
   resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
   resolveBaseUrl: (_id: string, clientBaseUrl?: string) => clientBaseUrl,

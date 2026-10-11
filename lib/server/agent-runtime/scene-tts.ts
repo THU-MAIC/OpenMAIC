@@ -1,4 +1,4 @@
-import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
@@ -63,12 +63,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId
       : DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || '';
-  const modelId =
-    resolveTTSModel(
-      providerId,
-      DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
-      voice,
-    ) || '';
+  const modelId = resolveTTSModel(providerId, undefined, voice) || '';
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];

@@ -29,6 +29,7 @@ import {
   isServerConfiguredProvider,
   LLM_ENV_MAP,
   resolveApiKey,
+  warnMissingServerModelLists,
 } from '@/lib/server/provider-config';
 import type { ProviderId } from '@/lib/types/provider';
 
@@ -172,6 +173,7 @@ function validateAgentRuntime(): void {
  */
 export function validateServerConfig(): void {
   try {
+    warnMissingServerModelLists();
     validateModelRoutes();
     validateDefaultModel();
     validateModelsEnvPins();

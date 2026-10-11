@@ -327,7 +327,7 @@ const strictProbeCases: StrictProbeCase[] = [
             'Content-Type': 'application/json; charset=utf-8',
           },
           body: JSON.stringify({
-            model: 'image-01',
+            model: 'custom-image-model',
             prompt: 'test',
             aspect_ratio: '1:1',
             n: 1,
@@ -365,7 +365,7 @@ const strictProbeCases: StrictProbeCase[] = [
             'Content-Type': 'application/json; charset=utf-8',
           },
           body: JSON.stringify({
-            model: 'MiniMax-Hailuo-2.3',
+            model: 'custom-video-model',
             prompt: 'test connectivity',
             duration: 6,
             resolution: '768P',
@@ -484,7 +484,11 @@ describe('non-matching connectivity probe sentinels', () => {
     );
 
     await expect(
-      testMiniMaxImageConnectivity({ providerId: 'minimax-image', apiKey: 'minimax-key' }),
+      testMiniMaxImageConnectivity({
+        providerId: 'minimax-image',
+        apiKey: 'minimax-key',
+        model: 'custom-image-model',
+      }),
     ).resolves.toEqual({ success: false, message: 'MiniMax Image returned HTTP 500' });
   });
 
@@ -497,7 +501,11 @@ describe('non-matching connectivity probe sentinels', () => {
     );
 
     await expect(
-      testMiniMaxVideoConnectivity({ providerId: 'minimax-video', apiKey: 'minimax-key' }),
+      testMiniMaxVideoConnectivity({
+        providerId: 'minimax-video',
+        apiKey: 'minimax-key',
+        model: 'custom-video-model',
+      }),
     ).resolves.toEqual({ success: false, message: 'MiniMax Video returned HTTP 500' });
   });
 

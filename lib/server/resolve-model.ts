@@ -10,6 +10,7 @@ import { getModel, getProvider, parseModelString, type ModelWithInfo } from '@/l
 import type { ProviderType, ThinkingConfig } from '@/lib/types/provider';
 import {
   isServerConfiguredProvider,
+  authorizeServerModel,
   resolveApiKey,
   resolveBaseUrl,
   resolveProxy,
@@ -87,7 +88,9 @@ export async function resolveModel(params: {
       'No model could be resolved. Configure DEFAULT_MODEL (and/or a MODEL_ROUTES entry for this stage), or send a model via x-model.',
     );
   }
-  const { providerId, modelId } = parseModelString(modelString);
+  const parsed = parseModelString(modelString.trim());
+  const providerId = parsed.providerId;
+  const modelId = parsed.modelId.trim();
 
   // When a stage route overrides the client's model, the client-sent connection
   // params (apiKey/baseUrl/providerType) belong to the client's *other* model
@@ -110,6 +113,7 @@ export async function resolveModel(params: {
   // public targets, so the hop target is checked regardless of who chose the
   // origin.
   const managed = isServerConfiguredProvider('providers', providerId);
+  authorizeServerModel('providers', providerId, modelId);
   const registeredProviderType = getProvider(providerId)?.type;
   if (
     clientProviderType &&

@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
@@ -359,6 +359,8 @@ Return a JSON object with this exact structure:
 
     return apiSuccess({ agents });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Agent profiles generation failed [stage="${stageName ?? 'unknown'}", model=${modelString ?? 'unknown'}]:`,
       error,

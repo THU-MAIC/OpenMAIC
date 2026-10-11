@@ -10,7 +10,7 @@ import {
 } from '@/lib/server/provider-config';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Transcription');
 
@@ -68,8 +68,8 @@ export async function POST(req: NextRequest) {
     const config = {
       providerId: effectiveProviderId,
       // A managed provider may pin its model list server-side
-      // (ASR_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
-      // first pinned entry is the managed default; unmanaged providers use the
+      // (ASR_<PREFIX>_MODELS): an authorized client choice wins; unlisted choices are refused. The
+      // first pinned entry is the default when no choice is supplied; unmanaged providers use the
       // client model directly.
       modelId: resolveASRModel(effectiveProviderId, modelId),
       language: language || 'auto',
@@ -87,6 +87,8 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ text: result.text });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Transcription failed [provider=${resolvedProviderId ?? 'unknown'}, model=${resolvedModelId ?? 'default'}]:`,
       error,

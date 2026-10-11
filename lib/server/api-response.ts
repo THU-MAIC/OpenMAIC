@@ -1,3 +1,4 @@
+import { ModelAuthorizationError } from '@/lib/server/model-authorization';
 import { NextResponse } from 'next/server';
 
 export const API_ERROR_CODES = {
@@ -71,4 +72,11 @@ export function apiError(
 
 export function apiSuccess<T extends Record<string, unknown>>(data: T, status = 200): NextResponse {
   return NextResponse.json({ success: true, ...data }, { status });
+}
+
+/** Stable pre-provider refusal for both unknown and unauthorized model ids. */
+export function modelAuthorizationResponse(error: unknown): NextResponse<ApiErrorBody> | undefined {
+  return error instanceof ModelAuthorizationError
+    ? apiError(error.code, error.httpStatus, error.message)
+    : undefined;
 }

@@ -249,7 +249,7 @@ describe('POST /api/web-search', () => {
     );
   });
 
-  it('pins the Claude model from server env over the client model', async () => {
+  it('refuses a Claude model outside the server list before search', async () => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-server-key');
     vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5');
 
@@ -259,14 +259,13 @@ describe('POST /api/web-search', () => {
       claudeModelId: 'claude-haiku-4-5',
     });
 
-    expect(res.status).toBe(200);
-    expect(mocks.searchWeb).toHaveBeenCalledWith(
-      expect.objectContaining({
-        providerId: 'claude',
-        apiKey: 'claude-server-key',
-        claudeModelId: 'claude-sonnet-5',
-      }),
-    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      success: false,
+      errorCode: 'PROVIDER_DISABLED',
+      error: 'This model is not authorized for server-managed credentials',
+    });
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
   });
 
   it('rejects Claude requests without an API key, naming the env var', async () => {

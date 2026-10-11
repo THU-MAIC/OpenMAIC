@@ -34,7 +34,7 @@ import type {
   SceneOutline,
   ImageMapping,
 } from '@/lib/types/generation';
-import { apiError } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -707,6 +707,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Outline streaming failed [requirement="${requirementSnippet ?? 'unknown'}...", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

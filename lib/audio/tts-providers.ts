@@ -284,6 +284,19 @@ export async function generateTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
+  if (config.managed) {
+    const { resolveTTSModel } = await import('@/lib/server/provider-config');
+    config = {
+      ...config,
+      modelId: resolveTTSModel(config.providerId, config.modelId, config.voice),
+      providerOptions: {
+        ...config.providerOptions,
+        ...(config.providerId === 'qwen-tts' && isQwenCloneVoice(config.voice)
+          ? { qwenVoiceClone: true }
+          : {}),
+      },
+    };
+  }
   const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
 
   // Validate API key if required (only for built-in providers with known config)
@@ -635,7 +648,9 @@ function getVLLMOmniSpeechUrl(baseUrl: string): string {
 }
 
 function getVLLMOmniModelId(config: TTSModelConfig): string {
-  const modelId = config.modelId?.trim();
+  const modelId = config.modelId;
+  // VoxCPM2 uses this deterministic adapter-internal alias on vLLM-Omni.
+  // Requests cannot choose the rewrite; authorization uses the declared id.
   if (!modelId || modelId === 'VoxCPM2') return VOXCPM_VLLM_MODEL_ID;
   return modelId;
 }
@@ -934,6 +949,10 @@ async function generateQwenTTS(
       config.providerOptions?.qwenVoiceClone === true
         ? config.modelId
         : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
+    if (config.managed) {
+      const { authorizeServerModel } = await import('@/lib/server/provider-config');
+      authorizeServerModel('tts', config.providerId, targetModel);
+    }
     try {
       return await synthesizeQwenVoiceClone(
         {
@@ -961,6 +980,10 @@ async function generateQwenTTS(
   const rate = Math.round(((config.speed || 1.0) - 1.0) * 500);
 
   const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
+  if (config.managed) {
+    const { authorizeServerModel } = await import('@/lib/server/provider-config');
+    authorizeServerModel('tts', config.providerId, modelId);
+  }
   const response = await ttsFetch(
     config,
     `${baseUrl}/services/aigc/multimodal-generation/generation`,

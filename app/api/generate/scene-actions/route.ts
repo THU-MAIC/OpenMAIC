@@ -26,7 +26,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import type { PBLContent } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
 import { normalizeLegacyPBLContent } from '@/lib/pbl/legacy/read';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
@@ -186,6 +186,8 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ scene, previousSpeeches: outputPreviousSpeeches });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Scene actions generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,

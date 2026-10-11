@@ -29,7 +29,7 @@ import {
 } from '@/lib/server/provider-config';
 import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
 
@@ -122,6 +122,8 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ result });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     const message = error instanceof Error ? error.message : String(error);
     // The provider's error text is logged only; the caller gets a fixed message
     // so an upstream body never reaches the response.

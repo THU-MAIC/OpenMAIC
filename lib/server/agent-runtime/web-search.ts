@@ -12,12 +12,14 @@ import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
+import { resolveWebSearchModel } from '@/lib/server/provider-config';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 
 export interface WebSearchCapability {
   providerId: Parameters<typeof searchWeb>[0]['providerId'];
   apiKey: string;
   baseUrl?: string;
+  claudeModelId?: string;
 }
 
 /** This deployment's web-search capability, or null when unconfigured. */
@@ -33,6 +35,7 @@ export function resolveWebSearchCapability(): WebSearchCapability | null {
     providerId: config.providerId,
     apiKey: config.apiKey,
     ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+    ...(config.claudeModelId ? { claudeModelId: config.claudeModelId } : {}),
   };
 }
 
@@ -62,6 +65,9 @@ export function buildWebSearchTool(
         query: params.query,
         apiKey: capability.apiKey,
         ...(capability.baseUrl ? { baseUrl: capability.baseUrl } : {}),
+        ...(capability.providerId === 'claude'
+          ? { claudeModelId: resolveWebSearchModel('claude', capability.claudeModelId) }
+          : {}),
         ...(signal ? { signal } : {}),
       });
       if (signal?.aborted) throw new Error('aborted');

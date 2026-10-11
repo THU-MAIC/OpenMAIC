@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.4] - Unreleased
+
+### Security
+
+- Providers using server credentials now authorize the selected model before provider access across chat, generation, media, voice, transcription, search and connection tests. Unknown and unauthorized models return the same HTTP 403 `PROVIDER_DISABLED` response. Users' own credentials and keyless providers are unaffected.
+
+### Breaking change: server-managed model authorization
+
+- Configure `*_MODELS` or each provider's YAML `models` list. Without an explicit list, only deployment defaults and fallbacks for that capability are authorized; preset catalogues do not grant access. Chat also honors operator `MODEL_ROUTES` references. Services without model selection need no list.
+- Migration: list all selectable model ids, including voice compatibility models, restart the server, and update saved selections outside the authorized set. Startup warnings identify credentialed model-selecting providers without a list. Give a gateway that adds upstream credentials a key and a model list, or restrict models in the gateway itself.
+
 ## [1.1.2] - 2026-09-28
 
 A security release. Server-side requests to provider URLs that a caller can choose now connect only to the addresses that passed validation and refuse redirects, and error responses no longer carry provider response bodies or connection details. Read **Behavior Changes** before upgrading.

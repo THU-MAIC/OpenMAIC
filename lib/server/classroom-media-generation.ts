@@ -13,7 +13,7 @@ import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import { managedMediaProviderFetch } from '@/lib/server/media-provider-fetch';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
-import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import {
@@ -28,6 +28,7 @@ import {
   resolveVideoBaseUrl,
   resolveVideoModel,
   resolveTTSApiKey,
+  resolveTTSModel,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -558,7 +559,7 @@ export async function generateTTSForClassroom(
           const result = await generateTTS(
             {
               providerId,
-              modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
+              modelId: resolveTTSModel(providerId, undefined, voice),
               apiKey,
               baseUrl: ttsBaseUrl,
               managed: ttsManaged,

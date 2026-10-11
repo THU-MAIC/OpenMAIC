@@ -160,15 +160,15 @@ describe('searchWithClaude', () => {
     expect(mockProvider).toHaveBeenCalledWith(CLAUDE_WEB_SEARCH_DEFAULT_MODEL);
   });
 
-  it('uses the provided model, trimmed', async () => {
+  it('sends the resolved model without rewriting it', async () => {
     mockAIResponse();
     await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: '  claude-opus-5  ' });
-    expect(mockProvider).toHaveBeenCalledWith('claude-opus-5');
+    expect(mockProvider).toHaveBeenCalledWith('  claude-opus-5  ');
   });
 
-  it('falls back to the default model for a blank modelId', async () => {
+  it('falls back to the default model for an absent modelId', async () => {
     mockAIResponse();
-    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: '   ' });
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', modelId: undefined });
     expect(mockProvider).toHaveBeenCalledWith(CLAUDE_WEB_SEARCH_DEFAULT_MODEL);
   });
 

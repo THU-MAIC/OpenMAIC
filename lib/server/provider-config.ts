@@ -14,7 +14,14 @@ import {
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
   TTS_PROVIDERS,
+  ASR_PROVIDERS,
 } from '@/lib/audio/constants';
+
+import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
+import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { CLAUDE_WEB_SEARCH_DEFAULT_MODEL } from '@/lib/web-search/constants';
+import { LLM_STAGES, getStageRoute } from '@/lib/server/model-routes';
+import { ModelAuthorizationError } from '@/lib/server/model-authorization';
 
 const log = createLogger('ServerProviderConfig');
 
@@ -360,6 +367,7 @@ const BEDROCK_PROVIDER_ID = 'bedrock';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
+let _modelListWarningsEmitted = false;
 
 /**
  * AliDocMind is server-configured when AK/SK are provided via env
@@ -451,7 +459,8 @@ function applyOpenAIImageFallback(
     apiKey,
     baseUrl:
       yamlOpenAIImage?.baseUrl || process.env.IMAGE_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
-    models: yamlOpenAIImage?.models,
+    models:
+      splitModels(process.env.IMAGE_OPENAI_MODELS) ?? normalizeModelList(yamlOpenAIImage?.models),
     proxy: yamlOpenAIImage?.proxy,
   };
   return imageConfig;
@@ -492,7 +501,10 @@ function applyBedrockProviderConfig(
   providers[BEDROCK_PROVIDER_ID] = {
     apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
     baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
-    models: envModels || yamlBedrock?.models || providers[BEDROCK_PROVIDER_ID]?.models,
+    models:
+      envModels ||
+      normalizeModelList(yamlBedrock?.models) ||
+      providers[BEDROCK_PROVIDER_ID]?.models,
     proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
   };
 
@@ -717,7 +729,7 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
 
 /** Resolve the server-only Qwen VC model override without exposing env values to clients. */
 export function resolveQwenVoiceCloneModel(): string {
-  return process.env.TTS_QWEN_VOICE_CLONE_MODEL || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+  return process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim() || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
 }
 
 export class TTSModelNotAllowedError extends Error {
@@ -731,53 +743,33 @@ export class TTSModelNotAllowedError extends Error {
 }
 
 /**
- * Resolve the TTS model. A managed provider may pin its model server-side
- * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
- * the managed-provider UI does not expose a model field. Otherwise the client
- * model wins.
+ * Resolve the requested TTS model against the server list or effective default,
+ * then recheck any model selected for voice compatibility. Keyless and BYOK
+ * providers retain their existing resolution behavior.
  */
 export function resolveTTSModel(
   providerId: string,
   clientModel?: string,
   voiceId?: string,
 ): string | undefined {
+  clientModel = clientModel?.trim() || undefined;
   const entry = serverEntry('tts', providerId);
-  const pinnedModels = entry?.models?.filter(Boolean) ?? [];
-
+  if (!usesServerCredentials('tts', providerId, entry))
+    return resolveKeylessTTSModel(providerId, clientModel, voiceId);
+  const requested = resolveManagedMediaModel('tts', providerId, clientModel);
+  let model = requested;
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
-    const requestedIsVCSentinel = !!clientModel && isQwenVoiceCloneModel(clientModel, vcModel);
-    const normalizedClientModel = requestedIsVCSentinel ? vcModel : clientModel;
-    const allowedModels = new Set([...pinnedModels, vcModel]);
-
-    if (
-      pinnedModels.length > 0 &&
-      normalizedClientModel &&
-      !allowedModels.has(normalizedClientModel)
-    ) {
-      throw new TTSModelNotAllowedError(providerId, normalizedClientModel);
+    if (voiceId && !isQwenCatalogVoice(voiceId)) model = vcModel;
+    else if (isQwenVoiceCloneModel(requested, vcModel)) {
+      model = voiceId
+        ? (entry?.models?.find((id) => !isQwenVoiceCloneModel(id, vcModel)) ??
+          TTS_PROVIDERS['qwen-tts'].defaultModelId)
+        : vcModel;
     }
-
-    if (voiceId) {
-      if (!isQwenCatalogVoice(voiceId)) return vcModel;
-      const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
-      if (pinnedModels.length > 0 && !pinnedCatalogModel) {
-        throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
-      }
-      // Self-heal persisted VC-model + catalog-voice wedges. Prefer the first
-      // operator-pinned non-VC model, otherwise the catalog default.
-      if (normalizedClientModel === vcModel) {
-        return pinnedCatalogModel || TTS_PROVIDERS['qwen-tts'].defaultModelId;
-      }
-    }
-
-    if (normalizedClientModel) return normalizedClientModel;
-    if (pinnedModels.length > 0) return pinnedModels[0];
-    return undefined;
   }
-
-  if (pinnedModels.length > 0) return pinnedModels[0];
-  return clientModel;
+  // Voice compatibility can select a different model. Check that final target too.
+  return resolveManagedMediaModel('tts', providerId, model);
 }
 
 // ---------------------------------------------------------------------------
@@ -813,16 +805,11 @@ export function resolveServerASRProviderId(): string | undefined {
 
 /**
  * Resolve the ASR model. When the operator pinned models server-side
- * (`ASR_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
+ * (`ASR_<PREFIX>_MODELS`), the authorized client choice wins and the first
+ * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
  */
 export function resolveASRModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('asr', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('asr', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -889,16 +876,11 @@ export function resolveServerImageProviderId(): string | undefined {
 
 /**
  * Resolve the image model. When the operator pinned models server-side
- * (`IMAGE_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
+ * (`IMAGE_<PREFIX>_MODELS`), the authorized client choice wins and the first
+ * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
  */
 export function resolveImageModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('image', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('image', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -948,16 +930,11 @@ export function resolveServerVideoProviderId(): string | undefined {
 
 /**
  * Resolve the video model. When the operator pinned models server-side
- * (`VIDEO_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
+ * (`VIDEO_<PREFIX>_MODELS`), the authorized client choice wins and the first
+ * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
  */
 export function resolveVideoModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('video', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('video', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,9 +986,7 @@ export function resolveWebSearchModel(
   providerId: string,
   clientModel?: string,
 ): string | undefined {
-  const entry = serverEntry('webSearch', providerId);
-  if (entry?.models && entry.models.length > 0) return entry.models[0];
-  return clientModel;
+  return resolveManagedMediaModel('webSearch', providerId, clientModel);
 }
 
 export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {
@@ -1047,4 +1022,185 @@ export function getParallelSceneConcurrency(): number {
   const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.min(raw, 10);
+}
+
+/** Only a single adapter default is a fallback; the rest of its catalogue grants nothing. */
+function mediaDefaultModel(section: ProviderSection, providerId: string): string | undefined {
+  if (section === 'tts')
+    return TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.defaultModelId || undefined;
+  if (section === 'asr')
+    return ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.defaultModelId || undefined;
+  if (section === 'image')
+    return IMAGE_PROVIDERS[providerId as keyof typeof IMAGE_PROVIDERS]?.models?.[0]?.id;
+  if (section === 'video')
+    return VIDEO_PROVIDERS[providerId as keyof typeof VIDEO_PROVIDERS]?.models?.[0]?.id;
+  if (section === 'webSearch' && providerId === 'claude') return CLAUDE_WEB_SEARCH_DEFAULT_MODEL;
+  return undefined;
+}
+
+function usesServerCredentials(
+  section: ProviderSection,
+  providerId: string,
+  entry?: ServerProviderEntry,
+): boolean {
+  return Boolean(
+    entry && (entry.apiKey || (section === 'providers' && providerId === BEDROCK_PROVIDER_ID)),
+  );
+}
+
+function selectsModel(section: ProviderSection, providerId: string): boolean {
+  // These services send no selected inference model (workflow names are not model ids).
+  if (section === 'pdf') return false;
+  if (section === 'webSearch') return providerId === 'claude';
+  if (section === 'tts')
+    return !['azure-tts', 'doubao-tts', 'browser-native-tts'].includes(providerId);
+  if (section === 'asr') return !['azure-asr', 'browser-native'].includes(providerId);
+  return section !== 'image' || providerId !== 'comfyui-image';
+}
+
+function authorizedModels(
+  section: ProviderSection,
+  providerId: string,
+  entry: ServerProviderEntry,
+): string[] {
+  const models = new Set(entry.models ?? []);
+  if (section === 'providers') {
+    const references = [
+      process.env.DEFAULT_MODEL,
+      process.env.MODEL_FALLBACK,
+      ...LLM_STAGES.map((stage) => getStageRoute(stage)?.model),
+    ];
+    for (const reference of references) {
+      if (!reference?.trim()) continue;
+      const value = reference.trim();
+      const colon = value.indexOf(':');
+      const id = colon > 0 ? value.slice(0, colon) : 'openai';
+      const model = (colon > 0 ? value.slice(colon + 1) : value).trim();
+      if (id === providerId && model) models.add(model);
+    }
+  } else {
+    // In 1.1.x the first configured model replaces the adapter's default.
+    const model = entry.models?.[0] ?? mediaDefaultModel(section, providerId);
+    if (model) models.add(model);
+  }
+  return [...models];
+}
+
+/** Check the model actually selected, using only authoritative server configuration. */
+export function authorizeServerModel(
+  section: ProviderSection,
+  providerId: string,
+  modelId: string | undefined,
+): void {
+  const entry = serverEntry(section, providerId);
+  if (!usesServerCredentials(section, providerId, entry) || !selectsModel(section, providerId))
+    return;
+  if (!modelId || !authorizedModels(section, providerId, entry!).includes(modelId)) {
+    throw new ModelAuthorizationError();
+  }
+}
+
+function resolveManagedMediaModel(
+  section: CapabilitySection,
+  providerId: string,
+  clientModel?: string,
+): string | undefined {
+  clientModel = clientModel?.trim() || undefined;
+  const entry = serverEntry(section, providerId);
+  if (!usesServerCredentials(section, providerId, entry) || !selectsModel(section, providerId)) {
+    // Preserve keyless/BYOK resolution, including operator pins on keyless providers.
+    if (entry?.models?.length) {
+      if (
+        ['asr', 'image', 'video'].includes(section) &&
+        clientModel &&
+        entry.models.includes(clientModel)
+      )
+        return clientModel;
+      return entry.models[0];
+    }
+    return clientModel;
+  }
+  const model = clientModel ?? entry?.models?.[0] ?? mediaDefaultModel(section, providerId);
+  authorizeServerModel(section, providerId, model);
+  return model;
+}
+
+/** Emit only from boot validation: Next loads a separate copy of this module for routes. */
+export function warnMissingServerModelLists(): void {
+  if (_modelListWarningsEmitted) return;
+  const config = getConfig();
+  _modelListWarningsEmitted = true;
+  warnMissingModelLists(config);
+}
+
+function warnMissingModelLists(config: ServerConfig): void {
+  const maps = {
+    providers: LLM_ENV_MAP,
+    tts: TTS_ENV_MAP,
+    asr: ASR_ENV_MAP,
+    pdf: PDF_ENV_MAP,
+    image: IMAGE_ENV_MAP,
+    video: VIDEO_ENV_MAP,
+    webSearch: WEB_SEARCH_ENV_MAP,
+  };
+  for (const section of Object.keys(maps) as ProviderSection[]) {
+    for (const [providerId, entry] of Object.entries(config[section])) {
+      if (
+        !usesServerCredentials(section, providerId, entry) ||
+        !selectsModel(section, providerId) ||
+        entry.models?.length
+      )
+        continue;
+      const prefix = Object.entries(maps[section]).find(([, id]) => id === providerId)?.[0];
+      const yamlSection = section === 'webSearch' ? 'web-search' : section;
+      const setting = `${prefix ? `${prefix}_MODELS or ` : ''}server-providers.yml ${yamlSection}.${providerId}.models`;
+      log.warn(
+        `[config] Set ${setting} for server-managed model selection; only deployment default/fallback models are authorized without an explicit list.`,
+      );
+    }
+  }
+}
+
+function resolveKeylessTTSModel(
+  providerId: string,
+  clientModel?: string,
+  voiceId?: string,
+): string | undefined {
+  const entry = serverEntry('tts', providerId);
+  const pinnedModels = entry?.models?.filter(Boolean) ?? [];
+
+  if (providerId === 'qwen-tts') {
+    const vcModel = resolveQwenVoiceCloneModel();
+    const requestedIsVCSentinel = !!clientModel && isQwenVoiceCloneModel(clientModel, vcModel);
+    const normalizedClientModel = requestedIsVCSentinel ? vcModel : clientModel;
+    const allowedModels = new Set([...pinnedModels, vcModel]);
+
+    if (
+      pinnedModels.length > 0 &&
+      normalizedClientModel &&
+      !allowedModels.has(normalizedClientModel)
+    ) {
+      throw new TTSModelNotAllowedError(providerId, normalizedClientModel);
+    }
+
+    if (voiceId) {
+      if (!isQwenCatalogVoice(voiceId)) return vcModel;
+      const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
+      if (pinnedModels.length > 0 && !pinnedCatalogModel) {
+        throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
+      }
+      // Self-heal persisted VC-model + catalog-voice wedges. Prefer the first
+      // operator-pinned non-VC model, otherwise the catalog default.
+      if (normalizedClientModel === vcModel) {
+        return pinnedCatalogModel || TTS_PROVIDERS['qwen-tts'].defaultModelId;
+      }
+    }
+
+    if (normalizedClientModel) return normalizedClientModel;
+    if (pinnedModels.length > 0) return pinnedModels[0];
+    return undefined;
+  }
+
+  if (pinnedModels.length > 0) return pinnedModels[0];
+  return clientModel;
 }

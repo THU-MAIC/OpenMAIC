@@ -25,7 +25,7 @@ import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
 import type { SendEvent } from '@/lib/chat/pi/types';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { parseUserStageRoutes } from '@/lib/server/model-routes';
-import { apiError } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError } from '@/lib/server/api-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
@@ -224,6 +224,8 @@ export async function POST(req: NextRequest) {
             })
           : undefined;
     } catch (error) {
+      const refusal = modelAuthorizationResponse(error);
+      if (refusal) return refusal;
       const message = error instanceof Error ? error.message : 'Invalid Web Search configuration';
       return apiError('INVALID_REQUEST', 400, message);
     }
@@ -319,6 +321,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Pi chat request failed [model=${chatModel ?? 'unknown'}, messages=${chatMessageCount ?? 0}]:`,
       error,

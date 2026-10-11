@@ -25,7 +25,7 @@ import {
   resolveServerImageProviderId,
 } from '@/lib/server/provider-config';
 import type { ImageProviderId } from '@/lib/media/types';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ message: result.message });
   } catch (err) {
+    const refusal = modelAuthorizationResponse(err);
+    if (refusal) return refusal;
     log.error(`Image provider verification failed: ${err}`, err);
     return apiError('INTERNAL_ERROR', 500, 'Connectivity test error');
   }

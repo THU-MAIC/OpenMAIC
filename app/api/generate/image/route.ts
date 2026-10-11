@@ -28,7 +28,7 @@ import {
 } from '@/lib/server/provider-config';
 import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import { withMediaProviderFetch } from '@/lib/server/media-provider-fetch';
 import { resolveImageSize } from '@/lib/server/image-sizing';
@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
     const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
     // A managed provider may pin its model list server-side
-    // (IMAGE_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
-    // first pinned entry is the managed default; unmanaged providers use the
+    // (IMAGE_<PREFIX>_MODELS): an authorized client choice wins; unlisted choices are refused. The
+    // first pinned entry is the default when no choice is supplied; unmanaged providers use the
     // client header directly.
     const model = resolveImageModel(providerId, clientModel);
     // Workflow-based providers (e.g. comfyui-image) have no model catalog and
@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ result });
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     const message = error instanceof Error ? error.message : String(error);
     // The provider's error text is logged only; the caller gets a fixed message
     // so an upstream body never reaches the response.

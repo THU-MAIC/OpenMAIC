@@ -16,7 +16,7 @@ import {
   resolveWebSearchModel,
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
@@ -108,6 +108,8 @@ export async function POST(req: NextRequest) {
     try {
       baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
     } catch (error) {
+      const refusal = modelAuthorizationResponse(error);
+      if (refusal) return refusal;
       const message = error instanceof Error ? error.message : 'Invalid web search base URL';
       return apiError('INVALID_REQUEST', 400, message);
     }
@@ -118,6 +120,9 @@ export async function POST(req: NextRequest) {
         getMissingBaseUrlMessage(providerId, provider.name),
       );
     }
+
+    const searchModel =
+      providerId === 'claude' ? resolveWebSearchModel('claude', claudeModelId) : undefined;
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
     const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);
@@ -146,6 +151,8 @@ export async function POST(req: NextRequest) {
         return result.text;
       };
     } catch (error) {
+      const refusal = modelAuthorizationResponse(error);
+      if (refusal) return refusal;
       log.warn('Search query rewrite model unavailable, falling back to raw requirement:', error);
     }
 
@@ -164,11 +171,9 @@ export async function POST(req: NextRequest) {
       apiKey,
       baseUrl,
       ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
-      // A server-pinned model (WEB_SEARCH_CLAUDE_MODELS) is authoritative over
-      // the client-selected one, matching how managed keys/base URLs behave.
-      ...(providerId === 'claude'
-        ? { claudeModelId: resolveWebSearchModel('claude', claudeModelId) }
-        : {}),
+      // The selection was checked against the authoritative server list/default
+      // before query rewriting; send that same resolved model.
+      ...(providerId === 'claude' ? { claudeModelId: searchModel } : {}),
     });
     const context = formatSearchResultsAsContext(result);
 
@@ -180,6 +185,8 @@ export async function POST(req: NextRequest) {
       responseTime: result.responseTime,
     });
   } catch (err) {
+    const refusal = modelAuthorizationResponse(err);
+    if (refusal) return refusal;
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
     return apiError('INTERNAL_ERROR', 500, message);

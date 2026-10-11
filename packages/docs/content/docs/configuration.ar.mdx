@@ -312,3 +312,28 @@ web-search:
 ```
 
 تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
+
+## Server-managed model authorization
+
+Providers using server credentials accept only models in their explicit `*_MODELS` list or `models` list in `server-providers.yml`, plus deployment defaults and fallbacks for that capability. The preset catalogue does not authorize additional models. Unknown and unauthorized models receive the same HTTP 403 `PROVIDER_DISABLED` response before provider access, including connection tests.
+
+**Breaking change in 1.1.4:** a credentialed provider without an explicit list is limited to deployment defaults and fallbacks. For chat, these are `DEFAULT_MODEL`, `MODEL_FALLBACK`, and operator `MODEL_ROUTES` references. For image, video, TTS and ASR, the first configured model is the default; without a list, only the single adapter default is authorized. Providers without an adapter default need an explicit list. Claude web search uses `WEB_SEARCH_CLAUDE_MODELS` or its single default model. Voice registration and synthesis must also authorize any compatibility model, including the Qwen voice-clone target; `TTS_QWEN_VOICE_CLONE_MODEL` alone does not grant access.
+
+To migrate:
+
+1. Set the model ids users may select in each credentialed provider's `*_MODELS` variable or YAML `models` list. Include voice compatibility models when used.
+2. Restart the server. A startup warning names each credentialed model-selecting provider without an explicit list.
+3. Update saved model selections that are outside the authorized set.
+
+Users' own credentials (BYOK) and keyless providers are unaffected. A provider configured without credentials is unrestricted: give a gateway that adds its own upstream credentials a key and an explicit model list, or restrict models in the gateway. Document parsers, workflow-based image services and services that send no selected model need no model list.
+
+```yaml
+providers:
+  openai:
+    apiKey: your-key
+    models: [gpt-4o-mini, gpt-4.1]
+tts:
+  qwen-tts:
+    apiKey: your-key
+    models: [qwen3-tts-flash, qwen3-tts-vc-2026-01-22]
+```

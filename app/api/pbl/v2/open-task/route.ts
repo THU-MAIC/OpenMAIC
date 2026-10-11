@@ -15,7 +15,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createLogger } from '@/lib/logger';
-import { apiError } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
 import { createSSEResponse } from '@/lib/pbl/v2/api/sse';
@@ -56,6 +56,8 @@ export async function POST(req: NextRequest) {
   try {
     resolved = await resolveModelFromRequest(req, body, 'pbl-v2-runtime:open-task');
   } catch (err) {
+    const refusal = modelAuthorizationResponse(err);
+    if (refusal) return refusal;
     log.error('Model resolution failed:', err);
     return apiError('INVALID_REQUEST', 400, err instanceof Error ? err.message : String(err));
   }

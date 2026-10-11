@@ -50,6 +50,7 @@ import {
   enabledServerTTSProviderIds,
   isServerConfiguredProvider,
   resolveTTSApiKey,
+  authorizeServerModel,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
 import {
@@ -340,6 +341,8 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       if (!providerId || !adapter || !adapter.supportsRegistration()) {
         throw new Error('deployment has no voice registration backend configured');
       }
+      const model = adapter.resolveRegistrationModel();
+      authorizeServerModel('tts', providerId, model);
       throwIfAborted(signal);
       const clip = await getMaterial(deps.sessionId, params.clipId);
       throwIfAborted(signal);
@@ -363,7 +366,7 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
         baseUrl: resolveTTSBaseUrl(providerId) ?? '',
         apiKey: resolveTTSApiKey(providerId),
         managed: isServerConfiguredProvider('tts', providerId),
-        model: adapter.resolveRegistrationModel(),
+        model,
       };
       const registrationKey = createHash('sha256')
         .update(clip.rawAssetId)

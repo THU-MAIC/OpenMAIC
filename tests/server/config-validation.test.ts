@@ -62,6 +62,7 @@ function clearConfigEnv() {
     delete process.env[`${prefix}_MODELS`];
   }
   delete process.env.BEDROCK_REGION;
+  delete process.env.IMAGE_OPENAI_MODELS;
 }
 
 describe('validateServerConfig — warning matrix', () => {
@@ -89,6 +90,9 @@ describe('validateServerConfig — warning matrix', () => {
   it('emits no warnings on a fully valid config', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'sk-test');
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-test');
+    vi.stubEnv('OPENAI_MODELS', 'gpt-5.4-mini,gpt-5.4');
+    vi.stubEnv('ANTHROPIC_MODELS', 'claude-sonnet-4');
+    vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt-image-1');
     vi.stubEnv('DEFAULT_MODEL', 'openai:gpt-5.4-mini');
     vi.stubEnv(
       'MODEL_ROUTES',

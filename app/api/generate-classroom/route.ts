@@ -1,6 +1,7 @@
+import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { after, type NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { modelAuthorizationResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
@@ -65,6 +66,8 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
     }
 
+    if (body.enableWebSearch) resolveClassroomWebSearchConfig(body);
+
     const baseUrl = buildRequestOrigin(req);
     const jobId = nanoid(10);
     const job = await createClassroomGenerationJob(jobId, body);
@@ -84,6 +87,8 @@ export async function POST(req: NextRequest) {
       202,
     );
   } catch (error) {
+    const refusal = modelAuthorizationResponse(error);
+    if (refusal) return refusal;
     log.error(
       `Classroom generation job creation failed [requirement="${requirementSnippet ?? 'unknown'}..."]:`,
       error,
