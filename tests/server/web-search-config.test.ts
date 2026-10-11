@@ -203,19 +203,19 @@ describe('server web search config', () => {
     });
   });
 
-  it('refuses unlisted Claude models and honors an explicit allowed choice', async () => {
+  it('substitutes the first Claude pin for unlisted models and honors listed choices', async () => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
     vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://api.anthropic.com/v1');
     vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
 
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
-    expect(() =>
+    expect(
       resolveClassroomWebSearchConfig({
         webSearchProviderId: 'claude',
         webSearchModelId: 'claude-haiku-4-5',
       }),
-    ).toThrow('This model is not authorized for server-managed credentials');
+    ).toMatchObject({ claudeModelId: 'claude-sonnet-5' });
     expect(
       resolveClassroomWebSearchConfig({
         webSearchProviderId: 'claude',

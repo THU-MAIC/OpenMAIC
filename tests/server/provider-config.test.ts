@@ -469,7 +469,7 @@ providers:
       expect(resolveWebSearchApiKey('claude', undefined)).toBe('claude-env-key');
       expect(resolveWebSearchBaseUrl('claude')).toBe('https://proxy.example.com/anthropic');
       // Server-pinned model (first entry) is authoritative over the client model.
-      expect(() => resolveWebSearchModel('claude', 'claude-haiku-4-5')).toThrow('not authorized');
+      expect(resolveWebSearchModel('claude', 'claude-haiku-4-5')).toBe('claude-sonnet-5');
       expect(resolveWebSearchModel('claude', 'claude-sonnet-5')).toBe('claude-sonnet-5');
       expect(getServerWebSearchProviders().claude).toEqual({});
     });
@@ -623,7 +623,7 @@ pdf:
       // Allowlisted client choice wins over the managed default.
       expect(resolveImageModel('seedream', 'model-b')).toBe('model-b');
       // Non-allowlisted client choice falls back to the managed default.
-      expect(() => resolveImageModel('seedream', 'client-model')).toThrow('not authorized');
+      expect(resolveImageModel('seedream', 'client-model')).toBe('model-a');
       expect(resolveImageModel('seedream')).toBe('model-a');
     });
 
@@ -656,7 +656,7 @@ pdf:
       // Allowlisted client choice wins over the managed default.
       expect(resolveVideoModel('seedance', 'v2')).toBe('v2');
       // Non-allowlisted client choice falls back to the managed default.
-      expect(() => resolveVideoModel('seedance', 'not-allowed')).toThrow('not authorized');
+      expect(resolveVideoModel('seedance', 'not-allowed')).toBe('v1');
       expect(resolveVideoModel('seedance')).toBe('v1');
     });
 
@@ -716,7 +716,7 @@ video:
       // Allowlisted client choice wins over the managed default.
       expect(resolveASRModel('openai-whisper', 'whisper-y')).toBe('whisper-y');
       // Non-allowlisted client choice falls back to the managed default.
-      expect(() => resolveASRModel('openai-whisper', 'client-model')).toThrow('not authorized');
+      expect(resolveASRModel('openai-whisper', 'client-model')).toBe('whisper-x');
       expect(resolveASRModel('openai-whisper')).toBe('whisper-x');
     });
 
@@ -1047,17 +1047,17 @@ video:
       expect(resolveTTSBaseUrl('qwen-tts')).toBe('https://dashscope.aliyuncs.com/api/v1');
     });
 
-    it('maps VC sentinels to the resolved model and rejects pin bypasses', async () => {
+    it('maps VC sentinels and substitutes only authorized pins', async () => {
       vi.stubEnv('TTS_QWEN_API_KEY', 'key');
       vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash,operator-vc-model');
       vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'operator-vc-model');
       const { resolveTTSModel } = await import('@/lib/server/provider-config');
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-vc-custom', 'clone-1')).toThrow(
-        'not authorized',
+      expect(resolveTTSModel('qwen-tts', 'qwen3-tts-vc-custom', 'clone-1')).toBe(
+        'operator-vc-model',
       );
       expect(resolveTTSModel('qwen-tts', 'qwen3-tts-flash', 'clone-1')).toBe('operator-vc-model');
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-flash-other', 'Cherry')).toThrow(
-        'not authorized',
+      expect(resolveTTSModel('qwen-tts', 'qwen3-tts-flash-other', 'Cherry')).toBe(
+        'qwen3-tts-flash',
       );
       expect(resolveTTSModel('qwen-tts', 'operator-vc-model', 'Cherry')).toBe('qwen3-tts-flash');
     });

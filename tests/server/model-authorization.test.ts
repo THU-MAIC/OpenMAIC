@@ -56,24 +56,31 @@ const denied = {
   message: 'This model is not authorized for server-managed credentials',
 };
 describe('1.1.x authorized sets', () => {
-  it('grants only explicit chat lists, deployment defaults/fallbacks and operator stage references', async () => {
+  it('grants only explicit chat lists, deployment defaults and operator stage references', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'server');
     vi.stubEnv('OPENAI_MODELS', ' listed , other ');
     vi.stubEnv('DEFAULT_MODEL', 'openai: default ');
     vi.stubEnv('MODEL_FALLBACK', 'openai: fallback ');
     vi.stubEnv('MODEL_ROUTES', JSON.stringify({ 'quiz-grade': 'openai: stage ' }));
     const { resolveModel } = await import('@/lib/server/resolve-model');
-    for (const model of ['listed', 'other', 'default', 'fallback', 'stage']) {
+    for (const model of ['listed', 'other', 'default', 'stage']) {
       await resolveModel({ modelString: `openai:${model}` });
       expect(mocks.getModel).toHaveBeenLastCalledWith(
         expect.objectContaining({ modelId: model, apiKey: 'server' }),
       );
     }
-    for (const model of ['gpt-4o-mini', 'unknown', 'LISTED', 'listed\u200b', 'openai/listed'])
+    for (const model of [
+      'fallback',
+      'gpt-4o-mini',
+      'unknown',
+      'LISTED',
+      'listed\u200b',
+      'openai/listed',
+    ])
       await expect(
         resolveModel({ modelString: `openai:${model}`, apiKey: 'user' }),
       ).rejects.toMatchObject(denied);
-    expect(mocks.getModel).toHaveBeenCalledTimes(5);
+    expect(mocks.getModel).toHaveBeenCalledTimes(4);
   });
   it('normalizes surrounding model whitespace consistently before checking and sending', async () => {
     vi.stubEnv('OPENAI_API_KEY', 'server');
@@ -128,7 +135,10 @@ describe('1.1.x authorized sets', () => {
     const cfg = await import('@/lib/server/provider-config');
     cfg.authorizeServerModel('providers', 'bedrock', 'allowed');
     expect(cfg.resolveImageModel('openai-image', ' image ')).toBe('image');
-    expect(() => cfg.resolveImageModel('openai-image', 'speech')).toThrow('not authorized');
+    expect(cfg.resolveImageModel('openai-image', 'speech')).toBe('image');
+    expect(() => cfg.authorizeServerModel('image', 'openai-image', 'speech')).toThrow(
+      'not authorized',
+    );
     expect(cfg.resolveTTSModel('openai-tts', ' speech ')).toBe('speech');
   });
   it('OPENAI_API_KEY image reuse honors IMAGE_OPENAI_MODELS and never the chat list', async () => {
@@ -137,7 +147,10 @@ describe('1.1.x authorized sets', () => {
     vi.stubEnv('IMAGE_OPENAI_MODELS', 'image');
     const cfg = await import('@/lib/server/provider-config');
     expect(cfg.resolveImageModel('openai-image')).toBe('image');
-    expect(() => cfg.resolveImageModel('openai-image', 'chat')).toThrow('not authorized');
+    expect(cfg.resolveImageModel('openai-image', 'chat')).toBe('image');
+    expect(() => cfg.authorizeServerModel('image', 'openai-image', 'chat')).toThrow(
+      'not authorized',
+    );
   });
   it('media/search without lists authorize only the single effective adapter default', async () => {
     for (const prefix of [
@@ -211,5 +224,56 @@ describe('1.1.x authorized sets', () => {
     expect(cfg.getServerProviders()).toEqual({ openai: { models: ['allowed'] } });
     cfg.warnMissingServerModelLists();
     expect(mocks.warn).not.toHaveBeenCalled();
+  });
+});
+
+// Replays the pinned-model scenarios reported for the 1.1.x client.
+describe.each(['env', 'yaml'] as const)('pinned capability models from %s', (source) => {
+  it.each([
+    ['tts', 'TTS_OPENAI', 'openai-tts', 'gpt-4o-mini-tts', 'tts-1', 'alloy'],
+    ['tts', 'TTS_MINIMAX', 'minimax-tts', 'speech-2.8-hd', 'speech-2.6-turbo', 'male-qn-qingse'],
+    ['tts', 'TTS_QWEN', 'qwen-tts', 'qwen3-tts-flash', 'qwen3-tts-instruct-flash', 'Cherry'],
+    ['asr', 'ASR_OPENAI', 'openai-whisper', 'gpt-4o-mini-transcribe', 'whisper-1', undefined],
+    ['image', 'IMAGE_OPENAI', 'openai-image', 'gpt-image-2', 'gpt-image-1', undefined],
+    ['video', 'VIDEO_KLING', 'kling', 'kling-v2-6', 'kling-v1-6', undefined],
+    ['web-search', 'WEB_SEARCH_CLAUDE', 'claude', 'client-default', 'pinned-search', undefined],
+  ])(
+    '%s %s substitutes its pin for the client catalogue default',
+    async (section, prefix, id, requested, pin, voice) => {
+      if (source === 'env') {
+        vi.stubEnv(`${prefix}_API_KEY`, 'server');
+        vi.stubEnv(`${prefix}_MODELS`, `${pin},listed-second`);
+      } else {
+        mocks.yaml = `${section}:\n  ${id}:\n    apiKey: server\n    models: [${pin},listed-second]\n`;
+      }
+      const cfg = await import('@/lib/server/provider-config');
+      const resolve = {
+        tts: cfg.resolveTTSModel,
+        asr: cfg.resolveASRModel,
+        image: cfg.resolveImageModel,
+        video: cfg.resolveVideoModel,
+        'web-search': cfg.resolveWebSearchModel,
+      }[section]!;
+      expect(resolve(id!, requested, voice)).toBe(pin);
+      expect(resolve(id!, 'not-listed', voice)).toBe(pin);
+      expect(resolve(id!, 'listed-second', voice)).toBe('listed-second');
+    },
+  );
+  it('maps the built-in Qwen clone sentinel before authorizing the override', async () => {
+    const override = 'qwen3-tts-vc-2027-01-01';
+    vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', override);
+    if (source === 'env') {
+      vi.stubEnv('TTS_QWEN_API_KEY', 'server');
+      vi.stubEnv('TTS_QWEN_MODELS', `qwen3-tts-instruct-flash,${override}`);
+    } else {
+      mocks.yaml = `tts:\n  qwen-tts:\n    apiKey: server\n    models: [qwen3-tts-instruct-flash,${override}]\n`;
+    }
+    const cfg = await import('@/lib/server/provider-config');
+    expect(cfg.resolveTTSModel('qwen-tts', 'qwen3-tts-vc-2026-01-22', 'clone-1')).toBe(override);
+    expect(cfg.resolveTTSModel('qwen-tts', 'qwen3-tts-vc-2026-01-22')).toBe(override);
+    // The override setting alone is never an authorization grant.
+    expect(() => cfg.authorizeServerModel('tts', 'qwen-tts', 'qwen3-tts-vc-2026-01-22')).toThrow(
+      'not authorized',
+    );
   });
 });

@@ -152,7 +152,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/provider-config.ts',
     'Temporary: provider configuration is still a mixed catalog and resolver composition root.',
     [
-      ['qwen', 26],
+      ['qwen', 25],
       ['openai', 25],
       ['azure', 8],
       ['atlascloud', 2],

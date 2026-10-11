@@ -143,13 +143,9 @@ export async function POST(req: NextRequest) {
       publicOnly,
       // A server-configured provider's endpoint may be on a local network.
       managed,
-      model: adapter.resolveRegistrationModel(body.ttsModelId?.trim() || undefined),
     };
 
     if (deleting) {
-      if (!adapter.deleteVoice) {
-        return apiError('INVALID_REQUEST', 400, 'This provider does not support voice deletion');
-      }
       // Vendor IDs may be present in exported classroom data, so possession of
       // an ID is not ownership. Only a caller-supplied account key authorizes
       // provider-side deletion; a managed server key must never be used here.
@@ -163,10 +159,15 @@ export async function POST(req: NextRequest) {
             'The local voice profile can be removed, but the provider voice was not deleted.',
         });
       }
+      if (!adapter.deleteVoice) {
+        return apiError('INVALID_REQUEST', 400, 'This provider does not support voice deletion');
+      }
+      cfg.model = adapter.resolveRegistrationModel(body.ttsModelId?.trim() || undefined);
       await adapter.deleteVoice(cfg, voiceId, deadline.signal);
       return apiSuccess({ voiceId, deleted: true, vendorDeleted: true, localOnly: false });
     }
 
+    cfg.model = adapter.resolveRegistrationModel(body.ttsModelId?.trim() || undefined);
     authorizeServerModel('tts', providerId, cfg.model);
 
     // Already registered → no-op (also avoids a redundant re-register when the

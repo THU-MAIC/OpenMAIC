@@ -756,20 +756,28 @@ export function resolveTTSModel(
   const entry = serverEntry('tts', providerId);
   if (!usesServerCredentials('tts', providerId, entry))
     return resolveKeylessTTSModel(providerId, clientModel, voiceId);
-  const requested = resolveManagedMediaModel('tts', providerId, clientModel);
-  let model = requested;
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
-    if (voiceId && !isQwenCatalogVoice(voiceId)) model = vcModel;
-    else if (isQwenVoiceCloneModel(requested, vcModel)) {
-      model = voiceId
-        ? (entry?.models?.find((id) => !isQwenVoiceCloneModel(id, vcModel)) ??
-          TTS_PROVIDERS['qwen-tts'].defaultModelId)
-        : vcModel;
+    const isCloneModel = (model?: string) => isQwenVoiceCloneModel(model, vcModel);
+    // The client sends the built-in clone sentinel even with a server override.
+    // Normalize it before authorization; voice compatibility selects a concrete
+    // target that must be authorized, never substituted with a catalog model.
+    const requestedClone = isCloneModel(clientModel);
+    if (requestedClone) clientModel = vcModel;
+    if ((voiceId && !isQwenCatalogVoice(voiceId)) || (!voiceId && requestedClone)) {
+      authorizeServerModel('tts', providerId, vcModel);
+      return vcModel;
     }
+    const requested = resolveManagedMediaModel('tts', providerId, clientModel);
+    const model =
+      voiceId && isCloneModel(requested)
+        ? (entry?.models?.find((id) => !isCloneModel(id)) ??
+          TTS_PROVIDERS['qwen-tts'].defaultModelId)
+        : requested;
+    authorizeServerModel('tts', providerId, model);
+    return model;
   }
-  // Voice compatibility can select a different model. Check that final target too.
-  return resolveManagedMediaModel('tts', providerId, model);
+  return resolveManagedMediaModel('tts', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -806,7 +814,7 @@ export function resolveServerASRProviderId(): string | undefined {
 /**
  * Resolve the ASR model. When the operator pinned models server-side
  * (`ASR_<PREFIX>_MODELS`), the authorized client choice wins and the first
- * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
+ * entry replaces an unlisted client choice. BYOK is unrestricted.
  */
 export function resolveASRModel(providerId: string, clientModel?: string): string | undefined {
   return resolveManagedMediaModel('asr', providerId, clientModel);
@@ -877,7 +885,7 @@ export function resolveServerImageProviderId(): string | undefined {
 /**
  * Resolve the image model. When the operator pinned models server-side
  * (`IMAGE_<PREFIX>_MODELS`), the authorized client choice wins and the first
- * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
+ * entry replaces an unlisted client choice. BYOK is unrestricted.
  */
 export function resolveImageModel(providerId: string, clientModel?: string): string | undefined {
   return resolveManagedMediaModel('image', providerId, clientModel);
@@ -931,7 +939,7 @@ export function resolveServerVideoProviderId(): string | undefined {
 /**
  * Resolve the video model. When the operator pinned models server-side
  * (`VIDEO_<PREFIX>_MODELS`), the authorized client choice wins and the first
- * entry is the managed default; an unlisted choice is refused. BYOK is unrestricted.
+ * entry replaces an unlisted client choice. BYOK is unrestricted.
  */
 export function resolveVideoModel(providerId: string, clientModel?: string): string | undefined {
   return resolveManagedMediaModel('video', providerId, clientModel);
@@ -1067,7 +1075,6 @@ function authorizedModels(
   if (section === 'providers') {
     const references = [
       process.env.DEFAULT_MODEL,
-      process.env.MODEL_FALLBACK,
       ...LLM_STAGES.map((stage) => getStageRoute(stage)?.model),
     ];
     for (const reference of references) {
@@ -1120,7 +1127,14 @@ function resolveManagedMediaModel(
     }
     return clientModel;
   }
-  const model = clientModel ?? entry?.models?.[0] ?? mediaDefaultModel(section, providerId);
+  // All model-selecting capabilities on 1.1.x substituted the first pin for
+  // an unlisted client model. Resolve that pin before checking the wire target.
+  const models = entry?.models;
+  const model = models?.length
+    ? clientModel && models.includes(clientModel)
+      ? clientModel
+      : models[0]
+    : (clientModel ?? mediaDefaultModel(section, providerId));
   authorizeServerModel(section, providerId, model);
   return model;
 }
@@ -1155,7 +1169,7 @@ function warnMissingModelLists(config: ServerConfig): void {
       const yamlSection = section === 'webSearch' ? 'web-search' : section;
       const setting = `${prefix ? `${prefix}_MODELS or ` : ''}server-providers.yml ${yamlSection}.${providerId}.models`;
       log.warn(
-        `[config] Set ${setting} for server-managed model selection; only deployment default/fallback models are authorized without an explicit list.`,
+        `[config] Set ${setting} for server-managed model selection; only configured chat defaults/routes or the single capability default are authorized without an explicit list.`,
       );
     }
   }

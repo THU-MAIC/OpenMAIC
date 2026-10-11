@@ -10,12 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Render jobs are bound to the requesting owner. Upgrade every render-service instance (or drain old instances) together with or before the app. Mixed service versions fail closed through a dedicated owner-bound job namespace.
 - Legacy classroom media stops being served when its course is deleted. Media responses use private caching with revalidation, and lifecycle lookup failures fail closed.
-- Providers using server credentials now authorize the selected model before provider access across chat, generation, media, voice, transcription, search and connection tests. Unknown and unauthorized models return the same HTTP 403 `PROVIDER_DISABLED` response. Users' own credentials and keyless providers are unaffected.
+- Providers using server credentials now authorize the selected model before provider access across chat, generation, media, voice, transcription, search and connection tests. Model authorization refusals return the same HTTP 403 `PROVIDER_DISABLED` response. Users' own credentials and keyless providers are unaffected.
 
 ### Breaking change: server-managed model authorization
 
-- Configure `*_MODELS` or each provider's YAML `models` list. Without an explicit list, only deployment defaults and fallbacks for that capability are authorized; preset catalogues do not grant access. Chat also honors operator `MODEL_ROUTES` references. Services without model selection need no list.
-- Migration: list all selectable model ids, including voice compatibility models, restart the server, and update saved selections outside the authorized set. Startup warnings identify credentialed model-selecting providers without a list. Give a gateway that adds upstream credentials a key and a model list, or restrict models in the gateway itself.
+- Configure `*_MODELS` or each provider's YAML `models` list. Without a list, chat authorizes only `DEFAULT_MODEL` and operator `MODEL_ROUTES` references; other model-selecting capabilities authorize only their single default. Preset catalogues do not grant access. Services without model selection need no list.
+- With an explicit list, TTS, ASR, image, video and Claude web search use a listed client choice or substitute the first listed model for an unlisted or missing choice. Speech preview, narration and transcription send catalogue defaults on the 1.1.x client: put the desired pinned model first, without needing to list the client default. Unlisted models never reach the provider with server credentials.
+- Qwen clone voices map the built-in clone sentinel to the configured `TTS_QWEN_VOICE_CLONE_MODEL` before authorization. Include the final clone target in the TTS model list; the override alone does not authorize it.
+- Migration: list all selectable model ids, including voice compatibility models, restart the server, and update saved chat selections and capability selections without explicit lists outside the authorized set. Startup warnings identify credentialed model-selecting providers without a list. Give a gateway that adds upstream credentials a key and a model list, or restrict models in the gateway itself.
 
 ## [1.1.2] - 2026-09-28
 

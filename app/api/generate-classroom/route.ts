@@ -66,7 +66,15 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
     }
 
-    if (body.enableWebSearch) resolveClassroomWebSearchConfig(body);
+    if (body.enableWebSearch) {
+      try {
+        resolveClassroomWebSearchConfig(body);
+      } catch (error) {
+        const refusal = modelAuthorizationResponse(error);
+        if (refusal) return refusal;
+        // Other search configuration errors retain the worker's handling.
+      }
+    }
 
     const baseUrl = buildRequestOrigin(req);
     const jobId = nanoid(10);

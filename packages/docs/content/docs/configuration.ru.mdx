@@ -315,15 +315,19 @@ web-search:
 
 ## Server-managed model authorization
 
-Providers using server credentials accept only models in their explicit `*_MODELS` list or `models` list in `server-providers.yml`, plus deployment defaults and fallbacks for that capability. The preset catalogue does not authorize additional models. Unknown and unauthorized models receive the same HTTP 403 `PROVIDER_DISABLED` response before provider access, including connection tests.
+Providers using server credentials authorize the model actually sent to the provider. Explicit `*_MODELS` lists or `models` lists in `server-providers.yml` grant access for that capability. The preset catalogue does not authorize additional models. Refused models receive the same HTTP 403 `PROVIDER_DISABLED` response before provider access, including connection tests.
 
-**Breaking change in 1.1.4:** a credentialed provider without an explicit list is limited to deployment defaults and fallbacks. For chat, these are `DEFAULT_MODEL`, `MODEL_FALLBACK`, and operator `MODEL_ROUTES` references. For image, video, TTS and ASR, the first configured model is the default; without a list, only the single adapter default is authorized. Providers without an adapter default need an explicit list. Claude web search uses `WEB_SEARCH_CLAUDE_MODELS` or its single default model. Voice registration and synthesis must also authorize any compatibility model, including the Qwen voice-clone target; `TTS_QWEN_VOICE_CLONE_MODEL` alone does not grant access.
+**Breaking change in 1.1.4:** without an explicit list, chat authorizes only `DEFAULT_MODEL` and operator `MODEL_ROUTES` references. Image, video, TTS, ASR and Claude web search authorize only their single capability default. Providers without a capability default need an explicit list.
+
+With an explicit list, TTS, ASR, image, video and Claude web search retain the 1.1.x pinned-model behavior: a listed client choice is used; an unlisted or missing choice uses the first listed model. Speech preview, narration and transcription send catalogue defaults from the 1.1.x client, so put the desired pinned model first; the client default does not need to be listed. An unlisted model is never sent with server credentials. Chat refuses unlisted choices instead of substituting a pin.
+
+Voice registration and synthesis must also authorize the final voice-compatible model. For Qwen clone voices, the built-in clone sentinel is mapped to `TTS_QWEN_VOICE_CLONE_MODEL` before authorization. Include that configured target in `TTS_QWEN_MODELS` or the YAML TTS list; the override alone does not grant access, and an unauthorized clone target is refused rather than replaced with a catalogue model.
 
 To migrate:
 
-1. Set the model ids users may select in each credentialed provider's `*_MODELS` variable or YAML `models` list. Include voice compatibility models when used.
+1. Set the authorized model ids for each credentialed provider. For speech and transcription, put the desired pinned model first. Include voice compatibility targets when used.
 2. Restart the server. A startup warning names each credentialed model-selecting provider without an explicit list.
-3. Update saved model selections that are outside the authorized set.
+3. Update saved chat selections outside the authorized set, and capability selections when no explicit list is configured.
 
 Users' own credentials (BYOK) and keyless providers are unaffected. A provider configured without credentials is unrestricted: give a gateway that adds its own upstream credentials a key and an explicit model list, or restrict models in the gateway. Document parsers, workflow-based image services and services that send no selected model need no model list.
 

@@ -42,6 +42,14 @@ vi.mock('@/lib/server/proxy-fetch', async (original) => ({
 }));
 vi.mock('@/lib/server/audio-provider-fetch', async (original) => ({
   ...(await original<typeof import('@/lib/server/audio-provider-fetch')>()),
+  createAudioProviderFetch: () => async (_url: unknown, init: RequestInit) => {
+    const form = init.body as FormData;
+    capture.calls.push({
+      model: String(form.get('model')),
+      key: new Headers(init.headers).get('Authorization'),
+    });
+    return Response.json({ text: 'Hello', language: 'english', duration: 1, segments: [] });
+  },
   audioProviderFetch: async (url: unknown, init: RequestInit) => {
     const body = JSON.parse(String(init.body || '{}'));
     capture.calls.push({
@@ -114,7 +122,10 @@ beforeEach(() => {
     )
       vi.stubEnv(key, undefined);
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 const refusal = {
   success: false,
   errorCode: 'PROVIDER_DISABLED',
@@ -163,10 +174,10 @@ it.each(['image', 'video'] as const)(
           { [`x-${capability}-provider`]: `minimax-${capability}`, [`x-${capability}-model`]: id },
         ),
       );
-      expect(r.status).toBe(403);
-      expect(await r.json()).toEqual(refusal);
+      expect(r.status).toBe(200);
+      expect(capture.calls.at(-1)).toEqual({ model, key: 'Bearer server-key' });
     }
-    expect(capture.calls).toEqual([]);
+    capture.calls = [];
     expect(
       (
         await route.POST(
@@ -394,7 +405,7 @@ it('an unmanaged provider uses its own key with no server env-key fallback', asy
   expect(capture.calls).toEqual([{ model: 'anything', key: 'Bearer user-key' }]);
 });
 
-it.each(['allowed', 'denied'] as const)(
+it.each(['listed', 'unlisted'] as const)(
   'agent Claude search preserves and rechecks the authorized wire model: %s',
   async (mode) => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'server-key');
@@ -405,15 +416,118 @@ it.each(['allowed', 'denied'] as const)(
     expect(capability.claudeModelId).toBe('approved-search');
     const tool = buildWebSearchTool({
       ...capability,
-      ...(mode === 'denied' ? { claudeModelId: 'not-listed' } : {}),
+      ...(mode === 'unlisted' ? { claudeModelId: 'not-listed' } : {}),
     });
     const run = tool.execute('call', { query: 'test' } as never);
-    if (mode === 'denied') {
-      await expect(run).rejects.toMatchObject({ code: 'PROVIDER_DISABLED', httpStatus: 403 });
-      expect(capture.calls).toEqual([]);
-    } else {
-      await run;
-      expect(capture.calls).toEqual([{ model: 'approved-search', key: 'server-key' }]);
-    }
+    await run;
+    expect(capture.calls).toEqual([{ model: 'approved-search', key: 'server-key' }]);
+  },
+);
+
+it.each(['gpt-4o-mini-tts', 'not-listed'])(
+  'pinned OpenAI TTS sends only tts-1 for %s',
+  async (requested) => {
+    vi.stubEnv('TTS_OPENAI_API_KEY', 'server-key');
+    vi.stubEnv('TTS_OPENAI_MODELS', 'tts-1');
+    const { POST } = await import('@/app/api/generate/tts/route');
+    const response = await POST(
+      req('generate/tts', {
+        text: 'Hello',
+        audioId: 'a',
+        ttsProviderId: 'openai-tts',
+        ttsModelId: requested,
+        ttsVoice: 'alloy',
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(capture.calls).toEqual([
+      { model: 'tts-1', target: undefined, key: 'Bearer server-key' },
+    ]);
+  },
+);
+it.each(['gpt-4o-mini-transcribe', 'not-listed'])(
+  'pinned ASR sends only whisper-1 for %s',
+  async (requested) => {
+    vi.stubEnv('ASR_OPENAI_API_KEY', 'server-key');
+    vi.stubEnv('ASR_OPENAI_MODELS', 'whisper-1');
+    const { POST } = await import('@/app/api/transcription/route');
+    const form = new FormData();
+    form.set('audio', new File([wav()], 'a.wav', { type: 'audio/wav' }));
+    form.set('providerId', 'openai-whisper');
+    form.set('modelId', requested);
+    const response = await POST(
+      new NextRequest('http://localhost/api/transcription', { method: 'POST', body: form }),
+    );
+    expect(response.status).toBe(200);
+    expect(capture.calls).toEqual([{ model: 'whisper-1', key: 'Bearer server-key' }]);
+  },
+);
+it('Qwen clone synthesis sends the listed override after mapping the client sentinel', async () => {
+  vi.stubEnv('TTS_QWEN_API_KEY', 'server-key');
+  vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-instruct-flash,qwen3-tts-vc-2027-01-01');
+  vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'qwen3-tts-vc-2027-01-01');
+  const { POST } = await import('@/app/api/generate/tts/route');
+  const response = await POST(
+    req('generate/tts', {
+      text: 'Hello',
+      audioId: 'a',
+      ttsProviderId: 'qwen-tts',
+      ttsModelId: 'qwen3-tts-vc-2026-01-22',
+      ttsVoice: 'cloned-voice',
+    }),
+  );
+  expect(response.status).toBe(200);
+  expect(capture.calls[0]).toEqual({
+    model: 'qwen3-tts-vc-2027-01-01',
+    target: undefined,
+    key: 'Bearer server-key',
+  });
+});
+it('the inner Qwen clone guard refuses an unauthorized target even if outer resolution regresses', async () => {
+  vi.stubEnv('TTS_QWEN_API_KEY', 'server-key');
+  vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash');
+  const cfg = await import('@/lib/server/provider-config');
+  // Isolate the inner guard: simulate an outer resolver returning an unlisted
+  // clone target while retaining the real authorization check and transport.
+  vi.spyOn(cfg, 'resolveTTSModel').mockReturnValue('qwen3-tts-vc-2026-01-22');
+  const { generateTTS } = await import('@/lib/audio/tts-providers');
+  await expect(
+    generateTTS(
+      {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts-flash',
+        voice: 'cloned-voice',
+        apiKey: 'server-key',
+        managed: true,
+      },
+      'Hello',
+    ),
+  ).rejects.toMatchObject({ code: 'PROVIDER_DISABLED', httpStatus: 403 });
+  expect(capture.calls).toEqual([]);
+});
+it.each([undefined, 'allowed'])(
+  'managed VoxCPM deletion skips model resolution with list %s',
+  async (models) => {
+    vi.stubEnv('TTS_VOXCPM_API_KEY', 'server-key');
+    vi.stubEnv('TTS_VOXCPM_BASE_URL', 'https://voice.example/v1');
+    vi.stubEnv('TTS_VOXCPM_MODELS', models);
+    const { getVoiceRegistrationAdapter } = await import('@/lib/audio/voice-registration');
+    const resolve = vi.spyOn(
+      getVoiceRegistrationAdapter('voxcpm-tts')!,
+      'resolveRegistrationModel',
+    );
+    const { POST } = await import('@/app/api/generate/voice/route');
+    const response = await POST(
+      req('generate/voice', {
+        providerId: 'voxcpm-tts',
+        voiceId: 'sample',
+        action: 'delete',
+        ttsModelId: 'stale-model',
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ localOnly: true, vendorDeleted: false });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(capture.calls).toEqual([]);
   },
 );

@@ -138,7 +138,7 @@ vi.mock('next/server', async (original) => ({
 }));
 vi.mock('@/lib/server/classroom-job-store', () => ({
   createClassroomGenerationJob: async () => {
-    mocks.admitted();
+    await mocks.admitted();
     return { status: 'pending' };
   },
 }));
@@ -382,6 +382,17 @@ describe('1.1.x model authorization route matrix', () => {
     });
     for (const model of ['not-listed', 'unknown-model'])
       it(`${route.path}: ${model} refuses before any upstream call`, async () => {
+        // No-list requests remain strict. Explicit lists substitute an
+        // authorized pin for these capability requests on 1.1.x.
+        for (const prefix of [
+          'IMAGE_SEEDREAM',
+          'VIDEO_SEEDANCE',
+          'TTS_OPENAI',
+          'TTS_VOXCPM',
+          'ASR_OPENAI',
+          'WEB_SEARCH_CLAUDE',
+        ])
+          vi.stubEnv(`${prefix}_MODELS`, undefined);
         const response = await route.invoke(model);
         expect(response.status).toBe(403);
         expect(await response.json()).toEqual(refusal);
@@ -406,6 +417,7 @@ describe('1.1.x model authorization route matrix', () => {
   });
   it('chat/pi: native search is checked before streaming', async () => {
     vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', 'true');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', undefined);
     const response = await (
       await import('@/app/api/chat/pi/route')
     ).POST(
@@ -418,6 +430,37 @@ describe('1.1.x model authorization route matrix', () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual(refusal);
     expect(mocks.upstream).not.toHaveBeenCalled();
+  });
+  it('generate-classroom admits non-authorization search configuration errors for worker handling', async () => {
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', undefined);
+    const input = {
+      requirement: 'Teach',
+      enableWebSearch: true,
+      webSearchProviderId: 'claude' as const,
+      webSearchApiKey: 'user',
+      webSearchBaseUrl: 'https://unsupported.example',
+    };
+    expect(() => resolveClassroomWebSearchConfig(input)).toThrow('Unsupported');
+    const config = await import('@/lib/server/web-search-config');
+    const preflight = vi
+      .spyOn(config, 'resolveClassroomWebSearchConfig')
+      .mockImplementationOnce(() => {
+        throw new Error('Unsupported Claude base URL');
+      });
+    const response = await (
+      await import('@/app/api/generate-classroom/route')
+    ).POST(request('generate-classroom', input));
+    preflight.mockRestore();
+    expect(response.status).toBe(202);
+    expect(mocks.admitted).toHaveBeenCalled();
+  });
+  it('generate-classroom retains job creation errors as 500', async () => {
+    mocks.admitted.mockRejectedValueOnce(new Error('storage unavailable'));
+    const response = await (
+      await import('@/app/api/generate-classroom/route')
+    ).POST(request('generate-classroom', { requirement: 'Teach' }));
+    expect(response.status).toBe(500);
   });
   it('includes every API route that calls a model resolver', () => {
     const found: string[] = [];
