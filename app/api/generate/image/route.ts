@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
     const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
     // A managed provider may pin its model list server-side
-    // (IMAGE_<PREFIX>_MODELS): an authorized client choice wins; unlisted choices are refused. The
-    // first pinned entry is the default when no choice is supplied; unmanaged providers use the
+    // (IMAGE_<PREFIX>_MODELS): a listed client choice wins; an unlisted or missing choice uses the
+    // first pinned entry; unmanaged providers use the
     // client header directly.
     const model = resolveImageModel(providerId, clientModel);
     // Workflow-based providers (e.g. comfyui-image) have no model catalog and

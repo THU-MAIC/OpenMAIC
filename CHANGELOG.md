@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-10-11
+
+A security release. Providers that use server credentials only send models the deployment authorizes, render jobs are bound to the requesting owner, and deleted courses stop serving their legacy media. Read **Breaking change** before upgrading, and upgrade the render-service together with or before the app. The same fixes ship in [v1.2.0-rc.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.2). Thanks to @13ob0 and @Duang777 for the reports.
+
 ### Security
 
 - Render jobs are bound to the requesting owner. Upgrade every render-service instance (or drain old instances) together with or before the app. Mixed service versions fail closed through a dedicated owner-bound job namespace.
@@ -18,6 +22,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - With an explicit list, TTS, ASR, image, video and Claude web search use a listed client choice or substitute the first listed model for an unlisted or missing choice. Speech preview, narration and transcription send catalogue defaults on the 1.1.x client: put the desired pinned model first, without needing to list the client default. Unlisted models never reach the provider with server credentials.
 - Qwen clone voices map the built-in clone sentinel to the configured `TTS_QWEN_VOICE_CLONE_MODEL` before authorization. Include the final clone target in the TTS model list; the override alone does not authorize it.
 - Migration: list all selectable model ids, including voice compatibility models, restart the server, and update saved chat selections and capability selections without explicit lists outside the authorized set. Startup warnings identify credentialed model-selecting providers without a list. Give a gateway that adds upstream credentials a key and a model list, or restrict models in the gateway itself.
+
+## [1.1.3] - 2026-10-05
+
+A security release. Course documents served by `/api/persistence` now carry only the slide HTML the renderer produces, on every write and every read. Read **Behavior Changes** before upgrading.
+
+### Security
+
+- Course documents: with server persistence enabled, `/api/persistence/documents/...` stored and returned slide HTML without sanitizing it. Document reads are capability-by-id, so anyone with a course link loads that course, and the classroom renders slide text, shape text, table cells and LaTeX snapshots as HTML. A course written through this path could therefore run script in the browser of anyone who opened its link. The owner-bound document store now applies the same sanitization policy as `/api/classroom` to the stage and scenes on every write and every read, so new documents are stored clean and documents stored earlier are served clean. [GHSA-6c52-8h4v-5xvg](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-6c52-8h4v-5xvg) [#1799](https://github.com/THU-MAIC/OpenMAIC/pull/1799)
+
+The same fix ships in [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1).
+
+### Behavior Changes
+
+- Slide HTML written through `/api/persistence` is reduced to the renderer's formatting vocabulary (the policy `/api/classroom` already applies): scripts, event-handler attributes, `javascript:` URLs and embedded objects are removed, and inline styles are re-serialized without spaces (`text-align: center;` becomes `text-align:center`). Formatting the editor produces is kept.
+- Documents already stored are not rewritten in the database; they are sanitized when read, and stored clean the next time they are saved.
 
 ## [1.1.2] - 2026-09-28
 

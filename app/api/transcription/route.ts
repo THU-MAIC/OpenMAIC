@@ -68,8 +68,8 @@ export async function POST(req: NextRequest) {
     const config = {
       providerId: effectiveProviderId,
       // A managed provider may pin its model list server-side
-      // (ASR_<PREFIX>_MODELS): an authorized client choice wins; unlisted choices are refused. The
-      // first pinned entry is the default when no choice is supplied; unmanaged providers use the
+      // (ASR_<PREFIX>_MODELS): a listed client choice wins; an unlisted or missing choice uses the
+      // first pinned entry; unmanaged providers use the
       // client model directly.
       modelId: resolveASRModel(effectiveProviderId, modelId),
       language: language || 'auto',
