@@ -12,6 +12,7 @@ import {
   createMemoryJobStore,
   succeedingExecutor,
 } from './support/fakes.js';
+import { submitRender } from './support/identities.js';
 
 process.env.RENDER_SERVICE_NO_LISTEN = 'true';
 
@@ -551,8 +552,9 @@ describe('POST /preview', () => {
     const jobs = createMemoryJobStore();
     const artifacts = createMemoryArtifactStore().store;
     const coordinator = new RenderCoordinator(executor, jobs, artifacts, { maxConcurrency: 1 });
-    const videoId = await coordinator.submit(
-      coordinator.reserve('video-user'),
+    const videoId = await submitRender(
+      coordinator,
+      'video-user',
       '/tmp/openmaic-preview-route-video-test',
       { fps: 30, quality: 'standard', format: 'mp4' },
     );

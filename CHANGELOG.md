@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
+- Render jobs are bound to the requesting owner. Upgrade every render-service instance (or drain old instances) together with or before the app. Mixed service versions fail closed through a dedicated owner-bound job namespace.
 - Legacy classroom media stops being served when its course is deleted. Media responses use private caching with revalidation, and lifecycle lookup failures fail closed.
 - Providers using server credentials now authorize the selected model before provider access across chat, generation, media, voice, transcription, search and connection tests. Unknown and unauthorized models return the same HTTP 403 `PROVIDER_DISABLED` response. Users' own credentials and keyless providers are unaffected.
 

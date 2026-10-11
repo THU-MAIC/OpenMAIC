@@ -8,6 +8,7 @@ import { createMemoryArtifactStore, createMemoryJobStore } from './support/fakes
 import type { RenderExecutor } from '../src/render-executor.js';
 import type { ArtifactStore } from '../src/artifact-store.js';
 import type { RenderExecutionResult, RenderResourceSettlement } from '../src/types.js';
+import { admission, owner, submitRender } from './support/identities.js';
 const directories: string[] = [];
 const options = { fps: 30, quality: 'standard', format: 'mp4' } as const;
 const retained: RenderResourceSettlement = {
@@ -61,13 +62,13 @@ it.each(['failed', 'succeeded'] as const)(
       onEvent: () => {},
     });
     const dir = await directory();
-    const id = await coordinator.submit(coordinator.reserve('one'), dir, options);
+    const id = await submitRender(coordinator, 'one', dir, options);
     const job = await finish(jobs, id);
     expect(job.resources).toMatchObject({ reservationReturned: false, details: retained.details });
     await coordinator.cleanupProject(dir);
     await expect(access(dir)).resolves.toBeUndefined();
     expect(coordinator.accepting).toBe(false);
-    expect(() => coordinator.reserve('two')).toThrow('resource owner');
+    expect(() => coordinator.reserve(admission('two'))).toThrow('resource owner');
     if (status === 'succeeded')
       expect(await artifacts.store.locate(id)).toMatchObject({ path: join(dir, 'output.mp4') });
   },
@@ -111,10 +112,10 @@ it.each([
       onEvent: () => {},
     });
     const dir = await directory();
-    const id = await coordinator.submit(coordinator.reserve('late-resource'), dir, options);
+    const id = await submitRender(coordinator, 'late-resource', dir, options);
     await publicationReady;
 
-    expect(await coordinator.cancel(id)).toBe(true);
+    expect(await coordinator.cancelForOwner(id, owner('late-resource'))).toBe(true);
     settle();
 
     const job = await finish(jobs, id);
@@ -132,7 +133,9 @@ it.each([
         'published-after-cancel',
       );
       expect(coordinator.accepting).toBe(false);
-      expect(() => coordinator.reserve('blocked-after-quarantine')).toThrow('resource owner');
+      expect(() => coordinator.reserve(admission('blocked-after-quarantine'))).toThrow(
+        'resource owner',
+      );
     }
   },
 );
@@ -177,10 +180,10 @@ it('preserves a committed publication when bookkeeping fails after a late cancel
   };
   const coordinator = new RenderCoordinator(executor, jobs, artifacts, { onEvent: () => {} });
   const dir = await directory();
-  const id = await coordinator.submit(coordinator.reserve('bookkeeping'), dir, options);
+  const id = await submitRender(coordinator, 'bookkeeping', dir, options);
   await putStarted;
 
-  expect(await coordinator.cancel(id)).toBe(true);
+  expect(await coordinator.cancelForOwner(id, owner('bookkeeping'))).toBe(true);
   rejectPut(new Error('artifact registration failed'));
 
   const job = await finish(jobs, id);
@@ -221,9 +224,9 @@ it('rejects a queued job without launching when the owner becomes unavailable', 
   );
   const a = await directory();
   const b = await directory();
-  const first = await coordinator.submit(coordinator.reserve('a'), a, options);
+  const first = await submitRender(coordinator, 'a', a, options);
   for (let i = 0; i < 20 && !settle; i++) await new Promise((resolve) => setTimeout(resolve, 5));
-  const second = await coordinator.submit(coordinator.reserve('b'), b, options);
+  const second = await submitRender(coordinator, 'b', b, options);
   accepting = false;
   settle({
     status: 'failed',
@@ -242,6 +245,8 @@ it('preserves the quarantine record across the job TTL', async () => {
   const store = new InMemoryJobStore(100, reap);
   await store.create({
     id: 'retained',
+    ownerId: owner('retained-owner'),
+    admissionIdentity: admission('retained-client'),
     status: 'failed',
     progress: 0,
     currentStage: 'failed',
@@ -268,6 +273,8 @@ it.each([
     const store = new InMemoryJobStore(100, reap);
     await store.create({
       id: 'settled',
+      ownerId: owner('settled-owner'),
+      admissionIdentity: admission('settled-client'),
       status: 'failed',
       progress: 0,
       currentStage: 'failed',
@@ -287,6 +294,8 @@ it('keeps default-executor TTL cleanup when no resource settlement exists', asyn
   const store = new InMemoryJobStore(100, reap);
   await store.create({
     id: 'legacy',
+    ownerId: owner('legacy-owner'),
+    admissionIdentity: admission('legacy-client'),
     status: 'failed',
     progress: 0,
     currentStage: 'failed',
@@ -324,7 +333,7 @@ it('contains a repeated settlement store failure without deleting a committed ar
   const coordinator = new RenderCoordinator(executor, jobs, artifacts.store, { onEvent: () => {} });
   const dir = await directory();
   try {
-    const id = await coordinator.submit(coordinator.reserve('recovery-failure'), dir, options);
+    const id = await submitRender(coordinator, 'recovery-failure', dir, options);
     await vi.waitFor(() => expect(log).toHaveBeenCalled());
     expect(update.mock.calls.filter(([, patch]) => patch.status === 'failed')).toHaveLength(1);
     await expect(artifacts.store.locate(id)).resolves.toMatchObject({
