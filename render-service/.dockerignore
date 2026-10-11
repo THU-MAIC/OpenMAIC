@@ -4,3 +4,6 @@ npm-debug.log
 .env
 .env.*
 *.md
+
+# Temporary sources extracted by tests/api/export-video-render-mixed-pool.test.ts
+.owner-bound-parent-*

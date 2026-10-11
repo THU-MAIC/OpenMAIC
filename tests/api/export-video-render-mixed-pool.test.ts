@@ -32,7 +32,7 @@ import { DELETE as CANCEL, GET as POLL } from '@/app/api/export-video/render/[jo
 import { GET as DOWNLOAD } from '@/app/api/export-video/render/[jobId]/download/route';
 
 const root = resolve(__dirname, '../..');
-const parent = '6a84dbeb';
+const parent = '6a84dbeb453fde53defa49a50f63470cabd4ea88';
 let hasParent = false;
 try {
   execFileSync('git', ['cat-file', '-e', `${parent}:render-service/src/main.ts`], {
