@@ -8,6 +8,7 @@ import {
   ModelSettingsError,
 } from '@/lib/server/model-config/settings';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
+import { assertDeploymentModelAuthorized } from '@/lib/server/model-config/model-authorization';
 import {
   tokenPlanAssignments,
   tokenPlanConflicts,
@@ -24,7 +25,13 @@ const deployment = (config: ModelConfigLayer['config']) =>
 beforeEach(() => {
   vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
   deployment({
-    providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+    providers: {
+      operator: {
+        preset: 'deepseek',
+        apiKey: 'sk-operator-secret-0001',
+        models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+      },
+    },
     // llm is a server default the workspace may change; video is locked off.
     slots: { llm: 'operator:deepseek-v4-pro', video: null },
     lock: ['video'],
@@ -37,6 +44,75 @@ afterEach(() => {
 });
 
 describe('modelSettingsView', () => {
+  it('offers only deployment slot models when the provider has no model list', async () => {
+    const config: ModelConfigLayer['config'] = {
+      providers: {
+        operator: { preset: 'openai', apiKey: 'operator-key' },
+        other: { preset: 'openai', apiKey: 'other-key' },
+      },
+      slots: {
+        llm: 'operator:gpt-5.6',
+        classroom: { model: 'operator:gpt-5.6', fallback: 'operator:custom:regional' },
+        agent: 'other:other-model',
+      },
+    };
+    deployment(config);
+    const view = modelSettingsView({
+      config: { slots: { 'course.outline': 'operator:workspace-only-model' } },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    const models = view.providers.find((provider) => provider.id === 'operator')!.capabilities.chat!
+      .models;
+    expect(models.map((model) => model.id)).toEqual(['gpt-5.6', 'custom:regional']);
+    expect(models[0]).toMatchObject({ name: expect.stringContaining('GPT-5.6') });
+    expect(view.slots.find((slot) => slot.slot === 'course.outline')!.effective.status).toBe(
+      'invalid',
+    );
+    for (const model of models) {
+      expect(() => assertDeploymentModelAuthorized(config, 'operator', model.id)).not.toThrow();
+      await expect(
+        applyModelSettingsChange(null, {
+          kind: 'slots',
+          set: { classroom: `operator:${model.id}` },
+        }),
+      ).resolves.toMatchObject({ slots: { classroom: `operator:${model.id}` } });
+    }
+  });
+
+  it('offers an empty chat list without authorization and keeps workspace model catalogues', () => {
+    deployment({ providers: { operator: { preset: 'openai', apiKey: 'operator-key' } } });
+    const view = modelSettingsView({
+      config: { providers: { mine: { preset: 'openai', apiKey: 'own-key' } } },
+      revision: 1,
+      unreadableSecrets: [],
+    });
+    expect(
+      view.providers.find((provider) => provider.id === 'operator')!.capabilities.chat!.models,
+    ).toEqual([]);
+    expect(
+      view.providers.find((provider) => provider.id === 'mine')!.capabilities.chat!.models.length,
+    ).toBeGreaterThan(0);
+    expect(
+      view.presets.find((preset) => preset.id === 'openai')!.capabilities.chat!.models.length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('offers the union of listed models and deployment primary/fallback models', () => {
+    deployment({
+      providers: {
+        operator: { preset: 'openai', apiKey: 'operator-key', models: ['listed', 'primary'] },
+      },
+      slots: { llm: { model: 'operator:primary', fallback: 'operator:backup' } },
+    });
+    const view = modelSettingsView(null);
+    expect(view.providers[0].capabilities.chat!.models.map((model) => model.id)).toEqual([
+      'listed',
+      'primary',
+      'backup',
+    ]);
+  });
+
   it('shows the tree with effective models, locks and masked keys, and no secrets', () => {
     const view = modelSettingsView({
       config: {
@@ -53,6 +129,7 @@ describe('modelSettingsView', () => {
     expect(view.providers.map(({ capabilities: _capabilities, ...rest }) => rest)).toEqual([
       {
         id: 'operator',
+        models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
         preset: 'deepseek',
         presetName: 'DeepSeek',
         presetKind: 'single',
@@ -107,7 +184,13 @@ describe('modelSettingsView', () => {
 
   it('leaves dormant workspace providers and their assignments out without user keys', () => {
     deployment({
-      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      providers: {
+        operator: {
+          preset: 'deepseek',
+          apiKey: 'sk-operator-secret-0001',
+          models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+        },
+      },
       slots: { llm: 'operator:deepseek-v4-pro' },
       allowUserKeys: false,
     });
@@ -284,7 +367,13 @@ describe('applyModelSettingsChange', () => {
       applyModelSettingsChange(null, { kind: 'slots', set: { video: 'operator:x' } }),
     ).rejects.toMatchObject({ code: 'SLOT_LOCKED' });
     deployment({
-      providers: { operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' } },
+      providers: {
+        operator: {
+          preset: 'deepseek',
+          apiKey: 'sk-operator-secret-0001',
+          models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+        },
+      },
       slots: { llm: 'operator:deepseek-v4-pro' },
       lock: ['llm'],
     });

@@ -117,7 +117,7 @@ describe('resolveSlot', () => {
   it('resolves the same whatever order the layers come in', () => {
     const workspace = layer(
       'workspace',
-      'providers:\n  mm:\n    preset: deepseek\n    apiKey: other\n  mv:\n    preset: minimax\n    apiKey: other\nslots:\n  llm: mm:deepseek-v4-pro\n  video: mv:MiniMax-Hailuo-2.3\n',
+      'providers:\n  mm:\n    preset: deepseek\n    apiKey: other\n  mv:\n    preset: minimax\n    apiKey: other\nslots:\n  llm: mm:MiniMax-M3\n  video: mv:MiniMax-Hailuo-2.3\n',
     );
     for (const slot of ['llm', 'video', 'course.content.slide'] as const) {
       expect(resolveSlot(slot, [workspace, deployment])).toEqual(

@@ -8,6 +8,7 @@
  * against the revision the caller read, and answers the new view. The owner is
  * the request's, through the owner identity seam, never a parameter.
  */
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -113,6 +114,12 @@ export async function PUT(req: NextRequest) {
       const stored = await readWorkspaceModelConfig(queryable, ownerId);
       return NextResponse.json(modelSettingsView(stored), { headers });
     } catch (error) {
+      const authorization = modelAuthorizationResponse(error);
+      if (authorization)
+        return new Response(authorization.body, {
+          status: 403,
+          headers: new Headers([...authorization.headers, ...headers]),
+        });
       if (error instanceof ModelSettingsError) {
         return jsonError(
           error.code === 'SLOT_LOCKED' ? 409 : 400,

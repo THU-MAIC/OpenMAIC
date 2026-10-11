@@ -20,6 +20,12 @@
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
+import {
+  assertDeploymentModelAuthorized,
+  deploymentDefaultModel,
+  usesServerCredentials,
+  selectsUpstreamModel,
+} from './model-authorization';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
@@ -199,6 +205,22 @@ function resolveTarget(
       `${at}: the provider (preset "${preset.id}") does not offer ${capability}`,
     );
   }
+  const effectiveModel =
+    modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability);
+  if (
+    found.source === 'deployment' &&
+    selectsUpstreamModel(provider.preset, capability) &&
+    !providerOnly &&
+    usesServerCredentials(provider) &&
+    (effectiveModel !== undefined || capability === 'chat')
+  ) {
+    assertDeploymentModelAuthorized(
+      layers.find((layer) => layer.source === 'deployment')?.config,
+      providerId,
+      effectiveModel ?? '',
+      capability,
+    );
+  }
   // A service whose official endpoint is per region (Azure Speech) names its
   // region with an endpoint of its own: one on the official host is the
   // vendor's, not a custom one, and is used in its normalised form. Anything
@@ -220,9 +242,7 @@ function resolveTarget(
     ...(provider.options !== undefined ? { options: { ...provider.options } } : {}),
     // A provider-only reference means the preset's own default (a token
     // plan's), else the registry's, which the adapter applies.
-    ...((modelId ?? target.defaultModel) !== undefined
-      ? { modelId: modelId ?? target.defaultModel }
-      : {}),
+    ...(effectiveModel !== undefined ? { modelId: effectiveModel } : {}),
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
 }

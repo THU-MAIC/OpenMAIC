@@ -1,4 +1,5 @@
 /** Agent runtime control plane for durable follow-up messages. */
+import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
 import { AgentSessionAccessError } from '@openmaic/storage';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
@@ -91,6 +92,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return response;
     }
 
+    await assertWorkspaceModelsAuthorized(ownerId, [
+      'agent',
+      'agent.title',
+      'image',
+      'video',
+      'tts',
+      'asr',
+      'webSearch',
+    ]);
     try {
       const materials = materialIds.length
         ? await bindOwnerMaterialsToSession(id, ownerId, materialIds)

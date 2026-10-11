@@ -285,6 +285,7 @@ export async function analyzeMaterial(
             providerId: requestConfig.providerId || '',
             // Local transcription uses the asr slot's connection.
             ...(services.asr ? { asr: services.asr } : {}),
+            ...(services.asrError ? { asrError: services.asrError } : {}),
             apiKey: mediaManaged ? undefined : requestConfig.apiKey || undefined,
             baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
             accessKeyId: mediaManaged

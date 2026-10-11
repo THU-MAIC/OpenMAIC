@@ -13,6 +13,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
@@ -197,6 +198,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof ModelAuthorizationError) {
+      return apiError('PROVIDER_DISABLED', 403, error.message);
+    }
     log.error(
       `Chat request failed [model=${chatModel ?? 'unknown'}, messages=${chatMessageCount ?? 0}]:`,
       error,

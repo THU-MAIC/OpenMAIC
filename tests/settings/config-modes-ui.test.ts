@@ -124,7 +124,11 @@ const T = (key: string, options?: Record<string, unknown>) =>
   options ? [key, ...Object.values(options)].join('|') : key;
 
 const providers = {
-  operator: { preset: 'deepseek', apiKey: 'sk-operator-secret-0001' },
+  operator: {
+    preset: 'deepseek',
+    apiKey: 'sk-operator-secret-0001',
+    models: ['deepseek-v4-flash'],
+  },
   voice: { preset: 'minimax', apiKey: 'sk-operator-secret-0002' },
 };
 

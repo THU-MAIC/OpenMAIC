@@ -25,6 +25,8 @@ import {
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
 
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+
 const log = createLogger('ExtractionServices');
 
 export interface ExtractionServices {
@@ -40,6 +42,8 @@ export interface ExtractionServices {
   documentStatus?: 'configured' | 'default' | 'disabled' | 'unassigned' | 'locked';
   /** The asr slot's connection, or undefined when speech recognition is off or unset. */
   asr?: ASRModelConfig;
+  /** Deferred until an extractor needs speech recognition. */
+  asrError?: ModelAuthorizationError;
 }
 
 const usable = (connection: MediaConnection | 'off' | 'locked' | null) =>
@@ -69,12 +73,14 @@ export async function resolveExtractionServices(
   ownerId?: string,
   { forward = true }: { forward?: boolean } = {},
 ): Promise<ExtractionServices> {
+  let asrError: ModelAuthorizationError | undefined;
   const [document, asr] = await Promise.all([
     documentConnection(ownerId, forward),
     // Speech only serves media extraction: an asr assignment this workspace
     // may not use leaves transcription unavailable, not every extraction.
     serverMediaConnection('asr', ownerId, { forward }).catch((error: unknown) => {
-      if (!(error instanceof WorkspaceEndpointError)) throw error;
+      if (error instanceof ModelAuthorizationError) asrError = error;
+      else if (!(error instanceof WorkspaceEndpointError)) throw error;
       log.warn(`Speech recognition unavailable for extraction: ${error.message}`);
       return null;
     }),
@@ -83,6 +89,7 @@ export async function resolveExtractionServices(
   const speech = usable(asr)?.providerId === BROWSER_NATIVE_ASR_PROVIDER_ID ? null : usable(asr);
   return {
     document: usable(document),
+    ...(asrError ? { asrError } : {}),
     documentStatus:
       document === 'off'
         ? 'disabled'
@@ -176,6 +183,7 @@ export function extractorConfigFor(
     allowEnvFallback: false,
     managed: service ? service.managed : true,
     ...(services.asr ? { asr: services.asr } : {}),
+    ...(services.asrError ? { asrError: services.asrError } : {}),
   };
 }
 

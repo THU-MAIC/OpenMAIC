@@ -74,7 +74,7 @@ describe('resolveStageModel', () => {
   it("keeps openmaic.yml's default over what the request names, and a legacy default under it", async () => {
     const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
     const deployment = layer('deployment', {
-      providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
+      providers: { openai: { preset: 'openai', apiKey: 'sk-operator', models: ['gpt-5.6-mini'] } },
       slots: { llm: 'openai:gpt-5.6' },
     });
     state.lookup = lookupFromLayers('course.outline', { deployment, workspace: null });

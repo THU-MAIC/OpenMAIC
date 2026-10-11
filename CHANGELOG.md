@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- Enforce model authorization for server-managed providers across chat, media, speech, model-based web search and workspace model assignments. Unauthorized and unknown model ids return the same HTTP 403 response before provider access. Users' own credentials continue to work.
+
+### Breaking change: server-managed model authorization
+
+- Set `*_MODELS` for every provider with server-managed credentials, or set `models` under each provider in `openmaic.yml` / `server-providers.yml`. Without a list, only deployment default/fallback and capability slot references authorize models; preset catalogues and workspace assignments do not. Provider-only media slots authorize a single adapter default. Services without model ids need no list. Providers configured without credentials (local Ollama, Lemonade) are not restricted; a keyless gateway that adds its own upstream credential should be given a key and a model list.
+- Migration: list the model ids users should be able to select (including voice compatibility models), restart the server, then update workspace selections that are no longer authorized. A startup warning names the configuration setting for each provider with credentials but no explicit list.
+
 ### Bug Fixes
 
 - S3 asset storage: `@openmaic/storage` 0.37.3 supports path-style addressing for S3-compatible object stores such as MinIO and Ceph. Set `AWS_S3_FORCE_PATH_STYLE=true` (or `1`) together with `AWS_ENDPOINT_URL_S3` so objects are addressed as `endpoint/bucket/key`; leaving it unset keeps the existing behaviour for Amazon S3 (#1686).

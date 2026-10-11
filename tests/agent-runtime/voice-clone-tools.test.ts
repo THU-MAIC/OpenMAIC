@@ -14,6 +14,7 @@
  * bounds, and the 24 kHz mono PCM WAV output contract stored back as an
  * `audio-track` material.
  */
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { spawnSync } from 'node:child_process';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +62,7 @@ function ttsFromMocks() {
   ).resolveTTSBaseUrl?.(providerId);
   return {
     providerId,
+    deploymentProviderId: 'speech',
     ...(apiKey ? { apiKey } : {}),
     ...(baseUrl ? { baseUrl } : {}),
     managed: true,
@@ -171,6 +173,16 @@ describe('voice clone agent tools', () => {
   const sourceAudio = synthesizeStereoWav(4);
 
   beforeEach(() => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { speech: { preset: 'qwen-tts', apiKey: 'sk-test', models: ['fake-model'] } },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
     mocks.enabledServerTTSProviderIds.mockReset();
     mocks.enabledServerTTSProviderIds.mockReturnValue([]);
     mocks.resolveTTSApiKey.mockReset();
@@ -182,6 +194,7 @@ describe('voice clone agent tools', () => {
   });
 
   afterEach(() => {
+    setDeploymentConfigForTests();
     vi.restoreAllMocks();
   });
 

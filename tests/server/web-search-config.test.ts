@@ -223,6 +223,7 @@ describe('server web search config', () => {
 
   it("applies the request's Claude model to the server's default search provider", async () => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
+    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-opus-5');
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
     expect(
@@ -230,24 +231,25 @@ describe('server web search config', () => {
     ).toMatchObject({ providerId: 'claude', claudeModelId: 'claude-opus-5' });
   });
 
-  it('pins the Claude model from WEB_SEARCH_CLAUDE_MODELS over the client model', async () => {
+  it('refuses an unlisted Claude model instead of substituting a server model', async () => {
     vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
     vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://api.anthropic.com/v1');
     vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
 
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
-    expect(
-      await resolveClassroomWebSearchConfig(null, {
+    await expect(
+      resolveClassroomWebSearchConfig(null, {
         webSearchProviderId: 'claude',
         webSearchModelId: 'claude-haiku-4-5',
       }),
-    ).toEqual({
-      providerId: 'claude',
-      apiKey: 'sk-server-key',
-      baseUrl: 'https://api.anthropic.com/v1',
-      claudeModelId: 'claude-sonnet-5',
-    });
+    ).rejects.toThrow('not authorized');
+    expect(
+      await resolveClassroomWebSearchConfig(null, {
+        webSearchProviderId: 'claude',
+        webSearchModelId: 'claude-opus-5',
+      }),
+    ).toMatchObject({ providerId: 'claude', claudeModelId: 'claude-opus-5' });
   });
 
   it.each([

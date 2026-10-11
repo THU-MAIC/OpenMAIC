@@ -11,7 +11,7 @@ description: Модели и провайдеры (openmaic.yml и настро�
 | Настройки моделей в веб-приложении | Пользователи рабочего пространства | Их собственные провайдеры и назначения для всех слотов, которые `openmaic.yml` не закрепляет; хранятся в базе данных | Сразу |
 | Переменные окружения (`.env.local`, секрет контейнера) | Администратор | Секреты, на которые ссылается `openmaic.yml`, и все остальные серверные опции | При запуске |
 
-Все переменные окружения необязательны, кроме `DATABASE_URL` (см. [Развёртывание](./deployment.mdx)). Полный список — в [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example), заготовка конфигурации моделей — в [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml), идентификаторы пресетов и моделей — в разделе [Поддерживаемые модели](./supported-models.mdx).
+`DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
 В прежних версиях модели настраивались только через переменные окружения провайдеров, `server-providers.yml`, `DEFAULT_MODEL` и `MODEL_ROUTES`. Кроме `MODEL_ROUTES`, всё это пока работает, но устарело; см. [Миграция со старой конфигурации](#миграция-со-старой-конфигурации).
 
@@ -97,7 +97,7 @@ allowUserKeys: false               # пользователи выбирают �
 | `preset` | Да | Встроенный пресет провайдера. См. [Поддерживаемые модели → Пресеты](./supported-models.mdx#пресеты). |
 | `apiKey` | Обычно | API-ключ. Сервисы без ключа (локальные серверы, Brave, SearXNG, unpdf) его не указывают. |
 | `baseUrl` | Для некоторых пресетов | Адрес вместо собственного адреса пресета. Обязателен для `openai-compatible`, `azure`, `searxng` и `mineru`. |
-| `models` | Нет | Идентификаторы чат-моделей, которые предлагает этот провайдер; их показывают настройки моделей. Для `openai-compatible` это единственный список в настройках. Он не ограничивает, какие модели можно указать в `slots`. |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | Нет | URL HTTP-прокси для запросов этого провайдера. |
 | `credentials` | Для некоторых пресетов | Пара ключей для сервисов, которые не используют один ключ. AliDocMind принимает `accessKeyId` и `accessKeySecret`. |
 | `options` | Нет | Несекретные настройки, специфичные для провайдера, например `backend` для `voxcpm-tts`. Имена состоят из букв, цифр, `_` и `-`; значения — строки, числа или булевы значения (без вложенных словарей и списков), `${VAR}` поддерживается. Настройки моделей показывают options, поэтому никогда не храните в них ключи. Только для развёртывания: настройки моделей не могут их задавать. |
@@ -743,3 +743,23 @@ web-search:
 ```
 
 Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.
+
+## Model authorization for server-managed providers
+
+For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+
+To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.

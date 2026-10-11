@@ -7,6 +7,7 @@
  *
  * POST /api/generate/tts
  */
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import { NextRequest } from 'next/server';
 import {
@@ -129,6 +130,8 @@ export async function POST(req: NextRequest) {
       format: narration.format,
     });
   } catch (error) {
+    const authorization = modelAuthorizationResponse(error);
+    if (authorization) return authorization;
     if (error instanceof StepRefusal) {
       return apiError(REFUSAL_CODES[error.reason as NarrationRefusal], 400, error.message);
     }

@@ -9,7 +9,8 @@ const legacy = vi.hoisted(() => ({
   disabledTts: new Set<string>(),
 }));
 
-vi.mock('@/lib/server/provider-config', () => ({
+vi.mock('@/lib/server/provider-config', async (original) => ({
+  ...(await original<typeof import('@/lib/server/provider-config')>()),
   getServerProviderConfig: (): ServerConfig => ({
     providers: legacy.providers,
     tts: {},
@@ -60,7 +61,7 @@ describe('loadDeploymentLayer', () => {
     legacy.providers = { openai: { apiKey: 'sk-openai' } };
     vi.stubEnv('DEFAULT_MODEL', ' openai:gpt-5.6 ');
     const { layer, legacy: translated, notices } = loadDeploymentLayer();
-    expect(notices).toHaveLength(1);
+    expect(notices).toHaveLength(2);
     expect(notices[0]).toMatch(DEPRECATED);
     // One deployment layer: the providers, and the default model as a server
     // default, exactly as openmaic.yml's slots (nothing locked).
@@ -112,7 +113,7 @@ describe('loadDeploymentLayer', () => {
     const { layer, notices } = loadDeploymentLayer();
     expect(layer?.config.slots).toEqual({ llm: 'ds:deepseek-v4-pro' });
     expect(layer?.config.providers).toEqual({ ds: { preset: 'deepseek', apiKey: 'sk-ds' } });
-    expect(notices).toHaveLength(1);
+    expect(notices).toHaveLength(2);
     expect(notices[0]).toMatch(/^openmaic\.yml is present/);
   });
 
@@ -124,5 +125,48 @@ describe('loadDeploymentLayer', () => {
       legacy: false,
       notices: [],
     });
+  });
+  it('logs each missing model-list warning only once at startup', async () => {
+    legacy.providers = { openai: { apiKey: 'operator-secret' } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    runtime.deploymentConfig();
+    runtime.deploymentConfig();
+    const warnings = warn.mock.calls.map(([message]) => String(message));
+    expect(warnings.filter((message) => message.includes('no explicit model list'))).toHaveLength(
+      1,
+    );
+    expect(warnings.join('\n')).toContain(
+      'OPENAI_MODELS or server-providers.yml providers.openai.models',
+    );
+    expect(warnings.join('\n')).toContain('only default/fallback models are usable');
+    expect(warnings.join('\n')).not.toContain('operator-secret');
+    runtime.setDeploymentConfigForTests();
+  });
+
+  it('names the YAML models key for every credentialed provider without a list', () => {
+    fs.writeFileSync(
+      path.join(dir, 'openmaic.yml'),
+      `providers:
+  chat:
+    preset: openai
+    apiKey: operator-chat
+  speech:
+    preset: openai-tts
+    apiKey: operator-speech
+  listed:
+    preset: seedream
+    apiKey: operator-image
+    models: [listed-model]
+  keyless:
+    preset: ollama
+`,
+    );
+    const warnings = loadDeploymentLayer().notices;
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain('providers.chat.models');
+    expect(warnings[1]).toContain('providers.speech.models');
+    expect(warnings.join('\n')).not.toContain('operator-chat');
   });
 });
