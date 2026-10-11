@@ -104,7 +104,7 @@ export async function testMiniMaxImageConnectivity(
         'Content-Type': 'application/json; charset=utf-8',
       },
       body: JSON.stringify({
-        model: 'image-01',
+        model: requireModel(config.model, 'MiniMax Image'),
         prompt: 'test',
         aspect_ratio: '1:1',
         n: 1,

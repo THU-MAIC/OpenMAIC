@@ -180,7 +180,7 @@ export function translateLegacyConfig(
       );
       return undefined;
     }
-    const ref = `${id}:${modelId}`;
+    const ref = `${id}:${modelId.trim()}`;
     if (!MODEL_REF_SHAPE.test(ref)) {
       notices.push(`${what} is not a valid model reference and is not carried over`);
       return undefined;

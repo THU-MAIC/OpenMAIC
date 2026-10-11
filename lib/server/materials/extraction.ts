@@ -21,6 +21,7 @@
  *   made under the same extraction services (a copy of its result) instead of
  *   extracting them again.
  */
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { randomUUID } from 'node:crypto';
 
 import { buildDocumentBundle, type ParsedDocumentImage } from '@/lib/document/bundle';
@@ -354,9 +355,18 @@ export async function extractOwnerMaterial(
 
 /**
  * The failed extraction a failure leaves: its message, kind and whether trying
- * again may help (the host's classification first, for a failure of its own).
+ * again may help. Authorization refusals retain their identity before host classification.
  */
 export function failedExtraction(error: unknown): OwnerMaterialExtraction {
+  if (error instanceof ModelAuthorizationError) {
+    return {
+      status: 'failed',
+      error: error.message,
+      errorCode: error.code,
+      httpStatus: error.httpStatus,
+      retryable: false,
+    };
+  }
   const host = classifyHostFailure(error);
   if (host) {
     return {

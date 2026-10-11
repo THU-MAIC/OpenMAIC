@@ -21,7 +21,8 @@ vi.mock('@/lib/server/provider-config', async (original) => ({
   ...(await original<typeof import('@/lib/server/provider-config')>()),
   isServerConfiguredProvider: (_section: string, id: string) =>
     ['openai', 'anthropic'].includes(id),
-  resolveApiKey: (id: string, own: string) => (id === 'openai' ? 'server-secret' : own),
+  resolveApiKey: (id: string, own: string) =>
+    ['openai', 'anthropic'].includes(id) ? 'server-secret' : own,
   resolveBaseUrl: (_id: string, own?: string) => own,
   resolveProxy: () => undefined,
 }));

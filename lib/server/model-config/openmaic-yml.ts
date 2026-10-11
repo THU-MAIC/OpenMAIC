@@ -55,7 +55,12 @@ const thinkingSchema = z
 
 const modelRef = z
   .string()
-  .regex(MODEL_REF, 'expected "providerId:modelId" (or "providerId" for its default model)');
+  .regex(MODEL_REF, 'expected "providerId:modelId" (or "providerId" for its default model)')
+  .transform((ref) => {
+    const { providerId, modelId } = parseModelRef(ref);
+    return modelId === undefined ? providerId : `${providerId}:${modelId.trim()}`;
+  })
+  .refine((ref) => MODEL_REF.test(ref), 'model id must not be blank');
 
 const assignmentObjectSchema = z
   .object({
@@ -115,7 +120,7 @@ export const providerSchema = z
     preset: z.string().min(1),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.url().optional(),
-    models: z.array(z.string().min(1)).min(1).optional(),
+    models: z.array(z.string().trim().min(1)).min(1).optional(),
     /** HTTP proxy for this provider's requests. */
     proxy: z.url().optional(),
     /** Multi-part credentials for vendors that do not use a single key. */

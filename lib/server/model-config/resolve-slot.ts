@@ -20,7 +20,12 @@
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
-import { assertDeploymentModelAuthorized, deploymentDefaultModel } from './model-authorization';
+import {
+  assertDeploymentModelAuthorized,
+  deploymentDefaultModel,
+  usesServerCredentials,
+  selectsUpstreamModel,
+} from './model-authorization';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
@@ -204,9 +209,9 @@ function resolveTarget(
     modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability);
   if (
     found.source === 'deployment' &&
-    capability !== 'document' &&
+    selectsUpstreamModel(provider.preset, capability) &&
     !providerOnly &&
-    (capability === 'chat' || provider.apiKey || Object.keys(provider.credentials ?? {}).length) &&
+    usesServerCredentials(provider) &&
     (effectiveModel !== undefined || capability === 'chat')
   ) {
     assertDeploymentModelAuthorized(

@@ -1,3 +1,4 @@
+// The route inventory detects listed resolver calls; direct SDK construction in a new route is not detected.
 /** Every model-resolving request and worker uses the deployment authorization boundary. */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';

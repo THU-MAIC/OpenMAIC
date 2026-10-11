@@ -9,6 +9,7 @@ import type { NextRequest } from 'next/server';
 import {
   assertDeploymentModelAuthorized,
   ModelAuthorizationError,
+  usesServerCredentials,
 } from '@/lib/server/model-config/model-authorization';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { getModel, getProvider, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
@@ -152,7 +153,13 @@ export async function resolveRequestedModel(
   // public targets, so the hop target is checked regardless of who chose the
   // origin.
   const managed = isServerConfiguredProvider('providers', providerId);
-  if (managed) {
+  if (
+    managed &&
+    usesServerCredentials({
+      preset: presetIdFor('chat', providerId),
+      apiKey: resolveApiKey(providerId),
+    })
+  ) {
     const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
     const deployment = deploymentConfig();
     // Do not revive legacy credentials when openmaic.yml replaced them. Use

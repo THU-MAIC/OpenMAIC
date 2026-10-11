@@ -460,6 +460,7 @@ function derivedStem(originalName: string | null, fallback: string): string {
 
 /** The asr slot's connection the server resolved for this extraction. */
 function configuredASR(config: DocumentExtractorConfig): ASRModelConfig {
+  if (config.asrError) throw config.asrError;
   if (!config.asr) {
     throw new MaterialExtractionError(
       'No speech recognition provider is configured for local media extraction',

@@ -1,6 +1,7 @@
 import { presetIdFor } from '@/lib/config/preset-ids';
 import {
   assertDeploymentModelAuthorized,
+  selectsUpstreamModel,
   deploymentAuthorizedModels,
   deploymentDefaultModel,
   ModelAuthorizationError,
@@ -504,7 +505,10 @@ function applyBedrockProviderConfig(
   providers[BEDROCK_PROVIDER_ID] = {
     apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
     baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
-    models: envModels || yamlBedrock?.models || providers[BEDROCK_PROVIDER_ID]?.models,
+    models:
+      envModels ||
+      normalizeModelList(yamlBedrock?.models) ||
+      providers[BEDROCK_PROVIDER_ID]?.models,
     proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
   };
 
@@ -744,7 +748,7 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
 
 /** Resolve the server-only Qwen VC model override without exposing env values to clients. */
 export function resolveQwenVoiceCloneModel(): string {
-  return process.env.TTS_QWEN_VOICE_CLONE_MODEL || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+  return process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim() || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
 }
 
 export class TTSModelNotAllowedError extends Error {
@@ -1067,11 +1071,12 @@ function resolveManagedMediaModel(
   providerId: string,
   clientModel?: string,
 ): string | undefined {
+  clientModel = clientModel?.trim() || undefined;
   const entry = serverEntry(section, providerId);
-  if (!entry?.apiKey) return clientModel;
+  const id = presetIdFor(section as SlotCapability, providerId);
+  if (!entry?.apiKey || !selectsUpstreamModel(id, section)) return clientModel;
   const deployment = deploymentConfig();
   if (!deployment.legacy) throw new ModelAuthorizationError();
-  const id = presetIdFor(section as SlotCapability, providerId);
   const config = deployment.layer?.config;
   const model = clientModel ?? deploymentAuthorizedModels(config, id, section)[0];
   if (model !== undefined) assertDeploymentModelAuthorized(config, id, model, section);

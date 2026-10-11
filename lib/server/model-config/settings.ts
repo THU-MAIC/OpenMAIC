@@ -12,7 +12,11 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
-import { deploymentAuthorizedModels, ModelAuthorizationError } from './model-authorization';
+import {
+  deploymentAuthorizedModels,
+  ModelAuthorizationError,
+  usesServerCredentials,
+} from './model-authorization';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
@@ -463,11 +467,11 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
-      capabilities: capabilityModels(
-        getProviderPreset(provider.preset),
-        deploymentAuthorizedModels(deployment?.config, id),
-        { strictModels: true, deployment: deployment?.config, providerId: id },
-      ),
+      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+        strictModels: usesServerCredentials(provider),
+        deployment: deployment?.config,
+        providerId: id,
+      }),
     })),
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
       id,

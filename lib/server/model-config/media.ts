@@ -15,7 +15,7 @@
  * workspace provider's endpoint was typed by a user: it is validated like a
  * caller-supplied base URL, and a workspace may not set a proxy.
  */
-import { assertDeploymentModelAuthorized } from './model-authorization';
+import { assertDeploymentModelAuthorized, selectsUpstreamModel } from './model-authorization';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { getSlot, type SlotId } from '@/lib/config/model-slots';
 import { registryDefaultBaseUrl } from '@/lib/config/provider-presets';
@@ -311,6 +311,7 @@ export function authorizeMediaModel(
   )
     return;
   const capability = getSlot(slot).capability;
+  if (!selectsUpstreamModel(presetIdFor(capability, connection.providerId), capability)) return;
   assertDeploymentModelAuthorized(
     deploymentConfig().layer?.config,
     connection.deploymentProviderId ?? presetIdFor(capability, connection.providerId),

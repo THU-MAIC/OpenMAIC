@@ -68,6 +68,8 @@ export interface OwnerMaterialExtraction {
   error?: string;
   /** The failure's kind: a refusal reason of the analysis, or `EXTRACTION_FAILED`. */
   errorCode?: string;
+  /** HTTP status of a provider authorization refusal. */
+  httpStatus?: number;
   /** Whether trying again may succeed. */
   retryable?: boolean;
   /** The extracted text's length, in characters. */

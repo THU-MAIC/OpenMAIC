@@ -16,6 +16,10 @@ import {
 } from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
+import { presetIdFor } from '@/lib/config/preset-ids';
+import { usesServerCredentials, selectsUpstreamModel } from './model-authorization';
+import { getProviderPreset } from '@/lib/config/provider-presets';
+import type { SlotCapability } from '@/lib/config/model-slots';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
@@ -80,9 +84,10 @@ export function loadDeploymentLayer(): DeploymentLayer {
         ...Object.entries(file.providers ?? {})
           .filter(
             ([, provider]) =>
-              (provider.apiKey ||
-                Object.keys(provider.credentials ?? {}).length ||
-                provider.preset === 'bedrock') &&
+              usesServerCredentials(provider) &&
+              Object.keys(getProviderPreset(provider.preset)?.capabilities ?? {}).some(
+                (capability) => selectsUpstreamModel(provider.preset, capability as SlotCapability),
+              ) &&
               !provider.models?.length,
           )
           .map(
@@ -106,11 +111,15 @@ export function loadDeploymentLayer(): DeploymentLayer {
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,
       ...Object.entries(getServerProviderConfig()).flatMap(([section, entries]) =>
-        section === 'disabled'
+        section === 'disabled' || section === 'pdf'
           ? []
           : Object.entries(entries as Record<string, ServerProviderEntry>)
               .filter(
                 ([id, entry]) =>
+                  selectsUpstreamModel(
+                    presetIdFor(section === 'providers' ? 'chat' : (section as SlotCapability), id),
+                    section === 'providers' ? 'chat' : (section as SlotCapability),
+                  ) &&
                   (entry.apiKey ||
                     entry.accessKeyId ||
                     (section === 'providers' && id === 'bedrock')) &&

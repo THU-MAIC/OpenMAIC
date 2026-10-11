@@ -6,6 +6,25 @@ import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { CLAUDE_WEB_SEARCH_DEFAULT_MODEL } from '@/lib/web-search/constants';
 import type { ModelConfigFile } from './openmaic-yml';
 
+/** Whether this provider uses deployment credentials, including an SDK credential chain. */
+export function usesServerCredentials(provider: {
+  preset?: string;
+  apiKey?: string;
+  credentials?: Record<string, string>;
+}): boolean {
+  return Boolean(
+    provider.apiKey ||
+    Object.values(provider.credentials ?? {}).some(Boolean) ||
+    provider.preset === 'bedrock',
+  );
+}
+
+/** Whether the capability sends a selected model to the provider. */
+export function selectsUpstreamModel(presetId: string, capability: SlotCapability): boolean {
+  const target = getProviderPreset(presetId)?.capabilities[capability];
+  return Boolean(target && (capability === 'chat' || deploymentDefaultModel(presetId, capability)));
+}
+
 /** Fixed text: a refusal must not expose the operator's model catalogue or key. */
 export class ModelAuthorizationError extends Error {
   readonly code = 'PROVIDER_DISABLED';
