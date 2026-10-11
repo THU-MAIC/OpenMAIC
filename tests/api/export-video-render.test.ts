@@ -40,10 +40,8 @@ function ownerBound(response: Response): Response {
   return response;
 }
 
-function mockCompatibleResponse(response: Response): void {
-  mocks.proxyFetch
-    .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
-    .mockResolvedValueOnce(ownerBound(response));
+function mockOwnerBoundResponse(response: Response): void {
+  mocks.proxyFetch.mockResolvedValueOnce(ownerBound(response));
 }
 
 describe('POST /api/export-video/render', () => {
@@ -60,7 +58,7 @@ describe('POST /api/export-video/render', () => {
   it.each(['queue_full', 'per_identity_limit'])(
     'preserves the 429 envelope and %s reason without interpreting prose',
     async (reason) => {
-      mockCompatibleResponse(
+      mockOwnerBoundResponse(
         Response.json({ error: 'Service diagnostic', reason }, { status: 429 }),
       );
       const response = await POST(request());
@@ -78,7 +76,7 @@ describe('POST /api/export-video/render', () => {
   it.each([undefined, null, 123, { code: 'queue_full' }, 'future_limit'])(
     'omits missing or unrecognized admission reasons (%j)',
     async (reason) => {
-      mockCompatibleResponse(Response.json({ error: 'Queue busy', reason }, { status: 429 }));
+      mockOwnerBoundResponse(Response.json({ error: 'Queue busy', reason }, { status: 429 }));
       const response = await POST(request());
       expect(response.status).toBe(429);
       expect(await response.json()).not.toHaveProperty('reason');
@@ -92,7 +90,7 @@ describe('POST /api/export-video/render', () => {
   ])(
     'keeps upstream %i mapping to %i without an admission reason',
     async (upstream, status, code) => {
-      mockCompatibleResponse(
+      mockOwnerBoundResponse(
         Response.json({ error: 'Diagnostic', reason: 'queue_full' }, { status: upstream }),
       );
       const response = await POST(request());
@@ -107,7 +105,7 @@ describe('POST /api/export-video/render', () => {
   );
 
   it('preserves a reason-less failure when the upstream body is not JSON', async () => {
-    mockCompatibleResponse(
+    mockOwnerBoundResponse(
       new Response('gateway response', { status: 502, statusText: 'Bad Gateway' }),
     );
     const response = await POST(request());
@@ -127,15 +125,13 @@ describe('POST /api/export-video/render', () => {
     // Reuse one chunk; exercise the real byte counter without buffering a large archive.
     const chunk = new Uint8Array(1024 * 1024);
     const body = new ReadableStream({ pull: (controller) => controller.enqueue(chunk) });
-    mocks.proxyFetch
-      .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
-      .mockImplementationOnce(async (_url, init: RequestInit) => {
-        const reader = (init.body as ReadableStream<Uint8Array>).getReader();
-        while (!(await reader.read()).done) {
-          /* drain the upload */
-        }
-        return ownerBound(Response.json({ jobId: 'unexpected' }));
-      });
+    mocks.proxyFetch.mockImplementationOnce(async (_url, init: RequestInit) => {
+      const reader = (init.body as ReadableStream<Uint8Array>).getReader();
+      while (!(await reader.read()).done) {
+        /* drain the upload */
+      }
+      return ownerBound(Response.json({ jobId: 'unexpected' }));
+    });
     const response = await POST(
       new NextRequest('http://localhost/api/export-video/render', {
         method: 'POST',
@@ -164,7 +160,7 @@ describe('POST /api/export-video/render', () => {
   });
 
   it('refuses submissions when an older service does not assert owner binding', async () => {
-    mocks.proxyFetch.mockResolvedValueOnce(Response.json({ ok: true }));
+    mocks.proxyFetch.mockResolvedValueOnce(new Response('Not Found', { status: 404 }));
 
     const response = await POST(request());
     expect(response.status).toBe(502);
@@ -174,15 +170,13 @@ describe('POST /api/export-video/render', () => {
     });
     expect(mocks.proxyFetch).toHaveBeenCalledTimes(1);
     expect(mocks.proxyFetch).toHaveBeenCalledWith(
-      'http://render-service:9000/health',
-      expect.objectContaining({ method: 'GET' }),
+      'http://render-service:9000/owner-bound/render',
+      expect.objectContaining({ method: 'POST' }),
     );
   });
 
-  it('refuses an unmarked submit response after a compatible health probe', async () => {
-    mocks.proxyFetch
-      .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
-      .mockResolvedValueOnce(Response.json({ jobId: 'unsafe-job' }, { status: 202 }));
+  it('refuses an unmarked submit response without a health preflight', async () => {
+    mocks.proxyFetch.mockResolvedValueOnce(Response.json({ jobId: 'unsafe-job' }, { status: 202 }));
 
     const response = await POST(request());
     expect(response.status).toBe(502);
@@ -193,12 +187,12 @@ describe('POST /api/export-video/render', () => {
   });
 
   it('forwards durable ownership separately from the default admission identity', async () => {
-    mockCompatibleResponse(Response.json({ jobId: 'job-1' }, { status: 202 }));
+    mockOwnerBoundResponse(Response.json({ jobId: 'job-1' }, { status: 202 }));
     const response = await POST(request({ 'x-forwarded-for': '203.0.113.1' }));
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ success: true, jobId: 'job-1', pollIntervalMs: 3000 });
     expect(mocks.proxyFetch).toHaveBeenCalledWith(
-      'http://render-service:9000/render',
+      'http://render-service:9000/owner-bound/render',
       expect.objectContaining({
         headers: expect.objectContaining({
           'x-openmaic-client': 'direct',
@@ -221,9 +215,9 @@ describe('owner-scoped render job proxies', () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it('forwards the durable owner on poll, cancel, and download', async () => {
-    mockCompatibleResponse(Response.json({ jobId: 'job-1', status: 'running' }));
-    mockCompatibleResponse(Response.json({ cancelled: true }));
-    mockCompatibleResponse(
+    mockOwnerBoundResponse(Response.json({ jobId: 'job-1', status: 'running' }));
+    mockOwnerBoundResponse(Response.json({ cancelled: true }));
+    mockOwnerBoundResponse(
       new Response('video', {
         headers: { 'content-type': 'video/mp4', 'content-length': '5' },
       }),
@@ -233,9 +227,10 @@ describe('owner-scoped render job proxies', () => {
     expect((await CANCEL(jobRequest('job-1', 'DELETE'), context)).status).toBe(200);
     expect((await DOWNLOAD(jobRequest('job-1/download'), context)).status).toBe(200);
 
-    const jobCalls = mocks.proxyFetch.mock.calls.filter(([url]) => !url.endsWith('/health'));
+    const jobCalls = mocks.proxyFetch.mock.calls;
     expect(jobCalls).toHaveLength(3);
-    for (const [, init] of jobCalls) {
+    for (const [url, init] of jobCalls) {
+      expect(url).toMatch(/^http:\/\/render-service:9000\/owner-bound\/render\/job-1/);
       expect(init).toEqual(
         expect.objectContaining({
           headers: expect.objectContaining({ 'x-openmaic-render-owner': 'owner-a' }),
@@ -244,29 +239,28 @@ describe('owner-scoped render job proxies', () => {
     }
   });
 
-  it('does not send job operations to an older service without owner binding', async () => {
+  it('refuses an older service namespace 404 without health preflights', async () => {
     mocks.proxyFetch
-      .mockResolvedValueOnce(Response.json({ ok: true }))
-      .mockResolvedValueOnce(Response.json({ ok: true }))
-      .mockResolvedValueOnce(Response.json({ ok: true }));
+      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+      .mockResolvedValueOnce(new Response('Not Found', { status: 404 }));
 
     expect((await POLL(jobRequest('job-1'), context)).status).toBe(502);
     expect((await CANCEL(jobRequest('job-1', 'DELETE'), context)).status).toBe(502);
     expect((await DOWNLOAD(jobRequest('job-1/download'), context)).status).toBe(502);
     expect(mocks.proxyFetch).toHaveBeenCalledTimes(3);
     for (const [url, init] of mocks.proxyFetch.mock.calls) {
-      expect(url).toBe('http://render-service:9000/health');
-      expect(init).toEqual(expect.objectContaining({ method: 'GET' }));
+      expect(url).toMatch(/^http:\/\/render-service:9000\/owner-bound\/render\/job-1/);
+      expect(init).toEqual(
+        expect.objectContaining({ headers: { 'x-openmaic-render-owner': 'owner-a' } }),
+      );
     }
   });
 
-  it('refuses unmarked job responses after compatible health probes', async () => {
+  it('refuses unmarked job responses without health preflights', async () => {
     mocks.proxyFetch
-      .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
       .mockResolvedValueOnce(Response.json({ jobId: 'job-1', status: 'running' }))
-      .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
       .mockResolvedValueOnce(Response.json({ cancelled: true }))
-      .mockResolvedValueOnce(ownerBound(Response.json({ ok: true })))
       .mockResolvedValueOnce(
         new Response('video', {
           headers: { 'content-type': 'video/mp4', 'content-length': '5' },
@@ -284,7 +278,7 @@ describe('owner-scoped render job proxies', () => {
       for (const cookie of cookies) headers.append('Set-Cookie', cookie);
       return 'owner-a';
     });
-    mockCompatibleResponse(Response.json({ error: 'Job not found' }, { status: 404 }));
+    mockOwnerBoundResponse(Response.json({ error: 'Job not found' }, { status: 404 }));
 
     const response = await CANCEL(jobRequest(jobId, 'DELETE'), {
       params: Promise.resolve({ jobId }),
@@ -307,8 +301,8 @@ describe('owner-scoped render job proxies', () => {
       for (const cookie of cookies) headers.append('Set-Cookie', cookie);
       return 'owner-a';
     });
-    mockCompatibleResponse(Response.json({ jobId: 'job-1', status: 'running' }));
-    mockCompatibleResponse(Response.json({ error: 'Job not found' }, { status: 404 }));
+    mockOwnerBoundResponse(Response.json({ jobId: 'job-1', status: 'running' }));
+    mockOwnerBoundResponse(Response.json({ error: 'Job not found' }, { status: 404 }));
 
     const polled = await POLL(jobRequest('job-1'), context);
     expect(polled.status).toBe(200);
@@ -332,7 +326,7 @@ describe('owner-scoped render job proxies', () => {
       for (const cookie of cookies) headers.append('Set-Cookie', cookie);
       return 'owner-a';
     });
-    mockCompatibleResponse(
+    mockOwnerBoundResponse(
       new Response(null, {
         status: 302,
         headers: { location: 'https://storage.example.test/video.mp4' },
@@ -344,6 +338,59 @@ describe('owner-scoped render job proxies', () => {
     expect(response.headers.get('location')).toBe('https://storage.example.test/video.mp4');
     expect(response.headers.getSetCookie()).toEqual(cookies);
   });
+
+  it.each([301, 302])(
+    'refuses an unmarked %i download before relaying its Location',
+    async (status) => {
+      const cookies = ['anonymous_id=first; Path=/', 'host_session=second; Path=/'];
+      mocks.resolveRequestOwnerId.mockImplementation((_req: NextRequest, headers: Headers) => {
+        for (const cookie of cookies) headers.append('Set-Cookie', cookie);
+        return 'owner-a';
+      });
+      mocks.proxyFetch.mockResolvedValueOnce(
+        new Response('protected redirect body', {
+          status,
+          headers: { location: 'https://storage.example.test/protected.mp4' },
+        }),
+      );
+
+      const response = await DOWNLOAD(jobRequest('job-1/download'), context);
+      expect(response.status).toBe(502);
+      expect(response.headers.get('location')).toBeNull();
+      expect(response.headers.getSetCookie()).toEqual(cookies);
+      expect(await response.text()).not.toContain('protected');
+      expect(mocks.proxyFetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['submit', 'poll', 'cancel', 'download'])(
+    'rejects an unmarked %s 404 with owner cookies',
+    async (operation) => {
+      mocks.resolveRequestOwnerId.mockImplementation((_req: NextRequest, headers: Headers) => {
+        headers.append('Set-Cookie', 'anonymous_id=first; Path=/');
+        return 'owner-a';
+      });
+      mocks.proxyFetch.mockResolvedValueOnce(
+        new Response('protected old-service body', {
+          status: 404,
+          headers: { location: 'https://storage.example.test/protected.mp4' },
+        }),
+      );
+      const response =
+        operation === 'submit'
+          ? await POST(request())
+          : operation === 'poll'
+            ? await POLL(jobRequest('job-1'), context)
+            : operation === 'cancel'
+              ? await CANCEL(jobRequest('job-1', 'DELETE'), context)
+              : await DOWNLOAD(jobRequest('job-1/download'), context);
+      expect(response.status).toBe(502);
+      expect(response.headers.getSetCookie()).toEqual(['anonymous_id=first; Path=/']);
+      expect(response.headers.get('location')).toBeNull();
+      expect(await response.text()).not.toContain('protected');
+      expect(mocks.proxyFetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('attaches owner cookies before returning a lazy download stream', async () => {
     const cookies = ['anonymous_id=first; Path=/', 'host_session=second; Path=/'];
@@ -362,7 +409,7 @@ describe('owner-scoped render job proxies', () => {
       },
       { highWaterMark: 0 },
     );
-    mockCompatibleResponse(
+    mockOwnerBoundResponse(
       new Response(stream, {
         headers: { 'content-type': 'video/mp4', 'content-length': '5' },
       }),

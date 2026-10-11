@@ -4,7 +4,6 @@ import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
   isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
-  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -40,19 +39,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     const controller = new AbortController();
     const headerTimeout = setTimeout(() => controller.abort(), 30_000);
     try {
-      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
-        clearTimeout(headerTimeout);
-        return answer(
-          apiError(
-            'UPSTREAM_ERROR',
-            502,
-            'Render service must be upgraded before downloading jobs',
-          ),
-        );
-      }
-
       const upstream = await proxyFetch(
-        `${resolved.url}/render/${encodeURIComponent(jobId)}/download`,
+        `${resolved.url}/owner-bound/render/${encodeURIComponent(jobId)}/download`,
         {
           method: 'GET',
           redirect: 'manual',

@@ -1,5 +1,5 @@
 /**
- * Integration test for the admission/buffering boundary of `POST /render`.
+ * Integration test for the admission/buffering boundary of `POST /owner-bound/render`.
  *
  * The security property under test (round-3 review P1#1): only
  * `maxConcurrentExtractions` requests may be inside the RAM-heavy section
@@ -49,7 +49,7 @@ afterEach(async () => {
   await Promise.all(scratch.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-/** Build a valid-looking multipart body for `POST /render`. */
+/** Build a valid-looking multipart body for `POST /owner-bound/render`. */
 const OWNER_HEADER = 'x-openmaic-render-owner';
 const OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
 
@@ -59,7 +59,7 @@ function renderRequest(sizeBytes = 4096, identity = 'anon', ownerId = 'owner-a')
   form.append('fps', '24');
   form.append('quality', 'draft');
   form.append('format', 'mp4');
-  return new Request('http://test/render', {
+  return new Request('http://test/owner-bound/render', {
     method: 'POST',
     body: form,
     headers: { 'x-openmaic-client': identity, [OWNER_HEADER]: ownerId },
@@ -107,7 +107,7 @@ async function waitForPoll(
   ownerId = 'owner-a',
 ): Promise<Record<string, unknown>> {
   return waitUntil(async () => {
-    const response = await app.fetch(jobRequest(`/render/${jobId}`, ownerId));
+    const response = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, ownerId));
     const body = (await response.json()) as Record<string, unknown>;
     return body.status === status ? body : null;
   }, `${jobId} to reach ${status}`);
@@ -119,7 +119,7 @@ async function healthBody(app: ReturnType<typeof createApp>): Promise<Record<str
   return (await response.json()) as Record<string, unknown>;
 }
 
-describe('POST /render buffering/extraction bound', () => {
+describe('POST /owner-bound/render buffering/extraction bound', () => {
   it('reports the configured preview concurrency, not just its default', async () => {
     vi.stubEnv('RENDER_PREVIEW_MAX_CONCURRENCY', '2');
     vi.resetModules();
@@ -269,7 +269,7 @@ describe('render HTTP contract through a replaceable executor', () => {
       },
     });
     const { app } = testApp(succeedingExecutor, { jobs });
-    const response = await app.fetch(jobRequest('/render/startup-failed'));
+    const response = await app.fetch(jobRequest('/owner-bound/render/startup-failed'));
     const text = await response.text();
     expect(JSON.parse(text)).toMatchObject({
       resources: {
@@ -316,7 +316,7 @@ describe('render HTTP contract through a replaceable executor', () => {
       done: true,
     });
 
-    const download = await app.fetch(jobRequest(`/render/${jobId}/download`));
+    const download = await app.fetch(jobRequest(`/owner-bound/render/${jobId}/download`));
     expect(download.status).toBe(200);
     expect(download.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     expect(download.headers.get('content-type')).toBe('video/mp4');
@@ -334,7 +334,9 @@ describe('render HTTP contract through a replaceable executor', () => {
     const submit = await app.fetch(renderRequest());
     const { jobId } = (await submit.json()) as { jobId: string };
 
-    const cancel = await app.fetch(jobRequest(`/render/${jobId}`, 'owner-a', { method: 'DELETE' }));
+    const cancel = await app.fetch(
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+    );
     expect(cancel.status).toBe(200);
     await expect(cancel.json()).resolves.toEqual({ cancelled: true });
     await expect(waitForPoll(app, jobId, 'cancelled')).resolves.toEqual({
@@ -370,7 +372,9 @@ describe('render HTTP contract through a replaceable executor', () => {
     const { jobId } = (await submit.json()) as { jobId: string };
     await executionStarted;
 
-    const cancel = await app.fetch(jobRequest(`/render/${jobId}`, 'owner-a', { method: 'DELETE' }));
+    const cancel = await app.fetch(
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+    );
     expect(cancel.status).toBe(200);
     await expect(waitForPoll(app, jobId, 'cancelled')).resolves.toEqual({
       jobId,
@@ -418,15 +422,15 @@ describe('render HTTP contract through a replaceable executor', () => {
     };
     const { app } = testApp(succeedingExecutor, { artifacts, jobs });
 
-    const redirect = await app.fetch(jobRequest('/render/ready/download'));
+    const redirect = await app.fetch(jobRequest('/owner-bound/render/ready/download'));
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('https://example.test/video.mp4');
 
-    const notReady = await app.fetch(jobRequest('/render/failed/download'));
+    const notReady = await app.fetch(jobRequest('/owner-bound/render/failed/download'));
     expect(notReady.status).toBe(409);
     await expect(notReady.json()).resolves.toEqual({ error: 'Job not ready (status: failed)' });
 
-    const missing = await app.fetch(jobRequest('/render/missing/download'));
+    const missing = await app.fetch(jobRequest('/owner-bound/render/missing/download'));
     expect(missing.status).toBe(404);
     await expect(missing.json()).resolves.toEqual({ error: 'Job not found' });
   });
@@ -454,7 +458,7 @@ describe('render HTTP contract through a replaceable executor', () => {
         { highWaterMark: 0 },
       );
       const response = await app.fetch(
-        new Request('http://test/render', {
+        new Request('http://test/owner-bound/render', {
           method: 'POST',
           headers: { ...headers, 'content-type': 'multipart/form-data; boundary=fixture' },
           body,
@@ -470,6 +474,62 @@ describe('render HTTP contract through a replaceable executor', () => {
     expect(reserve).not.toHaveBeenCalled();
   });
 
+  it('refuses legacy job paths without buffering, reservation, lookup, or cancellation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-legacy-'));
+    scratch.push(dir);
+    const jobs = new InMemoryJobStore(60_000);
+    const { app, artifacts, coordinator } = testApp(succeedingExecutor, {
+      jobs,
+      coordinator: { maxConcurrency: 0 },
+      makeProjectDir: async () => dir,
+    });
+    const submitted = await app.fetch(renderRequest());
+    expect(submitted.status).toBe(202);
+    const { jobId } = (await submitted.json()) as { jobId: string };
+    const snapshot = await jobs.list();
+    const reserve = vi.spyOn(coordinator, 'reserve');
+    const cancel = vi.spyOn(coordinator, 'cancelForOwner');
+    const get = vi.spyOn(jobs, 'getForOwner');
+    const locate = vi.spyOn(artifacts, 'locate');
+    let pulls = 0;
+    const body = new ReadableStream(
+      {
+        pull(controller) {
+          pulls++;
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    // Even valid assertions from an old app must not activate legacy routes.
+    const legacySubmit = new Request('http://test/render', {
+      method: 'POST',
+      headers: {
+        [OWNER_HEADER]: 'owner-a',
+        'x-openmaic-client': 'anon',
+        'content-type': 'multipart/form-data; boundary=fixture',
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    for (const req of [
+      legacySubmit,
+      jobRequest(`/render/${jobId}`),
+      jobRequest(`/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+      jobRequest(`/render/${jobId}/download`),
+    ]) {
+      const response = await app.fetch(req);
+      expect(response.status).toBe(404);
+      expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
+    }
+    expect(pulls).toBe(0);
+    expect(reserve).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(locate).not.toHaveBeenCalled();
+    expect(await jobs.list()).toEqual(snapshot);
+  });
+
   it('makes foreign and missing jobs indistinguishable across poll and cancel', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-owner-cancel-'));
     scratch.push(dir);
@@ -482,24 +542,26 @@ describe('render HTTP contract through a replaceable executor', () => {
     const submit = await app.fetch(renderRequest(4096, 'client-a', 'owner-a'));
     const { jobId } = (await submit.json()) as { jobId: string };
 
-    const ownPoll = await app.fetch(jobRequest(`/render/${jobId}`, 'owner-a'));
+    const ownPoll = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, 'owner-a'));
     expect(ownPoll.status).toBe(200);
     await expect(ownPoll.json()).resolves.toMatchObject({ jobId, status: 'queued' });
 
     for (const id of [jobId, 'missing']) {
-      const poll = await app.fetch(jobRequest(`/render/${id}`, 'owner-b'));
+      const poll = await app.fetch(jobRequest(`/owner-bound/render/${id}`, 'owner-b'));
       expect(poll.status).toBe(404);
       await expect(poll.json()).resolves.toEqual({ error: 'Job not found' });
 
-      const cancel = await app.fetch(jobRequest(`/render/${id}`, 'owner-b', { method: 'DELETE' }));
+      const cancel = await app.fetch(
+        jobRequest(`/owner-bound/render/${id}`, 'owner-b', { method: 'DELETE' }),
+      );
       expect(cancel.status).toBe(404);
       await expect(cancel.json()).resolves.toEqual({ error: 'Job not found' });
     }
 
-    const stillQueued = await app.fetch(jobRequest(`/render/${jobId}`, 'owner-a'));
+    const stillQueued = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, 'owner-a'));
     await expect(stillQueued.json()).resolves.toMatchObject({ status: 'queued' });
     const ownCancel = await app.fetch(
-      jobRequest(`/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
     );
     expect(ownCancel.status).toBe(200);
   });
@@ -530,12 +592,14 @@ describe('render HTTP contract through a replaceable executor', () => {
     };
     const { app } = testApp(succeedingExecutor, { artifacts, jobs });
 
-    const own = await app.fetch(jobRequest('/render/ready-for-owner/download', 'owner-a'));
+    const own = await app.fetch(
+      jobRequest('/owner-bound/render/ready-for-owner/download', 'owner-a'),
+    );
     expect(own.status).toBe(302);
     expect(locate).toHaveBeenCalledOnce();
 
     for (const id of ['ready-for-owner', 'missing']) {
-      const response = await app.fetch(jobRequest(`/render/${id}/download`, 'owner-b'));
+      const response = await app.fetch(jobRequest(`/owner-bound/render/${id}/download`, 'owner-b'));
       expect(response.status).toBe(404);
       await expect(response.json()).resolves.toEqual({ error: 'Job not found' });
     }
@@ -567,9 +631,9 @@ describe('render HTTP contract through a replaceable executor', () => {
     const { app } = testApp(succeedingExecutor, { artifacts, jobs });
 
     for (const request of [
-      jobRequest('/render/legacy-ownerless'),
-      jobRequest('/render/legacy-ownerless', 'owner-a', { method: 'DELETE' }),
-      jobRequest('/render/legacy-ownerless/download'),
+      jobRequest('/owner-bound/render/legacy-ownerless'),
+      jobRequest('/owner-bound/render/legacy-ownerless', 'owner-a', { method: 'DELETE' }),
+      jobRequest('/owner-bound/render/legacy-ownerless/download'),
     ]) {
       const response = await app.fetch(request);
       expect(response.status).toBe(404);

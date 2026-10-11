@@ -4,7 +4,6 @@ import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
   isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
-  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -56,14 +55,8 @@ export async function POST(req: NextRequest) {
     const capped = capBodyStream(req.body, MAX_UPLOAD_BYTES);
 
     try {
-      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
-        return answer(
-          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before accepting jobs'),
-        );
-      }
-
       // Long enough for the upload of a multi-MB ZIP; the render is async.
-      const upstream = await proxyFetch(`${resolved.url}/render`, {
+      const upstream = await proxyFetch(`${resolved.url}/owner-bound/render`, {
         method: 'POST',
         body: capped.stream,
         // duplex is required to send a streaming request body via fetch.

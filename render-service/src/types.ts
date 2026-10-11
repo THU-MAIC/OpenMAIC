@@ -49,7 +49,7 @@ export function requireAdmissionIdentity(value: unknown): AdmissionIdentity {
   return value;
 }
 
-/** User-facing render options accepted by `POST /render`. */
+/** User-facing render options accepted by `POST /owner-bound/render`. */
 export interface RenderOptions {
   /** Integer frames per second. */
   fps: number;

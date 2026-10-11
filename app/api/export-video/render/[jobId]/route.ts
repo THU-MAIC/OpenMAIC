@@ -4,7 +4,6 @@ import { proxyFetch } from '@/lib/server/proxy-fetch';
 import {
   isRenderOwnerBoundResponse,
   renderServiceOwnerHeaders,
-  renderServiceSupportsOwnerBinding,
   resolveRenderServiceUrl,
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
@@ -27,17 +26,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     }
 
     try {
-      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
-        return answer(
-          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before reading jobs'),
-        );
-      }
-
-      const upstream = await proxyFetch(`${resolved.url}/render/${encodeURIComponent(jobId)}`, {
-        method: 'GET',
-        headers: renderServiceOwnerHeaders(ownerId),
-        signal: AbortSignal.timeout(15_000),
-      });
+      const upstream = await proxyFetch(
+        `${resolved.url}/owner-bound/render/${encodeURIComponent(jobId)}`,
+        {
+          method: 'GET',
+          headers: renderServiceOwnerHeaders(ownerId),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
       if (!isRenderOwnerBoundResponse(upstream)) {
         return answer(
           apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before reading jobs'),
@@ -68,17 +64,14 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ jobI
     }
 
     try {
-      if (!(await renderServiceSupportsOwnerBinding(resolved.url))) {
-        return answer(
-          apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before cancelling jobs'),
-        );
-      }
-
-      const upstream = await proxyFetch(`${resolved.url}/render/${encodeURIComponent(jobId)}`, {
-        method: 'DELETE',
-        headers: renderServiceOwnerHeaders(ownerId),
-        signal: AbortSignal.timeout(15_000),
-      });
+      const upstream = await proxyFetch(
+        `${resolved.url}/owner-bound/render/${encodeURIComponent(jobId)}`,
+        {
+          method: 'DELETE',
+          headers: renderServiceOwnerHeaders(ownerId),
+          signal: AbortSignal.timeout(15_000),
+        },
+      );
       if (!isRenderOwnerBoundResponse(upstream)) {
         return answer(
           apiError('UPSTREAM_ERROR', 502, 'Render service must be upgraded before cancelling jobs'),

@@ -421,7 +421,7 @@ describe('admission and preview route events', () => {
     const form = new FormData();
     form.append('project', new Blob([new Uint8Array(64)]), 'project.zip');
     const response = await app.fetch(
-      new Request('http://test/render', {
+      new Request('http://test/owner-bound/render', {
         method: 'POST',
         body: form,
         headers: {
@@ -433,7 +433,7 @@ describe('admission and preview route events', () => {
     expect(response.status).toBe(429);
 
     expect(emitted.find((event) => event.event === 'render_admission_rejected')).toMatchObject({
-      route: '/render',
+      route: '/owner-bound/render',
       reason: 'queue_full',
       status: 429,
     });

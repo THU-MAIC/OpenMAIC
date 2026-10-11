@@ -9,12 +9,12 @@
  * vs Redis job store, local-disk vs S3 artifacts) can be swapped for a
  * demo-scale deployment without the app noticing:
  *
- *   POST   /render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
- *   POST   /preview                JSON: scene + stage + viewport → PNG
- *   GET    /render/:jobId          → { status, progress, currentStage, done, ... }
- *   GET    /render/:jobId/download → stream MP4 (or 302 to a presigned URL)
- *   DELETE /render/:jobId          → cancel
- *   GET    /health                 → { ok: true, accepting: boolean, ... }
+ *   POST   /owner-bound/render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
+ *   POST   /preview                            JSON: scene + stage + viewport → PNG
+ *   GET    /owner-bound/render/:jobId          → { status, progress, currentStage, done, ... }
+ *   GET    /owner-bound/render/:jobId/download → stream MP4 (or 302 to a presigned URL)
+ *   DELETE /owner-bound/render/:jobId          → cancel
+ *   GET    /health                             → { ok: true, accepting: boolean, ... }
  *
  * NOTE: this file must NOT be named `server.ts`. `@hyperframes/producer`'s main
  * module auto-starts its own bundled HTTP server (on PRODUCER_PORT, default
@@ -293,7 +293,7 @@ export function createApp(deps: AppDeps): Hono {
     }),
   );
 
-  app.post('/render', async (c) => {
+  app.post('/owner-bound/render', async (c) => {
     const ownerId = requestOwner(c);
     const identity = admissionIdentity(c);
     if (!ownerId || !identity) return c.json({ error: 'Invalid render identity' }, 400);
@@ -315,7 +315,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof RenderRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/render',
+          route: '/owner-bound/render',
           reason: error.reason ?? 'unspecified',
           status: 429,
         });
@@ -381,7 +381,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof RenderRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/render',
+          route: '/owner-bound/render',
           reason: error.reason ?? 'unspecified',
           status: 429,
         });
@@ -520,7 +520,7 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.get('/render/:jobId', async (c) => {
+  app.get('/owner-bound/render/:jobId', async (c) => {
     const ownerId = requestOwner(c);
     if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
     const job = await jobs.getForOwner(c.req.param('jobId'), ownerId);
@@ -545,7 +545,7 @@ export function createApp(deps: AppDeps): Hono {
     });
   });
 
-  app.delete('/render/:jobId', async (c) => {
+  app.delete('/owner-bound/render/:jobId', async (c) => {
     const ownerId = requestOwner(c);
     if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
     const ok = await coordinator.cancelForOwner(c.req.param('jobId'), ownerId);
@@ -553,7 +553,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ cancelled: true });
   });
 
-  app.get('/render/:jobId/download', async (c) => {
+  app.get('/owner-bound/render/:jobId/download', async (c) => {
     const ownerId = requestOwner(c);
     if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
     const jobId = c.req.param('jobId');

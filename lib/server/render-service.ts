@@ -20,7 +20,11 @@ export function renderServiceOwnerHeaders(ownerId: string): Record<string, strin
   return { [RENDER_OWNER_HEADER]: ownerId };
 }
 
-/** Whether the upstream service explicitly enforces owner-scoped render jobs. */
+/**
+ * Defense in depth for job responses. The owner-bound route namespace prevents
+ * legacy instances from executing job operations; this marker gates relaying
+ * their responses. Only the UI capability probe uses the health marker.
+ */
 export function isRenderOwnerBoundResponse(response: Response): boolean {
   return response.headers.get(RENDER_OWNER_BOUND_HEADER) === RENDER_OWNER_BOUND_VALUE;
 }
@@ -30,17 +34,6 @@ async function fetchRenderServiceHealth(url: string): Promise<Response> {
     method: 'GET',
     signal: AbortSignal.timeout(3000),
   });
-}
-
-/**
- * Probe the protocol before sending a request that may read or mutate a job.
- * The response check on each job request still protects mixed-version pools.
- */
-export async function renderServiceSupportsOwnerBinding(url: string): Promise<boolean> {
-  const response = await fetchRenderServiceHealth(url);
-  const supported = response.ok && isRenderOwnerBoundResponse(response);
-  await response.body?.cancel().catch(() => undefined);
-  return supported;
 }
 
 /**

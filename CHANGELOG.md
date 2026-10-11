@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Security
 
 - Enforce model authorization for server-managed providers across chat, media, speech, model-based web search and workspace model assignments. Unauthorized and unknown model ids return the same HTTP 403 response before provider access. Users' own credentials continue to work.
+- Render jobs are bound to the requesting owner. The render-service and app must be upgraded together; upgrade every service instance (or drain old instances) together with or before the app. Old/new version mixes fail closed through a dedicated owner-bound job namespace.
 
 ### Breaking change: server-managed model authorization
 
