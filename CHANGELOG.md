@@ -6,10 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0-rc.2] - 2026-10-11
+
 ### Security
 
-- Enforce model authorization for server-managed providers across chat, media, speech, model-based web search and workspace model assignments. Unauthorized and unknown model ids return the same HTTP 403 response before provider access. Users' own credentials continue to work.
-- Render jobs are bound to the requesting owner. The render-service and app must be upgraded together; upgrade every service instance (or drain old instances) together with or before the app. Old/new version mixes fail closed through a dedicated owner-bound job namespace.
+- Enforce model authorization for server-managed providers across chat, media, speech, model-based web search and workspace model assignments. Unauthorized and unknown model ids return the same HTTP 403 response before provider access. Users' own credentials continue to work. [#1879](https://github.com/THU-MAIC/OpenMAIC/pull/1879) (with @13ob0)
+- Render jobs are bound to the requesting owner. The render-service and app must be upgraded together; upgrade every service instance (or drain old instances) together with or before the app. Old/new version mixes fail closed through a dedicated owner-bound job namespace. [#1884](https://github.com/THU-MAIC/OpenMAIC/pull/1884) (by @Duang777)
+- Deleted courses no longer serve their legacy classroom media: `/api/classroom-media/<id>/...` checks the course lifecycle before touching the filesystem and answers a tombstoned course with the same 404 as a missing file. Successful responses are `private, max-age=300, must-revalidate` instead of `public, immutable`. [#1883](https://github.com/THU-MAIC/OpenMAIC/pull/1883) (by @Duang777)
 
 ### Breaking change: server-managed model authorization
 
