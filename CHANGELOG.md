@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking change: server-managed model authorization
 
-- Set `*_MODELS` for every provider with server-managed credentials, or set `models` under each provider in `openmaic.yml` / `server-providers.yml`. Without a list, only deployment default/fallback and capability slot references authorize models; preset catalogues and workspace assignments do not. Provider-only media slots authorize a single adapter default. Services without model ids need no list.
+- Set `*_MODELS` for every provider with server-managed credentials, or set `models` under each provider in `openmaic.yml` / `server-providers.yml`. Without a list, only deployment default/fallback and capability slot references authorize models; preset catalogues and workspace assignments do not. Provider-only media slots authorize a single adapter default. Services without model ids need no list. Providers configured without credentials (local Ollama, Lemonade) are not restricted; a keyless gateway that adds its own upstream credential should be given a key and a model list.
 - Migration: list the model ids users should be able to select (including voice compatibility models), restart the server, then update workspace selections that are no longer authorized. A startup warning names the configuration setting for each provider with credentials but no explicit list.
 
 ### Bug Fixes
