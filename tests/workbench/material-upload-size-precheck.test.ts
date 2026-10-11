@@ -78,6 +78,14 @@ describe('workbench material upload size precheck', () => {
     }
   });
 
+  it('leaves an oversized unsupported type to the server so its 415 is preserved', async () => {
+    const fetchMock = stubPolicy({ maxDocumentBytes: 4, maxMediaBytes: 4 });
+    await expect(
+      client.uploadWorkbenchMaterial(file('archive.zip', 'application/zip', 100)),
+    ).resolves.toMatchObject({ materialId: 'mat_test' });
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(uploadUrl, expect.anything());
+  });
+
   it('rejects media against maxMediaBytes even when the document cap is higher', async () => {
     const fetchMock = stubPolicy({ maxDocumentBytes: 10, maxMediaBytes: 4 });
     await expect(

@@ -31,7 +31,11 @@ import {
 import { parseElementRefs, type ElementRef } from './element-refs';
 import { parseCourseRefs, type CourseRef } from './course-refs';
 import { appendCourseSighting, courseSightingsOf } from './run-courses';
-import { MEDIA_MIME_TYPES, resolveWorkbenchMaterialMime } from './material-upload-policy';
+import {
+  isWorkbenchMaterialMime,
+  MEDIA_MIME_TYPES,
+  resolveWorkbenchMaterialMime,
+} from './material-upload-policy';
 import { fetchMaterialPolicy, type MaterialPolicy } from '@/lib/generation-run-client/api';
 
 export type ChatNodeKind =
@@ -2229,7 +2233,9 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     mimeType: file.type,
     fileName: file.name,
   });
-  const policy = await workbenchMaterialPolicy();
+  // The route rejects an unsupported type (415) before it applies a size cap;
+  // leave those to it so the user is told the format, not the size, is wrong.
+  const policy = isWorkbenchMaterialMime(mimeType) ? await workbenchMaterialPolicy() : undefined;
   const maxBytes = MEDIA_MIME_TYPES.includes(mimeType)
     ? policy?.maxMediaBytes
     : policy?.maxDocumentBytes;
