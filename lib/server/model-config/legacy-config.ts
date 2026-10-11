@@ -12,6 +12,7 @@
  * and is left out, never a startup failure. Notices never repeat configured
  * values, only registry ids and configuration names.
  */
+import { authorizeLegacyReferences } from './model-authorization';
 import { PROVIDERS, parseModelString } from '@/lib/ai/providers';
 import type { SlotCapability, SlotId } from '@/lib/config/model-slots';
 import { presetIdFor } from '@/lib/config/preset-ids';
@@ -247,5 +248,9 @@ export function translateLegacyConfig(
   const config: ModelConfigFile = {};
   if (Object.keys(providers).length) config.providers = providers;
   if (Object.keys(slots).length) config.slots = slots;
+  authorizeLegacyReferences(
+    config,
+    [defaultRef, fallback].filter((ref): ref is string => !!ref),
+  );
   return { config, notices };
 }

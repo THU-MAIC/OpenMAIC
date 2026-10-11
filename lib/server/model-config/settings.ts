@@ -1,4 +1,3 @@
-import { deploymentAuthorizedModels, ModelAuthorizationError } from './model-authorization';
 /**
  * The model settings a workspace sees and edits (RFC #1701, tracked in #1725,
  * P2). This is the service behind `/api/model-config`: it reads the slot tree
@@ -13,6 +12,7 @@ import { deploymentAuthorizedModels, ModelAuthorizationError } from './model-aut
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
+import { deploymentAuthorizedModels, ModelAuthorizationError } from './model-authorization';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
@@ -269,8 +269,15 @@ function capabilityModels(
   pinned?: string[],
   {
     chatOnly = false,
-    strictChatModels = false,
-  }: { chatOnly?: boolean; strictChatModels?: boolean } = {},
+    strictModels = false,
+    deployment,
+    providerId,
+  }: {
+    chatOnly?: boolean;
+    strictModels?: boolean;
+    deployment?: ModelConfigFile;
+    providerId?: string;
+  } = {},
 ): CapabilityModels {
   const result: CapabilityModels = {};
   if (!preset) return result;
@@ -281,9 +288,13 @@ function capabilityModels(
     if (registryId && isForceDisabled(capability, registryId)) continue;
     const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
+    const authorized =
+      strictModels && providerId
+        ? deploymentAuthorizedModels(deployment, providerId, capability)
+        : pinned;
     const models =
-      capability === 'chat' && (pinned?.length || strictChatModels)
-        ? (pinned ?? []).map(
+      (capability === 'chat' && pinned?.length) || strictModels
+        ? (authorized ?? []).map(
             (id) =>
               offered.find((model) => model.id === id) ??
               catalogueModel(capability, registryId!, id),
@@ -455,7 +466,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       capabilities: capabilityModels(
         getProviderPreset(provider.preset),
         deploymentAuthorizedModels(deployment?.config, id),
-        { strictChatModels: true },
+        { strictModels: true, deployment: deployment?.config, providerId: id },
       ),
     })),
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
@@ -768,7 +779,8 @@ export async function applyModelSettingsChange(
         }
       }
     } catch (error) {
-      if (error instanceof SlotResolutionError || error instanceof ModelAuthorizationError) {
+      if (error instanceof ModelAuthorizationError) throw error;
+      if (error instanceof SlotResolutionError) {
         throw new ModelSettingsError('INVALID_ASSIGNMENT', error.message);
       }
       throw error;
@@ -881,6 +893,10 @@ export async function importModelSettings(
       config = await applyModelSettingsChange(config, change);
       imported.push(item);
     } catch (error) {
+      if (error instanceof ModelAuthorizationError) {
+        skipped.push({ ...item, code: 'INVALID_ASSIGNMENT', reason: error.message });
+        return;
+      }
       if (!(error instanceof ModelSettingsError)) throw error;
       skipped.push({ ...item, code: error.code, reason: error.message });
     }

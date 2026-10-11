@@ -1,3 +1,12 @@
+import { presetIdFor } from '@/lib/config/preset-ids';
+import {
+  assertDeploymentModelAuthorized,
+  deploymentAuthorizedModels,
+  deploymentDefaultModel,
+  ModelAuthorizationError,
+} from '@/lib/server/model-config/model-authorization';
+import { deploymentConfig } from '@/lib/server/model-config/runtime';
+import type { SlotCapability } from '@/lib/config/model-slots';
 /**
  * Server-side Provider Configuration
  *
@@ -453,7 +462,8 @@ function applyOpenAIImageFallback(
     apiKey,
     baseUrl:
       yamlOpenAIImage?.baseUrl || process.env.IMAGE_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
-    models: yamlOpenAIImage?.models,
+    models:
+      splitModels(process.env.IMAGE_OPENAI_MODELS) ?? normalizeModelList(yamlOpenAIImage?.models),
     proxy: yamlOpenAIImage?.proxy,
   };
   return imageConfig;
@@ -761,19 +771,16 @@ export function slotTTSModel(
   return ttsModelFor(providerId, [], modelId, voiceId);
 }
 
-/**
- * Resolve the TTS model. A managed provider may pin its model server-side
- * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
- * the managed-provider UI does not expose a model field. Otherwise the client
- * model wins.
- */
+/** Resolve a TTS model authorized by the deployment, or the BYOK client's choice. */
 export function resolveTTSModel(
   providerId: string,
   clientModel?: string,
   voiceId?: string,
 ): string | undefined {
-  const pinnedModels = serverEntry('tts', providerId)?.models?.filter(Boolean) ?? [];
-  return ttsModelFor(providerId, pinnedModels, clientModel, voiceId);
+  const requested = resolveManagedMediaModel('tts', providerId, clientModel);
+  const model = ttsModelFor(providerId, [], requested, voiceId);
+  // Voice compatibility may change the wire model; it still needs authorization.
+  return resolveManagedMediaModel('tts', providerId, model);
 }
 
 function ttsModelFor(
@@ -849,18 +856,9 @@ export function resolveServerASRProviderId(): string | undefined {
   return Object.keys(cfg.asr).find((id) => !cfg.disabled.asr.has(id));
 }
 
-/**
- * Resolve the ASR model. When the operator pinned models server-side
- * (`ASR_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
- */
+/** Resolve the asr model, refusing unlisted models on server-managed credentials. */
 export function resolveASRModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('asr', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('asr', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -925,18 +923,9 @@ export function resolveServerImageProviderId(): string | undefined {
   return Object.keys(getConfig().image).find((id) => !disabled.has(id));
 }
 
-/**
- * Resolve the image model. When the operator pinned models server-side
- * (`IMAGE_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
- */
+/** Resolve the image model, refusing unlisted models on server-managed credentials. */
 export function resolveImageModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('image', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('image', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -984,18 +973,9 @@ export function resolveServerVideoProviderId(): string | undefined {
   return Object.keys(getConfig().video).find((id) => !disabled.has(id));
 }
 
-/**
- * Resolve the video model. When the operator pinned models server-side
- * (`VIDEO_<PREFIX>_MODELS`), the allowlisted client choice wins and the first
- * entry is the managed default; otherwise the client model wins.
- */
+/** Resolve the video model, refusing unlisted models on server-managed credentials. */
 export function resolveVideoModel(providerId: string, clientModel?: string): string | undefined {
-  const serverModels = serverEntry('video', providerId)?.models;
-  if (serverModels?.length) {
-    if (clientModel && serverModels.includes(clientModel)) return clientModel;
-    return serverModels[0];
-  }
-  return clientModel;
+  return resolveManagedMediaModel('video', providerId, clientModel);
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,18 +1018,12 @@ export function resolveWebSearchBaseUrl(
   return resolveSectionBaseUrl('webSearch', providerId, clientBaseUrl);
 }
 
-/**
- * Resolve the web-search model for model-based providers (currently Claude).
- * A managed provider may pin its model server-side (`${PREFIX}_MODELS`, first
- * entry) — authoritative like its key/baseUrl. Otherwise the client model wins.
- */
+/** Resolve a model-based search provider's authorized model, or the BYOK client's choice. */
 export function resolveWebSearchModel(
   providerId: string,
   clientModel?: string,
 ): string | undefined {
-  const entry = serverEntry('webSearch', providerId);
-  if (entry?.models && entry.models.length > 0) return entry.models[0];
-  return clientModel;
+  return resolveManagedMediaModel('webSearch', providerId, clientModel);
 }
 
 export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {
@@ -1085,4 +1059,43 @@ export function getParallelSceneConcurrency(): number {
   const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
   if (!Number.isFinite(raw) || raw <= 0) return 0;
   return Math.min(raw, 10);
+}
+
+/** Legacy media requests may use only this deployment's capability models. */
+function resolveManagedMediaModel(
+  section: 'tts' | 'asr' | 'image' | 'video' | 'webSearch',
+  providerId: string,
+  clientModel?: string,
+): string | undefined {
+  const entry = serverEntry(section, providerId);
+  if (!entry?.apiKey) return clientModel;
+  const deployment = deploymentConfig();
+  if (!deployment.legacy) throw new ModelAuthorizationError();
+  const id = presetIdFor(section as SlotCapability, providerId);
+  const config = deployment.layer?.config;
+  const model = clientModel ?? deploymentAuthorizedModels(config, id, section)[0];
+  if (model !== undefined) assertDeploymentModelAuthorized(config, id, model, section);
+  else if (clientModel !== undefined || deploymentDefaultModel(id, section))
+    throw new ModelAuthorizationError();
+  return model;
+}
+
+/** The exact legacy setting to declare a provider's authorized model ids. */
+export function providerModelsSetting(
+  section: keyof Omit<ServerConfig, 'disabled'>,
+  providerId: string,
+): string {
+  const maps = {
+    providers: LLM_ENV_MAP,
+    tts: TTS_ENV_MAP,
+    asr: ASR_ENV_MAP,
+    image: IMAGE_ENV_MAP,
+    video: VIDEO_ENV_MAP,
+    webSearch: WEB_SEARCH_ENV_MAP,
+    pdf: PDF_ENV_MAP,
+  };
+  const prefix = Object.entries(maps[section]).find(([, id]) => id === providerId)?.[0];
+  return prefix
+    ? `${prefix}_MODELS or server-providers.yml ${section}.${providerId}.models`
+    : `server-providers.yml ${section}.${providerId}.models`;
 }

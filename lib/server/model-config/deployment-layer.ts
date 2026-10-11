@@ -8,7 +8,12 @@
  * MODEL_ROUTES is not translated: a deployment that sets it without
  * openmaic.yml gets an error asking for the file.
  */
-import { getServerProviderConfig } from '@/lib/server/provider-config';
+import {
+  getServerProviderConfig,
+  providerModelsSetting,
+  type ServerConfig,
+  type ServerProviderEntry,
+} from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
@@ -66,11 +71,25 @@ export function loadDeploymentLayer(): DeploymentLayer {
     return {
       layer: { source: 'deployment', config: file },
       legacy: false,
-      notices: legacy
-        ? [
-            'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
-          ]
-        : [],
+      notices: [
+        ...(legacy
+          ? [
+              'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
+            ]
+          : []),
+        ...Object.entries(file.providers ?? {})
+          .filter(
+            ([, provider]) =>
+              (provider.apiKey ||
+                Object.keys(provider.credentials ?? {}).length ||
+                provider.preset === 'bedrock') &&
+              !provider.models?.length,
+          )
+          .map(
+            ([id]) =>
+              `Server-managed provider "${id}" has no explicit model list. Set openmaic.yml providers.${id}.models; only default/fallback models are usable.`,
+          ),
+      ],
     };
   }
   if (!legacy) return { layer: null, legacy: false, notices: [] };
@@ -86,6 +105,22 @@ export function loadDeploymentLayer(): DeploymentLayer {
     notices: [
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,
+      ...Object.entries(getServerProviderConfig()).flatMap(([section, entries]) =>
+        section === 'disabled'
+          ? []
+          : Object.entries(entries as Record<string, ServerProviderEntry>)
+              .filter(
+                ([id, entry]) =>
+                  (entry.apiKey ||
+                    entry.accessKeyId ||
+                    (section === 'providers' && id === 'bedrock')) &&
+                  !entry.models?.length,
+              )
+              .map(
+                ([id]) =>
+                  `Server-managed provider "${section}.${id}" has no explicit model list. Set ${providerModelsSetting(section as keyof Omit<ServerConfig, 'disabled'>, id)}; only default/fallback models are usable.`,
+              ),
+      ),
     ],
   };
 }

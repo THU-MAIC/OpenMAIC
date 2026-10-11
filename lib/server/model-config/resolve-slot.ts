@@ -20,7 +20,7 @@
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
-import { assertDeploymentModelAuthorized } from './model-authorization';
+import { assertDeploymentModelAuthorized, deploymentDefaultModel } from './model-authorization';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { findModelById } from '@/lib/ai/model-aliases';
 import { withoutThinkingEffort } from '@/lib/ai/thinking-config';
@@ -192,19 +192,28 @@ function resolveTarget(
   // into the provider position must not end up in a log.
   if (!found) throw new SlotResolutionError(`${at}: the provider is not declared`);
   const { provider } = found;
-  if (found.source === 'deployment' && capability === 'chat' && !providerOnly) {
-    assertDeploymentModelAuthorized(
-      layers.find((layer) => layer.source === 'deployment')?.config,
-      providerId,
-      modelId!,
-    );
-  }
   const preset = getProviderPreset(provider.preset);
   if (!preset) throw new SlotResolutionError(`${at}: the provider has an unknown preset`);
   const target = preset.capabilities[capability];
   if (!target) {
     throw new SlotResolutionError(
       `${at}: the provider (preset "${preset.id}") does not offer ${capability}`,
+    );
+  }
+  const effectiveModel =
+    modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability);
+  if (
+    found.source === 'deployment' &&
+    capability !== 'document' &&
+    !providerOnly &&
+    (capability === 'chat' || provider.apiKey || Object.keys(provider.credentials ?? {}).length) &&
+    (effectiveModel !== undefined || capability === 'chat')
+  ) {
+    assertDeploymentModelAuthorized(
+      layers.find((layer) => layer.source === 'deployment')?.config,
+      providerId,
+      effectiveModel ?? '',
+      capability,
     );
   }
   // A service whose official endpoint is per region (Azure Speech) names its
@@ -228,9 +237,7 @@ function resolveTarget(
     ...(provider.options !== undefined ? { options: { ...provider.options } } : {}),
     // A provider-only reference means the preset's own default (a token
     // plan's), else the registry's, which the adapter applies.
-    ...((modelId ?? target.defaultModel) !== undefined
-      ? { modelId: modelId ?? target.defaultModel }
-      : {}),
+    ...(effectiveModel !== undefined ? { modelId: effectiveModel } : {}),
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
   };
 }

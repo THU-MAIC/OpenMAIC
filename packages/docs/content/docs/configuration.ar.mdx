@@ -97,7 +97,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `preset` | نعم | الإعداد المسبق المدمج الذي يستخدمه هذا المزود. راجع [النماذج المدعومة ← الإعدادات المسبقة](./supported-models.mdx#الإعدادات-المسبقة). |
 | `apiKey` | عادةً | مفتاح API. تحذفه الخدمات التي لا تحتاج إلى مفتاح (الخوادم المحلية، Brave، SearXNG، unpdf). |
 | `baseUrl` | لبعض الإعدادات المسبقة | عنوان يُستدعى بدلًا من عنوان الإعداد المسبق. إلزامي لـ `openai-compatible` و`azure` و`searxng` و`mineru`. |
-| `models` | لا | معرّفات نماذج المحادثة التي يقدمها هذا المزود كما تعرضها إعدادات النماذج. بالنسبة إلى `openai-compatible` فهي القائمة الوحيدة في الإعدادات. لا تقيّد ما يمكن كتابته في `slots`. |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | لا | عنوان وكيل HTTP لطلبات هذا المزود. |
 | `credentials` | لبعض الإعدادات المسبقة | أزواج مفاتيح للخدمات التي لا تستخدم مفتاحًا واحدًا. يستخدم AliDocMind الحقلين `accessKeyId` و`accessKeySecret`. |
 | `options` | لا | إعدادات غير سرية خاصة بالمزود، مثل `backend` لـ `voxcpm-tts`. الأسماء أحرف وأرقام و`_` و`-`؛ والقيم سلاسل نصية أو أرقام أو قيم منطقية (بلا خرائط أو قوائم متداخلة)، ويعمل `${VAR}`. تعرض إعدادات النماذج الخيارات، لذا لا تضع فيها مفتاحًا أبدًا. للنشر فقط: لا تستطيع إعدادات النماذج ضبطها. |
@@ -743,3 +743,23 @@ web-search:
 ```
 
 تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
+
+## Model authorization for server-managed providers
+
+For every provider with deployment credentials, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+
+To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials continue to work. Services without model ids need no model list.
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.

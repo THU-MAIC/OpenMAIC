@@ -234,6 +234,19 @@ describe('resolveModel', () => {
 
     it('allows Bedrock after the server operator explicitly enables it', async () => {
       mocks.serverManaged = true;
+      mocks.deployment.layer = {
+        source: 'deployment',
+        config: {
+          providers: {
+            bedrock: {
+              preset: 'bedrock',
+              apiKey: 'server-key',
+              models: ['us.anthropic.claude-sonnet-5'],
+            },
+          },
+        },
+      };
+      mocks.deployment.legacy = true;
       const { resolveModel } = await import('@/lib/server/resolve-model');
       const result = await resolveModel({ modelString: 'bedrock:us.anthropic.claude-sonnet-5' });
       expect(result.providerId).toBe('bedrock');

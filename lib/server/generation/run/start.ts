@@ -3,6 +3,9 @@
  * `POST /api/generate-classroom`: the checks a run must pass before it exists,
  * the create under the owner's limits, and the runner's wake-up.
  */
+import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
 import type { ApiErrorCode } from '@/lib/server/api-response';
 import { resolveAgentsForOwner, UnknownAgentsError } from '@/lib/server/agents/registry';
 import {
@@ -28,6 +31,14 @@ import {
 } from './store';
 import type { GenerationRunInput } from './types';
 
+export const GENERATION_MODEL_SLOTS: readonly SlotId[] = [
+  ...MODEL_SLOTS.filter((slot) => slot.id.startsWith('course.')).map((slot) => slot.id as SlotId),
+  'image',
+  'video',
+  'tts',
+  'webSearch',
+];
+
 /** A start refused for a reason the caller can act on; the message is caller-facing. */
 export interface StartRefusal {
   code: ApiErrorCode;
@@ -39,6 +50,8 @@ export interface StartRefusal {
 
 /** The refusal `error` (thrown by {@link startGenerationRun}) answers with, or null for a fault. */
 export function startRefusal(error: unknown): StartRefusal | null {
+  if (error instanceof ModelAuthorizationError)
+    return { code: error.code, status: error.httpStatus, message: error.message };
   if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentsError) {
     return { code: 'INVALID_REQUEST', status: 400, message: error.message };
   }
@@ -81,6 +94,7 @@ export async function startGenerationRun(
   input: GenerationRunInput,
   start?: StartRequest,
 ): Promise<StoredRun> {
+  await assertWorkspaceModelsAuthorized(ownerId, GENERATION_MODEL_SLOTS);
   if (input.materialIds.length > 0) {
     await resolveClassroomMaterials(ownerId, input.materialIds, { forward: false });
   }
