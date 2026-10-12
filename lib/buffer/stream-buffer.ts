@@ -1,3 +1,4 @@
+import type { CueUserOption } from '@/lib/types/chat';
 import type { DirectorState } from '@/lib/types/chat';
 
 /**
@@ -63,7 +64,7 @@ export interface CueUserItem {
   kind: 'cue_user';
   fromAgentId?: string;
   prompt?: string;
-  options?: string[];
+  options?: CueUserOption[];
 }
 
 export interface DoneItem {
@@ -120,7 +121,7 @@ export interface StreamBufferCallbacks {
    */
   onSpeechProgress(ratio: number | null): void;
   onThinking(data: { stage: string; agentId?: string } | null): void;
-  onCueUser(fromAgentId?: string, prompt?: string, options?: string[]): void;
+  onCueUser(fromAgentId?: string, prompt?: string, options?: CueUserOption[]): void;
   onDone(data: {
     totalActions: number;
     totalAgents: number;
@@ -271,7 +272,7 @@ export class StreamBuffer {
     this.items.push({ kind: 'thinking', ...data });
   }
 
-  pushCueUser(data: { fromAgentId?: string; prompt?: string; options?: string[] }): void {
+  pushCueUser(data: { fromAgentId?: string; prompt?: string; options?: CueUserOption[] }): void {
     if (this._disposed) return;
     this.items.push({ kind: 'cue_user', ...data });
   }

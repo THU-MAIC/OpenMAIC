@@ -22,11 +22,13 @@ export type SessionStatus =
   | 'error';
 
 /** A durable hand-off from the classroom agents to the learner. */
+export type CueUserOption = string | { label: string; action?: 'end_discussion' };
+
 export interface CueUserState {
   fromAgentId?: string;
   prompt?: string;
   /** Optional short replies rendered as one-tap actions. */
-  options?: string[];
+  options?: CueUserOption[];
   parkedAt: number;
 }
 
@@ -506,7 +508,7 @@ export type StatelessEvent =
     }
   | {
       type: 'cue_user';
-      data: { fromAgentId?: string; prompt?: string; options?: string[] };
+      data: { fromAgentId?: string; prompt?: string; options?: CueUserOption[] };
     }
   | {
       type: 'done';

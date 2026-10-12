@@ -5,7 +5,10 @@ import { HttpRuntimeStore } from '@openmaic/storage/runtime/http';
 import { DSL_VERSION } from '@openmaic/dsl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadChatSessions, saveChatSessions } from '@/lib/utils/chat-storage';
-import { normalizeStoredSessionsForRestore } from '@/components/chat/use-chat-sessions';
+import {
+  normalizeStoredSessionsForRestore,
+  parkSessionForUser,
+} from '@/components/chat/use-chat-sessions';
 import type { ChatSession } from '@/lib/types/chat';
 
 class PGlitePool {
@@ -33,6 +36,7 @@ for (const backend of ['PGlite', 'PostgreSQL'] as const) {
       let stageId: string;
       const paths: string[] = [];
       beforeEach(async () => {
+        delete (globalThis as Record<symbol, unknown>)[Symbol.for('openmaic.persistence.provider')];
         vi.resetModules();
         vi.stubGlobal('navigator', {
           locks: { request: async (...args: unknown[]) => (args.at(-1) as () => unknown)() },
@@ -74,6 +78,40 @@ for (const backend of ['PGlite', 'PostgreSQL'] as const) {
         vi.unstubAllGlobals();
       });
 
+      it.each([
+        ['prompt-only', 'What do you think?', undefined],
+        ['metadata-free', undefined, undefined],
+        ['one option', 'What do you think?', ['Only one']],
+      ] as const)(
+        'persists a %s cue created by the session hook',
+        async (_name, prompt, options) => {
+          const now = 1_800_000_000_000;
+          const input = parkSessionForUser(
+            {
+              id: 'open-ended',
+              type: 'qa',
+              title: 'Q&A',
+              status: 'active',
+              messages: [],
+              config: { agentIds: ['default-1'] },
+              toolCalls: [],
+              pendingToolCalls: [],
+              createdAt: now,
+              updatedAt: now,
+            },
+            undefined,
+            prompt,
+            options ? [...options] : undefined,
+            now + 1,
+          );
+          await saveChatSessions(stageId, [input], { store, learnerKey });
+          const [loaded] = await loadChatSessions(stageId, { store, learnerKey });
+          expect(loaded?.status).toBe('waiting-user');
+          expect(loaded?.cueUser).toEqual({ ...(prompt ? { prompt } : {}), parkedAt: now + 1 });
+          expect(paths.some((path) => path.includes('/records'))).toBe(true);
+        },
+      );
+
       it('saves and reloads waiting-user, prompt/options and director context without a model request', async () => {
         const now = 1_800_000_000_000;
         const input: ChatSession = {
@@ -98,7 +136,10 @@ for (const backend of ['PGlite', 'PostgreSQL'] as const) {
           cueUser: {
             fromAgentId: 'default-1',
             prompt: 'Choose an example.',
-            options: ['Show an example', '不用，继续课程'],
+            options: [
+              { label: 'Show an example' },
+              { label: 'Back to the lesson', action: 'end_discussion' },
+            ],
             parkedAt: now,
           },
           directorState: { turnCount: 2, agentResponses: [], whiteboardLedger: [] },

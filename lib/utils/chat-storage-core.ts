@@ -12,6 +12,10 @@ import { isEqual } from 'lodash';
 
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
+import {
+  isValidCueUserState,
+  isValidDirectorState,
+} from '@/lib/runtime/chat-session-state-validator';
 
 // The retired browser schema stays read-only; newer runtime metadata is optional on restore.
 type ChatRestoreRecord = ChatSessionRecord & Pick<ChatSession, 'cueUser' | 'directorState'>;
@@ -131,22 +135,6 @@ export type ChatSyncPlan =
       finalStatus?: 'active' | 'completed';
     };
 
-function isCueUserState(value: unknown): value is NonNullable<ChatSession['cueUser']> {
-  if (typeof value !== 'object' || value === null) return false;
-  const candidate = value as Partial<NonNullable<ChatSession['cueUser']>>;
-  return (
-    (candidate.fromAgentId === undefined || typeof candidate.fromAgentId === 'string') &&
-    (candidate.prompt === undefined || typeof candidate.prompt === 'string') &&
-    (candidate.options === undefined ||
-      (Array.isArray(candidate.options) &&
-        candidate.options.length >= 2 &&
-        candidate.options.length <= 4 &&
-        candidate.options.every((option) => typeof option === 'string'))) &&
-    typeof candidate.parkedAt === 'number' &&
-    Number.isFinite(candidate.parkedAt)
-  );
-}
-
 function isLegacyRecord(record: unknown): record is ChatRestoreRecord {
   if (typeof record !== 'object' || record === null) return false;
   const candidate = record as Partial<ChatRestoreRecord>;
@@ -177,7 +165,7 @@ function isLegacyRecord(record: unknown): record is ChatRestoreRecord {
     Array.isArray(candidate.toolCalls) &&
     typeof candidate.createdAt === 'number' &&
     typeof candidate.updatedAt === 'number' &&
-    (candidate.cueUser === undefined || isCueUserState(candidate.cueUser)) &&
+    (candidate.cueUser === undefined || isValidCueUserState(candidate.cueUser)) &&
     (candidate.directorState === undefined ||
       (typeof candidate.directorState === 'object' && candidate.directorState !== null))
   );
@@ -405,9 +393,8 @@ function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
     Number.isFinite(candidate.updatedAt) &&
     (candidate.sceneId === undefined || typeof candidate.sceneId === 'string') &&
     (candidate.lastActionIndex === undefined || Number.isInteger(candidate.lastActionIndex)) &&
-    (candidate.cueUser === undefined || isCueUserState(candidate.cueUser)) &&
-    (candidate.directorState === undefined ||
-      (typeof candidate.directorState === 'object' && candidate.directorState !== null))
+    (candidate.cueUser === undefined || isValidCueUserState(candidate.cueUser)) &&
+    (candidate.directorState === undefined || isValidDirectorState(candidate.directorState))
   );
 }
 

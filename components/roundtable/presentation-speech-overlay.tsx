@@ -21,6 +21,8 @@ interface PresentationSpeechOverlayProps {
   readonly userAvatar?: string;
   /** Which side this overlay instance renders — 'left' or 'right' */
   readonly side?: 'left' | 'right';
+  /** A parked agent question stays separate from the learner's right dock. */
+  readonly sideOverride?: 'left' | 'right';
   readonly onBubbleClick?: () => void;
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
@@ -197,6 +199,7 @@ export function PresentationBubbleCard({
   audioIndicatorState,
   buttonState,
   isPaused,
+  scrollToEnd,
   children,
 }: {
   readonly bubble: PresentationBubbleModel;
@@ -205,6 +208,7 @@ export function PresentationBubbleCard({
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
+  readonly scrollToEnd?: boolean;
   readonly children?: ReactNode;
 }) {
   const { t } = useI18n();
@@ -278,7 +282,12 @@ export function PresentationBubbleCard({
         )}
       </div>
 
-      <div className="ml-4 mr-10 mb-4 max-h-[140px] overflow-y-auto scrollbar-hide">
+      <div
+        ref={(element) => {
+          if (element && scrollToEnd) element.scrollTop = element.scrollHeight;
+        }}
+        className="ml-4 mr-10 mb-4 max-h-[140px] overflow-y-auto scrollbar-hide"
+      >
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
             {[0, 0.2, 0.4].map((delay) => (
@@ -398,6 +407,7 @@ export function PresentationSpeechOverlay({
   isTopicPending,
   userAvatar,
   side = 'left',
+  sideOverride,
   onBubbleClick,
   audioIndicatorState,
   buttonState,
@@ -422,7 +432,7 @@ export function PresentationSpeechOverlay({
   // Right-side agents share a single instance, so all agents share the same collapse state.
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const matchesSide = !!(bubble && bubble.side === side);
+  const matchesSide = !!(bubble && (sideOverride ?? bubble.side) === side);
 
   const renderContent = (b: PresentationBubbleModel) => (
     <AnimatePresence mode="wait" initial={false}>
@@ -457,6 +467,7 @@ export function PresentationSpeechOverlay({
             audioIndicatorState={audioIndicatorState}
             buttonState={buttonState}
             isPaused={isPaused}
+            scrollToEnd={playbackView.phase === 'cueUser' && b.role !== 'user'}
           >
             {children}
           </PresentationBubbleCard>

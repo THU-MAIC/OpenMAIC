@@ -18,7 +18,11 @@ describe('Pi chat cue_user tool', () => {
 
     const first = await tool.execute('cue-1', {
       prompt: ' Any follow-up? ',
-      options: [' Show an example ', 'Let me practice', 'Let me practice'],
+      options: [
+        { label: ' Show an example ' },
+        { label: 'Back to the lesson', action: 'end_discussion' },
+        { label: ' Show an example ' },
+      ],
     });
     const second = await tool.execute('cue-2', { prompt: 'Again?' });
 
@@ -28,7 +32,10 @@ describe('Pi chat cue_user tool', () => {
         data: {
           fromAgentId: 'default-1',
           prompt: 'Any follow-up?',
-          options: ['Show an example', 'Let me practice'],
+          options: [
+            { label: 'Show an example' },
+            { label: 'Back to the lesson', action: 'end_discussion' },
+          ],
         },
       },
     ]);

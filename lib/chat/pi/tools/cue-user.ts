@@ -1,6 +1,7 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type, type Static } from 'typebox';
 import type { StatelessEvent } from '@/lib/types/chat';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 
 const CueUserParams = Type.Object({
   prompt: Type.Optional(
@@ -11,12 +12,23 @@ const CueUserParams = Type.Object({
     }),
   ),
   options: Type.Optional(
-    Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
-      description:
-        'Two to four short, mutually exclusive replies when the learner can answer with one tap. Omit for open-ended questions.',
-      minItems: 2,
-      maxItems: 4,
-    }),
+    Type.Array(
+      Type.Object({
+        label: Type.String({ minLength: 1, maxLength: 60 }),
+        action: Type.Optional(
+          Type.Literal('end_discussion', {
+            description:
+              'Mark only the choice that returns to the lesson; the client uses Stop Discussion and leaves playback paused.',
+          }),
+        ),
+      }),
+      {
+        description:
+          'Two to four short, mutually exclusive replies when the learner can answer with one tap. Omit for open-ended questions.',
+        minItems: 2,
+        maxItems: 4,
+      },
+    ),
   ),
 });
 
@@ -72,14 +84,13 @@ export function buildCueUserTool(opts: {
         };
       }
 
-      const options = params.options
-        ?.map((option) => option.trim())
-        .filter((option, index, all) => option.length > 0 && all.indexOf(option) === index)
-        .slice(0, 4);
+      const options = normalizeCueUserOptions(params.options);
+      const fromAgentId = opts.getLastAgentId();
+      const prompt = params.prompt?.trim().slice(0, 240);
       const emitted = await opts.cueUser({
-        fromAgentId: opts.getLastAgentId(),
-        prompt: params.prompt?.trim() || undefined,
-        ...(options && options.length >= 2 ? { options } : {}),
+        ...(fromAgentId ? { fromAgentId } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(options ? { options } : {}),
       });
       return {
         content: [

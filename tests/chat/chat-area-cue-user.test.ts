@@ -73,6 +73,11 @@ describe('ChatArea restored learner park', () => {
         sessionId: 'parked',
         source: 'manual_stop',
       });
+      // A fulfilled stop can leave the park intact (e.g. cleanup was skipped).
+      // A later user attempt must be allowed; only concurrent stops dedupe.
+      actions.endSession.mockResolvedValue(undefined);
+      await act(async () => ref.current!.stopActiveSession());
+      expect(actions.endSession).toHaveBeenCalledTimes(2);
       expect(actions.sendMessage).not.toHaveBeenCalled();
     } finally {
       act(() => root.unmount());

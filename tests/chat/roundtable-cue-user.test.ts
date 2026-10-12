@@ -59,6 +59,8 @@ describe('Roundtable parked learner turn', () => {
           sessionType: 'qa',
           isStreaming: false,
           cueUserPrompt: 'Which path should we explore next?',
+          cueUserAgentText: 'Which path should we explore next?',
+          cueUserAgentId: 'default-1',
           cueUserOptions: ['Show an example', 'Let me practice', '不用，继续课程'],
           controlsVisible: true,
           ...extra,
@@ -72,7 +74,11 @@ describe('Roundtable parked learner turn', () => {
     async (isPresenting) => {
       await render({ isPresenting, onStopDiscussion: vi.fn() });
       const bubble = container.querySelector('[data-bubble-role="user"]');
-      expect(bubble?.textContent).toContain('Which path should we explore next?');
+      expect(bubble?.textContent).toContain('roundtable.yourTurn');
+      expect(bubble?.textContent).not.toContain('Which path should we explore next?');
+      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent).toContain(
+        'Which path should we explore next?',
+      );
       expect(bubble?.querySelectorAll('[data-testid="cue-user-options"] button')).toHaveLength(3);
       expect(container.textContent).not.toContain('Old lecture');
       expect(container.querySelector('[title="roundtable.stopDiscussion"]')).not.toBeNull();
@@ -95,13 +101,13 @@ describe('Roundtable parked learner turn', () => {
     expect(onMessageSend).toHaveBeenCalledExactlyOnceWith('Show an example');
   });
 
-  it.each(['不用，继续课程', 'Continue the lesson', '回到课堂'])(
+  it.each(['不用了，继续课程', 'Back to the lesson', '回到课程吧', 'Continuer le cours'])(
     'routes %s to Stop discussion with no model send',
     async (option) => {
       const onMessageSend = vi.fn();
       const onStopDiscussion = vi.fn();
       await render({
-        cueUserOptions: ['Show an example', option],
+        cueUserOptions: [{ label: 'Show an example' }, { label: option, action: 'end_discussion' }],
         onMessageSend,
         onStopDiscussion,
         canSendMessage: () => false,
@@ -118,4 +124,29 @@ describe('Roundtable parked learner turn', () => {
       expect(onMessageSend).not.toHaveBeenCalled();
     },
   );
+
+  it('sends continuation-like answer text when it has no end action', async () => {
+    const onMessageSend = vi.fn();
+    const onStopDiscussion = vi.fn();
+    await render({
+      cueUserOptions: ['继续学习', 'Continue the lesson'],
+      onMessageSend,
+      onStopDiscussion,
+    });
+    act(() =>
+      (
+        container.querySelector('[data-testid="cue-user-options"] button') as HTMLButtonElement
+      ).click(),
+    );
+    expect(onMessageSend).toHaveBeenCalledExactlyOnceWith('继续学习');
+    expect(onStopDiscussion).not.toHaveBeenCalled();
+  });
+
+  it('preserves the open-ended cue without options', async () => {
+    await render({ cueUserOptions: undefined });
+    expect(container.querySelector('[data-bubble-role="user"]')?.textContent).toContain(
+      'Which path should we explore next?',
+    );
+    expect(container.querySelector('[data-testid="cue-user-options"]')).toBeNull();
+  });
 });

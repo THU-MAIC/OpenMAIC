@@ -1,5 +1,8 @@
 'use client';
 
+import type { CueUserOption } from '@/lib/types/chat';
+import { cueUserOptionLabel } from '@/lib/chat/cue-user-options';
+
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -64,7 +67,9 @@ interface RoundtableProps {
   readonly thinkingState?: { stage: string; agentId?: string } | null;
   readonly isCueUser?: boolean;
   readonly cueUserPrompt?: string;
-  readonly cueUserOptions?: readonly string[];
+  readonly cueUserAgentText?: string;
+  readonly cueUserAgentId?: string;
+  readonly cueUserOptions?: readonly CueUserOption[];
   /** Session entered the soft-closing grace window (client-side, ~15s). */
   readonly isSoftClosing?: boolean;
   readonly softCloseDeadline?: number;
@@ -119,9 +124,6 @@ interface RoundtableProps {
 
 // This must stay in sync with the non-presentation textarea's max-h-[100px] class.
 const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
-
-const CONTINUE_LESSON_OPTION_PATTERN =
-  /^(?:(?:不用|不需要|不了|先不用)[，,、。!！\s]*)?(?:继续(?:课程|上课|学习)|回到(?:课程|课堂)|返回(?:课程|课堂))[。!！\s]*$|^(?:(?:no thanks|not now)[,!.\s]*)?(?:(?:continue|resume)(?:\s+(?:the))?|return to|back to)\s+(?:lesson|course|class)[.!\s]*$/i;
 
 const VOICE_WAVE_BARS = [
   { peak: 18, duration: 0.55 },
@@ -178,6 +180,8 @@ export function Roundtable({
   thinkingState,
   isCueUser,
   cueUserPrompt,
+  cueUserAgentText,
+  cueUserAgentId,
   cueUserOptions,
   isSoftClosing,
   softCloseDeadline,
@@ -293,11 +297,15 @@ export function Roundtable({
     playbackView?.isInLiveFlow ??
     !!(speakingAgentId || thinkingState || isStreaming || sessionType);
 
+  const hasCueOptions = (cueUserOptions?.length ?? 0) >= 2;
+
   // Role-aware source text: userMessage overlay on top of playbackView
   const sourceText = userMessage
     ? userMessage
     : isCueUser && !currentSpeech && !speakingAgentId && !thinkingState
-      ? cueUserPrompt?.trim() || t('roundtable.yourTurn')
+      ? hasCueOptions
+        ? t('roundtable.yourTurn')
+        : cueUserPrompt?.trim() || t('roundtable.yourTurn')
       : (playbackView?.sourceText ??
         (currentSpeech
           ? currentSpeech
@@ -336,13 +344,13 @@ export function Roundtable({
 
   // Auto-scroll bubble: keep latest streaming text visible during live/discussion flow
   useEffect(() => {
-    if (!isInLiveFlow) return;
+    if (!isInLiveFlow || isCueUser) return;
     const el = bubbleScrollRef.current;
     if (!el) return;
     const scrollableHeight = el.scrollHeight - el.clientHeight;
     if (scrollableHeight <= 0) return;
     el.scrollTo({ top: scrollableHeight, behavior: 'smooth' });
-  }, [sourceText, isInLiveFlow]);
+  }, [sourceText, isInLiveFlow, isCueUser]);
 
   // Clear user message early when agent starts responding
   useEffect(() => {
@@ -638,18 +646,45 @@ export function Roundtable({
   const showStopButton =
     isCueUser || engineMode === 'live' || sessionType === 'qa' || sessionType === 'discussion';
 
-  const quickReplies = isCueUser && bubbleRole === 'user' && !userMessage && (
+  const cueAgent =
+    initialParticipants.find((participant) => participant.id === cueUserAgentId) ??
+    teacherParticipant;
+  const parkedAgentBubble =
+    isCueUser && hasCueOptions && cueUserAgentText && !userMessage
+      ? {
+          bubbleRole:
+            cueAgent?.role === 'teacher' || !cueAgent ? ('teacher' as const) : ('agent' as const),
+          bubbleKey: `parked-agent-${cueUserAgentId ?? 'teacher'}`,
+          bubbleName: cueAgent?.name || teacherName,
+          sourceText: cueUserAgentText,
+          avatar: cueAgent?.avatar || teacherAvatar,
+        }
+      : null;
+  const parkedAgentView: PlaybackView | null = parkedAgentBubble
+    ? {
+        ...enrichedPlaybackView,
+        bubbleRole: parkedAgentBubble.bubbleRole,
+        sourceText: parkedAgentBubble.sourceText,
+        buttonState: 'none',
+      }
+    : null;
+  const normalBubbles = [
+    ...(parkedAgentBubble ? [parkedAgentBubble] : []),
+    ...(bubbleRole ? [{ bubbleRole, bubbleKey, bubbleName, sourceText, avatar: undefined }] : []),
+  ];
+
+  const quickReplies = isCueUser && hasCueOptions && bubbleRole === 'user' && !userMessage && (
     <div data-testid="cue-user-options" className="mt-2 flex flex-wrap gap-1.5">
       {cueUserOptions?.map((option) => (
         <button
-          key={option}
+          key={cueUserOptionLabel(option)}
           type="button"
           disabled={isSendCooldown}
           className="cursor-pointer rounded-full border border-purple-200 bg-white px-2.5 py-1 text-xs text-purple-800 shadow-sm transition-colors hover:border-purple-300 hover:bg-purple-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-purple-200 disabled:hover:bg-white"
           onClick={(event) => {
             event.stopPropagation();
             if (cueActionClaimedRef.current || isSendCooldownRef.current) return;
-            if (CONTINUE_LESSON_OPTION_PATTERN.test(option.trim())) {
+            if (typeof option !== 'string' && option.action === 'end_discussion') {
               if (!onStopDiscussion) return;
               cueActionClaimedRef.current = true;
               onStopDiscussion();
@@ -659,11 +694,11 @@ export function Roundtable({
             cueActionClaimedRef.current = true;
             isSendCooldownRef.current = true;
             setIsSendCooldown(true);
-            showLocalUserMessage(option);
-            onMessageSend(option);
+            showLocalUserMessage(cueUserOptionLabel(option));
+            onMessageSend(cueUserOptionLabel(option));
           }}
         >
-          {option}
+          {cueUserOptionLabel(option)}
         </button>
       ))}
     </div>
@@ -796,11 +831,12 @@ export function Roundtable({
       <div className="h-0 w-full relative z-10 overflow-visible">
         {/* Speech overlay — fills the full stage area via absolute positioning */}
         <PresentationSpeechOverlay
-          playbackView={enrichedPlaybackView}
+          playbackView={parkedAgentView ?? enrichedPlaybackView}
           participants={initialParticipants}
-          speakingAgentId={speakingAgentId ?? null}
+          speakingAgentId={parkedAgentView ? (cueUserAgentId ?? null) : (speakingAgentId ?? null)}
           isTopicPending={!!isTopicPending}
           side="left"
+          sideOverride={parkedAgentView ? 'left' : undefined}
           onBubbleClick={handlePresentationBubbleClick}
           audioIndicatorState={audioIndicatorState ?? 'idle'}
           buttonState={enrichedPlaybackView?.buttonState}
@@ -1198,7 +1234,8 @@ export function Roundtable({
   return (
     <div
       className={cn(
-        'h-[192px] w-full flex flex-col relative z-10 transition-all duration-300',
+        'w-full flex flex-col relative z-10 transition-all duration-300',
+        parkedAgentBubble ? 'h-auto min-h-[192px]' : 'h-[192px]',
         isPresenting && !controlsVisible
           ? 'border-t border-transparent bg-transparent backdrop-blur-none'
           : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
@@ -1378,7 +1415,10 @@ export function Roundtable({
                 if (isRecording || isProcessing) cancelRecording();
               }
             }}
-            className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default"
+            className={cn(
+              'relative w-full h-full gap-2 rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default',
+              parkedAgentBubble && 'py-3',
+            )}
           >
             {elementReferencePill && (
               <div className="absolute left-1/2 top-2 z-30 -translate-x-1/2">{referencePill}</div>
@@ -1676,8 +1716,8 @@ export function Roundtable({
             </AnimatePresence>
 
             {/* Chat bubble */}
-            <AnimatePresence mode="wait">
-              {bubbleRole && (
+            <AnimatePresence>
+              {normalBubbles.map(({ bubbleRole, bubbleKey, bubbleName, sourceText, avatar }) => (
                 <motion.div
                   key={bubbleKey}
                   initial={{ opacity: 0, y: 8 }}
@@ -1721,7 +1761,7 @@ export function Roundtable({
                       }}
                       className={cn(
                         'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
-                        isCueUser && bubbleRole === 'user' && 'max-h-[180px]',
+                        isCueUser && bubbleRole === 'user' && 'max-h-[240px]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
@@ -1737,11 +1777,12 @@ export function Roundtable({
                       {bubbleRole &&
                         (() => {
                           const bubbleAvatar =
-                            bubbleRole === 'user'
+                            avatar ??
+                            (bubbleRole === 'user'
                               ? userAvatar
                               : bubbleRole === 'agent'
                                 ? speakingStudent?.avatar || userAvatar
-                                : teacherAvatar;
+                                : teacherAvatar);
                           return (
                             <div
                               className={cn(
@@ -1766,7 +1807,16 @@ export function Roundtable({
                           );
                         })()}
 
-                      <div ref={bubbleScrollRef} className="overflow-y-auto scrollbar-hide">
+                      <div
+                        ref={
+                          avatar
+                            ? (element) => {
+                                if (element) element.scrollTop = element.scrollHeight;
+                              }
+                            : bubbleScrollRef
+                        }
+                        className="overflow-y-auto scrollbar-hide"
+                      >
                         {/* Agent name + audio indicator header */}
                         {bubbleRole !== 'user' && bubbleName && (
                           <div className="flex items-center gap-1 mb-0.5">
@@ -1843,7 +1893,7 @@ export function Roundtable({
                             )}
                           </p>
                         )}
-                        {quickReplies}
+                        {bubbleRole === 'user' && quickReplies}
                       </div>
 
                       {/* Playback state icon (hidden during loading — dots already indicate activity) */}
@@ -1917,7 +1967,7 @@ export function Roundtable({
                     </div>
                   </div>
                 </motion.div>
-              )}
+              ))}
             </AnimatePresence>
           </div>
         </div>

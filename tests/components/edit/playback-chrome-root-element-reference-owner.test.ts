@@ -459,7 +459,7 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
   it('preserves a restored learner hand-off through initial engine initialization', async () => {
     mocks.restoredCue = true;
     await renderOwner();
-    expect(mocks.endActiveSession).not.toHaveBeenCalled();
+    expect(mocks.endActiveSession).toHaveBeenCalledWith({ preserveWaitingUser: true });
     expect(mocks.roundtableProps).toMatchObject({
       isCueUser: true,
       cueUserPrompt: 'Which example?',
@@ -476,6 +476,16 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     await rerenderOwner();
     expect(mocks.endActiveSession).toHaveBeenCalledWith({ source: 'scene_switch' });
     expect(mocks.roundtableProps?.isCueUser).toBe(false);
+  });
+
+  it('retires live work on a same-scene update while preserving a learner park', async () => {
+    mocks.restoredCue = true;
+    await renderOwner();
+    mocks.endActiveSession.mockClear();
+    stageState.scenes = [{ ...scene, title: 'Updated slide' }, secondScene];
+    await rerenderOwner();
+    expect(mocks.endActiveSession).toHaveBeenCalledExactlyOnceWith({ preserveWaitingUser: true });
+    expect(mocks.roundtableProps?.isCueUser).toBe(true);
   });
 
   it('selects the stage snapshot whiteboard and sends an identity-only reference', async () => {

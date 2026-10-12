@@ -1,5 +1,7 @@
 'use client';
 
+import type { CueUserOption } from '@/lib/types/chat';
+
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { toast } from 'sonner';
 import {
@@ -216,7 +218,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [cueUser, setCueUser] = useState<{
       fromAgentId?: string;
       prompt?: string;
-      options?: string[];
+      options?: CueUserOption[];
+      agentText?: string;
     } | null>(null);
     const isCueUser = cueUser !== null;
 
@@ -716,6 +719,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         // scene against shared whiteboard state.
         if (isSceneSwitch) {
           await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        } else {
+          await chatAreaRef.current?.endActiveSession({ preserveWaitingUser: true });
         }
         if (cancelled) return;
 
@@ -1844,6 +1849,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 thinkingState={thinkingState}
                 isCueUser={isCueUser}
                 cueUserPrompt={cueUser?.prompt}
+                cueUserAgentText={cueUser?.agentText}
+                cueUserAgentId={cueUser?.fromAgentId}
                 cueUserOptions={cueUser?.options}
                 isSoftClosing={chatIsSoftClosing}
                 softCloseDeadline={softCloseDeadline}
@@ -2048,10 +2055,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 setThinkingState(state);
               });
             }}
-            onCueUser={(fromAgentId, prompt, options) => {
-              setCueUser({ fromAgentId, prompt: prompt?.trim() || undefined, options });
+            onCueUser={(fromAgentId, prompt, options, agentText) => {
+              setCueUser({ fromAgentId, prompt: prompt?.trim() || undefined, options, agentText });
               setChatSessionType(chatAreaRef.current?.getActiveSessionType?.() ?? null);
             }}
+            onCueUserCleared={() => setCueUser(null)}
             onLiveSessionError={handleLiveSessionError}
             onSoftCloseSession={() => {
               setThinkingState(null);

@@ -1,5 +1,7 @@
 'use client';
 
+import type { CueUserOption } from '@/lib/types/chat';
+
 import {
   useImperativeHandle,
   forwardRef,
@@ -39,7 +41,13 @@ interface ChatAreaProps {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
+  onCueUser?: (
+    fromAgentId?: string,
+    prompt?: string,
+    options?: CueUserOption[],
+    agentText?: string,
+  ) => void;
+  onCueUserCleared?: () => void;
   onLiveSessionError?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
@@ -98,6 +106,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onSpeechProgress,
       onThinking,
       onCueUser,
+      onCueUserCleared,
       onLiveSessionError,
       onSoftCloseSession,
       onSoftClosingChange,
@@ -143,7 +152,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onLiveSpeech,
       onSpeechProgress,
       onThinking,
-      onCueUser,
       onActiveBubble,
       onLiveSessionError,
       onSoftCloseSession,
@@ -174,16 +182,33 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       [chatSessions],
     );
 
-    // Re-hydrate the learner hand-off after a reload/course restore. The
-    // stream callback handles the live path; this effect handles persistence.
+    const parkKey = waitingUserSession
+      ? `${waitingUserSession.id}:${waitingUserSession.cueUser?.parkedAt}`
+      : null;
+    const displayedParkRef = useRef<string | null>(null);
+    // The durable park owns the live and restore paths alike. Resource/context
+    // updates to the same park must not reapply a cue that was already consumed.
     useEffect(() => {
-      if (!waitingUserSession) return;
-      onCueUserRef.current?.(
+      if (displayedParkRef.current === parkKey) return;
+      const hadPark = displayedParkRef.current !== null;
+      displayedParkRef.current = parkKey;
+      if (!waitingUserSession) {
+        if (hadPark) onCueUserCleared?.();
+        return;
+      }
+      const agentText = waitingUserSession.messages
+        ?.findLast((message) => message.role === 'assistant')
+        ?.parts.filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('');
+      const args = [
         waitingUserSession.cueUser?.fromAgentId,
         waitingUserSession.cueUser?.prompt,
         waitingUserSession.cueUser?.options,
-      );
-    }, [waitingUserSession]);
+      ] as const;
+      if (agentText) onCueUserRef.current?.(...args, agentText);
+      else onCueUserRef.current?.(...args);
+    }, [parkKey, waitingUserSession, onCueUserCleared]);
 
     const softClosingChatSession = useMemo(
       () => chatSessions.find((s) => s.status === 'soft-closing'),
@@ -216,9 +241,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         manualStopsRef.current.set(sessionId, stop);
         try {
           await stop;
-        } catch (error) {
+        } finally {
           manualStopsRef.current.delete(sessionId);
-          throw error;
         }
       },
       [chatSessions, confirmSoftClosingSession, endSession, onStopSession],
