@@ -110,6 +110,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Root proxy integration tests load current and historical render-service
+      # sources. They need the standalone service's Node dependencies as well.
+      - name: Install render-service test dependencies
+        working-directory: render-service
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci
+
       - name: Node engine contract
         run: pnpm check:node-engine
 

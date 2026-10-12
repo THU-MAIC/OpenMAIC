@@ -97,8 +97,8 @@ describe('composer material upload scheduling', () => {
     expect(maximum).toBe(3);
   });
 
-  it('does not retry a quota 429', async () => {
-    const quotaError = Object.assign(new Error('quota exceeded'), { status: 429 });
+  it.each([413, 429])('does not retry a permanent upload refusal %s', async (status) => {
+    const quotaError = Object.assign(new Error('upload refused'), { status });
     const upload = vi.fn<() => Promise<string>>().mockRejectedValue(quotaError);
     const sleep = vi.fn(async () => undefined);
 

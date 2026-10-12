@@ -12,6 +12,11 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
+import {
+  deploymentAuthorizedModels,
+  ModelAuthorizationError,
+  usesServerCredentials,
+} from './model-authorization';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
@@ -266,7 +271,17 @@ function maskKey(key: string): string {
 function capabilityModels(
   preset: ProviderPreset | undefined,
   pinned?: string[],
-  { chatOnly = false }: { chatOnly?: boolean } = {},
+  {
+    chatOnly = false,
+    strictModels = false,
+    deployment,
+    providerId,
+  }: {
+    chatOnly?: boolean;
+    strictModels?: boolean;
+    deployment?: ModelConfigFile;
+    providerId?: string;
+  } = {},
 ): CapabilityModels {
   const result: CapabilityModels = {};
   if (!preset) return result;
@@ -277,9 +292,13 @@ function capabilityModels(
     if (registryId && isForceDisabled(capability, registryId)) continue;
     const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
+    const authorized =
+      strictModels && providerId
+        ? deploymentAuthorizedModels(deployment, providerId, capability)
+        : pinned;
     const models =
-      capability === 'chat' && pinned?.length
-        ? pinned.map(
+      (capability === 'chat' && pinned?.length) || strictModels
+        ? (authorized ?? []).map(
             (id) =>
               offered.find((model) => model.id === id) ??
               catalogueModel(capability, registryId!, id),
@@ -404,7 +423,8 @@ function effectiveFor(
     }
     return effectiveView(resolution);
   } catch (error) {
-    if (error instanceof SlotResolutionError) return { status: 'invalid', message: error.message };
+    if (error instanceof SlotResolutionError || error instanceof ModelAuthorizationError)
+      return { status: 'invalid', message: error.message };
     throw error;
   }
 }
@@ -447,7 +467,11 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
-      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models),
+      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+        strictModels: usesServerCredentials(provider),
+        deployment: deployment?.config,
+        providerId: id,
+      }),
     })),
     ...Object.entries(workspaceProviders).map(([id, provider]) => ({
       id,
@@ -759,6 +783,7 @@ export async function applyModelSettingsChange(
         }
       }
     } catch (error) {
+      if (error instanceof ModelAuthorizationError) throw error;
       if (error instanceof SlotResolutionError) {
         throw new ModelSettingsError('INVALID_ASSIGNMENT', error.message);
       }
@@ -872,6 +897,10 @@ export async function importModelSettings(
       config = await applyModelSettingsChange(config, change);
       imported.push(item);
     } catch (error) {
+      if (error instanceof ModelAuthorizationError) {
+        skipped.push({ ...item, code: 'INVALID_ASSIGNMENT', reason: error.message });
+        return;
+      }
       if (!(error instanceof ModelSettingsError)) throw error;
       skipped.push({ ...item, code: error.code, reason: error.message });
     }

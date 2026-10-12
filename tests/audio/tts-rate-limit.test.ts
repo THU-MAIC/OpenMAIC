@@ -135,30 +135,48 @@ describe('TTS provider failure classification', () => {
   );
 
   it.each([
-    [429, 'insufficient_quota'],
-    [429, 'rate_limit_exceeded'],
-    [403, 'insufficient_quota'],
-    [403, 'permission_denied'],
-  ])('keeps the existing route retries for OpenAI %s/%s', async (status, code) => {
-    fetchMock.mockImplementation(() =>
-      Promise.resolve(
-        Response.json(
-          { error: { code, message: 'Request refused' } },
-          { status: status as number },
+    [429, 'insufficient_quota', 1],
+    [429, 'rate_limit_exceeded', 2],
+    [403, 'insufficient_quota', 1],
+    [403, 'permission_denied', 2],
+    [429, undefined, 2],
+  ] as const)(
+    'only skips route retries for explicit OpenAI quota (%s/%s)',
+    async (status, code, attempts) => {
+      fetchMock.mockImplementation(() =>
+        Promise.resolve(Response.json({ error: { code, message: 'Request refused' } }, { status })),
+      );
+      const sleep = vi.fn(async () => {});
+      await expect(
+        withRouteRetry(
+          () =>
+            generateTTS({ providerId: 'openai-tts', apiKey: 'test-key', voice: 'alloy' }, 'hello'),
+          { label: 'tts', maxRetries: 1, refusalStatus: 400, sleep },
         ),
-      ),
-    );
-    const sleep = vi.fn(async () => {});
-    await expect(
-      withRouteRetry(
-        () =>
-          generateTTS({ providerId: 'openai-tts', apiKey: 'test-key', voice: 'alloy' }, 'hello'),
-        { label: 'tts', maxRetries: 1, refusalStatus: 400, sleep },
-      ),
-    ).rejects.toBeInstanceOf(Error);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledTimes(1);
-  });
+      ).rejects.toBeInstanceOf(Error);
+      expect(fetchMock).toHaveBeenCalledTimes(attempts);
+      expect(sleep).toHaveBeenCalledTimes(attempts - 1);
+    },
+  );
+
+  it.each([200, 400, 429])(
+    'does not retry a native MiniMax quota refusal on HTTP %s',
+    async (status) => {
+      fetchMock.mockImplementation(async () =>
+        jsonResponse({ base_resp: { status_code: 1008, status_msg: 'Refused' } }, status),
+      );
+      const sleep = vi.fn(async () => {});
+      const failure = await withRouteRetry(() => generateTTS(miniMaxConfig, 'hello'), {
+        label: 'tts',
+        maxRetries: 2,
+        refusalStatus: 400,
+        sleep,
+      }).catch((error: unknown) => error);
+      expect(runFailureCode(failure)).toMatchObject({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(sleep).not.toHaveBeenCalled();
+    },
+  );
 
   it('throws TTSRateLimitError when MiniMax returns HTTP 200 with status_code 1002', async () => {
     // status_msg deliberately does not say "rate limit" or "1002": classification

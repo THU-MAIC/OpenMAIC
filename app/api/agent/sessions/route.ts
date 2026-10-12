@@ -4,6 +4,7 @@
  * These handlers only use the durable session store. A separately running
  * worker claims queued sessions after the request has returned.
  */
+import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -92,6 +93,15 @@ export async function POST(req: NextRequest) {
   }
 
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
+    await assertWorkspaceModelsAuthorized(ownerId, [
+      'agent',
+      'agent.title',
+      'image',
+      'video',
+      'tts',
+      'asr',
+      'webSearch',
+    ]);
     // An EXPLICIT skill — a `?skill=` launch link, not composer UI — is
     // rejected here rather than at claim time: a session created with a typo'd
     // skill would otherwise sit queued and then quietly build an ordinary

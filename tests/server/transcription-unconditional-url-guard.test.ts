@@ -97,6 +97,19 @@ describe('transcription — client-supplied base URL guard applies in every envi
     vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     mocks.serverManaged = true;
+    const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            openai: { preset: 'openai-whisper', apiKey: 'server-key', models: ['whisper-1'] },
+          },
+        },
+      },
+      legacy: true,
+      notices: [],
+    });
     const res = await postTranscription('');
 
     expect(res.status).toBe(200);

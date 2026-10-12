@@ -66,7 +66,13 @@ const QUOTA_CODES = new Set([
 
 function quotaResponse(body: unknown): boolean {
   if (!isRecord(body)) return false;
-  const error = body.error;
+  // The error is nested as `{ error }` (an HTTP error body), flat (a stream's
+  // error event, as the SDK hands it on), or the `response.error` of a
+  // Responses API `response.failed` event.
+  const error =
+    body.type === 'response.failed' && isRecord(body.response)
+      ? body.response.error
+      : (body.error ?? body);
   if (!isRecord(error)) return false;
   return (
     (typeof error.code === 'string' && QUOTA_CODES.has(error.code)) ||

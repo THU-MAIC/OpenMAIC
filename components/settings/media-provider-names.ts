@@ -13,6 +13,7 @@ export const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
+  'glm-image': 'providerGlmImage',
   'comfyui-image': 'providerComfyUIImage',
   'openrouter-image': 'providerOpenRouterImage',
   lemonade: 'providerLemonadeImage',

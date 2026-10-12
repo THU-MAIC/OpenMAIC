@@ -16,6 +16,11 @@ const mocks = vi.hoisted(() => ({
   extractError: undefined as unknown,
 }));
 
+vi.mock('@/lib/server/model-config/runtime', async (original) => ({
+  ...(await original<typeof import('@/lib/server/model-config/runtime')>()),
+  assertWorkspaceModelsAuthorized: vi.fn(async () => {}),
+}));
+
 vi.mock('@/lib/server/generation/run/store', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/generation/run/store')>()),
   createGenerationRun: mocks.createGenerationRun,

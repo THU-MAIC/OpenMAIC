@@ -21,6 +21,7 @@ import {
   testMiniMaxImageConnectivity,
 } from './adapters/minimax-image-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import { generateWithGlmImage, testGlmImageConnectivity } from './adapters/glm-image-adapter';
 import {
   generateWithComfyuiImage,
   testComfyuiImageConnectivity,
@@ -130,6 +131,18 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  'glm-image': {
+    id: 'glm-image',
+    name: 'GLM Image (Zhipu)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    icon: '/logos/glm.svg',
+    models: [
+      { id: 'cogview-3-flash', name: 'CogView-3-Flash' },
+      { id: 'cogview-4', name: 'CogView-4' },
+    ],
+    supportedAspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16'],
+  },
   'comfyui-image': {
     id: 'comfyui-image',
     name: 'ComfyUI Image',
@@ -195,6 +208,8 @@ export async function testImageConnectivity(
       return testMiniMaxImageConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'glm-image':
+      return testGlmImageConnectivity(config);
     case 'comfyui-image':
       return testComfyuiImageConnectivity(config);
     case 'lemonade':
@@ -226,6 +241,8 @@ export async function generateImage(
       return generateWithMiniMaxImage(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'glm-image':
+      return generateWithGlmImage(config, options);
     case 'comfyui-image':
       return generateWithComfyuiImage(config, options);
     case 'lemonade':

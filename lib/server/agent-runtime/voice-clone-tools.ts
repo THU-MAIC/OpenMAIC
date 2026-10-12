@@ -47,7 +47,7 @@ import {
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { validateReferenceAudio } from '@/lib/audio/wav-validate';
 import { adapterOptions } from '@/lib/server/model-config/adapter-options';
-import type { MediaConnection } from '@/lib/server/model-config/media';
+import { authorizeMediaModel, type MediaConnection } from '@/lib/server/model-config/media';
 import {
   getAgentSessionMaterialStore,
   getSessionMaterial,
@@ -343,6 +343,8 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
       if (!providerId || !adapter || !adapter.supportsRegistration(adapterOptions(connection))) {
         throw new Error('deployment has no voice registration backend configured');
       }
+      const model = adapter.resolveRegistrationModel();
+      if (connection) authorizeMediaModel(connection, 'tts', model);
       throwIfAborted(signal);
       const clip = await getMaterial(deps.sessionId, params.clipId);
       throwIfAborted(signal);
@@ -380,7 +382,7 @@ export function buildVoiceCloneTools(deps: VoiceCloneToolDependencies): AgentToo
           deps.ttsConnection && deps.ttsConnection !== 'off'
             ? deps.ttsConnection.userEndpoint
             : false,
-        model: adapter.resolveRegistrationModel(),
+        model,
       };
       const registrationKey = createHash('sha256')
         .update(clip.rawAssetId)

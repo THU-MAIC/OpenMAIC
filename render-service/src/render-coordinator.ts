@@ -16,11 +16,13 @@ import type { RenderExecutor } from './render-executor.js';
 import { emitRenderEvent, type RenderEventSink, type RenderOutcome } from './events.js';
 import { Semaphore } from './semaphore.js';
 import type {
+  AdmissionIdentity,
   RenderCancelledFailure,
   RenderExecutionResult,
   RenderFailedFailure,
   RenderJobRecord,
   RenderOptions,
+  RenderOwnerId,
   RenderResourceSettlement,
 } from './types.js';
 
@@ -55,8 +57,15 @@ function planPathForProject(dir: string): string {
 
 /** An accepted admission slot, returned by RenderCoordinator.reserve. */
 export interface Reservation {
-  identity: string;
+  readonly admissionIdentity: AdmissionIdentity;
   consumed: boolean;
+}
+
+export interface RenderSubmission {
+  readonly reservation: Reservation;
+  readonly ownerId: RenderOwnerId;
+  readonly projectDir: string;
+  readonly options: RenderOptions;
 }
 
 interface QueuedJob {
@@ -79,7 +88,7 @@ export class RenderCoordinator {
   private readonly retainedProjects = new Set<string>();
   private readonly queue: QueuedJob[] = [];
   private readonly controllers = new Map<string, AbortController>();
-  private readonly activeByIdentity = new Map<string, number>();
+  private readonly activeByIdentity = new Map<AdmissionIdentity, number>();
   private pending = 0;
   private readonly maxConcurrency: number;
   private readonly maxQueue: number;
@@ -135,7 +144,7 @@ export class RenderCoordinator {
    * global cap is reached, or `per_identity_limit` when this identity already
    * holds `maxJobsPerUser` active jobs.
    */
-  reserve(identity: string): Reservation {
+  reserve(admissionIdentity: AdmissionIdentity): Reservation {
     if (this.executor.accepting?.() === false) {
       throw new RenderRejectedError('The resource owner is unavailable.', 'resource_unavailable');
     }
@@ -143,7 +152,7 @@ export class RenderCoordinator {
       throw new RenderRejectedError('The render queue is full; try again shortly.', 'queue_full');
     }
     if (this.maxJobsPerUser > 0) {
-      const active = this.activeByIdentity.get(identity) ?? 0;
+      const active = this.activeByIdentity.get(admissionIdentity) ?? 0;
       if (active >= this.maxJobsPerUser) {
         throw new RenderRejectedError(
           `A render is already in progress (limit ${this.maxJobsPerUser}).`,
@@ -151,9 +160,12 @@ export class RenderCoordinator {
         );
       }
     }
-    this.activeByIdentity.set(identity, (this.activeByIdentity.get(identity) ?? 0) + 1);
+    this.activeByIdentity.set(
+      admissionIdentity,
+      (this.activeByIdentity.get(admissionIdentity) ?? 0) + 1,
+    );
     this.pending += 1;
-    return { identity, consumed: false };
+    return { admissionIdentity, consumed: false };
   }
 
   /** Release a reservation that will not become a job. */
@@ -161,21 +173,17 @@ export class RenderCoordinator {
     if (reservation.consumed) return;
     reservation.consumed = true;
     this.pending = Math.max(0, this.pending - 1);
-    this.decrementIdentity(reservation.identity);
+    this.decrementIdentity(reservation.admissionIdentity);
   }
 
-  private decrementIdentity(identity: string): void {
+  private decrementIdentity(identity: AdmissionIdentity): void {
     const next = (this.activeByIdentity.get(identity) ?? 0) - 1;
     if (next <= 0) this.activeByIdentity.delete(identity);
     else this.activeByIdentity.set(identity, next);
   }
 
   /** Enqueue a render against a held reservation and return its stable job id. */
-  async submit(
-    reservation: Reservation,
-    projectDir: string,
-    options: RenderOptions,
-  ): Promise<string> {
+  async submit({ reservation, ownerId, projectDir, options }: RenderSubmission): Promise<string> {
     if (reservation.consumed) throw new RenderRejectedError('Reservation already used');
 
     if (this.executor.accepting?.() === false) {
@@ -189,7 +197,8 @@ export class RenderCoordinator {
     const now = Date.now();
     const record: RenderJobRecord = {
       id,
-      userId: reservation.identity,
+      ownerId,
+      admissionIdentity: reservation.admissionIdentity,
       status: 'queued',
       progress: 0,
       currentStage: 'queued',
@@ -200,7 +209,7 @@ export class RenderCoordinator {
     try {
       await this.jobs.create(record);
     } catch (error) {
-      this.decrementIdentity(reservation.identity);
+      this.decrementIdentity(reservation.admissionIdentity);
       throw error;
     }
 
@@ -220,8 +229,16 @@ export class RenderCoordinator {
     return id;
   }
 
-  /** Cancel a queued or running job through the same AbortSignal executor seam. */
-  async cancel(id: string): Promise<boolean> {
+  /** Cancel only when the immutable job owner matches the caller. */
+  async cancelForOwner(id: string, ownerId: RenderOwnerId): Promise<boolean> {
+    const owned = await this.jobs.getForOwner(id, ownerId);
+    if (!owned) return false;
+    return this.cancelOwned(owned);
+  }
+
+  /** Cancel a known-owned queued or running job through the executor signal. */
+  private async cancelOwned(record: RenderJobRecord): Promise<boolean> {
+    const { id } = record;
     const controller = this.controllers.get(id);
     if (!controller) return false;
     controller.abort();
@@ -230,7 +247,7 @@ export class RenderCoordinator {
     if (queuedIdx >= 0) {
       const [queued] = this.queue.splice(queuedIdx, 1);
       this.controllers.delete(id);
-      if (queued.record.userId) this.decrementIdentity(queued.record.userId);
+      this.decrementIdentity(queued.record.admissionIdentity);
       const failure: RenderCancelledFailure = {
         code: 'cancelled',
         message: 'Render cancelled',
@@ -449,7 +466,7 @@ export class RenderCoordinator {
       await this.finishNonSuccess(id, projectDir, { status: 'failed', failure, resources });
     } finally {
       this.controllers.delete(id);
-      if (record.userId) this.decrementIdentity(record.userId);
+      this.decrementIdentity(record.admissionIdentity);
       this.running -= 1;
       this.pump();
     }

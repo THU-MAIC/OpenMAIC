@@ -1680,6 +1680,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax 圖像",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerGlmImage": "GLM 圖片（智譜）",
     "providerOpenRouterImage": "OpenRouter 圖像",
     "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade 影像（本機）",

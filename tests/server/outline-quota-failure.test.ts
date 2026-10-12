@@ -46,33 +46,35 @@ async function failedOutline(fetch: typeof globalThis.fetch): Promise<unknown> {
 
 describe('an upstream refusal through outline generation', () => {
   it.each([
-    ['insufficient_quota', 'PROVIDER_QUOTA_EXHAUSTED'],
-    ['rate_limit_exceeded', 'RATE_LIMITED'],
-  ])('preserves %s for the run classifier after the existing retries', async (code, errorCode) => {
-    let requests = 0;
-    const failure = await failedOutline(async () => {
-      requests += 1;
-      return refused(code);
-    });
-
-    expect(failure).toBeInstanceOf(OutlineGenerationError);
-    expect(runFailureCode(failure)).toEqual({ errorCode, statusCode: 429 });
-    // Three outline attempts, each retaining the SDK's three attempts.
-    expect(requests).toBe(9);
-    if (errorCode === 'PROVIDER_QUOTA_EXHAUSTED') {
-      expect(
-        runFailureText({ step: 'outline', message: String(failure), ...runFailureCode(failure) }),
-      ).toEqual({
-        key: 'generation.quotaExhausted',
+    ['insufficient_quota', 'PROVIDER_QUOTA_EXHAUSTED', 1],
+    ['rate_limit_exceeded', 'RATE_LIMITED', 9],
+  ] as const)(
+    'preserves %s while only retrying transient failures',
+    async (code, errorCode, attempts) => {
+      let requests = 0;
+      const failure = await failedOutline(async () => {
+        requests += 1;
+        return refused(code);
       });
-    }
-  });
 
-  it('does not retain an earlier quota refusal when later attempts return empty output', async () => {
+      expect(failure).toBeInstanceOf(OutlineGenerationError);
+      expect(runFailureCode(failure)).toEqual({ errorCode, statusCode: 429 });
+      expect(requests).toBe(attempts);
+      if (errorCode === 'PROVIDER_QUOTA_EXHAUSTED') {
+        expect(
+          runFailureText({ step: 'outline', message: String(failure), ...runFailureCode(failure) }),
+        ).toEqual({
+          key: 'generation.quotaExhausted',
+        });
+      }
+    },
+  );
+
+  it('does not retain an earlier rate limit when later attempts return empty output', async () => {
     let requests = 0;
     const failure = await failedOutline(async () => {
       requests += 1;
-      if (requests <= 3) return refused('insufficient_quota');
+      if (requests <= 3) return refused('rate_limit_exceeded');
       return new Response(
         'data: {"id":"empty","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
         { headers: { 'content-type': 'text/event-stream' } },

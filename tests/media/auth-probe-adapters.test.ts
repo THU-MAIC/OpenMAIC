@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { testComfyuiImageConnectivity } from '@/lib/media/adapters/comfyui-image-adapter';
+import { testGlmImageConnectivity } from '@/lib/media/adapters/glm-image-adapter';
 import { testGrokImageConnectivity } from '@/lib/media/adapters/grok-image-adapter';
 import { testGrokVideoConnectivity } from '@/lib/media/adapters/grok-video-adapter';
 import { testHappyHorseConnectivity } from '@/lib/media/adapters/happyhorse-adapter';
@@ -151,6 +152,31 @@ const authOnlyCases: AuthOnlyCase[] = [
             Authorization: 'Bearer grok-image-key',
           },
           body: JSON.stringify({ model: 'grok-image-test', prompt: '', n: 1 }),
+        },
+      );
+    },
+  },
+  {
+    name: 'GLM Image',
+    providerName: 'GLM Image',
+    probe: () =>
+      testGlmImageConnectivity({
+        providerId: 'glm-image',
+        apiKey: 'glm-image-key',
+        baseUrl: 'https://glm-image.example.com/api/paas/v4',
+        model: 'cogview-3-flash',
+      }),
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://glm-image.example.com/api/paas/v4/images/generations',
+        {
+          method: 'POST',
+          redirect: 'manual',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer glm-image-key',
+          },
+          body: JSON.stringify({ model: 'cogview-3-flash', prompt: '', n: 1 }),
         },
       );
     },
@@ -327,7 +353,7 @@ const strictProbeCases: StrictProbeCase[] = [
             'Content-Type': 'application/json; charset=utf-8',
           },
           body: JSON.stringify({
-            model: 'image-01',
+            model: 'custom-image-model',
             prompt: 'test',
             aspect_ratio: '1:1',
             n: 1,
@@ -365,7 +391,7 @@ const strictProbeCases: StrictProbeCase[] = [
             'Content-Type': 'application/json; charset=utf-8',
           },
           body: JSON.stringify({
-            model: 'MiniMax-Hailuo-2.3',
+            model: 'custom-video-model',
             prompt: 'test connectivity',
             duration: 6,
             resolution: '768P',
@@ -484,7 +510,11 @@ describe('non-matching connectivity probe sentinels', () => {
     );
 
     await expect(
-      testMiniMaxImageConnectivity({ providerId: 'minimax-image', apiKey: 'minimax-key' }),
+      testMiniMaxImageConnectivity({
+        providerId: 'minimax-image',
+        apiKey: 'minimax-key',
+        model: 'image-01',
+      }),
     ).resolves.toEqual({ success: false, message: 'MiniMax Image returned HTTP 500' });
   });
 
@@ -497,7 +527,11 @@ describe('non-matching connectivity probe sentinels', () => {
     );
 
     await expect(
-      testMiniMaxVideoConnectivity({ providerId: 'minimax-video', apiKey: 'minimax-key' }),
+      testMiniMaxVideoConnectivity({
+        providerId: 'minimax-video',
+        apiKey: 'minimax-key',
+        model: 'MiniMax-Hailuo-2.3',
+      }),
     ).resolves.toEqual({ success: false, message: 'MiniMax Video returned HTTP 500' });
   });
 

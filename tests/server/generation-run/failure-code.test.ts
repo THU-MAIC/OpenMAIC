@@ -62,6 +62,42 @@ describe('run failure codes', () => {
     });
   });
 
+  // A stream reports its error as a part, which the SDK passes on as it came.
+  it.each([
+    [
+      'a Chat Completions stream error',
+      { message: 'No credit', type: 'insufficient_quota', code: 'insufficient_quota' },
+    ],
+    [
+      'a Responses error event',
+      { type: 'error', sequence_number: 0, message: 'No credit', code: 'insufficient_quota' },
+    ],
+    [
+      'a Responses response.failed event',
+      {
+        type: 'response.failed',
+        sequence_number: 0,
+        response: { error: { message: 'No credit', code: 'insufficient_quota' } },
+      },
+    ],
+  ])('recognizes the quota code in %s', (_label, part) => {
+    expect(runFailureCode(new Error('stream failed', { cause: part }))).toEqual({
+      errorCode: 'PROVIDER_QUOTA_EXHAUSTED',
+    });
+  });
+
+  it.each([
+    ['a failed response without an error', { type: 'response.failed', response: { error: null } }],
+    [
+      'a rate-limit error event',
+      { type: 'error', message: 'Slow down', code: 'rate_limit_exceeded' },
+    ],
+  ])('does not read %s as a quota refusal', (_label, part) => {
+    expect(runFailureCode(new Error('stream failed', { cause: part }))).toEqual({
+      errorCode: 'INTERNAL_ERROR',
+    });
+  });
+
   it('keeps the quota classification through SDK retries and an outer cause', () => {
     const retry = new RetryError({
       message: 'retry attempts exhausted',

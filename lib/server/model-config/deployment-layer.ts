@@ -8,9 +8,18 @@
  * MODEL_ROUTES is not translated: a deployment that sets it without
  * openmaic.yml gets an error asking for the file.
  */
-import { getServerProviderConfig } from '@/lib/server/provider-config';
+import {
+  getServerProviderConfig,
+  providerModelsSetting,
+  type ServerConfig,
+  type ServerProviderEntry,
+} from '@/lib/server/provider-config';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
+import { presetIdFor } from '@/lib/config/preset-ids';
+import { usesServerCredentials, selectsUpstreamModel } from './model-authorization';
+import { getProviderPreset } from '@/lib/config/provider-presets';
+import type { SlotCapability } from '@/lib/config/model-slots';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 
 export interface DeploymentLayer {
@@ -66,11 +75,26 @@ export function loadDeploymentLayer(): DeploymentLayer {
     return {
       layer: { source: 'deployment', config: file },
       legacy: false,
-      notices: legacy
-        ? [
-            'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
-          ]
-        : [],
+      notices: [
+        ...(legacy
+          ? [
+              'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',
+            ]
+          : []),
+        ...Object.entries(file.providers ?? {})
+          .filter(
+            ([, provider]) =>
+              usesServerCredentials(provider) &&
+              Object.keys(getProviderPreset(provider.preset)?.capabilities ?? {}).some(
+                (capability) => selectsUpstreamModel(provider.preset, capability as SlotCapability),
+              ) &&
+              !provider.models?.length,
+          )
+          .map(
+            ([id]) =>
+              `Server-managed provider "${id}" has no explicit model list. Set openmaic.yml providers.${id}.models; only default/fallback models are usable.`,
+          ),
+      ],
     };
   }
   if (!legacy) return { layer: null, legacy: false, notices: [] };
@@ -86,6 +110,26 @@ export function loadDeploymentLayer(): DeploymentLayer {
     notices: [
       'The model configuration comes from the legacy provider variables, server-providers.yml, DEFAULT_MODEL and MODEL_FALLBACK, which are deprecated; move it to openmaic.yml',
       ...notices,
+      ...Object.entries(getServerProviderConfig()).flatMap(([section, entries]) =>
+        section === 'disabled' || section === 'pdf'
+          ? []
+          : Object.entries(entries as Record<string, ServerProviderEntry>)
+              .filter(
+                ([id, entry]) =>
+                  selectsUpstreamModel(
+                    presetIdFor(section === 'providers' ? 'chat' : (section as SlotCapability), id),
+                    section === 'providers' ? 'chat' : (section as SlotCapability),
+                  ) &&
+                  (entry.apiKey ||
+                    entry.accessKeyId ||
+                    (section === 'providers' && id === 'bedrock')) &&
+                  !entry.models?.length,
+              )
+              .map(
+                ([id]) =>
+                  `Server-managed provider "${section}.${id}" has no explicit model list. Set ${providerModelsSetting(section as keyof Omit<ServerConfig, 'disabled'>, id)}; only default/fallback models are usable.`,
+              ),
+      ),
     ],
   };
 }

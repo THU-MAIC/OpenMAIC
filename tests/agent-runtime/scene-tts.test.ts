@@ -10,7 +10,8 @@ vi.mock('@/lib/server/provider-config', () => ({
   resolveTTSModel: vi.fn(() => ''),
   slotTTSModel: vi.fn(() => ''),
 }));
-vi.mock('@/lib/server/model-config/media', () => ({
+vi.mock('@/lib/server/model-config/media', async (original) => ({
+  ...(await original<typeof import('@/lib/server/model-config/media')>()),
   serverMediaConnection: (...args: unknown[]) => mocks.providers(...args),
 }));
 

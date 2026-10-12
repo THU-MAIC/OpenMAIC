@@ -11,7 +11,7 @@ description: النماذج والمزودون (openmaic.yml وإعدادات ا
 | إعدادات النماذج في تطبيق الويب | مستخدمو مساحة العمل | مزودوهم الخاصون، وتعيينات كل خانة لا يقفلها `openmaic.yml`، وتُحفظ في قاعدة البيانات | فورًا |
 | متغيرات البيئة (`.env.local`، أو Secret الحاوية) | المشغّل | الأسرار التي يشير إليها `openmaic.yml`، وكل خيارات الخادم الأخرى | عند بدء التشغيل |
 
-كل متغيرات البيئة اختيارية باستثناء `DATABASE_URL` (راجع [النشر](./deployment.mdx)). تجد جميع المتغيرات في [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)، ونقطة بداية لإعدادات النماذج في [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml)، ومعرّفات الإعدادات المسبقة والنماذج في [النماذج المدعومة](./supported-models.mdx).
+`DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
 في الإصدارات السابقة كانت النماذج تُضبط فقط عبر متغيرات بيئة المزودين و`server-providers.yml` و`DEFAULT_MODEL` و`MODEL_ROUTES`. ما زالت هذه الطرق تعمل حاليًا، باستثناء `MODEL_ROUTES`، لكنها مهملة؛ راجع [الانتقال من الإعدادات القديمة](#الانتقال-من-الإعدادات-القديمة).
 
@@ -97,7 +97,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `preset` | نعم | الإعداد المسبق المدمج الذي يستخدمه هذا المزود. راجع [النماذج المدعومة ← الإعدادات المسبقة](./supported-models.mdx#الإعدادات-المسبقة). |
 | `apiKey` | عادةً | مفتاح API. تحذفه الخدمات التي لا تحتاج إلى مفتاح (الخوادم المحلية، Brave، SearXNG، unpdf). |
 | `baseUrl` | لبعض الإعدادات المسبقة | عنوان يُستدعى بدلًا من عنوان الإعداد المسبق. إلزامي لـ `openai-compatible` و`azure` و`searxng` و`mineru`. |
-| `models` | لا | معرّفات نماذج المحادثة التي يقدمها هذا المزود كما تعرضها إعدادات النماذج. بالنسبة إلى `openai-compatible` فهي القائمة الوحيدة في الإعدادات. لا تقيّد ما يمكن كتابته في `slots`. |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | لا | عنوان وكيل HTTP لطلبات هذا المزود. |
 | `credentials` | لبعض الإعدادات المسبقة | أزواج مفاتيح للخدمات التي لا تستخدم مفتاحًا واحدًا. يستخدم AliDocMind الحقلين `accessKeyId` و`accessKeySecret`. |
 | `options` | لا | إعدادات غير سرية خاصة بالمزود، مثل `backend` لـ `voxcpm-tts`. الأسماء أحرف وأرقام و`_` و`-`؛ والقيم سلاسل نصية أو أرقام أو قيم منطقية (بلا خرائط أو قوائم متداخلة)، ويعمل `${VAR}`. تعرض إعدادات النماذج الخيارات، لذا لا تضع فيها مفتاحًا أبدًا. للنشر فقط: لا تستطيع إعدادات النماذج ضبطها. |
@@ -173,7 +173,7 @@ slots:
 
 تنطبق النماذج الاحتياطية على خانات النماذج اللغوية فقط: `llm` وكل الخانات تحته. يُرفض `fallback` في خانة `tts` أو `asr` أو `image` أو `video` أو `webSearch` أو `document`، عند بدء التشغيل في `openmaic.yml` وعند الحفظ في إعدادات النماذج.
 
-يُجرَّب `fallback` الخاص بالخانة مرة واحدة عندما يفشل استدعاء النموذج الأساسي، بعد محاولاته الخاصة، بفشل قابل لإعادة المحاولة: خطأ عابر من SDK، أو انتهاء المهلة، أو خطأ شبكة، أو نفاد الحصة (429)، أو نقص السعة (503)، أو مخرجات فارغة. رفض المحتوى لأسباب السلامة وأخطاء 4xx الأخرى لا تؤدي إلى الرجوع الاحتياطي. ينطبق الرجوع الاحتياطي على الاستدعاءات العادية والمتدفقة معًا، ويستخدم معاملات `thinking` الخاصة بالخانة.
+يُجرَّب `fallback` الخاص بالخانة مرة واحدة عندما يفشل استدعاء النموذج الأساسي، بعد محاولاته الخاصة، بفشل قابل لإعادة المحاولة: خطأ عابر من SDK، أو انتهاء المهلة، أو خطأ شبكة، أو تجاوز حد المعدل (429)، أو نقص السعة (503)، أو مخرجات فارغة. أما إذا رفض المزود الطلب صراحةً لنفاد الحصة (برمز متوافق مع OpenAI مثل `insufficient_quota`، أيًّا كانت حالة HTTP)، فلا يُعاد الاستدعاء على النموذج الأساسي، بل ينتقل فورًا إلى النموذج الاحتياطي. رفض المحتوى لأسباب السلامة وأخطاء 4xx الأخرى لا تؤدي إلى الرجوع الاحتياطي. ينطبق الرجوع الاحتياطي على الاستدعاءات العادية والمتدفقة معًا، ويستخدم معاملات `thinking` الخاصة بالخانة.
 
 النموذج الاحتياطي جزء من التعيين ويُورث معه: `course.content.slide` بلا تعيين خاص تستخدم نموذج `course.content` ونموذجه الاحتياطي. الخانة ذات المتطلبات لا تعيد المحاولة على نموذج احتياطي لا يلبيها.
 
@@ -615,7 +615,7 @@ slots:
 
 يستخدم موفرو الصور متغيرات `IMAGE_<PROVIDER>_API_KEY`، مع خيار `IMAGE_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
 
-`IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_` و `IMAGE_LEMONADE_`.
+`IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_`، `IMAGE_GLM_` و `IMAGE_LEMONADE_`.
 
 Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
 
@@ -743,3 +743,23 @@ web-search:
 ```
 
 تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
+
+## Model authorization for server-managed providers
+
+For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+
+To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
