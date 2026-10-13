@@ -9,6 +9,7 @@
  * package's outline prompt. The stream is retried on the same model, then
  * once on the stage's fallback model, and every retry is reported as an event.
  */
+import { prepareVisionImages } from '../vision-images';
 import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
 import { streamLLM } from '@/lib/ai/llm';
 import {
@@ -537,14 +538,15 @@ async function streamOutlines(
 
   // Retryable-failure fallback: after the same-model retries are
   // exhausted, retry once on the stage's configured fallback model.
-  let streamParams = visionImages?.length
+  const safeImages = await prepareVisionImages(visionImages ?? [], log);
+  let streamParams = safeImages.length
     ? {
         model: languageModel,
         system: prompts.system,
         messages: [
           {
             role: 'user' as const,
-            content: buildVisionUserContent(prompts.user, visionImages),
+            content: buildVisionUserContent(prompts.user, safeImages),
           },
         ],
         maxOutputTokens: modelInfo?.outputWindow,

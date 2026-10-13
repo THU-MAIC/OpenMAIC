@@ -1,7 +1,20 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import sharp from 'sharp';
+import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createLogger } from '@/lib/logger';
 import type { SceneOutline } from '@/lib/types/generation';
+
+let png: Buffer;
+beforeAll(async () => {
+  png = await sharp({
+    create: { width: 32, height: 24, channels: 3, background: 'white' },
+  })
+    .png()
+    .toBuffer();
+});
+function imageBase64(label: string): string {
+  return Buffer.concat([png, Buffer.from(label)]).toString('base64');
+}
 
 const callLLMMock = vi.hoisted(() => vi.fn());
 const resolveModelMock = vi.hoisted(() => vi.fn());
@@ -37,7 +50,7 @@ describe('scene content step — asset-id image transport', () => {
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
       images.map((image) => ({
         ...image,
-        src: `data:image/png;base64,${Buffer.from('resolved-bytes').toString('base64')}`,
+        src: `data:image/png;base64,${imageBase64('resolved-bytes')}`,
       })),
     );
     callLLMMock.mockResolvedValueOnce({
@@ -81,7 +94,7 @@ describe('scene content step — asset-id image transport', () => {
     const imagePart = messages[0].content.find((part: { type: string }) => part.type === 'image');
     expect(imagePart).toMatchObject({
       type: 'image',
-      image: Buffer.from('resolved-bytes').toString('base64'),
+      image: imageBase64('resolved-bytes'),
       mimeType: 'image/png',
     });
     // The generated element's src is the ALLOCATED ID, resolved by the
@@ -91,7 +104,7 @@ describe('scene content step — asset-id image transport', () => {
 
   test('passes data URLs through untouched on a browser-backed request', async () => {
     vi.resetModules();
-    const dataUrl = `data:image/png;base64,${Buffer.from('browser-bytes').toString('base64')}`;
+    const dataUrl = `data:image/png;base64,${imageBase64('browser-bytes')}`;
     resolveVisionImagesMock.mockImplementation(
       async (images: Array<{ id: string; src: string }>) => images,
     );
@@ -127,6 +140,39 @@ describe('scene content step — asset-id image transport', () => {
     expect(body.content.elements[0].src).toBe(dataUrl);
   });
 
+  test('drops an undecodable attachment while preserving its placeholder and asset-id mapping', async () => {
+    vi.resetModules();
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images.map((image) => ({
+        ...image,
+        src:
+          image.id === 'img_1'
+            ? `data:image/png;base64,${imageBase64('good')}`
+            : `data:image/bmp;base64,${Buffer.from('undecodable').toString('base64')}`,
+      })),
+    );
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({
+        elements: [
+          { type: 'image', src: 'img_2', left: 100, top: 100, width: 400, height: 300, rotate: 0 },
+        ],
+        remark: '',
+      }),
+    });
+    const body = await generate({
+      outline: slideOutline(['img_1', 'img_2']),
+      pdfImages: [
+        { id: 'img_1', src: '', pageNumber: 1 },
+        { id: 'img_2', src: '', pageNumber: 2 },
+      ],
+      imageMapping: { img_1: 'ast_good', img_2: 'ast_bad' },
+    });
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    expect(content[0].text).toContain('img_2');
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
+    expect(body.content.elements[0].src).toBe('ast_bad');
+  });
+
   test('drops an unresolvable image from BOTH the prompt text and the attachments (N3)', async () => {
     vi.resetModules();
     // The pre-resolution drops img_2 (the server cannot resolve its id);
@@ -138,7 +184,7 @@ describe('scene content step — asset-id image transport', () => {
           ...image,
           src: image.src.startsWith('data:')
             ? image.src
-            : `data:image/png;base64,${Buffer.from(`bytes-for-${image.id}`).toString('base64')}`,
+            : `data:image/png;base64,${imageBase64(`bytes-for-${image.id}`)}`,
         })),
     );
     callLLMMock.mockResolvedValueOnce({
@@ -177,7 +223,7 @@ describe('scene content step — asset-id image transport', () => {
     // Only img_1's bytes were attached.
     const imageParts = content.filter((part: { type: string }) => part.type === 'image');
     expect(imageParts).toHaveLength(1);
-    expect(imageParts[0].image).toBe(Buffer.from('bytes-for-img_1').toString('base64'));
+    expect(imageParts[0].image).toBe(imageBase64('bytes-for-img_1'));
     // The surviving image still resolves to the ALLOCATED ID in the element
     // src (part 2 B transport preserved).
     expect(body.content.elements[0].src).toBe('ast_ok');
@@ -185,13 +231,13 @@ describe('scene content step — asset-id image transport', () => {
 
   test('handles a MIXED imageMapping (allocated ids AND data URLs) in one request (N4)', async () => {
     vi.resetModules();
-    const dataUrl = `data:image/png;base64,${Buffer.from('browser-bytes').toString('base64')}`;
+    const dataUrl = `data:image/png;base64,${imageBase64('browser-bytes')}`;
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
       images.map((image) => ({
         ...image,
         src: image.src.startsWith('data:')
           ? image.src
-          : `data:image/png;base64,${Buffer.from('resolved-bytes').toString('base64')}`,
+          : `data:image/png;base64,${imageBase64('resolved-bytes')}`,
       })),
     );
     callLLMMock.mockResolvedValueOnce({
@@ -241,8 +287,7 @@ describe('scene content step — asset-id image transport', () => {
 
   test('multi-drop: refills the vision slice with RESOLVED candidates so no promise dangles (P2)', async () => {
     vi.resetModules();
-    const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    const dataUrlFor = (bytes: string) => `data:image/png;base64,${imageBase64(bytes)}`;
     // 25 candidates (> MAX_VISION_IMAGES = 20); img_2, img_7 and img_15 are
     // unresolvable. The old N3 filter dropped them and let the generator
     // re-slice img_21..img_23 in UNRESOLVED; the refill must admit them WITH
@@ -295,9 +340,7 @@ describe('scene content step — asset-id image transport', () => {
     const imageParts = content.filter((part: { type: string }) => part.type === 'image');
     expect(imageParts).toHaveLength(20);
     imageParts.forEach((part: { image: string }, index: number) => {
-      expect(part.image).toBe(
-        Buffer.from(`bytes-for-${expectedResolved[index]}`).toString('base64'),
-      );
+      expect(part.image).toBe(imageBase64(`bytes-for-${expectedResolved[index]}`));
     });
     for (const refilled of ['img_21', 'img_22', 'img_23']) {
       expect(text).toContain(`**${refilled}**`);
@@ -372,8 +415,7 @@ describe('scene content step — asset-id image transport', () => {
 
   test('hallucinated reference to a DROPPED id removes the element (no dangling src, P3)', async () => {
     vi.resetModules();
-    const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    const dataUrlFor = (bytes: string) => `data:image/png;base64,${imageBase64(bytes)}`;
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
       images
         .filter((image) => image.src !== 'ast_gone')
@@ -409,8 +451,7 @@ describe('scene content step — asset-id image transport', () => {
 
   test('browser-backed mode is unaffected: >cap data-URL images all keep their promises', async () => {
     vi.resetModules();
-    const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+    const dataUrlFor = (bytes: string) => `data:image/png;base64,${imageBase64(bytes)}`;
     // Data URLs pass through the resolver untouched — nothing can drop.
     resolveVisionImagesMock.mockImplementation(
       async (images: Array<{ id: string; src: string }>) => images,
@@ -444,7 +485,7 @@ describe('scene content step — asset-id image transport', () => {
     const imageParts = content.filter((part: { type: string }) => part.type === 'image');
     expect(imageParts).toHaveLength(20);
     imageParts.forEach((part: { image: string }, index: number) => {
-      expect(part.image).toBe(Buffer.from(ids[index]).toString('base64'));
+      expect(part.image).toBe(imageBase64(ids[index]));
     });
     // The element src is the data URL verbatim, exactly as before.
     expect(body.content.elements[0].src).toBe(dataUrlFor('img_1'));

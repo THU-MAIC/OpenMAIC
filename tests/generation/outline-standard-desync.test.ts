@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createLogger } from '@/lib/logger';
@@ -36,8 +37,13 @@ describe('outline step — standard branch prompt parity on a dropped image (N3)
 
   test('drops an unresolvable image from the standard prompt text and the attachments', async () => {
     vi.resetModules();
+    const png = await sharp({
+      create: { width: 32, height: 24, channels: 3, background: 'white' },
+    })
+      .png()
+      .toBuffer();
     const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
+      `data:image/png;base64,${Buffer.concat([png, Buffer.from(bytes)]).toString('base64')}`;
     // The pre-resolution drops img_2 (its id does not resolve server-side);
     // img_1 resolves to bytes.
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
@@ -90,7 +96,9 @@ describe('outline step — standard branch prompt parity on a dropped image (N3)
     expect(textPart?.text).not.toContain('img_2');
     const imageParts = content.filter((part) => part.type === 'image');
     expect(imageParts).toHaveLength(1);
-    expect(imageParts[0]?.image).toBe(Buffer.from('outline-bytes-img_1').toString('base64'));
+    expect(imageParts[0]?.image).toBe(
+      Buffer.concat([png, Buffer.from('outline-bytes-img_1')]).toString('base64'),
+    );
   });
 });
 

@@ -5,6 +5,7 @@
  * actions step. The logic of 1.1.x's POST /api/generate/scene-content; the
  * caller resolves the model for the scene type's stage.
  */
+import { prepareVisionImages } from '../vision-images';
 import { callLLM } from '@/lib/ai/llm';
 import {
   applyOutlineFallbacks,
@@ -110,6 +111,7 @@ export async function generateSceneContent(
       // bytes the base64 path would send BEFORE prompt assembly, keeping the
       // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
       const resolvedImages = await ctx.resolveVisionImages(images);
+      const safeImages = await prepareVisionImages(resolvedImages, log);
       const result = await callLLM(
         {
           model: languageModel,
@@ -119,7 +121,7 @@ export async function generateSceneContent(
           messages: [
             {
               role: 'user' as const,
-              content: buildVisionUserContent(userPrompt, resolvedImages),
+              content: buildVisionUserContent(userPrompt, safeImages),
             },
           ],
           maxOutputTokens: modelInfo?.outputWindow,

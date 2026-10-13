@@ -9,6 +9,11 @@ export const MAX_PDF_CONTENT_CHARS = 50000;
 // Maximum number of images to send as vision content parts
 export const MAX_VISION_IMAGES = 20;
 
+// Keep decoded attachments below provider size limits and bound image dimensions.
+// Large or unsupported images can crash prompt building or be rejected by providers.
+export const MAX_VISION_IMAGE_BYTES = 1024 * 1024;
+export const MAX_VISION_IMAGE_DIMENSION = 2048;
+
 // Size cap for one course material document (bytes), enforced by the extract
 // route on both the multipart and asset-id forms and by the vision-image
 // resolution (`resolveVisionImagesForPrompt`) so an oversized asset is

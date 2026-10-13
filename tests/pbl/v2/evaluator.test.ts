@@ -16,6 +16,7 @@
  * write a small MockLanguageModelV3 helper for both Instructor and
  * Evaluator together.
  */
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test';
 import {
@@ -199,6 +200,48 @@ describe('Evaluator agent — task JSON-only output', () => {
     expect(patch.evaluation.improvements).toEqual(['补充不存在 key 的样例']);
     expect(patch.evaluation.score).toBe(76);
   });
+});
+
+describe('Evaluator agent — vision attachments', () => {
+  it.each(['tiff', 'undecodable'])(
+    'continues evaluation with an uploaded %s image',
+    async (format) => {
+      const project = mkProject();
+      const buffer =
+        format === 'tiff'
+          ? await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } })
+              .tiff()
+              .toBuffer()
+          : Buffer.from('undecodable');
+      addSubmission(project, {
+        microtaskId: 't1',
+        milestoneId: 'ms1',
+        kind: 'file',
+        content: 'Review this diagram.',
+        mimeType: 'image/tiff',
+        fileUrl: `data:image/tiff;base64,${buffer.toString('base64')}`,
+      });
+      const model = scriptedModel(
+        '{"feedback":"Diagram reviewed.","strengths":[],"improvements":[],"score":70}',
+      );
+      const events = await collectEvents(
+        runTaskEvaluation({
+          project,
+          milestoneId: 'ms1',
+          microtaskId: 't1',
+          languageModel: model,
+          hasVision: true,
+        }),
+      );
+      expect(evaluationPatch(events)?.kind).toBe('evaluation');
+      const imageParts = model.doStreamCalls[0].prompt.flatMap((message) =>
+        message.role === 'user' ? message.content.filter((part) => part.type === 'file') : [],
+      );
+      expect(imageParts).toHaveLength(format === 'tiff' ? 1 : 0);
+      if (format === 'tiff')
+        expect(imageParts[0]).toMatchObject({ type: 'file', mediaType: 'image/jpeg' });
+    },
+  );
 });
 
 describe('Evaluator agent — milestone/final JSON-only output', () => {
