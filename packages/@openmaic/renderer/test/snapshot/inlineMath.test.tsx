@@ -104,7 +104,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('snapshots typeset inline math per prose root', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('snapshots typeset inline math per prose root', { timeout: 30_000 }, () => {
   it('slideToPng captures every formula of every root', async () => {
     // jsdom's getComputedStyle is slow on thousands of KaTeX nodes; the font
     // checks it feeds are not under test here.

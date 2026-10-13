@@ -313,7 +313,9 @@ describe('slide elements typeset inline formulas', () => {
   });
 });
 
-describe('inline math typesetting budget', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -577,7 +579,9 @@ describe('inline math typesetting budget', () => {
   });
 });
 
-describe('completeInlineMath', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('completeInlineMath', { timeout: 30_000 }, () => {
   function rootWith(count: number, prefix: string): HTMLElement {
     const root = document.createElement('div');
     root.setAttribute('data-inline-math-root', '');

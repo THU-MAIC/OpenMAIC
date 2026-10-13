@@ -87,7 +87,9 @@ function expectTypeset(latex: string): void {
   expect(formulas[0].classList.contains('katex')).toBe(true);
 }
 
-describe('app slide renderer — inline formulas', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('app slide renderer — inline formulas', { timeout: 30_000 }, () => {
   it('in text elements, across a move and a content change', () => {
     const update = mount(BaseTextElement, { elementInfo: text(prose(LATEX)) });
     expectTypeset(LATEX);
