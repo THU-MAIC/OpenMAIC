@@ -76,7 +76,7 @@ describe('Roundtable parked learner turn', () => {
       const bubble = container.querySelector('[data-bubble-role="user"]');
       expect(bubble?.textContent).toContain('roundtable.yourTurn');
       expect(bubble?.textContent).not.toContain('Which path should we explore next?');
-      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent).toContain(
+      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent ?? '').toContain(
         'Which path should we explore next?',
       );
       expect(bubble?.querySelectorAll('[data-testid="cue-user-options"] button')).toHaveLength(3);
@@ -142,11 +142,50 @@ describe('Roundtable parked learner turn', () => {
     expect(onStopDiscussion).not.toHaveBeenCalled();
   });
 
-  it('preserves the open-ended cue without options', async () => {
-    await render({ cueUserOptions: undefined });
-    expect(container.querySelector('[data-bubble-role="user"]')?.textContent).toContain(
-      'Which path should we explore next?',
-    );
-    expect(container.querySelector('[data-testid="cue-user-options"]')).toBeNull();
-  });
+  it.each([false, true])(
+    'keeps the open-ended question in the teacher bubble (presentation=%s)',
+    async (isPresenting) => {
+      await render({ isPresenting, cueUserOptions: undefined });
+      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent ?? '').toContain(
+        'Which path should we explore next?',
+      );
+      const learnerBubble = container.querySelector('[data-bubble-role="user"]');
+      expect(learnerBubble?.querySelector('p')?.textContent).toBe('roundtable.yourTurn');
+      expect(learnerBubble?.textContent).not.toContain('Which path should we explore next?');
+      expect(container.querySelector('[data-testid="cue-user-options"]')).toBeNull();
+    },
+  );
+
+  it.each([false, true])(
+    'uses the cue prompt for an actions-only teacher turn with options (presentation=%s)',
+    async (isPresenting) => {
+      await render({ isPresenting, cueUserAgentText: '   ' });
+      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent ?? '').toContain(
+        'Which path should we explore next?',
+      );
+      const learnerBubble = container.querySelector('[data-bubble-role="user"]');
+      expect(learnerBubble?.querySelector('p')?.textContent).toBe('roundtable.yourTurn');
+      expect(
+        learnerBubble?.querySelectorAll('[data-testid="cue-user-options"] button'),
+      ).toHaveLength(3);
+    },
+  );
+
+  it.each([false, true])(
+    'uses the cue prompt in the teacher bubble without agent metadata or options (presentation=%s)',
+    async (isPresenting) => {
+      await render({
+        isPresenting,
+        cueUserAgentText: undefined,
+        cueUserAgentId: undefined,
+        cueUserOptions: undefined,
+      });
+      expect(container.querySelector('[data-bubble-role="teacher"]')?.textContent ?? '').toContain(
+        'Which path should we explore next?',
+      );
+      const learnerBubble = container.querySelector('[data-bubble-role="user"]');
+      expect(learnerBubble?.querySelector('p')?.textContent).toBe('roundtable.yourTurn');
+      expect(container.querySelector('[data-testid="cue-user-options"]')).toBeNull();
+    },
+  );
 });

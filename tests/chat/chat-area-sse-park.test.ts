@@ -40,6 +40,128 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it('uses the current cue prompt when an actions-only turn follows an older assistant message', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  fixture.state.stage.id = 'actions-only-restore';
+  fixture.state.chats = [
+    {
+      id: 'actions-only',
+      type: 'qa',
+      title: 'Q&A',
+      status: 'waiting-user',
+      createdAt: 1,
+      updatedAt: 2,
+      config: { agentIds: ['default-1'], defaultAgentId: 'default-1' },
+      toolCalls: [],
+      pendingToolCalls: [],
+      messages: [
+        {
+          id: 'older-question',
+          role: 'assistant',
+          parts: [{ type: 'text', text: 'Old question' }],
+        },
+        {
+          id: 'latest-user',
+          role: 'user',
+          parts: [{ type: 'text', text: 'Show me on the whiteboard' }],
+        },
+      ],
+      cueUser: { fromAgentId: 'default-1', prompt: 'What does the diagram show?', parkedAt: 2 },
+    },
+  ];
+  const onCueUser = vi.fn();
+  const root = createRoot(document.createElement('div'));
+  try {
+    await act(async () => root.render(createElement(ChatArea, { onCueUser })));
+    expect(onCueUser).toHaveBeenCalledExactlyOnceWith(
+      'default-1',
+      'What does the diagram show?',
+      undefined,
+    );
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+it.each(['send', 'stop'] as const)(
+  'queues distinct inputs during initial preparation (%s)',
+  async (mode) => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+    vi.useFakeTimers();
+    fixture.state.stage.id = 'initial-send-queue';
+    fixture.state.chats = [];
+    let release!: (value: object) => void;
+    fixture.capabilities
+      .mockReset()
+      .mockResolvedValue({})
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+    const requests: Array<{ messages: ChatSession['messages'] }> = [];
+    const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+    vi.stubGlobal('fetch', async (_input: unknown, init: RequestInit) => {
+      requests.push(JSON.parse(String(init.body)));
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streams.push(controller);
+            init.signal?.addEventListener('abort', () =>
+              controller.error(new DOMException('Aborted', 'AbortError')),
+            );
+          },
+        }),
+        { headers: { 'content-type': 'text/event-stream' } },
+      );
+    });
+    const root = createRoot(document.createElement('div'));
+    const ref = createRef<ChatAreaRef>();
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+    let third: Promise<void> | undefined;
+    const onStopSession = vi.fn();
+    try {
+      await act(async () => root.render(createElement(ChatArea, { ref, onStopSession })));
+      await act(async () => {
+        first = ref.current!.sendMessage('First input');
+      });
+      await act(async () => {
+        second = ref.current!.sendMessage('Second input');
+        third = ref.current!.sendMessage('Third input');
+      });
+      if (mode === 'stop') {
+        await act(async () => ref.current!.stopActiveSession());
+        await act(async () => ref.current!.stopActiveSession());
+        expect(onStopSession).toHaveBeenCalledExactlyOnceWith({ source: 'manual_stop' });
+      }
+      await act(async () => {
+        release({});
+      });
+      if (mode === 'stop') {
+        expect(requests).toHaveLength(0);
+        expect(fixture.state.chats).toHaveLength(0);
+        await Promise.all([first, second, third]);
+        return;
+      }
+      expect(requests.length).toBeGreaterThan(0);
+      expect(fixture.state.chats).toHaveLength(1);
+      expect(requests.at(-1)!.messages.map((message) => message.parts)).toEqual([
+        [{ type: 'text', text: 'First input' }],
+        [{ type: 'text', text: 'Second input' }],
+        [{ type: 'text', text: 'Third input' }],
+      ]);
+      expect(new Set(requests.at(-1)!.messages.map((message) => message.id)).size).toBe(3);
+    } finally {
+      release?.({});
+      act(() => root.unmount());
+      streams.forEach((stream) => stream.error(new DOMException('Aborted', 'AbortError')));
+      await Promise.all([first, second, third]);
+    }
+  },
+);
+
 it('allows a follow-up after an empty SSE turn marks the session as an error', async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   vi.useFakeTimers();
@@ -96,6 +218,10 @@ it.each([
   'stop-during-preparation',
   'unmount-during-preparation',
   'stage-switch-during-preparation',
+  'queued-reply',
+  'queue-stop-during-preparation',
+  'queue-unmount-during-preparation',
+  'queue-stage-switch-during-preparation',
 ] as const)(
   'consumes the park before async send and cannot restore it while retiring done-before-EOF (%s)',
   async (retirement) => {
@@ -156,6 +282,8 @@ it.each([
     let mounted = true;
     let first!: Promise<void>;
     let reply!: Promise<void>;
+    let queued: Promise<void> | undefined;
+    let queueSettled = false;
     let release: ((value: object) => void) | undefined;
     try {
       await act(async () =>
@@ -195,16 +323,21 @@ it.each([
       await act(async () => {
         reply = ref.current!.sendMessage('Practice');
         void ref.current!.sendMessage('Practice');
+        if (retirement.startsWith('queue')) {
+          queued = ref.current!.sendMessage('Typed follow-up').then(() => {
+            queueSettled = true;
+          });
+        }
       });
       expect(fixture.state.chats[0]?.status).toBe('active');
       expect(fixture.state.chats[0]?.cueUser).toBeUndefined();
       expect(onCueUserCleared).toHaveBeenCalledTimes(1);
       expect(onCueUser).toHaveBeenCalledTimes(hydrationCount);
       if (retirement.endsWith('during-preparation')) {
-        if (retirement === 'stop-during-preparation')
+        if (retirement.includes('stop-during-preparation'))
           await act(async () => ref.current!.stopActiveSession());
-        else if (retirement === 'unmount-during-preparation') {
-          act(() => root.unmount());
+        else if (retirement.includes('unmount-during-preparation')) {
+          await act(async () => root.unmount());
           mounted = false;
         } else {
           fixture.state.stage.id = 'new-stage';
@@ -213,13 +346,15 @@ it.each([
             root.render(createElement(ChatArea, { ref, onCueUser, onCueUserCleared })),
           );
         }
+        if (queued) expect(queueSettled).toBe(true);
         await act(async () => {
           release!({});
         });
         expect(requests).toHaveLength(1);
         await reply;
-        if (retirement === 'stop-during-preparation')
+        if (retirement.includes('stop-during-preparation'))
           expect(fixture.state.chats[0]?.status).toBe('completed');
+        if (queued) expect(queueSettled).toBe(true);
         return;
       }
       await act(async () => {
@@ -237,6 +372,15 @@ it.each([
             m.role === 'user' && m.parts.some((p) => p.type === 'text' && p.text === 'Practice'),
         ),
       ).toHaveLength(1);
+      if (queued) {
+        const users = requests.at(-1)!.messages.filter((message) => message.role === 'user');
+        expect(users.map((message) => message.parts)).toEqual([
+          [{ type: 'text', text: 'Explain' }],
+          [{ type: 'text', text: 'Practice' }],
+          [{ type: 'text', text: 'Typed follow-up' }],
+        ]);
+        expect(new Set(users.map((message) => message.id)).size).toBe(3);
+      }
       expect(fixture.state.chats[0]?.messages.find((m) => m.id === 'question')?.parts).toEqual([
         expect.objectContaining({ type: 'text', text: 'What now?' }),
       ]);
@@ -263,7 +407,7 @@ it.each([
           /* already retired */
         }
       }
-      await Promise.all([first, reply]);
+      await Promise.all([first, reply, queued]);
     }
   },
   15_000,

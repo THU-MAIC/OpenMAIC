@@ -199,6 +199,7 @@ export function PresentationBubbleCard({
   audioIndicatorState,
   buttonState,
   isPaused,
+  isCueUser,
   scrollToEnd,
   children,
 }: {
@@ -208,6 +209,7 @@ export function PresentationBubbleCard({
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
+  readonly isCueUser?: boolean;
   readonly scrollToEnd?: boolean;
   readonly children?: ReactNode;
 }) {
@@ -227,7 +229,7 @@ export function PresentationBubbleCard({
             : 'bg-white/62 dark:bg-gray-900/82 border-gray-200/70 dark:border-gray-700/70',
       )}
     >
-      <div className="flex items-center gap-3 px-4 pt-3 pb-2">
+      <div data-bubble-header className="flex items-center gap-3 px-4 pt-3 pb-2">
         <div
           className={cn(
             'w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm shrink-0',
@@ -283,10 +285,18 @@ export function PresentationBubbleCard({
       </div>
 
       <div
+        data-bubble-speech
         ref={(element) => {
           if (element && scrollToEnd) element.scrollTop = element.scrollHeight;
         }}
-        className="ml-4 mr-10 mb-4 max-h-[140px] overflow-y-auto scrollbar-hide"
+        className={cn(
+          'ml-4 mr-10 mb-4 overflow-y-auto scrollbar-hide',
+          scrollToEnd
+            ? 'text-[15px] leading-relaxed max-h-[5lh]'
+            : isCueUser && bubble.role === 'user' && children
+              ? 'max-h-[240px]'
+              : 'max-h-[140px]',
+        )}
       >
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
@@ -467,6 +477,7 @@ export function PresentationSpeechOverlay({
             audioIndicatorState={audioIndicatorState}
             buttonState={buttonState}
             isPaused={isPaused}
+            isCueUser={playbackView.phase === 'cueUser'}
             scrollToEnd={playbackView.phase === 'cueUser' && b.role !== 'user'}
           >
             {children}

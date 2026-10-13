@@ -102,14 +102,17 @@ const invalidDirectors: [string, unknown][] = [
   ['null agent responses', { ...director, agentResponses: null }],
   ['missing whiteboard ledger', { turnCount: 2, agentResponses: [] }],
   ['non-array whiteboard ledger', { ...director, whiteboardLedger: {} }],
-  ['too many agent responses', { ...director, agentResponses: Array(257).fill({}) }],
-  ['too many whiteboard entries', { ...director, whiteboardLedger: Array(257).fill({}) }],
+];
+
+const largeDirectors: [string, unknown][] = [
+  ['more than 256 agent responses', { ...director, agentResponses: Array(300).fill({}) }],
+  ['more than 256 whiteboard entries', { ...director, whiteboardLedger: Array(300).fill({}) }],
   [
-    'oversized serialized director',
+    'more than 64 KiB of serialized context',
     { ...director, agentResponses: [{ contentPreview: 'a'.repeat(65_536) }] },
   ],
   [
-    'oversized UTF-8 director',
+    'more than 64 KiB of UTF-8 context',
     { ...director, agentResponses: [{ contentPreview: '问'.repeat(22_000) }] },
   ],
 ];
@@ -214,6 +217,18 @@ describe('chat session payload through /api/persistence (PGlite)', () => {
     expect(await store.listRecords(runtimeId)).toEqual(baseline);
   });
 
+  it.each(largeDirectors)('persists %s without truncation', async (_name, directorState) => {
+    const payload = { ...sessionState(), directorState };
+    await store.appendRecord({
+      id: `${runtimeId}:large-director`,
+      sessionId: runtimeId,
+      createdAt: timestamp,
+      payload,
+    });
+    expect(responses[0]).toMatchObject({ method: 'POST', status: 201 });
+    expect((await store.listRecords(runtimeId)).at(-1)?.payload).toEqual(payload);
+  });
+
   it.each(['parkedAt', 'turnCount'])(
     'rejects nonfinite %s sent directly as a JSON exponent',
     async (field) => {
@@ -270,7 +285,7 @@ describe('chat session payload through /api/persistence (PGlite)', () => {
     expect((await store.listRecords(runtimeId))[0]).toEqual(baseline[0]);
   });
 
-  it('accepts omitted metadata and director collections at their limits', async () => {
+  it('accepts omitted metadata and populated director collections', async () => {
     const { cueUser: _cue, directorState: _director, ...withoutMetadata } = sessionState();
     await store.appendRecord({
       id: `${runtimeId}:without-metadata`,

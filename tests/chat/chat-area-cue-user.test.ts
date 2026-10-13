@@ -17,6 +17,7 @@ vi.mock('@/components/chat/use-chat-sessions', () => ({
         id: 'parked',
         type: 'qa',
         status: 'waiting-user',
+        messages: [],
         cueUser: {
           prompt: 'Try another example?',
           options: ['Yes', 'Continue lesson'],

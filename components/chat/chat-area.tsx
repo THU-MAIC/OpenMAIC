@@ -196,8 +196,12 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         if (hadPark) onCueUserCleared?.();
         return;
       }
+      const lastUserIndex = waitingUserSession.messages.findLastIndex(
+        (message) => message.role === 'user',
+      );
       const agentText = waitingUserSession.messages
-        ?.findLast((message) => message.role === 'assistant')
+        .slice(lastUserIndex + 1)
+        .findLast((message) => message.role === 'assistant')
         ?.parts.filter((part) => part.type === 'text')
         .map((part) => part.text)
         .join('');
@@ -256,7 +260,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
           session.status === 'soft-closing',
       );
       if (active) await handleEndSession(active.id);
-    }, [chatSessions, handleEndSession]);
+      else await endActiveSession(MANUAL_STOP_END_OPTIONS);
+    }, [chatSessions, handleEndSession, endActiveSession]);
 
     const handleContinueActiveSoftClosingSession = useCallback((): boolean => {
       const softClosing = chatSessions.find((session) => session.status === 'soft-closing');

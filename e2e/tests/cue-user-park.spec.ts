@@ -13,6 +13,68 @@ async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {
   await page.screenshot({ path: testInfo.outputPath(name), fullPage: true });
 }
 
+async function assertParkedTeacherLayout(page: Page) {
+  const layout = await page.locator('[data-bubble-role="teacher"]').evaluate((teacher) => {
+    const header = teacher.querySelector<HTMLElement>('[data-bubble-header]')!;
+    const speech = teacher.querySelector<HTMLElement>('[data-bubble-speech]')!;
+    const paragraph = speech.querySelector('p')!;
+    const avatar =
+      teacher.querySelector<HTMLElement>('.absolute.-top-2\\.5') ?? header.querySelector('img');
+    const visibleThroughAncestors = (element: Element) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.top < 0 || rect.bottom > innerHeight || rect.left < 0 || rect.right > innerWidth)
+        return false;
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        const bounds = parent.getBoundingClientRect();
+        if (
+          style.overflowY !== 'visible' &&
+          (rect.top < bounds.top - 0.5 || rect.bottom > bounds.bottom + 0.5)
+        )
+          return false;
+        if (
+          style.overflowX !== 'visible' &&
+          (rect.left < bounds.left - 0.5 || rect.right > bounds.right + 0.5)
+        )
+          return false;
+      }
+      return true;
+    };
+    const bounds = speech.getBoundingClientRect();
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    const lines = Array.from(range.getClientRects());
+    const visibleLines = lines.filter(
+      (line) => line.bottom > bounds.top && line.top < bounds.bottom,
+    );
+    const lineHeight = parseFloat(getComputedStyle(paragraph).lineHeight);
+    return {
+      headerVisible: visibleThroughAncestors(header),
+      avatarVisible: !!avatar && visibleThroughAncestors(avatar),
+      speechVisible: visibleThroughAncestors(speech),
+      completeLines: visibleLines.every(
+        (line) => line.top >= bounds.top - 0.5 && line.bottom <= bounds.bottom + 0.5,
+      ),
+      promptEndVisible:
+        lines.at(-1)!.bottom <= bounds.bottom + 0.5 && lines.at(-1)!.top >= bounds.top - 0.5,
+      scrollTop: speech.scrollTop,
+      scrollHeight: speech.scrollHeight,
+      viewportHeight: bounds.height,
+      lineHeight,
+      wholeLineHeight:
+        speech.scrollHeight <= speech.clientHeight ||
+        Math.abs(bounds.height / lineHeight - Math.round(bounds.height / lineHeight)) < 0.05,
+    };
+  });
+  expect(layout.headerVisible).toBe(true);
+  expect(layout.avatarVisible).toBe(true);
+  expect(layout.speechVisible).toBe(true);
+  expect(layout.completeLines).toBe(true);
+  expect(layout.promptEndVisible).toBe(true);
+  expect(layout.wholeLineHeight).toBe(true);
+  return layout;
+}
+
 test('interrupt, quick reply, server save/reload and manual stop preserve the learner park', async ({
   page,
 }, testInfo) => {
@@ -234,6 +296,15 @@ const cueScenarios = [
     options: undefined,
   },
   {
+    name: 'actions-only prompt fallback',
+    prompt: 'What does the diagram show?',
+    teacherText: undefined,
+    options: [
+      { label: 'Explain the diagram' },
+      { label: 'Continue lesson', action: 'end_discussion' as const },
+    ],
+  },
+  {
     name: 'four bounded options',
     prompt: 'Which approach would you like to try?',
     teacherText:
@@ -250,6 +321,83 @@ const cueScenarios = [
     })),
   },
 ];
+
+test('Stop cancels a first Q&A during preparation before a session exists', async ({ page }) => {
+  await page.addInitScript(
+    (settings) => localStorage.setItem('maic:account:settings-storage', settings),
+    createSettingsStorage({ autoPlayLecture: false, ttsMuted: true }),
+  );
+  await page.goto('/classroom/warmup-nonexistent');
+  const stageId = uniqueStageId('initial-send-stop');
+  const now = Date.now();
+  await seedServerDocument(page, {
+    stage: { id: stageId, name: 'Cancel preparation', createdAt: now, updatedAt: now },
+    scenes: [
+      {
+        id: 'stop-scene',
+        stageId,
+        type: 'slide',
+        title: 'Cancel preparation',
+        order: 0,
+        content: { type: 'slide', canvas: { elements: [], background: { color: '#ffffff' } } },
+        actions: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  });
+  await setCurrentScene(page, stageId, 'stop-scene');
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/model-config', async (route) => {
+    await gate;
+    await route.fallback();
+  });
+  let requests = 0;
+  await page.route('**/api/chat/pi', async (route) => {
+    requests++;
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: 'data: {"type":"done","data":{"totalAgents":0,"totalActions":0}}\n\n',
+    });
+  });
+  try {
+    await page.goto(`/classroom/${stageId}`);
+    await expect(page.getByTestId('scene-title').first()).toBeAttached({ timeout: 45_000 });
+    await page.keyboard.press('T');
+    const input = page.getByPlaceholder('Type your message...', { exact: true });
+    await input.fill('First question');
+    await input.press('Enter');
+    const stop = page.getByTitle('Stop Discussion', { exact: true });
+    await expect(stop).toBeVisible();
+    await stop.evaluate((button: HTMLElement) => {
+      button.click();
+      button.click();
+    });
+    await expect(stop).toHaveCount(0);
+    const modelRead = page.waitForResponse((response) =>
+      response.url().endsWith('/api/model-config'),
+    );
+    release();
+    await modelRead;
+    await page.reload();
+    await expect(page.getByTestId('scene-title').first()).toBeAttached({ timeout: 45_000 });
+    await expect(stop).toHaveCount(0);
+    expect(requests).toBe(0);
+    const owner = await (await page.request.get('/api/persistence/learner-key')).json();
+    const sessions = await (
+      await page.request.get(
+        `/api/persistence/runtime/stages/${stageId}/learners/${encodeURIComponent(owner.learnerKey)}/sessions`,
+      )
+    ).json();
+    expect(sessions.filter((session: { kind: string }) => session.kind === 'chat')).toHaveLength(0);
+  } finally {
+    release();
+  }
+});
+
 for (const { name, prompt, teacherText, options } of cueScenarios) {
   test(`${name} cue survives PostgreSQL save/reload without a model request`, async ({
     page,
@@ -267,7 +415,20 @@ for (const { name, prompt, teacherText, options } of cueScenarios) {
           type: 'agent_start',
           data: { messageId: 'open-question', agentId: 'default-1', agentName: 'Teacher' },
         },
-        { type: 'text_delta', data: { messageId: 'open-question', content: teacherText } },
+        ...(teacherText
+          ? [{ type: 'text_delta', data: { messageId: 'open-question', content: teacherText } }]
+          : [
+              {
+                type: 'action',
+                data: {
+                  actionId: 'clear-board',
+                  actionName: 'wb_clear',
+                  params: {},
+                  agentId: 'default-1',
+                  messageId: 'open-question',
+                },
+              },
+            ]),
         { type: 'agent_end', data: { messageId: 'open-question', agentId: 'default-1' } },
         {
           type: 'cue_user',
@@ -275,7 +436,12 @@ for (const { name, prompt, teacherText, options } of cueScenarios) {
         },
         {
           type: 'done',
-          data: { totalActions: 0, totalAgents: 1, agentHadContent: true, cueUserReceived: true },
+          data: {
+            totalActions: teacherText ? 0 : 1,
+            totalAgents: 1,
+            agentHadContent: true,
+            cueUserReceived: true,
+          },
         },
       ];
       await route.fulfill({
@@ -311,12 +477,19 @@ for (const { name, prompt, teacherText, options } of cueScenarios) {
     await input.fill('Explain the example');
     await input.press('Enter');
     const user = page.locator('[data-bubble-role="user"]');
-    await expect(user).toContainText(options ? 'Your turn' : (prompt ?? 'Your turn'), {
+    await expect(user).toContainText('Your turn', {
       timeout: 20_000,
     });
     if (options)
-      await expect(page.getByTestId('cue-user-options').locator('button')).toHaveCount(4);
+      await expect(page.getByTestId('cue-user-options').locator('button')).toHaveCount(
+        options.length,
+      );
     else await expect(page.getByTestId('cue-user-options')).toHaveCount(0);
+    await expect(page.locator('[data-bubble-role="teacher"]')).toHaveCount(1);
+    await expect(page.locator('[data-bubble-role="teacher"]')).toContainText(
+      teacherText ?? prompt!,
+    );
+    await expect(user).not.toContainText(prompt ?? teacherText!);
     const owner = await (await page.request.get('/api/persistence/learner-key')).json();
     await expect
       .poll(
@@ -351,12 +524,17 @@ for (const { name, prompt, teacherText, options } of cueScenarios) {
         parkedAt: expect.any(Number),
       });
     await page.reload();
-    await expect(user).toContainText(options ? 'Your turn' : (prompt ?? 'Your turn'), {
+    await expect(user).toContainText('Your turn', {
       timeout: 30_000,
     });
     await expect(page.getByTitle('Stop Discussion', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-bubble-role="teacher"]')).toHaveCount(1);
+    await expect(page.locator('[data-bubble-role="teacher"]')).toContainText(
+      teacherText ?? prompt!,
+    );
+    await expect(user).not.toContainText(prompt ?? teacherText!);
     expect(requests).toBe(1);
-    if (options) {
+    if (options?.length === 4) {
       await expect(page.locator('[data-bubble-role="teacher"]')).toContainText(prompt!);
       await page.screenshot({
         path: testInfo.outputPath('bounded-options-layout.png'),
@@ -384,6 +562,30 @@ for (const { name, prompt, teacherText, options } of cueScenarios) {
         });
       });
       expect(repliesVisible).toBe(true);
+      for (const fullscreen of [false, true]) {
+        if (fullscreen) await page.getByTitle('Fullscreen', { exact: true }).click();
+        for (const dark of [false, true]) {
+          await page.evaluate(
+            (enabled) => document.documentElement.classList.toggle('dark', enabled),
+            dark,
+          );
+          const variant = `${fullscreen ? 'fullscreen' : 'normal'}-${dark ? 'dark' : 'light'}`;
+          await captureScreenshot(page, testInfo, `long-teacher-${variant}.png`);
+          const layout = await assertParkedTeacherLayout(page);
+          const buttonsVisible = await user.evaluate((bubble) => {
+            const speech = bubble.querySelector('[data-bubble-speech]')!.getBoundingClientRect();
+            return Array.from(bubble.querySelectorAll('button')).every((button) => {
+              const bounds = button.getBoundingClientRect();
+              return bounds.top >= speech.top && bounds.bottom <= speech.bottom;
+            });
+          });
+          expect(buttonsVisible).toBe(true);
+          await testInfo.attach(`long-teacher-${variant}-geometry`, {
+            body: JSON.stringify(layout, null, 2),
+            contentType: 'application/json',
+          });
+        }
+      }
     }
     await captureScreenshot(page, testInfo, 'open-ended-restored.png');
     await page.getByTitle('Stop Discussion', { exact: true }).click();

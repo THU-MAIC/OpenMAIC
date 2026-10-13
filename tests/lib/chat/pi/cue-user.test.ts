@@ -3,6 +3,40 @@ import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 import { buildCueUserTool } from '@/lib/chat/pi/tools/cue-user';
 
 describe('Pi chat cue_user tool', () => {
+  it('keeps only the first accepted end_discussion action while preserving reply labels', async () => {
+    const events: unknown[] = [];
+    const tool = buildCueUserTool({
+      getLastAgentId: () => 'default-1',
+      cueUser: async (data) => {
+        events.push(data);
+        return true;
+      },
+    });
+
+    await tool.execute('cue-actions', {
+      options: [
+        { label: '   ', action: 'end_discussion' },
+        { label: 'Explain' },
+        { label: ' Explain ', action: 'end_discussion' },
+        { label: 'Continue lesson', action: 'end_discussion' },
+        { label: 'Stop for now', action: 'end_discussion' },
+        { label: 'Practice' },
+      ],
+    });
+
+    expect(events).toEqual([
+      {
+        fromAgentId: 'default-1',
+        options: [
+          { label: 'Explain' },
+          { label: 'Continue lesson', action: 'end_discussion' },
+          { label: 'Stop for now' },
+          { label: 'Practice' },
+        ],
+      },
+    ]);
+  });
+
   it('emits the existing cue_user payload once', async () => {
     const events: unknown[] = [];
     let userCued = false;

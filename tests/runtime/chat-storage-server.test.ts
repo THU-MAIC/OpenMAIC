@@ -27,6 +27,54 @@ const cookie = '11111111-1111-4111-8111-111111111111';
 const learnerKey = `anon:${cookie}`;
 const postgresUrl = process.env.PG_CHAT_CUE_URL;
 
+function qaSession(id: string, turnCount: number): ChatSession {
+  const now = 1_800_000_000_000;
+  const summaries = Array.from({ length: turnCount }, (_, index) => {
+    const turn = index + 1;
+    return `第${turn}轮：${'我们结合生活中的例子解释这个概念，并说明每个步骤的原因。'.repeat(12)}`.slice(
+      0,
+      300,
+    );
+  });
+  return {
+    id,
+    type: 'qa',
+    title: 'Q&A',
+    status: 'waiting-user',
+    messages: summaries
+      .flatMap((summary, index): ChatSession['messages'] => [
+        {
+          id: `${id}:user-${index + 1}`,
+          role: 'user',
+          parts: [{ type: 'text', text: `请解释第${index + 1}个问题，并给出一个实际例子。` }],
+        },
+        {
+          id: `${id}:teacher-${index + 1}`,
+          role: 'assistant',
+          parts: [{ type: 'text', text: summary }],
+        },
+      ])
+      .slice(-200),
+    config: { agentIds: ['default-1'], defaultAgentId: 'default-1' },
+    toolCalls: [],
+    pendingToolCalls: [],
+    createdAt: now,
+    updatedAt: now + turnCount,
+    cueUser: { fromAgentId: 'default-1', prompt: '还有什么问题？', parkedAt: now + turnCount },
+    directorState: {
+      turnCount,
+      agentResponses: summaries.map((contentPreview) => ({
+        agentId: 'default-1',
+        agentName: 'Teacher',
+        contentPreview,
+        actionCount: 0,
+        whiteboardActions: [],
+      })),
+      whiteboardLedger: [],
+    },
+  };
+}
+
 for (const backend of ['PGlite', 'PostgreSQL'] as const) {
   describe.skipIf(backend === 'PostgreSQL' && !postgresUrl)(
     `parked chat through /api/persistence (${backend})`,
@@ -71,7 +119,7 @@ for (const backend of ['PGlite', 'PostgreSQL'] as const) {
         });
         expect(seeded.status).toBe(204);
         store = new HttpRuntimeStore({ baseUrl: 'http://localhost/api/persistence', fetch });
-      }, 30_000);
+      }, 60_000);
       afterEach(async () => {
         await pool?.end();
         vi.unstubAllEnvs();
@@ -160,6 +208,54 @@ for (const backend of ['PGlite', 'PostgreSQL'] as const) {
         await saveChatSessions(stageId, loaded, { store, learnerKey });
         expect(await store.listRecords(runtime[0]!.id)).toHaveLength(recordCount);
         expect(paths.every((path) => path.startsWith('/api/persistence/'))).toBe(true);
+      });
+
+      it('keeps saving a growing many-turn Q&A and the sessions after it', async () => {
+        const laterSession = qaSession('later-qa', 1);
+        for (let turn = 1; turn <= 70; turn += 1) {
+          const growingSession = qaSession('long-qa', turn);
+          await saveChatSessions(stageId, [growingSession, laterSession], { store, learnerKey });
+          const loaded = await loadChatSessions(stageId, { store, learnerKey });
+          expect(loaded.find((session) => session.id === growingSession.id)).toEqual(
+            growingSession,
+          );
+        }
+
+        const growingSession = qaSession('long-qa', 71);
+        const laterUpdate = qaSession('later-qa', 2);
+        expect(
+          new TextEncoder().encode(JSON.stringify(growingSession.directorState)).byteLength,
+        ).toBeGreaterThan(64 * 1024);
+        await saveChatSessions(stageId, [growingSession, laterUpdate], { store, learnerKey });
+        const loaded = await loadChatSessions(stageId, { store, learnerKey });
+        expect(loaded.find((session) => session.id === growingSession.id)).toEqual(growingSession);
+        expect(loaded.find((session) => session.id === laterUpdate.id)).toEqual(laterUpdate);
+      }, 30_000);
+
+      it('loads a previously persisted large snapshot with its recent history and director context', async () => {
+        await saveChatSessions(stageId, [qaSession('preexisting-qa', 1)], { store, learnerKey });
+        const snapshot = qaSession('preexisting-qa', 300);
+        const { directorState: _director, ...withoutDirector } = snapshot;
+        await saveChatSessions(stageId, [withoutDirector], { store, learnerKey });
+        const [runtime] = await store.listSessions(stageId, learnerKey);
+        const stateRecord = (await store.listRecords(runtime!.id)).at(-1)!;
+        const persistedRecord = {
+          ...stateRecord,
+          payload: { ...stateRecord.payload, directorState: snapshot.directorState },
+        };
+        // Seed a snapshot written before director bounds existed, bypassing the write validator.
+        await pool.query(
+          'UPDATE runtime_records SET data = $1::jsonb WHERE session_id = $2 AND seq = $3',
+          [JSON.stringify(persistedRecord), runtime!.id, stateRecord.seq],
+        );
+
+        expect(
+          new TextEncoder().encode(JSON.stringify(snapshot.directorState)).byteLength,
+        ).toBeGreaterThan(64 * 1024);
+        const [loaded] = await loadChatSessions(stageId, { store, learnerKey });
+        expect(loaded).toEqual(snapshot);
+        expect(loaded?.messages.at(-1)).toEqual(snapshot.messages.at(-1));
+        expect(loaded?.directorState?.agentResponses).toHaveLength(300);
       });
     },
   );

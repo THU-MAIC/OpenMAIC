@@ -27,9 +27,7 @@ const chat: RuntimePayloadValidator = (payload) => {
     if (state.directorState !== undefined && !isValidDirectorState(state.directorState)) {
       return {
         valid: false,
-        errors: [
-          { path: '/payload/directorState', message: 'invalid or oversized chat director state' },
-        ],
+        errors: [{ path: '/payload/directorState', message: 'invalid chat director state' }],
       };
     }
   }

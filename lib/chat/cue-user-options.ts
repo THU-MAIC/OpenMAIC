@@ -7,17 +7,21 @@ export function cueUserOptionLabel(option: CueUserOption): string {
 
 export function normalizeCueUserOptions(options?: CueUserOption[]): CueUserOption[] | undefined {
   const seen = new Set<string>();
+  let hasEndDiscussion = false;
   const normalized = options
     ?.flatMap((option) => {
       const label = cueUserOptionLabel(option).trim().slice(0, 60);
       if (!label || seen.has(label)) return [];
       seen.add(label);
+      const endDiscussion =
+        typeof option !== 'string' && option.action === 'end_discussion' && !hasEndDiscussion;
+      if (endDiscussion) hasEndDiscussion = true;
       return [
         typeof option === 'string'
           ? label
           : {
               label,
-              ...(option.action === 'end_discussion' ? { action: option.action } : {}),
+              ...(endDiscussion ? { action: option.action } : {}),
             },
       ];
     })

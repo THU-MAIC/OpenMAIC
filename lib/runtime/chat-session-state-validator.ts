@@ -8,11 +8,6 @@ const MAX_CUE_OPTION_LENGTH = 60;
 const CUE_KEYS = new Set(['fromAgentId', 'prompt', 'options', 'parkedAt']);
 const OPTION_KEYS = new Set(['label', 'action']);
 
-// Director context is cumulative across turns. Bound both collection work and
-// the complete serialized UTF-8 size, including nested content and extra keys.
-const MAX_DIRECTOR_COLLECTION_LENGTH = 256;
-const MAX_DIRECTOR_STATE_BYTES = 64 * 1024;
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -52,7 +47,7 @@ export function isValidCueUserState(value: unknown): value is CueUserState {
   );
 }
 
-/** Validate the director envelope and bounds; nested action data stays extensible. */
+/** Validate the director envelope; cumulative context and nested action data stay extensible. */
 export function isValidDirectorState(value: unknown): boolean {
   if (
     !isObject(value) ||
@@ -61,15 +56,9 @@ export function isValidDirectorState(value: unknown): boolean {
     !Number.isInteger(value.turnCount) ||
     value.turnCount < 0 ||
     !Array.isArray(value.agentResponses) ||
-    value.agentResponses.length > MAX_DIRECTOR_COLLECTION_LENGTH ||
-    !Array.isArray(value.whiteboardLedger) ||
-    value.whiteboardLedger.length > MAX_DIRECTOR_COLLECTION_LENGTH
+    !Array.isArray(value.whiteboardLedger)
   ) {
     return false;
   }
-  try {
-    return new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_DIRECTOR_STATE_BYTES;
-  } catch {
-    return false;
-  }
+  return true;
 }

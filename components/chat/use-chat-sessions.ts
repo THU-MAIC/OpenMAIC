@@ -72,7 +72,8 @@ export function takeSoftCloseRegistration(
 
 /** Context used by playback cleanup and optional lecture auto-resume. */
 export interface SessionCleanupPayload {
-  sessionId: string;
+  /** Absent when an initial send is stopped before its session is created. */
+  sessionId?: string;
   endReason?: string;
   source: CleanupSource;
 }
@@ -629,7 +630,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     sessionsRef.current = next;
     setSessionsState(next);
   }, []);
-  const sendPreparationRef = useRef<{ sessionId: string | null } | null>(null);
+  const sendPreparationRef = useRef<{
+    sessionId: string | null;
+    inputKey: string;
+    ready: Promise<string | null>;
+    resolveReady: (sessionId: string | null) => void;
+  } | null>(null);
   const previousLiveSessionRef = useRef<PreviousLiveSessionContext | undefined>(undefined);
   const piSessionBoundariesRef = useRef<Map<string, PiSessionBoundaryContext>>(new Map());
 
@@ -638,6 +644,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   // the persisted stage store when the stageId dependency changes.
   useEffect(() => {
     if (stageId === stageIdRef.current) return;
+    sendPreparationRef.current?.resolveReady(null);
     sendPreparationRef.current = null;
     stageIdRef.current = stageId;
     softCloseRegistrationsRef.current.forEach(({ timer }) => clearTimeout(timer));
@@ -708,6 +715,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     const softCloseRegistrations = softCloseRegistrationsRef.current;
     const softCloseLifecycle = softCloseLifecycleRef.current;
     return () => {
+      sendPreparationRef.current?.resolveReady(null);
       sendPreparationRef.current = null;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -1446,7 +1454,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const endSession = useCallback(
     async (sessionId: string, options: EndSessionOptions = {}): Promise<void> => {
       log.info(`[ChatArea] Ending session: ${sessionId}`);
-      if (sendPreparationRef.current?.sessionId === sessionId) sendPreparationRef.current = null;
+      if (sendPreparationRef.current?.sessionId === sessionId) {
+        sendPreparationRef.current.resolveReady(null);
+        sendPreparationRef.current = null;
+      }
       clearSoftCloseRegistration(sessionId);
       softCloseLifecycleRef.current.set(sessionId, 'completed');
       livePausedRef.current = false;
@@ -1591,6 +1602,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const endActiveSession = useCallback(
     async (options: EndSessionOptions = {}): Promise<void> => {
+      const preparation = sendPreparationRef.current;
+      preparation?.resolveReady(null);
+      sendPreparationRef.current = null;
       const active = sessionsRef.current.find(
         (session) =>
           isOpenLiveSession(session) &&
@@ -1598,6 +1612,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       );
       if (active) {
         await endSession(active.id, options);
+      } else if (preparation && options.source) {
+        onStopSessionRef.current?.({
+          ...(preparation.sessionId ? { sessionId: preparation.sessionId } : {}),
+          source: options.source,
+        });
       }
     },
     [endSession],
@@ -1767,11 +1786,29 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const sendMessage = useCallback(
     async (content: string, options: ChatMessageSendOptions = {}): Promise<void> => {
-      if (sendPreparationRef.current) return;
-      const preparation = { sessionId: activeSessionId };
+      let sessionId = activeSessionId;
+      const stageAtSend = stageIdRef.current;
+      const inputKey = JSON.stringify([content, options.elementReference]);
+      // Distinct submissions wait for preparation, keeping the session created
+      // by the preceding send. Repeated clicks on the same input are ignored.
+      while (sendPreparationRef.current) {
+        const pending = sendPreparationRef.current;
+        if (pending.inputKey === inputKey) return;
+        sessionId = await pending.ready;
+        if (
+          !sessionId ||
+          stageIdRef.current !== stageAtSend ||
+          sessionsRef.current.find((session) => session.id === sessionId)?.status === 'completed'
+        )
+          return;
+      }
+      let resolveReady!: (sessionId: string | null) => void;
+      const ready = new Promise<string | null>((resolve) => {
+        resolveReady = resolve;
+      });
+      const preparation = { sessionId, inputKey, ready, resolveReady };
       sendPreparationRef.current = preparation;
       try {
-        let sessionId = activeSessionId;
         const parkedBeforeSend = sessionsRef.current.find(
           (session) => session.id === sessionId && session.status === 'waiting-user',
         );
@@ -1798,6 +1835,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 if (s.id !== interruptedMessageSessionId) return s;
                 const messages = [...s.messages];
                 for (let i = messages.length - 1; i >= 0; i--) {
+                  if (messages[i].role === 'user') break;
                   if (messages[i].role === 'assistant') {
                     const parts = [...messages[i].parts];
                     for (let j = parts.length - 1; j >= 0; j--) {
@@ -1886,7 +1924,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         setIsStreaming(true);
 
         const now = Date.now();
-        const userMessageId = `user-${now}`;
+        const userMessageId = `user-${now}-${nanoid()}`;
 
         // Read all selected agent IDs from settings store
         const settingsState = useSettingsStore.getState();
@@ -1943,6 +1981,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         });
 
         sendPreparationRef.current = null;
+        preparation.resolveReady(sessionId);
         try {
           log.info(
             `[ChatArea] Sending message: "${content.slice(0, 50)}..." agents: ${agentIds.join(', ')}`,
@@ -1990,6 +2029,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           }
         }
       } finally {
+        preparation.resolveReady(null);
         if (sendPreparationRef.current === preparation) sendPreparationRef.current = null;
       }
     },
