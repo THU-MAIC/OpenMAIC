@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -12,20 +12,28 @@ describe('credential security notices', () => {
     expect(source).toContain('<CredentialStorageHint />');
   });
 
-  it('covers credential inputs that do not use the shared API key field', () => {
-    for (const file of [
-      'components/settings/tts-settings.tsx',
-      'components/settings/token-plan-settings.tsx',
-    ]) {
-      expect(readFileSync(resolve(process.cwd(), file), 'utf8')).toContain('CredentialStorageHint');
+  it('covers every password input in settings panels', () => {
+    const files = readdirSync(resolve(process.cwd(), 'components/settings'), {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.tsx'))
+      .map((entry) => resolve(entry.parentPath, entry.name));
+    for (const file of files) {
+      const source = readFileSync(file, 'utf8');
+      if (!/type\s*=\s*(?:["']password["']|\{[^}]*["']password["'][^}]*\})/.test(source)) continue;
+      if (file.endsWith('server-settings.tsx')) continue;
+      expect(source, `${file} must render CredentialStorageHint`).toMatch(
+        /<CredentialStorageHint\b/,
+      );
     }
   });
 
   it('uses credential-neutral wording', () => {
     const locale = JSON.parse(
       readFileSync(resolve(process.cwd(), 'lib/i18n/locales/en-US.json'), 'utf8'),
-    ) as { settings: { credentialStorageHint: string } };
-    expect(locale.settings.credentialStorageHint).toContain('encrypted');
-    expect(locale.settings.credentialStorageHint).toContain('operator');
+    ) as { settings: { credentialStorageHint: string; credentialStorageHintDetail: string } };
+    expect(locale.settings.credentialStorageHint).toContain('Encrypted');
+    expect(locale.settings.credentialStorageHintDetail).toContain('operator');
   });
 });

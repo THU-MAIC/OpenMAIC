@@ -543,6 +543,9 @@ export function TokenPlanSettings({
                         </Button>
                       </div>
                       <CredentialStorageHint />
+                      <p className="text-xs leading-5 text-muted-foreground">
+                        {t(`${tp}.applyModelsNote`)}
+                      </p>
                     </form>
                   )}
 

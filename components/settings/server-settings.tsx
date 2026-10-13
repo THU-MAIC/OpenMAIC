@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type {
@@ -151,10 +152,22 @@ export function EndpointServerOnlyHint() {
 export function CredentialStorageHint() {
   const { t } = useI18n();
   return (
-    <p className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
-      <LockKeyhole className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <span>{t('settings.credentialStorageHint')}</span>
-    </p>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
+          <span className="underline decoration-dotted underline-offset-2">
+            {t('settings.credentialStorageHint')}
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" className="max-w-72 leading-5">
+        {t('settings.credentialStorageHintDetail')}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
