@@ -222,10 +222,7 @@ export function newProviderId(view: ModelSettingsView, presetId: string): string
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, PROVIDER_ID_MAX - 4) || 'provider';
-  const taken = new Set([
-    ...view.providers.map((provider) => provider.id),
-    ...(view.webFetchProviders ?? []).map((provider) => provider.id),
-  ]);
+  const taken = new Set(view.providers.map((provider) => provider.id));
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {
     const candidate = `${base}-${n}`;

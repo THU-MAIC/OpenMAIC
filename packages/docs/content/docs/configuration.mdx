@@ -814,7 +814,7 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 
 ## Web fetch provider slot
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to `builtin` in legacy, empty and YAML configurations, including an omitted root under `lock: all`. Explicit `webFetch: null` disables fetching and removes the tool and its prompt from subsequent runs. Each request uses one provider, with no fallback or escalation. A stale provider reference fails like other media slots; it does not switch to the builtin reader.
+`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to `builtin` in legacy, empty and YAML configurations, including an omitted root under `lock: all`. Explicit `webFetch: null` disables fetching and removes the tool and its prompt from subsequent runs. Each request uses one provider, with no fallback or escalation. An invalid provider reference or a workspace endpoint rejected by policy fails the entire agent run during capability resolution, before the agent starts, as with `webSearch`. This is a configuration error, not a failed `fetch_url` result; it does not switch to the builtin reader.
 
 | Provider | Credentials | Extraction |
 | --- | --- | --- |

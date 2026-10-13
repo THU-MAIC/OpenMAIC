@@ -735,8 +735,11 @@ export async function applyModelSettingsChange(
         'This deployment does not let workspaces add providers',
       );
     }
-    if (getWebFetchProvider(change.id)) {
-      throw new ModelSettingsError('PROVIDER_RESERVED', 'Web fetch registry ids are reserved');
+    if (change.id === DEFAULT_WEB_FETCH_PROVIDER.id) {
+      throw new ModelSettingsError(
+        'PROVIDER_RESERVED',
+        'The implicit web fetch reader id is reserved',
+      );
     }
     if (Object.hasOwn(deploymentProviders, change.id)) {
       throw new ModelSettingsError('PROVIDER_RESERVED', 'The deployment declares this provider id');

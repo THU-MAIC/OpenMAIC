@@ -89,9 +89,9 @@ export function shouldBypassProxy(url: URL): boolean {
   return entries.some((entry) => matchesNoProxyEntry(hostname, port, entry));
 }
 
-let cachedAgent: ProxyAgent | null = null;
-let cachedProxyUrl: string | undefined;
-let cachedSettings: string | undefined;
+// Retain independent transport profiles without growing indefinitely as providers change.
+const PROXY_AGENT_CACHE_LIMIT = 8;
+const proxyAgents = new Map<string, ProxyAgent>();
 
 export interface ProxyFetchOptions {
   /** An operator-configured provider proxy takes precedence over the environment. */
@@ -103,13 +103,20 @@ function getProxyAgent(options?: ProxyFetchOptions): ProxyAgent | undefined {
   const proxyUrl = options?.proxy ?? getProxyUrl();
   if (!proxyUrl) return undefined;
 
-  // Reuse agent if proxy URL hasn't changed
-  const settings = JSON.stringify(options?.timeouts);
-  if (cachedAgent && cachedProxyUrl === proxyUrl && cachedSettings === settings) {
-    return cachedAgent;
+  const timeouts = options?.timeouts;
+  const key = JSON.stringify([
+    proxyUrl,
+    timeouts ? [timeouts.connectTimeout, timeouts.headersTimeout, timeouts.bodyTimeout] : null,
+  ]);
+  const cached = proxyAgents.get(key);
+  if (cached) {
+    // Refresh insertion order so the least recently used profile is evicted first.
+    proxyAgents.delete(key);
+    proxyAgents.set(key, cached);
+    return cached;
   }
 
-  cachedAgent = new ProxyAgent({
+  const agent = new ProxyAgent({
     uri: proxyUrl,
     ...(options?.timeouts
       ? {
@@ -120,9 +127,15 @@ function getProxyAgent(options?: ProxyFetchOptions): ProxyAgent | undefined {
         }
       : {}),
   });
-  cachedSettings = settings;
-  cachedProxyUrl = proxyUrl;
-  return cachedAgent;
+  proxyAgents.set(key, agent);
+  if (proxyAgents.size > PROXY_AGENT_CACHE_LIMIT) {
+    const oldestKey = proxyAgents.keys().next().value!;
+    const oldest = proxyAgents.get(oldestKey)!;
+    proxyAgents.delete(oldestKey);
+    // Graceful close lets active requests finish before releasing their sockets.
+    void oldest.close().catch(() => log.warn('Could not close an evicted proxy agent'));
+  }
+  return agent;
 }
 
 /**

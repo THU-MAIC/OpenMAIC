@@ -192,40 +192,101 @@ it.each([true, false])('prevents workspace builtin shadowing with locked=%s', (l
   });
 });
 
-it.each(['builtin', 'kimi'])(
-  'reserves registry id %s against workspace provider writes',
-  async (id) => {
-    const { applyModelSettingsChange } = await import('@/lib/server/model-config/settings');
-    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
-    try {
-      await expect(
-        applyModelSettingsChange(null, {
-          kind: 'provider',
-          id,
-          preset: 'kimi',
-          apiKey: 'user-key',
-        }),
-      ).rejects.toMatchObject({ code: 'PROVIDER_RESERVED' });
-    } finally {
-      setDeploymentConfigForTests();
-    }
-  },
-);
+it('reserves the implicit builtin id against workspace provider writes', async () => {
+  const { applyModelSettingsChange } = await import('@/lib/server/model-config/settings');
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  try {
+    await expect(
+      applyModelSettingsChange(null, {
+        kind: 'provider',
+        id: 'builtin',
+        preset: 'kimi',
+        apiKey: 'user-key',
+      }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_RESERVED' });
+  } finally {
+    setDeploymentConfigForTests();
+  }
+});
 
-it('gives new workspace providers ids outside the reserved registry names', async () => {
+it('keeps registry ids available for workspace providers except the implicit reader', async () => {
   const { newProviderId } = await import('@/lib/model-settings/edit');
   const { serviceEntries } = await import('@/lib/model-settings/services');
   setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   try {
     const view = modelSettingsView(null);
-    expect(newProviderId(view, 'kimi')).toBe('kimi-2');
+    expect(newProviderId(view, 'kimi')).toBe('kimi');
+    expect(newProviderId(view, 'builtin')).toBe('builtin-2');
     expect(
       serviceEntries(
         view,
         'webFetch',
         view.webFetchProviders!.map((provider) => provider.id),
       ).find((entry) => entry.registryId === 'kimi')?.id,
-    ).toBe('kimi-2');
+    ).toBe('kimi');
+  } finally {
+    setDeploymentConfigForTests();
+  }
+});
+
+it('lets an existing workspace kimi provider rotate or clear its key, edit models and be removed', async () => {
+  const { applyModelSettingsChange } = await import('@/lib/server/model-config/settings');
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  try {
+    const current = {
+      providers: { kimi: { preset: 'kimi', apiKey: 'old-key', models: ['kimi-k2.5'] } },
+      slots: { llm: 'kimi:kimi-k2.5', webFetch: 'kimi' },
+    };
+    const rotated = await applyModelSettingsChange(current, {
+      kind: 'provider',
+      id: 'kimi',
+      preset: 'kimi',
+      apiKey: 'new-key',
+    });
+    expect(rotated.providers?.kimi.apiKey).toBe('new-key');
+    expect(rotated.slots).toEqual(current.slots);
+    const edited = await applyModelSettingsChange(rotated, {
+      kind: 'provider',
+      id: 'kimi',
+      preset: 'kimi',
+      models: ['kimi-k2.5', 'custom-model'],
+    });
+    expect(edited.providers?.kimi.models).toEqual(['kimi-k2.5', 'custom-model']);
+    expect(edited.providers?.kimi.apiKey).toBe('new-key');
+    const cleared = await applyModelSettingsChange(edited, {
+      kind: 'provider',
+      id: 'kimi',
+      preset: 'kimi',
+      apiKey: '',
+    });
+    expect(cleared.providers?.kimi).not.toHaveProperty('apiKey');
+    expect(cleared).not.toHaveProperty('slots');
+    const removed = await applyModelSettingsChange(edited, { kind: 'remove-provider', id: 'kimi' });
+    expect(removed).not.toHaveProperty('providers');
+    expect(removed).not.toHaveProperty('slots');
+  } finally {
+    setDeploymentConfigForTests();
+  }
+});
+
+it('keeps a legacy browser kimi provider and its assignments on import', async () => {
+  const { buildModelSettingsProposal } = await import('@/lib/legacy-browser-import/model-settings');
+  const { importModelSettings } = await import('@/lib/server/model-config/settings');
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  try {
+    const proposal = buildModelSettingsProposal({
+      providerId: 'kimi',
+      modelId: 'kimi-k2.5',
+      providersConfig: { kimi: { apiKey: 'legacy-key', baseUrl: '' } },
+    })!;
+    const result = await importModelSettings(null, proposal);
+    expect(result.skipped).toEqual([]);
+    expect(result.config.providers?.kimi).toEqual({ preset: 'kimi', apiKey: 'legacy-key' });
+    expect(result.config.slots?.llm).toBe('kimi:kimi-k2.5');
+    expect(result.imported).toEqual([
+      { kind: 'provider', id: 'kimi' },
+      { kind: 'slot', id: 'llm' },
+    ]);
   } finally {
     setDeploymentConfigForTests();
   }

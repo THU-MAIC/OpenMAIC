@@ -85,10 +85,7 @@ export function serviceEntries(
     view.presets.find((preset) => preset.id === provider.preset);
   const placed = new Set<string>();
   const services: ServiceEntry[] = [];
-  const taken = new Set([
-    ...view.providers.map((provider) => provider.id),
-    ...(view.webFetchProviders ?? []).map((provider) => provider.id),
-  ]);
+  const taken = new Set(view.providers.map((provider) => provider.id));
   for (const registryId of registryIds) {
     const presetId = presetIdFor(capability, registryId);
     const named = serving.find(
