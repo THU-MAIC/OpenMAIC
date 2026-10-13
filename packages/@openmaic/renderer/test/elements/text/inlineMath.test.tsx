@@ -3,7 +3,7 @@ import type { ReactElement } from 'react';
 import katex from 'katex';
 import { render } from '@testing-library/react';
 import type { PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BaseShapeElement } from '../../../src/elements/shape/BaseShapeElement';
 import { StaticTable } from '../../../src/elements/table/StaticTable';
 import { BaseTextElement } from '../../../src/elements/text/BaseTextElement';
@@ -313,14 +313,76 @@ describe('slide elements typeset inline formulas', () => {
   });
 });
 
-describe('inline math typesetting budget', () => {
-  /** A distinct ~1900-character matrix: expensive to typeset and never cached. */
-  const matrix = (index: number) =>
-    `\\begin{pmatrix}${Array.from({ length: 160 }, (_, k) => `a_{${index}${k}}`).join('&')}\\end{pmatrix}`.slice(
-      0,
-      1_900,
-    );
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 40));
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('inline math typesetting budget', { timeout: 30_000 }, () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * A distinct formula padded with trailing whitespace to 1,900 source
+   * characters. The budget counts source characters, so two of these fill a
+   * pass, while each costs KaTeX next to nothing (math mode ignores spaces).
+   */
+  const long = (index: number) => `x_{${index}}`.padEnd(1_900);
+  /**
+   * A distinct formula of 40 radicals, padded like {@link long}: each render is
+   * over 64,000 characters of markup (the typeset cache's per-entry limit) at a
+   * fraction of the cost of a large matrix.
+   */
+  const huge = (index: number) =>
+    Array.from({ length: 40 }, (_, k) => `\\sqrt{${index}_{${k}}}`)
+      .join('')
+      .padEnd(1_900);
+
+  /**
+   * Idle callbacks that run only when the test flushes them, so idle-time work
+   * is deterministic instead of raced against wall-clock polling.
+   */
+  function idleQueue() {
+    const callbacks = new Map<number, () => void>();
+    let next = 0;
+    const request = vi.fn((callback: () => void) => {
+      next += 1;
+      callbacks.set(next, callback);
+      return next;
+    });
+    const cancel = vi.fn((handle: number) => {
+      callbacks.delete(handle);
+    });
+    vi.stubGlobal('requestIdleCallback', request);
+    vi.stubGlobal('cancelIdleCallback', cancel);
+    return {
+      request,
+      cancel,
+      callbacks,
+      /** Run queued callbacks, and those they queue, until none is left. */
+      flush() {
+        for (let run = 0; run < 100 && callbacks.size > 0; run += 1) {
+          const [handle, callback] = callbacks.entries().next().value!;
+          callbacks.delete(handle);
+          callback();
+        }
+        expect(callbacks.size).toBe(0);
+      },
+    };
+  }
+
+  const longText = (id: string, sources: readonly string[]) =>
+    ({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 80,
+      rotate: 0,
+      id,
+      type: 'text',
+      content: sources.map((source) => `<p>${stored(source)}</p>`).join(''),
+      defaultFontName: '',
+      defaultColor: '#000',
+    }) as PPTTextElement;
 
   it('typesets ordinary prose in one pass', () => {
     const root = host(
@@ -332,8 +394,8 @@ describe('inline math typesetting budget', () => {
     expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(60);
   });
 
-  it('leaves heavy formulas past the budget for later passes', async () => {
-    const sources = Array.from({ length: 8 }, (_, index) => `${matrix(index)}+${index}`);
+  it('leaves long formulas past the budget for later passes', () => {
+    const sources = Array.from({ length: 8 }, (_, index) => long(index));
     expect(sources.every((source) => source.length <= MAX_INLINE_MATH_SOURCE)).toBe(true);
     const root = host(sources.map((source) => `<p>${stored(source)}</p>`).join(''));
     expect(renderInlineMath(root)).toBe(true);
@@ -347,7 +409,7 @@ describe('inline math typesetting budget', () => {
   });
 
   it('typesets everything at once when asked to complete', () => {
-    const sources = Array.from({ length: 6 }, (_, index) => `${matrix(index + 20)}+${index}`);
+    const sources = Array.from({ length: 6 }, (_, index) => long(index + 20));
     const root = host(sources.map((source) => `<p>${stored(source)}</p>`).join(''));
     expect(renderInlineMath(root, { complete: true })).toBe(false);
     expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(sources.length);
@@ -365,67 +427,87 @@ describe('inline math typesetting budget', () => {
     expect(root.textContent).toContain(`q_{${count - 1}}`);
   });
 
-  it('finishes the rest in idle time after mount', async () => {
-    const box = { left: 0, top: 0, width: 400, height: 80, rotate: 0 };
-    const sources = Array.from({ length: 6 }, (_, index) => `${matrix(index + 40)}+${index}`);
-    const content = sources.map((source) => `<p>${stored(source)}</p>`).join('');
-    const element = {
-      ...box,
-      id: 'heavy',
-      type: 'text',
-      content,
-      defaultFontName: '',
-      defaultColor: '#000',
-    } as PPTTextElement;
-    const view = render(<BaseTextElement elementInfo={element} />);
+  it('finishes the rest in idle time after mount', () => {
+    const idle = idleQueue();
+    const sources = Array.from({ length: 6 }, (_, index) => long(index + 40));
+    const view = render(<BaseTextElement elementInfo={longText('heavy', sources)} />);
     const typeset = () => view.container.querySelectorAll('.katex[data-inline-math]').length;
     expect(typeset()).toBeLessThan(sources.length);
-    for (let index = 0; index < 20 && typeset() < sources.length; index += 1) await settle();
+    expect(idle.request).toHaveBeenCalled();
+    idle.flush();
     expect(typeset()).toBe(sources.length);
   });
 
-  it('cancels idle work on unmount, and a late idle callback does nothing', () => {
-    const callbacks = new Map<number, () => void>();
-    let next = 0;
-    const request = vi.fn((callback: () => void) => {
-      next += 1;
-      callbacks.set(next, callback);
-      return next;
-    });
-    const cancel = vi.fn((handle: number) => callbacks.delete(handle));
-    vi.stubGlobal('requestIdleCallback', request);
-    vi.stubGlobal('cancelIdleCallback', cancel);
-    try {
-      const sources = Array.from({ length: 6 }, (_, index) => `${matrix(index + 60)}+${index}`);
-      const element = {
-        left: 0,
-        top: 0,
-        width: 400,
-        height: 80,
-        rotate: 0,
-        id: 'heavy-3',
-        type: 'text',
-        content: sources.map((source) => `<p>${stored(source)}</p>`).join(''),
-        defaultFontName: '',
-        defaultColor: '#000',
-      } as PPTTextElement;
-      const view = render(<BaseTextElement elementInfo={element} />);
-      expect(request).toHaveBeenCalled();
-      const [handle, late] = [...callbacks.entries()].at(-1)!;
-      view.unmount();
-      expect(cancel).toHaveBeenCalledWith(handle);
-      const typeset = vi.spyOn(katex, 'render');
-      late();
-      expect(typeset).not.toHaveBeenCalled();
-      typeset.mockRestore();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+  it('falls back to timers where idle callbacks are unavailable', () => {
+    vi.useFakeTimers();
+    const sources = Array.from({ length: 6 }, (_, index) => long(index + 50));
+    const view = render(<BaseTextElement elementInfo={longText('heavy-2', sources)} />);
+    const typeset = () => view.container.querySelectorAll('.katex[data-inline-math]').length;
+    expect(typeset()).toBeLessThan(sources.length);
+    vi.runAllTimers();
+    expect(typeset()).toBe(sources.length);
+    view.unmount();
   });
 
-  it('keeps progress through repeated commits with formulas too large to cache', async () => {
-    // Each render is ~170 KB of markup, over the cache's per-entry limit.
-    const sources = Array.from({ length: 6 }, (_, index) => `${matrix(index + 80)}+${index}`);
+  it('cancels idle work on unmount, and a late idle callback does nothing', () => {
+    const idle = idleQueue();
+    const sources = Array.from({ length: 6 }, (_, index) => long(index + 60));
+    const view = render(<BaseTextElement elementInfo={longText('heavy-3', sources)} />);
+    expect(idle.request).toHaveBeenCalled();
+    const [handle, late] = [...idle.callbacks.entries()].at(-1)!;
+    view.unmount();
+    expect(idle.cancel).toHaveBeenCalledWith(handle);
+    const typeset = vi.spyOn(katex, 'render');
+    late();
+    expect(typeset).not.toHaveBeenCalled();
+    typeset.mockRestore();
+  });
+
+  it.each([
+    ['removed', undefined],
+    ['replaced', () => {}],
+  ] as const)(
+    'cancels idle work with the function it scheduled with when cancelIdleCallback is %s later',
+    (_, later) => {
+      const idle = idleQueue();
+      const sources = Array.from({ length: 6 }, (_, index) => long(index + 70));
+      const view = render(<BaseTextElement elementInfo={longText('heavy-4', sources)} />);
+      const [handle] = [...idle.callbacks.keys()].slice(-1);
+      expect(handle).toBeDefined();
+      const replacement = later ? vi.fn(later) : undefined;
+      vi.stubGlobal('cancelIdleCallback', replacement);
+      if (!later) vi.stubGlobal('requestIdleCallback', undefined);
+      expect(() => view.unmount()).not.toThrow();
+      expect(idle.cancel).toHaveBeenCalledWith(handle);
+      expect(idle.callbacks.has(handle)).toBe(false);
+      if (replacement) expect(replacement).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cancels the timer fallback with the clearTimeout it scheduled with', () => {
+    const realSetTimeout = globalThis.setTimeout;
+    const realClearTimeout = globalThis.clearTimeout;
+    const schedule = vi.fn(((...args: Parameters<typeof setTimeout>) =>
+      realSetTimeout(...args)) as typeof setTimeout);
+    const clear = vi.fn(((handle) => realClearTimeout(handle)) as typeof clearTimeout);
+    vi.stubGlobal('setTimeout', schedule);
+    vi.stubGlobal('clearTimeout', clear);
+    const sources = Array.from({ length: 6 }, (_, index) => long(index + 75));
+    const view = render(<BaseTextElement elementInfo={longText('heavy-5', sources)} />);
+    const scheduled = schedule.mock.calls.findLastIndex(([, delay]) => delay === 16);
+    expect(scheduled).toBeGreaterThanOrEqual(0);
+    const handle = schedule.mock.results[scheduled].value;
+    const replacement = vi.fn(((handle) => realClearTimeout(handle)) as typeof clearTimeout);
+    vi.stubGlobal('clearTimeout', replacement);
+    view.unmount();
+    expect(clear).toHaveBeenCalledWith(handle);
+    expect(replacement).not.toHaveBeenCalledWith(handle);
+  });
+
+  it('keeps progress through repeated commits with formulas too large to cache', () => {
+    const idle = idleQueue();
+    const sources = Array.from({ length: 6 }, (_, index) => huge(index + 80));
+    expect(sources.every((source) => source.length <= MAX_INLINE_MATH_SOURCE)).toBe(true);
     const content = sources.map((source) => `<p>${stored(source)}</p>`).join('');
     const box = { top: 0, width: 400, height: 80, rotate: 0 };
     const views = [
@@ -490,16 +572,16 @@ describe('inline math typesetting budget', () => {
         expect(typeset()[0]).toBe(first);
         previous = typeset().length;
       }
-      for (let index = 0; index < 20 && typeset().length < sources.length; index += 1) {
-        await settle();
-      }
+      idle.flush();
       expect(typeset()).toHaveLength(sources.length);
       mounted.unmount();
     }
   });
 });
 
-describe('completeInlineMath', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('completeInlineMath', { timeout: 30_000 }, () => {
   function rootWith(count: number, prefix: string): HTMLElement {
     const root = document.createElement('div');
     root.setAttribute('data-inline-math-root', '');

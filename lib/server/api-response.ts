@@ -1,3 +1,4 @@
+import { ModelAuthorizationError } from './model-config/model-authorization';
 import { NextResponse } from 'next/server';
 
 export const API_ERROR_CODES = {
@@ -75,4 +76,12 @@ export function apiError(
 
 export function apiSuccess<T extends Record<string, unknown>>(data: T, status = 200): NextResponse {
   return NextResponse.json({ success: true, ...data }, { status });
+}
+
+/** A stable response for a model refused before provider access. */
+export function modelAuthorizationResponse(error: unknown): NextResponse<ApiErrorBody> | undefined {
+  if (error instanceof ModelAuthorizationError) {
+    return apiError(error.code, error.httpStatus, error.message);
+  }
+  return undefined;
 }

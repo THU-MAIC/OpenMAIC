@@ -24,6 +24,7 @@ import { type AST, toAST } from '@/lib/export/html-parser';
 import { type SvgPoints, toPoints, getSvgPathRange } from '@/lib/export/svg-path-parser';
 import { svg2Base64 } from '@/lib/export/svg2base64';
 import { latexToOmml } from '@/lib/export/latex-to-omml';
+import { inlineMathSource, proseToPlainText } from '@/lib/export/pptx-rich-text';
 import { createLogger } from '@/lib/logger';
 import { collectSpeechText } from './narration';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
@@ -124,15 +125,22 @@ function formatHTML(html: string, ratioPx2Pt: number) {
         }
       }
 
+      // An inline formula is one run holding its LaTeX source, never the
+      // text of its rendered KaTeX tree.
+      const mathSource = inlineMathSource(item);
+
       if ('tagName' in item && item.tagName === 'br') {
         slices.push({ text: '', options: { breakLine: true } });
-      } else if ('content' in item) {
-        const text = item.content
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&gt;/g, '>')
-          .replace(/&lt;/g, '<')
-          .replace(/&amp;/g, '&')
-          .replace(/\n/g, '');
+      } else if ('content' in item || mathSource !== null) {
+        const text =
+          mathSource !== null
+            ? mathSource
+            : (item as { content: string }).content
+                .replace(/&nbsp;/g, ' ')
+                .replace(/&gt;/g, '>')
+                .replace(/&lt;/g, '<')
+                .replace(/&amp;/g, '&')
+                .replace(/\n/g, '');
         const options: pptxgen.TextPropsOptions = {};
 
         if (styleObj['font-size']) {
@@ -1061,7 +1069,7 @@ export async function buildPptxBlob(
             if (cell.style?.color) cellOptions.color = formatColor(cell.style.color).color;
 
             if (!hiddenCells.includes(`${i}_${j}`)) {
-              _row.push({ text: cell.text, options: cellOptions });
+              _row.push({ text: proseToPlainText(cell.text), options: cellOptions });
             }
           }
           if (_row.length) tableData.push(_row);

@@ -226,6 +226,7 @@
     "endQA": "Encerrar Perguntas",
     "softClosing": "Continuar discussão",
     "error": {
+      "toolCallingRequired": "O chat da sala de aula precisa de um modelo com suporte a chamadas de ferramentas. Selecione um para o slot da sala de aula em Configurações → Configuração de modelos do curso, ou entre em contato com o administrador se essa configuração for gerenciada.",
       "emptyAgentResponses": "Os agentes retornaram respostas vazias; a discussão foi interrompida. Tente novamente ou verifique as configurações do modelo.",
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
     },
@@ -2117,7 +2118,7 @@
         },
         "classroom": {
           "name": "Sala de aula",
-          "desc": "Discussão, correção de quizzes e projetos durante o aprendizado."
+          "desc": "Discussão, correção de quizzes e projetos durante o aprendizado. O chat da sala de aula precisa de um modelo com suporte a chamadas de ferramentas."
         },
         "agent": {
           "name": "Agente",

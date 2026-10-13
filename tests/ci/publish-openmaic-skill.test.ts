@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { delimiter, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,10 @@ const semverPackageJsonPath = createRequire(packageJsonPath).resolve('semver/pac
 const fixtureRoot = mkdtempSync(resolve(tmpdir(), 'clawhub-publish-test-'));
 const stubClawhub = resolve(fixtureRoot, 'clawhub-stub.sh');
 let runIndex = 0;
+
+/** `/bin/bash` is a POSIX path that does not exist on Windows; elsewhere it is
+ * what PATH resolves `bash` to, so both platforms run the same interpreter. */
+const bashCommand = process.platform === 'win32' ? 'bash' : '/bin/bash';
 
 writeFileSync(
   stubClawhub,
@@ -61,10 +65,10 @@ function runPublish(options: RunOptions = {}) {
   if (options.preflight !== undefined) {
     env.STUB_PREFLIGHT_JSON = JSON.stringify(options.preflight);
   }
-  if (options.pathPrefix) env.PATH = `${options.pathPrefix}:${env.PATH ?? ''}`;
+  if (options.pathPrefix) env.PATH = `${options.pathPrefix}${delimiter}${env.PATH ?? ''}`;
   if (options.omittedEnvironment) delete env[options.omittedEnvironment];
 
-  const result = spawnSync('/bin/bash', [publishScript, ...(options.args ?? [])], {
+  const result = spawnSync(bashCommand, [publishScript, ...(options.args ?? [])], {
     cwd: repositoryRoot,
     encoding: 'utf8',
     env,

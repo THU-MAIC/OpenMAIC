@@ -9,6 +9,7 @@
  * lease gone. PostgreSQL decides who executes a run; this process only keeps
  * its own count.
  */
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { randomUUID } from 'node:crypto';
 
 import { createLogger } from '@/lib/logger';
@@ -26,6 +27,7 @@ import {
   keepGenerationRunAssetsAlive,
   readGenerationRunState,
   releaseGenerationRunLease,
+  refuseGenerationRunExecution,
   type ClaimedRun,
 } from './store';
 
@@ -93,6 +95,13 @@ export async function runClaimedGenerationRun(
       onLeaseReleased: () => {
         released = true;
       },
+    });
+  } catch (error) {
+    if (!(error instanceof ModelAuthorizationError)) throw error;
+    return await refuseGenerationRunExecution(claim.lease, {
+      message: error.message,
+      errorCode: error.code,
+      statusCode: error.httpStatus,
     });
   } finally {
     clearInterval(heartbeat);

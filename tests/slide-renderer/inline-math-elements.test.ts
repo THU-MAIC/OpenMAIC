@@ -9,7 +9,8 @@ import { createElement, type ComponentType } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import type { PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MAX_INLINE_MATH_SOURCE } from '@openmaic/renderer';
 import { BaseShapeElement } from '@/components/slide-renderer/components/element/ShapeElement/BaseShapeElement';
 import { StaticTable } from '@/components/slide-renderer/components/element/TableElement/StaticTable';
 import { BaseTextElement } from '@/components/slide-renderer/components/element/TextElement/BaseTextElement';
@@ -70,7 +71,36 @@ afterEach(() => {
   host?.remove();
   root = null;
   host = null;
+  vi.unstubAllGlobals();
 });
+
+/**
+ * Idle callbacks that run only when the test flushes them, so idle-time work
+ * is deterministic instead of raced against wall-clock polling.
+ */
+function idleQueue() {
+  const callbacks = new Map<number, () => void>();
+  let next = 0;
+  const request = vi.fn((callback: () => void) => {
+    next += 1;
+    callbacks.set(next, callback);
+    return next;
+  });
+  vi.stubGlobal('requestIdleCallback', request);
+  vi.stubGlobal('cancelIdleCallback', (handle: number) => callbacks.delete(handle));
+  return {
+    request,
+    /** Run queued callbacks, and those they queue, until none is left. */
+    flush() {
+      for (let run = 0; run < 100 && callbacks.size > 0; run += 1) {
+        const [handle, callback] = callbacks.entries().next().value!;
+        callbacks.delete(handle);
+        callback();
+      }
+      expect(callbacks.size).toBe(0);
+    },
+  };
+}
 
 function mount<P extends object>(component: ComponentType<P>, props: P): (next: P) => void {
   host = document.createElement('div');
@@ -87,7 +117,9 @@ function expectTypeset(latex: string): void {
   expect(formulas[0].classList.contains('katex')).toBe(true);
 }
 
-describe('app slide renderer — inline formulas', () => {
+// Typesetting ~1,000 formulas takes well under a second alone but can pass the
+// 5 s default when the release gate runs several package suites at once.
+describe('app slide renderer — inline formulas', { timeout: 30_000 }, () => {
   it('in text elements, across a move and a content change', () => {
     const update = mount(BaseTextElement, { elementInfo: text(prose(LATEX)) });
     expectTypeset(LATEX);
@@ -139,15 +171,20 @@ describe('app slide renderer — inline formulas', () => {
     }
   });
 
-  it('keeps progress through repeated commits with formulas too large to cache', async () => {
-    // A ~1360-character matrix renders to ~170 KB of markup: over the cache's
-    // per-entry limit, so every re-typeset is full price.
-    const matrix = (index: number) =>
-      `\\begin{pmatrix}${Array.from({ length: 160 }, (_, k) => `a_{${index}${k}}`).join('&')}\\end{pmatrix}`;
-    const content = Array.from(
-      { length: 6 },
-      (_, index) => `<p>${stored(matrix(index + 300))}</p>`,
-    ).join('');
+  it('keeps progress through repeated commits with formulas too large to cache', () => {
+    const idle = idleQueue();
+    // 40 radicals per formula, padded with trailing spaces (ignored in math
+    // mode) to 1,900 source characters: six of them cross the per-pass budget
+    // of 4,000 source characters, and each render is over the typeset cache's
+    // 64,000-character per-entry limit (asserted below), so every re-typeset
+    // is full price, at a fraction of the cost of a large matrix.
+    const huge = (index: number) =>
+      Array.from({ length: 40 }, (_, k) => `\\sqrt{${index}_{${k}}}`)
+        .join('')
+        .padEnd(1_900);
+    const sources = Array.from({ length: 6 }, (_, index) => huge(index + 300));
+    expect(sources.every((source) => source.length <= MAX_INLINE_MATH_SOURCE)).toBe(true);
+    const content = sources.map((source) => `<p>${stored(source)}</p>`).join('');
     const cases = [
       [BaseTextElement, (left: number) => text(content, left)],
       [StaticTable, (left: number) => table(content, 400 + left)],
@@ -158,19 +195,19 @@ describe('app slide renderer — inline formulas', () => {
       });
       const typeset = () => host!.querySelectorAll('.katex[data-inline-math]');
       let previous = typeset().length;
+      expect(previous).toBeGreaterThan(0);
+      expect(previous).toBeLessThan(sources.length);
+      expect(idle.request).toHaveBeenCalled();
       const first = typeset()[0];
+      expect(first.outerHTML.length).toBeGreaterThan(64_000);
       for (let commit = 1; commit <= 5; commit += 1) {
         update({ elementInfo: make(commit * 10) });
         expect(typeset().length).toBeGreaterThanOrEqual(previous);
         expect(typeset()[0]).toBe(first);
         previous = typeset().length;
       }
-      for (let index = 0; index < 20 && typeset().length < 6; index += 1) {
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 40));
-        });
-      }
-      expect(typeset()).toHaveLength(6);
+      idle.flush();
+      expect(typeset()).toHaveLength(sources.length);
       act(() => root?.unmount());
       host?.remove();
       root = null;

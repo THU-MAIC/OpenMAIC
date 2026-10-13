@@ -12,6 +12,15 @@ const EXPANDING_INPUTS = {
   gdefAndLet: `\\gdef\\ma{${LEAF}}\\let\\mb\\ma\\global\\def\\mc{${times('mb', 30)}}${times('mc', 30)}`,
 };
 
+/**
+ * Wall-clock ceiling for one render. The checks after it are what show the
+ * definitions were dropped; this only catches a runaway. Expanded without the
+ * guard, `nestedDef` alone takes tens of seconds, while a guarded render takes
+ * a few milliseconds, so the ceiling sits far from both and holds on a loaded
+ * CI runner.
+ */
+const RUNAWAY_MS = 1_000;
+
 async function importMath(latex: string) {
   const json = {
     size: { width: 960, height: 540 },
@@ -48,7 +57,7 @@ describe('imported formulas ignore formula-defined macros', () => {
   for (const [name, latex] of Object.entries(EXPANDING_INPUTS)) {
     it(name, async () => {
       const { elements, ms } = await importMath(latex);
-      expect(ms).toBeLessThan(100);
+      expect(ms).toBeLessThan(RUNAWAY_MS);
       expect(JSON.stringify(elements).length).toBeLessThan(64 * 1024);
       // The definitions are dropped, so KaTeX rejects the formula and the
       // importer keeps its plain-text fallback.

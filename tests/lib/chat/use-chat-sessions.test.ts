@@ -365,6 +365,100 @@ describe('lectureActionPersistParams', () => {
 });
 
 describe('runPiSingleRequest', () => {
+  it.each(['qa', 'discussion'] as const)(
+    'shows the localized tool requirement before consuming an SSE stream for %s',
+    async (sessionType) => {
+      const response = new Response(
+        JSON.stringify({
+          errorCode: 'MODEL_CONFIG_INVALID',
+          reason: 'tool_calling_required',
+          error: 'Server English explanation',
+        }),
+        { status: 400 },
+      );
+      const json = vi.spyOn(response, 'json');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => response),
+      );
+      const onEvent = vi.fn();
+      const onResponseAccepted = vi.fn();
+      try {
+        await expect(
+          runPiSingleRequest(
+            'session-1',
+            {
+              messages: [],
+              storeState: {
+                stage: null,
+                scenes: [],
+                currentSceneId: null,
+                mode: 'autonomous',
+                whiteboardOpen: false,
+              },
+              config: { agentIds: ['teacher'] },
+            },
+            new AbortController(),
+            sessionType,
+            () => ({ onEvent, onIterationEnd: vi.fn() }),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            { current: vi.fn() },
+            (key) => `translated:${key}`,
+            onResponseAccepted,
+          ),
+        ).rejects.toThrow('translated:chat.error.toolCallingRequired');
+        expect(json).toHaveBeenCalledOnce();
+        expect(onEvent).not.toHaveBeenCalled();
+        expect(onResponseAccepted).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it.each([
+    ['not JSON', 400],
+    ['{}', 400],
+    ['{"reason":"tool_calling_required"}', 500],
+  ])('keeps the status fallback for %s (%s)', async (body, status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status })),
+    );
+    try {
+      await expect(
+        runPiSingleRequest(
+          'session-1',
+          {
+            messages: [],
+            storeState: {
+              stage: null,
+              scenes: [],
+              currentSceneId: null,
+              mode: 'autonomous',
+              whiteboardOpen: false,
+            },
+            config: { agentIds: ['teacher'] },
+          },
+          new AbortController(),
+          'qa',
+          () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          { current: vi.fn() },
+          (key) => key,
+        ),
+      ).rejects.toThrow(`Pi chat request failed: ${status}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     'removed-before-post',
     'runtime-authoritative',

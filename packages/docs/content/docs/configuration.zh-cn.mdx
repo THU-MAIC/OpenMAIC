@@ -11,7 +11,7 @@ OpenMAIC 有三个配置来源，各自只负责一件事：
 | Web 端的模型设置 | 工作区的用户 | 用户自己的服务商，以及 `openmaic.yml` 未锁定槽位的分配，保存在数据库中 | 立即生效 |
 | 环境变量（`.env.local`、容器 Secret） | 运维人员 | `openmaic.yml` 引用的密钥，以及其他所有服务端选项 | 启动时 |
 
-除 `DATABASE_URL` 外，所有环境变量都是可选的（见[部署](./deployment.mdx)）。全部环境变量见 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以从 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 开始编写模型配置，预设和模型 ID 见[支持的模型](./supported-models.mdx)。
+`DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
 早期版本只能通过服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 配置模型。除 `MODEL_ROUTES` 外，这些方式目前仍然可用，但已弃用，见[从旧配置迁移](#从旧配置迁移)。
 
@@ -97,7 +97,7 @@ allowUserKeys: false               # 用户只能在这些服务商中选择，�
 | `preset` | 是 | 使用哪个内置预设，见[支持的模型 → 预设](./supported-models.mdx#预设)。 |
 | `apiKey` | 通常需要 | API key。不需要 key 的服务（本地服务、Brave、SearXNG、unpdf）可以省略。 |
 | `baseUrl` | 部分预设需要 | 替代预设自带端点的地址。`openai-compatible`、`azure`、`searxng` 和 `mineru` 必填。 |
-| `models` | 否 | 该服务商提供的对话模型 ID，即模型设置里列出的选项。对 `openai-compatible` 来说这是模型设置唯一的列表来源。它不限制 `slots` 里能写哪些模型。 |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | 否 | 该服务商请求使用的 HTTP 代理地址。 |
 | `credentials` | 部分预设需要 | 不使用单个 key 的服务所需的密钥对。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
 | `options` | 否 | 非机密的、服务商特有的设置，例如 `voxcpm-tts` 的 `backend`。名称由字母、数字、`_` 和 `-` 组成；值为字符串、数字或布尔值（不能嵌套映射或列表），可以使用 `${VAR}`。模型设置会显示 options，因此绝不要在其中放 key。仅限部署：模型设置无法设置它们。 |
@@ -765,3 +765,23 @@ web-search:
 ```
 
 环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。
+
+## Model authorization for server-managed providers
+
+For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+
+To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.

@@ -13,6 +13,7 @@
  *
  * Response: { success: boolean, message: string }
  */
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import { NextRequest } from 'next/server';
 import { testVideoConnectivity, VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -127,6 +128,8 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ message: result.message });
   } catch (err) {
+    const authorization = modelAuthorizationResponse(err);
+    if (authorization) return authorization;
     log.error(`Video provider verification failed: ${err}`, err);
     return apiError('INTERNAL_ERROR', 500, 'Connectivity test error');
   }

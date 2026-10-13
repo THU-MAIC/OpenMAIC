@@ -226,6 +226,7 @@
     "endQA": "End Q&A",
     "softClosing": "Continue discussion",
     "error": {
+      "toolCallingRequired": "Classroom chat requires a model that supports tool calling. Select one for the classroom slot in Settings → Course Model Config, or contact your administrator if this setting is managed.",
       "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
@@ -2117,7 +2118,7 @@
         },
         "classroom": {
           "name": "Classroom",
-          "desc": "Discussion, quiz grading and projects while learning."
+          "desc": "Discussion, quiz grading and projects while learning. Classroom chat needs a model that supports tool calling."
         },
         "agent": {
           "name": "Agent",

@@ -15,6 +15,15 @@ const EXPANDING_INPUTS = {
   gdefAndLet: `\\gdef\\ma{${LEAF}}\\let\\mb\\ma\\global\\def\\mc{${times('mb', 30)}}${times('mc', 30)}`,
 };
 
+/**
+ * Wall-clock ceiling for one render. The checks after it are what show the
+ * definitions were dropped; this only catches a runaway. Expanded without the
+ * guard, `nestedDef` alone takes tens of seconds, while a guarded render takes
+ * a few milliseconds, so the ceiling sits far from both and holds on a loaded
+ * CI runner.
+ */
+const RUNAWAY_MS = 1_000;
+
 function latexElement(latex: string) {
   return { type: 'latex', latex, left: 0, top: 0, width: 400, height: 80 };
 }
@@ -32,7 +41,7 @@ describe('generated latex elements ignore formula-defined macros', () => {
   for (const [name, latex] of Object.entries(EXPANDING_INPUTS)) {
     test(name, async () => {
       const { html, ms } = await renderLatex(latex);
-      expect(ms).toBeLessThan(100);
+      expect(ms).toBeLessThan(RUNAWAY_MS);
       expect(html.length).toBeLessThan(64 * 1024);
     });
   }

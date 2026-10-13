@@ -1,3 +1,4 @@
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import {
   resolveServerWebSearchProviderId,
   isServerConfiguredProvider,
@@ -253,6 +254,7 @@ export function webSearchConfigFromConnection(
     connection.origin === 'default'
       ? requestedSearchModel(providerId, requested)
       : connection.modelId;
+  authorizeMediaModel(connection, 'webSearch', model);
   return {
     providerId,
     apiKey,

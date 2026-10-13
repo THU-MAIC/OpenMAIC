@@ -226,6 +226,7 @@
     "endQA": "Kết thúc hỏi đáp",
     "softClosing": "Tiếp tục thảo luận",
     "error": {
+      "toolCallingRequired": "Trò chuyện trong lớp cần mô hình hỗ trợ gọi công cụ. Hãy chọn mô hình đó cho ô lớp học trong Cài đặt → Cấu hình mô hình khóa học, hoặc liên hệ quản trị viên nếu cài đặt này do quản trị viên quản lý.",
       "emptyAgentResponses": "Các tác nhân trả về nội dung rỗng nên thảo luận đã dừng. Hãy thử lại hoặc kiểm tra cài đặt model.",
       "streamInterrupted": "Luồng dữ liệu dừng bất ngờ, thảo luận chưa hoàn tất. Vui lòng thử lại."
     },
@@ -2117,7 +2118,7 @@
         },
         "classroom": {
           "name": "Lớp học",
-          "desc": "Thảo luận, chấm bài kiểm tra và dự án trong khi học."
+          "desc": "Thảo luận, chấm bài kiểm tra và dự án trong khi học. Trò chuyện trong lớp cần mô hình hỗ trợ gọi công cụ."
         },
         "agent": {
           "name": "Tác tử",

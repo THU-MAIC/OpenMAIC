@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import {
@@ -53,6 +54,13 @@ const body = {
 };
 
 const content = { elements: [], remark: 'generated' };
+let imageSrc: string;
+beforeAll(async () => {
+  const png = await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } })
+    .png()
+    .toBuffer();
+  imageSrc = `data:image/png;base64,${png.toString('base64')}`;
+});
 
 describe('scene content step', () => {
   beforeEach(() => {
@@ -62,9 +70,7 @@ describe('scene content step', () => {
     mocks.resolveVisionImagesStub.mockReset();
     mocks.resolveVisionImagesStub.mockImplementation(
       async (images: { id: string; src: string }[]) =>
-        images
-          .filter((img) => img.src !== 'asset-2')
-          .map((img) => ({ ...img, src: `data:image/png;base64,${img.id}` })),
+        images.filter((img) => img.src !== 'asset-2').map((img) => ({ ...img, src: imageSrc })),
     );
   });
 
@@ -90,9 +96,7 @@ describe('scene content step', () => {
     // Only the assigned images, in page order, minus the one that did not resolve.
     expect(options.assignedImages.map((img: PdfImage) => img.id)).toEqual(['img_1']);
     expect(options.imageMapping).toEqual({ img_1: 'asset-1', img_3: 'asset-3' });
-    expect(options.resolvedVisionImages).toEqual([
-      { id: 'img_1', src: 'data:image/png;base64,img_1' },
-    ]);
+    expect(options.resolvedVisionImages).toEqual([{ id: 'img_1', src: imageSrc }]);
     expect(options.targetLanguage).toBeUndefined();
   });
 

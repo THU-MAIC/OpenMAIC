@@ -4,6 +4,7 @@
  * request's deprecated provider fields) and mapping provider errors to its
  * responses.
  */
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { generateTTS, type TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES, isQwenCloneVoice } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -149,6 +150,7 @@ export async function synthesizeNarration(
   );
 
   // Generate audio
+  authorizeMediaModel(connection, 'tts', config.modelId);
   const { audio, format } = await generateTTS(config, text);
 
   void recordGenerationUsage({

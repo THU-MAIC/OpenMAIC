@@ -9,6 +9,7 @@
  * deprecated) counts only where that walk finds nothing, or a default
  * translated from the legacy variables (see {@link requestMayChoose}).
  */
+import { ModelAuthorizationError } from './model-authorization';
 import { slotForStage, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { createLogger } from '@/lib/logger';
 import type { LlmStage } from '@/lib/server/model-routes';
@@ -297,4 +298,21 @@ export async function savedProviderTarget(
     throw new SlotResolutionError("reference: the provider is the deployment's");
   }
   return target;
+}
+
+/** Admission checks use the same resolver as the worker, before creating asynchronous work. */
+export async function assertWorkspaceModelsAuthorized(
+  workspaceId: string | null,
+  slots: readonly SlotId[],
+): Promise<void> {
+  const { layer: deployment } = deploymentConfig();
+  const workspace = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
+  for (const slot of slots) {
+    try {
+      lookupFromLayers(slot, { deployment, workspace });
+    } catch (error) {
+      if (error instanceof ModelAuthorizationError) throw error;
+      if (!(error instanceof SlotResolutionError)) throw error;
+    }
+  }
 }

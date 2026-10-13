@@ -105,6 +105,71 @@ describe('scene step retry boundary', () => {
     expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
   });
 
+  it.each(['content', 'actions'])(
+    'continues the scene-%s call when all vision attachments are undecodable',
+    async (step) => {
+      vi.resetModules();
+      const image = {
+        id: 'bad',
+        src: `data:image/png;base64,${Buffer.from('undecodable').toString('base64')}`,
+      };
+      const visionModel = {
+        model: { id: 'language-model' },
+        modelInfo: { outputWindow: 4096, capabilities: { vision: true } },
+        modelString: 'test:model',
+      } as never;
+      if (step === 'content') {
+        mocks.generateSceneContent.mockImplementation(async (_outline, aiCall, options) => {
+          expect(options.resolvedVisionImages).toEqual([]);
+          expect(options.assignedImages).toEqual([]);
+          expect(options.imageMapping).toEqual({});
+          await aiCall('system', 'user', options.resolvedVisionImages);
+          return { elements: [], remark: 'ok' };
+        });
+        const { generateSceneContent } =
+          await import('@/lib/server/generation/steps/scene-content');
+        await generateSceneContent(
+          {
+            outline: { ...outline, suggestedImageIds: [image.id] },
+            model: visionModel,
+            pdfImages: [{ ...image, pageNumber: 1 }],
+            imageMapping: { [image.id]: image.src },
+          },
+          {
+            log: createLogger('Scene Content'),
+            resolveVisionImages: async (images) => [...images],
+          },
+        );
+      } else {
+        mocks.generateSceneActions.mockImplementation(async (_outline, _content, aiCall) => {
+          await aiCall('system', 'user', [image]);
+          return [];
+        });
+        mocks.buildCompleteScene.mockReturnValue({ id: 'scene-1' });
+        const { generateSceneActions } =
+          await import('@/lib/server/generation/steps/scene-actions');
+        await generateSceneActions(
+          {
+            outline,
+            allOutlines: [outline],
+            content: { elements: [], remark: '' },
+            stageId: 'stage-1',
+            model: visionModel,
+          },
+          { log: createLogger('Scene Actions') },
+        );
+      }
+      if (step === 'content') {
+        expect(mocks.buildVisionUserContent).not.toHaveBeenCalled();
+        expect(mocks.callLLM.mock.calls[0][0].prompt).toBe('user');
+      } else {
+        expect(mocks.buildVisionUserContent).toHaveBeenCalledWith('user', []);
+      }
+      expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+      expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
+    },
+  );
+
   it('normalizes stored legacy PBL content before generating actions and building the scene', async () => {
     vi.resetModules();
     mocks.generateSceneActions.mockImplementation(async (_outline, content, aiCall) => {

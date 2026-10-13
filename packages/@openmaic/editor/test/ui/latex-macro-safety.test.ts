@@ -13,6 +13,15 @@ const EXPANDING_INPUTS = {
   gdefAndLet: `\\gdef\\ma{${LEAF}}\\let\\mb\\ma\\global\\def\\mc{${times('mb', 30)}}${times('mc', 30)}`,
 };
 
+/**
+ * Wall-clock ceiling for one render. The checks after it are what show the
+ * definitions were dropped; this only catches a runaway. Expanded without the
+ * guard, `nestedDef` alone takes tens of seconds, while a guarded render takes
+ * a few milliseconds, so the ceiling sits far from both and holds on a loaded
+ * CI runner.
+ */
+const RUNAWAY_MS = 1_000;
+
 function timed<T>(render: () => T): { value: T; ms: number } {
   const start = performance.now();
   const value = render();
@@ -23,7 +32,7 @@ describe('editor math rendering ignores formula-defined macros', () => {
   for (const [name, latex] of Object.entries(EXPANDING_INPUTS)) {
     it(`latex dialog: ${name}`, () => {
       const { value, ms } = timed(() => renderLatexSource(latex));
-      expect(ms).toBeLessThan(100);
+      expect(ms).toBeLessThan(RUNAWAY_MS);
       // The definitions are dropped, so the later use is an unknown command.
       expect(value).toMatchObject({ error: expect.stringMatching(/Undefined control sequence/) });
     });
@@ -32,7 +41,7 @@ describe('editor math rendering ignores formula-defined macros', () => {
       const { value, ms } = timed(() =>
         createTextDocument(`<p><span data-inline-math="${latex}"></span></p>`),
       );
-      expect(ms).toBeLessThan(100);
+      expect(ms).toBeLessThan(RUNAWAY_MS);
       expect(JSON.stringify(value.toJSON()).length).toBeLessThan(64 * 1024);
     });
   }

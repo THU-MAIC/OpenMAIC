@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
@@ -65,6 +66,21 @@ function providerCall(call: unknown[] | undefined) {
 describe('image step', () => {
   beforeEach(() => {
     vi.resetModules();
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            seedream: { preset: 'seedream', apiKey: 'image-key' },
+            seedance: { preset: 'seedance', apiKey: 'video-key', models: ['model-a'] },
+            'openai-tts': { preset: 'openai-tts', apiKey: 'server-key' },
+          },
+          slots: { image: 'seedream', video: 'seedance', tts: 'openai-tts:gpt-4o-mini-tts' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
     mocks.generateImage.mockReset();
     mocks.generateImage.mockResolvedValue(imageResult);
     mocks.resolveMediaSlot.mockReset();
@@ -124,6 +140,21 @@ describe('image step', () => {
 describe('video step', () => {
   beforeEach(() => {
     vi.resetModules();
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            seedream: { preset: 'seedream', apiKey: 'image-key' },
+            seedance: { preset: 'seedance', apiKey: 'video-key', models: ['model-a'] },
+            'openai-tts': { preset: 'openai-tts', apiKey: 'server-key' },
+          },
+          slots: { image: 'seedream', video: 'seedance', tts: 'openai-tts:gpt-4o-mini-tts' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
     mocks.generateVideo.mockReset();
     mocks.generateVideo.mockResolvedValue(videoResult);
     mocks.resolveMediaSlot.mockReset();

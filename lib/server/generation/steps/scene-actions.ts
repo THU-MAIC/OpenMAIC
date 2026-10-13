@@ -5,6 +5,7 @@
  * and assemble the complete scene. The logic of 1.1.x's
  * POST /api/generate/scene-actions.
  */
+import { prepareVisionImages } from '../vision-images';
 import { callLLM } from '@/lib/ai/llm';
 import {
   generateSceneActions as generateActions,
@@ -80,6 +81,7 @@ export async function generateSceneActions(
     images?: Array<{ id: string; src: string }>,
   ): Promise<string> => {
     if (images?.length && hasVision) {
+      const safeImages = await prepareVisionImages(images, log);
       const result = await callLLM(
         {
           model: languageModel,
@@ -89,7 +91,7 @@ export async function generateSceneActions(
           messages: [
             {
               role: 'user' as const,
-              content: buildVisionUserContent(userPrompt, images),
+              content: buildVisionUserContent(userPrompt, safeImages),
             },
           ],
           maxOutputTokens: modelInfo?.outputWindow,
