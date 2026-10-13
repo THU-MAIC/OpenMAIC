@@ -35,6 +35,10 @@ export interface WebSearchProviderConfig {
   requiresApiKey: boolean;
   /** Chat account whose server credentials also serve this search provider. */
   sharedChatProviderId?: string;
+  /** Explicit legacy opt-in before shared chat credentials activate search. */
+  enableEnvVar?: string;
+  /** Official account bases accepted by search settings and client requests. */
+  officialBaseUrls?: readonly string[];
   /** Self-hosted instances need an explicit base URL (no public default). */
   requiresBaseUrl?: boolean;
   defaultBaseUrl?: string;

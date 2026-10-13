@@ -154,8 +154,6 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   // WEB_SEARCH_ prefix avoids colliding with ANTHROPIC_* LLM provider vars.
   WEB_SEARCH_CLAUDE: 'claude',
   WEB_SEARCH_MINIMAX: 'minimax',
-  // Kimi search uses the same key and endpoint base as chat.
-  KIMI: 'kimi',
   // Dedicated prefix avoids colliding with the Doubao LLM provider vars.
   WEB_SEARCH_DOUBAO: 'doubao',
   SEARXNG: 'searxng',
@@ -196,7 +194,12 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
     IMAGE_COMFYUI: 'comfyui-image',
   },
   video: { ...VIDEO_ENV_MAP },
-  webSearch: { ...WEB_SEARCH_ENV_MAP },
+  webSearch: {
+    ...WEB_SEARCH_ENV_MAP,
+    // Retain the old alias; the capability-specific switch takes precedence.
+    KIMI: 'kimi',
+    WEB_SEARCH_KIMI: 'kimi',
+  },
 };
 
 /** YAML section key per capability (web-search is hyphenated in YAML). */
@@ -534,8 +537,19 @@ function buildConfig(yamlData: YamlData): ServerConfig {
 
   const searchDefaults = { ...yamlData['web-search'] };
   for (const provider of Object.values(WEB_SEARCH_PROVIDERS)) {
-    const shared = provider.sharedChatProviderId && providers[provider.sharedChatProviderId];
-    if (shared) searchDefaults[provider.id] = { ...shared, ...searchDefaults[provider.id] };
+    if (!provider.sharedChatProviderId) continue;
+    const explicit = searchDefaults[provider.id];
+    const optIn = provider.enableEnvVar && process.env[provider.enableEnvVar];
+    if (!explicit && !(optIn?.trim() && parseBooleanEnv(optIn))) continue;
+    const shared = providers[provider.sharedChatProviderId];
+    searchDefaults[provider.id] = {
+      apiKey: shared?.apiKey,
+      baseUrl: shared?.baseUrl,
+      proxy: shared?.proxy,
+      ...explicit,
+      // Search has no model selector; chat pins must stay on the chat account.
+      models: undefined,
+    };
   }
   const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, searchDefaults, {
     keylessProviders: new Set(['brave', 'searxng']),

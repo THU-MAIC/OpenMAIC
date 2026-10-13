@@ -177,7 +177,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['anthropic', 2],
       ['google', 4],
       ['deepseek', 2],
-      ['kimi', 4],
+      ['kimi', 6],
       ['minimax', 13],
       ['glm', 6],
       ['siliconflow', 2],
@@ -289,7 +289,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/web-search-config.ts',
     'Temporary: web-search URL and option validation are still provider-specific.',
     [
-      ['kimi', 3],
+      ['kimi', 1],
       ['baidu', 8],
       ['tavily', 3],
       ['bocha', 7],

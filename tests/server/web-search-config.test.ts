@@ -20,6 +20,9 @@ describe('server web search config', () => {
     delete process.env.WEB_SEARCH_CLAUDE_BASE_URL;
     delete process.env.WEB_SEARCH_CLAUDE_MODELS;
     delete process.env.SEARXNG_BASE_URL;
+    delete process.env.KIMI_API_KEY;
+    delete process.env.KIMI_BASE_URL;
+    delete process.env.WEB_SEARCH_KIMI_ENABLED;
   });
 
   it('rejects client-controlled base URLs outside the provider allowlist', async () => {
@@ -321,5 +324,32 @@ describe('Kimi official search bases', () => {
     expect(() =>
       resolveSafeClientWebSearchBaseUrl('kimi', 'https://api.kimi.com.openmaic.test/coding/v1'),
     ).toThrow('Unsupported Kimi base URL');
+  });
+});
+
+describe('chat-only Kimi search requests', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('KIMI_API_KEY', 'operator-chat-key');
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', '');
+    vi.stubEnv('TAVILY_API_KEY', '');
+    vi.stubEnv('SEARXNG_BASE_URL', '');
+  });
+
+  it('does not redirect a user Tavily request to the operator chat account', async () => {
+    const { resolveWebSearchConnection, resolveClassroomWebSearchConfig } =
+      await import('@/lib/server/web-search-config');
+    expect(await resolveClassroomWebSearchConfig(null)).toBeUndefined();
+    expect(
+      await resolveWebSearchConnection(
+        null,
+        {
+          webSearchProviderId: 'tavily',
+          webSearchApiKey: 'user-search-key',
+        },
+        { preferServerProvider: true },
+      ),
+    ).toMatchObject({ providerId: 'tavily', apiKey: 'user-search-key' });
   });
 });

@@ -18,7 +18,7 @@ description: Встроенные модели и список провайде�
 | `minimax` | MiniMax | Чат, изображения, видео, TTS, веб-поиск |
 | `tokendance` | TokenDance | Чат, изображения, видео, TTS, веб-поиск |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Чат, изображения, видео, TTS, веб-поиск |
-| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
+| `kimi-coding-plan` | Kimi coding plan | Чат, веб-поиск |
 
 `openai-compatible` подключает любой OpenAI-совместимый чат-сервер: ему нужен `baseUrl`, а настройки моделей предлагают его список `models`.
 
@@ -140,8 +140,12 @@ description: Встроенные модели и список провайде�
 | Doubao          | `doubao`    |
 | SearXNG         | `searxng`   |
 
-### Kimi web search
+### Веб-поиск Kimi
 
-The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+Пресеты `kimi` (Moonshot Open Platform) и `kimi-coding-plan` используют один API-ключ и базовый URL для чата и веб-поиска. Назначьте `webSearch` тому же провайдеру, что и чат: отдельный ключ или модель поиска не нужны.
 
-Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.
+Базовые URL Open Platform `https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1` используют `/tools/search_pro`. Текст результата собирается из фрагментов страницы; если их нет, используется краткое описание. Базовые URL coding plan `https://api.kimi.com/coding/v1` и `https://api.kimi.ai/coding/v1` используют `/search` с включённой загрузкой страниц. Предпочтение отдаётся тексту страницы, затем краткому описанию. Один запрос возвращает не более 20 результатов.
+
+В старой конфигурации учётные данные чата сами по себе не включают поиск. Установите `WEB_SEARCH_KIMI_ENABLED=true` или явно добавьте запись `web-search.kimi` в `server-providers.yml`. В `openmaic.yml` явно назначьте слот `webSearch`. Мастер настройки рекомендует поиск только для аккаунтов с официальным базовым URL.
+
+Эндпоинт выбирается по пути базового URL: после удаления завершающих косых черт путь, оканчивающийся на `/coding/v1`, использует `/search`; все остальные используют `/tools/search_pro`. Пользовательские прокси, настроенные в `openmaic.yml`, должны сохранять эту структуру пути.

@@ -18,7 +18,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `minimax` | MiniMax | チャット、画像、動画、TTS、Web 検索 |
 | `tokendance` | TokenDance | チャット、画像、動画、TTS、Web 検索 |
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
-| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
+| `kimi-coding-plan` | Kimi コーディングプラン | チャット、Web 検索 |
 
 `openai-compatible` は任意の OpenAI 互換チャットサーバーに接続します。`baseUrl` が必要で、モデル設定に表示されるのはその `models` 一覧です。
 
@@ -140,8 +140,12 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
 
-### Kimi web search
+### Kimi の Web 検索
 
-The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+`kimi` プリセット（Moonshot Open Platform）と `kimi-coding-plan` プリセットは、同じ API キーとベース URL でチャットと Web 検索を提供します。`webSearch` をチャットと同じプロバイダーに割り当てれば、追加のキーや検索モデルは不要です。
 
-Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.
+Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` は `/tools/search_pro` を使用します。結果の本文はページの断片を連結し、本文がなければ要約を使用します。コーディングプランの `https://api.kimi.com/coding/v1` と `https://api.kimi.ai/coding/v1` は `/search` を使用し、ページの取得を有効にします。結果には要約よりもページ本文を優先します。1 回のリクエストで返す結果は最大 20 件です。
+
+従来の設定では、チャットの認証情報だけで検索が有効になることはありません。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を明示的に追加してください。`openmaic.yml` では `webSearch` スロットを明示的に割り当てます。ウィザードが検索を推奨するのは、公式のベース URL を使用するアカウントだけです。
+
+エンドポイントはベース URL のパスで決まります。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。`openmaic.yml` で設定するカスタムプロキシも、このパス構造を維持する必要があります。

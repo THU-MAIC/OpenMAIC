@@ -58,6 +58,8 @@ const ENV_PREFIXES_TO_CLEAR = [
   'EXA',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
+  'WEB_SEARCH_KIMI',
+  'SEARXNG',
   'WEB_SEARCH_CLAUDE',
   'WEB_SEARCH_DOUBAO',
 ];
@@ -1212,6 +1214,7 @@ describe('Kimi shared search credentials', () => {
     'reuses the legacy YAML chat base and model pins with env key %s',
     async (envKey) => {
       if (envKey) process.env.KIMI_API_KEY = envKey;
+      process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
       yamlOverride = `providers:
   kimi:
     apiKey: kimi-yaml-key
@@ -1220,7 +1223,12 @@ describe('Kimi shared search credentials', () => {
 `;
       const { getServerProviderConfig } = await import('@/lib/server/provider-config');
       const config = getServerProviderConfig();
-      expect(config.webSearch.kimi).toEqual(config.providers.kimi);
+      expect(config.webSearch.kimi).toMatchObject({
+        apiKey: config.providers.kimi.apiKey,
+        baseUrl: config.providers.kimi.baseUrl,
+      });
+      expect(config.webSearch.kimi.models).toBeUndefined();
+      expect(config.providers.kimi.models).toEqual(['kimi-k3']);
       expect(config.webSearch.kimi.apiKey).toBe(envKey || 'kimi-yaml-key');
     },
   );
@@ -1231,6 +1239,7 @@ describe('Kimi shared search credentials', () => {
     'https://api.kimi.com/coding/v1',
   ])('reuses Kimi chat credentials at %s', async (baseUrl) => {
     process.env.KIMI_API_KEY = 'kimi-key';
+    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
     process.env.KIMI_BASE_URL = baseUrl;
     const config = await import('@/lib/server/provider-config');
     expect(config.resolveWebSearchApiKey('kimi', undefined)).toBe('kimi-key');
@@ -1240,4 +1249,91 @@ describe('Kimi shared search credentials', () => {
       baseUrl,
     });
   });
+});
+
+describe('Kimi search opt-in', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    clearProviderEnv();
+    yamlOverride = null;
+  });
+
+  it.each([
+    [undefined, undefined],
+    ['SEARXNG_BASE_URL', 'searxng'],
+    ['TAVILY_API_KEY', 'tavily'],
+  ])(
+    'keeps chat credentials out of default search selection with %s',
+    async (envName, expected) => {
+      process.env.KIMI_API_KEY = 'chat-key';
+      if (envName)
+        process.env[envName] =
+          envName === 'SEARXNG_BASE_URL' ? 'https://search.openmaic.test' : 'search-key';
+      const {
+        getServerProviderConfig,
+        resolveServerWebSearchProviderId,
+        getServerWebSearchProviders,
+      } = await import('@/lib/server/provider-config');
+      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+      const config = getServerProviderConfig();
+      expect(config.webSearch).not.toHaveProperty('kimi');
+      expect(getServerWebSearchProviders()).not.toHaveProperty('kimi');
+      expect(resolveServerWebSearchProviderId()).toBe(expected);
+      expect(translateLegacyConfig(config).config.slots?.webSearch).toBe(expected);
+    },
+  );
+
+  it('activates search only with the capability-specific opt-in and does not inherit chat model pins', async () => {
+    process.env.KIMI_API_KEY = 'chat-key';
+    process.env.KIMI_MODELS = 'kimi-k3';
+    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
+    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+      await import('@/lib/server/provider-config');
+    const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+    const config = getServerProviderConfig();
+    expect(config.webSearch.kimi.apiKey).toBe('chat-key');
+    expect(config.webSearch.kimi.models).toBeUndefined();
+    expect(config.providers.kimi.models).toEqual(['kimi-k3']);
+    expect(resolveServerWebSearchProviderId()).toBe('kimi');
+    expect(translateLegacyConfig(config).config.slots?.webSearch).toBe('kimi');
+  });
+
+  it('accepts explicit YAML search opt-in without a second key', async () => {
+    yamlOverride =
+      'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';
+    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+      await import('@/lib/server/provider-config');
+    expect(getServerProviderConfig().webSearch.kimi.apiKey).toBe('chat-key');
+    expect(resolveServerWebSearchProviderId()).toBe('kimi');
+  });
+
+  it('does not activate search without credentials or with a legacy enabled alias alone', async () => {
+    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
+    const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+    expect(resolveServerWebSearchProviderId()).toBeUndefined();
+    vi.resetModules();
+    delete process.env.WEB_SEARCH_KIMI_ENABLED;
+    process.env.KIMI_API_KEY = 'chat-key';
+    process.env.KIMI_ENABLED = 'true';
+    const next = await import('@/lib/server/provider-config');
+    expect(next.resolveServerWebSearchProviderId()).toBeUndefined();
+  });
+
+  it.each([
+    ['false', undefined, true],
+    [undefined, 'false', true],
+    ['true', 'false', false],
+  ])(
+    'honors the dedicated disable switch %s over the compatibility alias %s',
+    async (enabled, alias, disabled) => {
+      yamlOverride =
+        'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';
+      if (enabled) process.env.WEB_SEARCH_KIMI_ENABLED = enabled;
+      if (alias) process.env.KIMI_ENABLED = alias;
+      const { isServerProviderDisabled, resolveServerWebSearchProviderId } =
+        await import('@/lib/server/provider-config');
+      expect(isServerProviderDisabled('webSearch', 'kimi')).toBe(disabled);
+      expect(resolveServerWebSearchProviderId()).toBe(disabled ? undefined : 'kimi');
+    },
+  );
 });

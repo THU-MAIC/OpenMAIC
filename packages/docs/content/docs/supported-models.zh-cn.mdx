@@ -18,7 +18,7 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | `minimax` | MiniMax | 对话、图像、视频、TTS、联网搜索 |
 | `tokendance` | TokenDance | 对话、图像、视频、TTS、联网搜索 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 对话、图像、视频、TTS、联网搜索 |
-| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
+| `kimi-coding-plan` | Kimi 编程套餐 | 对话、联网搜索 |
 
 `openai-compatible` 用于接入任意 OpenAI 兼容的对话服务：需要填写 `baseUrl`，模型设置中提供的就是它的 `models` 列表。
 
@@ -140,8 +140,12 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
 
-### Kimi web search
+### Kimi 联网搜索
 
-The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+`kimi` 预设（Moonshot Open Platform）和 `kimi-coding-plan` 预设都支持使用同一个 API key 和 Base URL 进行对话与联网搜索。将 `webSearch` 指向对话使用的同一服务商，无需额外的密钥或搜索模型。
 
-Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.
+Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 使用 `/tools/search_pro`，搜索结果正文由页面片段拼接而成，没有正文时回退到摘要。编程套餐的 `https://api.kimi.com/coding/v1` 和 `https://api.kimi.ai/coding/v1` 使用 `/search` 并启用页面抓取，优先使用页面正文，其次使用摘要。每次请求最多返回 20 条结果。
+
+在旧版配置中，仅配置对话密钥不会启用搜索。请设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.kimi`。使用 `openmaic.yml` 时，需要显式指定 `webSearch` 槽位。首次运行向导仅为使用官方 Base URL 的账户推荐搜索。
+
+端点按 Base URL 的路径选择：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。在 `openmaic.yml` 中配置的自定义代理必须保留这一端点路径结构。

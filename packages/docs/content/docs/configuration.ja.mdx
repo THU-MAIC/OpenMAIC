@@ -804,4 +804,7 @@ slots:
   webSearch: kimi
 ```
 
-Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 環境変数のみを使う旧設定では、`KIMI_API_KEY` と任意の `KIMI_BASE_URL` が Web 検索の認証情報も提供します。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。
+Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 旧設定では、明示的に有効化した場合にのみ `KIMI_API_KEY` と任意の `KIMI_BASE_URL` が検索の認証情報を提供します。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を追加します（例：`enabled: true`）。チャットの認証情報だけでは検索は有効にならず、既定の検索プロバイダーも変わりません。スロットに割り当てられていても、`WEB_SEARCH_KIMI_ENABLED=false` は Kimi 検索を無効にします。互換性のため、旧エイリアス `KIMI_ENABLED=false` も引き続きサポートされます。検索の設定には機能固有の名前を使用してください。 `KIMI_MODELS` はチャットにのみ適用されます。旧設定のチャットと検索でアカウントが競合すると警告が出て、検索エントリーはスキップされます。別々のアカウントを使う場合は、`openmaic.yml` で別々のプロバイダー ID を宣言してください。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。
+
+
+エンドポイントはベースパスに応じて選択されます。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。デプロイで設定するカスタムプロキシも、このパス構成を維持する必要があります。ウィザードが検索を推奨するのは公式アカウントのベース URL のみなので、ワークスペースのカスタムチャットプロキシに検索が自動で割り当てられることはありません。

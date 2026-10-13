@@ -4,6 +4,7 @@
  * provider form's change. Kept apart from the components so they can be
  * tested without a DOM.
  */
+import { isOfficialWebSearchBaseUrl } from '@/lib/web-search/constants';
 import type { SlotCapability } from '@/lib/config/model-slots';
 
 import {
@@ -190,6 +191,11 @@ export function wizardAssignments(
     if (!model || !isFillable(slot)) continue;
     const offered = provider.capabilities[slot.capability];
     if (!offered) continue;
+    if (
+      slot.capability === 'webSearch' &&
+      !isOfficialWebSearchBaseUrl(offered.registryId ?? model, provider.baseUrl)
+    )
+      continue;
     if (offered.models.some((entry) => entry.id === model)) {
       set[slotId] = modelRef(providerId, model);
     } else if (offered.models.length === 0 && slot.capability !== 'chat') {
