@@ -173,13 +173,25 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
   return { id, name: plan.name, kind: 'token-plan', capabilities, recommended };
 }
 
+// These accounts share one key and base URL across capability registries.
+const SHARED_ACCOUNT_PRESETS: ProviderPreset[] = [
+  {
+    id: 'kimi',
+    name: 'Kimi',
+    kind: 'single',
+    capabilities: { chat: { registryId: 'kimi' }, webSearch: { registryId: 'kimi' } },
+    recommended: { webSearch: 'kimi' },
+  },
+];
+
 function buildPresets(): ProviderPreset[] {
   const plans = TOKEN_PLAN_PRESETS.map(tokenPlanToPreset);
-  const planIds = new Set(plans.map((plan) => plan.id));
-  // A token plan that covers a chat provider's own endpoint (MiniMax,
+  const combined = [...plans, ...SHARED_ACCOUNT_PRESETS];
+  const combinedIds = new Set(combined.map((preset) => preset.id));
+  // A shared account or token plan that covers a chat provider's own endpoint (MiniMax,
   // TokenDance) supersedes the single-capability preset of the same id.
-  const singles = singlePresets().filter((preset) => !planIds.has(preset.id));
-  return [...plans, ...singles];
+  const singles = singlePresets().filter((preset) => !combinedIds.has(preset.id));
+  return [...combined, ...singles];
 }
 
 export const PROVIDER_PRESETS: readonly ProviderPreset[] = buildPresets();

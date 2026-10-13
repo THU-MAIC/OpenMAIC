@@ -18,7 +18,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `minimax` | MiniMax | チャット、画像、動画、TTS、Web 検索 |
 | `tokendance` | TokenDance | チャット、画像、動画、TTS、Web 検索 |
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
-| `kimi-coding-plan` | Kimi コーディングプラン | チャット |
+| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
 
 `openai-compatible` は任意の OpenAI 互換チャットサーバーに接続します。`baseUrl` が必要で、モデル設定に表示されるのはその `models` 一覧です。
 
@@ -31,7 +31,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
 | ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
@@ -136,5 +136,12 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### Kimi web search
+
+The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+
+Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.

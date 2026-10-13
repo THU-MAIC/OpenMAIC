@@ -18,7 +18,7 @@ description: Встроенные модели и список провайде�
 | `minimax` | MiniMax | Чат, изображения, видео, TTS, веб-поиск |
 | `tokendance` | TokenDance | Чат, изображения, видео, TTS, веб-поиск |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Чат, изображения, видео, TTS, веб-поиск |
-| `kimi-coding-plan` | Kimi coding plan | Чат |
+| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
 
 `openai-compatible` подключает любой OpenAI-совместимый чат-сервер: ему нужен `baseUrl`, а настройки моделей предлагают его список `models`.
 
@@ -31,7 +31,7 @@ description: Встроенные модели и список провайде�
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
+| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -136,5 +136,12 @@ description: Встроенные модели и список провайде�
 | Brave Search    | `brave`     |
 | Baidu           | `baidu`     |
 | MiniMax         | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao          | `doubao`    |
 | SearXNG         | `searxng`   |
+
+### Kimi web search
+
+The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+
+Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.

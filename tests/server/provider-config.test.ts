@@ -1199,3 +1199,45 @@ video:
     });
   });
 });
+
+describe('Kimi shared search credentials', () => {
+  beforeEach(() => {
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for('openmaic.model-config.deployment')];
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    clearProviderEnv();
+    yamlOverride = null;
+  });
+  it.each([undefined, 'kimi-env-key'])(
+    'reuses the legacy YAML chat base and model pins with env key %s',
+    async (envKey) => {
+      if (envKey) process.env.KIMI_API_KEY = envKey;
+      yamlOverride = `providers:
+  kimi:
+    apiKey: kimi-yaml-key
+    baseUrl: https://api.moonshot.ai/v1
+    models: [kimi-k3]
+`;
+      const { getServerProviderConfig } = await import('@/lib/server/provider-config');
+      const config = getServerProviderConfig();
+      expect(config.webSearch.kimi).toEqual(config.providers.kimi);
+      expect(config.webSearch.kimi.apiKey).toBe(envKey || 'kimi-yaml-key');
+    },
+  );
+
+  it.each([
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+    'https://api.kimi.com/coding/v1',
+  ])('reuses Kimi chat credentials at %s', async (baseUrl) => {
+    process.env.KIMI_API_KEY = 'kimi-key';
+    process.env.KIMI_BASE_URL = baseUrl;
+    const config = await import('@/lib/server/provider-config');
+    expect(config.resolveWebSearchApiKey('kimi', undefined)).toBe('kimi-key');
+    expect(config.resolveWebSearchBaseUrl('kimi')).toBe(baseUrl);
+    expect(config.getServerProviderConfig().webSearch.kimi).toMatchObject({
+      apiKey: 'kimi-key',
+      baseUrl,
+    });
+  });
+});

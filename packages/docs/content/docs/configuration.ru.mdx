@@ -787,3 +787,21 @@ slots:
 ```
 
 Эквивалент в устаревшей конфигурации: `OPENAI_API_KEY=...` и `OPENAI_MODELS=gpt-5.4-mini`. Для медиа используйте префикс возможности, например `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` и `WEB_SEARCH_CLAUDE_MODELS`.
+
+### Чат и веб-поиск Kimi
+
+Объявите одну учётную запись Kimi и назначьте ей оба слота:
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # Необязательно: https://api.moonshot.ai/v1 для международной Open Platform.
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+Для ключа Coding Plan укажите `preset: kimi-coding-plan` и `llm: kimi:kimi-for-coding`; базовый URL по умолчанию — `https://api.kimi.com/coding/v1`. Ключи Open Platform и Coding Plan должны использовать соответствующие им базовые URL. В устаревшей конфигурации только через переменные окружения `KIMI_API_KEY` и необязательная `KIMI_BASE_URL` также предоставляют учётные данные для веб-поиска. Если существует `openmaic.yml`, явно объявите провайдера и назначьте слоты. Настройки и мастер первого запуска позволяют использовать обе возможности через одну учётную запись.

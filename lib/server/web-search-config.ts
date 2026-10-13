@@ -39,6 +39,12 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
   // The bare root is accepted for convenience; the Claude adapter normalizes it
   // to the /v1 root, since the AI SDK appends "/messages" to the base URL.
   claude: ['https://api.anthropic.com', 'https://api.anthropic.com/v1'],
+  kimi: [
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+    'https://api.kimi.com/coding/v1',
+    'https://api.kimi.ai/coding/v1',
+  ],
   minimax: [
     'https://api.minimaxi.com',
     'https://api.minimaxi.com/v1',

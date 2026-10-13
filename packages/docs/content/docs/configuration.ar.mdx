@@ -787,3 +787,21 @@ slots:
 ```
 
 المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
+
+### محادثة Kimi والبحث على الويب
+
+أعلن حساب Kimi واحدًا وعيّن له الخانتين:
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # اختياري: https://api.moonshot.ai/v1 للمنصة المفتوحة الدولية.
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+لمفتاح Coding Plan، استخدم `preset: kimi-coding-plan` و`llm: kimi:kimi-for-coding`؛ عنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يجب إقران مفاتيح المنصة المفتوحة وCoding Plan بالعناوين الأساسية المطابقة لها. في الإعدادات القديمة التي تستخدم متغيرات البيئة فقط، يوفّر `KIMI_API_KEY` و`KIMI_BASE_URL` الاختياري بيانات اعتماد البحث على الويب أيضًا. عند وجود `openmaic.yml`، أعلن المزود وعيّن الخانات صراحةً. تتيح الإعدادات ومعالج التشغيل الأول استخدام القدرتين من الحساب نفسه.

@@ -294,7 +294,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     },
   },
   // ── Kimi Coding Plan（末位 = 最低优先级）────────────────────────────────
-  // LLM-only: the Coding Plan key authenticates against the plan's DEDICATED
+  // The Coding Plan key authenticates against the plan's DEDICATED
   // endpoint (https://www.kimi.com/code/docs/) — api.kimi.com/coding/v1,
   // international api.kimi.ai/coding/v1 — NOT Moonshot's Open Platform
   // (api.moonshot.cn/v1): sending plan keys there fails with
@@ -305,8 +305,9 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // #1645); disconnect restores the registry default (Moonshot endpoint) for
   // personal keys. Seeding overrides the mainline to K2.8 (official model id
   // `kimi-for-coding`); every follow-mainline LLM station inherits it. No
-  // image/video/TTS/web-search adaptation: those modalities are simply not
-  // declared and stay untouched. Priority note: placed LAST in
+  // image/video/TTS adaptation: those modalities are simply not
+  // declared and stay untouched. Search uses the same Coding Plan key and base URL.
+  // Priority note: placed LAST in
   // TOKEN_PLAN_PRESETS, so when any other plan is enabled, Kimi yields the
   // mainline/stage slots to it.
   {
@@ -328,6 +329,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         defaultModels: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
         defaultModelId: 'kimi-for-coding',
       },
+      webSearch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
     },
   },
 ];

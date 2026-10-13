@@ -787,3 +787,21 @@ slots:
 ```
 
 Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+
+### Kimi chat and web search
+
+Declare one Kimi account and assign both slots to it:
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # Optional: https://api.moonshot.ai/v1 for the international Open Platform.
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-coding`; its default base is `https://api.kimi.com/coding/v1`. The Open Platform and Coding Plan keys must be paired with their matching base URL. In legacy environment-only configuration, `KIMI_API_KEY` and optional `KIMI_BASE_URL` also supply web search. When `openmaic.yml` exists, declare the provider and assign the slots explicitly. Settings and the first-run wizard offer both capabilities through the same account.

@@ -12,6 +12,7 @@ export type WebSearchProviderId =
   | 'brave'
   | 'baidu'
   | 'claude'
+  | 'kimi'
   | 'minimax'
   | 'doubao'
   | 'searxng';
@@ -32,6 +33,8 @@ export interface WebSearchProviderConfig {
   id: WebSearchProviderId;
   name: string;
   requiresApiKey: boolean;
+  /** Chat account whose server credentials also serve this search provider. */
+  sharedChatProviderId?: string;
   /** Self-hosted instances need an explicit base URL (no public default). */
   requiresBaseUrl?: boolean;
   defaultBaseUrl?: string;

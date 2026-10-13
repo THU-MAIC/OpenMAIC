@@ -305,3 +305,21 @@ describe('server web search config', () => {
     });
   });
 });
+
+describe('Kimi official search bases', () => {
+  it.each([
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+    'https://api.kimi.com/coding/v1',
+    'https://api.kimi.ai/coding/v1',
+  ])('accepts %s', async (baseUrl) => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+    expect(resolveSafeClientWebSearchBaseUrl('kimi', baseUrl)).toBe(baseUrl);
+  });
+  it('rejects lookalike endpoints', async () => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+    expect(() =>
+      resolveSafeClientWebSearchBaseUrl('kimi', 'https://api.kimi.com.openmaic.test/coding/v1'),
+    ).toThrow('Unsupported Kimi base URL');
+  });
+});

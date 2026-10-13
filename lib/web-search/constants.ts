@@ -68,6 +68,15 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     icon: '/logos/claude.svg',
     models: CLAUDE_WEB_SEARCH_MODELS,
   },
+  kimi: {
+    id: 'kimi',
+    name: 'Kimi',
+    sharedChatProviderId: 'kimi',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
+    endpointPath: '/tools/search_pro',
+    icon: '/logos/kimi.png',
+  },
   minimax: {
     id: 'minimax',
     name: 'MiniMax',

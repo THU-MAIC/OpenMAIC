@@ -787,3 +787,21 @@ slots:
 ```
 
 旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi 对话与联网搜索
+
+声明一个 Kimi 账号，并将两个槽位都分配给它：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 可选：国际版开放平台使用 https://api.moonshot.ai/v1。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在仅使用环境变量的旧版配置中，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 也为联网搜索提供凭据。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。

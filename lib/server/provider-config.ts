@@ -1,4 +1,5 @@
 import { presetIdFor } from '@/lib/config/preset-ids';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import {
   assertDeploymentModelAuthorized,
   selectsUpstreamModel,
@@ -153,6 +154,8 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   // WEB_SEARCH_ prefix avoids colliding with ANTHROPIC_* LLM provider vars.
   WEB_SEARCH_CLAUDE: 'claude',
   WEB_SEARCH_MINIMAX: 'minimax',
+  // Kimi search uses the same key and endpoint base as chat.
+  KIMI: 'kimi',
   // Dedicated prefix avoids colliding with the Doubao LLM provider vars.
   WEB_SEARCH_DOUBAO: 'doubao',
   SEARXNG: 'searxng',
@@ -529,6 +532,15 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     yamlData.providers,
   );
 
+  const searchDefaults = { ...yamlData['web-search'] };
+  for (const provider of Object.values(WEB_SEARCH_PROVIDERS)) {
+    const shared = provider.sharedChatProviderId && providers[provider.sharedChatProviderId];
+    if (shared) searchDefaults[provider.id] = { ...shared, ...searchDefaults[provider.id] };
+  }
+  const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, searchDefaults, {
+    keylessProviders: new Set(['brave', 'searxng']),
+  });
+
   return {
     providers,
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
@@ -546,9 +558,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     ),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
-      keylessProviders: new Set(['brave', 'searxng']),
-    }),
+    webSearch,
     disabled: collectDisabledProviders(yamlData),
   };
 }

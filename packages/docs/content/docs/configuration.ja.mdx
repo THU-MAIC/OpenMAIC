@@ -787,3 +787,21 @@ slots:
 ```
 
 旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi のチャットと Web 検索
+
+Kimi アカウントを 1 つ宣言し、両方のスロットを割り当てます：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 任意：国際版 Open Platform では https://api.moonshot.ai/v1 を使用します。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 環境変数のみを使う旧設定では、`KIMI_API_KEY` と任意の `KIMI_BASE_URL` が Web 検索の認証情報も提供します。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。

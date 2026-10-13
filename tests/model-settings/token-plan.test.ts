@@ -9,6 +9,8 @@ import type {
   ModelSettingsChange,
   ModelSettingsView,
 } from '@/lib/model-settings/client';
+import { wizardAssignments } from '@/lib/model-settings/edit';
+import { serviceEntries } from '@/lib/model-settings/services';
 import {
   connectConflicts,
   connectTokenPlan,
@@ -161,6 +163,7 @@ describe('token plan recommendation', () => {
     });
     expect(recommendationIn(viewOf(config), 'kimi-coding-plan')).toEqual({
       llm: 'kimi-coding-plan:kimi-for-coding',
+      webSearch: 'kimi-coding-plan',
     });
   });
 });
@@ -293,4 +296,23 @@ describe('connecting a token plan', () => {
     expect(server.config()?.providers).not.toHaveProperty('tokendance-2');
     expect(server.config()?.slots).toMatchObject({ llm: 'tokendance:cogevol-base' });
   });
+});
+
+describe('Kimi account setup', () => {
+  it.each(['kimi', 'kimi-coding-plan'])(
+    'offers shared credentials and fills search in the wizard for %s',
+    async (presetId) => {
+      const view = viewOf(await configure(addPlan(presetId)));
+      const preset = view.presets.find((entry) => entry.id === presetId)!;
+      const assignments = wizardAssignments(view, preset, presetId);
+      expect(assignments).toHaveProperty('webSearch', presetId);
+      expect(assignments.llm).toMatch(new RegExp(`^${presetId}:`));
+      const searchEntries = serviceEntries(view, 'webSearch', ['kimi']).filter(
+        (entry) => entry.provider,
+      );
+      expect(searchEntries).toHaveLength(1);
+      expect(searchEntries[0].provider?.id).toBe(presetId);
+      expect(searchEntries[0].provider?.key?.set).toBe(true);
+    },
+  );
 });
