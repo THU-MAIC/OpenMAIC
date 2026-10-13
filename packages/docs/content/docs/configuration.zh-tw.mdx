@@ -804,7 +804,7 @@ slots:
   webSearch: kimi
 ```
 
-使用 Coding Plan 金鑰時，請設定 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其預設位址為 `https://api.kimi.com/coding/v1`。開放平台和 Coding Plan 金鑰必須使用各自對應的基礎 URL。 在舊版設定中，只有明確啟用後，`KIMI_API_KEY` 和可選的 `KIMI_BASE_URL` 才會為搜尋提供憑證：設定 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中新增 `web-search.kimi`（例如設定 `enabled: true`）。僅有對話憑證不會啟用搜尋，也不會改變預設搜尋供應商。即使插槽已指派給 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍會停用 Kimi 搜尋。舊版別名 `KIMI_ENABLED=false` 仍受支援以維持相容性；搜尋設定請使用能力專屬的名稱。 `KIMI_MODELS` 僅適用於對話。舊版對話和搜尋帳號衝突時會產生警告，並略過搜尋項目；若需使用不同帳號，請在 `openmaic.yml` 中宣告不同的供應商 ID。 存在 `openmaic.yml` 時，請明確宣告供應商並指派插槽。設定和首次使用精靈允許透過同一帳號使用兩項能力。
+使用 Coding Plan 金鑰時，請設定 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其預設位址為 `https://api.kimi.com/coding/v1`。開放平台和 Coding Plan 金鑰必須使用各自對應的基礎 URL。 在舊版設定中，只有明確啟用後，`KIMI_API_KEY` 和可選的 `KIMI_BASE_URL` 才會為搜尋提供憑證：設定 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中新增 `web-search.kimi`（例如設定 `enabled: true`）。僅有對話憑證不會啟用搜尋，也不會改變預設搜尋供應商。即使插槽已指派給 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍會停用 Kimi 搜尋。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜尋的唯一開關。 `KIMI_MODELS` 僅適用於對話。舊版對話和搜尋帳號衝突時會產生警告，並略過搜尋項目；若需使用不同帳號，請在 `openmaic.yml` 中宣告不同的供應商 ID。 存在 `openmaic.yml` 時，請明確宣告供應商並指派插槽。設定和首次使用精靈允許透過同一帳號使用兩項能力。
 
 
 端點選擇取決於基礎路徑：移除結尾斜線後，以 `/coding/v1` 結尾的路徑使用 `/search`，其他路徑使用 `/tools/search_pro`。部署設定的自訂代理必須保留此路徑配置。精靈只為官方帳號位址推薦搜尋，因此工作區自訂對話代理不會自動取得搜尋指派。

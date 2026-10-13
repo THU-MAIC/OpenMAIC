@@ -59,6 +59,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_KIMI',
+  'BRAVE',
   'SEARXNG',
   'WEB_SEARCH_CLAUDE',
   'WEB_SEARCH_DOUBAO',
@@ -1298,6 +1299,41 @@ describe('Kimi search opt-in', () => {
     expect(translateLegacyConfig(config).config.slots?.webSearch).toBe('kimi');
   });
 
+  it.each([
+    ['SEARXNG_BASE_URL', 'https://search.openmaic.test', 'searxng'],
+    ['BRAVE_BASE_URL', 'https://search.brave.com', 'brave'],
+    ['WEB_SEARCH_DOUBAO_API_KEY', 'doubao-key', 'doubao'],
+  ])(
+    'keeps an existing %s search default after opting into Kimi',
+    async (envName, value, expected) => {
+      process.env.KIMI_API_KEY = 'chat-key';
+      process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
+      process.env[envName] = value;
+      const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+        await import('@/lib/server/provider-config');
+      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
+      const server = getServerProviderConfig();
+      expect(Object.keys(server.webSearch)).toEqual([expected, 'kimi']);
+      expect(resolveServerWebSearchProviderId()).toBe(expected);
+      const { config } = translateLegacyConfig(server);
+      expect(resolveSlot('webSearch', [{ source: 'deployment', config }])).toMatchObject({
+        registryId: expected,
+      });
+      expect(
+        resolveSlot('webSearch', [
+          {
+            source: 'deployment',
+            config: {
+              ...config,
+              slots: { ...config.slots, webSearch: 'kimi' },
+            },
+          },
+        ]),
+      ).toMatchObject({ registryId: 'kimi', apiKey: 'chat-key' });
+    },
+  );
+
   it('accepts explicit YAML search opt-in without a second key', async () => {
     yamlOverride =
       'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';
@@ -1307,7 +1343,7 @@ describe('Kimi search opt-in', () => {
     expect(resolveServerWebSearchProviderId()).toBe('kimi');
   });
 
-  it('does not activate search without credentials or with a legacy enabled alias alone', async () => {
+  it('does not activate search without credentials or with an unrelated enabled variable alone', async () => {
     process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
     const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
     expect(resolveServerWebSearchProviderId()).toBeUndefined();
@@ -1321,10 +1357,10 @@ describe('Kimi search opt-in', () => {
 
   it.each([
     ['false', undefined, true],
-    [undefined, 'false', true],
+    [undefined, 'false', false],
     ['true', 'false', false],
   ])(
-    'honors the dedicated disable switch %s over the compatibility alias %s',
+    'uses only the search switch %s and ignores an unrelated chat variable %s',
     async (enabled, alias, disabled) => {
       yamlOverride =
         'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';

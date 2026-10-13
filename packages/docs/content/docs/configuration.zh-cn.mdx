@@ -804,7 +804,7 @@ slots:
   webSearch: kimi
 ```
 
-使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在旧版配置中，只有显式启用后，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 才会为搜索提供凭据：设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中添加 `web-search.kimi`（例如设置 `enabled: true`）。仅有对话凭据不会启用搜索，也不会改变默认搜索服务商。即使槽位已分配给 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍会禁用 Kimi 搜索。旧版别名 `KIMI_ENABLED=false` 仍受支持以保持兼容；搜索配置请使用能力专属的名称。 `KIMI_MODELS` 仅适用于对话。旧版对话和搜索账号冲突时会产生警告，并跳过搜索条目；如需使用不同账号，请在 `openmaic.yml` 中声明不同的服务商 ID。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。
+使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在旧版配置中，只有显式启用后，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 才会为搜索提供凭据：设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中添加 `web-search.kimi`（例如设置 `enabled: true`）。仅有对话凭据不会启用搜索，也不会改变默认搜索服务商。即使槽位已分配给 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍会禁用 Kimi 搜索。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜索的唯一开关。 `KIMI_MODELS` 仅适用于对话。旧版对话和搜索账号冲突时会产生警告，并跳过搜索条目；如需使用不同账号，请在 `openmaic.yml` 中声明不同的服务商 ID。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。
 
 
 端点选择取决于基础路径：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。部署配置的自定义代理必须保留这一布局。向导只为官方账号地址推荐搜索，因此工作区自定义对话代理不会自动获得搜索分配。

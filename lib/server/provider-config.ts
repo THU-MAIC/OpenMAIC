@@ -196,8 +196,6 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
   video: { ...VIDEO_ENV_MAP },
   webSearch: {
     ...WEB_SEARCH_ENV_MAP,
-    // Retain the old alias; the capability-specific switch takes precedence.
-    KIMI: 'kimi',
     WEB_SEARCH_KIMI: 'kimi',
   },
 };
@@ -535,25 +533,29 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     yamlData.providers,
   );
 
-  const searchDefaults = { ...yamlData['web-search'] };
+  const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+    keylessProviders: new Set(['brave', 'searxng']),
+  });
   for (const provider of Object.values(WEB_SEARCH_PROVIDERS)) {
     if (!provider.sharedChatProviderId) continue;
-    const explicit = searchDefaults[provider.id];
+    const explicit = yamlData['web-search']?.[provider.id];
     const optIn = provider.enableEnvVar && process.env[provider.enableEnvVar];
     if (!explicit && !(optIn?.trim() && parseBooleanEnv(optIn))) continue;
     const shared = providers[provider.sharedChatProviderId];
-    searchDefaults[provider.id] = {
-      apiKey: shared?.apiKey,
-      baseUrl: shared?.baseUrl,
-      proxy: shared?.proxy,
-      ...explicit,
+    const configured = webSearch[provider.id];
+    const apiKey = configured?.apiKey || shared?.apiKey;
+    // Append shared accounts after existing search providers, including when
+    // their explicit YAML entry was loaded earlier, preserving default order.
+    delete webSearch[provider.id];
+    if (!apiKey) continue;
+    webSearch[provider.id] = {
+      apiKey,
+      baseUrl: configured?.baseUrl ?? explicit?.baseUrl ?? shared?.baseUrl,
+      proxy: configured?.proxy ?? explicit?.proxy ?? shared?.proxy,
       // Search has no model selector; chat pins must stay on the chat account.
       models: undefined,
     };
   }
-  const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, searchDefaults, {
-    keylessProviders: new Set(['brave', 'searxng']),
-  });
 
   return {
     providers,
