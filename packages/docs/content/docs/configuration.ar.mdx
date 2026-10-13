@@ -127,7 +127,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
 | `video` | video | — | توليد الفيديو |
-| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
+| `webFetch` | webFetch | — | استخراج صفحات الويب (الافتراضي: `builtin`) |
 | `webSearch` | webSearch | — | البحث على الويب |
 | `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
 
@@ -172,7 +172,7 @@ slots:
 
 ### النماذج الاحتياطية
 
-تنطبق النماذج الاحتياطية على خانات النماذج اللغوية فقط: `llm` وكل الخانات تحته. يُرفض `fallback` في خانة `tts` أو `asr` أو `image` أو `video` أو `webSearch` أو `document`، عند بدء التشغيل في `openmaic.yml` وعند الحفظ في إعدادات النماذج.
+تنطبق النماذج الاحتياطية على خانات النماذج اللغوية فقط: `llm` وكل الخانات تحته. يُرفض `fallback` في خانة `tts` أو `asr` أو `image` أو `video` أو `webSearch` أو `webFetch` أو `document`، عند بدء التشغيل في `openmaic.yml` وعند الحفظ في إعدادات النماذج.
 
 يُجرَّب `fallback` الخاص بالخانة مرة واحدة عندما يفشل استدعاء النموذج الأساسي، بعد محاولاته الخاصة، بفشل قابل لإعادة المحاولة: خطأ عابر من SDK، أو انتهاء المهلة، أو خطأ شبكة، أو تجاوز حد المعدل (429)، أو نقص السعة (503)، أو مخرجات فارغة. أما إذا رفض المزود الطلب صراحةً لنفاد الحصة (برمز متوافق مع OpenAI مثل `insufficient_quota`، أيًّا كانت حالة HTTP)، فلا يُعاد الاستدعاء على النموذج الأساسي، بل ينتقل فورًا إلى النموذج الاحتياطي. رفض المحتوى لأسباب السلامة وأخطاء 4xx الأخرى لا تؤدي إلى الرجوع الاحتياطي. ينطبق الرجوع الاحتياطي على الاستدعاءات العادية والمتدفقة معًا، ويستخدم معاملات `thinking` الخاصة بالخانة.
 
@@ -193,7 +193,7 @@ lock: [llm, video]   # هذه الخانات وكل الخانات تحتها
 
 - يجب أن تكون كل خانة يذكرها `lock` مكتوبة تحت `slots` (و`null` يُحتسب: `video: null` مع `lock: [video]` يبقي الفيديو موقوفًا للجميع). الخانة المجهولة، أو الخانة المقفلة التي لا يكتبها `slots`، توقف الخادم عند بدء التشغيل مع ذكر موضعها (`lock.1: ...`).
 - الخانة المقفلة تثبّت أبناءها أيضًا: مع `lock: [llm]` لا يستطيع أي مستخدم ضبط `course.outline` أو أي خانة أخرى لنموذج اللغة، وتُحل كلها من `openmaic.yml` وحده.
-- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع. For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
+- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع. لكن `webFetch` غير المحدد يستخدم `builtin`؛ ولتعطيله اضبط `webFetch: null`.
 - تجتمع `null` والقيمة الافتراضية والقفل كما هو متوقع: `video: null` وحدها موقوفة حتى يشغّلها مستخدم؛ ومع `lock: [video]` تبقى موقوفة.
 
 تأخذ الإعدادات أحد ثلاثة أشكال، بحسب الإعداد:
@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل أي قدرة على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانة غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل القدرات الأخرى، باستثناء `webFetch`، على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانات الأخرى غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
 
 ثم احذف `MODEL_ROUTES` و`DEFAULT_MODEL` و`MODEL_FALLBACK`.
 
@@ -814,17 +812,14 @@ slots:
 
 عند وجود `openmaic.yml`، أعلن `providers.<id>: { preset: kimi }` وعيّن `slots.webSearch: <id>`؛ لا يستطيع المتغير القديم `WEB_SEARCH_KIMI_ENABLED` تعيين هذه الخانة.
 
-## Web fetch provider slot
+## خانة مزوّد جلب صفحات الويب
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+تحدد `webFetch` خدمة القراءة التي تستخدمها أداة الوكيل `fetch_url`. الخدمة الافتراضية هي `builtin` في الإعدادات القديمة والفارغة وملفات YAML، حتى عند عدم تحديد هذه الخانة تحت `lock: all`. يؤدي ضبط `webFetch: null` صراحةً إلى تعطيل الجلب وإزالة الأداة وتعليماتها من عمليات التشغيل اللاحقة. يستخدم كل طلب مزوّدًا واحدًا دون مزوّد احتياطي أو تصعيد إلى خدمة أخرى. تُسبب الإشارة إلى مزوّد محذوف خطأً مثل خانات الوسائط الأخرى، ولا تُبدّل الخدمة إلى القارئ المدمج.
 
-| Provider | Credentials | Extraction |
+| المزوّد | بيانات الاعتماد | الاستخراج |
 | --- | --- | --- |
-| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
-| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `builtin` | غير مطلوبة | قارئ Readability/Turndown محلي؛ تستخدم ملفات PDF خانة `document` |
+| `kimi` | مفتاح المزوّد Kimi الحالي وعنوانه الأساسي | خدمة مستضافة لاستخراج Markdown، تشمل روابط PDF |
 
 ```yaml
 providers:
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+يوفر كلا الإعدادين المسبقين `kimi` و`kimi-coding-plan` قدرة `webFetch`. لبيانات اعتماد Coding Plan، استخدم `preset: kimi-coding-plan`؛ وعنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يُحافظ على أي عنوان أساسي مضبوط صراحةً. تستخدم عناوين Moonshot Open Platform (`https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1`) المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يرسل كلاهما طلب `POST` يحتوي على `{ "url": ... }` مع مصادقة Bearer. يقبل المهايئ `markdown` أو `content`؛ لم تُتحقق حقول استجابة Coding Plan وتوافر العناوين الدولية باستخدام مفتاح فعلي. تراعي الطلبات إعداد `proxy` الخاص بالمزوّد ومتغيرات بيئة الوكيل القياسية.
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+استخدم بيانات الاعتماد الحالية في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**، واختر القارئ في **إعداد نماذج المقرر ← جلب صفحات الويب**. يُستخدم المفتاح نفسه للدردشة مع هذا المزوّد؛ تغييره أو حذفه يؤثر في الدردشة أيضًا. تكون البطاقة للقراءة فقط عندما يثبّتها المسؤول. يحتفظ الإعداد الأولي بالقارئ المدمج حتى اختيار قارئ آخر صراحةً. يمكن لبيانات اعتماد مساحة العمل استخدام عناوين API الأساسية الرسمية؛ أما عناوين الجلب المخصصة والوكلاء فيجب أن يعلنها المسؤول في `openmaic.yml`.
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+قبل إرسال رابط إلى خدمة مستضافة، تُطبق بوابة روابط الجلسة والتطبيع الصارم للرابط وفحص جميع عناوين DNS المحلية. تُطبق الفحوص نفسها على الرابط النهائي الذي تعيده الخدمة قبل قبول المحتوى. تتحكم الخدمات المستضافة في DNS والتحويلات الوسيطة الخاصة بها، لذلك لا تستطيع الفحوص المحلية تثبيت اتصالاتها الشبكية. يظل النص بيانات غير موثوقة، ويخضع لاكتشاف صفحات التحقق وحدود الحجم بالبايت وعلامة الاقتطاع، مع حفظ مواد الويب وصيغة النتيجة `{trusted, untrusted}` كما في السابق.

@@ -287,7 +287,7 @@ interface CoursePromptBlocks {
   search?: string;
   /** Policy boundary for content fetched from session-observed URLs. */
   untrustedContent?: string;
-  /** fetch_url usage guidance (the tool is always registered). */
+  /** fetch_url usage guidance, present only when fetching is enabled. */
   fetch?: string;
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;

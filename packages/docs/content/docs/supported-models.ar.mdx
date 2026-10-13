@@ -18,7 +18,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | `minimax` | MiniMax | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `tokendance` | TokenDance | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `volcengine-ark` | Volcengine Ark Agent Plan | المحادثة والصور والفيديو وTTS والبحث على الويب |
-| `kimi-coding-plan` | Kimi coding plan | المحادثة والبحث على الويب |
+| `kimi-coding-plan` | Kimi coding plan | المحادثة والبحث على الويب وجلب صفحات الويب |
 
 يربط `openai-compatible` أي خادم محادثة متوافق مع OpenAI: يحتاج إلى `baseUrl`، وتعرض إعدادات النماذج قائمة `models` الخاصة به.
 
@@ -32,6 +32,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`veo` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
 | البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`kimi` و`kimi-coding-plan` و`searxng` |
+| جلب صفحات الويب | `builtin` و`kimi` و`kimi-coding-plan` |
 | تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
@@ -152,11 +153,6 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 
 عند وجود `openmaic.yml`، يجب تعريف `providers.<id>: { preset: kimi }` وتعيين `slots.webSearch: <id>`؛ فمتغير الإعدادات القديمة `WEB_SEARCH_KIMI_ENABLED` لا يعيّن هذه الخانة.
 
-## Web fetch
+## جلب صفحات الويب
 
-The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
-Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
-API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
-while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
-Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
-All readers retain local session and public-address checks and untrusted results.
+تستخدم خانة `webFetch` افتراضيًا القارئ `builtin` دون مفتاح (Readability وTurndown؛ وتظل ملفات PDF تستخدم `document`). يعيد كل من `kimi` و`kimi-coding-plan` استخدام مفتاح مزوّده والعنوان الأساسي لواجهة API للاستخراج المستضاف. يستخدم Moonshot Open Platform المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. لا توجد خدمة احتياطية. اختر القارئ في خدمات النماذج أو إعداد نماذج المقرر، أو اضبط `slots.webFetch` في `openmaic.yml`. المفتاح مشترك مع الدردشة. تحتفظ جميع الخدمات بفحوص الجلسة والعناوين العامة المحلية وتعيد بيانات غير موثوقة.

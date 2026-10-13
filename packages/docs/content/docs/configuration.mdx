@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-Once `openmaic.yml` exists, the provider variables configure nothing on their own: a TTS, image, document or web search provider that had only its variables (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …) is no longer used, and no capability gets a default provider. Declare each provider you use under `providers` and assign `tts`, `image`, `document`, `webSearch` (and `asr`, `video`) in `slots`, as in the environment-variable example above; a slot left unassigned stays unconfigured unless a workspace assigns it in the model settings.
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+Once `openmaic.yml` exists, the provider variables configure nothing on their own: a TTS, image, document or web search provider that had only its variables (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …) is no longer used, and other capabilities get no default provider. Declare each provider you use under `providers` and assign `tts`, `image`, `document`, `webSearch` (and `asr`, `video`) in `slots`, as in the environment-variable example above; a slot for another capability left unassigned stays unconfigured unless a workspace assigns it in the model settings.
 
 Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
 
@@ -816,10 +814,7 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 
 ## Web fetch provider slot
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to `builtin` in legacy, empty and YAML configurations, including an omitted root under `lock: all`. Explicit `webFetch: null` disables fetching and removes the tool and its prompt from subsequent runs. Each request uses one provider, with no fallback or escalation. A stale provider reference fails like other media slots; it does not switch to the builtin reader.
 
 | Provider | Credentials | Extraction |
 | --- | --- | --- |
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+Both `kimi` and `kimi-coding-plan` presets offer `webFetch`. For Coding Plan credentials, use `preset: kimi-coding-plan`; its default base is `https://api.kimi.com/coding/v1`. Any explicitly configured base URL is preserved. Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1`) use `/tools/fetch`; Coding Plan uses `/fetch`. Both send `POST` with `{ "url": ... }` and Bearer authentication. The adapter accepts `markdown` or `content`; Coding Plan response fields and international availability have not been verified with a live key. Requests respect the provider's `proxy` setting and standard proxy environment variables.
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+In **Settings → Model Services → Web Fetch**, use the existing provider credentials. The key is shared with that provider's chat service: editing or removing it also affects chat. Choose the reader in **Course Model Config → Web Fetch**. Administrator locks make the card read-only. First-run setup keeps the builtin default until a reader is explicitly selected. Workspace credentials can use official API bases; arbitrary fetch endpoints and proxies must be declared by the administrator in `openmaic.yml`.
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+The session URL gate, strict URL normalization and all local DNS address checks run before forwarding a URL to a hosted reader. The same checks run against a reported final URL before accepting its content. Hosted readers control their own DNS and intermediate redirects; local checks cannot pin their networks. Their text remains untrusted, with challenge-page detection, byte limits, a truncation notice and the existing web material persistence and `{trusted, untrusted}` result.

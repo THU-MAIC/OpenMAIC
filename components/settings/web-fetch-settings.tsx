@@ -2,7 +2,6 @@
 
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import providers from '@/lib/web-fetch/metadata.generated.json';
 import {
   ApiKeyField,
   EndpointServerOnlyHint,
@@ -14,7 +13,7 @@ import {
 
 export function WebFetchSettings({ view, apply, entry }: ServicePanelProps) {
   const { t } = useI18n();
-  const provider = (providers as Record<string, { requiresApiKey: boolean }>)[entry.registryId];
+  const provider = entry.metadata;
   const editable = entry.state === 'workspace' || entry.state === 'available';
   return (
     <div className="max-w-3xl space-y-6">
@@ -31,6 +30,9 @@ export function WebFetchSettings({ view, apply, entry }: ServicePanelProps) {
             onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
             onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
           />
+          {!!provider.credentialPresets?.length && (
+            <p className="text-xs text-muted-foreground">{t('settings.webFetchSharedKeyHint')}</p>
+          )}
           <EndpointServerOnlyHint />
         </div>
       )}

@@ -127,7 +127,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
 | `image` | image | — | 圖像生成 |
 | `video` | video | — | 影片生成 |
-| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
+| `webFetch` | webFetch | — | 網頁內容擷取（預設：`builtin`） |
 | `webSearch` | webSearch | — | 網路搜尋 |
 | `document` | document | — | 文件解析服務（MinerU、MinerU Cloud、AliDocMind）。內建的 PDF 文字擷取不需要服務 |
 
@@ -172,7 +172,7 @@ slots:
 
 ### 備援模型
 
-備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch`, `webFetch` or `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
+備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch`、`webFetch` 或 `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
 
 當主模型的呼叫在自身重試之後仍以可重試的方式失敗時，會改用插槽的 `fallback` 再試一次。可重試的失敗包括：SDK 判定的暫時性錯誤、逾時、網路錯誤、限流（429）、容量不足（503）或輸出為空。供應商明確回傳額度用盡時（OpenAI 相容格式的額度錯誤碼，例如 `insufficient_quota`，不論 HTTP 狀態碼），不會在主模型上重試，呼叫會直接改用備援模型。內容安全拒絕和其他 4xx 錯誤不會觸發備援。備援對一般呼叫和串流呼叫都有效，並沿用插槽的 `thinking` 參數。
 
@@ -193,7 +193,7 @@ lock: [llm, video]   # 這些插槽及其下所有插槽
 
 - `lock` 列出的每個插槽都必須在 `slots` 中寫出（`null` 也算：`video: null` 加 `lock: [video]` 會對所有人關閉影片）。未知插槽，或 `slots` 中沒有寫出的鎖定插槽，會讓服務在啟動時拒絕執行，並指出其位置（`lock.1: ...`）。
 - 鎖定的插槽同時固定其子插槽：使用 `lock: [llm]` 時，任何使用者都不能設定 `course.outline` 或其他語言模型插槽，它們全部只依 `openmaic.yml` 解析。
-- `lock: all` 固定所有插槽，無論是否寫出；`slots` 沒寫的能力根插槽因此對所有人都是未設定。 For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
+- `lock: all` 固定所有插槽，無論是否寫出；`slots` 沒寫的能力根插槽因此對所有人都是未設定。 但未指定的 `webFetch` 仍使用 `builtin`；設定 `webFetch: null` 可將其關閉。
 - `null`、伺服器端預設值與鎖定可以組合：只寫 `video: null` 時預設關閉，使用者可以開啟；加上 `lock: [video]` 後維持關閉。
 
 設定介面會依照設定呈現三種形態之一：
@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-一旦存在 `openmaic.yml`，供應商變數本身就不再設定任何東西：只靠變數設定的 TTS、圖像、文件或網路搜尋供應商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不會得到預設供應商。請把用到的每個供應商寫進 `providers`，並在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的環境變數範例；未指定的槽位保持未設定，除非某個工作區在模型設定中為它指定。
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+一旦存在 `openmaic.yml`，供應商變數本身就不再設定任何東西：只靠變數設定的 TTS、圖像、文件或網路搜尋供應商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，除 `webFetch` 外，其他能力也不會得到預設供應商。請把用到的每個供應商寫進 `providers`，並在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的環境變數範例；未指定的其他槽位保持未設定，除非某個工作區在模型設定中為它指定。
 
 然後刪除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -814,17 +812,14 @@ slots:
 
 存在 `openmaic.yml` 時，請宣告 `providers.<id>: { preset: kimi }` 並指派 `slots.webSearch: <id>`；舊版變數 `WEB_SEARCH_KIMI_ENABLED` 無法指派該插槽。
 
-## Web fetch provider slot
+## 網頁擷取服務插槽
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+`webFetch` 決定智慧體的 `fetch_url` 工具使用哪個讀取服務。在舊版設定、空設定和 YAML 設定中，預設使用 `builtin`；即使 `lock: all` 下沒有指定該根插槽也是如此。明確設定 `webFetch: null` 會關閉擷取，並從後續執行中移除該工具及其提示。每次請求只使用一個供應商，不會備援或升級至其他服務。失效的供應商參照會像其他媒體插槽一樣報錯，不會自動改用內建讀取服務。
 
-| Provider | Credentials | Extraction |
+| 供應商 | 憑證 | 內容擷取 |
 | --- | --- | --- |
-| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
-| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `builtin` | 無需憑證 | 本機 Readability/Turndown 讀取服務；PDF 使用 `document` 插槽 |
+| `kimi` | 既有 Kimi 供應商的金鑰和基底網址 | 託管 Markdown 擷取服務，也接收 PDF 網址 |
 
 ```yaml
 providers:
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+`kimi` 和 `kimi-coding-plan` 預設都提供 `webFetch`。使用 Coding Plan 憑證時，請指定 `preset: kimi-coding-plan`，其預設基底網址為 `https://api.kimi.com/coding/v1`；明確設定的基底網址會保留。Moonshot 開放平台網址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。兩者都傳送帶有 `{ "url": ... }` 的 `POST` 請求，並使用 Bearer 驗證。介接器接受 `markdown` 或 `content`；尚未使用真實金鑰驗證 Coding Plan 的回應欄位與國際端點的可用性。請求遵循供應商的 `proxy` 設定及標準代理環境變數。
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+在 **設定 → 模型服務 → 網頁擷取** 中使用既有供應商憑證。此金鑰與同一供應商的對話服務共用，修改或移除金鑰也會影響對話。在 **課程模型設定 → 網頁擷取** 中選擇讀取服務。管理員鎖定後，卡片為唯讀。首次設定會保留內建預設值，直到明確選擇其他讀取服務。工作區憑證可使用官方 API 基底網址；自訂擷取網址與代理必須由管理員在 `openmaic.yml` 中宣告。
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+網址轉送至託管服務之前，必須通過工作階段網址授權、嚴格網址正規化及全部本機 DNS 位址檢查。接收內容前，也會對服務回傳的最終網址執行相同檢查。託管服務控制其自身的 DNS 和中間重新導向，本機檢查無法固定其網路連線。回傳的文字仍是不可信資料，經過驗證頁面偵測、位元組限制和截斷標記處理，並沿用網頁素材持久化及 `{trusted, untrusted}` 結果結構。

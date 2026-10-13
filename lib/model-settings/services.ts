@@ -47,6 +47,7 @@ export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
  *   self-hosted service, or a server that does not let workspaces add providers).
  */
 export interface ServiceEntry {
+  metadata?: import('@/lib/web-fetch/types').WebFetchProviderInfo;
   /** The provider's id, or the id a provider of this service gets when it is added. */
   id: string;
   /** The capability registry's entry that serves it (voices, models, endpoints). */
@@ -84,7 +85,10 @@ export function serviceEntries(
     view.presets.find((preset) => preset.id === provider.preset);
   const placed = new Set<string>();
   const services: ServiceEntry[] = [];
-  const taken = new Set(view.providers.map((provider) => provider.id));
+  const taken = new Set([
+    ...view.providers.map((provider) => provider.id),
+    ...(view.webFetchProviders ?? []).map((provider) => provider.id),
+  ]);
   for (const registryId of registryIds) {
     const presetId = presetIdFor(capability, registryId);
     const named = serving.find(
@@ -128,7 +132,12 @@ export function serviceEntries(
         ...(preset ? { preset } : {}),
       };
     });
-  return [...others, ...services];
+  return [...others, ...services].map((entry) => ({
+    ...entry,
+    ...(capability === 'webFetch'
+      ? { metadata: view.webFetchProviders?.find((provider) => provider.id === entry.registryId) }
+      : {}),
+  }));
 }
 
 /**

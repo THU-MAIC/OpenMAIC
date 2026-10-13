@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "組み込みリーダー"
     },
     "modelCount": "モデル",
     "modelSingular": "モデル",
@@ -1948,7 +1949,7 @@
         "tts": "音声合成サービス・ボイス・モデルを設定します",
         "video": "動画生成サービスの認証情報とモデルカタログを設定します",
         "webSearch": "ウェブ検索サービスと検索ソースを設定します",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Webページの抽出サービスを設定"
       },
       "nav": "モデルサービス",
       "notConfigured": "未設定",
@@ -2152,8 +2153,8 @@
           "desc": "アップロードされたドキュメントを読み取ります。"
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Webページ取得",
+          "desc": "選択したプロバイダーで、セッションで許可されたWebページを読み取ります。"
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Webページ取得",
+    "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
+    "webFetchApiKey": "APIキー",
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

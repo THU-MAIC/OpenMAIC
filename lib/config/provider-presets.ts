@@ -16,7 +16,7 @@
  * another capability's registry id or a token plan id, the preset id is
  * spelled out in {@link PRESET_ID_OVERRIDES}.
  */
-import WEB_FETCH_PROVIDERS from '@/lib/web-fetch/metadata.generated.json';
+import { WEB_FETCH_PROVIDERS } from '@/lib/web-fetch/registry';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -122,11 +122,7 @@ function singlePresets(): ProviderPreset[] {
     for (const [registryId, entry] of Object.entries(registry)) {
       const requiresBaseUrl =
         entry.requiresBaseUrl === true || !!REQUIRES_BASE_URL[capability]?.includes(registryId);
-      if (
-        capability === 'webFetch' &&
-        (WEB_FETCH_PROVIDERS as Record<string, { credentialPreset?: string }>)[registryId]
-          .credentialPreset
-      )
+      if (capability === 'webFetch' && WEB_FETCH_PROVIDERS[registryId].credentialPresets?.length)
         continue;
       presets.push({
         id: presetIdFor(capability, registryId),
@@ -201,8 +197,10 @@ function buildPresets(): ProviderPreset[] {
   const singles = singlePresets().filter((preset) => !combinedIds.has(preset.id));
   const presets = [...combined, ...singles];
   for (const provider of Object.values(WEB_FETCH_PROVIDERS)) {
-    if (!('credentialPreset' in provider)) continue;
-    for (const preset of presets.filter((entry) => entry.id === provider.credentialPreset)) {
+    if (!provider.credentialPresets?.length) continue;
+    for (const preset of presets.filter((entry) =>
+      provider.credentialPresets?.includes(entry.id),
+    )) {
       preset.capabilities.webFetch = {
         registryId: provider.id,
         baseUrl: preset.capabilities.chat?.baseUrl,

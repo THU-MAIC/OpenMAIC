@@ -127,7 +127,7 @@ Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェ�
 | `asr` | asr | — | 音声認識（音声入力、音声・動画の文字起こし） |
 | `image` | image | — | 画像生成 |
 | `video` | video | — | 動画生成 |
-| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
+| `webFetch` | webFetch | — | Webページ抽出（既定：`builtin`） |
 | `webSearch` | webSearch | — | Web 検索 |
 | `document` | document | — | ドキュメント解析サービス（MinerU、MinerU Cloud、AliDocMind）。組み込みの PDF テキスト抽出にはサービスは不要です |
 
@@ -172,7 +172,7 @@ slots:
 
 ### フォールバック
 
-フォールバックは言語モデルのスロット、つまり `llm` とその下のすべてのスロットにだけ適用されます。`tts`、`asr`、`image`、`video`、`webSearch`、`document` のスロットに書いた `fallback` は拒否されます（`openmaic.yml` では起動時、モデル設定では保存時）。
+フォールバックは言語モデルのスロット、つまり `llm` とその下のすべてのスロットにだけ適用されます。`tts`、`asr`、`image`、`video`、`webSearch`、`webFetch`、`document` のスロットに書いた `fallback` は拒否されます（`openmaic.yml` では起動時、モデル設定では保存時）。
 
 主モデルの呼び出しが自身の再試行の後も再試行可能な失敗で終わった場合、スロットの `fallback` で一度だけ再試行します。再試行可能な失敗とは、SDK が一時的と判断したエラー、タイムアウト、ネットワークエラー、レート制限（429）、容量不足（503）、または空の出力です。プロバイダーがクォータ切れを明示的に返した場合（`insufficient_quota` などの OpenAI 互換のクォータコード。HTTP ステータスは問いません）は、主モデルで再試行せず、すぐにフォールバックに切り替えます。コンテンツ安全性による拒否やその他の 4xx エラーではフォールバックしません。フォールバックは通常の呼び出しとストリーミング呼び出しの両方に適用され、スロットの `thinking` パラメーターを使います。
 
@@ -193,7 +193,7 @@ lock: [llm, video]   # これらのスロットとその下のすべてのスロ
 
 - `lock` に挙げるスロットはすべて `slots` に書かれている必要があります（`null` も含みます。`video: null` と `lock: [video]` で全員の動画が無効のままになります）。未知のスロットや、`slots` に書かれていないロック対象のスロットがあると、位置（`lock.1: ...`）を示してサーバーは起動しません。
 - ロックしたスロットは子も固定します。`lock: [llm]` では、どのユーザーも `course.outline` などの言語モデルスロットを設定できず、すべて `openmaic.yml` だけで解決されます。
-- `lock: all` は書かれているかどうかにかかわらずすべてのスロットを固定します。`slots` に書かれていない機能のルートは、全員に対して未設定になります。 For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
+- `lock: all` は書かれているかどうかにかかわらずすべてのスロットを固定します。`slots` に書かれていない機能のルートは、全員に対して未設定になります。 ただし未指定の `webFetch` は `builtin` を使用し、`webFetch: null` で無効にできます。
 - `null`、サーバーの既定値、ロックは組み合わせて使えます。`video: null` だけなら既定で無効でユーザーが有効にでき、`lock: [video]` を加えると無効のままです。
 
 設定画面は、構成に応じて次の三つの形のいずれかになります。
@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-`openmaic.yml` が存在すると、プロバイダー変数だけでは何も設定されません。変数だけで設定していた TTS、画像、ドキュメント、Web 検索のプロバイダー（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` など）は使われなくなり、どの機能にもデフォルトのプロバイダーは割り当てられません。使用するプロバイダーをすべて `providers` に宣言し、上の環境変数の例と同様に `slots` で `tts`、`image`、`document`、`webSearch`（および `asr`、`video`）を割り当ててください。割り当てられていないスロットは、ワークスペースがモデル設定で割り当てない限り未設定のままです。
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+`openmaic.yml` が存在すると、プロバイダー変数だけでは何も設定されません。変数だけで設定していた TTS、画像、ドキュメント、Web 検索のプロバイダー（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` など）は使われなくなり、`webFetch` 以外の機能にはデフォルトのプロバイダーは割り当てられません。使用するプロバイダーをすべて `providers` に宣言し、上の環境変数の例と同様に `slots` で `tts`、`image`、`document`、`webSearch`（および `asr`、`video`）を割り当ててください。割り当てられていないその他のスロットは、ワークスペースがモデル設定で割り当てない限り未設定のままです。
 
 その後 `MODEL_ROUTES`、`DEFAULT_MODEL`、`MODEL_FALLBACK` を削除します。
 
@@ -814,17 +812,14 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 
 `openmaic.yml` が存在する場合は、`providers.<id>: { preset: kimi }` を宣言して `slots.webSearch: <id>` を割り当ててください。旧環境変数 `WEB_SEARCH_KIMI_ENABLED` ではこのスロットを割り当てられません。
 
-## Web fetch provider slot
+## Webページ取得のプロバイダースロット
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+`webFetch` は、エージェントの `fetch_url` ツールで使う読み取りサービスを選択します。従来の設定、空の設定、YAML 設定では `builtin` が既定であり、`lock: all` でこのルートが未指定の場合も同様です。`webFetch: null` を明示すると取得が無効になり、以降の実行からツールとそのプロンプトが除かれます。各リクエストは一つのプロバイダーだけを使用し、フォールバックや別サービスへの切り替えはありません。削除済みのプロバイダーへの参照は、他のメディアスロットと同様にエラーになり、組み込みサービスには切り替わりません。
 
-| Provider | Credentials | Extraction |
+| プロバイダー | 認証情報 | 抽出 |
 | --- | --- | --- |
-| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
-| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `builtin` | 不要 | ローカルの Readability/Turndown。PDF は `document` スロットを使用 |
+| `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
 
 ```yaml
 providers:
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+`kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。Coding Plan の応答フィールドと国際エンドポイントの利用可否は実際のキーでは未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+**設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。

@@ -3,6 +3,8 @@ import type { FetchUrlOptions, ExtractedWebPage } from './builtin-extraction';
 export interface WebFetchCredentials {
   apiKey?: string;
   baseUrl?: string;
+  proxy?: string;
+  options?: Record<string, string | number | boolean>;
 }
 
 export interface WebFetchResult {
@@ -16,11 +18,12 @@ export interface WebFetchResult {
 export interface WebFetchMetadata {
   id: string;
   name: string;
+  nameKey?: string;
   icon?: string;
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   /** Share an existing preset's credentials instead of creating a separate service. */
-  credentialPreset?: string;
+  credentialPresets?: readonly string[];
   acceptsWorkspaceBaseUrl?: (baseUrl: string) => boolean;
   resolveCredentials: (credentials?: WebFetchCredentials) => WebFetchCredentials;
 }
@@ -34,3 +37,13 @@ export type WebFetchProvider = WebFetchMetadata &
       }
     | { hosted: true; extract: (url: string, options: ExtractOptions) => Promise<WebFetchResult> }
   );
+
+/** Display-only data sent by the settings API. */
+export interface WebFetchProviderInfo {
+  id: string;
+  name: string;
+  nameKey?: string;
+  icon?: string;
+  requiresApiKey: boolean;
+  credentialPresets?: readonly string[];
+}

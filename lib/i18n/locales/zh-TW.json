@@ -1335,7 +1335,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "內建讀取服務"
     },
     "modelCount": "個模型",
     "modelSingular": "個模型",
@@ -1933,7 +1934,7 @@
         "tts": "設定語音合成服務、音色與模型",
         "video": "設定影片生成服務的憑證與模型目錄",
         "webSearch": "設定網路搜尋服務與檢索來源",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "設定網頁內容擷取服務"
       },
       "nav": "模型服務",
       "notConfigured": "未設定",
@@ -2137,8 +2138,8 @@
           "desc": "讀取上傳的文件。"
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "網頁擷取",
+          "desc": "使用所選供應商讀取工作階段中已獲准的網頁。"
         }
       },
       "source": {
@@ -2185,9 +2186,10 @@
       }
     },
     "serverConfiguredAddOwn": "如需使用自己的憑證，請新增一個供應商。",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "網頁擷取",
+    "webFetchHint": "選擇網頁讀取方式。託管服務只會收到工作階段中已獲准的公開網址。結果仍是不可信資料，失敗時不會切換讀取服務。",
+    "webFetchApiKey": "API 金鑰",
+    "webFetchSharedKeyHint": "此金鑰也用於與同一供應商進行對話。修改或移除金鑰也會影響對話。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

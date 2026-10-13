@@ -23,7 +23,7 @@ export function lineText(view: ModelSettingsView, slot: SlotView, t: T): LineTex
       : undefined;
 
   if (effective.status === 'assigned') {
-    const provider = providerLabel(view, effective.providerId);
+    const provider = providerLabel(view, effective.providerId, t);
     const value = effective.modelId
       ? modelName(view, slot.capability, effective.providerId, effective.modelId)
       : provider;

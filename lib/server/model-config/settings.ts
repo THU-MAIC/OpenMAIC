@@ -12,7 +12,12 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
-import { DEFAULT_WEB_FETCH_PROVIDER, getWebFetchProvider } from '@/lib/web-fetch/registry';
+import type { WebFetchProviderInfo } from '@/lib/web-fetch/types';
+import {
+  DEFAULT_WEB_FETCH_PROVIDER,
+  getWebFetchProvider,
+  webFetchProviderMetadata,
+} from '@/lib/web-fetch/registry';
 import {
   deploymentAuthorizedModels,
   ModelAuthorizationError,
@@ -186,6 +191,7 @@ export interface SlotView {
 }
 
 export interface ModelSettingsView {
+  webFetchProviders?: WebFetchProviderInfo[];
   revision: number | null;
   /**
    * Whether users may add providers, keys and token plans of their own
@@ -575,6 +581,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     presets,
     providers,
     slots,
+    webFetchProviders: webFetchProviderMetadata(),
   };
 }
 
@@ -727,6 +734,9 @@ export async function applyModelSettingsChange(
         'PROVIDERS_NOT_ALLOWED',
         'This deployment does not let workspaces add providers',
       );
+    }
+    if (getWebFetchProvider(change.id)) {
+      throw new ModelSettingsError('PROVIDER_RESERVED', 'Web fetch registry ids are reserved');
     }
     if (Object.hasOwn(deploymentProviders, change.id)) {
       throw new ModelSettingsError('PROVIDER_RESERVED', 'The deployment declares this provider id');

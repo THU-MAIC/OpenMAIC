@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Integrierter Leser"
     },
     "modelCount": "Modelle",
     "modelSingular": "Modell",
@@ -1948,7 +1949,7 @@
         "tts": "Sprachsynthese-Dienste, Stimmen und Modelle konfigurieren",
         "video": "Zugangsdaten und Modellkataloge für Videogenerierungs-Dienste konfigurieren",
         "webSearch": "Websuch-Dienste und Abrufquellen konfigurieren",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Dienste zur Extraktion von Webseiten konfigurieren"
       },
       "nav": "Modelldienste",
       "notConfigured": "Nicht konfiguriert",
@@ -2152,8 +2153,8 @@
           "desc": "Liest hochgeladene Dokumente."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Webseiten abrufen",
+          "desc": "In der Sitzung zugelassene Webseiten mit dem gewählten Anbieter lesen."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "Um eigene Zugangsdaten zu verwenden, füge einen separaten Anbieter hinzu.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Webseiten abrufen",
+    "webFetchHint": "Wählen Sie, wie Webseiten gelesen werden. Gehostete Dienste erhalten nur öffentliche URLs, die in der Sitzung zugelassen sind. Ergebnisse bleiben nicht vertrauenswürdig; bei Fehlern wird der Dienst nicht gewechselt.",
+    "webFetchApiKey": "API-Schlüssel",
+    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

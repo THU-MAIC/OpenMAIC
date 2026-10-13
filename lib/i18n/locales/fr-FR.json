@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Lecteur intégré"
     },
     "modelCount": "modèles",
     "modelSingular": "modèle",
@@ -1948,7 +1949,7 @@
         "tts": "Configurer les services de synthèse vocale, les voix et les modèles",
         "video": "Configurer les identifiants et catalogues de modèles des services de génération vidéo",
         "webSearch": "Configurer les services de recherche web et les sources de récupération",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Configurer les services d’extraction de pages web"
       },
       "nav": "Services de modèles",
       "notConfigured": "Non configuré",
@@ -2152,8 +2153,8 @@
           "desc": "Lit les documents importés."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Récupération web",
+          "desc": "Lire les pages web autorisées dans la session avec le fournisseur choisi."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "Pour utiliser vos propres identifiants, ajoutez un fournisseur distinct.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Récupération web",
+    "webFetchHint": "Choisissez comment lire les pages web. Les services hébergés reçoivent les URL publiques autorisées dans la session. Les résultats restent non fiables et aucun autre lecteur n’est utilisé en cas d’échec.",
+    "webFetchApiKey": "Clé API",
+    "webFetchSharedKeyHint": "Cette clé sert aussi au chat avec ce fournisseur. La modifier ou la supprimer affecte le chat."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

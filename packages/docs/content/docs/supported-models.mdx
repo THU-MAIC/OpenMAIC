@@ -18,7 +18,7 @@ A preset is a built-in provider template: which vendor, which endpoint, and whic
 | `minimax` | MiniMax | Chat, image, video, TTS, web search |
 | `tokendance` | TokenDance | Chat, image, video, TTS, web search |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
-| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
+| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search, web fetch |
 
 `openai-compatible` connects any OpenAI-compatible chat server: it needs a `baseUrl`, and its `models` list is what the model settings offer.
 
@@ -32,6 +32,7 @@ All preset IDs:
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Web fetch | `builtin`, `kimi`, `kimi-coding-plan` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -154,9 +155,4 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 
 ## Web fetch
 
-The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
-Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
-API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
-while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
-Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
-All readers retain local session and public-address checks and untrusted results.
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and Turndown; PDFs still use `document`). Both `kimi` and `kimi-coding-plan` reuse their provider's key and API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`, while Coding Plan uses `/fetch`. There is no fallback. Choose the reader in Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`. The key is shared with chat. All readers retain local session and public-address checks and untrusted results.

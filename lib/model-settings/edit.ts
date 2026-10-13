@@ -222,7 +222,10 @@ export function newProviderId(view: ModelSettingsView, presetId: string): string
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, PROVIDER_ID_MAX - 4) || 'provider';
-  const taken = new Set(view.providers.map((provider) => provider.id));
+  const taken = new Set([
+    ...view.providers.map((provider) => provider.id),
+    ...(view.webFetchProviders ?? []).map((provider) => provider.id),
+  ]);
   if (!taken.has(base)) return base;
   for (let n = 2; ; n++) {
     const candidate = `${base}-${n}`;
@@ -454,8 +457,21 @@ export function slotKey(slot: string): string {
  * A provider's name for display: its preset's name when the provider is named
  * after the preset, else its own id (two providers of one preset stay apart).
  */
-export function providerLabel(view: ModelSettingsView, providerId: string): string {
+export function providerLabel(
+  view: ModelSettingsView,
+  providerId: string,
+  t?: (key: string) => string,
+): string {
   const provider = view.providers.find((entry) => entry.id === providerId);
+  if (provider && provider.preset === providerId && t) {
+    const metadata = view.webFetchProviders?.find(
+      (entry) => entry.id === provider.capabilities.webFetch?.registryId,
+    );
+    if (metadata?.nameKey) {
+      const name = t(metadata.nameKey);
+      if (name !== metadata.nameKey) return name;
+    }
+  }
   return provider && provider.preset === providerId ? provider.presetName : providerId;
 }
 

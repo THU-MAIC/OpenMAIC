@@ -1,4 +1,5 @@
 'use client';
+import { registryIdsFor } from '@/components/settings/service-display';
 
 /**
  * The "Model Services" section: one tab per capability, each with the list of
@@ -55,7 +56,7 @@ import { ProviderConfigPanel } from './provider-config-panel';
 import { PINNED_PROVIDER_ID } from './provider-links';
 import { ProviderList } from './provider-list';
 import { removeServiceProvider, rootUse } from './server-settings';
-import { REGISTRY_INFO, entryIcon, entryName, isEntryConfigured } from './service-display';
+import { entryIcon, entryName, isEntryConfigured } from './service-display';
 import { TTSSettings } from './tts-settings';
 import { UnimportedSettingsNotice } from './unimported-settings-notice';
 import { VideoSettings } from './video-settings';
@@ -143,7 +144,7 @@ export function ModelServicesPanel({
   const { t } = useI18n();
   const capability = TAB_CAPABILITY[tab];
   const entries = useMemo(() => {
-    const list = serviceEntries(view, capability, REGISTRY_INFO[capability].ids);
+    const list = serviceEntries(view, capability, registryIdsFor(view, capability));
     // Kimi 推广位：置顶于内置服务之首（其他账号/自定义服务在前，其余保持原顺序）。
     const rank = (entry: ServiceEntry) =>
       entry.provider && !entry.serviceId ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;

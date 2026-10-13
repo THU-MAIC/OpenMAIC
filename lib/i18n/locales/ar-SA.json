@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "القارئ المدمج"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1948,7 +1949,7 @@
         "tts": "هيّئ خدمات تحويل النص إلى كلام والأصوات والنماذج",
         "video": "هيّئ بيانات الاعتماد وكتالوجات النماذج لخدمات توليد الفيديو",
         "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "إعداد خدمات استخراج محتوى صفحات الويب"
       },
       "nav": "خدمات النماذج",
       "notConfigured": "غير مهيّأ",
@@ -2152,8 +2153,8 @@
           "desc": "يقرأ المستندات المرفوعة."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "جلب صفحات الويب",
+          "desc": "قراءة صفحات الويب المسموح بها في الجلسة باستخدام المزوّد المحدد."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "جلب صفحات الويب",
+    "webFetchHint": "اختر طريقة قراءة صفحات الويب. تتلقى الخدمات المستضافة روابط عامة مسموحًا بها في الجلسة. تظل النتائج غير موثوقة، ولا يؤدي الفشل إلى تبديل القارئ.",
+    "webFetchApiKey": "مفتاح API",
+    "webFetchSharedKeyHint": "يُستخدم هذا المفتاح أيضًا للدردشة مع هذا المزوّد. تغييره أو حذفه يؤثر في الدردشة."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

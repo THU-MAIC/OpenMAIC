@@ -166,3 +166,67 @@ it('exposes the keyless default through the media/tool connection resolver', asy
     setDeploymentConfigForTests();
   }
 });
+
+it.each([true, false])('prevents workspace builtin shadowing with locked=%s', (locked) => {
+  const deployment = {
+    source: 'deployment' as const,
+    config: {
+      slots: { webFetch: 'builtin' },
+      ...(locked ? { lock: ['webFetch'] as ['webFetch'] } : {}),
+    },
+  };
+  const workspace = {
+    source: 'workspace' as const,
+    config: { providers: { builtin: { preset: 'kimi', apiKey: 'user-key' } } },
+  };
+  expect(resolveSlot('webFetch', [deployment, workspace])).toMatchObject({
+    registryId: 'builtin',
+    providerId: 'builtin',
+    providerSource: 'deployment',
+    source: locked ? 'locked' : 'default',
+  });
+  expect(resolveSlot('webFetch', [deployment, workspace])).not.toHaveProperty('apiKey');
+  expect(resolveSlot('webFetch', [workspace])).toMatchObject({
+    registryId: 'builtin',
+    providerSource: 'deployment',
+  });
+});
+
+it.each(['builtin', 'kimi'])(
+  'reserves registry id %s against workspace provider writes',
+  async (id) => {
+    const { applyModelSettingsChange } = await import('@/lib/server/model-config/settings');
+    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+    try {
+      await expect(
+        applyModelSettingsChange(null, {
+          kind: 'provider',
+          id,
+          preset: 'kimi',
+          apiKey: 'user-key',
+        }),
+      ).rejects.toMatchObject({ code: 'PROVIDER_RESERVED' });
+    } finally {
+      setDeploymentConfigForTests();
+    }
+  },
+);
+
+it('gives new workspace providers ids outside the reserved registry names', async () => {
+  const { newProviderId } = await import('@/lib/model-settings/edit');
+  const { serviceEntries } = await import('@/lib/model-settings/services');
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  try {
+    const view = modelSettingsView(null);
+    expect(newProviderId(view, 'kimi')).toBe('kimi-2');
+    expect(
+      serviceEntries(
+        view,
+        'webFetch',
+        view.webFetchProviders!.map((provider) => provider.id),
+      ).find((entry) => entry.registryId === 'kimi')?.id,
+    ).toBe('kimi-2');
+  } finally {
+    setDeploymentConfigForTests();
+  }
+});

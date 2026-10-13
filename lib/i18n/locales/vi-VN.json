@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Trình đọc tích hợp"
     },
     "modelCount": "model",
     "modelSingular": "mô hình",
@@ -1948,7 +1949,7 @@
         "tts": "Cấu hình dịch vụ tổng hợp giọng nói, giọng đọc và mô hình",
         "video": "Cấu hình thông tin xác thực và danh mục mô hình của dịch vụ tạo video",
         "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Cấu hình dịch vụ trích xuất trang web"
       },
       "nav": "Dịch vụ mô hình",
       "notConfigured": "Chưa cấu hình",
@@ -2152,8 +2153,8 @@
           "desc": "Đọc các tài liệu đã tải lên."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Lấy trang web",
+          "desc": "Đọc các trang web được cho phép trong phiên bằng nhà cung cấp đã chọn."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Lấy trang web",
+    "webFetchHint": "Chọn cách đọc trang web. Dịch vụ lưu trữ chỉ nhận URL công khai được cho phép trong phiên. Kết quả vẫn là dữ liệu không đáng tin cậy và lỗi không làm chuyển sang dịch vụ khác.",
+    "webFetchApiKey": "Khóa API",
+    "webFetchSharedKeyHint": "Khóa này cũng được dùng để trò chuyện với nhà cung cấp này. Thay đổi hoặc xóa khóa sẽ ảnh hưởng đến trò chuyện."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

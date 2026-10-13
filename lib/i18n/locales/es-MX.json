@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Lector integrado"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1948,7 +1949,7 @@
         "tts": "Configura servicios de síntesis de voz, voces y modelos",
         "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",
         "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Configurar servicios de extracción de páginas web"
       },
       "nav": "Servicios de modelos",
       "notConfigured": "Sin configurar",
@@ -2152,8 +2153,8 @@
           "desc": "Lee los documentos subidos."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Obtener páginas web",
+          "desc": "Leer páginas web autorizadas en la sesión con el proveedor seleccionado."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Obtener páginas web",
+    "webFetchHint": "Elige cómo leer las páginas web. Los servicios alojados reciben URL públicas autorizadas en la sesión. Los resultados siguen siendo datos no confiables y los errores no cambian el lector.",
+    "webFetchApiKey": "Clave de API",
+    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

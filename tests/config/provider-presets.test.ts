@@ -72,10 +72,12 @@ describe('provider presets', () => {
     expect(Object.keys(getProviderPreset('kimi-coding-plan')!.capabilities)).toEqual([
       'chat',
       'webSearch',
+      'webFetch',
     ]);
     expect(getProviderPreset('kimi')?.capabilities).toEqual({
       chat: { registryId: 'kimi' },
       webSearch: { registryId: 'kimi' },
+      webFetch: { registryId: 'kimi', baseUrl: undefined },
     });
   });
 
@@ -97,5 +99,12 @@ describe('provider presets', () => {
         if (models) expect(models, `${preset.id} → ${slot}`).toContain(model);
       }
     }
+  });
+});
+
+it('preserves the Coding Plan endpoint for web fetch', () => {
+  expect(getProviderPreset('kimi-coding-plan')?.capabilities.webFetch).toEqual({
+    registryId: 'kimi',
+    baseUrl: 'https://api.kimi.com/coding/v1',
   });
 });

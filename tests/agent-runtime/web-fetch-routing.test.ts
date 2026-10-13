@@ -1,3 +1,4 @@
+import * as undici from 'undici';
 import * as dns from 'node:dns/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,6 +12,10 @@ import {
   setWorkspaceLayerLoaderForTests,
 } from '@/lib/server/model-config/runtime';
 
+vi.mock('undici', async (importActual) => ({
+  ...(await importActual<typeof import('undici')>()),
+  fetch: vi.fn(),
+}));
 vi.mock('node:dns/promises', () => ({ lookup: vi.fn() }));
 
 const url = 'https://example.com/article';
@@ -167,4 +172,85 @@ describe('hosted web fetch trust boundary', () => {
       untrusted: { title: 'Article', content: text },
     });
   });
+});
+
+it('uses the real slot lookup and builtin reader when webFetch is unconfigured', async () => {
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  vi.mocked(undici.fetch).mockResolvedValue(
+    new Response(text, { headers: { 'Content-Type': 'text/plain' } }) as never,
+  );
+  const save = vi.fn().mockResolvedValue({ id: 'builtin-material' });
+  const tool = buildFetchUrlTool({
+    sessionId: 'session-1',
+    isUrlAllowed: async () => true,
+    saveWebMaterial: save,
+  });
+  const result = await tool.execute('call-1', { url } as never, undefined);
+  expect(undici.fetch).toHaveBeenCalled();
+  expect(provider.extract).not.toHaveBeenCalled();
+  expect(result.details).toMatchObject({
+    trusted: { status: 'done', materialId: 'builtin-material' },
+    untrusted: { content: text },
+  });
+});
+
+it('fails loudly for a stale workspace reference, like other media slots', async () => {
+  const { resolveMediaSlot } = await import('@/lib/server/model-config/media');
+  const { SlotResolutionError } = await import('@/lib/server/model-config/resolve-slot');
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
+  setWorkspaceLayerLoaderForTests(async () => ({
+    source: 'workspace',
+    config: { slots: { webFetch: 'deleted', webSearch: 'deleted', document: 'deleted' } },
+  }));
+  for (const slot of ['webFetch', 'webSearch', 'document'] as const) {
+    await expect(resolveMediaSlot(slot, { workspaceId: 'user:test' })).rejects.toBeInstanceOf(
+      SlotResolutionError,
+    );
+  }
+  const fetch = buildFetchUrlTool({
+    sessionId: 'session-1',
+    ownerId: 'user:test',
+    isUrlAllowed: async () => true,
+  });
+  await expect(fetch.execute('call-1', { url } as never, undefined)).rejects.toBeInstanceOf(
+    SlotResolutionError,
+  );
+});
+
+it('forwards the resolved provider proxy and options through the shared media path', async () => {
+  setDeploymentConfigForTests({
+    legacy: false,
+    notices: [],
+    layer: {
+      source: 'deployment',
+      config: {
+        providers: {
+          reader: {
+            preset: 'kimi-coding-plan',
+            apiKey: 'test-key',
+            proxy: 'http://proxy.example:8080',
+            options: { custom: true },
+          },
+        },
+        slots: { webFetch: 'reader' },
+      },
+    },
+  });
+  const fetch = buildFetchUrlTool({
+    sessionId: 'session-1',
+    isUrlAllowed: async () => true,
+    saveWebMaterial: vi.fn().mockResolvedValue({ id: 'material' }),
+  });
+  await fetch.execute('call-1', { url } as never, undefined);
+  expect(provider.extract).toHaveBeenCalledWith(
+    url,
+    expect.objectContaining({
+      credentials: {
+        apiKey: 'test-key',
+        baseUrl: 'https://api.kimi.com/coding/v1',
+        proxy: 'http://proxy.example:8080',
+        options: { custom: true },
+      },
+    }),
+  );
 });

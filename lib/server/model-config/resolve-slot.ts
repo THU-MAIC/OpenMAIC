@@ -403,6 +403,7 @@ export function resolveSlot(
 /** Stable display id for the implicit keyless reader, without shadowing configured providers. */
 export function defaultWebFetchProviderId(layers: readonly ModelConfigLayer[]): string {
   let id = DEFAULT_WEB_FETCH_PROVIDER.id;
-  while (layers.some((layer) => Object.hasOwn(layer.config.providers ?? {}, id))) id += '-default';
+  const deployment = layers.find((layer) => layer.source === 'deployment');
+  while (Object.hasOwn(deployment?.config.providers ?? {}, id)) id += '-default';
   return id;
 }

@@ -1,4 +1,5 @@
 'use client';
+import { registryIdsFor, registryInfoFor } from '@/components/settings/service-display';
 
 import { useState } from 'react';
 import { AlertCircle, Info, Loader2 } from 'lucide-react';
@@ -50,7 +51,7 @@ import {
 } from '@/lib/model-settings/services';
 
 import { InlineThinkingControl, ProviderLogo } from '../model-picker';
-import { REGISTRY_INFO, entryIcon, entryName, logoInverts, providerLogo } from '../service-display';
+import { entryIcon, entryName, logoInverts, providerLogo } from '../service-display';
 
 import { MS, applyErrorText, slotDescription, slotName } from './slot-meta';
 import { lineText } from './station-text';
@@ -287,8 +288,8 @@ export function SlotPicker({
       : keylessServices(
           view,
           slot.capability,
-          REGISTRY_INFO[slot.capability].ids,
-          REGISTRY_INFO[slot.capability].requiresApiKey,
+          registryIdsFor(view, slot.capability),
+          registryInfoFor(view, slot.capability).requiresApiKey,
         );
   const pickKeyless = async (entry: ServiceEntry) => {
     setBusy(entry.id);
@@ -319,7 +320,7 @@ export function SlotPicker({
     const { providerId, modelId } = splitRef(ref);
     return modelId
       ? modelName(view, slot.capability, providerId, modelId)
-      : providerLabel(view, providerId);
+      : providerLabel(view, providerId, t);
   })();
 
   // The rows in order, to make the current one (else the first) the Tab stop.
@@ -436,7 +437,7 @@ export function SlotPicker({
                 onClick={() => pick(provider.id)}
                 logo={<Logo view={view} providerId={provider.id} capability={slot.capability} />}
               >
-                {providerLabel(view, provider.id)}
+                {providerLabel(view, provider.id, t)}
               </Row>
             ))}
           </>
@@ -446,11 +447,11 @@ export function SlotPicker({
           providers.map((provider) => {
             const models = provider.capabilities[slot.capability]?.models ?? [];
             return (
-              <div key={provider.id} role="group" aria-label={providerLabel(view, provider.id)}>
+              <div key={provider.id} role="group" aria-label={providerLabel(view, provider.id, t)}>
                 <GroupLabel
                   logo={<Logo view={view} providerId={provider.id} capability={slot.capability} />}
                 >
-                  {providerLabel(view, provider.id)}
+                  {providerLabel(view, provider.id, t)}
                 </GroupLabel>
                 {!chat && (
                   <Row
@@ -563,7 +564,7 @@ export function SlotPicker({
               {providersFor(view, 'chat').map((provider) => (
                 <SelectGroup key={provider.id}>
                   <SelectLabel className="text-[11px]">
-                    {providerLabel(view, provider.id)}
+                    {providerLabel(view, provider.id, t)}
                   </SelectLabel>
                   {(provider.capabilities.chat?.models ?? []).map((model) => (
                     <SelectItem

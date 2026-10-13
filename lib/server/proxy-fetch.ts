@@ -91,17 +91,36 @@ export function shouldBypassProxy(url: URL): boolean {
 
 let cachedAgent: ProxyAgent | null = null;
 let cachedProxyUrl: string | undefined;
+let cachedSettings: string | undefined;
 
-function getProxyAgent(): ProxyAgent | undefined {
-  const proxyUrl = getProxyUrl();
+export interface ProxyFetchOptions {
+  /** An operator-configured provider proxy takes precedence over the environment. */
+  proxy?: string;
+  timeouts?: { connectTimeout: number; headersTimeout: number; bodyTimeout: number };
+}
+
+function getProxyAgent(options?: ProxyFetchOptions): ProxyAgent | undefined {
+  const proxyUrl = options?.proxy ?? getProxyUrl();
   if (!proxyUrl) return undefined;
 
   // Reuse agent if proxy URL hasn't changed
-  if (cachedAgent && cachedProxyUrl === proxyUrl) {
+  const settings = JSON.stringify(options?.timeouts);
+  if (cachedAgent && cachedProxyUrl === proxyUrl && cachedSettings === settings) {
     return cachedAgent;
   }
 
-  cachedAgent = new ProxyAgent(proxyUrl);
+  cachedAgent = new ProxyAgent({
+    uri: proxyUrl,
+    ...(options?.timeouts
+      ? {
+          requestTls: { timeout: options.timeouts.connectTimeout },
+          proxyTls: { timeout: options.timeouts.connectTimeout },
+          headersTimeout: options.timeouts.headersTimeout,
+          bodyTimeout: options.timeouts.bodyTimeout,
+        }
+      : {}),
+  });
+  cachedSettings = settings;
   cachedProxyUrl = proxyUrl;
   return cachedAgent;
 }
@@ -111,8 +130,12 @@ function getProxyAgent(): ProxyAgent | undefined {
  * Falls back to global fetch when no proxy is configured, when the target
  * is a loopback address, or when the target matches no_proxy / NO_PROXY.
  */
-export async function proxyFetch(input: string | URL, init?: RequestInit): Promise<Response> {
-  const agent = getProxyAgent();
+export async function proxyFetch(
+  input: string | URL,
+  init?: RequestInit,
+  options?: ProxyFetchOptions,
+): Promise<Response> {
+  const agent = getProxyAgent(options);
   const url = typeof input === 'string' ? input : input.toString();
 
   if (!agent) {
@@ -126,12 +149,12 @@ export async function proxyFetch(input: string | URL, init?: RequestInit): Promi
   } catch {
     // Unparseable input — let fetch surface the real error below.
   }
-  if (parsed && shouldBypassProxy(parsed)) {
+  if (!options?.proxy && parsed && shouldBypassProxy(parsed)) {
     log.info('Bypassing proxy (loopback/NO_PROXY) for:', url.slice(0, 80));
     return fetch(input, init);
   }
 
-  log.info('Using proxy', cachedProxyUrl, 'for:', url.slice(0, 80));
+  log.info('Using proxy for:', url.slice(0, 80));
   // Use undici's fetch with the proxy dispatcher
   const res = await undiciFetch(input, {
     ...(init as UndiciRequestInit),

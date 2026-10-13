@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Встроенный сервис чтения"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",
@@ -1948,7 +1949,7 @@
         "tts": "Настройте службы синтеза речи, голоса и модели",
         "video": "Настройте доступы и каталоги моделей служб генерации видео",
         "webSearch": "Настройте службы веб-поиска и источники поиска",
-        "webFetch": "Configure web page extraction services"
+        "webFetch": "Настроить сервисы извлечения содержимого веб-страниц"
       },
       "nav": "Сервисы моделей",
       "notConfigured": "Не настроено",
@@ -2152,8 +2153,8 @@
           "desc": "Читает загруженные документы."
         },
         "webFetch": {
-          "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "name": "Загрузка веб-страниц",
+          "desc": "Читать разрешённые в сеансе веб-страницы с выбранным провайдером."
         }
       },
       "source": {
@@ -2200,9 +2201,10 @@
       }
     },
     "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера.",
-    "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchSettings": "Загрузка веб-страниц",
+    "webFetchHint": "Выберите способ чтения веб-страниц. Размещённым сервисам передаются только публичные URL, разрешённые в сеансе. Результаты остаются недоверенными данными; при ошибке сервис не меняется.",
+    "webFetchApiKey": "Ключ API",
+    "webFetchSharedKeyHint": "Этот ключ также используется для чата с этим провайдером. Его изменение или удаление влияет на чат."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

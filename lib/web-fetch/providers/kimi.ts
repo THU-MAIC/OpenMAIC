@@ -20,7 +20,7 @@ export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
   icon: PROVIDERS.kimi.icon,
   hosted: true,
   requiresApiKey: true,
-  credentialPreset: 'kimi',
+  credentialPresets: ['kimi', 'kimi-coding-plan'],
   acceptsWorkspaceBaseUrl: (baseUrl) =>
     [
       'https://api.moonshot.cn/v1',
@@ -41,6 +41,7 @@ export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
       : AbortSignal.timeout(options.bodyTimeoutMs ?? 30_000);
     signal.throwIfAborted();
     const { Agent } = await import('undici');
+    const { proxyFetch } = await import('@/lib/server/proxy-fetch');
     const agent = new Agent({
       connect: { timeout: 5_000 },
       headersTimeout: 10_000,
@@ -56,17 +57,28 @@ export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
     try {
       requestSignal.throwIfAborted();
       const response = await withAbort(
-        fetch(kimiFetchEndpoint(credentials.baseUrl!), {
-          method: 'POST',
-          redirect: 'error',
-          headers: {
-            Authorization: `Bearer ${credentials.apiKey}`,
-            'Content-Type': 'application/json',
+        proxyFetch(
+          kimiFetchEndpoint(credentials.baseUrl!),
+          {
+            method: 'POST',
+            redirect: 'error',
+            headers: {
+              Authorization: `Bearer ${credentials.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url }),
+            signal: requestSignal,
+            dispatcher: agent,
+          } as RequestInit & { dispatcher: typeof agent },
+          {
+            proxy: credentials.proxy,
+            timeouts: {
+              connectTimeout: 5_000,
+              headersTimeout: 10_000,
+              bodyTimeout: options.bodyTimeoutMs ?? 30_000,
+            },
           },
-          body: JSON.stringify({ url }),
-          signal: requestSignal,
-          dispatcher: agent,
-        } as RequestInit & { dispatcher: typeof agent }),
+        ),
         requestSignal,
       );
       clearTimeout(headerTimer);

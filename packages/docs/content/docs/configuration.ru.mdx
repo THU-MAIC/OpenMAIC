@@ -127,7 +127,7 @@ Amazon Bedrock (`preset: bedrock`) подписывает запросы цеп�
 | `asr` | asr | — | Распознавание речи (голосовой ввод, расшифровка аудио и видео) |
 | `image` | image | — | Генерация изображений |
 | `video` | video | — | Генерация видео |
-| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
+| `webFetch` | webFetch | — | Извлечение веб-страниц (по умолчанию `builtin`) |
 | `webSearch` | webSearch | — | Веб-поиск |
 | `document` | document | — | Сервис разбора документов (MinerU, MinerU Cloud, AliDocMind). Встроенному извлечению текста из PDF сервис не нужен |
 
@@ -172,7 +172,7 @@ slots:
 
 ### Резервные модели
 
-Резервные модели применяются только к слотам языковых моделей: `llm` и всем слотам под ним. `fallback` в слоте `tts`, `asr`, `image`, `video`, `webSearch` или `document` отклоняется — при запуске для `openmaic.yml` и при сохранении в настройках моделей.
+Резервные модели применяются только к слотам языковых моделей: `llm` и всем слотам под ним. `fallback` в слоте `tts`, `asr`, `image`, `video`, `webSearch`, `webFetch` или `document` отклоняется — при запуске для `openmaic.yml` и при сохранении в настройках моделей.
 
 `fallback` слота используется один раз, если вызов основной модели после её собственных повторов завершился сбоем, допускающим повтор: временная ошибка SDK, таймаут, сетевая ошибка, ограничение частоты запросов (429), нехватка мощности (503) или пустой ответ. Если провайдер явно отказал из-за исчерпанной квоты (OpenAI-совместимый код вроде `insufficient_quota`, при любом HTTP-статусе), вызов на основной модели не повторяется и сразу переходит на резервную модель. Отказы по соображениям безопасности контента и другие ошибки 4xx к резервной модели не приводят. Резервная модель работает и для обычных, и для потоковых вызовов и использует параметры `thinking` слота.
 
@@ -193,7 +193,7 @@ lock: [llm, video]   # эти слоты и все слоты под ними
 
 - Каждый слот из `lock` должен быть записан в `slots` (`null` тоже считается: `video: null` вместе с `lock: [video]` выключает видео для всех). Неизвестный слот или закреплённый слот, не записанный в `slots`, останавливает сервер при запуске с указанием позиции (`lock.1: ...`).
 - Закреплённый слот закрепляет и своих потомков: при `lock: [llm]` ни один пользователь не может задать `course.outline` или другой слот языковой модели, и все они разрешаются только по `openmaic.yml`.
-- `lock: all` закрепляет все слоты, записанные и нет; корень возможности, не записанный в `slots`, тогда не настроен ни для кого. For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
+- `lock: all` закрепляет все слоты, записанные и нет; корень возможности, не записанный в `slots`, тогда не настроен ни для кого. Однако неуказанный `webFetch` использует `builtin`; для отключения задайте `webFetch: null`.
 - `null`, значение по умолчанию и закрепление сочетаются естественно: одно `video: null` выключено, пока пользователь не включит; с `lock: [video]` остаётся выключенным.
 
 Настройки принимают один из трёх видов в зависимости от конфигурации:
@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-Как только появляется `openmaic.yml`, переменные провайдеров сами по себе ничего не настраивают: провайдер TTS, изображений, документов или веб-поиска, заданный только переменными (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …), больше не используется, и ни одна возможность не получает провайдера по умолчанию. Объявите каждый используемый провайдер в `providers` и назначьте `tts`, `image`, `document`, `webSearch` (а также `asr`, `video`) в `slots`, как в примере с переменными окружения выше; неназначенный слот остаётся ненастроенным, если рабочее пространство не назначит его в настройках моделей.
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+Как только появляется `openmaic.yml`, переменные провайдеров сами по себе ничего не настраивают: провайдер TTS, изображений, документов или веб-поиска, заданный только переменными (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …), больше не используется, и возможности, кроме `webFetch`, не получают провайдера по умолчанию. Объявите каждый используемый провайдер в `providers` и назначьте `tts`, `image`, `document`, `webSearch` (а также `asr`, `video`) в `slots`, как в примере с переменными окружения выше; неназначенный слот другой возможности остаётся ненастроенным, если рабочее пространство не назначит его в настройках моделей.
 
 Затем удалите `MODEL_ROUTES`, `DEFAULT_MODEL` и `MODEL_FALLBACK`.
 
@@ -814,17 +812,14 @@ slots:
 
 Если существует `openmaic.yml`, объявите `providers.<id>: { preset: kimi }` и назначьте `slots.webSearch: <id>`; устаревшая переменная `WEB_SEARCH_KIMI_ENABLED` не может назначить этот слот.
 
-## Web fetch provider slot
+## Слот провайдера загрузки веб-страниц
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+`webFetch` выбирает сервис чтения для инструмента агента `fetch_url`. В старой, пустой и YAML-конфигурации по умолчанию используется `builtin`, в том числе когда корень не указан при `lock: all`. Явное `webFetch: null` отключает загрузку и убирает инструмент и его инструкции из последующих запусков. Каждый запрос использует одного провайдера без резервного или дополнительного сервиса. Ссылка на удалённого провайдера вызывает ошибку, как в других медиаслотах, а не переключает загрузку на встроенный сервис.
 
-| Provider | Credentials | Extraction |
+| Провайдер | Учётные данные | Извлечение |
 | --- | --- | --- |
-| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
-| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `builtin` | Не нужны | Локальный Readability/Turndown; PDF используют слот `document` |
+| `kimi` | Ключ и базовый URL существующего провайдера Kimi | Размещённый сервис извлечения Markdown, включая URL файлов PDF |
 
 ```yaml
 providers:
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+Оба пресета, `kimi` и `kimi-coding-plan`, предоставляют `webFetch`. Для учётных данных Coding Plan используйте `preset: kimi-coding-plan`; его базовый URL по умолчанию — `https://api.kimi.com/coding/v1`. Явно заданный базовый URL сохраняется. Базовые URL Moonshot Open Platform (`https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1`) используют `/tools/fetch`, Coding Plan — `/fetch`. Оба отправляют `POST` с `{ "url": ... }` и Bearer-аутентификацией. Адаптер принимает `markdown` или `content`; поля ответа Coding Plan и доступность международных адресов не проверены с действующим ключом. Запросы учитывают настройку `proxy` провайдера и стандартные переменные окружения прокси.
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+Используйте существующие учётные данные в **Настройки → Сервисы моделей → Загрузка веб-страниц** и выберите сервис в **Настройка моделей курса → Загрузка веб-страниц**. Ключ также используется чатом с этим провайдером: его изменение или удаление влияет на чат. Закреплённые администратором карточки доступны только для чтения. Первичная настройка сохраняет встроенный сервис, пока другой не выбран явно. Учётные данные рабочего пространства могут использовать официальные базовые URL API; собственные адреса загрузки и прокси администратор должен объявить в `openmaic.yml`.
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+До передачи URL размещённому сервису выполняются проверка разрешённых URL сеанса, строгая нормализация URL и проверка всех адресов локального DNS. Те же проверки применяются к возвращённому конечному URL до принятия содержимого. Размещённый сервис управляет собственным DNS и промежуточными перенаправлениями, поэтому локальные проверки не могут закрепить его сетевые подключения. Текст остаётся недоверенными данными: применяются обнаружение страниц проверки доступа, ограничения размера в байтах, отметка об усечении, прежнее сохранение веб-материалов и формат результата `{trusted, untrusted}`.

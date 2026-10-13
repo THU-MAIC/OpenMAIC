@@ -1,4 +1,3 @@
-import WEB_FETCH_PROVIDERS from '@/lib/web-fetch/metadata.generated.json';
 /**
  * One-way import of the model settings earlier builds kept in the browser
  * (RFC #1701, tracked in #1725, P2).
@@ -113,7 +112,7 @@ export interface LegacyModelSettingsState {
   pdfProvidersConfig?: ServiceMap;
 }
 
-type ServiceCapability = Exclude<SlotCapability, 'chat'>;
+type ServiceCapability = Exclude<SlotCapability, 'chat' | 'webFetch'>;
 
 /** The built-in registries of the capabilities other than chat. */
 const SERVICE_REGISTRIES: Record<
@@ -125,7 +124,6 @@ const SERVICE_REGISTRIES: Record<
   image: IMAGE_PROVIDERS,
   video: VIDEO_PROVIDERS,
   webSearch: WEB_SEARCH_PROVIDERS,
-  webFetch: WEB_FETCH_PROVIDERS,
   document: PDF_PROVIDERS,
 };
 
@@ -700,4 +698,29 @@ export function readProposal(storage: StorageLike): ModelSettingsProposal | unde
   if (!raw) return undefined;
   const parsed = JSON.parse(raw) as unknown;
   return parsed && typeof parsed === 'object' ? (parsed as ModelSettingsProposal) : undefined;
+}
+
+/** Labels for historical browser settings, without importing executable server registries. */
+export function legacyPresetInfo(
+  presetId: string,
+): { name: string; capability: SlotCapability } | undefined {
+  const plan = TOKEN_PLAN_PRESETS.find((entry) => tokenPlanPresetId(entry.id) === presetId);
+  if (plan) {
+    const modality = Object.keys(plan.modalities)[0] as TokenPlanModality;
+    return { name: plan.name, capability: TOKEN_PLAN_CAPABILITY[modality] };
+  }
+  if (presetId === 'openai-compatible')
+    return { name: 'OpenAI-compatible endpoint', capability: 'chat' };
+  const registries = { chat: PROVIDERS, ...SERVICE_REGISTRIES };
+  for (const [capability, registry] of Object.entries(registries)) {
+    for (const [id, entry] of Object.entries(registry)) {
+      if (presetIdFor(capability as SlotCapability, id) === presetId) {
+        return {
+          name: (entry as { name?: string }).name ?? id,
+          capability: capability as SlotCapability,
+        };
+      }
+    }
+  }
+  return undefined;
 }

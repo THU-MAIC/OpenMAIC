@@ -127,7 +127,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 | `asr` | asr | — | 语音识别（语音输入、音视频转写） |
 | `image` | image | — | 图像生成 |
 | `video` | video | — | 视频生成 |
-| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
+| `webFetch` | webFetch | — | 网页内容提取（默认：`builtin`） |
 | `webSearch` | webSearch | — | 联网搜索 |
 | `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind）。内置的 PDF 文本提取不需要服务 |
 
@@ -172,7 +172,7 @@ slots:
 
 ### 回退模型
 
-回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch`, `webFetch` or `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
+回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch`、`webFetch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
 
 当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、限流（429）、容量不足（503）或输出为空。服务商明确返回额度用尽时（OpenAI 兼容格式的额度错误码，例如 `insufficient_quota`，不论 HTTP 状态码），不会在主模型上重试，调用会直接换用回退模型。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
 
@@ -193,7 +193,7 @@ lock: [llm, video]   # 这些槽位及其下所有槽位
 
 - `lock` 列出的每个槽位都必须在 `slots` 中写出（`null` 也算：`video: null` 加 `lock: [video]` 会对所有人关闭视频）。未知槽位，或 `slots` 中没有写出的锁定槽位，会让服务在启动时拒绝运行，并指出其位置（`lock.1: ...`）。
 - 锁定的槽位同时固定其子槽位：使用 `lock: [llm]` 时，任何用户都不能设置 `course.outline` 或其他语言模型槽位，它们全部只按 `openmaic.yml` 解析。
-- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。 For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
+- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。 但未指定的 `webFetch` 仍使用 `builtin`；设置 `webFetch: null` 可将其关闭。
 - `null`、服务端默认值与锁定可以组合：只写 `video: null` 时默认关闭，用户可以开启；加上 `lock: [video]` 后保持关闭。
 
 设置界面会根据配置呈现三种形态之一：
@@ -407,9 +407,7 @@ slots:
     api: openai-completions
 ```
 
-一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的槽位保持未配置，除非某个工作区在模型设置中为它指定。
-
-**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
+一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，除 `webFetch` 外，其他能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的其他槽位保持未配置，除非某个工作区在模型设置中为它指定。
 
 然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -814,17 +812,14 @@ slots:
 
 存在 `openmaic.yml` 时，请声明 `providers.<id>: { preset: kimi }` 并分配 `slots.webSearch: <id>`；旧版变量 `WEB_SEARCH_KIMI_ENABLED` 无法分配该槽位。
 
-## Web fetch provider slot
+## 网页抓取服务槽位
 
-`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
-`builtin` in legacy, empty and YAML configurations, including an omitted root
-under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
-provider per request, with no fallback or escalation.
+`webFetch` 决定智能体的 `fetch_url` 工具使用哪个读取服务。在旧版配置、空配置和 YAML 配置中，默认使用 `builtin`；即使 `lock: all` 下没有指定该根槽位也是如此。显式设置 `webFetch: null` 会关闭抓取，并从后续运行中移除该工具及其提示。每次请求只使用一个服务商，不会回退或升级到其他服务。失效的服务商引用会像其他媒体槽位一样报错，不会自动改用内置读取服务。
 
-| Provider | Credentials | Extraction |
+| 服务商 | 凭据 | 内容提取 |
 | --- | --- | --- |
-| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
-| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `builtin` | 无需凭据 | 本地 Readability/Turndown 读取服务；PDF 使用 `document` 槽位 |
+| `kimi` | 已有 Kimi 服务商的密钥和基础地址 | 托管 Markdown 提取服务，也接收 PDF 网址 |
 
 ```yaml
 providers:
@@ -836,31 +831,8 @@ slots:
   webFetch: reader
 ```
 
-Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
-`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
-`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
-and Bearer authentication. The adapter accepts `markdown` or `content`; the
-Coding Plan response fields and international service availability have not
-been verified with a live key.
+`kimi` 和 `kimi-coding-plan` 预设都提供 `webFetch`。使用 Coding Plan 凭据时，请指定 `preset: kimi-coding-plan`，其默认基础地址为 `https://api.kimi.com/coding/v1`；显式配置的基础地址会保留。Moonshot 开放平台地址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。两者都发送带有 `{ "url": ... }` 的 `POST` 请求，并使用 Bearer 身份验证。适配器接受 `markdown` 或 `content`；尚未使用真实密钥验证 Coding Plan 的响应字段和国际端点的可用性。请求遵循服务商的 `proxy` 设置和标准代理环境变量。
 
-In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
-Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
-make the card read-only. First-run setup lists the capability with the provider;
-the existing builtin default remains until a reader is explicitly selected.
-Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
-must be declared by the administrator in `openmaic.yml`.
+在 **设置 → 模型服务 → 网页抓取** 中使用已有服务商凭据。该密钥与同一服务商的对话服务共享，修改或移除密钥也会影响对话。在 **课程模型配置 → 网页抓取** 中选择读取服务。管理员锁定后，卡片为只读。首次设置会保留内置默认值，直到明确选择其他读取服务。工作区凭据可使用官方 API 基础地址；自定义抓取地址和代理必须由管理员在 `openmaic.yml` 中声明。
 
-The session URL gate, strict URL normalization and all local DNS address checks
-run before forwarding a URL to a hosted reader. The same checks run against a
-reported final URL before accepting its content. Hosted readers use their own
-networks and control their own redirects; local checks cannot pin their DNS or
-inspect intermediate redirects. Their text remains untrusted, with challenge
-page detection, byte limits, a truncation notice and the existing web material
-persistence and `{trusted, untrusted}` tool result.
-
-Add a default-exported provider module under `lib/web-fetch/providers/`.
-`pnpm generate:web-fetch-registry` discovers it and generates static registrations
-and client-safe metadata (also run by install, test and build). No vendor list in
-generic code needs editing. Dispatch and
-metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
-consume the registry instead of enumerating vendor ids.
+网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。

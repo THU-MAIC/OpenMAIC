@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { kimi, kimiFetchEndpoint } from '@/lib/web-fetch/providers/kimi';
 
+const proxyFetch = vi.hoisted(() =>
+  vi.fn((input: string | URL, init?: RequestInit, _options?: unknown) => fetch(input, init)),
+);
+vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch }));
+
 const url = 'https://example.com/page';
 afterEach(() => vi.unstubAllGlobals());
 
@@ -130,5 +135,20 @@ describe('Kimi web fetch adapter', () => {
     await expect(
       kimi.extract(url, { credentials: { apiKey: 'test-key' }, maxBytes: 10 }),
     ).rejects.toThrow(/byte limit/);
+  });
+});
+
+it('forwards an operator proxy while retaining transport deadlines', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ markdown: 'Body' })));
+  await kimi.extract(url, {
+    credentials: {
+      apiKey: 'test-key',
+      proxy: 'http://proxy.example:8080',
+      options: { custom: true },
+    },
+  });
+  expect(proxyFetch).toHaveBeenLastCalledWith(expect.any(String), expect.anything(), {
+    proxy: 'http://proxy.example:8080',
+    timeouts: { connectTimeout: 5000, headersTimeout: 10000, bodyTimeout: 30000 },
   });
 });

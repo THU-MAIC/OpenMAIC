@@ -607,5 +607,4 @@ export const MATERIAL_TOOL_NAMES = [
   'search_material',
   'extract_material',
   'wait_for_materials',
-  'fetch_url',
 ] as const;

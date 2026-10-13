@@ -444,11 +444,12 @@ describe('allowlist ↔ presentation reconciliation', () => {
     ...VOICE_CLONE_TOOL_NAMES,
     ...SKILL_EDIT_TOOL_NAMES,
     'create_skill',
-    // ask_user is the runner's minimal agent latch; web_search is
+    // ask_user is the runner's minimal agent latch; web_search and fetch_url are
     // capability-gated; `read` is Pi's native skill read, registered whenever
     // any skill is installed.
     'ask_user',
     'web_search',
+    'fetch_url',
     'read',
   ];
 

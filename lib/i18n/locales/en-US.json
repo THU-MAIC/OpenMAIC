@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Built-in reader"
     },
     "modelCount": "models",
     "modelSingular": "model",
@@ -2201,8 +2202,9 @@
     },
     "serverConfiguredAddOwn": "To use your own credentials, add a separate provider.",
     "webFetchSettings": "Web Fetch",
-    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
-    "webFetchApiKey": "API Key"
+    "webFetchHint": "Choose how web pages are read. Hosted readers receive session-approved public URLs. Results remain untrusted, and failures do not switch readers.",
+    "webFetchApiKey": "API Key",
+    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat."
   },
   "workspace": {
     "untitledCourse": "Untitled course",
