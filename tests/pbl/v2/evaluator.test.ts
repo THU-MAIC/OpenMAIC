@@ -17,7 +17,7 @@
  * Evaluator together.
  */
 import sharp from 'sharp';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockLanguageModelV3, convertArrayToReadableStream } from 'ai/test';
 import {
   runFinalEvaluation,
@@ -203,9 +203,12 @@ describe('Evaluator agent — task JSON-only output', () => {
 });
 
 describe('Evaluator agent — vision attachments', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it.each(['tiff', 'undecodable'])(
     'continues evaluation with an uploaded %s image',
     async (format) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       const project = mkProject();
       const buffer =
         format === 'tiff'
@@ -240,6 +243,23 @@ describe('Evaluator agent — vision attachments', () => {
       expect(imageParts).toHaveLength(format === 'tiff' ? 1 : 0);
       if (format === 'tiff')
         expect(imageParts[0]).toMatchObject({ type: 'file', mediaType: 'image/jpeg' });
+      else {
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            '[PBL v2 Evaluator] Image submission evaluated without the image',
+          ),
+        );
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('"microtaskId":"t1"'));
+        expect(
+          model.doStreamCalls[0].prompt.flatMap((message) =>
+            message.role === 'user' ? message.content.filter((part) => part.type === 'text') : [],
+          ),
+        ).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ text: expect.stringContaining('Review this diagram.') }),
+          ]),
+        );
+      }
     },
   );
 });

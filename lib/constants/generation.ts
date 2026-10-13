@@ -9,9 +9,8 @@ export const MAX_PDF_CONTENT_CHARS = 50000;
 // Maximum number of images to send as vision content parts
 export const MAX_VISION_IMAGES = 20;
 
-// Keep decoded attachments below provider size limits and bound image dimensions.
-// Large or unsupported images can crash prompt building or be rejected by providers.
-export const MAX_VISION_IMAGE_BYTES = 1024 * 1024;
+// Providers cap the base64 payload, which is about 4/3 the decoded byte length.
+export const MAX_VISION_IMAGE_BASE64_BYTES = 1024 * 1024;
 export const MAX_VISION_IMAGE_DIMENSION = 2048;
 
 // Size cap for one course material document (bytes), enforced by the extract

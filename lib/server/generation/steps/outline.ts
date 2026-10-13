@@ -399,13 +399,16 @@ async function prepareOutline(
       // vision prompt byte-identical in both modes (RFC #1153 part 2 B). An
       // id the server cannot resolve is dropped here, so the placeholder
       // text below never promises an image that will not be attached.
-      const resolvedVisionImages = await ctx.resolveVisionImages(
-        visionSlice.map((img) => ({
-          id: img.id,
-          src: imageMapping[img.id],
-          ...(img.width !== undefined ? { width: img.width } : {}),
-          ...(img.height !== undefined ? { height: img.height } : {}),
-        })),
+      const resolvedVisionImages = await prepareVisionImages(
+        await ctx.resolveVisionImages(
+          visionSlice.map((img) => ({
+            id: img.id,
+            src: imageMapping[img.id],
+            ...(img.width !== undefined ? { width: img.width } : {}),
+            ...(img.height !== undefined ? { height: img.height } : {}),
+          })),
+        ),
+        ctx.log,
       );
       const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
       const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));
@@ -538,15 +541,14 @@ async function streamOutlines(
 
   // Retryable-failure fallback: after the same-model retries are
   // exhausted, retry once on the stage's configured fallback model.
-  const safeImages = await prepareVisionImages(visionImages ?? [], log);
-  let streamParams = safeImages.length
+  let streamParams = visionImages?.length
     ? {
         model: languageModel,
         system: prompts.system,
         messages: [
           {
             role: 'user' as const,
-            content: buildVisionUserContent(prompts.user, safeImages),
+            content: buildVisionUserContent(prompts.user, visionImages),
           },
         ],
         maxOutputTokens: modelInfo?.outputWindow,

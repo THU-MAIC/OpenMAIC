@@ -119,14 +119,22 @@ describe('scene step retry boundary', () => {
         modelString: 'test:model',
       } as never;
       if (step === 'content') {
-        mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {
-          await aiCall('system', 'user', [image]);
+        mocks.generateSceneContent.mockImplementation(async (_outline, aiCall, options) => {
+          expect(options.resolvedVisionImages).toEqual([]);
+          expect(options.assignedImages).toEqual([]);
+          expect(options.imageMapping).toEqual({});
+          await aiCall('system', 'user', options.resolvedVisionImages);
           return { elements: [], remark: 'ok' };
         });
         const { generateSceneContent } =
           await import('@/lib/server/generation/steps/scene-content');
         await generateSceneContent(
-          { outline, model: visionModel },
+          {
+            outline: { ...outline, suggestedImageIds: [image.id] },
+            model: visionModel,
+            pdfImages: [{ ...image, pageNumber: 1 }],
+            imageMapping: { [image.id]: image.src },
+          },
           {
             log: createLogger('Scene Content'),
             resolveVisionImages: async (images) => [...images],
@@ -151,7 +159,12 @@ describe('scene step retry boundary', () => {
           { log: createLogger('Scene Actions') },
         );
       }
-      expect(mocks.buildVisionUserContent).toHaveBeenCalledWith('user', []);
+      if (step === 'content') {
+        expect(mocks.buildVisionUserContent).not.toHaveBeenCalled();
+        expect(mocks.callLLM.mock.calls[0][0].prompt).toBe('user');
+      } else {
+        expect(mocks.buildVisionUserContent).toHaveBeenCalledWith('user', []);
+      }
       expect(mocks.callLLM).toHaveBeenCalledTimes(1);
       expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
     },

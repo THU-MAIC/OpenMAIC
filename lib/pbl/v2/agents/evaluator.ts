@@ -156,6 +156,13 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
     const safeImages = visionImageSrc
       ? await prepareVisionImages([{ id: 'submission', src: visionImageSrc }], log)
       : [];
+    if (visionImageSrc && safeImages.length === 0) {
+      log.warn('Image submission evaluated without the image', {
+        kind,
+        milestoneId,
+        microtaskId,
+      });
+    }
     const result = streamLLM(
       {
         model: languageModel,

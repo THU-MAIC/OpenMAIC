@@ -140,7 +140,7 @@ describe('scene content step — asset-id image transport', () => {
     expect(body.content.elements[0].src).toBe(dataUrl);
   });
 
-  test('drops an undecodable attachment while preserving its placeholder and asset-id mapping', async () => {
+  test('drops an undecodable image from the prompt, attachments, and asset-id mapping', async () => {
     vi.resetModules();
     resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
       images.map((image) => ({
@@ -168,9 +168,12 @@ describe('scene content step — asset-id image transport', () => {
       imageMapping: { img_1: 'ast_good', img_2: 'ast_bad' },
     });
     const content = callLLMMock.mock.calls[0][0].messages[0].content;
-    expect(content[0].text).toContain('img_2');
+    expect(content[0].text).toContain('img_1');
+    expect(content[0].text).toContain('[see attached]');
+    expect(content[0].text).not.toContain('img_2');
+    expect(resolveVisionImagesMock).toHaveBeenCalledTimes(3);
     expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
-    expect(body.content.elements[0].src).toBe('ast_bad');
+    expect(body.content.elements).toHaveLength(0);
   });
 
   test('drops an unresolvable image from BOTH the prompt text and the attachments (N3)', async () => {

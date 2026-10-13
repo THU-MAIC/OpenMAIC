@@ -2,7 +2,10 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, expect, it, vi } from 'vitest';
 import { parseBase64DataUrl } from '@openmaic/generation';
-import { MAX_VISION_IMAGE_BYTES, MAX_VISION_IMAGE_DIMENSION } from '@/lib/constants/generation';
+import {
+  MAX_VISION_IMAGE_BASE64_BYTES,
+  MAX_VISION_IMAGE_DIMENSION,
+} from '@/lib/constants/generation';
 import { prepareVisionImages } from '@/lib/server/generation/vision-images';
 
 const logger = () => ({ info: vi.fn(), warn: vi.fn() });
@@ -15,7 +18,7 @@ async function expectWithinCaps(image: { src: string; width?: number; height?: n
   const parsed = parseBase64DataUrl(image.src)!;
   expect(parsed.mimeType).toBe('image/jpeg');
   const buffer = Buffer.from(parsed.base64, 'base64');
-  expect(buffer.byteLength).toBeLessThanOrEqual(MAX_VISION_IMAGE_BYTES);
+  expect(parsed.base64.length).toBeLessThanOrEqual(MAX_VISION_IMAGE_BASE64_BYTES);
   const metadata = await sharp(buffer).metadata();
   expect(Math.max(metadata.width!, metadata.height!)).toBeLessThanOrEqual(
     MAX_VISION_IMAGE_DIMENSION,
@@ -41,13 +44,92 @@ describe('vision image preparation', () => {
     },
   );
 
+  it.each(['png', 'jpeg'] as const)('preserves an 8-bit grayscale %s image', async (format) => {
+    const buffer = await tinyImage().toColourspace('b-w').toFormat(format).toBuffer();
+    expect(await sharp(buffer).metadata()).toMatchObject({ space: 'b-w', depth: 'uchar' });
+    const image = { id: 'grayscale', src: dataUrl(buffer, `image/${format}`) };
+    expect(await prepareVisionImages([image], logger())).toEqual([image]);
+  });
+
+  it.each(['IMAGE/JPEG', 'image/jpg', 'IMAGE/JPG'])(
+    'normalizes %s without re-encoding',
+    async (mime) => {
+      const buffer = await tinyImage().jpeg().toBuffer();
+      const log = logger();
+      expect(await prepareVisionImages([{ id: 'alias', src: dataUrl(buffer, mime) }], log)).toEqual(
+        [{ id: 'alias', src: dataUrl(buffer, 'image/jpeg') }],
+      );
+      expect(log.info).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['gif', 'webp'] as const)('converts a small animated %s to one frame', async (format) => {
+    const buffer = await sharp(randomBytes(32 * 48 * 3), {
+      raw: { width: 32, height: 48, channels: 3, pageHeight: 24 },
+    })
+      .toFormat(format, { loop: 0, delay: [100, 100] })
+      .toBuffer();
+    expect(await sharp(buffer).metadata()).toMatchObject({ pages: 2 });
+    const [image] = await prepareVisionImages(
+      [{ id: 'animated', src: dataUrl(buffer, `image/${format}`) }],
+      logger(),
+    );
+    await expectWithinCaps(image);
+    expect(image.height).toBe(24);
+  });
+
+  it.each(['cmyk', 'rgb16'] as const)('converts a small %s image to 8-bit sRGB', async (space) => {
+    const format = space === 'cmyk' ? 'jpeg' : 'png';
+    const buffer = await tinyImage().toColourspace(space).toFormat(format).toBuffer();
+    expect((await sharp(buffer).metadata()).space).toBe(space);
+    const [image] = await prepareVisionImages(
+      [{ id: 'color', src: dataUrl(buffer, `image/${format}`) }],
+      logger(),
+    );
+    await expectWithinCaps(image);
+    expect(
+      await sharp(Buffer.from(parseBase64DataUrl(image.src)!.base64, 'base64')).metadata(),
+    ).toMatchObject({ space: 'srgb', depth: 'uchar' });
+  });
+
+  it('re-encodes an image whose decoded bytes fit but base64 payload exceeds the cap', async () => {
+    const buffer = await sharp(randomBytes(600 * 500 * 3), {
+      raw: { width: 600, height: 500, channels: 3 },
+    })
+      .png()
+      .toBuffer();
+    expect(buffer.length).toBeLessThan(MAX_VISION_IMAGE_BASE64_BYTES);
+    expect(buffer.toString('base64').length).toBeGreaterThan(MAX_VISION_IMAGE_BASE64_BYTES);
+    const [image] = await prepareVisionImages([{ id: 'payload', src: dataUrl(buffer) }], logger());
+    await expectWithinCaps(image);
+    expect(image.width).toBe(600);
+  });
+
+  it.each([32, 3000])('drops a truncated JPEG with width %i', async (width) => {
+    const buffer = await sharp(randomBytes(width * 100 * 3), {
+      raw: { width, height: 100, channels: 3 },
+    })
+      .jpeg()
+      .toBuffer();
+    const truncated = buffer.subarray(0, Math.floor(buffer.length * 0.7));
+    expect(await sharp(truncated, { failOn: 'none' }).metadata()).toMatchObject({ width });
+    const log = logger();
+    expect(
+      await prepareVisionImages([{ id: 'truncated', src: dataUrl(truncated, 'image/jpeg') }], log),
+    ).toEqual([]);
+    expect(log.warn).toHaveBeenCalledWith(
+      'Dropped vision image',
+      expect.objectContaining({ id: 'truncated' }),
+    );
+  });
+
   it('downscales a large noisy PNG with missing dimensions and compresses it below the byte cap', async () => {
     const buffer = await sharp(randomBytes(4000 * 3000 * 3), {
       raw: { width: 4000, height: 3000, channels: 3 },
     })
       .png()
       .toBuffer();
-    expect(buffer.byteLength).toBeGreaterThan(MAX_VISION_IMAGE_BYTES);
+    expect(buffer.byteLength).toBeGreaterThan(MAX_VISION_IMAGE_BASE64_BYTES);
     const log = logger();
     const [image] = await prepareVisionImages([{ id: 'large', src: dataUrl(buffer) }], log);
     await expectWithinCaps(image);
@@ -68,7 +150,7 @@ describe('vision image preparation', () => {
     })
       .png()
       .toBuffer();
-    expect(buffer.byteLength).toBeLessThan(MAX_VISION_IMAGE_BYTES);
+    expect(buffer.byteLength).toBeLessThan(MAX_VISION_IMAGE_BASE64_BYTES);
     const [image] = await prepareVisionImages([{ id: 'wide', src: dataUrl(buffer) }], logger());
     await expectWithinCaps(image);
     expect(image.width).toBe(2048);
@@ -95,7 +177,7 @@ describe('vision image preparation', () => {
       .png()
       .toBuffer();
     const firstEncoding = await sharp(buffer).jpeg({ quality: 82 }).toBuffer();
-    expect(firstEncoding.byteLength).toBeGreaterThan(MAX_VISION_IMAGE_BYTES);
+    expect(firstEncoding.toString('base64').length).toBeGreaterThan(MAX_VISION_IMAGE_BASE64_BYTES);
     const [image] = await prepareVisionImages([{ id: 'quality', src: dataUrl(buffer) }], logger());
     await expectWithinCaps(image);
     expect(image.width).toBe(2048);

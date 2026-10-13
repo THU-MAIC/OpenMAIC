@@ -91,27 +91,18 @@ export async function generateSceneContent(
   // Detect vision capability
   const hasVision = !!modelInfo?.capabilities?.vision;
 
-  // Vision-aware AI call function. On a server-backed transport the
-  // `imageMapping` values are allocated asset ids; the N3 pre-resolution
-  // below has already resolved the vision slice's ids to bytes and stripped
-  // every unresolvable id from the mapping, so the srcs this closure sees
-  // are concrete data URLs and this resolution is a DEFENSIVE NO-OP — it
-  // passes concrete srcs through untouched (RFC #1153 part 2 B) and would
-  // only drop an id that still carried an allocated id, which the
-  // pre-resolution makes impossible. Kept so a package consumer that
-  // generates without pre-resolving still degrades cleanly.
+  // Images are resolved and prepared before the generator builds its prompt,
+  // so its placeholders and attachments describe the same set. The
+  // resolution below is a DEFENSIVE NO-OP for those concrete data URLs
+  // (RFC #1153 part 2 B); it is kept so a package consumer that generates
+  // without pre-resolving never sends an allocated asset id as an image.
   const aiCall = async (
     systemPrompt: string,
     userPrompt: string,
     images?: Array<{ id: string; src: string }>,
   ): Promise<string> => {
     if (images?.length && hasVision) {
-      // Server-backed transport: `imageMapping` values are allocated asset
-      // ids, so the image srcs reach here as ids. Resolve them to the same
-      // bytes the base64 path would send BEFORE prompt assembly, keeping the
-      // vision prompt byte-identical in both modes (RFC #1153 part 2 B).
       const resolvedImages = await ctx.resolveVisionImages(images);
-      const safeImages = await prepareVisionImages(resolvedImages, log);
       const result = await callLLM(
         {
           model: languageModel,
@@ -121,7 +112,7 @@ export async function generateSceneContent(
           messages: [
             {
               role: 'user' as const,
-              content: buildVisionUserContent(userPrompt, safeImages),
+              content: buildVisionUserContent(userPrompt, resolvedImages),
             },
           ],
           maxOutputTokens: modelInfo?.outputWindow,
@@ -203,8 +194,7 @@ export async function generateSceneContent(
     // candidates in a row → stop). When a stop fires, every candidate that
     // did not resolve — unresolvable OR unprobed — is STRIPPED from the
     // mapping, so the generator can never hand an unresolved allocated id to
-    // the defensive aiCall resolution (which would re-open the unbounded
-    // probe the stop just closed); ONE summary warn names the stop.
+    // aiCall; ONE summary warn names the stop.
     let phaseTimer: ReturnType<typeof setTimeout> | undefined;
     const phaseBudget = new Promise<'__vision-resolution-budget-expired__'>((resolve) => {
       phaseTimer = setTimeout(
@@ -224,14 +214,16 @@ export async function generateSceneContent(
       let attempted: VisionPromptImage[] | '__vision-resolution-budget-expired__';
       try {
         attempted = await Promise.race([
-          ctx.resolveVisionImages([
-            {
-              id: candidate.id,
-              src: imageMapping[candidate.id],
-              ...(candidate.width !== undefined ? { width: candidate.width } : {}),
-              ...(candidate.height !== undefined ? { height: candidate.height } : {}),
-            },
-          ]),
+          ctx
+            .resolveVisionImages([
+              {
+                id: candidate.id,
+                src: imageMapping[candidate.id],
+                ...(candidate.width !== undefined ? { width: candidate.width } : {}),
+                ...(candidate.height !== undefined ? { height: candidate.height } : {}),
+              },
+            ])
+            .then((images) => prepareVisionImages(images, log)),
           phaseBudget,
         ]);
       } catch (error) {

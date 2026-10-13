@@ -1,6 +1,9 @@
 import sharp from 'sharp';
 import { parseBase64DataUrl, type GenerationLogger } from '@openmaic/generation';
-import { MAX_VISION_IMAGE_BYTES, MAX_VISION_IMAGE_DIMENSION } from '@/lib/constants/generation';
+import {
+  MAX_VISION_IMAGE_BASE64_BYTES,
+  MAX_VISION_IMAGE_DIMENSION,
+} from '@/lib/constants/generation';
 
 interface VisionImage {
   id: string;
@@ -38,28 +41,49 @@ export async function prepareVisionImages<T extends VisionImage>(
       const width = metadata.width;
       const height = metadata.height;
       if (!width || !height) throw new Error('Missing image dimensions');
+      const declaredMime = parsed.mimeType.toLowerCase();
+      const mime = declaredMime === 'image/jpg' ? 'image/jpeg' : declaredMime;
       if (
-        VISION_FORMATS.get(parsed.mimeType) === metadata.format &&
-        originalBytes <= MAX_VISION_IMAGE_BYTES &&
+        VISION_FORMATS.get(mime) === metadata.format &&
+        parsed.base64.length <= MAX_VISION_IMAGE_BASE64_BYTES &&
+        (metadata.pages ?? 1) === 1 &&
+        (metadata.space === 'srgb' || metadata.space === 'b-w') &&
+        metadata.depth === 'uchar' &&
         Math.max(width, height, image.width ?? 0, image.height ?? 0) <= MAX_VISION_IMAGE_DIMENSION
       ) {
-        safeImages.push(image);
+        // Metadata alone cannot detect truncated pixel data, even for small images.
+        await sharp(buffer, { failOn: 'error' }).raw().toBuffer();
+        safeImages.push({
+          ...image,
+          src: `data:${mime};base64,${parsed.base64}`,
+        });
         continue;
       }
+      // Decode and transform the first frame once; quality retries only encode pixels.
+      const pixels = await sharp(buffer, { failOn: 'error' })
+        .rotate()
+        .resize({
+          width: MAX_VISION_IMAGE_DIMENSION,
+          height: MAX_VISION_IMAGE_DIMENSION,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .flatten({ background: '#ffffff' })
+        .toColourspace('srgb')
+        .raw({ depth: 'uchar' })
+        .toBuffer({ resolveWithObject: true });
       let transformed = false;
       for (const quality of JPEG_QUALITIES) {
-        const output = await sharp(buffer, { failOn: 'none' })
-          .rotate()
-          .resize({
-            width: MAX_VISION_IMAGE_DIMENSION,
-            height: MAX_VISION_IMAGE_DIMENSION,
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
-          .flatten({ background: '#ffffff' })
+        const output = await sharp(pixels.data, {
+          raw: {
+            width: pixels.info.width,
+            height: pixels.info.height,
+            channels: pixels.info.channels,
+          },
+        })
           .jpeg({ quality })
           .toBuffer({ resolveWithObject: true });
-        if (output.data.byteLength > MAX_VISION_IMAGE_BYTES) continue;
+        if (Math.ceil(output.data.byteLength / 3) * 4 > MAX_VISION_IMAGE_BASE64_BYTES) continue;
         safeImages.push({
           ...image,
           src: `data:image/jpeg;base64,${output.data.toString('base64')}`,
@@ -79,7 +103,7 @@ export async function prepareVisionImages<T extends VisionImage>(
         transformed = true;
         break;
       }
-      if (!transformed) throw new Error('Encoded image exceeds the vision byte cap');
+      if (!transformed) throw new Error('Encoded image exceeds the vision base64 payload cap');
     } catch (error) {
       log.warn('Dropped vision image', {
         id: image.id,
