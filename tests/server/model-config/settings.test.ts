@@ -143,6 +143,13 @@ describe('modelSettingsView', () => {
         source: 'workspace',
         key: { set: true, mask: '…9876' },
       },
+      {
+        id: 'builtin',
+        preset: 'builtin',
+        presetName: 'Built-in reader',
+        presetKind: 'single',
+        source: 'deployment',
+      },
     ]);
     // Each provider lists the models it serves per capability, for the pickers.
     expect(view.providers[0].capabilities.chat?.models).toContainEqual(
@@ -202,7 +209,7 @@ describe('modelSettingsView', () => {
       revision: 2,
       unreadableSecrets: [],
     });
-    expect(view.providers.map((provider) => provider.id)).toEqual(['operator']);
+    expect(view.providers.map((provider) => provider.id)).toEqual(['operator', 'builtin']);
     const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
     // The dormant llm choice is neither shown nor used: the server default is.
     expect(slot('llm')).not.toHaveProperty('assignment');

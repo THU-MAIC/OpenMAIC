@@ -12,6 +12,7 @@
  * read-only. Every change is validated against the whole configuration before
  * it is stored, so a stored workspace configuration always resolves.
  */
+import { DEFAULT_WEB_FETCH_PROVIDER, getWebFetchProvider } from '@/lib/web-fetch/registry';
 import {
   deploymentAuthorizedModels,
   ModelAuthorizationError,
@@ -52,6 +53,7 @@ import {
   type SlotAssignment,
 } from './openmaic-yml';
 import {
+  defaultWebFetchProviderId,
   findAssignment,
   lockingNode,
   resolveSlot,
@@ -264,7 +266,8 @@ function maskKey(key: string): string {
 
 /**
  * What a provider can be assigned to, with its models: a workspace provider
- * with its own endpoint serves chat only (see media.ts), and a preset whose
+ * with its own endpoint serves chat only (see media.ts), except official web fetch
+ * endpoints accepted by the registry. A preset whose
  * registry catalogue says nothing about the endpoint (an OpenAI-compatible
  * server) offers only the models the provider lists.
  */
@@ -273,11 +276,13 @@ function capabilityModels(
   pinned?: string[],
   {
     chatOnly = false,
+    baseUrl,
     strictModels = false,
     deployment,
     providerId,
   }: {
     chatOnly?: boolean;
+    baseUrl?: string;
     strictModels?: boolean;
     deployment?: ModelConfigFile;
     providerId?: string;
@@ -286,7 +291,18 @@ function capabilityModels(
   const result: CapabilityModels = {};
   if (!preset) return result;
   for (const capability of Object.keys(preset.capabilities) as SlotCapability[]) {
-    if (chatOnly && capability !== 'chat') continue;
+    if (
+      chatOnly &&
+      capability !== 'chat' &&
+      !(
+        capability === 'webFetch' &&
+        baseUrl &&
+        getWebFetchProvider(preset.capabilities.webFetch!.registryId)?.acceptsWorkspaceBaseUrl?.(
+          baseUrl,
+        )
+      )
+    )
+      continue;
     // A provider the operator switched off for this capability is not offered.
     const registryId = preset.capabilities[capability]?.registryId;
     if (registryId && isForceDisabled(capability, registryId)) continue;
@@ -442,7 +458,12 @@ function sourceFor(
   workspace: ModelConfigLayer | null,
 ): SlotSourceView {
   const found = findAssignment(slot, deployment ?? undefined, workspace ?? undefined);
-  if (!found) return { kind: 'unconfigured' };
+  if (!found) {
+    if (getSlot(slot).capability === 'webFetch') {
+      return { kind: lockingNode(deployment?.config, slot) !== undefined ? 'locked' : 'default' };
+    }
+    return { kind: 'unconfigured' };
+  }
   if (found.node !== slot) return { kind: 'inherited', from: found.node };
   return { kind: found.source };
 }
@@ -460,6 +481,9 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
   const workspaceProviders = counted?.config.providers ?? {};
   const unreadable = new Set(stored?.unreadableSecrets ?? []);
 
+  const implicitId = defaultWebFetchProviderId(
+    [deployment, counted].filter((layer): layer is ModelConfigLayer => !!layer),
+  );
   const providers: ProviderView[] = [
     ...Object.entries(deploymentProviders).map(([id, provider]) => ({
       id,
@@ -483,6 +507,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
         // An official regional endpoint is the service's own, not a custom one.
         chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
+        baseUrl: provider.baseUrl,
       }),
       key: {
         set: Boolean(provider.apiKey) || unreadable.has(id),
@@ -490,6 +515,13 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         ...(unreadable.has(id) ? { unreadable: true } : {}),
       },
     })),
+    {
+      id: implicitId,
+      preset: DEFAULT_WEB_FETCH_PROVIDER.id,
+      ...presetLabel(DEFAULT_WEB_FETCH_PROVIDER.id),
+      source: 'deployment',
+      capabilities: { webFetch: { models: [], registryId: DEFAULT_WEB_FETCH_PROVIDER.id } },
+    },
   ];
 
   const deploymentSlots = deployment?.config.slots ?? {};
@@ -774,7 +806,15 @@ export async function applyModelSettingsChange(
       }
       if (resolution.status === 'assigned' && getSlot(slot as SlotId).capability !== 'chat') {
         for (const target of [resolution, resolution.fallback]) {
-          if (target?.providerSource === 'workspace' && target.customBaseUrl) {
+          if (
+            target?.providerSource === 'workspace' &&
+            target.customBaseUrl &&
+            !(
+              getSlot(slot as SlotId).capability === 'webFetch' &&
+              target.baseUrl &&
+              getWebFetchProvider(target.registryId)?.acceptsWorkspaceBaseUrl?.(target.baseUrl)
+            )
+          ) {
             throw new ModelSettingsError(
               'INVALID_ASSIGNMENT',
               `${slot} cannot use ${target.providerId}: a workspace provider with its own endpoint serves chat slots only`,

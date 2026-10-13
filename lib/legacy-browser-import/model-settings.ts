@@ -1,3 +1,4 @@
+import WEB_FETCH_PROVIDERS from '@/lib/web-fetch/metadata.generated.json';
 /**
  * One-way import of the model settings earlier builds kept in the browser
  * (RFC #1701, tracked in #1725, P2).
@@ -124,6 +125,7 @@ const SERVICE_REGISTRIES: Record<
   image: IMAGE_PROVIDERS,
   video: VIDEO_PROVIDERS,
   webSearch: WEB_SEARCH_PROVIDERS,
+  webFetch: WEB_FETCH_PROVIDERS,
   document: PDF_PROVIDERS,
 };
 

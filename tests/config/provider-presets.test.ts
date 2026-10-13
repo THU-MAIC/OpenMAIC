@@ -1,3 +1,4 @@
+import { WEB_FETCH_PROVIDERS } from '@/lib/web-fetch/registry';
 import { describe, expect, it } from 'vitest';
 import { PROVIDERS } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
@@ -16,6 +17,7 @@ const REGISTRIES: Record<SlotCapability, Record<string, unknown>> = {
   image: IMAGE_PROVIDERS,
   video: VIDEO_PROVIDERS,
   webSearch: WEB_SEARCH_PROVIDERS,
+  webFetch: WEB_FETCH_PROVIDERS,
   document: PDF_PROVIDERS,
 };
 

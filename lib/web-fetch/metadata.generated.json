@@ -1,0 +1,17 @@
+{
+  "builtin": {
+    "id": "builtin",
+    "name": "Built-in reader",
+    "hosted": false,
+    "requiresApiKey": false
+  },
+  "kimi": {
+    "id": "kimi",
+    "name": "Kimi",
+    "icon": "/logos/kimi.png",
+    "hosted": true,
+    "requiresApiKey": true,
+    "defaultBaseUrl": "https://api.moonshot.cn/v1",
+    "credentialPreset": "kimi"
+  }
+}

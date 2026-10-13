@@ -151,3 +151,12 @@ Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 
 端点按 Base URL 的路径选择：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。在 `openmaic.yml` 中配置的自定义代理必须保留这一端点路径结构。
 
 存在 `openmaic.yml` 时，必须声明 `providers.<id>: { preset: kimi }` 并指定 `slots.webSearch: <id>`；旧版环境变量 `WEB_SEARCH_KIMI_ENABLED` 无法为该槽位指定服务商。
+
+## Web fetch
+
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
+Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
+API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
+while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
+Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
+All readers retain local session and public-address checks and untrusted results.

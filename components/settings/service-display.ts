@@ -1,3 +1,4 @@
+import WEB_FETCH_PROVIDERS from '@/lib/web-fetch/metadata.generated.json';
 /**
  * How the settings name and picture a service: each capability's built-in
  * services (names, logos, whether they need a key), and the name and logo of
@@ -107,6 +108,12 @@ export const REGISTRY_INFO: Record<SlotCapability, RegistryInfo> = {
     name: (id) => entryOf(PDF_PROVIDERS, id)?.name ?? id,
     icon: (id) => entryOf(PDF_PROVIDERS, id)?.icon,
     requiresApiKey: (id) => entryOf(PDF_PROVIDERS, id)?.requiresApiKey !== false,
+  },
+  webFetch: {
+    ids: Object.keys(WEB_FETCH_PROVIDERS),
+    name: (id) => entryOf(WEB_FETCH_PROVIDERS, id)?.name ?? id,
+    icon: (id) => entryOf(WEB_FETCH_PROVIDERS, id)?.icon,
+    requiresApiKey: (id) => entryOf(WEB_FETCH_PROVIDERS, id)?.requiresApiKey !== false,
   },
   webSearch: {
     ids: Object.keys(WEB_SEARCH_PROVIDERS),

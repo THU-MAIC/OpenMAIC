@@ -1947,7 +1947,8 @@
         "providers": "Настройте доступы, адреса API и каталоги моделей для служб языковых моделей",
         "tts": "Настройте службы синтеза речи, голоса и модели",
         "video": "Настройте доступы и каталоги моделей служб генерации видео",
-        "webSearch": "Настройте службы веб-поиска и источники поиска"
+        "webSearch": "Настройте службы веб-поиска и источники поиска",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Сервисы моделей",
       "notConfigured": "Не настроено",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "Разбор документов",
           "desc": "Читает загруженные документы."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "Сервер не подтвердил импорт."
       }
     },
-    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера."
+    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

@@ -127,6 +127,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
 | `video` | video | — | توليد الفيديو |
+| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | البحث على الويب |
 | `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # هذه الخانات وكل الخانات تحتها
 
 - يجب أن تكون كل خانة يذكرها `lock` مكتوبة تحت `slots` (و`null` يُحتسب: `video: null` مع `lock: [video]` يبقي الفيديو موقوفًا للجميع). الخانة المجهولة، أو الخانة المقفلة التي لا يكتبها `slots`، توقف الخادم عند بدء التشغيل مع ذكر موضعها (`lock.1: ...`).
 - الخانة المقفلة تثبّت أبناءها أيضًا: مع `lock: [llm]` لا يستطيع أي مستخدم ضبط `course.outline` أو أي خانة أخرى لنموذج اللغة، وتُحل كلها من `openmaic.yml` وحده.
-- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع.
+- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع. For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
 - تجتمع `null` والقيمة الافتراضية والقفل كما هو متوقع: `video: null` وحدها موقوفة حتى يشغّلها مستخدم؛ ومع `lock: [video]` تبقى موقوفة.
 
 تأخذ الإعدادات أحد ثلاثة أشكال، بحسب الإعداد:
@@ -407,6 +408,8 @@ slots:
 ```
 
 بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل أي قدرة على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانة غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
+
+**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
 
 ثم احذف `MODEL_ROUTES` و`DEFAULT_MODEL` و`MODEL_FALLBACK`.
 
@@ -810,3 +813,54 @@ slots:
 يعتمد اختيار نقطة النهاية على المسار الأساسي: بعد إزالة الشرطات المائلة الختامية، يستخدم المسار المنتهي بـ `/coding/v1` نقطة `/search`، وتستخدم المسارات الأخرى `/tools/search_pro`. يجب أن تحافظ الوكلاء المخصصة المضبوطة في النشر على بنية المسار هذه. يوصي المعالج بالبحث لعناوين الحسابات الرسمية فقط، لذلك لا يحصل وكيل المحادثة المخصص لمساحة العمل على تعيين بحث تلقائيًا.
 
 عند وجود `openmaic.yml`، أعلن `providers.<id>: { preset: kimi }` وعيّن `slots.webSearch: <id>`؛ لا يستطيع المتغير القديم `WEB_SEARCH_KIMI_ENABLED` تعيين هذه الخانة.
+
+## Web fetch provider slot
+
+`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
+`builtin` in legacy, empty and YAML configurations, including an omitted root
+under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
+provider per request, with no fallback or escalation.
+
+| Provider | Credentials | Extraction |
+| --- | --- | --- |
+| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
+| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
+`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
+`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
+and Bearer authentication. The adapter accepts `markdown` or `content`; the
+Coding Plan response fields and international service availability have not
+been verified with a live key.
+
+In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
+Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
+make the card read-only. First-run setup lists the capability with the provider;
+the existing builtin default remains until a reader is explicitly selected.
+Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
+must be declared by the administrator in `openmaic.yml`.
+
+The session URL gate, strict URL normalization and all local DNS address checks
+run before forwarding a URL to a hosted reader. The same checks run against a
+reported final URL before accepting its content. Hosted readers use their own
+networks and control their own redirects; local checks cannot pin their DNS or
+inspect intermediate redirects. Their text remains untrusted, with challenge
+page detection, byte limits, a truncation notice and the existing web material
+persistence and `{trusted, untrusted}` tool result.
+
+Add a default-exported provider module under `lib/web-fetch/providers/`.
+`pnpm generate:web-fetch-registry` discovers it and generates static registrations
+and client-safe metadata (also run by install, test and build). No vendor list in
+generic code needs editing. Dispatch and
+metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
+consume the registry instead of enumerating vendor ids.

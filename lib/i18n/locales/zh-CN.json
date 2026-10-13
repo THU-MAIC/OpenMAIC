@@ -1947,7 +1947,8 @@
         "providers": "配置语言模型服务的凭证、接口地址与模型目录",
         "tts": "配置语音合成服务、音色与模型",
         "video": "配置视频生成服务的凭证与模型目录",
-        "webSearch": "配置网络搜索服务与检索来源"
+        "webSearch": "配置网络搜索服务与检索来源",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "模型服务",
       "notConfigured": "未配置",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "文档解析",
           "desc": "读取上传的文档。"
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "服务器未确认已导入。"
       }
     },
-    "serverConfiguredAddOwn": "如需使用自己的凭据，请新增一个提供方。"
+    "serverConfiguredAddOwn": "如需使用自己的凭据，请新增一个提供方。",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

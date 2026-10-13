@@ -1947,7 +1947,8 @@
         "providers": "言語モデルサービスの認証情報・API アドレス・モデルカタログを設定します",
         "tts": "音声合成サービス・ボイス・モデルを設定します",
         "video": "動画生成サービスの認証情報とモデルカタログを設定します",
-        "webSearch": "ウェブ検索サービスと検索ソースを設定します"
+        "webSearch": "ウェブ検索サービスと検索ソースを設定します",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "モデルサービス",
       "notConfigured": "未設定",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "ドキュメント解析",
           "desc": "アップロードされたドキュメントを読み取ります。"
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "サーバーがインポートを確認しませんでした。"
       }
     },
-    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。"
+    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

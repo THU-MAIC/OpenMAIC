@@ -46,6 +46,13 @@ export interface StationDef {
 }
 
 export const STATIONS: readonly StationDef[] = [
+  {
+    id: 'webFetch',
+    kind: 'aside',
+    x: 0,
+    y: ROW_2 + 360,
+    lines: [{ slot: 'webFetch', toggle: true }],
+  },
   { id: 'llm', kind: 'root', x: 440, y: 24, lines: [{ slot: 'llm' }] },
   { id: 'agent', kind: 'aside', x: 0, y: 40, lines: [{ slot: 'agent' }] },
   { id: 'asr', kind: 'aside', x: 944, y: 40, lines: [{ slot: 'asr', toggle: true }] },

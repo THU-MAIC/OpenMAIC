@@ -151,3 +151,12 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 يُختار مسار الطلب وفق مسار عنوان URL الأساسي: بعد إزالة الشرطات المائلة النهائية، يُستخدم `/search` إذا انتهى المسار بـ `/coding/v1`، ويُستخدم `/tools/search_pro` في الحالات الأخرى. يجب أن تحافظ خدمات الوكيل المخصصة المضبوطة في `openmaic.yml` على بنية المسار هذه.
 
 عند وجود `openmaic.yml`، يجب تعريف `providers.<id>: { preset: kimi }` وتعيين `slots.webSearch: <id>`؛ فمتغير الإعدادات القديمة `WEB_SEARCH_KIMI_ENABLED` لا يعيّن هذه الخانة.
+
+## Web fetch
+
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
+Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
+API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
+while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
+Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
+All readers retain local session and public-address checks and untrusted results.

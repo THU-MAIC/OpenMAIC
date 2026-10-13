@@ -20,7 +20,11 @@ import {
 type SlotAssignment = Exclude<SlotView['assignment'], undefined>;
 
 /** Capabilities whose providers serve without a model to pick. */
-export const PROVIDER_ONLY_CAPABILITIES: readonly SlotCapability[] = ['webSearch', 'document'];
+export const PROVIDER_ONLY_CAPABILITIES: readonly SlotCapability[] = [
+  'webSearch',
+  'webFetch',
+  'document',
+];
 
 /** `providerId:modelId`, or the provider alone for its default model. */
 export function modelRef(providerId: string, modelId?: string): string {
@@ -391,6 +395,7 @@ export const PRESET_GROUPS = [
   'asr',
   'image',
   'video',
+  'webFetch',
   'webSearch',
   'document',
 ] as const;

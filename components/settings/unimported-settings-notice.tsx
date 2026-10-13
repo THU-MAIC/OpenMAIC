@@ -41,6 +41,7 @@ const CAPABILITY_LABEL: Record<SlotCapability, string> = {
   asr: 'settings.asrSettings',
   image: 'settings.imageSettings',
   video: 'settings.videoSettings',
+  webFetch: 'settings.webFetchSettings',
   webSearch: 'settings.webSearchSettings',
   document: 'settings.documentParsingSettings',
 };

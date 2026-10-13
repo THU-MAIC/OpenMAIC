@@ -127,6 +127,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 | `asr` | asr | — | 语音识别（语音输入、音视频转写） |
 | `image` | image | — | 图像生成 |
 | `video` | video | — | 视频生成 |
+| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | 联网搜索 |
 | `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind）。内置的 PDF 文本提取不需要服务 |
 
@@ -171,7 +172,7 @@ slots:
 
 ### 回退模型
 
-回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
+回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch`, `webFetch` or `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
 
 当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、限流（429）、容量不足（503）或输出为空。服务商明确返回额度用尽时（OpenAI 兼容格式的额度错误码，例如 `insufficient_quota`，不论 HTTP 状态码），不会在主模型上重试，调用会直接换用回退模型。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # 这些槽位及其下所有槽位
 
 - `lock` 列出的每个槽位都必须在 `slots` 中写出（`null` 也算：`video: null` 加 `lock: [video]` 会对所有人关闭视频）。未知槽位，或 `slots` 中没有写出的锁定槽位，会让服务在启动时拒绝运行，并指出其位置（`lock.1: ...`）。
 - 锁定的槽位同时固定其子槽位：使用 `lock: [llm]` 时，任何用户都不能设置 `course.outline` 或其他语言模型槽位，它们全部只按 `openmaic.yml` 解析。
-- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。
+- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。 For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
 - `null`、服务端默认值与锁定可以组合：只写 `video: null` 时默认关闭，用户可以开启；加上 `lock: [video]` 后保持关闭。
 
 设置界面会根据配置呈现三种形态之一：
@@ -407,6 +408,8 @@ slots:
 ```
 
 一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的槽位保持未配置，除非某个工作区在模型设置中为它指定。
+
+**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
 
 然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -810,3 +813,54 @@ slots:
 端点选择取决于基础路径：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。部署配置的自定义代理必须保留这一布局。向导只为官方账号地址推荐搜索，因此工作区自定义对话代理不会自动获得搜索分配。
 
 存在 `openmaic.yml` 时，请声明 `providers.<id>: { preset: kimi }` 并分配 `slots.webSearch: <id>`；旧版变量 `WEB_SEARCH_KIMI_ENABLED` 无法分配该槽位。
+
+## Web fetch provider slot
+
+`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
+`builtin` in legacy, empty and YAML configurations, including an omitted root
+under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
+provider per request, with no fallback or escalation.
+
+| Provider | Credentials | Extraction |
+| --- | --- | --- |
+| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
+| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
+`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
+`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
+and Bearer authentication. The adapter accepts `markdown` or `content`; the
+Coding Plan response fields and international service availability have not
+been verified with a live key.
+
+In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
+Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
+make the card read-only. First-run setup lists the capability with the provider;
+the existing builtin default remains until a reader is explicitly selected.
+Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
+must be declared by the administrator in `openmaic.yml`.
+
+The session URL gate, strict URL normalization and all local DNS address checks
+run before forwarding a URL to a hosted reader. The same checks run against a
+reported final URL before accepting its content. Hosted readers use their own
+networks and control their own redirects; local checks cannot pin their DNS or
+inspect intermediate redirects. Their text remains untrusted, with challenge
+page detection, byte limits, a truncation notice and the existing web material
+persistence and `{trusted, untrusted}` tool result.
+
+Add a default-exported provider module under `lib/web-fetch/providers/`.
+`pnpm generate:web-fetch-registry` discovers it and generates static registrations
+and client-safe metadata (also run by install, test and build). No vendor list in
+generic code needs editing. Dispatch and
+metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
+consume the registry instead of enumerating vendor ids.

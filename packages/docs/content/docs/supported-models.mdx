@@ -151,3 +151,12 @@ Chat credentials alone do not enable search in legacy configuration. Opt in with
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; every other base uses `/tools/search_pro`. Custom proxies configured in `openmaic.yml` must preserve that path layout.
 
 When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.
+
+## Web fetch
+
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
+Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
+API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
+while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
+Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
+All readers retain local session and public-address checks and untrusted results.

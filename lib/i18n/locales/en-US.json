@@ -1947,7 +1947,8 @@
         "providers": "Configure credentials, endpoints and model catalogs for language model services",
         "tts": "Configure speech synthesis services, voices and models",
         "video": "Configure credentials and model catalogs for video generation services",
-        "webSearch": "Configure web search services and retrieval sources"
+        "webSearch": "Configure web search services and retrieval sources",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Model Services",
       "notConfigured": "Not configured",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "Document parsing",
           "desc": "Reads uploaded documents."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "The server did not confirm that it was imported."
       }
     },
-    "serverConfiguredAddOwn": "To use your own credentials, add a separate provider."
+    "serverConfiguredAddOwn": "To use your own credentials, add a separate provider.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "Untitled course",

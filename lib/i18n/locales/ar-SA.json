@@ -1947,7 +1947,8 @@
         "providers": "هيّئ بيانات الاعتماد والعناوين وكتالوجات النماذج لخدمات النماذج اللغوية",
         "tts": "هيّئ خدمات تحويل النص إلى كلام والأصوات والنماذج",
         "video": "هيّئ بيانات الاعتماد وكتالوجات النماذج لخدمات توليد الفيديو",
-        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع"
+        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "خدمات النماذج",
       "notConfigured": "غير مهيّأ",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "تحليل المستندات",
           "desc": "يقرأ المستندات المرفوعة."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
     },
-    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً."
+    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

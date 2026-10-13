@@ -1947,7 +1947,8 @@
         "providers": "Cấu hình thông tin xác thực, điểm cuối và danh mục mô hình của dịch vụ mô hình ngôn ngữ",
         "tts": "Cấu hình dịch vụ tổng hợp giọng nói, giọng đọc và mô hình",
         "video": "Cấu hình thông tin xác thực và danh mục mô hình của dịch vụ tạo video",
-        "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất"
+        "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Dịch vụ mô hình",
       "notConfigured": "Chưa cấu hình",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "Phân tích tài liệu",
           "desc": "Đọc các tài liệu đã tải lên."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
     },
-    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác."
+    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

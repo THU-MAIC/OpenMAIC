@@ -13,6 +13,7 @@ export type SettingsSection =
   | 'pdf'
   | 'image'
   | 'video'
+  | 'web-fetch'
   | 'web-search'
   | 'skills'
   | 'course-models'

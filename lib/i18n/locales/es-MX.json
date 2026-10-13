@@ -1947,7 +1947,8 @@
         "providers": "Configura credenciales, endpoints y catálogos de modelos de los servicios de modelos de lenguaje",
         "tts": "Configura servicios de síntesis de voz, voces y modelos",
         "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",
-        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación"
+        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Servicios de modelos",
       "notConfigured": "Sin configurar",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "Análisis de documentos",
           "desc": "Lee los documentos subidos."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "El servidor no confirmó que se importara."
       }
     },
-    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte."
+    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

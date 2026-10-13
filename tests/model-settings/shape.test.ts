@@ -58,6 +58,7 @@ describe('settingsShape', () => {
         'tts',
         'asr',
         'document',
+        'webFetch',
         'webSearch',
       ]);
     }

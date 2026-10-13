@@ -1947,7 +1947,8 @@
         "providers": "Configurer les identifiants, points de terminaison et catalogues de modèles des services de modèles de langue",
         "tts": "Configurer les services de synthèse vocale, les voix et les modèles",
         "video": "Configurer les identifiants et catalogues de modèles des services de génération vidéo",
-        "webSearch": "Configurer les services de recherche web et les sources de récupération"
+        "webSearch": "Configurer les services de recherche web et les sources de récupération",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "Services de modèles",
       "notConfigured": "Non configuré",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "Analyse de documents",
           "desc": "Lit les documents importés."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "Le serveur n'a pas confirmé l'importation."
       }
     },
-    "serverConfiguredAddOwn": "Pour utiliser vos propres identifiants, ajoutez un fournisseur distinct."
+    "serverConfiguredAddOwn": "Pour utiliser vos propres identifiants, ajoutez un fournisseur distinct.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

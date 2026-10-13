@@ -1947,7 +1947,8 @@
         "providers": "언어 모델 서비스의 자격 증명, API 주소, 모델 카탈로그를 설정합니다",
         "tts": "음성 합성 서비스, 보이스, 모델을 설정합니다",
         "video": "영상 생성 서비스의 자격 증명과 모델 카탈로그를 설정합니다",
-        "webSearch": "웹 검색 서비스와 검색 소스를 설정합니다"
+        "webSearch": "웹 검색 서비스와 검색 소스를 설정합니다",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "모델 서비스",
       "notConfigured": "미구성",
@@ -2149,6 +2150,10 @@
         "document": {
           "name": "문서 분석",
           "desc": "업로드한 문서를 읽습니다."
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2194,7 +2199,10 @@
         "unconfirmed": "서버가 가져오기를 확인하지 않았습니다."
       }
     },
-    "serverConfiguredAddOwn": "본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요."
+    "serverConfiguredAddOwn": "본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요.",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

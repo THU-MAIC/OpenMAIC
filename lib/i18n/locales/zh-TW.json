@@ -1932,7 +1932,8 @@
         "providers": "設定語言模型服務的憑證、API 位址與模型目錄",
         "tts": "設定語音合成服務、音色與模型",
         "video": "設定影片生成服務的憑證與模型目錄",
-        "webSearch": "設定網路搜尋服務與檢索來源"
+        "webSearch": "設定網路搜尋服務與檢索來源",
+        "webFetch": "Configure web page extraction services"
       },
       "nav": "模型服務",
       "notConfigured": "未設定",
@@ -2134,6 +2135,10 @@
         "document": {
           "name": "文件解析",
           "desc": "讀取上傳的文件。"
+        },
+        "webFetch": {
+          "name": "Web Fetch",
+          "desc": "Read session-approved web pages with the selected provider."
         }
       },
       "source": {
@@ -2179,7 +2184,10 @@
         "unconfirmed": "伺服器未確認已匯入。"
       }
     },
-    "serverConfiguredAddOwn": "如需使用自己的憑證，請新增一個供應商。"
+    "serverConfiguredAddOwn": "如需使用自己的憑證，請新增一個供應商。",
+    "webFetchSettings": "Web Fetch",
+    "webFetchHint": "Choose the reader used by fetch_url. Hosted readers receive only session-approved public URLs. Results remain untrusted; there is no fallback.",
+    "webFetchApiKey": "API Key"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

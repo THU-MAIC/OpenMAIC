@@ -33,6 +33,7 @@ export const ROOT_SLOT: Record<SlotCapability, SlotId> = {
   video: 'video',
   tts: 'tts',
   asr: 'asr',
+  webFetch: 'webFetch',
   webSearch: 'webSearch',
   document: 'document',
 };

@@ -127,6 +127,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
 | `video` | video | — | Video generation |
+| `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | Web search |
 | `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind). The built-in PDF text extraction needs no service |
 
@@ -171,7 +172,7 @@ A reference without `:model` means the provider's default model: the model a tok
 
 ### Fallbacks
 
-Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
+Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch`, `webFetch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
 
 A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, a rate limit (429), capacity (503), or empty output. An explicit quota refusal from the provider (an OpenAI-compatible code such as `insufficient_quota`, whatever its HTTP status) is not retried on the primary model: the call goes to the fallback at once. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # these slots and every slot below them
 
 - Every slot `lock` names must be written under `slots` (`null` counts: `video: null` with `lock: [video]` keeps video off for everyone). An unknown slot, or a locked slot `slots` does not write, stops the server at startup with its position (`lock.1: ...`).
 - A locked slot fixes its children too: with `lock: [llm]`, no user can set `course.outline` or any other language model slot, and all of them resolve from `openmaic.yml` alone.
-- `lock: all` fixes every slot, written or not; a capability root `slots` leaves out is then unconfigured for everyone.
+- `lock: all` fixes every slot, written or not; a capability root `slots` leaves out is then unconfigured for everyone. For `webFetch`, an omitted assignment uses `builtin`; set `webFetch: null` to disable it.
 - `null`, a server default and a lock combine as you would expect: `video: null` alone is off until a user turns it on; with `lock: [video]` it stays off.
 
 The settings take one of three shapes, derived from the configuration:
@@ -407,6 +408,8 @@ slots:
 ```
 
 Once `openmaic.yml` exists, the provider variables configure nothing on their own: a TTS, image, document or web search provider that had only its variables (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …) is no longer used, and no capability gets a default provider. Declare each provider you use under `providers` and assign `tts`, `image`, `document`, `webSearch` (and `asr`, `video`) in `slots`, as in the environment-variable example above; a slot left unassigned stays unconfigured unless a workspace assigns it in the model settings.
+
+**Exception:** An omitted `webFetch` slot still uses `builtin`; set it to `null` to disable fetching.
 
 Then remove `MODEL_ROUTES`, `DEFAULT_MODEL` and `MODEL_FALLBACK`.
 
@@ -810,3 +813,54 @@ For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-co
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; otherwise it uses `/tools/search_pro`. Custom proxies configured by the deployment must preserve that path layout. The wizard recommends search only for official account bases, so a custom workspace chat proxy does not automatically acquire a search assignment.
 
 When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.
+
+## Web fetch provider slot
+
+`webFetch` selects the reader used by the agent's `fetch_url` tool. It defaults to
+`builtin` in legacy, empty and YAML configurations, including an omitted root
+under `lock: all`. Explicit `webFetch: null` disables fetching. There is one
+provider per request, with no fallback or escalation.
+
+| Provider | Credentials | Extraction |
+| --- | --- | --- |
+| `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
+| `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and
+`https://api.moonshot.ai/v1`) use `/tools/fetch`. The Kimi Coding Plan base
+`https://api.kimi.com/coding/v1` uses `/fetch`. Both send `POST` with `{ "url": ... }`
+and Bearer authentication. The adapter accepts `markdown` or `content`; the
+Coding Plan response fields and international service availability have not
+been verified with a live key.
+
+In **Settings → Model Services → Web Fetch**, use the existing Kimi credentials.
+Choose the reader in **Course Model Config → Web Fetch**. Administrator locks
+make the card read-only. First-run setup lists the capability with the provider;
+the existing builtin default remains until a reader is explicitly selected.
+Workspace credentials can use official Kimi API bases; arbitrary fetch endpoints
+must be declared by the administrator in `openmaic.yml`.
+
+The session URL gate, strict URL normalization and all local DNS address checks
+run before forwarding a URL to a hosted reader. The same checks run against a
+reported final URL before accepting its content. Hosted readers use their own
+networks and control their own redirects; local checks cannot pin their DNS or
+inspect intermediate redirects. Their text remains untrusted, with challenge
+page detection, byte limits, a truncation notice and the existing web material
+persistence and `{trusted, untrusted}` tool result.
+
+Add a default-exported provider module under `lib/web-fetch/providers/`.
+`pnpm generate:web-fetch-registry` discovers it and generates static registrations
+and client-safe metadata (also run by install, test and build). No vendor list in
+generic code needs editing. Dispatch and
+metadata are exposed by `lib/web-fetch/registry.ts`. Configuration and settings
+consume the registry instead of enumerating vendor ids.

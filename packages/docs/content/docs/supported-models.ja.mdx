@@ -151,3 +151,12 @@ Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` 
 エンドポイントはベース URL のパスで決まります。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。`openmaic.yml` で設定するカスタムプロキシも、このパス構造を維持する必要があります。
 
 `openmaic.yml` がある場合、従来の環境変数 `WEB_SEARCH_KIMI_ENABLED` だけでは検索スロットは割り当てられないため、`providers.<id>: { preset: kimi }` を宣言し、`slots.webSearch: <id>` を指定してください。
+
+## Web fetch
+
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
+Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
+API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
+while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
+Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
+All readers retain local session and public-address checks and untrusted results.

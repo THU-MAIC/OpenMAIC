@@ -151,3 +151,12 @@ description: Встроенные модели и список провайде�
 Эндпоинт выбирается по пути базового URL: после удаления завершающих косых черт путь, оканчивающийся на `/coding/v1`, использует `/search`; все остальные используют `/tools/search_pro`. Пользовательские прокси, настроенные в `openmaic.yml`, должны сохранять эту структуру пути.
 
 Если есть `openmaic.yml`, объявите `providers.<id>: { preset: kimi }` и задайте `slots.webSearch: <id>`: переменная старой конфигурации `WEB_SEARCH_KIMI_ENABLED` не назначает этот слот.
+
+## Web fetch
+
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and
+Turndown; PDFs still use `document`). `kimi` reuses the existing Kimi key and
+API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`,
+while Kimi Coding Plan uses `/fetch`. There is no fallback. Choose the reader in
+Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`.
+All readers retain local session and public-address checks and untrusted results.

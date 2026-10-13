@@ -59,12 +59,13 @@ import { REGISTRY_INFO, entryIcon, entryName, isEntryConfigured } from './servic
 import { TTSSettings } from './tts-settings';
 import { UnimportedSettingsNotice } from './unimported-settings-notice';
 import { VideoSettings } from './video-settings';
+import { WebFetchSettings } from './web-fetch-settings';
 import { WebSearchSettings } from './web-search-settings';
 
 /** 「模型服务」分区内的服务 tab：沿用旧一级分区的值与面板组件。 */
 export type ServiceTab = Extract<
   SettingsSection,
-  'providers' | 'image' | 'video' | 'tts' | 'asr' | 'pdf' | 'web-search'
+  'providers' | 'image' | 'video' | 'tts' | 'asr' | 'pdf' | 'web-search' | 'web-fetch'
 >;
 
 export const SERVICE_TABS = [
@@ -74,6 +75,7 @@ export const SERVICE_TABS = [
   'tts',
   'asr',
   'pdf',
+  'web-fetch',
   'web-search',
 ] as const satisfies readonly ServiceTab[];
 
@@ -84,6 +86,7 @@ export const SERVICE_TAB_LABELS: Record<ServiceTab, string> = {
   tts: 'settings.ttsSettings',
   asr: 'settings.asrSettings',
   pdf: 'settings.documentParsingSettings',
+  'web-fetch': 'settings.webFetchSettings',
   'web-search': 'settings.webSearchSettings',
 };
 
@@ -94,6 +97,7 @@ const SERVICE_TAB_ICONS: Record<ServiceTab, LucideIcon> = {
   tts: Volume2,
   asr: Mic,
   pdf: FileText,
+  'web-fetch': FileText,
   'web-search': Search,
 };
 
@@ -104,6 +108,7 @@ export const SERVICE_TAB_DESCRIPTIONS: Record<ServiceTab, string> = {
   tts: 'settings.modelServices.desc.tts',
   asr: 'settings.modelServices.desc.asr',
   pdf: 'settings.modelServices.desc.pdf',
+  'web-fetch': 'settings.modelServices.desc.webFetch',
   'web-search': 'settings.modelServices.desc.webSearch',
 };
 
@@ -115,6 +120,7 @@ export const TAB_CAPABILITY: Record<ServiceTab, SlotCapability> = {
   tts: 'tts',
   asr: 'asr',
   pdf: 'document',
+  'web-fetch': 'webFetch',
   'web-search': 'webSearch',
 };
 
@@ -300,6 +306,7 @@ export function ModelServicesPanel({
               {tab === 'tts' && <TTSSettings {...panelProps} />}
               {tab === 'asr' && <ASRSettings {...panelProps} />}
               {tab === 'pdf' && <PDFSettings {...panelProps} />}
+              {tab === 'web-fetch' && <WebFetchSettings {...panelProps} />}
               {tab === 'web-search' && <WebSearchSettings {...panelProps} />}
             </div>
           )}
