@@ -384,6 +384,36 @@ describe('scene content step — asset-id image transport', () => {
     warn.mockRestore();
   });
 
+  test('undecodable but resolvable images do not trip the fuse; later valid images still refill the slice', async () => {
+    vi.resetModules();
+    // The store answers every probe, but the first four images are corrupt.
+    // Preparation drops them; that is a content problem, not a store outage,
+    // so the consecutive-failure fuse must not stop the phase before img_5.
+    const { ids, pdfImages, imageMapping } = manyCandidateImages(5);
+    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
+      images.map((image) => ({
+        ...image,
+        src:
+          image.src === 'ast_img_5' || image.id === 'img_5'
+            ? `data:image/png;base64,${imageBase64('good')}`
+            : `data:image/bmp;base64,${Buffer.from('undecodable').toString('base64')}`,
+      })),
+    );
+    callLLMMock.mockResolvedValueOnce({
+      text: JSON.stringify({ elements: [], remark: '' }),
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await generate({ outline: slideOutline(ids), pdfImages, imageMapping });
+
+    const content = callLLMMock.mock.calls[0][0].messages[0].content;
+    expect(content[0].text).toContain('img_5');
+    expect(content[0].text).not.toContain('**img_1**');
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
+    expect(warn.mock.calls.some((call) => String(call[0]).includes('fuse'))).toBe(false);
+    warn.mockRestore();
+  });
+
   test('hanging store: the aggregate resolution budget stops the phase within the bound, no hang (P2-r3)', async () => {
     vi.resetModules();
     vi.useFakeTimers();

@@ -188,20 +188,16 @@ export async function generateSceneContent(
     // all-fail phase must not churn every candidate (and emit a warn per
     // candidate) until the route's 300 s platform cap. Two stops, both
     // degrading to "whatever resolved so far" — never failing the step:
-    // (a) an aggregate budget for the WHOLE phase (the shared 15 s ingest
+    // (a) an aggregate budget of resolver time across the phase (the shared 15 s ingest
     // constant, raced against each probe so even ONE hanging probe cannot
     // outlive it) and (b) a consecutive-failure fuse (3 unresolvable/errored
     // candidates in a row → stop). When a stop fires, every candidate that
     // did not resolve — unresolvable OR unprobed — is STRIPPED from the
     // mapping, so the generator can never hand an unresolved allocated id to
     // aiCall; ONE summary warn names the stop.
-    let phaseTimer: ReturnType<typeof setTimeout> | undefined;
-    const phaseBudget = new Promise<'__vision-resolution-budget-expired__'>((resolve) => {
-      phaseTimer = setTimeout(
-        () => resolve('__vision-resolution-budget-expired__'),
-        VISION_RESOLUTION_BUDGET_MS,
-      );
-    });
+    // The budget meters resolver time only: image preparation (decode and
+    // re-encode) runs outside it so slow transformations cannot starve probes.
+    let resolutionMsRemaining = VISION_RESOLUTION_BUDGET_MS;
     const resolvedById = new Map<string, VisionPromptImage>();
     let consecutiveUnresolvable = 0;
     let stopReason: 'fuse' | 'budget' | null = null;
@@ -211,20 +207,29 @@ export async function generateSceneContent(
         stopReason = 'fuse';
         break;
       }
+      if (resolutionMsRemaining <= 0) {
+        stopReason = 'budget';
+        break;
+      }
       let attempted: VisionPromptImage[] | '__vision-resolution-budget-expired__';
+      let probeTimer: ReturnType<typeof setTimeout> | undefined;
+      const probeStartedAt = Date.now();
       try {
         attempted = await Promise.race([
-          ctx
-            .resolveVisionImages([
-              {
-                id: candidate.id,
-                src: imageMapping[candidate.id],
-                ...(candidate.width !== undefined ? { width: candidate.width } : {}),
-                ...(candidate.height !== undefined ? { height: candidate.height } : {}),
-              },
-            ])
-            .then((images) => prepareVisionImages(images, log)),
-          phaseBudget,
+          ctx.resolveVisionImages([
+            {
+              id: candidate.id,
+              src: imageMapping[candidate.id],
+              ...(candidate.width !== undefined ? { width: candidate.width } : {}),
+              ...(candidate.height !== undefined ? { height: candidate.height } : {}),
+            },
+          ]),
+          new Promise<'__vision-resolution-budget-expired__'>((resolve) => {
+            probeTimer = setTimeout(
+              () => resolve('__vision-resolution-budget-expired__'),
+              resolutionMsRemaining,
+            );
+          }),
         ]);
       } catch (error) {
         // A throwing probe counts as an unresolvable candidate (an errored
@@ -234,19 +239,24 @@ export async function generateSceneContent(
           error,
         );
         attempted = [];
+      } finally {
+        if (probeTimer !== undefined) clearTimeout(probeTimer);
+        resolutionMsRemaining -= Date.now() - probeStartedAt;
       }
       if (attempted === '__vision-resolution-budget-expired__') {
         stopReason = 'budget';
         break;
       }
-      if (attempted.length === 1) {
-        resolvedById.set(attempted[0]!.id, attempted[0]!);
-        consecutiveUnresolvable = 0;
-      } else {
+      if (attempted.length !== 1) {
         consecutiveUnresolvable += 1;
+        continue;
       }
+      // The store answered, so the fuse resets even when the image itself is
+      // unusable; a dropped image is skipped and the next candidate refills.
+      consecutiveUnresolvable = 0;
+      const [prepared] = await prepareVisionImages(attempted, log);
+      if (prepared) resolvedById.set(prepared.id, prepared);
     }
-    if (phaseTimer !== undefined) clearTimeout(phaseTimer);
     resolvedVisionImages = [...resolvedById.values()];
     // Every candidate that did not resolve — an unresolvable probe, OR an
     // unprobed one when the fuse/budget stopped the phase — is stripped from
