@@ -878,8 +878,16 @@
         "exitFullscreen": "Thoát khu làm việc toàn màn hình",
         "exitNativeFullscreen": "Thoát toàn màn hình",
         "returnToHero": "Về trang tổng quan dự án",
+
         "breadcrumbOverview": "Tổng quan",
-        "breadcrumbCurrent": "Khu làm việc"
+        "breadcrumbCurrent": "Khu làm việc",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "Trò chuyện với {{name}} về tiến độ của bạn...",
@@ -986,7 +994,14 @@
         "fileRead": "Đã đọc: {{filename}} · {{size}} KB",
         "submittedBadge": "Đã nộp ({{count}})",
         "receiptFile": "Tệp: {{filename}}",
-        "receiptTemplate": "Đã nộp bài cho nhiệm vụ này ({{label}})."
+        "receiptTemplate": "Đã nộp bài cho nhiệm vụ này ({{label}}).",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "Dự án này chưa thiết lập trợ lý AI nào."

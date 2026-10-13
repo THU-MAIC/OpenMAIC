@@ -223,6 +223,49 @@ describe('buildTaskEvalPrompt', () => {
   });
 });
 
+describe('buildTaskEvalPrompt — git evidence (slice 4b)', () => {
+  it('injects the commit diff and static findings when gitEvidence is provided', () => {
+    const t = mkMicrotask('t1', '实现详情页');
+    const ms = mkMilestone('ms1', 'Setup', [t]);
+    const project = mkProject({ milestones: [ms] });
+    const { user } = buildTaskEvalPrompt(project, ms, t, {
+      gitEvidence: {
+        provider: 'gitea',
+        fullName: 'goking/arkts-pbl-template',
+        ref: 'refs/heads/main',
+        commitSha: 'abc1234',
+        commitMessage: 'add Detail page',
+        diff: 'diff --git a/Index.ets b/Index.ets',
+        changedFiles: ['entry/src/main/ets/pages/Index.ets'],
+        staticFindings: [
+          {
+            level: 'error',
+            message: '页面未在 main_pages.json 注册',
+            file: 'entry/src/main/ets/pages/Detail.ets',
+          },
+          { level: 'warn', message: '出现 any', file: 'entry/src/main/ets/pages/Index.ets' },
+        ],
+      },
+    });
+    expect(user).toContain('Git submission evidence');
+    expect(user).toContain('abc1234');
+    expect(user).toContain('add Detail page');
+    expect(user).toContain('diff --git');
+    expect(user).toContain('页面未在 main_pages.json 注册');
+    expect(user).toContain('[error]');
+    expect(user).toContain('出现 any');
+    expect(user).toContain('[warn]');
+  });
+
+  it('omits the git section when no gitEvidence is provided', () => {
+    const t = mkMicrotask('t1', 't');
+    const ms = mkMilestone('ms1', 'm', [t]);
+    const project = mkProject({ milestones: [ms] });
+    const { user } = buildTaskEvalPrompt(project, ms, t);
+    expect(user).not.toContain('Git submission evidence');
+  });
+});
+
 describe('buildMilestoneEvalPrompt', () => {
   it('includes per-microtask telemetry from cached engagement when present', () => {
     const cached: PBLEngagementSummary = {

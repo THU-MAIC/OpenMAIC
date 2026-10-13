@@ -878,8 +878,16 @@
         "exitFullscreen": "全画面ワークスペースを終了",
         "exitNativeFullscreen": "全画面表示を終了",
         "returnToHero": "プロジェクト概要に戻る",
+
         "breadcrumbOverview": "概要",
-        "breadcrumbCurrent": "ワークスペース"
+        "breadcrumbCurrent": "ワークスペース",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "{{name}}と進捗について話す...",
@@ -986,7 +994,14 @@
         "fileRead": "読み込み済み：{{filename}} · {{size}} KB",
         "submittedBadge": "提出済み（{{count}}）",
         "receiptFile": "ファイル：{{filename}}",
-        "receiptTemplate": "このタスクの成果物を提出しました（{{label}}）。"
+        "receiptTemplate": "このタスクの成果物を提出しました（{{label}}）。",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "このプロジェクトにはAIエージェントが設定されていません。"

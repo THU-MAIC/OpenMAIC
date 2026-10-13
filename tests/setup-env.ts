@@ -31,7 +31,16 @@ if (process.env.TEST_LOAD_LOCAL_ENV === '1') {
       const eqIdx = trimmed.indexOf('=');
       if (eqIdx < 0) continue;
       const key = trimmed.slice(0, eqIdx).trim();
-      const value = trimmed.slice(eqIdx + 1).trim();
+      let value = trimmed.slice(eqIdx + 1).trim();
+      // Match dotenv/Next's .env parsing: strip one layer of surrounding
+      // double/single quotes, so `GITEA_ADMIN_PASSWORD="secret"` loads the
+      // same as the unquoted form.
+      if (value.length >= 2) {
+        const first = value[0]!;
+        if ((first === '"' || first === "'") && value[value.length - 1] === first) {
+          value = value.slice(1, -1);
+        }
+      }
       if (!process.env[key]) {
         process.env[key] = value;
       }

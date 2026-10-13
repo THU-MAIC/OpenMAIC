@@ -50,6 +50,9 @@ describe('embedded persistence route', () => {
       ...(await importOriginal<object>()),
       ensureOwnerAgentSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    vi.doMock('@/lib/persistence/pbl-repo-registry', () => ({
+      ensurePBLRepoRegistrySchema: vi.fn().mockResolvedValue(undefined),
+    }));
   });
 
   it('returns a clear 404 when DATABASE_URL is unset', async () => {

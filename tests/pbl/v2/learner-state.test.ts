@@ -25,6 +25,7 @@ const PROJECT_FIELD_BOUNDARY = {
   title: 'design-template',
   description: 'design-template',
   learningObjective: 'design-template',
+  gitConfig: 'design-template',
   gains: 'design-template',
   proficiency: 'design-template',
   language: 'design-template',
@@ -229,9 +230,20 @@ describe('PBL learner state split', () => {
     expect(state.milestones[0]?.microtasks[0]).not.toHaveProperty('hints');
   });
 
+  it('keeps gitConfig as a design-template field (survives reset, never leaks into learner state)', () => {
+    const project = makeProject({ gitConfig: { provider: 'gitea', fullName: 'learner/project' } });
+
+    const state = extractLearnerState(project);
+    const template = stripToDesignTemplate(project);
+
+    expect(state).not.toHaveProperty('gitConfig');
+    expect(template.gitConfig).toEqual({ provider: 'gitea', fullName: 'learner/project' });
+  });
+
   it('classifies every top-level PBLProjectV2 field into the runtime boundary', () => {
     const project = makeProject({
       learningObjective: 'Understand the runtime boundary',
+      gitConfig: { provider: 'gitea', fullName: 'learner/project' },
       gains: ['Runtime confidence'],
       languageDirective: 'English only',
       scenario: {

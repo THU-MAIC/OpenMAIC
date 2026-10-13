@@ -96,6 +96,13 @@ const SHIPPED: readonly (readonly [
     '3acac29dc0790eee5fdd4831810f19864eba2e9cef251a8804b49f74f1c48609',
   ],
   [
+    'pbl-repo-registry',
+    1,
+    'baseline',
+    false,
+    '025c67aca1dedb5cd9270d4236b8bfc8bf4982cb0c1b9d74e9b73f33987d001c',
+  ],
+  [
     'asset',
     1,
     'baseline',

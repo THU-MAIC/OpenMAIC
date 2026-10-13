@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
     // A runtime-only override must not disable the route the built client uses.
     NEXT_PUBLIC_PI_CHAT_ENABLED: process.env.NEXT_PUBLIC_PI_CHAT_ENABLED ?? '',
   },
+  // Dev-only host allow-list. The dev server binds 0.0.0.0 so the Gitea
+  // container can reach the push webhook, but a browser on the same host opens
+  // 127.0.0.1 — Next 16 otherwise treats those static-chunk/HMR requests as
+  // cross-origin and blocks them, leaving a blank page. Allow the loopback
+  // aliases a same-host browser actually uses.
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   output: 'standalone',
   outputFileTracingIncludes: {
     '/*': [

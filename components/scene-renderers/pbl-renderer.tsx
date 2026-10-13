@@ -239,6 +239,7 @@ function PBLV2Container({
         typeof document !== 'undefined' &&
         createPortal(
           <PBLV2WorkspaceLayer
+            sceneId={sceneId}
             project={runtimeProject}
             onProjectChange={handleWorkspaceProjectChange}
             onReturnToHero={handleReturnToHero}
@@ -291,6 +292,7 @@ function measureHostRect(hostRef: RefObject<HTMLDivElement | null>): LayoutRect 
  *   shows the collapse (Minimize) control.
  */
 function PBLV2WorkspaceLayer({
+  sceneId,
   project,
   onProjectChange,
   onReturnToHero,
@@ -303,6 +305,7 @@ function PBLV2WorkspaceLayer({
   onExpandedChange,
   onAutoExpandConsumed,
 }: {
+  readonly sceneId: string;
   readonly project: PBLProjectV2;
   readonly onProjectChange: (next: PBLProjectV2) => void;
   readonly onReturnToHero: () => void;
@@ -526,6 +529,7 @@ function PBLV2WorkspaceLayer({
             />
           ) : (
             <PBLV2Workspace
+              sceneId={sceneId}
               project={project}
               onProjectChange={onProjectChange}
               onReturnToHero={onReturnToHero}

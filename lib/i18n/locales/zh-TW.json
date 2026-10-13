@@ -863,8 +863,16 @@
         "exitFullscreen": "退出全螢幕工作台",
         "exitNativeFullscreen": "離開全螢幕",
         "returnToHero": "返回專案主頁",
+
         "breadcrumbOverview": "專案首頁",
-        "breadcrumbCurrent": "工作台"
+        "breadcrumbCurrent": "工作台",
+        "enrollRepo": "開通倉庫",
+        "enrolling": "開通中…",
+        "copyCloneUrl": "複製倉庫位址",
+        "copied": "已複製",
+        "openRepo": "開啟倉庫",
+        "repoTokenTail": "憑證尾號 {{tail}}",
+        "enrollFailed": "開通失敗：{{error}}"
       },
       "chat": {
         "placeholder": "和 {{name}} 聊聊你的進度...",
@@ -971,7 +979,14 @@
         "fileRead": "已讀取：{{filename}} · {{size}} KB",
         "submittedBadge": "已提交（{{count}}）",
         "receiptFile": "檔案：{{filename}}",
-        "receiptTemplate": "已提交本任務產出（{{label}}）。"
+        "receiptTemplate": "已提交本任務產出（{{label}}）。",
+        "gitTab": "提交評判",
+        "shaPlaceholder": "輸入提交 SHA，例如 7f3a9c2",
+        "previewDiff": "預覽 diff",
+        "previewLoading": "拉取 diff…",
+        "shaInvalid": "SHA 格式不正確（應為 7~64 位十六進位字元）。",
+        "repoRequired": "請先在頂部「開通倉庫」後再提交評判。",
+        "gitSubmitSummary": "Git 提交 {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "這個專案還沒有配置 AI 角色。"

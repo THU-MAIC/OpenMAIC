@@ -34,6 +34,7 @@ import {
   Download,
   Eye,
   FileText,
+  GitBranch,
   Image as ImageIcon,
   Lightbulb,
   Paperclip,
@@ -45,6 +46,7 @@ import {
   addSubmission,
   listSubmissionsForMicrotask,
 } from '@/lib/pbl/v2/operations/runtime/submission';
+import { fetchCommitDiff, type CommitDiff } from '@/lib/pbl/v2/api/git-client';
 import { findModelById } from '@/lib/ai/model-aliases';
 import {
   TEXT_PDF_IMAGE_ACCEPT,
@@ -60,6 +62,7 @@ import type {
   PBLSubmission,
 } from '@/lib/pbl/v2/types';
 import { trimmedPBLText } from '@/lib/pbl/v2/readers';
+import { cn } from '@/lib/utils/cn';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { applyInstructorEvent } from './apply-instructor-event';
 import { PROVIDERS } from '@/lib/ai/providers';
@@ -898,16 +901,17 @@ interface SubmissionModalProps {
   onSubmit: (args: {
     microtaskId: string;
     milestoneId: string;
-    kind: 'text' | 'file';
+    kind: 'text' | 'file' | 'git';
     content: string;
     filename?: string;
     mimeType?: string;
     fileUrl?: string;
+    gitConfig?: PBLSubmission['gitConfig'];
   }) => void;
 }
 
 function SubmissionModal({
-  project: _project,
+  project,
   microtaskId,
   milestoneId,
   microtaskTitle,
@@ -928,7 +932,7 @@ function SubmissionModal({
       PROVIDERS[classroomModel.registryId as keyof typeof PROVIDERS]?.models,
       classroomModel.modelId,
     )?.capabilities?.vision;
-  const [mode, setMode] = useState<'paste' | 'file'>('paste');
+  const [mode, setMode] = useState<'paste' | 'file' | 'git'>('paste');
   const [text, setText] = useState('');
   const [filename, setFilename] = useState('');
   const [mimeType, setMimeType] = useState('');
@@ -937,6 +941,12 @@ function SubmissionModal({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Git ("提交评判") mode state: the pinned SHA, its optional server-side diff
+  // preview, and the learner's fork full name (from project.gitConfig).
+  const fullName = project.gitConfig?.fullName;
+  const [sha, setSha] = useState('');
+  const [diffPreview, setDiffPreview] = useState<CommitDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Aborts the in-flight file parse / upload so it doesn't keep running in the
   // background after the modal is closed (which would otherwise occupy the
@@ -1134,7 +1144,60 @@ function SubmissionModal({
     setError(null);
   };
 
+  const handlePreviewDiff = useCallback(async () => {
+    const trimmedSha = sha.trim();
+    if (!fullName || !/^[0-9a-fA-F]{7,64}$/.test(trimmedSha)) return;
+    setDiffLoading(true);
+    setError(null);
+    setDiffPreview(null);
+    try {
+      setDiffPreview(await fetchCommitDiff(fullName, trimmedSha));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [fullName, sha]);
+
   const handleSubmit = () => {
+    if (mode === 'git') {
+      const trimmedSha = sha.trim();
+      if (!fullName) {
+        setError(t('pbl.v2.submission.repoRequired'));
+        return;
+      }
+      if (!/^[0-9a-fA-F]{7,64}$/.test(trimmedSha)) {
+        setError(t('pbl.v2.submission.shaInvalid'));
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      queueMicrotask(() => {
+        try {
+          onSubmit({
+            microtaskId,
+            milestoneId,
+            kind: 'git',
+            content: t('pbl.v2.submission.gitSubmitSummary', {
+              sha: trimmedSha.slice(0, 7),
+              repo: fullName,
+            }),
+            gitConfig: {
+              provider: 'gitea',
+              fullName,
+              ref: 'refs/heads/main',
+              commitSha: trimmedSha,
+              trigger: 'pinned',
+            },
+          });
+        } catch (e) {
+          setError(e instanceof Error ? e.message : String(e));
+          setBusy(false);
+        }
+      });
+      return;
+    }
+
     if (!text.trim() && !hasImage) {
       setError(t('pbl.v2.submission.contentRequired'));
       return;
@@ -1206,7 +1269,7 @@ function SubmissionModal({
         >
           {/* Mode toggle */}
           <div className="inline-flex rounded-full border border-cyan-100/[0.12] bg-slate-700/[0.26] p-1">
-            {(['paste', 'file'] as const).map((m) => (
+            {(['paste', 'file', 'git'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
@@ -1217,10 +1280,80 @@ function SubmissionModal({
                 }`}
                 type="button"
               >
-                {m === 'paste' ? t('pbl.v2.submission.pasteTab') : t('pbl.v2.submission.uploadTab')}
+                {m === 'paste'
+                  ? t('pbl.v2.submission.pasteTab')
+                  : m === 'file'
+                    ? t('pbl.v2.submission.uploadTab')
+                    : t('pbl.v2.submission.gitTab')}
               </button>
             ))}
           </div>
+
+          {mode === 'git' && (
+            <div className="space-y-2.5">
+              {!fullName && (
+                <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] leading-snug text-amber-200/90">
+                  {t('pbl.v2.submission.repoRequired')}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={sha}
+                  onChange={(e) => {
+                    setSha(e.target.value);
+                    setDiffPreview(null);
+                  }}
+                  placeholder={t('pbl.v2.submission.shaPlaceholder')}
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="min-w-0 flex-1 rounded-lg border border-cyan-100/[0.13] bg-slate-950/[0.26] px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/35"
+                />
+                <button
+                  type="button"
+                  onClick={handlePreviewDiff}
+                  disabled={diffLoading || !fullName || !/^[0-9a-fA-F]{7,64}$/.test(sha.trim())}
+                  className="shrink-0 rounded-lg border border-cyan-100/[0.12] bg-slate-700/[0.24] px-2.5 py-2 text-xs text-muted-foreground transition-colors hover:bg-slate-700/[0.34] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {diffLoading
+                    ? t('pbl.v2.submission.previewLoading')
+                    : t('pbl.v2.submission.previewDiff')}
+                </button>
+              </div>
+              {diffPreview && (
+                <div className="space-y-2 rounded-lg border border-cyan-100/[0.12] bg-slate-950/[0.26] p-3">
+                  {diffPreview.changedFiles.length > 0 && (
+                    <ul className="space-y-1">
+                      {diffPreview.changedFiles.slice(0, 20).map((f) => (
+                        <li
+                          key={f.filename}
+                          className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                        >
+                          <span
+                            className={cn(
+                              'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                              f.status === 'added'
+                                ? 'bg-emerald-400'
+                                : f.status === 'removed'
+                                  ? 'bg-red-400'
+                                  : 'bg-cyan-400',
+                            )}
+                          />
+                          <span className="truncate font-mono">{f.filename}</span>
+                          <span className="ml-auto shrink-0 text-[10px]">{f.status}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {diffPreview.diff && (
+                    <pre className="max-h-40 overflow-auto rounded-md bg-slate-950/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground/90">
+                      {diffPreview.diff}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {mode === 'file' && (
             <label className="block cursor-pointer rounded-xl border border-dashed border-cyan-100/[0.14] bg-slate-700/[0.24] px-4 py-4 text-center text-xs text-muted-foreground transition-colors hover:bg-slate-700/[0.34]">
@@ -1280,25 +1413,27 @@ function SubmissionModal({
             </div>
           )}
 
-          <textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              textFromFileRef.current = false;
-            }}
-            rows={mode === 'file' ? 8 : 10}
-            placeholder={
-              hasImage
-                ? t('pbl.v2.submission.imageCaptionPlaceholder')
-                : mode === 'file'
-                  ? t('pbl.v2.submission.uploadPlaceholder')
-                  : t('pbl.v2.submission.pastePlaceholder')
-            }
-            className={`w-full resize-y rounded-xl border border-cyan-100/[0.13] bg-slate-950/[0.26] p-3 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/35 ${
-              mode === 'paste' ? 'font-mono' : ''
-            }`}
-          />
+          {mode !== 'git' && (
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                textFromFileRef.current = false;
+              }}
+              rows={mode === 'file' ? 8 : 10}
+              placeholder={
+                hasImage
+                  ? t('pbl.v2.submission.imageCaptionPlaceholder')
+                  : mode === 'file'
+                    ? t('pbl.v2.submission.uploadPlaceholder')
+                    : t('pbl.v2.submission.pastePlaceholder')
+              }
+              className={`w-full resize-y rounded-xl border border-cyan-100/[0.13] bg-slate-950/[0.26] p-3 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/35 ${
+                mode === 'paste' ? 'font-mono' : ''
+              }`}
+            />
+          )}
 
           {error && (
             <div
@@ -1324,7 +1459,15 @@ function SubmissionModal({
                       className="rounded-lg border border-cyan-100/[0.12] bg-slate-700/[0.32] px-2.5 py-2 text-[11px] leading-snug"
                     >
                       <div className="flex items-center gap-1.5">
-                        {s.mimeType?.startsWith('image/') ? (
+                        {s.kind === 'git' ? (
+                          <>
+                            <GitBranch className="w-3 h-3 shrink-0 text-emerald-300" />
+                            <span className="min-w-0 truncate font-medium">
+                              {s.gitConfig?.commitSha?.slice(0, 7) ??
+                                t('pbl.v2.submission.textSubmission')}
+                            </span>
+                          </>
+                        ) : s.mimeType?.startsWith('image/') ? (
                           <>
                             <ImageIcon className="w-3 h-3 shrink-0 text-muted-foreground" />
                             <span className="min-w-0 truncate font-medium">
@@ -1383,8 +1526,9 @@ function SubmissionModal({
               parsing ||
               uploading ||
               submitLocked ||
-              (!text.trim() && !hasImage) ||
-              captionRequired
+              (mode === 'git'
+                ? !fullName || !/^[0-9a-fA-F]{7,64}$/.test(sha.trim())
+                : (!text.trim() && !hasImage) || captionRequired)
             }
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >

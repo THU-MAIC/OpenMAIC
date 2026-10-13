@@ -28,6 +28,7 @@ import { scenarioActGoalsScaffold } from './completion-stats';
 import { PBL_SIMULATOR_AGENT_ID } from '../kernel/progress';
 import { listEvaluationsForMicrotask } from './evaluation';
 import { summarizeLatestSubmissionForMicrotask } from './submission';
+import type { GitEvaluationEvidence } from './git-evaluation-evidence';
 import type { PBLMicrotask, PBLMilestone, PBLProjectV2, PBLScenarioConfig } from '../../types';
 import { trimmedPBLText } from '../../readers';
 
@@ -47,6 +48,41 @@ function laterMicrotasksInMilestone(milestone: PBLMilestone, task: PBLMicrotask)
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
+/** Render the git evidence section for a git-backed submission: the commit the
+ *  learner pinned, its changed files, the raw diff, and any domain static-check
+ *  findings. The static findings are the LLM's concrete, factual anchors — it
+ *  should cite them when they match a rubric dimension, not re-derive them. */
+function renderGitEvidenceSection(evidence: GitEvaluationEvidence): string {
+  const parts: string[] = [
+    `## Git submission evidence (commit to grade)`,
+    `- repo: ${evidence.fullName}`,
+    `- ref: ${evidence.ref}`,
+    `- commit: ${evidence.commitSha}`,
+  ];
+  if (evidence.commitMessage) {
+    parts.push(`- commit message: ${evidence.commitMessage.split('\n')[0]}`);
+  }
+  if (evidence.changedFiles.length) {
+    parts.push(`- changed files:\n${evidence.changedFiles.map((f) => `    - ${f}`).join('\n')}`);
+  }
+  if (evidence.staticFindings.length) {
+    const byLevel = (level: GitEvaluationEvidence['staticFindings'][number]['level']) =>
+      evidence.staticFindings.filter((f) => f.level === level);
+    const lines: string[] = ['- automated static-check findings:'];
+    for (const level of ['error', 'warn', 'info'] as const) {
+      for (const f of byLevel(level)) {
+        const file = f.file ? ` (${f.file})` : '';
+        lines.push(`    - [${level}] ${f.message}${file}`);
+      }
+    }
+    parts.push(lines.join('\n'));
+  } else {
+    parts.push('- automated static-check findings: none');
+  }
+  parts.push(`\n### Commit diff\n${evidence.diff || '(no diff available)'}`);
+  return parts.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Task evaluation
 // ---------------------------------------------------------------------------
@@ -63,7 +99,7 @@ export function buildTaskEvalPrompt(
   project: PBLProjectV2,
   milestone: PBLMilestone,
   task: PBLMicrotask,
-  opts: { recentChatSummary?: string } = {},
+  opts: { recentChatSummary?: string; gitEvidence?: GitEvaluationEvidence } = {},
 ): EvalPromptPair {
   const language = resolveLanguage(project);
   const system = loadPBLV2Prompt('evaluator-task', { language });
@@ -95,6 +131,9 @@ export function buildTaskEvalPrompt(
         submissions,
       ].join('\n'),
     );
+  }
+  if (opts.gitEvidence) {
+    sections.push(renderGitEvidenceSection(opts.gitEvidence));
   }
   const previousTaskEvals = listEvaluationsForMicrotask(project, task.id)
     .filter((e) => e.kind === 'task')
