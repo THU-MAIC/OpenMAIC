@@ -117,7 +117,13 @@ export function I18nProvider({
 
     // Earlier versions kept the choice only in localStorage, which the server
     // cannot read. Carry it over once; from then on the cookie decides.
-    if (cookieLocale()) return;
+    const cookie = cookieLocale();
+    if (cookie) {
+      // Write the cookie again so it doesn't expire under Safari's 7-day cap on
+      // script-set cookies, and keep the localStorage mirror (read by PBL) in step.
+      if (cookie === initialLocale) persistLocale(initialLocale);
+      return;
+    }
     let stored: Locale | undefined;
     try {
       stored = matchLocale(localStorage.getItem(LOCALE_COOKIE));

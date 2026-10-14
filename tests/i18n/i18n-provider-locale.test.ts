@@ -135,8 +135,9 @@ describe('I18nProvider initial locale', () => {
     expect(document.cookie).toContain('locale=zh-CN');
   });
 
-  it('lets a valid locale cookie win over a different localStorage value', async () => {
-    document.cookie = 'locale=en-US; Path=/';
+  it('lets a valid locale cookie win over a different localStorage value, and syncs it', async () => {
+    // Lowercase, so the assertion below only holds if the cookie is written again.
+    document.cookie = 'locale=en-us; Path=/';
     localStorage.setItem('locale', 'ko-KR');
     await act(async () => {
       root = createRoot(container);
@@ -145,6 +146,7 @@ describe('I18nProvider initial locale', () => {
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
     expect(container.querySelector('span')?.dataset.locale).toBe('en-US');
     expect(document.cookie).toBe('locale=en-US');
+    expect(localStorage.getItem('locale')).toBe('en-US');
   });
 });
 
