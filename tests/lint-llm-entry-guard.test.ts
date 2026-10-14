@@ -121,4 +121,29 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
     const choreographyErrors = await errorsFor('lib/choreography/probe.ts', reactImport);
     expect(choreographyErrors).toContain('no-restricted-imports');
   });
+
+  it('allows the shared geometry leaf without opening generation to app or browser packages', async () => {
+    for (const filePath of [
+      'packages/@openmaic/generation/src/probe.ts',
+      'packages/@openmaic/generation/test/probe.ts',
+    ]) {
+      for (const code of [
+        "import { validateSvgPath } from '@openmaic/geometry'; export { validateSvgPath };",
+        "export { validateSvgPath } from '@openmaic/geometry';",
+        "export * from '@openmaic/geometry';",
+      ])
+        expect(await errorsFor(filePath, code), filePath).toEqual([]);
+      for (const moduleName of [
+        'react',
+        '@openmaic/renderer',
+        '@openmaic/geometry-other',
+        '@/lib/export/svg-path-parser',
+      ]) {
+        expect(
+          await errorsFor(filePath, `import '${moduleName}'; export const a = 1;`),
+          `${filePath}: ${moduleName}`,
+        ).toContain('no-restricted-syntax');
+      }
+    }
+  });
 }, 120_000);
