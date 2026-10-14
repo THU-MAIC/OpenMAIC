@@ -35,10 +35,12 @@ async function exported(element: Slide['elements'][number] | null) {
   const blob = await buildPptxBlob([slide], [], 0.5625, 1000, 100, 1);
   const zip = await JSZip.loadAsync(await blob.arrayBuffer());
   const xml = await zip.file('ppt/slides/slide1.xml')!.async('string');
+  const relationships = (await zip.file('ppt/slides/_rels/slide1.xml.rels')?.async('string')) ?? '';
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   expect(document.getElementsByTagName('parsererror')).toHaveLength(0);
   return {
     xml,
+    relationships,
     nodes: Array.from(document.getElementsByTagName('p:sp'), (node) => node.outerHTML),
   };
 }
@@ -61,5 +63,21 @@ describe('PPTX shared bad-shape recovery', () => {
   });
   it('omits bad shapes without labels', async () => {
     expect((await exported({ ...shape, text: undefined })).nodes).toEqual([]);
+  });
+  it.each([
+    {
+      link: { type: 'web' as const, target: 'https://example.org/lesson' },
+      target: 'https://example.org/lesson',
+    },
+    { link: { type: 'slide' as const, target: 'slide' }, target: 'slide1.xml' },
+  ])('preserves $link.type links in recovered text', async ({ link, target }) => {
+    const bad = { ...shape, link };
+    const historical = await exported(bad);
+    const generated = await exported(shapeToTextFallback(bad));
+    expect(historical.nodes).toEqual(generated.nodes);
+    const linkId = historical.xml.match(/<a:hlinkClick r:id="(rId\d+)"/)?.[1];
+    expect(linkId).toBeDefined();
+    expect(historical.relationships).toContain(`Id="${linkId}"`);
+    expect(historical.relationships).toContain(`Target="${target}"`);
   });
 });

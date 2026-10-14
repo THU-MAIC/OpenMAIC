@@ -681,8 +681,25 @@ export async function buildPptxBlob(
         if (el.paragraphSpace !== undefined)
           options.paraSpaceBefore = el.paragraphSpace / ratioPx2Pt;
         if (el.vertical) options.vert = 'eaVert';
-
         pptxSlide.addText(textProps, options);
+        if (el.link) {
+          const hyperlink = getLinkOption(el.link, slideNumbers);
+          if (hyperlink) {
+            // PptxGenJS does not create a relationship for hyperlinks on a
+            // rich-text box's options (it emits rIdundefined). A transparent
+            // shape above the label also makes the whole element clickable.
+            pptxSlide.addShape('rect' as pptxgen.ShapeType, {
+              x: options.x,
+              y: options.y,
+              w: options.w,
+              h: options.h,
+              rotate: options.rotate,
+              fill: { color: '#ffffff', transparency: 100 },
+              line: { color: '#ffffff', transparency: 100 },
+              hyperlink,
+            });
+          }
+        }
       }
 
       // ── IMAGE ──
