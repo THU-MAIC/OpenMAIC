@@ -2,12 +2,18 @@
 
 import { useMemo, useRef, type ReactNode } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
-import { validateShapeGeometry, RENDER_PATH_LIMITS } from '@openmaic/geometry';
+import {
+  validateShapeGeometry,
+  RENDER_PATH_LIMITS,
+  shapeToTextFallback,
+  type PathValidation,
+} from '@openmaic/geometry';
 import { useElementOutline } from '../shared/useElementOutline';
 import { useElementShadow } from '../shared/useElementShadow';
 import { useElementFlip } from '../shared/useElementFlip';
 import { useElementFill } from '../shared/useElementFill';
 import { GradientDefs } from './GradientDefs';
+import { BaseTextElement } from '../text/BaseTextElement';
 import { PatternDefs } from './PatternDefs';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
@@ -32,19 +38,33 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
       ),
     [elementInfo.path, elementInfo.viewBox, elementInfo.width, elementInfo.height],
   );
-  // Keep the label's viewport usable even when old records contain bad sizes.
-  const width =
-    Number.isFinite(elementInfo.width) && elementInfo.width > 0
-      ? geometry.ok
-        ? elementInfo.width
-        : Math.min(elementInfo.width, 4000)
-      : 100;
-  const height =
-    Number.isFinite(elementInfo.height) && elementInfo.height > 0
-      ? geometry.ok
-        ? elementInfo.height
-        : Math.min(elementInfo.height, 4000)
-      : 100;
+  if (!geometry.ok) {
+    const fallback = shapeToTextFallback(elementInfo);
+    return fallback ? (
+      <div data-shape-geometry-error={geometry.error.code}>
+        <BaseTextElement
+          elementInfo={fallback}
+          renderContent={
+            renderLabel ? (_text, content) => renderLabel(elementInfo, content) : undefined
+          }
+        />
+      </div>
+    ) : null;
+  }
+  return (
+    <ValidShapeElement elementInfo={elementInfo} renderLabel={renderLabel} geometry={geometry} />
+  );
+}
+
+function ValidShapeElement({
+  elementInfo,
+  renderLabel,
+  geometry,
+}: BaseShapeElementProps & {
+  geometry: Extract<PathValidation, { ok: true }>;
+}) {
+  const width = elementInfo.width;
+  const height = elementInfo.height;
   const { fill } = useElementFill(elementInfo, 'base');
   const { outlineWidth, outlineColor, strokeDashArray } = useElementOutline(elementInfo.outline);
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
@@ -98,7 +118,6 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
   return (
     <div
       className="base-element-shape"
-      data-shape-geometry-error={geometry.ok ? undefined : geometry.error.code}
       style={{
         position: 'absolute',
         top: `${elementInfo.top}px`,
@@ -137,9 +156,9 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
             // exported PNG. Fix: grow the SVG viewport to contain the full path
             // bbox and offset it back, so the geometry renders in the exact same
             // place but nothing falls outside the captured viewport.
-            const sx = geometry.ok ? elementInfo.width / elementInfo.viewBox[0] : 1;
-            const sy = geometry.ok ? elementInfo.height / elementInfo.viewBox[1] : 1;
-            const bbox = geometry.ok ? geometry.bounds : null;
+            const sx = elementInfo.width / elementInfo.viewBox[0];
+            const sy = elementInfo.height / elementInfo.viewBox[1];
+            const bbox = geometry.bounds;
             const CAP = 4000; // guard against pathological coords blowing up the SVG
             let padL = 0;
             let padT = 0;
@@ -183,7 +202,7 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
                     vectorEffect="non-scaling-stroke"
                     strokeLinecap="butt"
                     strokeMiterlimit="8"
-                    d={geometry.ok ? elementInfo.path : ''}
+                    d={elementInfo.path}
                     fill={fill}
                     stroke={outlineColor}
                     strokeWidth={outlineWidth}

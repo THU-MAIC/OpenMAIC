@@ -15,7 +15,37 @@ import {
 } from './scene-fixtures.js';
 
 describe('scene generation primitives', () => {
-  it('drops invalid shapes including their labels while retaining valid neighboring elements', async () => {
+  it('recovers malformed required geometry types before normalization can discard a valid label', async () => {
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'shape',
+            left: 20,
+            top: 30,
+            width: 100,
+            height: 80,
+            path: 123,
+            viewBox: '0 0 100 80',
+            text: { content: '<p>Preserve label</p>' },
+          },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({
+      elements: [
+        {
+          type: 'text',
+          content: '<p>Preserve label</p>',
+          left: 20,
+          top: 30,
+          width: 100,
+          height: 80,
+        },
+      ],
+    });
+  });
+  it('recovers invalid shapes as bounded text while retaining valid neighboring elements', async () => {
     const shape = {
       type: 'shape',
       left: 0,
@@ -33,6 +63,9 @@ describe('scene generation primitives', () => {
           {
             ...shape,
             path: 'M0 0 L1e999 0',
+            rotate: 45,
+            groupId: 'labels',
+            opacity: 0,
             text: {
               content: '<p>Keep this explanation</p>',
               align: 'middle',
@@ -44,13 +77,13 @@ describe('scene generation primitives', () => {
             ...shape,
             width: 1e100,
             path: 'M0 0 L100 0 L50 100 Z',
-            text: { content: '<p>Do not bypass size limits</p>' },
+            text: { content: '<p>Recover within size limits</p>' },
           },
           {
             ...shape,
             viewBox: [0, 0],
             path: 'M0 0 L100 0 L50 100 Z',
-            text: { content: '<p>Do not retain an invalid shape label</p>' },
+            text: { content: '<p>Recover a zero-viewBox label</p>' },
           },
           { ...shape, path: 'M0 0 L100 0 L50 100 Z' },
           { type: 'text', left: 0, top: 120, width: 100, height: 40, content: '<p>Valid text</p>' },
@@ -59,6 +92,16 @@ describe('scene generation primitives', () => {
     );
     expect(content).toMatchObject({
       elements: [
+        {
+          type: 'text',
+          content: '<p>Keep this explanation</p>',
+          vAlign: 'middle',
+          rotate: 45,
+          groupId: 'labels',
+          opacity: 0,
+        },
+        { type: 'text', content: '<p>Recover within size limits</p>', width: 4000 },
+        { type: 'text', content: '<p>Recover a zero-viewBox label</p>' },
         { type: 'shape', path: 'M0 0 L100 0 L50 100 Z' },
         { type: 'text', content: '<p>Valid text</p>' },
       ],

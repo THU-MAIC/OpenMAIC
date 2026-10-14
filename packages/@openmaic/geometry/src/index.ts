@@ -1,5 +1,6 @@
 import { SVGPathData, SVGPathDataTransformer } from 'svg-pathdata';
 import type { PPTShapeElement } from '@openmaic/dsl';
+export { shapeToTextFallback } from './shape-text-fallback.js';
 
 export interface PathLimits {
   /** UTF-16 code units, checked before tokenization or parsing. */

@@ -671,7 +671,13 @@ importers:
       svg-pathdata:
         specifier: ^8.0.0
         version: 8.0.0
+      tinycolor2:
+        specifier: ^1.6.0
+        version: 1.6.0
     devDependencies:
+      '@types/tinycolor2':
+        specifier: ^1.4.6
+        version: 1.4.6
       typescript:
         specifier: ^5
         version: 5.9.3

@@ -57,7 +57,8 @@ describe('SDK historical shape rendering (build renderer before running)', () =>
     async (path) => {
       const html = await renderInWorker(path);
       expect(html).toContain('data-shape-geometry-error=');
-      expect(html).toContain('d=""');
+      expect(html).toContain('base-element-text');
+      expect(html).not.toContain('<svg');
       expect(html).toContain('Preserved label');
       expect(html).not.toMatch(/scale\([^)]*(?:NaN|Infinity)/);
     },
@@ -74,7 +75,8 @@ describe('SDK historical shape rendering (build renderer before running)', () =>
     'uses finite label dimensions for historical width %s',
     async (width) => {
       const html = await renderInWorker('M0 0 L100 100', { width });
-      expect(html).toContain('d=""');
+      expect(html).toContain('base-element-text');
+      expect(html).not.toContain('<svg');
       expect(html).toContain('Preserved label');
       expect(html).not.toMatch(/Infinity|NaN/);
     },
@@ -82,7 +84,8 @@ describe('SDK historical shape rendering (build renderer before running)', () =>
 
   it('omits invalid geometry when historical viewBox is zero', async () => {
     const html = await renderInWorker('M0 0 L100 100', { viewBox: [0, 0] });
-    expect(html).toContain('d=""');
+    expect(html).toContain('base-element-text');
+    expect(html).not.toContain('<svg');
     expect(html).toContain('Preserved label');
     expect(html).not.toContain('Infinity');
   });

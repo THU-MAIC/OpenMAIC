@@ -5,13 +5,14 @@
  * from scene outlines.
  */
 
-import { validateShapeGeometry } from '@openmaic/geometry';
+import { validateShapeGeometry, shapeToTextFallback } from '@openmaic/geometry';
 import { nanoid } from 'nanoid';
 import katex from 'katex';
 import type {
   Action,
   PBLProject,
   PPTElement,
+  PPTShapeElement,
   QuizQuestion,
   SlideBackground,
   WidgetType,
@@ -501,7 +502,8 @@ function fixElementDefaults(
       // 1. Repair: a JSON `null` from the model means "absent" — strip nulls so
       //    normalize treats the field as missing and fills/derives it, instead
       //    of failing on a wrong-typed null (`start: null`, `text: null`, …).
-      // 2. Drop: if normalization still throws, discard the element. Keeping
+      // 2. Recover shape labels with the shared bounded text projection; discard
+      //    other elements when normalization still fails. Keeping
       //    the raw element would hand the malformed payload to consumers that
       //    read it unguarded (getElementRange / BaseLineElement / the PPTX
       //    exporter index straight into `start[0]`), crashing playback or
@@ -512,9 +514,12 @@ function fixElementDefaults(
         normalized = normalizeElement(stripNulls(el));
       } catch (err) {
         log.warn(
-          `Dropping malformed generated element: ${err instanceof Error ? err.message : String(err)}`,
+          `Malformed generated element: ${err instanceof Error ? err.message : String(err)}`,
         );
-        return null;
+        // The same recovery also handles malformed required path/viewBox types.
+        return el && typeof el === 'object' && el.type === 'shape'
+          ? shapeToTextFallback(el as unknown as PPTShapeElement)
+          : null;
       }
 
       if (normalized.type === 'shape') {
@@ -522,9 +527,9 @@ function fixElementDefaults(
         if (!validation.ok) {
           const { field, position, message } = validation.error;
           log.warn(
-            `Dropping invalid generated shape: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
+            `Invalid generated shape; using text fallback when a label exists: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
           );
-          return null;
+          return shapeToTextFallback(normalized);
         }
       }
 
@@ -841,10 +846,11 @@ async function generateSlideContent(
   const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
-    // Shape rotation is part of the model-facing geometry contract. Preserve
-    // finite angles while keeping the legacy zero default for other elements.
+    // Preserve shape and text rotation, including recovered shape labels.
     rotate:
-      el.type === 'shape' && typeof el.rotate === 'number' && Number.isFinite(el.rotate)
+      (el.type === 'shape' || el.type === 'text') &&
+      typeof el.rotate === 'number' &&
+      Number.isFinite(el.rotate)
         ? el.rotate
         : 0,
   })) as PPTElement[];

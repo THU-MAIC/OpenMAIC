@@ -25,11 +25,13 @@
   },
   "dependencies": {
     "@openmaic/dsl": "workspace:^",
-    "svg-pathdata": "^8.0.0"
+    "svg-pathdata": "^8.0.0",
+    "tinycolor2": "^1.6.0"
   },
   "devDependencies": {
     "typescript": "^5",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "@types/tinycolor2": "^1.4.6"
   },
   "license": "MIT",
   "repository": {
