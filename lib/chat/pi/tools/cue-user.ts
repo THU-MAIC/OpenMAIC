@@ -6,29 +6,17 @@ import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 const CueUserParams = Type.Object({
   prompt: Type.Optional(
     Type.String({
-      description:
-        'A concise, learner-facing question that makes it clear what response is expected.',
+      description: 'Optional short prompt for handing the turn back to the user.',
       maxLength: 240,
     }),
   ),
   options: Type.Optional(
-    Type.Array(
-      Type.Object({
-        label: Type.String({ minLength: 1, maxLength: 60 }),
-        action: Type.Optional(
-          Type.Literal('end_discussion', {
-            description:
-              'Mark only the choice that returns to the lesson; the client uses Stop Discussion and leaves playback paused.',
-          }),
-        ),
-      }),
-      {
-        description:
-          'Two to four short, mutually exclusive replies when the learner can answer with one tap. Omit for open-ended questions.',
-        minItems: 2,
-        maxItems: 4,
-      },
-    ),
+    Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
+      description:
+        'Two to four short, mutually exclusive suggested replies. Omit for open-ended questions.',
+      minItems: 2,
+      maxItems: 4,
+    }),
   ),
 });
 

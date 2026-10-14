@@ -1,10 +1,8 @@
 'use client';
 
-import type { CueUserOption } from '@/lib/types/chat';
-
 import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
 
-import { useState, useCallback, useRef, useEffect, type SetStateAction } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   nextChatUpdatedAt,
   withChatSegmentReveal,
@@ -31,7 +29,6 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { classroomChatUsable, loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
-import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
 import { runAgentLoop, type AgentLoopStoreState } from '@/lib/chat/agent-loop';
 import { ActionEngine } from '@/lib/action/engine';
@@ -72,16 +69,13 @@ export function takeSoftCloseRegistration(
 
 /** Context used by playback cleanup and optional lecture auto-resume. */
 export interface SessionCleanupPayload {
-  /** Absent when an initial send is stopped before its session is created. */
-  sessionId?: string;
+  sessionId: string;
   endReason?: string;
   source: CleanupSource;
 }
 
 export interface EndSessionOptions {
   source?: CleanupSource;
-  /** Component teardown should release resources without completing a durable learner park. */
-  preserveWaitingUser?: boolean;
 }
 
 export const MANUAL_STOP_END_OPTIONS: EndSessionOptions = { source: 'manual_stop' };
@@ -134,7 +128,7 @@ interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (fromAgentId?: string, prompt?: string, options?: CueUserOption[]) => void;
+  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
   /** Called immediately when the server semantically closes a QA/Discussion session. */
@@ -292,35 +286,8 @@ function isLiveSessionType(session: Pick<ChatSession, 'type'>): boolean {
 
 export function isOpenLiveSession(session: Pick<ChatSession, 'type' | 'status'>): boolean {
   return (
-    isLiveSessionType(session) &&
-    (session.status === 'active' ||
-      session.status === 'waiting-user' ||
-      session.status === 'soft-closing')
+    isLiveSessionType(session) && (session.status === 'active' || session.status === 'soft-closing')
   );
-}
-
-export function parkSessionForUser(
-  session: ChatSession,
-  fromAgentId?: string,
-  prompt?: string,
-  options?: CueUserOption[],
-  now = Date.now(),
-): ChatSession {
-  const normalizedPrompt = prompt?.trim().slice(0, 240) || undefined;
-  const normalizedOptions = normalizeCueUserOptions(options);
-  return {
-    ...session,
-    status: 'waiting-user',
-    cueUser: {
-      ...(fromAgentId ? { fromAgentId } : {}),
-      ...(normalizedPrompt ? { prompt: normalizedPrompt } : {}),
-      ...(normalizedOptions && normalizedOptions.length >= 2 ? { options: normalizedOptions } : {}),
-      parkedAt: now,
-    },
-    endReason: undefined,
-    softCloseDeadline: undefined,
-    updatedAt: nextChatUpdatedAt(session, now),
-  };
 }
 
 export function resumeSoftClosingSessionForFollowUp(
@@ -332,7 +299,6 @@ export function resumeSoftClosingSessionForFollowUp(
     ...session,
     messages: [...session.messages, userMessage],
     status: 'active' as SessionStatus,
-    cueUser: undefined,
     endReason: undefined,
     softCloseDeadline: undefined,
     updatedAt: nextChatUpdatedAt(session, now),
@@ -347,7 +313,6 @@ export function resumeSoftClosingSessionWithoutMessage(
   return {
     ...session,
     status: 'active',
-    cueUser: undefined,
     endReason: undefined,
     softCloseDeadline: undefined,
     updatedAt: nextChatUpdatedAt(session, now),
@@ -608,20 +573,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const currentSceneId = useStageStore((s) => s.currentSceneId);
   const currentSceneIdRef = useRef(currentSceneId);
 
-  const [sessions, setSessionsState] = useState<ChatSession[]>(() => {
-    // Restore sessions loaded by the stage store from server persistence.
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    // Restore sessions from store (loaded from IndexedDB)
     const stored = useStageStore.getState().chats;
     return normalizeStoredSessionsForRestore(stored);
   });
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
-    const restored = normalizeStoredSessionsForRestore(useStageStore.getState().chats);
-    return restored.find((session) => session.status === 'waiting-user')?.id ?? null;
-  });
-  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => {
-    const restored = normalizeStoredSessionsForRestore(useStageStore.getState().chats);
-    const waitingId = restored.find((session) => session.status === 'waiting-user')?.id;
-    return waitingId ? new Set([waitingId]) : new Set();
-  });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(new Set());
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const streamingSessionIdRef = useRef<string | null>(null);
@@ -630,43 +588,39 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     new Map(),
   );
   const sessionsRef = useRef<ChatSession[]>(sessions);
-  // The ref is authoritative even before React commits a render. In particular,
-  // claiming a park and accepting a reply must happen before any async work.
-  const setSessions = useCallback((update: SetStateAction<ChatSession[]>) => {
-    const next = typeof update === 'function' ? update(sessionsRef.current) : update;
-    sessionsRef.current = next;
-    setSessionsState(next);
-  }, []);
-  const sendPreparationRef = useRef<{
-    sessionId: string | null;
-    inputKey: string;
-    ready: Promise<string | null>;
-    resolveReady: (sessionId: string | null) => void;
-  } | null>(null);
   const previousLiveSessionRef = useRef<PreviousLiveSessionContext | undefined>(undefined);
   const piSessionBoundariesRef = useRef<Map<string, PiSessionBoundaryContext>>(new Map());
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  // Per-loop-iteration state — tracks done event data and cue_user for the agent loop
+  const loopDoneDataRef = useRef<{
+    directorState?: DirectorState;
+    totalAgents: number;
+    agentHadContent?: boolean;
+    cueUserReceived: boolean;
+    sessionClosed?: boolean;
+    endReason?: string;
+  } | null>(null);
 
   // Reload sessions when stage changes (course switch)
   // This synchronous setState is intentional: it resets derived state from
-  // the persisted stage store when the stageId dependency changes.
+  // an external store (IndexedDB) when the stageId dependency changes.
   useEffect(() => {
     if (stageId === stageIdRef.current) return;
-    sendPreparationRef.current?.resolveReady(null);
-    sendPreparationRef.current = null;
     stageIdRef.current = stageId;
     softCloseRegistrationsRef.current.forEach(({ timer }) => clearTimeout(timer));
     softCloseRegistrationsRef.current.clear();
     softCloseLifecycleRef.current.clear();
     // Stage changed — reload sessions from store (already populated by loadFromStorage)
     const stored = useStageStore.getState().chats;
-    const restored = normalizeStoredSessionsForRestore(stored);
-    const waitingId = restored.find((session) => session.status === 'waiting-user')?.id;
-    setSessions(restored);
-    setActiveSessionId(waitingId ?? null);
-    setExpandedSessionIds(waitingId ? new Set([waitingId]) : new Set());
+    setSessions(normalizeStoredSessionsForRestore(stored));
+    setActiveSessionId(null);
+    setExpandedSessionIds(new Set());
     previousLiveSessionRef.current = undefined;
     piSessionBoundariesRef.current.clear();
-  }, [stageId, setSessions]);
+  }, [stageId]);
 
   useEffect(() => {
     if (currentSceneId === currentSceneIdRef.current) return;
@@ -722,8 +676,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     const softCloseRegistrations = softCloseRegistrationsRef.current;
     const softCloseLifecycle = softCloseLifecycleRef.current;
     return () => {
-      sendPreparationRef.current?.resolveReady(null);
-      sendPreparationRef.current = null;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
@@ -773,14 +725,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 updatedAt: Date.now(),
                 endReason: data?.endReason ?? s.endReason,
                 softCloseDeadline: undefined,
-                cueUser: undefined,
                 directorState: data?.directorState ?? s.directorState,
               }
             : s,
         ),
       );
     },
-    [setSessions],
+    [],
   );
 
   const finishSoftCloseTimeout = useCallback(
@@ -810,23 +761,20 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     [claimSoftCloseRegistration, markSessionCompleted],
   );
 
-  const storeDirectorState = useCallback(
-    (sessionId: string, directorState?: DirectorState) => {
-      if (!directorState) return;
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === sessionId
-            ? {
-                ...s,
-                directorState,
-                updatedAt: nextChatUpdatedAt(s),
-              }
-            : s,
-        ),
-      );
-    },
-    [setSessions],
-  );
+  const storeDirectorState = useCallback((sessionId: string, directorState?: DirectorState) => {
+    if (!directorState) return;
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              directorState,
+              updatedAt: nextChatUpdatedAt(s),
+            }
+          : s,
+      ),
+    );
+  }, []);
 
   const enterSoftClosing = useCallback(
     (sessionId: string, data: { endReason?: string; directorState?: DirectorState }) => {
@@ -850,7 +798,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 updatedAt: Date.now(),
                 endReason: data.endReason ?? s.endReason,
                 softCloseDeadline: deadline,
-                cueUser: undefined,
                 directorState: data.directorState ?? s.directorState,
               }
             : s,
@@ -869,7 +816,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         directorState: data.directorState,
       });
     },
-    [clearSoftCloseRegistration, finishSoftCloseTimeout, setSessions],
+    [clearSoftCloseRegistration, finishSoftCloseTimeout],
   );
 
   useEffect(() => {
@@ -919,7 +866,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 ...s,
                 status: 'error' as SessionStatus,
                 softCloseDeadline: undefined,
-                cueUser: undefined,
                 updatedAt: nextChatUpdatedAt(s, now),
                 messages: [
                   ...s.messages,
@@ -948,7 +894,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         onLiveSpeechRef.current?.(null, null);
       }
     },
-    [retireActiveLiveRequest, setSessions],
+    [retireActiveLiveRequest],
   );
 
   // Tracks the single message ID per lecture session
@@ -1127,23 +1073,39 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             onThinkingRef.current?.(data);
           },
 
-          onCueUser(fromAgentId?: string, prompt?: string, options?: CueUserOption[]) {
-            const now = Date.now();
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionId
-                  ? parkSessionForUser(session, fromAgentId, prompt, options, now)
-                  : session,
-              ),
-            );
-            setActiveSessionId(sessionId);
-            setExpandedSessionIds((prev) => new Set([...prev, sessionId]));
-            onCueUserRef.current?.(fromAgentId, prompt, options);
+          onCueUser(fromAgentId?: string, prompt?: string, options?: string[]) {
+            // Track cue_user for agent loop
+            if (loopDoneDataRef.current) {
+              loopDoneDataRef.current.cueUserReceived = true;
+            } else {
+              loopDoneDataRef.current = {
+                totalAgents: 0,
+                cueUserReceived: true,
+              };
+            }
+            if (options) onCueUserRef.current?.(fromAgentId, prompt, options);
+            else onCueUserRef.current?.(fromAgentId, prompt);
           },
 
-          onDone() {
-            // Context is saved when the SSE done event arrives. A cue may be
-            // revealed one pacing tick before this buffered item is drained.
+          onDone(data: {
+            totalActions: number;
+            totalAgents: number;
+            agentHadContent?: boolean;
+            cueUserReceived?: boolean;
+            sessionClosed?: boolean;
+            endReason?: string;
+            directorState?: DirectorState;
+          }) {
+            // Store done data for agent loop consumption
+            loopDoneDataRef.current = {
+              directorState: data.directorState,
+              totalAgents: data.totalAgents,
+              agentHadContent: data.agentHadContent ?? true,
+              cueUserReceived:
+                data.cueUserReceived ?? loopDoneDataRef.current?.cueUserReceived ?? false,
+              sessionClosed: data.sessionClosed,
+              endReason: data.endReason,
+            };
             // Session completion is handled by runAgentLoopFn, not here
             // (Lectures don't use the agent loop and complete via endSession)
           },
@@ -1179,18 +1141,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       return buffer;
     },
-    [setSessions],
+    [],
   );
 
   const createStatelessStreamConsumer = useCallback(
     (sessionId: string, controller: AbortController, sessionType: SessionType) => {
       let currentBuffer: StreamBuffer | null = null;
       let currentMessageId: string | null = null;
-      let cueUserReceived = false;
-      let doneData: Extract<StatelessEvent, { type: 'done' }>['data'] | null = null;
 
       const onEvent = (event: StatelessEvent) => {
-        if (controller.signal.aborted) return;
         if (event.type === 'whiteboard') {
           consumePiWhiteboardEvent(event.data, controller.signal);
           return;
@@ -1242,12 +1201,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             currentBuffer.pushThinking(event.data);
             break;
           case 'cue_user':
-            cueUserReceived = true;
             currentBuffer.pushCueUser(event.data);
             break;
           case 'done':
-            doneData = event.data;
-            storeDirectorState(sessionId, event.data.directorState);
             currentBuffer.pushDone(event.data);
             break;
           case 'error':
@@ -1268,12 +1224,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
         currentBuffer = null;
 
+        const doneData = loopDoneDataRef.current;
+        loopDoneDataRef.current = null;
+
         if (!doneData) return null;
         return {
           directorState: doneData.directorState,
           totalAgents: doneData.totalAgents,
           agentHadContent: doneData.agentHadContent ?? true,
-          cueUserReceived: doneData.cueUserReceived ?? cueUserReceived,
+          cueUserReceived: doneData.cueUserReceived,
           sessionClosed: doneData.sessionClosed,
           endReason: doneData.endReason,
         };
@@ -1281,7 +1240,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       return { onEvent, onIterationEnd };
     },
-    [createBufferForSession, storeDirectorState],
+    [createBufferForSession],
   );
 
   /**
@@ -1385,7 +1344,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                       ...s,
                       status: 'completed' as SessionStatus,
                       updatedAt: nextChatUpdatedAt(s),
-                      cueUser: undefined,
                     }
                   : s,
               ),
@@ -1414,7 +1372,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       storeDirectorState,
       t,
       getFirstPiRequestContext,
-      setSessions,
     ],
   );
 
@@ -1451,7 +1408,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       log.info(`[ChatArea] Created session: ${sessionId} (${type})`);
       return sessionId;
     },
-    [registerFirstPiRequest, setSessions],
+    [registerFirstPiRequest],
   );
 
   /**
@@ -1461,10 +1418,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const endSession = useCallback(
     async (sessionId: string, options: EndSessionOptions = {}): Promise<void> => {
       log.info(`[ChatArea] Ending session: ${sessionId}`);
-      if (sendPreparationRef.current?.sessionId === sessionId) {
-        sendPreparationRef.current.resolveReady(null);
-        sendPreparationRef.current = null;
-      }
       clearSoftCloseRegistration(sessionId);
       softCloseLifecycleRef.current.set(sessionId, 'completed');
       livePausedRef.current = false;
@@ -1536,7 +1489,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               ...withChatSessionStatus(s, 'completed'),
               messages,
               softCloseDeadline: undefined,
-              cueUser: undefined,
             };
           }),
         );
@@ -1550,7 +1502,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               ? {
                   ...withChatSessionStatus(s, 'completed'),
                   softCloseDeadline: undefined,
-                  cueUser: undefined,
                 }
               : s,
           ),
@@ -1561,7 +1512,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         setActiveSessionId(null);
       }
     },
-    [activeSessionId, clearSoftCloseRegistration, retireActiveLiveRequest, setSessions],
+    [activeSessionId, clearSoftCloseRegistration, retireActiveLiveRequest],
   );
 
   const continueSoftClosingSession = useCallback(
@@ -1583,7 +1534,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       );
       return true;
     },
-    [claimSoftCloseRegistration, setSessions],
+    [claimSoftCloseRegistration],
   );
 
   const confirmSoftClosingSession = useCallback(
@@ -1609,21 +1560,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    */
   const endActiveSession = useCallback(
     async (options: EndSessionOptions = {}): Promise<void> => {
-      const preparation = sendPreparationRef.current;
-      preparation?.resolveReady(null);
-      sendPreparationRef.current = null;
-      const active = sessionsRef.current.find(
-        (session) =>
-          isOpenLiveSession(session) &&
-          !(options.preserveWaitingUser && session.status === 'waiting-user'),
-      );
+      const active = sessionsRef.current.find(isOpenLiveSession);
       if (active) {
         await endSession(active.id, options);
-      } else if (preparation && options.source) {
-        onStopSessionRef.current?.({
-          ...(preparation.sessionId ? { sessionId: preparation.sessionId } : {}),
-          source: options.source,
-        });
       }
     },
     [endSession],
@@ -1701,7 +1640,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       log.info(`[ChatArea] Soft-paused session: ${sessionId}`);
     },
-    [retireActiveLiveRequest, setSessions],
+    [retireActiveLiveRequest],
   );
 
   /**
@@ -1794,250 +1733,185 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const sendMessage = useCallback(
     async (content: string, options: ChatMessageSendOptions = {}): Promise<void> => {
       let sessionId = activeSessionId;
-      const stageAtSend = stageIdRef.current;
-      const inputKey = JSON.stringify([content, options.elementReference]);
-      // Distinct submissions wait for preparation, keeping the session created
-      // by the preceding send. Repeated clicks on the same input are ignored.
-      while (sendPreparationRef.current) {
-        const pending = sendPreparationRef.current;
-        if (pending.inputKey === inputKey) return;
-        sessionId = await pending.ready;
-        if (
-          !sessionId ||
-          stageIdRef.current !== stageAtSend ||
-          sessionsRef.current.find((session) => session.id === sessionId)?.status === 'completed'
-        )
-          return;
-      }
-      let resolveReady!: (sessionId: string | null) => void;
-      const ready = new Promise<string | null>((resolve) => {
-        resolveReady = resolve;
-      });
-      const preparation = { sessionId, inputKey, ready, resolveReady };
-      sendPreparationRef.current = preparation;
-      try {
-        const parkedBeforeSend = sessionsRef.current.find(
-          (session) => session.id === sessionId && session.status === 'waiting-user',
-        );
-        let claimedUpdatedAt: number | undefined;
-        if (parkedBeforeSend) {
+
+      // Interrupt active generation: abort stream and append "..." to the last agent message
+      if (abortControllerRef.current) {
+        const interruptedSessionId = retireActiveLiveRequest(sessionId);
+        const interruptedMessageSessionId = interruptedSessionId ?? sessionId;
+
+        if (interruptedMessageSessionId) {
           setSessions((prev) =>
-            prev.map((session) => {
-              if (session.id !== parkedBeforeSend.id) return session;
-              const claimed = { ...withChatSessionStatus(session, 'active'), cueUser: undefined };
-              claimedUpdatedAt = claimed.updatedAt;
-              return claimed;
+            prev.map((s) => {
+              if (s.id !== interruptedMessageSessionId) return s;
+              const messages = [...s.messages];
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === 'assistant') {
+                  const parts = [...messages[i].parts];
+                  for (let j = parts.length - 1; j >= 0; j--) {
+                    if (parts[j].type === 'text') {
+                      const textPart = parts[j] as {
+                        type: 'text';
+                        text: string;
+                      };
+                      parts[j] = {
+                        type: 'text',
+                        text: (textPart.text || '') + '...',
+                      } as UIMessage<ChatMessageMetadata>['parts'][number];
+                      messages[i] = { ...messages[i], parts };
+                      return { ...s, messages, updatedAt: nextChatUpdatedAt(s) };
+                    }
+                  }
+                  break;
+                }
+              }
+              return s;
             }),
           );
         }
+      }
 
-        // Interrupt active generation: abort stream and append "..." to the last agent message
-        if (abortControllerRef.current) {
-          const interruptedSessionId = retireActiveLiveRequest(sessionId);
-          const interruptedMessageSessionId = interruptedSessionId ?? sessionId;
+      // An interrupted action may still be finishing a delayed state mutation.
+      // Capture the next request only after that mutation has settled.
+      await pendingRetirementRef.current;
 
-          if (interruptedMessageSessionId && interruptedMessageSessionId !== parkedBeforeSend?.id) {
-            setSessions((prev) =>
-              prev.map((s) => {
-                if (s.id !== interruptedMessageSessionId) return s;
-                const messages = [...s.messages];
-                for (let i = messages.length - 1; i >= 0; i--) {
-                  if (messages[i].role === 'user') break;
-                  if (messages[i].role === 'assistant') {
-                    const parts = [...messages[i].parts];
-                    for (let j = parts.length - 1; j >= 0; j--) {
-                      if (parts[j].type === 'text') {
-                        const textPart = parts[j] as {
-                          type: 'text';
-                          text: string;
-                        };
-                        parts[j] = {
-                          type: 'text',
-                          text: (textPart.text || '') + '...',
-                        } as UIMessage<ChatMessageMetadata>['parts'][number];
-                        messages[i] = { ...messages[i], parts };
-                        return { ...s, messages, updatedAt: nextChatUpdatedAt(s) };
-                      }
-                    }
-                    break;
-                  }
-                }
-                return s;
-              }),
-            );
+      // Validate model configuration before sending: chat resolves the
+      // workspace's classroom slot (assigned there or inherited).
+      if (!classroomChatUsable(await loadModelCapabilities())) {
+        toast.error(t('settings.modelNotConfigured'));
+        return;
+      }
+
+      // Create a new session when there's no active QA session to append to.
+      // A completed session should NOT be reused — start a fresh one instead.
+      const activeSession = sessionsRef.current.find((s) => s.id === sessionId);
+      const needNewSession =
+        !sessionId || activeSession?.type === 'lecture' || activeSession?.status === 'completed';
+
+      if (needNewSession) {
+        // End all active QA/Discussion sessions before creating new one
+        const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
+        for (const session of activeQAOrDiscussion) {
+          await endSession(session.id);
+        }
+        sessionId = await createSession('qa', 'Q&A');
+      } else if (sessionId && activeSession?.status === 'soft-closing') {
+        if (claimSoftCloseRegistration(sessionId)) {
+          softCloseLifecycleRef.current.set(sessionId, 'active');
+        } else {
+          const lifecycle = softCloseLifecycleRef.current.get(sessionId);
+          if (lifecycle === 'completed') {
+            sessionId = await createSession('qa', 'Q&A');
+          } else if (lifecycle !== 'active') {
+            return;
           }
         }
+      }
 
-        // An interrupted action may still be finishing a delayed state mutation.
-        // Capture the next request only after that mutation has settled.
-        await pendingRetirementRef.current;
-        if (sendPreparationRef.current !== preparation) return;
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+      streamingSessionIdRef.current = sessionId;
+      setIsStreaming(true);
 
-        // Validate model configuration before sending: chat resolves the
-        // workspace's classroom slot (assigned there or inherited).
-        const capabilities = await loadModelCapabilities();
-        if (sendPreparationRef.current !== preparation) return;
-        if (!classroomChatUsable(capabilities)) {
-          if (parkedBeforeSend) {
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === parkedBeforeSend.id && session.updatedAt === claimedUpdatedAt
-                  ? { ...parkedBeforeSend, updatedAt: nextChatUpdatedAt(session) }
-                  : session,
-              ),
-            );
-          }
-          toast.error(t('settings.modelNotConfigured'));
+      const now = Date.now();
+      const userMessageId = `user-${now}`;
+
+      // Read all selected agent IDs from settings store
+      const settingsState = useSettingsStore.getState();
+      const agentIds: string[] =
+        settingsState.selectedAgentIds?.length > 0 ? settingsState.selectedAgentIds : ['default-1'];
+
+      const userMessage: UIMessage<ChatMessageMetadata> = {
+        id: userMessageId,
+        role: 'user',
+        parts: [{ type: 'text', text: content }],
+        metadata: {
+          senderName: t('common.you'),
+          senderAvatar: USER_AVATAR,
+          originalRole: 'user',
+          createdAt: now,
+        },
+      };
+
+      // Read current session data from ref (avoids stale closure AND keeps updater pure)
+      const existingSession = sessionsRef.current.find((s) => s.id === sessionId);
+      const sessionMessages: UIMessage<ChatMessageMetadata>[] = existingSession
+        ? [...existingSession.messages, userMessage]
+        : [userMessage];
+      const sessionType: SessionType = existingSession?.type || 'qa';
+
+      // Pure updater — no side effects
+      setSessions((prev) => {
+        const exists = prev.some((s) => s.id === sessionId);
+        if (exists) {
+          return prev.map((s) =>
+            s.id === sessionId ? resumeSoftClosingSessionForFollowUp(s, userMessage, now) : s,
+          );
+        } else {
+          const newSession: ChatSession = {
+            id: sessionId!,
+            type: 'qa',
+            title: 'Q&A',
+            status: 'active',
+            messages: [userMessage],
+            config: {
+              agentIds,
+              defaultAgentId: agentIds[0],
+            },
+            toolCalls: [],
+            pendingToolCalls: [],
+            sceneId: currentSceneIdRef.current ?? undefined,
+            createdAt: now,
+            updatedAt: now,
+          };
+          return [...prev, newSession];
+        }
+      });
+
+      try {
+        log.info(
+          `[ChatArea] Sending message: "${content.slice(0, 50)}..." agents: ${agentIds.join(', ')}`,
+        );
+
+        const userProfileState = useUserProfileStore.getState();
+
+        await runAgentLoopFn(
+          sessionId!,
+          {
+            messages: sessionMessages,
+            config: {
+              agentIds,
+              sessionType,
+            },
+            userProfile: {
+              nickname: userProfileState.nickname || undefined,
+              bio: userProfileState.bio || undefined,
+            },
+            directorState: existingSession?.directorState,
+            ...(options.elementReference ? { elementReference: options.elementReference } : {}),
+          },
+          controller,
+          sessionType,
+          options.onResponseAccepted,
+        );
+      } catch (error) {
+        // Ignore AbortError — it's intentional (user interrupted)
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          log.info('[ChatArea] Request aborted by user');
           return;
         }
 
-        // Create a new session when there's no active QA session to append to.
-        // A completed session should NOT be reused — start a fresh one instead.
-        const activeSession = sessionsRef.current.find((s) => s.id === sessionId);
-        const needNewSession =
-          !sessionId || activeSession?.type === 'lecture' || activeSession?.status === 'completed';
-
-        if (needNewSession) {
-          // End all active QA/Discussion sessions before creating new one
-          const activeQAOrDiscussion = sessionsRef.current.filter(isOpenLiveSession);
-          for (const session of activeQAOrDiscussion) {
-            await endSession(session.id);
-          }
-          sessionId = await createSession('qa', 'Q&A');
-        } else if (sessionId && activeSession?.status === 'soft-closing') {
-          if (claimSoftCloseRegistration(sessionId)) {
-            softCloseLifecycleRef.current.set(sessionId, 'active');
-          } else {
-            const lifecycle = softCloseLifecycleRef.current.get(sessionId);
-            if (lifecycle === 'completed') {
-              sessionId = await createSession('qa', 'Q&A');
-            } else if (lifecycle !== 'active') {
-              return;
-            }
-          }
-        }
-
-        if (sendPreparationRef.current !== preparation) return;
-        const sessionBeforeRequest = sessionsRef.current.find(
-          (session) => session.id === sessionId,
+        log.error('[ChatArea] Error:', error);
+        clearLiveSessionAfterError(
+          sessionId!,
+          `Error: ${error instanceof Error ? error.message : String(error)}`,
         );
-        // A session completed during preparation must stay closed, while an
-        // error or interrupted turn can still receive the user's next message.
-        if (sessionBeforeRequest?.status === 'completed') return;
-        preparation.sessionId = sessionId;
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        streamingSessionIdRef.current = sessionId;
-        setIsStreaming(true);
-
-        const now = Date.now();
-        const userMessageId = `user-${now}-${nanoid()}`;
-
-        // Read all selected agent IDs from settings store
-        const settingsState = useSettingsStore.getState();
-        const agentIds: string[] =
-          settingsState.selectedAgentIds?.length > 0
-            ? settingsState.selectedAgentIds
-            : ['default-1'];
-
-        const userMessage: UIMessage<ChatMessageMetadata> = {
-          id: userMessageId,
-          role: 'user',
-          parts: [{ type: 'text', text: content }],
-          metadata: {
-            senderName: t('common.you'),
-            senderAvatar: USER_AVATAR,
-            originalRole: 'user',
-            createdAt: now,
-          },
-        };
-
-        // Read current session data from ref (avoids stale closure AND keeps updater pure)
-        const existingSession = sessionsRef.current.find((s) => s.id === sessionId);
-        const sessionMessages: UIMessage<ChatMessageMetadata>[] = existingSession
-          ? [...existingSession.messages, userMessage]
-          : [userMessage];
-        const sessionType: SessionType = existingSession?.type || 'qa';
-
-        // Pure updater — no side effects
-        setSessions((prev) => {
-          const exists = prev.some((s) => s.id === sessionId);
-          if (exists) {
-            return prev.map((s) =>
-              s.id === sessionId ? resumeSoftClosingSessionForFollowUp(s, userMessage, now) : s,
-            );
-          } else {
-            const newSession: ChatSession = {
-              id: sessionId!,
-              type: 'qa',
-              title: 'Q&A',
-              status: 'active',
-              messages: [userMessage],
-              config: {
-                agentIds,
-                defaultAgentId: agentIds[0],
-              },
-              toolCalls: [],
-              pendingToolCalls: [],
-              sceneId: currentSceneIdRef.current ?? undefined,
-              createdAt: now,
-              updatedAt: now,
-            };
-            return [...prev, newSession];
-          }
-        });
-
-        sendPreparationRef.current = null;
-        preparation.resolveReady(sessionId);
-        try {
-          log.info(
-            `[ChatArea] Sending message: "${content.slice(0, 50)}..." agents: ${agentIds.join(', ')}`,
-          );
-
-          const userProfileState = useUserProfileStore.getState();
-
-          await runAgentLoopFn(
-            sessionId!,
-            {
-              messages: sessionMessages,
-              config: {
-                agentIds,
-                sessionType,
-              },
-              userProfile: {
-                nickname: userProfileState.nickname || undefined,
-                bio: userProfileState.bio || undefined,
-              },
-              directorState: existingSession?.directorState,
-              ...(options.elementReference ? { elementReference: options.elementReference } : {}),
-            },
-            controller,
-            sessionType,
-            options.onResponseAccepted,
-          );
-        } catch (error) {
-          // Ignore AbortError — it's intentional (user interrupted)
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            log.info('[ChatArea] Request aborted by user');
-            return;
-          }
-
-          log.error('[ChatArea] Error:', error);
-          clearLiveSessionAfterError(
-            sessionId!,
-            `Error: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        } finally {
-          // Only clean up if this is still the active controller (avoid race with interrupt)
-          if (abortControllerRef.current === controller) {
-            abortControllerRef.current = null;
-            streamingSessionIdRef.current = null;
-            setIsStreaming(false);
-          }
-        }
       } finally {
-        preparation.resolveReady(null);
-        if (sendPreparationRef.current === preparation) sendPreparationRef.current = null;
+        // Only clean up if this is still the active controller (avoid race with interrupt)
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+          streamingSessionIdRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
     [
@@ -2049,7 +1923,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       retireActiveLiveRequest,
       runAgentLoopFn,
       t,
-      setSessions,
     ],
   );
 
@@ -2163,7 +2036,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n context
-    [clearLiveSessionAfterError, endSession, registerFirstPiRequest, runAgentLoopFn, setSessions],
+    [clearLiveSessionAfterError, endSession, registerFirstPiRequest, runAgentLoopFn],
   );
 
   /**
@@ -2260,7 +2133,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       log.info(`[ChatArea] Created lecture session: ${sessionId} for scene ${sceneId}`);
       return sessionId;
     },
-    [sessions, t, setSessions],
+    [sessions, t],
   );
 
   /**
@@ -2311,7 +2184,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         });
       }
     },
-    [createBufferForSession, setSessions],
+    [createBufferForSession],
   );
 
   // Derive active session type for external consumers

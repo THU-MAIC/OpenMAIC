@@ -108,7 +108,7 @@ export function buildDirectorPrompt(
     'Use exactly one terminal tool per loop.',
     'Use `cue_user` when the classroom should wait for the user to continue, ask something new, or answer a visible follow-up.',
     'When calling `cue_user`, include a concise learner-facing `prompt`. If the response can be expressed as 2-4 clear, mutually exclusive choices, also include `options`; omit options for open-ended replies.',
-    'Each option is an object with `label` and optional `action`. Mark a return-to-lesson choice with `action: "end_discussion"` regardless of language or wording. Other choices omit `action`. The client ends that discussion without a model request and keeps lesson playback paused until Play.',
+    'Each option is a short string of at most 60 characters. The client sends the selected label as an ordinary user message; use the terminal tool policy to decide whether its next turn continues or closes the session.',
     'The cue prompt and options must match the last visible classroom-agent turn; do not introduce a new question or teaching content only inside the tool call.',
     'Use `close_session` when the latest user message or immediate history clearly indicates goodbye, no more, thanks-and-done, conclusion, wrap-up, an explicit end, or a request to return to the lesson.',
     '`close_session` closes only the current Q&A/discussion side session. It does NOT mean the whole class is over unless the user explicitly says the lesson/class is over.',

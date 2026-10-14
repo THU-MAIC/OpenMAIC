@@ -28,8 +28,6 @@ const mocks = vi.hoisted(() => ({
     | undefined,
   startLecture: vi.fn(),
   endSession: vi.fn(),
-  endActiveSession: vi.fn(),
-  restoredCue: false,
   engineStop: vi.fn(),
   engineStart: vi.fn(),
   engineContinuePlayback: vi.fn(),
@@ -255,13 +253,10 @@ vi.mock('@/components/roundtable', async () => {
 vi.mock('@/components/chat/chat-area', async () => {
   const React = await import('react');
   return {
-    ChatArea: React.forwardRef(function MockChatArea(props, ref) {
-      const restoreCue = React.useRef(
-        (props as { onCueUser: (id: string, prompt: string, options: string[]) => void }).onCueUser,
-      );
+    ChatArea: React.forwardRef(function MockChatArea(_props, ref) {
       React.useImperativeHandle(ref, () => ({
         sendMessage: mocks.sendMessage,
-        endActiveSession: mocks.endActiveSession,
+        endActiveSession: vi.fn().mockResolvedValue(undefined),
         endSession: mocks.endSession,
         startLecture: mocks.startLecture,
         addLectureMessage: vi.fn(),
@@ -272,16 +267,11 @@ vi.mock('@/components/chat/chat-area', async () => {
         pauseActiveLiveBuffer: vi.fn(),
         stopActiveSession: vi.fn(),
         continueActiveSoftClosingSession: vi.fn(),
-        getActiveSessionType: () => (mocks.restoredCue ? 'qa' : null),
+        getActiveSessionType: vi.fn(),
         pauseBuffer: vi.fn(),
         resumeBuffer: vi.fn(),
         resumeActiveSession: vi.fn(),
       }));
-      React.useEffect(() => {
-        if (mocks.restoredCue) {
-          restoreCue.current('default-1', 'Which example?', ['Show an example', 'Continue lesson']);
-        }
-      }, []);
       return null;
     }),
   };
@@ -410,9 +400,6 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.startLecture.mockResolvedValue('lecture-1');
     mocks.endSession.mockReset();
     mocks.endSession.mockResolvedValue(undefined);
-    mocks.endActiveSession.mockReset();
-    mocks.endActiveSession.mockResolvedValue(undefined);
-    mocks.restoredCue = false;
     mocks.engineStop.mockReset();
     mocks.engineStart.mockReset();
     mocks.engineContinuePlayback.mockReset();
@@ -455,38 +442,6 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
       await Promise.resolve();
     });
   }
-
-  it('preserves a restored learner hand-off through initial engine initialization', async () => {
-    mocks.restoredCue = true;
-    await renderOwner();
-    expect(mocks.endActiveSession).toHaveBeenCalledWith({ preserveWaitingUser: true });
-    expect(mocks.roundtableProps).toMatchObject({
-      isCueUser: true,
-      cueUserPrompt: 'Which example?',
-      cueUserOptions: ['Show an example', 'Continue lesson'],
-    });
-    expect(mocks.canvasProps?.showStopDiscussion).toBe(true);
-    expect(mocks.sendMessage).not.toHaveBeenCalled();
-  });
-
-  it('ends a parked hand-off on an actual scene switch', async () => {
-    mocks.restoredCue = true;
-    await renderOwner();
-    stageState.currentSceneId = secondScene.id;
-    await rerenderOwner();
-    expect(mocks.endActiveSession).toHaveBeenCalledWith({ source: 'scene_switch' });
-    expect(mocks.roundtableProps?.isCueUser).toBe(false);
-  });
-
-  it('retires live work on a same-scene update while preserving a learner park', async () => {
-    mocks.restoredCue = true;
-    await renderOwner();
-    mocks.endActiveSession.mockClear();
-    stageState.scenes = [{ ...scene, title: 'Updated slide' }, secondScene];
-    await rerenderOwner();
-    expect(mocks.endActiveSession).toHaveBeenCalledExactlyOnceWith({ preserveWaitingUser: true });
-    expect(mocks.roundtableProps?.isCueUser).toBe(true);
-  });
 
   it('selects the stage snapshot whiteboard and sends an identity-only reference', async () => {
     const board = {

@@ -12,13 +12,6 @@ import { isEqual } from 'lodash';
 
 import type { ChatMessageMetadata, ChatSession, SessionStatus } from '@/lib/types/chat';
 import type { ChatSessionRecord } from '@/lib/legacy-browser-storage/schema';
-import {
-  isValidCueUserState,
-  isValidDirectorState,
-} from '@/lib/runtime/chat-session-state-validator';
-
-// The retired browser schema stays read-only; newer runtime metadata is optional on restore.
-type ChatRestoreRecord = ChatSessionRecord & Pick<ChatSession, 'cueUser' | 'directorState'>;
 
 const MAX_MESSAGES_PER_SESSION = 200;
 const MAX_RUNTIME_RECORDS_PER_CHAT_SESSION = 256;
@@ -48,8 +41,6 @@ export interface ChatSessionStatePayload extends ChatMessageSkeleton {
   updatedAt: number;
   sceneId?: string;
   lastActionIndex?: number;
-  cueUser?: ChatSession['cueUser'];
-  directorState?: ChatSession['directorState'];
 }
 
 export interface FoldedChat {
@@ -135,16 +126,15 @@ export type ChatSyncPlan =
       finalStatus?: 'active' | 'completed';
     };
 
-function isLegacyRecord(record: unknown): record is ChatRestoreRecord {
+function isLegacyRecord(record: unknown): record is ChatSessionRecord {
   if (typeof record !== 'object' || record === null) return false;
-  const candidate = record as Partial<ChatRestoreRecord>;
+  const candidate = record as Partial<ChatSessionRecord>;
   return (
     typeof candidate.id === 'string' &&
     (candidate.type === 'qa' || candidate.type === 'discussion' || candidate.type === 'lecture') &&
     typeof candidate.title === 'string' &&
     (candidate.status === 'idle' ||
       candidate.status === 'active' ||
-      candidate.status === 'waiting-user' ||
       candidate.status === 'soft-closing' ||
       candidate.status === 'interrupted' ||
       candidate.status === 'completed' ||
@@ -164,10 +154,7 @@ function isLegacyRecord(record: unknown): record is ChatRestoreRecord {
     candidate.config !== null &&
     Array.isArray(candidate.toolCalls) &&
     typeof candidate.createdAt === 'number' &&
-    typeof candidate.updatedAt === 'number' &&
-    (candidate.cueUser === undefined || isValidCueUserState(candidate.cueUser)) &&
-    (candidate.directorState === undefined ||
-      (typeof candidate.directorState === 'object' && candidate.directorState !== null))
+    typeof candidate.updatedAt === 'number'
   );
 }
 
@@ -192,7 +179,7 @@ function legacyTimestamps(record: ChatSessionRecord): { createdAt: number; updat
   return { createdAt, updatedAt: Math.max(createdAt, updatedAt) };
 }
 
-export function fromLegacyRecord(record: ChatRestoreRecord): ChatSession {
+export function fromLegacyRecord(record: ChatSessionRecord): ChatSession {
   if (!isLegacyRecord(record)) throw new TypeError('invalid legacy chat row shape');
   const { createdAt, updatedAt } = legacyTimestamps(record);
   return {
@@ -210,8 +197,6 @@ export function fromLegacyRecord(record: ChatRestoreRecord): ChatSession {
     ...(Number.isInteger(record.lastActionIndex)
       ? { lastActionIndex: record.lastActionIndex }
       : {}),
-    ...(record.cueUser ? { cueUser: record.cueUser } : {}),
-    ...(record.directorState ? { directorState: record.directorState } : {}),
   };
 }
 
@@ -347,8 +332,6 @@ export function statePayload(session: ChatSession): ChatSessionStatePayload {
     ...(Number.isInteger(session.lastActionIndex)
       ? { lastActionIndex: session.lastActionIndex }
       : {}),
-    ...(session.cueUser ? { cueUser: session.cueUser } : {}),
-    ...(session.directorState ? { directorState: session.directorState } : {}),
   };
 }
 
@@ -377,7 +360,6 @@ function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
     typeof candidate.title === 'string' &&
     (candidate.status === 'idle' ||
       candidate.status === 'active' ||
-      candidate.status === 'waiting-user' ||
       candidate.status === 'soft-closing' ||
       candidate.status === 'interrupted' ||
       candidate.status === 'completed' ||
@@ -392,9 +374,7 @@ function isStatePayload(payload: unknown): payload is ChatSessionStatePayload {
     typeof candidate.updatedAt === 'number' &&
     Number.isFinite(candidate.updatedAt) &&
     (candidate.sceneId === undefined || typeof candidate.sceneId === 'string') &&
-    (candidate.lastActionIndex === undefined || Number.isInteger(candidate.lastActionIndex)) &&
-    (candidate.cueUser === undefined || isValidCueUserState(candidate.cueUser)) &&
-    (candidate.directorState === undefined || isValidDirectorState(candidate.directorState))
+    (candidate.lastActionIndex === undefined || Number.isInteger(candidate.lastActionIndex))
   );
 }
 
@@ -447,8 +427,6 @@ export function foldRecords(records: RuntimeRecord[]): FoldedChat {
       updatedAt: state.updatedAt,
       sceneId: state.sceneId,
       lastActionIndex: state.lastActionIndex,
-      cueUser: state.cueUser,
-      directorState: state.directorState,
     },
   };
 }

@@ -271,10 +271,11 @@ describe('Pi director prompt closure routing', () => {
     const prompt = buildDirectorPrompt(makeBody(), agents, 4);
 
     expect(prompt).toContain('Terminal Tool Policy');
-    expect(prompt).toContain('Use exactly one terminal tool per loop');
-    expect(prompt).toContain('include a concise learner-facing `prompt`');
     expect(prompt).toContain('2-4 clear, mutually exclusive choices');
-    expect(prompt).toContain('must match the last visible classroom-agent turn');
+    expect(prompt).toContain('Each option is a short string');
+    expect(prompt).not.toContain('end_discussion');
+    expect(prompt).toContain('e.g. 可以继续下课 / 继续课程 / 回到课程 / 继续上课');
+    expect(prompt).toContain('Use exactly one terminal tool per loop');
     expect(prompt).toContain('`cue_user` and `close_session` are mutually exclusive');
     expect(prompt).toContain('If you call `close_session`, do not call `cue_user` afterward');
     expect(prompt).toContain('close_session.endReason');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Play, Pause, Repeat, Loader2, Volume2, ChevronDown, ChevronUp } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -21,13 +21,10 @@ interface PresentationSpeechOverlayProps {
   readonly userAvatar?: string;
   /** Which side this overlay instance renders — 'left' or 'right' */
   readonly side?: 'left' | 'right';
-  /** A parked agent question stays separate from the learner's right dock. */
-  readonly sideOverride?: 'left' | 'right';
   readonly onBubbleClick?: () => void;
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
-  readonly children?: ReactNode;
 }
 
 export interface PresentationBubbleModel {
@@ -65,8 +62,7 @@ export function buildPresentationBubbleModel({
     phase === 'lecturePlaying' ||
     phase === 'lecturePaused' ||
     phase === 'discussionActive' ||
-    phase === 'discussionPaused' ||
-    phase === 'cueUser';
+    phase === 'discussionPaused';
   const isLoading = phase === 'discussionActive' && bubbleRole !== null && sourceText === '';
 
   if (!showDuringPhase) return null;
@@ -199,9 +195,6 @@ export function PresentationBubbleCard({
   audioIndicatorState,
   buttonState,
   isPaused,
-  isCueUser,
-  scrollToEnd,
-  children,
 }: {
   readonly bubble: PresentationBubbleModel;
   readonly onClick?: () => void;
@@ -209,14 +202,10 @@ export function PresentationBubbleCard({
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
-  readonly isCueUser?: boolean;
-  readonly scrollToEnd?: boolean;
-  readonly children?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
     <div
-      data-bubble-role={bubble.role}
       aria-live="polite"
       onClick={onClick}
       className={cn(
@@ -229,7 +218,7 @@ export function PresentationBubbleCard({
             : 'bg-white/62 dark:bg-gray-900/82 border-gray-200/70 dark:border-gray-700/70',
       )}
     >
-      <div data-bubble-header className="flex items-center gap-3 px-4 pt-3 pb-2">
+      <div className="flex items-center gap-3 px-4 pt-3 pb-2">
         <div
           className={cn(
             'w-10 h-10 rounded-full overflow-hidden border-2 shadow-sm shrink-0',
@@ -284,20 +273,7 @@ export function PresentationBubbleCard({
         )}
       </div>
 
-      <div
-        data-bubble-speech
-        ref={(element) => {
-          if (element && scrollToEnd) element.scrollTop = element.scrollHeight;
-        }}
-        className={cn(
-          'ml-4 mr-10 mb-4 overflow-y-auto scrollbar-hide',
-          scrollToEnd
-            ? 'text-[15px] leading-relaxed max-h-[5lh]'
-            : isCueUser && bubble.role === 'user' && children
-              ? 'max-h-[240px]'
-              : 'max-h-[140px]',
-        )}
-      >
+      <div className="ml-4 mr-10 mb-4 max-h-[140px] overflow-y-auto scrollbar-hide">
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
             {[0, 0.2, 0.4].map((delay) => (
@@ -324,7 +300,6 @@ export function PresentationBubbleCard({
             )}
           </p>
         )}
-        {children}
       </div>
 
       {bubble.role !== 'user' &&
@@ -417,12 +392,10 @@ export function PresentationSpeechOverlay({
   isTopicPending,
   userAvatar,
   side = 'left',
-  sideOverride,
   onBubbleClick,
   audioIndicatorState,
   buttonState,
   isPaused,
-  children,
 }: PresentationSpeechOverlayProps) {
   const { t } = useI18n();
 
@@ -442,7 +415,7 @@ export function PresentationSpeechOverlay({
   // Right-side agents share a single instance, so all agents share the same collapse state.
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const matchesSide = !!(bubble && (sideOverride ?? bubble.side) === side);
+  const matchesSide = !!(bubble && bubble.side === side);
 
   const renderContent = (b: PresentationBubbleModel) => (
     <AnimatePresence mode="wait" initial={false}>
@@ -477,11 +450,7 @@ export function PresentationSpeechOverlay({
             audioIndicatorState={audioIndicatorState}
             buttonState={buttonState}
             isPaused={isPaused}
-            isCueUser={playbackView.phase === 'cueUser'}
-            scrollToEnd={playbackView.phase === 'cueUser' && b.role !== 'user'}
-          >
-            {children}
-          </PresentationBubbleCard>
+          />
         </motion.div>
       )}
     </AnimatePresence>

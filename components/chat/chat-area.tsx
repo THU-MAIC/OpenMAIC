@@ -1,7 +1,5 @@
 'use client';
 
-import type { CueUserOption } from '@/lib/types/chat';
-
 import {
   useImperativeHandle,
   forwardRef,
@@ -41,13 +39,7 @@ interface ChatAreaProps {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (
-    fromAgentId?: string,
-    prompt?: string,
-    options?: CueUserOption[],
-    agentText?: string,
-  ) => void;
-  onCueUserCleared?: () => void;
+  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onLiveSessionError?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
@@ -106,7 +98,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onSpeechProgress,
       onThinking,
       onCueUser,
-      onCueUserCleared,
       onLiveSessionError,
       onSoftCloseSession,
       onSoftClosingChange,
@@ -122,10 +113,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   ) => {
     const { t } = useI18n();
     const scenes = useStageStore((s) => s.scenes);
-    const onCueUserRef = useRef(onCueUser);
-    useEffect(() => {
-      onCueUserRef.current = onCueUser;
-    }, [onCueUser]);
     const {
       sessions,
       activeSessionType,
@@ -152,6 +139,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onLiveSpeech,
       onSpeechProgress,
       onThinking,
+      onCueUser,
       onActiveBubble,
       onLiveSessionError,
       onSoftCloseSession,
@@ -173,46 +161,9 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
-      () => chatSessions.some((s) => s.status === 'active' || s.status === 'waiting-user'),
+      () => chatSessions.some((s) => s.status === 'active'),
       [chatSessions],
     );
-
-    const waitingUserSession = useMemo(
-      () => chatSessions.find((session) => session.status === 'waiting-user'),
-      [chatSessions],
-    );
-
-    const parkKey = waitingUserSession
-      ? `${waitingUserSession.id}:${waitingUserSession.cueUser?.parkedAt}`
-      : null;
-    const displayedParkRef = useRef<string | null>(null);
-    // The durable park owns the live and restore paths alike. Resource/context
-    // updates to the same park must not reapply a cue that was already consumed.
-    useEffect(() => {
-      if (displayedParkRef.current === parkKey) return;
-      const hadPark = displayedParkRef.current !== null;
-      displayedParkRef.current = parkKey;
-      if (!waitingUserSession) {
-        if (hadPark) onCueUserCleared?.();
-        return;
-      }
-      const lastUserIndex = waitingUserSession.messages.findLastIndex(
-        (message) => message.role === 'user',
-      );
-      const agentText = waitingUserSession.messages
-        .slice(lastUserIndex + 1)
-        .findLast((message) => message.role === 'assistant')
-        ?.parts.filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('');
-      const args = [
-        waitingUserSession.cueUser?.fromAgentId,
-        waitingUserSession.cueUser?.prompt,
-        waitingUserSession.cueUser?.options,
-      ] as const;
-      if (agentText) onCueUserRef.current?.(...args, agentText);
-      else onCueUserRef.current?.(...args);
-    }, [parkKey, waitingUserSession, onCueUserCleared]);
 
     const softClosingChatSession = useMemo(
       () => chatSessions.find((s) => s.status === 'soft-closing'),
@@ -227,41 +178,26 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [softClosingChatSession, onSoftClosingChange]);
 
     // Wrap endSession for QA/Discussion: also notify parent for engine cleanup
-    const manualStopsRef = useRef(new Map<string, Promise<void>>());
     const handleEndSession = useCallback(
       async (sessionId: string) => {
-        const existing = manualStopsRef.current.get(sessionId);
-        if (existing) return existing;
-        const stop = (async () => {
-          const session = chatSessions.find((candidate) => candidate.id === sessionId);
-          if (session?.status === 'soft-closing') {
-            const payload = await confirmSoftClosingSession(sessionId);
-            if (payload) onStopSession?.(payload);
-            return;
-          }
-          await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
-          onStopSession?.({ sessionId, source: 'manual_stop' });
-        })();
-        manualStopsRef.current.set(sessionId, stop);
-        try {
-          await stop;
-        } finally {
-          manualStopsRef.current.delete(sessionId);
+        const session = chatSessions.find((candidate) => candidate.id === sessionId);
+        if (session?.status === 'soft-closing') {
+          const payload = await confirmSoftClosingSession(sessionId);
+          if (payload) onStopSession?.(payload);
+          return;
         }
+        await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
+        onStopSession?.({ sessionId, source: 'manual_stop' });
       },
       [chatSessions, confirmSoftClosingSession, endSession, onStopSession],
     );
 
     const handleStopActiveSession = useCallback(async () => {
       const active = chatSessions.find(
-        (session) =>
-          session.status === 'active' ||
-          session.status === 'waiting-user' ||
-          session.status === 'soft-closing',
+        (session) => session.status === 'active' || session.status === 'soft-closing',
       );
       if (active) await handleEndSession(active.id);
-      else await endActiveSession(MANUAL_STOP_END_OPTIONS);
-    }, [chatSessions, handleEndSession, endActiveSession]);
+    }, [chatSessions, handleEndSession]);
 
     const handleContinueActiveSoftClosingSession = useCallback((): boolean => {
       const softClosing = chatSessions.find((session) => session.status === 'soft-closing');

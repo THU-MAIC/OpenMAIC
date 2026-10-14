@@ -1,4 +1,3 @@
-import type { CueUserOption } from '@/lib/types/chat';
 import type { DirectorState } from '@/lib/types/chat';
 
 /**
@@ -64,7 +63,7 @@ export interface CueUserItem {
   kind: 'cue_user';
   fromAgentId?: string;
   prompt?: string;
-  options?: CueUserOption[];
+  options?: string[];
 }
 
 export interface DoneItem {
@@ -121,7 +120,7 @@ export interface StreamBufferCallbacks {
    */
   onSpeechProgress(ratio: number | null): void;
   onThinking(data: { stage: string; agentId?: string } | null): void;
-  onCueUser(fromAgentId?: string, prompt?: string, options?: CueUserOption[]): void;
+  onCueUser(fromAgentId?: string, prompt?: string, options?: string[]): void;
   onDone(data: {
     totalActions: number;
     totalAgents: number;
@@ -272,7 +271,7 @@ export class StreamBuffer {
     this.items.push({ kind: 'thinking', ...data });
   }
 
-  pushCueUser(data: { fromAgentId?: string; prompt?: string; options?: CueUserOption[] }): void {
+  pushCueUser(data: { fromAgentId?: string; prompt?: string; options?: string[] }): void {
     if (this._disposed) return;
     this.items.push({ kind: 'cue_user', ...data });
   }
@@ -406,7 +405,8 @@ export class StreamBuffer {
             this.cb.onThinking(item);
             break;
           case 'cue_user':
-            this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
+            if (item.options) this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
+            else this.cb.onCueUser(item.fromAgentId, item.prompt);
             break;
           case 'done':
             this.cb.onLiveSpeech(null, null);
@@ -627,7 +627,8 @@ export class StreamBuffer {
         break;
 
       case 'cue_user':
-        this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
+        if (item.options) this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
+        else this.cb.onCueUser(item.fromAgentId, item.prompt);
         this.readIndex++;
         this.charCursor = 0;
         this.advanceNonText();
@@ -688,7 +689,8 @@ export class StreamBuffer {
           this.cb.onThinking(next);
           break;
         case 'cue_user':
-          this.cb.onCueUser(next.fromAgentId, next.prompt, next.options);
+          if (next.options) this.cb.onCueUser(next.fromAgentId, next.prompt, next.options);
+          else this.cb.onCueUser(next.fromAgentId, next.prompt);
           break;
         case 'done':
           this.cb.onLiveSpeech(null, null);

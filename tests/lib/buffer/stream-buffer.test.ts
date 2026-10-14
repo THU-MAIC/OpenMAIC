@@ -8,11 +8,7 @@ describe('StreamBuffer Pi wrap-up ordering', () => {
       const lifecycle: string[] = [];
       const cues: unknown[] = [];
       const prompt = 'Which example should we try?';
-      const options = [
-        { label: 'Show an example' },
-        { label: 'Let me practice' },
-        { label: 'Back to the lesson', action: 'end_discussion' as const },
-      ];
+      const options = ['Show an example', 'Let me practice', 'Back to the lesson'];
       const buffer = new StreamBuffer(
         {
           onAgentStart() {},

@@ -1,43 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 import { buildCueUserTool } from '@/lib/chat/pi/tools/cue-user';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 
 describe('Pi chat cue_user tool', () => {
-  it('keeps only the first accepted end_discussion action while preserving reply labels', async () => {
-    const events: unknown[] = [];
-    const tool = buildCueUserTool({
-      getLastAgentId: () => 'default-1',
-      cueUser: async (data) => {
-        events.push(data);
-        return true;
-      },
+  it('accepts optional bounded string options, with no client action schema', () => {
+    const tool = buildCueUserTool({ getLastAgentId: () => 'default-1', cueUser: async () => true });
+    const schema = tool.parameters;
+    expect(schema.properties.options).toMatchObject({
+      type: 'array',
+      minItems: 2,
+      maxItems: 4,
+      items: { type: 'string', minLength: 1, maxLength: 60 },
     });
-
-    await tool.execute('cue-actions', {
-      options: [
-        { label: '   ', action: 'end_discussion' },
-        { label: 'Explain' },
-        { label: ' Explain ', action: 'end_discussion' },
-        { label: 'Continue lesson', action: 'end_discussion' },
-        { label: 'Stop for now', action: 'end_discussion' },
-        { label: 'Practice' },
-      ],
-    });
-
-    expect(events).toEqual([
-      {
-        fromAgentId: 'default-1',
-        options: [
-          { label: 'Explain' },
-          { label: 'Continue lesson', action: 'end_discussion' },
-          { label: 'Stop for now' },
-          { label: 'Practice' },
-        ],
-      },
-    ]);
   });
 
-  it('emits the existing cue_user payload once', async () => {
+  it('emits normalized string suggestions only once', async () => {
     const events: unknown[] = [];
     let userCued = false;
     const tool = buildCueUserTool({
@@ -49,32 +27,34 @@ describe('Pi chat cue_user tool', () => {
         return true;
       },
     });
-
     const first = await tool.execute('cue-1', {
       prompt: ' Any follow-up? ',
-      options: [
-        { label: ' Show an example ' },
-        { label: 'Back to the lesson', action: 'end_discussion' },
-        { label: ' Show an example ' },
-      ],
+      options: [' Show an example ', 'Back to the lesson', ' Show an example '],
     });
     const second = await tool.execute('cue-2', { prompt: 'Again?' });
-
     expect(events).toEqual([
       {
         type: 'cue_user',
         data: {
           fromAgentId: 'default-1',
           prompt: 'Any follow-up?',
-          options: [
-            { label: 'Show an example' },
-            { label: 'Back to the lesson', action: 'end_discussion' },
-          ],
+          options: ['Show an example', 'Back to the lesson'],
         },
       },
     ]);
     expect(first.details).toEqual({ emitted: true });
     expect(second.details).toEqual({ emitted: false });
+  });
+
+  it('normalizes 2-4 unique nonempty labels capped at60chars and omits a lone choice', () => {
+    expect(normalizeCueUserOptions([' ', ' A ', 'A', 'x'.repeat(70), 'C', 'D', 'E'])).toEqual([
+      'A',
+      'x'.repeat(60),
+      'C',
+      'D',
+    ]);
+    expect(normalizeCueUserOptions([' ', ' A ', 'A'])).toBeUndefined();
+    expect(normalizeCueUserOptions()).toBeUndefined();
   });
 
   it('does not emit cue_user before any classroom agent turn when guarded', async () => {
