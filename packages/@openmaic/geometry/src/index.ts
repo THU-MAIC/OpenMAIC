@@ -337,10 +337,10 @@ export function validateShapeGeometry(
 export function shapeGeometryChanged(before: PPTShapeElement, after: PPTShapeElement): boolean {
   return (
     before.path !== after.path ||
-    before.width !== after.width ||
-    before.height !== after.height ||
+    !Object.is(before.width, after.width) ||
+    !Object.is(before.height, after.height) ||
     before.viewBox?.length !== after.viewBox?.length ||
-    before.viewBox?.[0] !== after.viewBox?.[0] ||
-    before.viewBox?.[1] !== after.viewBox?.[1]
+    !Object.is(before.viewBox?.[0], after.viewBox?.[0]) ||
+    !Object.is(before.viewBox?.[1], after.viewBox?.[1])
   );
 }

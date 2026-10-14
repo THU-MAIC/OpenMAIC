@@ -55,6 +55,31 @@ describe('agent shape write validation', () => {
     });
     expect(next.canvas.elements[0]).not.toHaveProperty('fill');
   });
+  it.each(['width', 'height', 'viewBox[0]', 'viewBox[1]'])(
+    'permits a style edit when historical %s is NaN',
+    (field) => {
+      const slide = content();
+      const shape = slide.canvas.elements[0];
+      if (shape.type !== 'shape') throw new Error('expected shape');
+      if (field === 'width' || field === 'height') shape[field] = NaN;
+      else shape.viewBox[field === 'viewBox[0]' ? 0 : 1] = NaN;
+      const next = applySlideEditOperation(slide, {
+        type: 'element.update',
+        elementId: 'shape',
+        patch: { fill: '#123456' },
+      });
+      expect(next.canvas.elements[0]).toMatchObject({ fill: '#123456' });
+      expect(validateSlideCanvas(next.canvas, slide.canvas)).toEqual([]);
+      expect(
+        applySlideEdit(slide, {
+          op: 'patch',
+          action: 'set',
+          path: '/canvas/elements/0/fill',
+          value: '#123456',
+        }),
+      ).toMatchObject({ ok: true });
+    },
+  );
   it.each(['M0 0 Z1 1', 'M0 0 L1e999 0', '<svg/>'])(
     'rejects an invalid complete new path: %s',
     (path) => {
