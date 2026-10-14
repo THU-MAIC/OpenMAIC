@@ -96,6 +96,7 @@ export {
   buildCourseContext,
   buildLanguageText,
   buildVisionUserContent,
+  parseBase64DataUrl,
   formatAgentsForPrompt,
   formatImageDescription,
   formatImagePlaceholder,

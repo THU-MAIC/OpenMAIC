@@ -1,4 +1,6 @@
+import sharp from 'sharp';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AICallFn } from '@openmaic/generation';
 
 import { generateSceneActions } from '@/lib/server/generation/steps/scene-actions';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -41,6 +43,7 @@ describe('scene actions step', () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.generateSceneActions.mockReset();
+    mocks.callLLM.mockReset();
     mocks.generateSceneActions.mockResolvedValue([
       { id: 'a1', type: 'speech', text: 'Now the second part.' },
       { id: 'a2', type: 'speech', text: 'Let us look closer.' },
@@ -64,5 +67,41 @@ describe('scene actions step', () => {
     });
     expect(result.scene).toMatchObject({ stageId: 'stage-1', type: 'slide', title: 'Second' });
     expect(result.previousSpeeches).toEqual(['Now the second part.', 'Let us look closer.']);
+  });
+
+  it('includes attachment labels only for images that survive preparation', async () => {
+    const png = await sharp({ create: { width: 32, height: 24, channels: 3, background: 'white' } })
+      .png()
+      .toBuffer();
+    mocks.callLLM.mockResolvedValue({ text: 'Actions ready.' });
+    mocks.generateSceneActions.mockImplementationOnce(
+      async (_outline, _content, aiCall: AICallFn) => {
+        await aiCall('Describe the slide.', 'Explain the diagram.', [
+          { id: 'good', src: `data:image/png;base64,${png.toString('base64')}` },
+          {
+            id: 'bad',
+            src: `data:image/png;base64,${Buffer.from('undecodable').toString('base64')}`,
+          },
+        ]);
+        return [];
+      },
+    );
+    await generateSceneActions(
+      {
+        ...body,
+        model: fakeModel({
+          modelInfo: { id: 'test-model', name: 'Test model', capabilities: { vision: true } },
+        }),
+      },
+      { log: testLogger() },
+    );
+    const content = mocks.callLLM.mock.calls[0]![0].messages[0].content;
+    expect(content.filter((part: { type: string }) => part.type === 'image')).toHaveLength(1);
+    const text = content
+      .filter((part: { type: string }) => part.type === 'text')
+      .map((part: { text: string }) => part.text)
+      .join('\n');
+    expect(text).toContain('good');
+    expect(text).not.toContain('bad');
   });
 });

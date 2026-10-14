@@ -46,6 +46,7 @@ import type { LanguageModel } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { streamLLM } from '@/lib/ai/llm';
 import { buildVisionUserContent } from '@openmaic/generation';
+import { prepareVisionImages } from '@/lib/server/generation/vision-images';
 import type { ThinkingConfig } from '@/lib/types/provider';
 
 import type {
@@ -152,6 +153,16 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
   const isMilestone = kind === 'milestone';
   let lastSanitizedLength = 0;
   try {
+    const safeImages = visionImageSrc
+      ? await prepareVisionImages([{ id: 'submission', src: visionImageSrc }], log)
+      : [];
+    if (visionImageSrc && safeImages.length === 0) {
+      log.warn('Image submission evaluated without the image', {
+        kind,
+        milestoneId,
+        microtaskId,
+      });
+    }
     const result = streamLLM(
       {
         model: languageModel,
@@ -159,14 +170,12 @@ async function* runShared(args: RunSharedArgs): AsyncGenerator<PBLSSEEvent, void
         // Image submission on a vision-capable model → send the picture as a
         // multimodal user turn (reusing OpenMAIC's buildVisionUserContent).
         // Everything else keeps the plain text prompt unchanged.
-        ...(visionImageSrc
+        ...(safeImages.length
           ? {
               messages: [
                 {
                   role: 'user' as const,
-                  content: buildVisionUserContent(userPrompt, [
-                    { id: 'submission', src: visionImageSrc },
-                  ]),
+                  content: buildVisionUserContent(userPrompt, safeImages),
                 },
               ],
             }

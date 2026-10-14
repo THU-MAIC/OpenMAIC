@@ -15,9 +15,11 @@
  * workspace provider's endpoint was typed by a user: it is validated like a
  * caller-supplied base URL, and a workspace may not set a proxy.
  */
+import { assertDeploymentModelAuthorized, selectsUpstreamModel } from './model-authorization';
+import { presetIdFor } from '@/lib/config/preset-ids';
 import { getSlot, type SlotId } from '@/lib/config/model-slots';
 import { registryDefaultBaseUrl } from '@/lib/config/provider-presets';
-import { apiError } from '@/lib/server/api-response';
+import { apiError, modelAuthorizationResponse } from '@/lib/server/api-response';
 import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
 import { invalidOwnerCredentialResponse } from '@/lib/server/identity/with-owner';
 
@@ -72,6 +74,8 @@ export type MediaSlot = Extract<
 export interface MediaConnection {
   /** The capability's registry id (e.g. `minimax-tts`, `tavily`). */
   providerId: string;
+  /** The deployment provider supplying the credential, when resolved by slot. */
+  deploymentProviderId?: string;
   /** Absent: the provider's default model. */
   modelId?: string;
   apiKey?: string;
@@ -156,6 +160,7 @@ async function fromTarget(
   }
   return {
     providerId: target.registryId,
+    ...(managed ? { deploymentProviderId: target.providerId } : {}),
     ...(target.modelId !== undefined ? { modelId: target.modelId } : {}),
     ...(target.apiKey !== undefined ? { apiKey: target.apiKey } : {}),
     ...(target.baseUrl !== undefined ? { baseUrl: target.baseUrl } : {}),
@@ -237,6 +242,8 @@ export class RequestedProviderRefusedError extends Error {
  * undefined for any other error.
  */
 export function mediaResolutionResponse(error: unknown, what: string): Response | undefined {
+  const authorization = modelAuthorizationResponse(error);
+  if (authorization) return authorization;
   if (error instanceof SlotDisabledError) {
     return apiError('PROVIDER_DISABLED', 403, `${what} is turned off on this server`);
   }
@@ -289,4 +296,26 @@ export async function serverMediaConnection(
     if (error instanceof SlotUnassignedError) return null;
     throw error;
   }
+}
+
+/** Check the final wire model, including model changes made for a voice. */
+export function authorizeMediaModel(
+  connection: MediaConnection,
+  slot: MediaSlot,
+  modelId: string | undefined,
+): void {
+  if (
+    !connection.managed ||
+    (!connection.apiKey && !Object.keys(connection.credentials ?? {}).length) ||
+    !modelId
+  )
+    return;
+  const capability = getSlot(slot).capability;
+  if (!selectsUpstreamModel(presetIdFor(capability, connection.providerId), capability)) return;
+  assertDeploymentModelAuthorized(
+    deploymentConfig().layer?.config,
+    connection.deploymentProviderId ?? presetIdFor(capability, connection.providerId),
+    modelId,
+    capability,
+  );
 }

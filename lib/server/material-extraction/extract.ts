@@ -25,6 +25,7 @@ import {
   storeSessionMaterialRawAsset,
 } from '@/lib/server/agent-runtime/session-materials';
 
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { isTransientExtractionError, MaterialExtractionError } from './errors';
 
 export interface MaterialExtractionExecutionDependencies {
@@ -157,6 +158,7 @@ export async function extractMaterialSource(
         config: { ...mediaInput.config, providerId: selected.id },
       });
     } catch (error) {
+      if (error instanceof ModelAuthorizationError) throw error;
       throw new MaterialExtractionError(
         error instanceof Error ? error.message : String(error),
         isTransientExtractionError(error),

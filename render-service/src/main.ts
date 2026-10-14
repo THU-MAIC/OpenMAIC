@@ -9,12 +9,12 @@
  * vs Redis job store, local-disk vs S3 artifacts) can be swapped for a
  * demo-scale deployment without the app noticing:
  *
- *   POST   /render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
- *   POST   /preview                JSON: scene + stage + viewport → PNG
- *   GET    /render/:jobId          → { status, progress, currentStage, done, ... }
- *   GET    /render/:jobId/download → stream MP4 (or 302 to a presigned URL)
- *   DELETE /render/:jobId          → cancel
- *   GET    /health                 → { ok: true, accepting: boolean, ... }
+ *   POST   /owner-bound/render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
+ *   POST   /preview                            JSON: scene + stage + viewport → PNG
+ *   GET    /owner-bound/render/:jobId          → { status, progress, currentStage, done, ... }
+ *   GET    /owner-bound/render/:jobId/download → stream MP4 (or 302 to a presigned URL)
+ *   DELETE /owner-bound/render/:jobId          → cancel
+ *   GET    /health                             → { ok: true, accepting: boolean, ... }
  *
  * NOTE: this file must NOT be named `server.ts`. `@hyperframes/producer`'s main
  * module auto-starts its own bundled HTTP server (on PRODUCER_PORT, default
@@ -55,7 +55,14 @@ import {
 import { invalidSlideCanvasElementError, previewabilityError } from './preview-validation.js';
 import type { JobStore } from './job-store.js';
 import type { ArtifactStore } from './artifact-store.js';
-import { isTerminal, type RenderOptions } from './types.js';
+import {
+  isAdmissionIdentity,
+  isRenderOwnerId,
+  isTerminal,
+  type AdmissionIdentity,
+  type RenderOptions,
+  type RenderOwnerId,
+} from './types.js';
 import { collectRuntimeVersions } from './runtime-info.js';
 import { publicResourceProfile, validateResourceProfileStartup } from './resource-profile.js';
 import type { RuntimeVersions } from './types.js';
@@ -114,6 +121,20 @@ interface PreviewPayload {
   scene: PreviewScene;
   stage: PreviewStageContext;
   viewport: PreviewViewport;
+}
+
+const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
+const RENDER_OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
+const ADMISSION_IDENTITY_HEADER = 'x-openmaic-client';
+
+function requestOwner(c: Context): RenderOwnerId | null {
+  const value = c.req.header(RENDER_OWNER_HEADER)?.trim();
+  return isRenderOwnerId(value) ? value : null;
+}
+
+function admissionIdentity(c: Context): AdmissionIdentity | null {
+  const value = c.req.header(ADMISSION_IDENTITY_HEADER)?.trim();
+  return isAdmissionIdentity(value) ? value : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -255,6 +276,10 @@ export function createApp(deps: AppDeps): Hono {
     deps.previewExecutionGate ?? new Semaphore(config.previewMaxConcurrency);
 
   const app = new Hono();
+  app.use('*', async (c, next) => {
+    await next();
+    c.header(RENDER_OWNER_BOUND_HEADER, '1');
+  });
 
   app.get('/health', (c) =>
     c.json({
@@ -268,7 +293,11 @@ export function createApp(deps: AppDeps): Hono {
     }),
   );
 
-  app.post('/render', async (c) => {
+  app.post('/owner-bound/render', async (c) => {
+    const ownerId = requestOwner(c);
+    const identity = admissionIdentity(c);
+    if (!ownerId || !identity) return c.json({ error: 'Invalid render identity' }, 400);
+
     // Reject an oversized body by declared length first (courtesy 413 for honest
     // clients). The real bound is the byte-counting cap below, since
     // Content-Length is client-supplied and absent on chunked uploads.
@@ -276,11 +305,6 @@ export function createApp(deps: AppDeps): Hono {
     if (Number.isFinite(declared) && declared > config.maxUploadBytes) {
       return c.json({ error: 'Upload too large' }, 413);
     }
-
-    // Identity is derived by the trusted proxy (client IP) and passed in a header;
-    // a client-supplied multipart `userId` is deliberately ignored so it can't be
-    // rotated to bypass the per-identity guard.
-    const identity = c.req.header('x-openmaic-client')?.trim() || 'anonymous';
 
     // Reserve a queue slot BEFORE the buffering permit, so a rejected caller
     // (queue full / per-identity limit) never enters buffering or extraction.
@@ -291,7 +315,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof RenderRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/render',
+          route: '/owner-bound/render',
           reason: error.reason ?? 'unspecified',
           status: 429,
         });
@@ -345,7 +369,7 @@ export function createApp(deps: AppDeps): Hono {
         await unzipProject(bytes, projectDir);
         // Harden the extracted HTML before the producer reads any of it.
         await hardenProject(projectDir);
-        return coordinator.submit(reservation, projectDir, options);
+        return coordinator.submit({ reservation, ownerId, projectDir, options });
       });
       return c.json({ jobId }, 202);
     } catch (error) {
@@ -357,7 +381,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof RenderRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/render',
+          route: '/owner-bound/render',
           reason: error.reason ?? 'unspecified',
           status: 429,
         });
@@ -496,8 +520,10 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.get('/render/:jobId', async (c) => {
-    const job = await jobs.get(c.req.param('jobId'));
+  app.get('/owner-bound/render/:jobId', async (c) => {
+    const ownerId = requestOwner(c);
+    if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
+    const job = await jobs.getForOwner(c.req.param('jobId'), ownerId);
     if (!job) return c.json({ error: 'Job not found' }, 404);
     return c.json({
       jobId: job.id,
@@ -519,15 +545,19 @@ export function createApp(deps: AppDeps): Hono {
     });
   });
 
-  app.delete('/render/:jobId', async (c) => {
-    const ok = await coordinator.cancel(c.req.param('jobId'));
+  app.delete('/owner-bound/render/:jobId', async (c) => {
+    const ownerId = requestOwner(c);
+    if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
+    const ok = await coordinator.cancelForOwner(c.req.param('jobId'), ownerId);
     if (!ok) return c.json({ error: 'Job not found' }, 404);
     return c.json({ cancelled: true });
   });
 
-  app.get('/render/:jobId/download', async (c) => {
+  app.get('/owner-bound/render/:jobId/download', async (c) => {
+    const ownerId = requestOwner(c);
+    if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
     const jobId = c.req.param('jobId');
-    const job = await jobs.get(jobId);
+    const job = await jobs.getForOwner(jobId, ownerId);
     if (!job) return c.json({ error: 'Job not found' }, 404);
     if (job.status !== 'succeeded') {
       return c.json({ error: `Job not ready (status: ${job.status})` }, 409);

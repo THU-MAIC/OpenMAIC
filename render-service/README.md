@@ -18,21 +18,48 @@ rendering. Nothing here is required for the app to run.
 Rendering is asynchronous (a 10-minute video can take tens of minutes): submit,
 poll, then download. Job ids are opaque.
 
-| Method + path                 | Purpose                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------ |
-| `POST /render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
-| `POST /preview`               | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
-| `GET /render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
-| `GET /render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
-| `DELETE /render/:jobId`       | cancel a queued/running job                                                          |
-| `GET /health`                 | resource profile, observed runtime versions, and whether renders are being admitted  |
+| Method + path                             | Purpose                                                                              |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /owner-bound/render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
+| `POST /preview`                           | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
+| `GET /owner-bound/render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
+| `GET /owner-bound/render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
+| `DELETE /owner-bound/render/:jobId`       | cancel a queued/running job                                                          |
+| `GET /health`                             | resource profile, observed runtime versions, and whether renders are being admitted  |
 
 `status` is one of `queued | running | succeeded | failed | cancelled`;
 `progress` is `0..1`.
 
+### Video job ownership
+
+Every video job request requires `x-openmaic-render-owner`. The app proxy sets
+this header from `OwnerPrincipal.ownerId` when it submits, polls, cancels, or
+downloads a job. The render service stores that owner on submission and returns
+`404 Job not found` when the owner does not match. A job id alone does not grant
+access. `POST /owner-bound/render` also requires `x-openmaic-client` for admission control.
+
+The render service validates the header format but does not authenticate the
+header. Treat it as an assertion from the trusted app proxy. Keep the service on
+a network that only the app can reach, as the default Compose deployment does.
+For a standalone deployment, put the service behind the app proxy and do not
+publish its port to browsers or other untrusted clients.
+
+Upgrade every render-service instance behind the configured URL (or drain old
+instances) before or together with the main app. Job operations are served only
+under `/owner-bound/render`; legacy `/render` job routes are no longer served.
+The new namespace makes mixed pools fail closed: old service instances refuse
+new job paths, and upgraded instances refuse an old app's legacy paths.
+
+Owner-aware service builds return `x-openmaic-render-owner-bound: 1` on health
+and job responses. The app uses the health marker for its UI capability flag
+and checks each job response as defense in depth. An unmarked response,
+including a namespace 404 from an old instance, is reported as a service error.
+A reverse proxy must never add this marker; it is an assertion made by the
+render service itself.
+
 ### Admission: 429s and `/health`
 
-Admission rejections are machine-readable. `POST /render` answers `429` with a
+Admission rejections are machine-readable. `POST /owner-bound/render` answers `429` with a
 JSON body `{ error, reason }` where `reason` is one of:
 
 - `queue_full` — the deployment-wide cap `RENDER_MAX_QUEUE` (reserved + queued +
@@ -193,7 +220,7 @@ no outbound access.
 The injected CSP plus request interception close script, fetch/XHR, WebSocket,
 image, frame and form egress from the untrusted documents. Two channels remain:
 
-- **Top-level navigation on `/render`.** `location`, a `<meta http-equiv=refresh>`,
+- **Top-level navigation on `/owner-bound/render`.** `location`, a `<meta http-equiv=refresh>`,
   `window.open` and `target=_top` can replace the top frame; CSP has no
   `navigate-to` directive, and the producer's browser exposes no request
   interception we can install. The service therefore relies on the container's
@@ -273,7 +300,7 @@ latency was 0.31–1.19 seconds. This sample checks the default combined workloa
 not a memory ceiling or latency guarantee for arbitrary scenes or higher
 preview concurrency.
 
-Both `/health` and `GET /render/:jobId` make the selection observable. Health
+Both `/health` and `GET /owner-bound/render/:jobId` make the selection observable. Health
 reports the configured `previewMaxConcurrency` and the profile ceiling as
 `resourceProfile.maxPreviewConcurrency`, alongside the capture policy, requested
 mode, worker/concurrency bounds, minimum memory, and observed Node, producer,

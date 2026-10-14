@@ -9,6 +9,7 @@
  * package's outline prompt. The stream is retried on the same model, then
  * once on the stage's fallback model, and every retry is reported as an event.
  */
+import { prepareVisionImages } from '../vision-images';
 import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
 import { streamLLM } from '@/lib/ai/llm';
 import {
@@ -398,13 +399,16 @@ async function prepareOutline(
       // vision prompt byte-identical in both modes (RFC #1153 part 2 B). An
       // id the server cannot resolve is dropped here, so the placeholder
       // text below never promises an image that will not be attached.
-      const resolvedVisionImages = await ctx.resolveVisionImages(
-        visionSlice.map((img) => ({
-          id: img.id,
-          src: imageMapping[img.id],
-          ...(img.width !== undefined ? { width: img.width } : {}),
-          ...(img.height !== undefined ? { height: img.height } : {}),
-        })),
+      const resolvedVisionImages = await prepareVisionImages(
+        await ctx.resolveVisionImages(
+          visionSlice.map((img) => ({
+            id: img.id,
+            src: imageMapping[img.id],
+            ...(img.width !== undefined ? { width: img.width } : {}),
+            ...(img.height !== undefined ? { height: img.height } : {}),
+          })),
+        ),
+        ctx.log,
       );
       const resolvedIds = new Set(resolvedVisionImages.map((img) => img.id));
       const visionImageById = new Map(sortedImages.map((img) => [img.id, img] as const));

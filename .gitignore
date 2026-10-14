@@ -94,3 +94,6 @@ e2e/__screenshots-619/
 
 # Operator model configuration (see openmaic.yml in RFC #1701); it names secrets via ${VAR}
 /openmaic.yml
+
+# Temporary render-service sources extracted by the mixed-pool regression test
+render-service/.owner-bound-parent-*/

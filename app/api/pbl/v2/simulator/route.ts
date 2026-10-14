@@ -12,6 +12,7 @@
  * Only relevant for scenario projects in a `scenarioStage === 'roleplay'`
  * milestone; `runSimulatorTurn` gates this and errors out otherwise.
  */
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import type { NextRequest } from 'next/server';
 
@@ -50,6 +51,8 @@ export async function POST(req: NextRequest) {
   try {
     resolved = await resolveModelFromRequest(req, body, 'pbl-v2-runtime:simulator');
   } catch (err) {
+    const authorization = modelAuthorizationResponse(err);
+    if (authorization) return authorization;
     log.error('Model resolution failed:', err);
     return apiError('INVALID_REQUEST', 400, err instanceof Error ? err.message : String(err));
   }

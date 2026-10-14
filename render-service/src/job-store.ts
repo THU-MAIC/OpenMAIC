@@ -7,18 +7,17 @@
  * same interface so poll/download requests can be served by any replica. The
  * routes only ever see `JobStore`.
  */
-import type { RenderJobRecord, RenderJobStatus } from './types.js';
+import type { RenderJobPatch, RenderJobRecord, RenderOwnerId } from './types.js';
 import { isTerminal } from './types.js';
 
 export interface JobStore {
   create(record: RenderJobRecord): Promise<void>;
   get(id: string): Promise<RenderJobRecord | null>;
+  getForOwner(id: string, ownerId: RenderOwnerId): Promise<RenderJobRecord | null>;
   /** Merge a partial patch into an existing record; no-op if it's gone. */
-  update(id: string, patch: Partial<RenderJobRecord>): Promise<void>;
+  update(id: string, patch: RenderJobPatch): Promise<void>;
   remove(id: string): Promise<void>;
   list(): Promise<RenderJobRecord[]>;
-  /** Count of active (queued or running) jobs for a user — for the per-user guard. */
-  countActiveForUser(userId: string): Promise<number>;
 }
 
 /** Process-local job registry backed by a Map, with a TTL sweeper for finished jobs. */
@@ -47,7 +46,12 @@ export class InMemoryJobStore implements JobStore {
     return this.jobs.get(id) ?? null;
   }
 
-  async update(id: string, patch: Partial<RenderJobRecord>): Promise<void> {
+  async getForOwner(id: string, ownerId: RenderOwnerId): Promise<RenderJobRecord | null> {
+    const job = this.jobs.get(id);
+    return job?.ownerId === ownerId ? job : null;
+  }
+
+  async update(id: string, patch: RenderJobPatch): Promise<void> {
     const existing = this.jobs.get(id);
     if (!existing) return;
     this.jobs.set(id, { ...existing, ...patch, updatedAtMs: Date.now() });
@@ -59,14 +63,6 @@ export class InMemoryJobStore implements JobStore {
 
   async list(): Promise<RenderJobRecord[]> {
     return [...this.jobs.values()];
-  }
-
-  async countActiveForUser(userId: string): Promise<number> {
-    let n = 0;
-    for (const job of this.jobs.values()) {
-      if (job.userId === userId && !isTerminal(job.status)) n++;
-    }
-    return n;
   }
 
   private sweep(): void {

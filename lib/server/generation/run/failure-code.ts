@@ -3,6 +3,7 @@
  * same failure, so a client shows the same sentence for it as it did when it
  * called those routes itself.
  */
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
 import { WebSearchConfigError } from '@/lib/server/web-search-config';
@@ -16,6 +17,8 @@ export interface RunFailureCode {
 }
 
 export function runFailureCode(error: unknown): RunFailureCode {
+  if (error instanceof ModelAuthorizationError)
+    return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelConfigurationError || error instanceof WebSearchConfigError) {
     return { errorCode: error.code };
   }

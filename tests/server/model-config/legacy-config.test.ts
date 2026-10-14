@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
-import { describe, expect, it } from 'vitest';
+import fs from 'fs';
+import { describe, expect, it, vi } from 'vitest';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { parseModelConfig } from '@/lib/server/model-config/openmaic-yml';
 import { resolveSlot } from '@/lib/server/model-config/resolve-slot';
@@ -364,4 +365,67 @@ describe('translateLegacyConfig output', () => {
     });
     expect(resolveSlot('tts', layers)).toMatchObject({ registryId: 'minimax-tts' });
   });
+});
+
+it('loads the real legacy Google compatible env through translation, slots and Pi resolution', async () => {
+  const snapshot = { ...process.env };
+  const exists = fs.existsSync.bind(fs);
+  const boundary = vi
+    .spyOn(fs, 'existsSync')
+    .mockImplementation((path) =>
+      /(?:openmaic|server-providers)\.ya?ml$/.test(String(path)) ? false : exists(path),
+    );
+  let runtime: typeof import('@/lib/server/model-config/runtime') | undefined;
+  try {
+    // Hermetic env and file boundary: the production env loader and translation stay real.
+    for (const name of Object.keys(process.env)) {
+      if (
+        /(?:_API_KEY|_BASE_URL|_MODELS|_ENABLED|_PROXY)$/.test(name) ||
+        [
+          'OPENMAIC_CONFIG',
+          'DEFAULT_MODEL',
+          'MODEL_ROUTES',
+          'MODEL_FALLBACK',
+          'DATABASE_URL',
+        ].includes(name)
+      )
+        delete process.env[name];
+    }
+    process.env.OPENAI_API_KEY = 'test-placeholder-key';
+    process.env.OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+    process.env.OPENAI_MODELS = 'gemini-3.8-flash';
+    process.env.DEFAULT_MODEL = 'openai:gemini-3.8-flash';
+    vi.resetModules();
+    runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    const loaded = runtime.deploymentConfig();
+    expect(loaded).toMatchObject({
+      legacy: true,
+      layer: {
+        config: {
+          providers: { openai: { baseUrl: process.env.OPENAI_BASE_URL } },
+          slots: { llm: 'openai:gemini-3.8-flash' },
+        },
+      },
+    });
+    expect(await runtime.lookupStage('chat-adapter', null)).toMatchObject({
+      status: 'assigned',
+      registryId: 'openai',
+      modelId: 'gemini-3.8-flash',
+      baseUrl: process.env.OPENAI_BASE_URL,
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await expect(
+      resolveModel({ stage: 'chat-adapter', requireToolCalling: true }),
+    ).rejects.toMatchObject({ name: 'PiGeminiNativeRequiredError' });
+    await expect(resolveModel({ stage: 'quiz-grade' })).resolves.toMatchObject({
+      modelId: 'gemini-3.8-flash',
+    });
+  } finally {
+    runtime?.setDeploymentConfigForTests();
+    boundary.mockRestore();
+    for (const name of Object.keys(process.env)) if (!(name in snapshot)) delete process.env[name];
+    Object.assign(process.env, snapshot);
+    vi.resetModules();
+  }
 });

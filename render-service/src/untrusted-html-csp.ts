@@ -3,7 +3,7 @@
  *
  * Both render paths load HTML that was authored outside this service: the
  * interactive HTML in `POST /preview`, and the whole uploaded project in
- * `POST /render`. Each document gets the policy as its first `<meta>` so the
+ * `POST /owner-bound/render`. Each document gets the policy as its first `<meta>` so the
  * parser processes it before any authored markup can run, and a later
  * attacker-supplied `<meta>` cannot loosen it because browsers intersect every
  * policy on a document.

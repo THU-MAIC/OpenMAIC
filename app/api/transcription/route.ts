@@ -1,3 +1,5 @@
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 import { NextRequest } from 'next/server';
 import { transcribeAudio } from '@/lib/audio/asr-providers';
 import {
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       managed: connection.managed,
     };
     // Reflect the resolved (possibly server-pinned) model in failure logs.
+    authorizeMediaModel(connection, 'asr', config.modelId);
     resolvedModelId = config.modelId;
 
     // Transcribe using the provider system
@@ -92,6 +95,8 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ text: result.text });
   } catch (error) {
+    const authorization = modelAuthorizationResponse(error);
+    if (authorization) return authorization;
     log.error(
       `Transcription failed [provider=${resolvedProviderId ?? 'unknown'}, model=${resolvedModelId ?? 'default'}]:`,
       error,

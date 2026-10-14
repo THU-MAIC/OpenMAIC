@@ -654,7 +654,9 @@ function getVLLMOmniSpeechUrl(baseUrl: string): string {
 }
 
 function getVLLMOmniModelId(config: TTSModelConfig): string {
-  const modelId = config.modelId?.trim();
+  const modelId = config.modelId;
+  // VoxCPM2 is the operator-declared id; vLLM-Omni requires this fixed internal
+  // alias. The rewrite is deterministic and cannot be selected by a request.
   if (!modelId || modelId === 'VoxCPM2') return VOXCPM_VLLM_MODEL_ID;
   return modelId;
 }

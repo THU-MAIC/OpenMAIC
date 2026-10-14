@@ -7,6 +7,8 @@
  *     progress again, so the per-owner limit applies (429 `ACTIVE_RUN_LIMIT`). Idempotent by `commandId`: a
  *     repeated command answers what the first one did.
  */
+import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
+import { GENERATION_MODEL_SLOTS } from '@/lib/server/generation/run/start';
 import type { NextRequest } from 'next/server';
 
 import { apiSuccess } from '@/lib/server/api-response';
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = parseConfirmOutline(raw);
     if (!parsed.ok) return ownerApiError('INVALID_REQUEST', 400, parsed.message, responseHeaders);
     try {
+      await assertWorkspaceModelsAuthorized(ownerId, GENERATION_MODEL_SLOTS);
       const result = await confirmGenerationRunOutline(id, ownerId, parsed.value, {
         maxActiveRunsPerOwner: generationRunConfig().maxActiveRunsPerOwner,
       });

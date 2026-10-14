@@ -13,6 +13,7 @@
  * Body: { prompt, duration?, aspectRatio?, resolution? }
  * Response: { success: boolean, result?: VideoGenerationResult, error?: string }
  */
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import { NextRequest } from 'next/server';
 import {
@@ -87,6 +88,8 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ result });
   } catch (error) {
+    const authorization = modelAuthorizationResponse(error);
+    if (authorization) return authorization;
     const message = error instanceof Error ? error.message : String(error);
     // The provider's error text is logged only; the caller gets a fixed message
     // so an upstream body never reaches the response.

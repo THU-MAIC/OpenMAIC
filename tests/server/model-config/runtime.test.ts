@@ -6,7 +6,7 @@ import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 const deployment: ModelConfigLayer = {
   source: 'deployment',
   config: {
-    providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
+    providers: { openai: { preset: 'openai', apiKey: 'sk-operator', models: ['gpt-5.6-mini'] } },
     // What DEFAULT_MODEL translates to: the default model, and the agent off.
     slots: { llm: 'openai:gpt-5.6', agent: null },
   },
@@ -84,7 +84,9 @@ describe('lookupFromLayers', () => {
       source: 'deployment',
       config: {
         allowUserKeys: false,
-        providers: { op: { preset: 'deepseek', apiKey: 'k' } },
+        providers: {
+          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+        },
         slots: { llm: 'op:deepseek-v4-pro' },
       },
     };
@@ -126,7 +128,9 @@ describe('lookupFromLayers', () => {
       source: 'deployment',
       config: {
         allowUserKeys: false,
-        providers: { op: { preset: 'deepseek', apiKey: 'k' } },
+        providers: {
+          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+        },
       },
     };
     const workspace: ModelConfigLayer = {

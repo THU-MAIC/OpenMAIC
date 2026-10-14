@@ -33,6 +33,8 @@ export interface DocumentExtractorConfig {
    * slot, for media extractors that transcribe an audio track.
    */
   asr?: ASRModelConfig;
+  /** Speech configuration failure, raised only when transcription is needed. */
+  asrError?: Error;
   /**
    * The caller stopped waiting (a deleted material, a deadline, shutdown): the
    * extractor aborts its requests, polls and commands and rejects.

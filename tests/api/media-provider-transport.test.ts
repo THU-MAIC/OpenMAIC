@@ -13,6 +13,7 @@
  *    connect-time lookup differently (DNS rebinding); and
  *  - the global `fetch`, replaced with a spy that must never be called.
  */
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
@@ -119,6 +120,22 @@ describe('media provider routes on the strict transport', () => {
     mocks.isServerConfiguredProvider.mockReset();
     mocks.promisesLookup.mockReset();
     mocks.callbackLookup.mockReset();
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            'openai-image': {
+              preset: 'openai-image',
+              apiKey: 'server-key',
+              models: ['gpt-image-2'],
+            },
+          },
+        },
+      },
+      legacy: true,
+      notices: [],
+    });
     mocks.managedBaseUrl.value = undefined;
     destroyAudioProviderDispatchersForTests();
     delete process.env.ALLOW_LOCAL_NETWORKS;

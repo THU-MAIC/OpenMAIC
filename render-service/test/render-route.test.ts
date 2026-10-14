@@ -1,5 +1,5 @@
 /**
- * Integration test for the admission/buffering boundary of `POST /render`.
+ * Integration test for the admission/buffering boundary of `POST /owner-bound/render`.
  *
  * The security property under test (round-3 review P1#1): only
  * `maxConcurrentExtractions` requests may be inside the RAM-heavy section
@@ -15,11 +15,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ArtifactStore } from '../src/artifact-store.js';
-import type { JobStore } from '../src/job-store.js';
+import { InMemoryJobStore, type JobStore } from '../src/job-store.js';
 import type { RenderCoordinatorOptions } from '../src/render-coordinator.js';
 import type { RenderExecutor } from '../src/render-executor.js';
 import { Semaphore } from '../src/semaphore.js';
-import type { RenderJobRecord } from '../src/types.js';
+import {
+  requireAdmissionIdentity,
+  requireRenderOwnerId,
+  type RenderJobRecord,
+} from '../src/types.js';
 import { waitUntil } from './support/async.js';
 import {
   createMemoryArtifactStore,
@@ -45,17 +49,31 @@ afterEach(async () => {
   await Promise.all(scratch.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
-/** Build a valid-looking multipart body for `POST /render`. */
-function renderRequest(sizeBytes = 4096, identity = 'anon'): Request {
+/** Build a valid-looking multipart body for `POST /owner-bound/render`. */
+const OWNER_HEADER = 'x-openmaic-render-owner';
+const OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
+
+function renderRequest(sizeBytes = 4096, identity = 'anon', ownerId = 'owner-a'): Request {
   const form = new FormData();
   form.append('project', new Blob([new Uint8Array(sizeBytes)]), 'project.zip');
   form.append('fps', '24');
   form.append('quality', 'draft');
   form.append('format', 'mp4');
-  return new Request('http://test/render', {
+  return new Request('http://test/owner-bound/render', {
     method: 'POST',
     body: form,
-    headers: { 'x-openmaic-client': identity },
+    headers: { 'x-openmaic-client': identity, [OWNER_HEADER]: ownerId },
+  });
+}
+
+function jobRequest(
+  path: string,
+  ownerId = 'owner-a',
+  init: Omit<RequestInit, 'headers'> = {},
+): Request {
+  return new Request(`http://test${path}`, {
+    ...init,
+    headers: { [OWNER_HEADER]: ownerId },
   });
 }
 
@@ -86,9 +104,10 @@ async function waitForPoll(
   app: ReturnType<typeof createApp>,
   jobId: string,
   status: RenderJobRecord['status'],
+  ownerId = 'owner-a',
 ): Promise<Record<string, unknown>> {
   return waitUntil(async () => {
-    const response = await app.fetch(new Request(`http://test/render/${jobId}`));
+    const response = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, ownerId));
     const body = (await response.json()) as Record<string, unknown>;
     return body.status === status ? body : null;
   }, `${jobId} to reach ${status}`);
@@ -100,7 +119,7 @@ async function healthBody(app: ReturnType<typeof createApp>): Promise<Record<str
   return (await response.json()) as Record<string, unknown>;
 }
 
-describe('POST /render buffering/extraction bound', () => {
+describe('POST /owner-bound/render buffering/extraction bound', () => {
   it('reports the configured preview concurrency, not just its default', async () => {
     vi.stubEnv('RENDER_PREVIEW_MAX_CONCURRENCY', '2');
     vi.resetModules();
@@ -144,6 +163,7 @@ describe('POST /render buffering/extraction bound', () => {
 
     const response = await app.fetch(new Request('http://test/health'));
     expect(response.status).toBe(200);
+    expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       previewMaxConcurrency: 1,
@@ -230,6 +250,8 @@ describe('render HTTP contract through a replaceable executor', () => {
     const now = Date.now();
     await jobs.create({
       id: 'startup-failed',
+      ownerId: requireRenderOwnerId('owner-a'),
+      admissionIdentity: requireAdmissionIdentity('client-a'),
       status: 'failed',
       progress: 0,
       currentStage: 'failed',
@@ -247,7 +269,7 @@ describe('render HTTP contract through a replaceable executor', () => {
       },
     });
     const { app } = testApp(succeedingExecutor, { jobs });
-    const response = await app.fetch(new Request('http://test/render/startup-failed'));
+    const response = await app.fetch(jobRequest('/owner-bound/render/startup-failed'));
     const text = await response.text();
     expect(JSON.parse(text)).toMatchObject({
       resources: {
@@ -281,6 +303,7 @@ describe('render HTTP contract through a replaceable executor', () => {
 
     const submit = await app.fetch(renderRequest());
     expect(submit.status).toBe(202);
+    expect(submit.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     const { jobId } = (await submit.json()) as { jobId: string };
 
     await expect(waitForPoll(app, jobId, 'succeeded')).resolves.toEqual({
@@ -293,8 +316,9 @@ describe('render HTTP contract through a replaceable executor', () => {
       done: true,
     });
 
-    const download = await app.fetch(new Request(`http://test/render/${jobId}/download`));
+    const download = await app.fetch(jobRequest(`/owner-bound/render/${jobId}/download`));
     expect(download.status).toBe(200);
+    expect(download.headers.get(OWNER_BOUND_HEADER)).toBe('1');
     expect(download.headers.get('content-type')).toBe('video/mp4');
     expect(download.headers.get('content-disposition')).toBe(`attachment; filename="${jobId}.mp4"`);
     expect(Buffer.from(await download.arrayBuffer()).toString()).toBe('fake-mp4');
@@ -311,7 +335,7 @@ describe('render HTTP contract through a replaceable executor', () => {
     const { jobId } = (await submit.json()) as { jobId: string };
 
     const cancel = await app.fetch(
-      new Request(`http://test/render/${jobId}`, { method: 'DELETE' }),
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
     );
     expect(cancel.status).toBe(200);
     await expect(cancel.json()).resolves.toEqual({ cancelled: true });
@@ -349,7 +373,7 @@ describe('render HTTP contract through a replaceable executor', () => {
     await executionStarted;
 
     const cancel = await app.fetch(
-      new Request(`http://test/render/${jobId}`, { method: 'DELETE' }),
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
     );
     expect(cancel.status).toBe(200);
     await expect(waitForPoll(app, jobId, 'cancelled')).resolves.toEqual({
@@ -367,6 +391,8 @@ describe('render HTTP contract through a replaceable executor', () => {
     const now = Date.now();
     await jobs.create({
       id: 'ready',
+      ownerId: requireRenderOwnerId('owner-a'),
+      admissionIdentity: requireAdmissionIdentity('client-a'),
       status: 'succeeded',
       progress: 1,
       currentStage: 'complete',
@@ -377,6 +403,8 @@ describe('render HTTP contract through a replaceable executor', () => {
     });
     await jobs.create({
       id: 'failed',
+      ownerId: requireRenderOwnerId('owner-a'),
+      admissionIdentity: requireAdmissionIdentity('client-a'),
       status: 'failed',
       progress: 0.25,
       currentStage: 'failed',
@@ -394,17 +422,225 @@ describe('render HTTP contract through a replaceable executor', () => {
     };
     const { app } = testApp(succeedingExecutor, { artifacts, jobs });
 
-    const redirect = await app.fetch(new Request('http://test/render/ready/download'));
+    const redirect = await app.fetch(jobRequest('/owner-bound/render/ready/download'));
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('https://example.test/video.mp4');
 
-    const notReady = await app.fetch(new Request('http://test/render/failed/download'));
+    const notReady = await app.fetch(jobRequest('/owner-bound/render/failed/download'));
     expect(notReady.status).toBe(409);
     await expect(notReady.json()).resolves.toEqual({ error: 'Job not ready (status: failed)' });
 
-    const missing = await app.fetch(new Request('http://test/render/missing/download'));
+    const missing = await app.fetch(jobRequest('/owner-bound/render/missing/download'));
     expect(missing.status).toBe(404);
     await expect(missing.json()).resolves.toEqual({ error: 'Job not found' });
+  });
+
+  it('requires valid internal identities before admission or request-body reads', async () => {
+    const { app, coordinator } = testApp(succeedingExecutor);
+    const reserve = vi.spyOn(coordinator, 'reserve');
+
+    for (const headers of [
+      { 'x-openmaic-client': 'client-a' },
+      { 'x-openmaic-client': 'client-a', [OWNER_HEADER]: 'owner with spaces' },
+      { 'x-openmaic-client': 'client-a', [OWNER_HEADER]: 'x'.repeat(257) },
+      { [OWNER_HEADER]: 'owner-a' },
+      { 'x-openmaic-client': 'client with spaces', [OWNER_HEADER]: 'owner-a' },
+    ]) {
+      let pulls = 0;
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            pulls += 1;
+            controller.enqueue(new Uint8Array([1]));
+            controller.close();
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      const response = await app.fetch(
+        new Request('http://test/owner-bound/render', {
+          method: 'POST',
+          headers: { ...headers, 'content-type': 'multipart/form-data; boundary=fixture' },
+          body,
+          duplex: 'half',
+        } as RequestInit),
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ error: 'Invalid render identity' });
+      expect(pulls).toBe(0);
+    }
+
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it('refuses legacy job paths without buffering, reservation, lookup, or cancellation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-legacy-'));
+    scratch.push(dir);
+    const jobs = new InMemoryJobStore(60_000);
+    const { app, artifacts, coordinator } = testApp(succeedingExecutor, {
+      jobs,
+      coordinator: { maxConcurrency: 0 },
+      makeProjectDir: async () => dir,
+    });
+    const submitted = await app.fetch(renderRequest());
+    expect(submitted.status).toBe(202);
+    const { jobId } = (await submitted.json()) as { jobId: string };
+    const snapshot = await jobs.list();
+    const reserve = vi.spyOn(coordinator, 'reserve');
+    const cancel = vi.spyOn(coordinator, 'cancelForOwner');
+    const get = vi.spyOn(jobs, 'getForOwner');
+    const locate = vi.spyOn(artifacts, 'locate');
+    let pulls = 0;
+    const body = new ReadableStream(
+      {
+        pull(controller) {
+          pulls++;
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    // Even valid assertions from an old app must not activate legacy routes.
+    const legacySubmit = new Request('http://test/render', {
+      method: 'POST',
+      headers: {
+        [OWNER_HEADER]: 'owner-a',
+        'x-openmaic-client': 'anon',
+        'content-type': 'multipart/form-data; boundary=fixture',
+      },
+      body,
+      duplex: 'half',
+    } as RequestInit);
+    for (const req of [
+      legacySubmit,
+      jobRequest(`/render/${jobId}`),
+      jobRequest(`/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+      jobRequest(`/render/${jobId}/download`),
+    ]) {
+      const response = await app.fetch(req);
+      expect(response.status).toBe(404);
+      expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
+    }
+    expect(pulls).toBe(0);
+    expect(reserve).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(locate).not.toHaveBeenCalled();
+    expect(await jobs.list()).toEqual(snapshot);
+  });
+
+  it('makes foreign and missing jobs indistinguishable across poll and cancel', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-owner-cancel-'));
+    scratch.push(dir);
+    const jobs = new InMemoryJobStore(60_000);
+    const { app } = testApp(succeedingExecutor, {
+      jobs,
+      coordinator: { maxConcurrency: 0 },
+      makeProjectDir: async () => dir,
+    });
+    const submit = await app.fetch(renderRequest(4096, 'client-a', 'owner-a'));
+    const { jobId } = (await submit.json()) as { jobId: string };
+
+    const ownPoll = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, 'owner-a'));
+    expect(ownPoll.status).toBe(200);
+    await expect(ownPoll.json()).resolves.toMatchObject({ jobId, status: 'queued' });
+
+    for (const id of [jobId, 'missing']) {
+      const poll = await app.fetch(jobRequest(`/owner-bound/render/${id}`, 'owner-b'));
+      expect(poll.status).toBe(404);
+      await expect(poll.json()).resolves.toEqual({ error: 'Job not found' });
+
+      const cancel = await app.fetch(
+        jobRequest(`/owner-bound/render/${id}`, 'owner-b', { method: 'DELETE' }),
+      );
+      expect(cancel.status).toBe(404);
+      await expect(cancel.json()).resolves.toEqual({ error: 'Job not found' });
+    }
+
+    const stillQueued = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`, 'owner-a'));
+    await expect(stillQueued.json()).resolves.toMatchObject({ status: 'queued' });
+    const ownCancel = await app.fetch(
+      jobRequest(`/owner-bound/render/${jobId}`, 'owner-a', { method: 'DELETE' }),
+    );
+    expect(ownCancel.status).toBe(200);
+  });
+
+  it('does not locate an artifact for a foreign or missing job', async () => {
+    const jobs = new InMemoryJobStore(60_000);
+    const now = Date.now();
+    await jobs.create({
+      id: 'ready-for-owner',
+      ownerId: requireRenderOwnerId('owner-a'),
+      admissionIdentity: requireAdmissionIdentity('client-a'),
+      status: 'succeeded',
+      progress: 1,
+      currentStage: 'complete',
+      createdAtMs: now,
+      updatedAtMs: now,
+      projectDir: '/tmp/ready-for-owner',
+      outputPath: '/tmp/ready-for-owner/output.mp4',
+    });
+    const locate = vi.fn(async () => ({
+      kind: 'url' as const,
+      href: 'https://example.test/owned.mp4',
+    }));
+    const artifacts: ArtifactStore = {
+      async put() {},
+      locate,
+      async remove() {},
+    };
+    const { app } = testApp(succeedingExecutor, { artifacts, jobs });
+
+    const own = await app.fetch(
+      jobRequest('/owner-bound/render/ready-for-owner/download', 'owner-a'),
+    );
+    expect(own.status).toBe(302);
+    expect(locate).toHaveBeenCalledOnce();
+
+    for (const id of ['ready-for-owner', 'missing']) {
+      const response = await app.fetch(jobRequest(`/owner-bound/render/${id}/download`, 'owner-b'));
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({ error: 'Job not found' });
+    }
+    expect(locate).toHaveBeenCalledOnce();
+  });
+
+  it('hides an ownerless record from poll, cancel, and download', async () => {
+    const jobs = new InMemoryJobStore(60_000);
+    const records: unknown = Reflect.get(jobs, 'jobs');
+    if (!(records instanceof Map)) throw new Error('InMemoryJobStore backing map not found');
+    const now = Date.now();
+    records.set('legacy-ownerless', {
+      id: 'legacy-ownerless',
+      admissionIdentity: requireAdmissionIdentity('client-a'),
+      status: 'succeeded',
+      progress: 1,
+      currentStage: 'complete',
+      createdAtMs: now,
+      updatedAtMs: now,
+      projectDir: '/tmp/legacy-ownerless',
+      outputPath: '/tmp/legacy-ownerless/output.mp4',
+    });
+    const locate = vi.fn();
+    const artifacts: ArtifactStore = {
+      async put() {},
+      locate,
+      async remove() {},
+    };
+    const { app } = testApp(succeedingExecutor, { artifacts, jobs });
+
+    for (const request of [
+      jobRequest('/owner-bound/render/legacy-ownerless'),
+      jobRequest('/owner-bound/render/legacy-ownerless', 'owner-a', { method: 'DELETE' }),
+      jobRequest('/owner-bound/render/legacy-ownerless/download'),
+    ]) {
+      const response = await app.fetch(request);
+      expect(response.status).toBe(404);
+      expect(response.headers.get(OWNER_BOUND_HEADER)).toBe('1');
+      await expect(response.json()).resolves.toEqual({ error: 'Job not found' });
+    }
+    expect(locate).not.toHaveBeenCalled();
   });
 });
 

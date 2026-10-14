@@ -31,7 +31,12 @@ import {
 import { parseElementRefs, type ElementRef } from './element-refs';
 import { parseCourseRefs, type CourseRef } from './course-refs';
 import { appendCourseSighting, courseSightingsOf } from './run-courses';
-import { resolveWorkbenchMaterialMime } from './material-upload-policy';
+import {
+  isWorkbenchMaterialMime,
+  MEDIA_MIME_TYPES,
+  resolveWorkbenchMaterialMime,
+} from './material-upload-policy';
+import { fetchMaterialPolicy, type MaterialPolicy } from '@/lib/generation-run-client/api';
 
 export type ChatNodeKind =
   | 'user'
@@ -2176,6 +2181,49 @@ export class WorkbenchMaterialUploadError extends Error {
   }
 }
 
+// Share discovery across concurrent uploads for this page. Only the server's
+// advertised caps are authoritative; a failed or slow read must not block
+// uploading (the server's 413 still applies), and the next upload should try
+// discovery again. A slow read stays cached so later uploads can use it once
+// it answers; until then, uploads after its first timeout do not wait again.
+const MATERIAL_POLICY_WAIT_MS = 5_000;
+let materialPolicyPromise: Promise<MaterialPolicy | undefined> | undefined;
+let materialPolicyOverdue = false;
+let materialPolicyAnswered = false;
+
+async function workbenchMaterialPolicy(): Promise<MaterialPolicy | undefined> {
+  if (!materialPolicyPromise) {
+    materialPolicyOverdue = false;
+    materialPolicyAnswered = false;
+    materialPolicyPromise = fetchMaterialPolicy().then(
+      (policy) => {
+        materialPolicyAnswered = true;
+        return policy;
+      },
+      () => {
+        materialPolicyPromise = undefined;
+        return undefined;
+      },
+    );
+  }
+  if (materialPolicyOverdue && !materialPolicyAnswered) return undefined;
+  const timedOut = Symbol('timed out');
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const policy = await Promise.race([
+      materialPolicyPromise,
+      new Promise<typeof timedOut>((resolve) => {
+        timer = setTimeout(resolve, MATERIAL_POLICY_WAIT_MS, timedOut);
+      }),
+    ]);
+    if (policy !== timedOut) return policy;
+    materialPolicyOverdue = true;
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Upload one file into the caller's durable material library. */
 export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMaterial> {
   // Some Linux browsers report every OOXML file with the generic
@@ -2185,6 +2233,25 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
     mimeType: file.type,
     fileName: file.name,
   });
+  // The route rejects an unsupported type (415) before it applies a size cap;
+  // leave those to it so the user is told the format, not the size, is wrong.
+  const policy = isWorkbenchMaterialMime(mimeType) ? await workbenchMaterialPolicy() : undefined;
+  const maxBytes = MEDIA_MIME_TYPES.includes(mimeType)
+    ? policy?.maxMediaBytes
+    : policy?.maxDocumentBytes;
+  if (
+    typeof maxBytes === 'number' &&
+    Number.isFinite(maxBytes) &&
+    maxBytes > 0 &&
+    file.size > maxBytes
+  ) {
+    throw new WorkbenchMaterialUploadError(
+      `upload exceeds ${maxBytes} bytes`,
+      413,
+      undefined,
+      maxBytes,
+    );
+  }
   // A session extracts what it binds itself: the library's own extraction
   // (for classic generation) is not started for it.
   const res = await fetch('/api/materials?extract=false', {
