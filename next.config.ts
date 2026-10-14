@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  // Do not generate or rewrite agent instruction files when next dev detects an AI session.
+  agentRules: false,
   env: {
     // Pin even the unset/default value in both client and server bundles.
     // A runtime-only override must not disable the route the built client uses.
