@@ -264,12 +264,14 @@ function applyOperationToContent(
             // keep the kernel's invariants independent of which mutation
             // shape future op consumers pick.
             const source = structuredClone(current(element)) as PPTElement;
-            return {
+            const duplicate = {
               ...source,
               id: operation.idMap[source.id],
               left: source.left + offset.x,
               top: source.top + offset.y,
             };
+            assertShapeWrite(duplicate);
+            return duplicate;
           });
 
         draft.canvas.elements.push(...duplicatedElements);

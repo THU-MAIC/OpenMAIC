@@ -96,6 +96,28 @@ describe('shape geometry write validation', () => {
       applyEditIntents(content, [{ type: 'element.update', id: 'shape', props: { width: 500 } }]),
     ).toThrow(/commands/);
   });
+
+  it('rejects duplicating historical bad shapes without changing the source', () => {
+    const content = slideContent([
+      shapeElement('valid'),
+      shapeElement('bad', { path: 'M0 0 Z1 1' }),
+    ]);
+    const before = structuredClone(content);
+    expect(() =>
+      applyEditorTransaction(content, {
+        origin: 'system',
+        history: 'neutral',
+        operations: [
+          {
+            type: 'element.duplicate',
+            elementIds: ['valid', 'bad'],
+            idMap: { valid: 'valid-copy', bad: 'bad-copy' },
+          },
+        ],
+      }),
+    ).toThrow(/path/);
+    expect(content).toEqual(before);
+  });
 });
 
 function tableElement(id: string, overrides: Partial<PPTTableElement> = {}): PPTTableElement {

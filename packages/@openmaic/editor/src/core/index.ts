@@ -483,14 +483,17 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
         existingIds.add(duplicateId);
       }
       const offset = operation.offset ?? { x: 20, y: 20 };
-      elements.push(
-        ...sourceElements.map((source) => ({
+      const duplicates = sourceElements.map((source) => {
+        const duplicate = {
           ...clone(source),
           id: operation.idMap[source.id],
           left: source.left + offset.x,
           top: source.top + offset.y,
-        })),
-      );
+        };
+        if (duplicate.type === 'shape') assertShapeGeometry(operation.type, duplicate);
+        return duplicate;
+      });
+      elements.push(...duplicates);
       return;
     }
     case 'element.align': {
