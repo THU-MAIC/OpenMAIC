@@ -282,6 +282,12 @@ function applyOperationToContent(
       case 'element.removeProps': {
         const element = draft.canvas.elements.find((item) => item.id === operation.elementId);
         if (!element) return;
+        const next = { ...element };
+        operation.propNames.forEach((propName) => {
+          delete (next as Record<string, unknown>)[propName];
+        });
+        // Removing a required field changes geometry just as assigning it does.
+        assertShapeWrite({ ...next, type: element.type } as PPTElement, element);
         operation.propNames.forEach((propName) => {
           delete (element as Record<string, unknown>)[propName];
         });

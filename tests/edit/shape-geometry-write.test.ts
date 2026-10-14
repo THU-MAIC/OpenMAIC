@@ -5,6 +5,7 @@ import {
   validateSlideCanvas,
 } from '@/lib/server/agent-runtime/course-edit/element-schema';
 import { applySlideEdit } from '@/lib/server/agent-runtime/course-edit/apply';
+import { applySlideEditOperation, createSlideEditHistory } from '@/lib/edit/slide-ops';
 import type { SlideContent } from '@openmaic/dsl';
 
 function content(): SlideContent {
@@ -26,6 +27,34 @@ function content(): SlideContent {
 }
 
 describe('agent shape write validation', () => {
+  it.each(['path', 'viewBox', 'width', 'height'])(
+    'rejects removing required shape geometry: %s',
+    (field) => {
+      const history = createSlideEditHistory(content());
+      expect(() =>
+        applySlideEditOperation(history, {
+          type: 'element.removeProps',
+          elementId: 'shape',
+          propNames: [field],
+        }),
+      ).toThrow();
+      expect(history.past).toEqual([]);
+      expect(history.present).toEqual(content());
+    },
+  );
+
+  it('permits removing unrelated style properties from historical bad shapes', () => {
+    const slide = content();
+    const shape = slide.canvas.elements[0];
+    if (shape.type !== 'shape') throw new Error('expected shape');
+    shape.path = 'M0 0 Z1 1';
+    const next = applySlideEditOperation(slide, {
+      type: 'element.removeProps',
+      elementId: 'shape',
+      propNames: ['fill'],
+    });
+    expect(next.canvas.elements[0]).not.toHaveProperty('fill');
+  });
   it.each(['M0 0 Z1 1', 'M0 0 L1e999 0', '<svg/>'])(
     'rejects an invalid complete new path: %s',
     (path) => {
