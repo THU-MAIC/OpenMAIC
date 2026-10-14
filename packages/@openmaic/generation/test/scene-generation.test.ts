@@ -15,7 +15,7 @@ import {
 } from './scene-fixtures.js';
 
 describe('scene generation primitives', () => {
-  it('drops only invalid SVG geometry, retaining labels and valid neighboring shapes', async () => {
+  it('drops invalid shapes including their labels while retaining valid neighboring elements', async () => {
     const shape = {
       type: 'shape',
       left: 0,
@@ -40,14 +40,27 @@ describe('scene generation primitives', () => {
               defaultColor: '#000',
             },
           },
+          {
+            ...shape,
+            width: 1e100,
+            path: 'M0 0 L100 0 L50 100 Z',
+            text: { content: '<p>Do not bypass size limits</p>' },
+          },
+          {
+            ...shape,
+            viewBox: [0, 0],
+            path: 'M0 0 L100 0 L50 100 Z',
+            text: { content: '<p>Do not retain an invalid shape label</p>' },
+          },
           { ...shape, path: 'M0 0 L100 0 L50 100 Z' },
+          { type: 'text', left: 0, top: 120, width: 100, height: 40, content: '<p>Valid text</p>' },
         ],
       }),
     );
     expect(content).toMatchObject({
       elements: [
-        { type: 'text', content: '<p>Keep this explanation</p>' },
         { type: 'shape', path: 'M0 0 L100 0 L50 100 Z' },
+        { type: 'text', content: '<p>Valid text</p>' },
       ],
     });
   });
