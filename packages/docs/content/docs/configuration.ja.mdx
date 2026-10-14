@@ -808,3 +808,5 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 
 
 エンドポイントはベースパスに応じて選択されます。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。デプロイで設定するカスタムプロキシも、このパス構成を維持する必要があります。ウィザードが検索を推奨するのは公式アカウントのベース URL のみなので、ワークスペースのカスタムチャットプロキシに検索が自動で割り当てられることはありません。
+
+`openmaic.yml` が存在する場合は、`providers.<id>: { preset: kimi }` を宣言して `slots.webSearch: <id>` を割り当ててください。旧環境変数 `WEB_SEARCH_KIMI_ENABLED` ではこのスロットを割り当てられません。

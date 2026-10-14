@@ -149,3 +149,5 @@ Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1
 Chat credentials alone do not enable search in legacy configuration. Opt in with `WEB_SEARCH_KIMI_ENABLED=true` or an explicit `web-search.kimi` entry in `server-providers.yml`. In `openmaic.yml`, explicitly assign the `webSearch` slot. The wizard recommends search only for official account bases.
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; every other base uses `/tools/search_pro`. Custom proxies configured in `openmaic.yml` must preserve that path layout.
+
+When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.

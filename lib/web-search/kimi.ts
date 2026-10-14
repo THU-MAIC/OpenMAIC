@@ -87,6 +87,7 @@ export async function searchWithKimi(params: {
       score: 0,
     }))
     .filter((source) => source.url)
+    // Coding Plan search may ignore the requested limit; cap both endpoints locally.
     .slice(0, limit);
 
   return { answer: '', sources, query, responseTime: (Date.now() - startedAt) / 1000 };

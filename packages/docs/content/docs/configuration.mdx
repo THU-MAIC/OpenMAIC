@@ -808,3 +808,5 @@ For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-co
 
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; otherwise it uses `/tools/search_pro`. Custom proxies configured by the deployment must preserve that path layout. The wizard recommends search only for official account bases, so a custom workspace chat proxy does not automatically acquire a search assignment.
+
+When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.

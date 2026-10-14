@@ -149,3 +149,5 @@ Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 
 在旧版配置中，仅配置对话密钥不会启用搜索。请设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.kimi`。使用 `openmaic.yml` 时，需要显式指定 `webSearch` 槽位。首次运行向导仅为使用官方 Base URL 的账户推荐搜索。
 
 端点按 Base URL 的路径选择：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。在 `openmaic.yml` 中配置的自定义代理必须保留这一端点路径结构。
+
+存在 `openmaic.yml` 时，必须声明 `providers.<id>: { preset: kimi }` 并指定 `slots.webSearch: <id>`；旧版环境变量 `WEB_SEARCH_KIMI_ENABLED` 无法为该槽位指定服务商。

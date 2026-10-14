@@ -149,3 +149,5 @@ Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` 
 従来の設定では、チャットの認証情報だけで検索が有効になることはありません。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を明示的に追加してください。`openmaic.yml` では `webSearch` スロットを明示的に割り当てます。ウィザードが検索を推奨するのは、公式のベース URL を使用するアカウントだけです。
 
 エンドポイントはベース URL のパスで決まります。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。`openmaic.yml` で設定するカスタムプロキシも、このパス構造を維持する必要があります。
+
+`openmaic.yml` がある場合、従来の環境変数 `WEB_SEARCH_KIMI_ENABLED` だけでは検索スロットは割り当てられないため、`providers.<id>: { preset: kimi }` を宣言し、`slots.webSearch: <id>` を指定してください。

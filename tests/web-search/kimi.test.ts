@@ -109,6 +109,38 @@ describe('Kimi web search', () => {
     expect(result.sources.map((source) => source.content)).toEqual(['Full page', 'Issues', '']);
   });
 
+  it.each(['https://api.moonshot.cn/v1', 'https://api.kimi.com/coding/v1'])(
+    'keeps only the requested three results when %s returns nineteen',
+    async (baseUrl) => {
+      const items = Array.from({ length: 19 }, (_, index) => ({
+        content: `Page content ${index}`,
+        chunks: [{ text: `Page chunk ${index}` }],
+        date: '2026-10-14',
+        icon: '',
+        mime: 'text/html',
+        site_name: 'OpenMAIC',
+        snippet: `Summary ${index}`,
+        title: `Result ${index}`,
+        url: `${repository}/issues/${index + 1}`,
+      }));
+      proxyFetchMock.mockResolvedValueOnce(Response.json({ search_results: items }));
+      const result = await searchWithKimi({
+        query: 'OpenMAIC',
+        apiKey: 'key',
+        baseUrl,
+        maxResults: 3,
+      });
+      expect(JSON.parse(proxyFetchMock.mock.calls[0][1].body).limit).toBe(3);
+      expect(result.sources).toHaveLength(3);
+      expect(result.sources.map((source) => source.url)).toEqual(
+        items.slice(0, 3).map((item) => item.url),
+      );
+      expect(result.sources[0].content).toBe(
+        baseUrl.includes('/coding/v1') ? 'Page content 0' : 'Page chunk 0',
+      );
+    },
+  );
+
   it.each([
     [2.9, 2],
     [0, 1],

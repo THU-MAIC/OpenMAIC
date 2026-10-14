@@ -808,3 +808,5 @@ slots:
 
 
 端點選擇取決於基礎路徑：移除結尾斜線後，以 `/coding/v1` 結尾的路徑使用 `/search`，其他路徑使用 `/tools/search_pro`。部署設定的自訂代理必須保留此路徑配置。精靈只為官方帳號位址推薦搜尋，因此工作區自訂對話代理不會自動取得搜尋指派。
+
+存在 `openmaic.yml` 時，請宣告 `providers.<id>: { preset: kimi }` 並指派 `slots.webSearch: <id>`；舊版變數 `WEB_SEARCH_KIMI_ENABLED` 無法指派該插槽。
