@@ -887,16 +887,60 @@ describe('PPT element reference Route → Director → real call_agent L2', () =
     },
   );
 
-  it('still accepts a slide reference whose scenes contain a non-object member', async () => {
-    installAgentShell('Mock projection answer.');
-    const body = makeBody();
-    (body.storeState.scenes as unknown[]).push(7);
-    const { POST } = await import('@/app/api/chat/pi/route');
-    const response = await POST(makeRequest(body));
-    expect(response.status).toBe(200);
-    expect(response.headers.get('X-OpenMAIC-Element-Reference-Accepted')).toBe('1');
-    await response.text();
-  });
+  it.each([
+    ['interactive reference', 'first', false],
+    ['interactive reference', 'last', false],
+    ['ordinary chat', 'first', false],
+    ['ordinary chat', 'first', true],
+    ['ordinary chat', 'last', false],
+  ] as const)(
+    'rejects a %s request with a null scene %s (native child=%s) with 400 before any model call',
+    async (kind, position, nativeChild) => {
+      if (nativeChild) process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME = 'true';
+      const body = kind === 'interactive reference' ? makeInteractiveBody() : makeBody();
+      if (kind === 'ordinary chat') {
+        delete (body as { elementReference?: unknown }).elementReference;
+      }
+      const scenes = body.storeState.scenes as unknown[];
+      if (position === 'first') scenes.unshift(null);
+      else scenes.push(null);
+
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        errorCode: 'INVALID_REQUEST',
+        error: 'storeState.scenes members must be objects',
+      });
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['a primitive', 7],
+    ['a string', 'scene-x'],
+    ['an array', []],
+  ] as const)(
+    'rejects a slide reference whose scenes contain %s member with 400 before any model call',
+    async (_label, member) => {
+      const body = makeBody();
+      (body.storeState.scenes as unknown[]).push(member);
+      const { POST } = await import('@/app/api/chat/pi/route');
+      const response = await POST(makeRequest(body));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        errorCode: 'INVALID_REQUEST',
+        error: 'storeState.scenes members must be objects',
+      });
+      expect(response.headers.has('X-OpenMAIC-Element-Reference-Accepted')).toBe(false);
+      expect(mocks.resolveModel).not.toHaveBeenCalled();
+      expect(mocks.buildAgent).not.toHaveBeenCalled();
+      expect(mocks.streamLLM).not.toHaveBeenCalled();
+    },
+  );
 
   it('does not relabel unexpected resolver exceptions as invalid snapshot errors', async () => {
     const references = await import('@/lib/chat/pi/element-reference');

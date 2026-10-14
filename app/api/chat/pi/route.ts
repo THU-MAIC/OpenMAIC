@@ -101,6 +101,19 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       return apiError('INVALID_REQUEST', 400, 'Courseware references are disabled');
     }
 
+    // Non-object members (null, primitives, arrays) are never valid scenes and
+    // null throws on scene.id / scene.order in reference lookup and later scene
+    // iteration. Rejecting them once here covers every path before reference
+    // resolution and model resolution.
+    if (
+      Array.isArray(body.storeState.scenes) &&
+      body.storeState.scenes.some(
+        (scene) => typeof scene !== 'object' || scene === null || Array.isArray(scene),
+      )
+    ) {
+      return apiError('INVALID_REQUEST', 400, 'storeState.scenes members must be objects');
+    }
+
     let elementReference;
     try {
       elementReference = resolveElementReference(body);
