@@ -8,7 +8,7 @@
   },
   "scripts": {
     "postinstall": "pnpm run build:packages",
-    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
+    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../geometry && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
     "build:standalone-player": "node scripts/build-standalone-player.mjs",
     "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",
@@ -170,7 +170,8 @@
     "use-stick-to-bottom": "^1.1.1",
     "zod": "^4.3.5",
     "zustand": "^5.0.10",
-    "remark-cjk-friendly": "^2.3.1"
+    "remark-cjk-friendly": "^2.3.1",
+    "@openmaic/geometry": "workspace:*"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.16",

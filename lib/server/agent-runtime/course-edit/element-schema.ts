@@ -14,6 +14,8 @@
  *
  * Field sets mirror `@openmaic/dsl` `slides.ts` exactly (the 10-element union).
  */
+import { validateShapeGeometry, shapeGeometryChanged } from '@openmaic/geometry';
+import type { Slide, PPTShapeElement } from '@openmaic/dsl';
 import { Type, type TSchema } from 'typebox';
 import { Check, Errors } from 'typebox/value';
 import { ElementTypes } from '@openmaic/dsl';
@@ -743,16 +745,34 @@ export function validateElementPatch(type: string, patch: Record<string, unknown
 
 /** Validate a complete, id-less element before the server assigns identity. */
 export function validateElementInput(element: unknown): string[] {
-  if (Check(SlideElementInputSchema, element)) return [];
+  if (Check(SlideElementInputSchema, element)) {
+    const input = element as PPTShapeElement;
+    return input.type === 'shape' ? shapeGeometryIssues(input, 'element') : [];
+  }
   return Errors(SlideElementInputSchema, element).map(
     (error) => `element${error.instancePath || ''}: ${error.message}`,
   );
 }
 
 /** Validate the entire patched canvas, rejecting unknown fields at every level. */
-export function validateSlideCanvas(canvas: unknown): string[] {
-  if (Check(SlideCanvasSchema, canvas)) return [];
+export function validateSlideCanvas(canvas: unknown, previous?: Slide): string[] {
+  if (Check(SlideCanvasSchema, canvas)) {
+    const old = new Map(previous?.elements.map((element) => [element.id, element]));
+    return (canvas as Slide).elements.flatMap((element, index) => {
+      if (element.type !== 'shape') return [];
+      const before = old.get(element.id);
+      if (before?.type === 'shape' && !shapeGeometryChanged(before, element)) return [];
+      return shapeGeometryIssues(element, `canvas/elements/${index}`);
+    });
+  }
   return Errors(SlideCanvasSchema, canvas).map(
     (error) => `canvas${error.instancePath || ''}: ${error.message}`,
   );
+}
+
+function shapeGeometryIssues(shape: PPTShapeElement, prefix: string): string[] {
+  const result = validateShapeGeometry(shape);
+  if (result.ok) return [];
+  const { field, position, message } = result.error;
+  return [`${prefix}/${field}${position === undefined ? '' : ` at ${position}`}: ${message}`];
 }

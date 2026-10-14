@@ -15,6 +15,43 @@ import {
 } from './scene-fixtures.js';
 
 describe('scene generation primitives', () => {
+  it('drops only invalid SVG geometry, retaining labels and valid neighboring shapes', async () => {
+    const shape = {
+      type: 'shape',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      viewBox: [100, 100],
+      fill: '#fff',
+      fixedRatio: false,
+    };
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          { ...shape, path: 'M0 0 Z1 1' },
+          {
+            ...shape,
+            path: 'M0 0 L1e999 0',
+            text: {
+              content: '<p>Keep this explanation</p>',
+              align: 'middle',
+              defaultFontName: 'Inter',
+              defaultColor: '#000',
+            },
+          },
+          { ...shape, path: 'M0 0 L100 0 L50 100 Z' },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({
+      elements: [
+        { type: 'text', content: '<p>Keep this explanation</p>' },
+        { type: 'shape', path: 'M0 0 L100 0 L50 100 Z' },
+      ],
+    });
+  });
+
   it('generates slide content through the injected AI call', async () => {
     const aiCall: AICallFn = vi.fn(async () =>
       JSON.stringify({

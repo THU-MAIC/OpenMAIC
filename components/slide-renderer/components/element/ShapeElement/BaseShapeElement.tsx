@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
+import { validateShapeGeometry, RENDER_PATH_LIMITS } from '@openmaic/geometry';
 import { useInlineMath, useInnerHtml } from '@openmaic/renderer';
 import { useElementOutline } from '../hooks/useElementOutline';
 import { useElementShadow } from '../hooks/useElementShadow';
@@ -18,6 +19,32 @@ export interface BaseShapeElementProps {
  * Base shape element for read-only/playback mode
  */
 export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
+  const geometry = useMemo(
+    () =>
+      validateShapeGeometry(
+        {
+          path: elementInfo.path,
+          viewBox: elementInfo.viewBox,
+          width: elementInfo.width,
+          height: elementInfo.height,
+        },
+        RENDER_PATH_LIMITS,
+      ),
+    [elementInfo.path, elementInfo.viewBox, elementInfo.width, elementInfo.height],
+  );
+  // Keep the label's viewport usable even when old records contain bad sizes.
+  const width =
+    Number.isFinite(elementInfo.width) && elementInfo.width > 0
+      ? geometry.ok
+        ? elementInfo.width
+        : Math.min(elementInfo.width, 4000)
+      : 100;
+  const height =
+    Number.isFinite(elementInfo.height) && elementInfo.height > 0
+      ? geometry.ok
+        ? elementInfo.height
+        : Math.min(elementInfo.height, 4000)
+      : 100;
   const { fill } = useElementFill(elementInfo, 'base');
   const { outlineWidth, outlineColor, strokeDashArray } = useElementOutline(elementInfo.outline);
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
@@ -37,11 +64,12 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
   return (
     <div
       className="base-element-shape absolute"
+      data-shape-geometry-error={geometry.ok ? undefined : geometry.error.code}
       style={{
         top: `${elementInfo.top}px`,
         left: `${elementInfo.left}px`,
-        width: `${elementInfo.width}px`,
-        height: `${elementInfo.height}px`,
+        width: `${width}px`,
+        height: `${height}px`,
       }}
     >
       <div
@@ -60,8 +88,8 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
         >
           <svg
             overflow="visible"
-            width={elementInfo.width}
-            height={elementInfo.height}
+            width={width}
+            height={height}
             className="transform-origin-[0_0] overflow-visible block"
           >
             <defs>
@@ -78,15 +106,15 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
               )}
             </defs>
             <g
-              transform={`scale(${elementInfo.width / elementInfo.viewBox[0]}, ${
-                elementInfo.height / elementInfo.viewBox[1]
+              transform={`scale(${geometry.ok ? elementInfo.width / elementInfo.viewBox[0] : 1}, ${
+                geometry.ok ? elementInfo.height / elementInfo.viewBox[1] : 1
               }) translate(0,0) matrix(1,0,0,1,0,0)`}
             >
               <path
                 vectorEffect="non-scaling-stroke"
                 strokeLinecap="butt"
                 strokeMiterlimit="8"
-                d={elementInfo.path}
+                d={geometry.ok ? elementInfo.path : ''}
                 fill={fill}
                 stroke={outlineColor}
                 strokeWidth={outlineWidth}

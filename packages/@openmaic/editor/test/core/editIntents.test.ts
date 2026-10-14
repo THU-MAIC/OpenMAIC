@@ -66,6 +66,38 @@ function shapeElement(id: string, overrides: Partial<PPTShapeElement> = {}): PPT
   };
 }
 
+describe('shape geometry write validation', () => {
+  it('rejects malformed additions and batches without changing the input snapshot', () => {
+    const content = slideContent([shapeElement('shape')]);
+    const original = structuredClone(content);
+    expect(() =>
+      applyEditIntents(content, [
+        { type: 'element.add', element: shapeElement('bad', { path: 'M0 0 Z1 1' }) },
+      ]),
+    ).toThrow(/path/);
+    expect(() =>
+      applyEditIntents(content, [
+        { type: 'element.update', id: 'shape', props: { fill: '#123456' } },
+        { type: 'element.update', id: 'shape', props: { viewBox: [0, 0] } },
+      ]),
+    ).toThrow(/viewBox/);
+    expect(content).toEqual(original);
+  });
+
+  it('permits unrelated edits of historical paths beyond new input limits', () => {
+    const path = 'M0 0' + ' L1 1'.repeat(10_001);
+    const content = slideContent([shapeElement('shape', { path })]);
+    expect(
+      applyEditIntents(content, [
+        { type: 'element.update', id: 'shape', props: { fill: '#123456' } },
+      ]).canvas.elements[0],
+    ).toMatchObject({ path, fill: '#123456' });
+    expect(() =>
+      applyEditIntents(content, [{ type: 'element.update', id: 'shape', props: { width: 500 } }]),
+    ).toThrow(/commands/);
+  });
+});
+
 function tableElement(id: string, overrides: Partial<PPTTableElement> = {}): PPTTableElement {
   return {
     id,

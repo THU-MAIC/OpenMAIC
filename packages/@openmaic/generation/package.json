@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/generation",
-  "version": "0.3.19",
+  "version": "0.3.20",
   "description": "Pure generation pipeline contracts and packaged prompt assets for MAIC consumers.",
   "type": "module",
   "main": "./dist/index.js",
@@ -52,7 +52,8 @@
     "katex": "^0.16.22",
     "nanoid": "^5.1.6",
     "parse5": "^8.0.1",
-    "partial-json": "^0.1.7"
+    "partial-json": "^0.1.7",
+    "@openmaic/geometry": "workspace:^"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

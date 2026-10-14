@@ -5,6 +5,7 @@
  * from scene outlines.
  */
 
+import { validateShapeGeometry } from '@openmaic/geometry';
 import { nanoid } from 'nanoid';
 import katex from 'katex';
 import type {
@@ -514,6 +515,38 @@ function fixElementDefaults(
           `Dropping malformed generated element: ${err instanceof Error ? err.message : String(err)}`,
         );
         return null;
+      }
+
+      if (normalized.type === 'shape') {
+        const validation = validateShapeGeometry(normalized);
+        if (!validation.ok) {
+          const { field, position, message } = validation.error;
+          log.warn(
+            `Invalid generated shape ${normalized.id}: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
+          );
+          // Keep useful label text without inventing replacement geometry.
+          if (
+            normalized.text?.content &&
+            normalized.width > 0 &&
+            normalized.height > 0 &&
+            Number.isFinite(normalized.width) &&
+            Number.isFinite(normalized.height)
+          ) {
+            return normalizeElement({
+              type: 'text',
+              id: normalized.id,
+              left: normalized.left,
+              top: normalized.top,
+              width: normalized.width,
+              height: normalized.height,
+              rotate: normalized.rotate,
+              content: normalized.text.content,
+              defaultFontName: normalized.text.defaultFontName,
+              defaultColor: normalized.text.defaultColor,
+            });
+          }
+          return null;
+        }
       }
 
       // Fit the image box to the assigned PDF image's real aspect ratio (`src` is

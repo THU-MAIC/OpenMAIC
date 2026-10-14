@@ -1,3 +1,4 @@
+import { validateShapeGeometry, shapeGeometryChanged } from '@openmaic/geometry';
 import { current, produce } from 'immer';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, Slide } from '@openmaic/dsl';
@@ -168,6 +169,7 @@ function applyOperationToContent(
         return;
       }
       case 'element.add': {
+        assertShapeWrite(operation.element);
         if (draft.canvas.elements.some((el) => el.id === operation.element.id)) {
           throw new Error(`element.add: id "${operation.element.id}" already exists`);
         }
@@ -181,13 +183,17 @@ function applyOperationToContent(
       case 'element.update': {
         const element = draft.canvas.elements.find((item) => item.id === operation.elementId);
         if (!element) return;
+        assertShapeWrite({ ...element, ...operation.patch } as PPTElement, element);
         Object.assign(element, operation.patch);
         return;
       }
       case 'element.updateMany': {
         const elementIds = new Set(operation.elementIds);
         draft.canvas.elements.forEach((element) => {
-          if (elementIds.has(element.id)) Object.assign(element, operation.patch);
+          if (elementIds.has(element.id)) {
+            assertShapeWrite({ ...element, ...operation.patch } as PPTElement, element);
+            Object.assign(element, operation.patch);
+          }
         });
         return;
       }
@@ -356,4 +362,16 @@ function alignElementsToCanvas(
     element.left -= offsetX;
     element.top -= offsetY;
   });
+}
+
+function assertShapeWrite(next: PPTElement, before?: PPTElement): void {
+  if (next.type !== 'shape') return;
+  if (before?.type === 'shape' && !shapeGeometryChanged(before, next)) return;
+  const result = validateShapeGeometry(next);
+  if (!result.ok) {
+    const { field, position, message } = result.error;
+    throw new Error(
+      `shape ${next.id}: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
+    );
+  }
 }
