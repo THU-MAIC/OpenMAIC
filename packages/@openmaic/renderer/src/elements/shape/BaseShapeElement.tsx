@@ -93,7 +93,9 @@ function ValidShapeElement({
         flexDirection: 'column',
         justifyContent,
         overflowWrap: 'break-word',
-        lineHeight: text.lineHeight,
+        boxSizing: 'border-box',
+        padding: 10,
+        lineHeight: text.lineHeight ?? 1.625,
         letterSpacing: `${text.wordSpace || 0}px`,
         // PowerPoint/WPS 在 group flipH/flipV 时只镜像几何与位置，文字字形保持
         // 正向。父层 element-content 已应用 flipStyle 镜像 SVG path；这里给文字
