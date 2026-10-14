@@ -22,8 +22,8 @@ out/
 *.min.js
 *.min.css
 
-# Generated SVG evaluation responses, galleries, and browser evidence
-eval/svg-validator/results/
+# Local SVG evaluation scripts, responses, galleries, and browser evidence
+eval/svg-validator/
 
 # Markdown & YAML
 *.md
