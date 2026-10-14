@@ -95,6 +95,19 @@ describe('SVG path validation', () => {
     });
   });
 
+  it.each(['M0 0 A0 10 0 0 0 10 10', 'M0 0 A10 0 0 0 0 10 10', 'M0 0 A0 0 0 0 0 10 10'])(
+    'treats a zero-radius arc as a line: %s',
+    (path) => {
+      expect(validateSvgPath(path)).toMatchObject({
+        ok: true,
+        bounds: { minX: 0, minY: 0, maxX: 10, maxY: 10 },
+      });
+      expect(
+        validateShapeGeometry({ path, viewBox: [10, 10], width: 100, height: 100 }),
+      ).toMatchObject({ ok: true });
+    },
+  );
+
   it('preserves the bulge of tiny arcs and rejects computation overflow explicitly', () => {
     const tiny = validateSvgPath('M0 0 A1e-12 1e-12 0 0 1 2e-12 0');
     expect(tiny.ok).toBe(true);

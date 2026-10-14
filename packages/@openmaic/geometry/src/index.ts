@@ -192,6 +192,7 @@ export function validateSvgPath(path: unknown, policy: Partial<PathLimits> = {})
       previousY = 0;
     const absolute = new SVGPathData(parsed.commands.map((c) => ({ ...c })))
       .toAbs()
+      // svg-pathdata turns zero-radius arcs into lines here, before arcControlPoints.
       .transform(SVGPathDataTransformer.NORMALIZE_HVZ(true, true, true, false))
       .normalizeST()
       .qtToC()
