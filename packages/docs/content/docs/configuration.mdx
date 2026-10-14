@@ -534,6 +534,8 @@ AZURE_OPENAI_MODELS=your-deployment-name
 
 To connect another OpenAI-compatible LLM service, declare an `openai-compatible` provider with its `baseUrl` and `models` in `openmaic.yml`, or add one with **Add provider** under **Settings → Model Services → LLM**.
 
+For Gemini classroom interaction, use the native `google` preset: add Google in **Settings → Model Services** and select it for **Classroom** in **Course Model Config**. Pi rejects Google’s official OpenAI-compatible endpoint (`https://generativelanguage.googleapis.com/v1beta/openai`) with migration guidance; compatible tool-calling support is tracked in [#1556](https://github.com/THU-MAIC/OpenMAIC/issues/1556). This check recognizes only that official endpoint and cannot identify the upstream behind arbitrary third-party gateways.
+
 ### Local models (Ollama and Lemonade)
 
 Ollama and Lemonade do not require an API key. Put the local service base URL in the server configuration so it passes SSRF validation:

@@ -7,6 +7,7 @@
  */
 import { attachInteractiveState } from '@/lib/chat/pi/interactive-state-evidence';
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { PiGeminiNativeRequiredError } from '@/lib/server/model-config/pi-gemini-route';
 import { SlotRequirementError } from '@/lib/server/model-config/llm';
 
 import { NextRequest } from 'next/server';
@@ -355,6 +356,15 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       },
     });
   } catch (error) {
+    if (error instanceof PiGeminiNativeRequiredError) {
+      return apiError(
+        'MODEL_CONFIG_INVALID',
+        400,
+        error.message,
+        undefined,
+        'gemini_native_required',
+      );
+    }
     if (error instanceof SlotRequirementError) {
       return apiError(
         'MODEL_CONFIG_INVALID',

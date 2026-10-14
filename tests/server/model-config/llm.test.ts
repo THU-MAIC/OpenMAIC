@@ -5,6 +5,18 @@ import type { ResolvedModel } from '@/lib/server/resolve-model';
 
 const state = vi.hoisted(() => ({ lookup: undefined as SlotResolution | undefined }));
 
+// Fix the DNS boundary; workspace URL and address validation still run through the real SSRF guard.
+vi.mock('node:dns', async (original) => {
+  const actual = await original<typeof import('node:dns')>();
+  return {
+    ...actual,
+    promises: {
+      ...actual.promises,
+      lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
+    },
+  };
+});
+
 vi.mock('@/lib/server/model-config/runtime', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/model-config/runtime')>()),
   lookupStage: vi.fn(async () => state.lookup),
@@ -255,4 +267,110 @@ describe('resolveStageModel', () => {
       resolveStageModel({ stage: 'chat-adapter', workspaceId: null }),
     ).resolves.toMatchObject({ baseUrl: 'http://127.0.0.1:11434/v1', modelId: 'm' });
   });
+});
+
+describe('Pi Google route on resolved slot targets', () => {
+  const official = 'https://generativelanguage.googleapis.com/v1beta/openai';
+  it.each([
+    ['openai-compatible', official, true],
+    ['openai', official + '/', true],
+    ['openai', 'https://GENERATIVELANGUAGE.GOOGLEAPIS.COM:443/v1beta/openai?x=1', true],
+    ['google', official, false],
+    ['google', undefined, false],
+    ['openai-compatible', 'https://gateway.example/v1', false],
+    ['openai-compatible', official + '.evil.example/v1', false],
+    [
+      'openai-compatible',
+      'https://generativelanguage.googleapis.com.evil.example/v1beta/openai',
+      false,
+    ],
+    [
+      'openai-compatible',
+      'https://generativelanguage.googleapis.com@evil.example/v1beta/openai',
+      false,
+    ],
+    ['openai-compatible', 'https://example.com/v1?url=' + official, false],
+    [
+      'openai-compatible',
+      'https://example.com/generativelanguage.googleapis.com/v1beta/openai',
+      false,
+    ],
+    ['openai-compatible', 'https://generativelanguage.googleapis.com/v1/openai', false],
+    ['openai-compatible', 'https://generativelanguage.googleapis.com/v1beta/openai/extra', false],
+    ['openai-compatible', 'https://example-aiplatform.googleapis.com/v1/endpoints/openapi', false],
+  ])('checks only the effective %s URL %s (refused=%s)', async (preset, baseUrl, refused) => {
+    state.lookup = lookupFromLayers('classroom', {
+      deployment: layer('deployment', {
+        providers: { p: { preset, apiKey: 'test-key', ...(baseUrl ? { baseUrl } : {}) } },
+        slots: { classroom: 'p:google/gemini-alias' },
+      }),
+      workspace: null,
+    });
+    const run = resolveStageModel({
+      stage: 'chat-adapter',
+      workspaceId: null,
+      requireToolCalling: true,
+    });
+    if (refused) await expect(run).rejects.toMatchObject({ name: 'PiGeminiNativeRequiredError' });
+    else await expect(run).resolves.toMatchObject({ modelId: 'google/gemini-alias' });
+  });
+  it.each([undefined, ''])(
+    'uses the registry default for an empty effective URL (%s)',
+    async (baseUrl) => {
+      const providers = await import('@/lib/ai/providers');
+      const registry = providers.getProvider('openai')!;
+      const getProvider = vi
+        .spyOn(providers, 'getProvider')
+        .mockImplementation((id) =>
+          id === 'openai' ? { ...registry, defaultBaseUrl: official } : undefined,
+        );
+      try {
+        state.lookup = lookupFromLayers('classroom', {
+          deployment: layer('deployment', {
+            providers: { p: { preset: 'openai', apiKey: 'test-key' } },
+            slots: { classroom: 'p:alias' },
+          }),
+          workspace: null,
+        });
+        if (state.lookup?.status === 'assigned') state.lookup.baseUrl = baseUrl;
+        await expect(
+          resolveStageModel({ stage: 'chat-adapter', workspaceId: null, requireToolCalling: true }),
+        ).rejects.toMatchObject({ name: 'PiGeminiNativeRequiredError' });
+      } finally {
+        getProvider.mockRestore();
+      }
+    },
+  );
+  it.each([
+    ['openai-compatible', official, true, false],
+    ['openai-compatible', official, false, true],
+    ['google', undefined, true, true],
+    ['openai-compatible', 'https://example.com/v1', true, true],
+  ])(
+    'skips only incompatible Pi fallback (%s, tools=%s)',
+    async (preset, baseUrl, requireToolCalling, allowed) => {
+      const { attachedModelFallback } = await import('@/lib/ai/model-fallbacks');
+      state.lookup = lookupFromLayers('classroom', {
+        deployment: layer('deployment', {
+          providers: {
+            primary: { preset: 'google', apiKey: 'test-key' },
+            backup: { preset, apiKey: 'test-key', ...(baseUrl ? { baseUrl } : {}) },
+          },
+          slots: {
+            classroom: { model: 'primary:gemini-3.8-flash', fallback: 'backup:gemini-alias' },
+          },
+        }),
+        workspace: null,
+      });
+      const resolved = await resolveStageModel({
+        stage: 'chat-adapter',
+        workspaceId: null,
+        requireToolCalling,
+      });
+      const fallback = await attachedModelFallback(resolved.model)!();
+      if (allowed)
+        expect(fallback).toMatchObject({ modelString: expect.stringContaining('gemini-alias') });
+      else expect(fallback).toBeNull();
+    },
+  );
 });

@@ -534,6 +534,8 @@ AZURE_OPENAI_MODELS=your-deployment-name
 
 別の OpenAI 互換 LLM サービスに接続するには、`openmaic.yml` で `baseUrl` と `models` を指定した `openai-compatible` プロバイダーを宣言するか、**設定 → モデルサービス → 言語モデル** の **プロバイダーを追加** で追加してください。
 
+Gemini の教室チャットにはネイティブの `google` プリセットを使います。**設定 → モデルサービス**で Google を追加し、**コースモデル設定**の**教室**で選択してください。Pi は Google 公式の OpenAI 互換エンドポイント（`https://generativelanguage.googleapis.com/v1beta/openai`）を早期に拒否し、移行を案内します。互換経路のツール呼び出し対応は [#1556](https://github.com/THU-MAIC/OpenMAIC/issues/1556) で追跡しています。このチェックは公式エンドポイントのみを識別し、任意のサードパーティゲートウェイの接続先は識別できません。
+
 ### ローカルモデル（Ollama と Lemonade）
 
 Ollama と Lemonade は API key 不要です。ローカルサービスの base URL はサーバー側設定に書き、SSRF チェックを通過させます。

@@ -227,6 +227,7 @@
     "softClosing": "Continue discussion",
     "error": {
       "toolCallingRequired": "Classroom chat requires a model that supports tool calling. Select one for the classroom slot in Settings → Course Model Config, or contact your administrator if this setting is managed.",
+      "geminiNativeRequired": "Gemini classroom interaction requires Google native. Add Google (google preset) in Settings → Model Services, then select it for “Classroom” in Course Model Config. If this configuration is managed, contact your administrator.",
       "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },
@@ -1266,6 +1267,8 @@
     },
     "apiKey": "API Key",
     "apiKeyDesc": "Configure your API key",
+    "credentialStorageHint": "Encrypted on this instance's server",
+    "credentialStorageHintDetail": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiBaseUrl": "API Endpoint URL",
     "apiBaseUrlDesc": "Configure your API endpoint URL",
     "apiKeyRequired": "API key cannot be empty",
@@ -1803,7 +1806,7 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time.",
       "statusConnected": "Connected",
-      "keyStorage": "The key is kept on the server, encrypted, and never shown again. Connecting applies this plan’s recommended models to the course stages; if that would replace what a stage uses now (a model you picked or the server’s default), you are asked first.",
+      "applyModelsNote": "Connecting applies this plan’s recommended models to the course stages; if that would replace what a stage uses now (a model you picked or the server’s default), you are asked first.",
       "saveKey": "Save & enable",
       "cancelKeyUpdate": "Cancel update",
       "manageAccount": "Manage account",

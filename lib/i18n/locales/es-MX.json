@@ -227,6 +227,7 @@
     "softClosing": "Continuar debate",
     "error": {
       "toolCallingRequired": "El chat del aula necesita un modelo que admita llamadas a herramientas. Selecciona uno para el espacio del aula en Configuración → Configuración de modelos del curso, o contacta al administrador si esta opción está administrada.",
+      "geminiNativeRequired": "La interacción con Gemini requiere Google nativo. Agrega Google (preajuste google) en Configuración → Servicios de modelos y selecciónalo para “Aula” en Configuración de modelos del curso. Si la configuración está administrada, contacta al administrador.",
       "emptyAgentResponses": "Los agentes devolvieron respuestas vacías; el debate se detuvo. Inténtalo de nuevo o revisa la configuración de tu modelo.",
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },
@@ -1265,6 +1266,8 @@
       "system": "Sistema"
     },
     "apiKey": "Clave API",
+    "credentialStorageHint": "Encrypted on this instance's server",
+    "credentialStorageHintDetail": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "Configura tu clave API",
     "apiBaseUrl": "URL del endpoint de la API",
     "apiBaseUrlDesc": "Configura la URL del endpoint de la API",
@@ -1803,7 +1806,7 @@
       "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar.",
       "statusConnected": "Conectado",
-      "keyStorage": "La clave se guarda cifrada en el servidor y no se vuelve a mostrar. Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza lo que una etapa usa ahora (un modelo que elegiste o el predeterminado del servidor), se te pregunta antes.",
+      "applyModelsNote": "Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza lo que una etapa usa ahora (un modelo que elegiste o el predeterminado del servidor), se te pregunta antes.",
       "saveKey": "Guardar y activar",
       "cancelKeyUpdate": "Cancelar actualización",
       "manageAccount": "Gestionar cuenta",

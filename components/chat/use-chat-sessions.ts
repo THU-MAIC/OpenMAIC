@@ -420,6 +420,9 @@ export async function runPiSingleRequest(
     ) {
       throw new Error(t('chat.elementReference.whiteboardChanged'));
     }
+    if (response.status === 400 && errorBody?.reason === 'gemini_native_required') {
+      throw new Error(t('chat.error.geminiNativeRequired'));
+    }
     if (response.status === 400 && errorBody?.reason === 'tool_calling_required') {
       throw new Error(t('chat.error.toolCallingRequired'));
     }
