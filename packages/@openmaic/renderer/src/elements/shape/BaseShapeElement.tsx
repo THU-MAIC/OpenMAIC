@@ -44,6 +44,7 @@ export function BaseShapeElement({ elementInfo, renderLabel }: BaseShapeElementP
       <div data-shape-geometry-error={geometry.error.code}>
         <BaseTextElement
           elementInfo={fallback}
+          fillHeight={Boolean(renderLabel)}
           renderContent={
             renderLabel ? (_text, content) => renderLabel(elementInfo, content) : undefined
           }

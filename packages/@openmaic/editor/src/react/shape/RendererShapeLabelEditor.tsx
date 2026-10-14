@@ -82,7 +82,9 @@ export function RendererShapeLabelEditor({
         flexDirection: 'column',
         justifyContent,
         overflowWrap: 'break-word',
-        lineHeight: text.lineHeight,
+        boxSizing: 'border-box',
+        padding: 10,
+        lineHeight: text.lineHeight ?? 1.625,
         letterSpacing: `${text.wordSpace || 0}px`,
         // Match BaseShapeElement: paragraph margins affect the content height,
         // which in turn affects vertically centered Shape labels.

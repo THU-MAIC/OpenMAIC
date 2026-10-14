@@ -11,9 +11,16 @@ export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
   target?: string;
   renderContent?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  /** Keep a recovered shape's label container sized for an absolute-positioned editor. */
+  fillHeight?: boolean;
 }
 
-export function BaseTextElement({ elementInfo, target, renderContent }: BaseTextElementProps) {
+export function BaseTextElement({
+  elementInfo,
+  target,
+  renderContent,
+  fillHeight = false,
+}: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const proseRef = useRef<HTMLDivElement>(null);
   const innerHtml = useInnerHtml(elementInfo.content);
@@ -79,7 +86,10 @@ export function BaseTextElement({ elementInfo, target, renderContent }: BaseText
             padding: hasTextInsets ? 0 : '10px',
             overflowWrap: 'break-word',
             width: elementInfo.vertical ? 'auto' : '100%',
-            height: elementInfo.vertical ? '100%' : 'auto',
+            height: elementInfo.vertical || fillHeight ? '100%' : 'auto',
+            display: fillHeight ? 'flex' : undefined,
+            flexDirection: fillHeight ? 'column' : undefined,
+            justifyContent: fillHeight ? justifyContent : undefined,
             textShadow: shadowStyle,
             lineHeight: elementInfo.lineHeight,
             letterSpacing:
