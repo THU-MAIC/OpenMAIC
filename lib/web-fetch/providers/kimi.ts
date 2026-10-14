@@ -14,6 +14,26 @@ export function kimiFetchEndpoint(baseUrl: string): string {
   return `${base.href.replace(/\/+$/, '')}${coding ? '/fetch' : '/tools/fetch'}`;
 }
 
+/** Only fetch transport failures qualify; HTTP and response parsing stay outside the retry. */
+function isTransportError(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  while (error && typeof error === 'object' && !seen.has(error)) {
+    if (error instanceof TypeError) return true;
+    seen.add(error);
+    const { code, cause } = error as { code?: unknown; cause?: unknown };
+    if (
+      typeof code === 'string' &&
+      (/^(ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EPIPE|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|UNABLE_TO_VERIFY_LEAF_SIGNATURE|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN)$/.test(
+        code,
+      ) ||
+        /^(ERR_TLS_|ERR_SSL_|CERT_)/.test(code))
+    )
+      return true;
+    error = cause;
+  }
+  return false;
+}
+
 export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
   id: 'kimi',
   name: 'Kimi',
@@ -55,32 +75,43 @@ export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
     );
     headerTimer.unref?.();
     try {
-      requestSignal.throwIfAborted();
-      const response = await withAbort(
-        proxyFetch(
-          kimiFetchEndpoint(credentials.baseUrl!),
-          {
-            method: 'POST',
-            redirect: 'error',
-            headers: {
-              Authorization: `Bearer ${credentials.apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ url }),
-            signal: requestSignal,
-            dispatcher: agent,
-          } as RequestInit & { dispatcher: typeof agent },
-          {
-            proxy: credentials.proxy,
-            timeouts: {
-              connectTimeout: 5_000,
-              headersTimeout: 10_000,
-              bodyTimeout: options.bodyTimeoutMs ?? 30_000,
-            },
-          },
-        ),
-        requestSignal,
-      );
+      const endpoint = kimiFetchEndpoint(credentials.baseUrl!);
+      let response: Response;
+      for (let attempt = 0; ; attempt++) {
+        requestSignal.throwIfAborted();
+        try {
+          response = await withAbort(
+            proxyFetch(
+              endpoint,
+              {
+                method: 'POST',
+                redirect: 'error',
+                headers: {
+                  Authorization: `Bearer ${credentials.apiKey}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ url }),
+                signal: requestSignal,
+                dispatcher: agent,
+              } as RequestInit & { dispatcher: typeof agent },
+              {
+                proxy: credentials.proxy,
+                timeouts: {
+                  connectTimeout: 5_000,
+                  headersTimeout: 10_000,
+                  bodyTimeout: options.bodyTimeoutMs ?? 30_000,
+                },
+              },
+            ),
+            requestSignal,
+          );
+          break;
+        } catch (error) {
+          requestSignal.throwIfAborted();
+          if (attempt !== 0 || !isTransportError(error)) throw error;
+          // Both attempts share the original header and overall deadlines.
+        }
+      }
       clearTimeout(headerTimer);
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);

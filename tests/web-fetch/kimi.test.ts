@@ -39,7 +39,72 @@ describe('Kimi web fetch adapter', () => {
       }),
     );
   });
-  it('accepts the content alias used by Coding Plan responses', async () => {
+  it.each([
+    new TypeError('fetch failed'),
+    Object.assign(new Error('Connection reset'), { code: 'ECONNRESET' }),
+    new Error('DNS failure', { cause: Object.assign(new Error('DNS'), { code: 'ENOTFOUND' }) }),
+    Object.assign(new Error('TLS failure'), { code: 'ERR_TLS_CERT_ALTNAME_INVALID' }),
+  ])('retries one transport failure before succeeding: %s', async (error) => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(Response.json({ markdown: 'Recovered' }));
+    vi.stubGlobal('fetch', fetch);
+    await expect(kimi.extract(url, { credentials: { apiKey: 'test-key' } })).resolves.toEqual({
+      markdown: 'Recovered',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1].signal).toBe(fetch.mock.calls[0][1].signal);
+  });
+  it('fails cleanly after two transport errors', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(kimi.extract(url, { credentials: { apiKey: 'test-key' } })).rejects.toThrow(
+      'fetch failed',
+    );
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('does not retry a transport error after caller cancellation', async () => {
+    const controller = new AbortController();
+    const fetch = vi.fn().mockImplementation(() => {
+      controller.abort(new Error('Cancelled'));
+      return Promise.reject(new TypeError('fetch failed'));
+    });
+    vi.stubGlobal('fetch', fetch);
+    await expect(
+      kimi.extract(url, {
+        credentials: { apiKey: 'test-key' },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('Cancelled');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('does not retry other errors thrown by the transport', async () => {
+    const fetch = vi.fn().mockRejectedValue(new Error('Invalid request'));
+    vi.stubGlobal('fetch', fetch);
+    await expect(kimi.extract(url, { credentials: { apiKey: 'test-key' } })).rejects.toThrow(
+      'Invalid request',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps the original overall deadline while the second attempt stalls', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () => reject(init.signal.reason), { once: true });
+          }),
+      );
+    vi.stubGlobal('fetch', fetch);
+    await expect(
+      kimi.extract(url, { credentials: { apiKey: 'test-key' }, bodyTimeoutMs: 100 }),
+    ).rejects.toThrow(/aborted|Timed out/i);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1].signal).toBe(fetch.mock.calls[0][1].signal);
+  });
+  it('accepts the content alias for compatibility', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ content: 'Body' })));
     expect(
       await kimi.extract(url, {
@@ -47,20 +112,19 @@ describe('Kimi web fetch adapter', () => {
       }),
     ).toEqual({ markdown: 'Body' });
   });
-  it.each([401, 403, 404, 429, 500, 504])(
+  it.each([401, 403, 404, 429, 500, 502, 504])(
     'maps HTTP %i without exposing the error body',
     async (status) => {
-      vi.stubGlobal(
-        'fetch',
-        vi
-          .fn()
-          .mockResolvedValue(
-            Response.json({ error: { message: 'secret echoed by upstream' } }, { status }),
-          ),
-      );
+      const fetch = vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ error: { message: 'secret echoed by upstream' } }, { status }),
+        );
+      vi.stubGlobal('fetch', fetch);
       await expect(kimi.extract(url, { credentials: { apiKey: 'test-key' } })).rejects.toThrow(
         `Web fetch provider returned HTTP ${status}`,
       );
+      expect(fetch).toHaveBeenCalledTimes(1);
     },
   );
   it.each([null, {}, { markdown: 123 }, { content: [] }])(

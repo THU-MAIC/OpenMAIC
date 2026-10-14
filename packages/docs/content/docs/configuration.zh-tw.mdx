@@ -831,7 +831,7 @@ slots:
   webFetch: reader
 ```
 
-`kimi` 和 `kimi-coding-plan` 預設都提供 `webFetch`。使用 Coding Plan 憑證時，請指定 `preset: kimi-coding-plan`，其預設基底網址為 `https://api.kimi.com/coding/v1`；明確設定的基底網址會保留。Moonshot 開放平台網址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。兩者都傳送帶有 `{ "url": ... }` 的 `POST` 請求，並使用 Bearer 驗證。介接器接受 `markdown` 或 `content`；尚未使用真實金鑰驗證 Coding Plan 的回應欄位與國際端點的可用性。請求遵循供應商的 `proxy` 設定及標準代理環境變數。
+`kimi` 和 `kimi-coding-plan` 預設都提供 `webFetch`。使用 Coding Plan 憑證時，請指定 `preset: kimi-coding-plan`，其預設基底網址為 `https://api.kimi.com/coding/v1`；明確設定的基底網址會保留。Moonshot 開放平台網址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。兩者都傳送帶有 `{ "url": ... }` 的 `POST` 請求，並使用 Bearer 驗證。介接器接受 `markdown` 或 `content`。維護者使用真實金鑰測試了 `POST https://api.kimi.com/coding/v1/fetch`，確認回應包含 `{ markdown, title, url }`；國際端點的可用性仍未驗證。請求遵循供應商的 `proxy` 設定及標準代理環境變數。
 
 在 **設定 → 模型服務 → 網頁擷取** 中使用既有供應商憑證。此金鑰與同一供應商的對話服務共用，修改或移除金鑰也會影響對話。在 **課程模型設定 → 網頁擷取** 中選擇讀取服務。管理員鎖定後，卡片為唯讀。首次設定會保留內建預設值，直到明確選擇其他讀取服務。工作區憑證可使用官方 API 基底網址；自訂擷取網址與代理必須由管理員在 `openmaic.yml` 中宣告。
 

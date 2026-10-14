@@ -831,7 +831,7 @@ slots:
   webFetch: reader
 ```
 
-`kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。Coding Plan の応答フィールドと国際エンドポイントの利用可否は実際のキーでは未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
+`kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。メンテナーが実際のキーで `POST https://api.kimi.com/coding/v1/fetch` をテストし、応答に `{ markdown, title, url }` が含まれることを確認しました。国際エンドポイントの利用可否は引き続き未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
 
 **設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
 
