@@ -1266,6 +1266,8 @@
       "system": "Theo hệ thống"
     },
     "apiKey": "Khóa API",
+    "credentialStorageHint": "Encrypted on this instance's server",
+    "credentialStorageHintDetail": "Saved encrypted on this instance's server and used to call the provider for you. The operator of this deployment can access it, so only enter keys on instances you trust.",
     "apiKeyDesc": "Thiết lập khóa API của bạn",
     "apiBaseUrl": "Địa chỉ API",
     "apiBaseUrlDesc": "Thiết lập địa chỉ endpoint API của bạn",
@@ -1804,7 +1806,7 @@
       "capabilities": "Khả năng được cung cấp",
       "offeredNote": "Các model gói này cung cấp. Hãy chọn những model bạn muốn hiện trên thanh tạo bài — mức khả dụng tùy hạng gói của bạn, và model không được hỗ trợ sẽ báo lỗi lúc tạo bài.",
       "statusConnected": "Đã kết nối",
-      "keyStorage": "Khóa được mã hóa và lưu trên máy chủ, không hiển thị lại. Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình một bước đang dùng (mô hình bạn đã chọn hoặc mặc định của máy chủ), bạn sẽ được hỏi trước.",
+      "applyModelsNote": "Khi kết nối, các mô hình được gói này đề xuất sẽ được áp dụng cho các bước khóa học; nếu việc đó thay thế mô hình một bước đang dùng (mô hình bạn đã chọn hoặc mặc định của máy chủ), bạn sẽ được hỏi trước.",
       "saveKey": "Lưu và bật",
       "cancelKeyUpdate": "Hủy cập nhật",
       "manageAccount": "Quản lý tài khoản",

@@ -7,11 +7,12 @@
  * write-only API key field, and saving a provider from a service panel.
  */
 import { useState, type ReactNode } from 'react';
-import { AlertCircle, Eye, EyeOff, Loader2, RefreshCw, Server } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Loader2, LockKeyhole, RefreshCw, Server } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type {
@@ -148,6 +149,28 @@ export function EndpointServerOnlyHint() {
   return <p className="text-xs text-muted-foreground">{t(`${SC}.endpointServerOnly`)}</p>;
 }
 
+export function CredentialStorageHint() {
+  const { t } = useI18n();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <LockKeyhole className="size-3 shrink-0" aria-hidden="true" />
+          <span className="underline decoration-dotted underline-offset-2">
+            {t('settings.credentialStorageHint')}
+          </span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" className="max-w-72 leading-5">
+        {t('settings.credentialStorageHintDetail')}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 /**
  * A write-only API key: the stored key is never shown, only its mask. Typing
  * a key and leaving the field (or pressing Enter) saves it; "Remove key"
@@ -242,6 +265,7 @@ export function ApiKeyField({
           )}
         </p>
       ) : null}
+      <CredentialStorageHint />
     </div>
   );
 }
