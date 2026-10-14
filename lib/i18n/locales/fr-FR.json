@@ -227,6 +227,7 @@
     "softClosing": "Poursuivre la discussion",
     "error": {
       "toolCallingRequired": "Le chat de la classe nécessite un modèle prenant en charge les appels d’outils. Sélectionnez-en un pour « Classe » dans Paramètres → Configuration des modèles de cours, ou contactez votre administrateur si ce paramètre est géré par celui-ci.",
+      "geminiNativeRequired": "L’interaction avec Gemini nécessite Google natif. Ajoutez Google (préréglage google) dans Paramètres → Services de modèles, puis sélectionnez-le pour « Classe » dans Configuration des modèles de cours. Si la configuration est gérée, contactez votre administrateur.",
       "emptyAgentResponses": "Les agents n’ont renvoyé aucune réponse ; la discussion s’est arrêtée. Réessayez ou vérifiez les paramètres de votre modèle.",
       "streamInterrupted": "Le flux s’est interrompu de façon inattendue ; la discussion n’a pas abouti. Veuillez réessayer."
     },

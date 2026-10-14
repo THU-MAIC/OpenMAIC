@@ -365,13 +365,18 @@ describe('lectureActionPersistParams', () => {
 });
 
 describe('runPiSingleRequest', () => {
-  it.each(['qa', 'discussion'] as const)(
-    'shows the localized tool requirement before consuming an SSE stream for %s',
-    async (sessionType) => {
+  it.each([
+    ['qa', 'tool_calling_required', 'toolCallingRequired'],
+    ['discussion', 'tool_calling_required', 'toolCallingRequired'],
+    ['qa', 'gemini_native_required', 'geminiNativeRequired'],
+    ['discussion', 'gemini_native_required', 'geminiNativeRequired'],
+  ] as const)(
+    'shows the localized configuration error for %s (%s)',
+    async (sessionType, reason, key) => {
       const response = new Response(
         JSON.stringify({
           errorCode: 'MODEL_CONFIG_INVALID',
-          reason: 'tool_calling_required',
+          reason,
           error: 'Server English explanation',
         }),
         { status: 400 },
@@ -409,7 +414,7 @@ describe('runPiSingleRequest', () => {
             (key) => `translated:${key}`,
             onResponseAccepted,
           ),
-        ).rejects.toThrow('translated:chat.error.toolCallingRequired');
+        ).rejects.toThrow(`translated:chat.error.${key}`);
         expect(json).toHaveBeenCalledOnce();
         expect(onEvent).not.toHaveBeenCalled();
         expect(onResponseAccepted).not.toHaveBeenCalled();
@@ -422,6 +427,8 @@ describe('runPiSingleRequest', () => {
   it.each([
     ['not JSON', 400],
     ['{}', 400],
+    ['{"reason":"unknown"}', 400],
+    ['{"reason":"gemini_native_required"}', 500],
     ['{"reason":"tool_calling_required"}', 500],
   ])('keeps the status fallback for %s (%s)', async (body, status) => {
     vi.stubGlobal(

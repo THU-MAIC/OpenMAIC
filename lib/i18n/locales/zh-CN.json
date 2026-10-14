@@ -227,6 +227,7 @@
     "softClosing": "继续讨论",
     "error": {
       "toolCallingRequired": "课堂聊天需要支持工具调用的模型。请在设置 → 课程模型配置中为「课堂互动」选择此类模型；如果该设置由管理员管理，请联系管理员。",
+      "geminiNativeRequired": "Gemini 课堂互动需要使用 Google 原生路线。请在设置 → 模型服务中添加 Google（google 预设），再在课程模型配置中为「课堂互动」选择该模型；如果配置由管理员管理，请联系管理员。",
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
     },

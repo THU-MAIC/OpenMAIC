@@ -227,6 +227,7 @@
     "softClosing": "Continuar debate",
     "error": {
       "toolCallingRequired": "El chat del aula necesita un modelo que admita llamadas a herramientas. Selecciona uno para el espacio del aula en Configuración → Configuración de modelos del curso, o contacta al administrador si esta opción está administrada.",
+      "geminiNativeRequired": "La interacción con Gemini requiere Google nativo. Agrega Google (preajuste google) en Configuración → Servicios de modelos y selecciónalo para “Aula” en Configuración de modelos del curso. Si la configuración está administrada, contacta al administrador.",
       "emptyAgentResponses": "Los agentes devolvieron respuestas vacías; el debate se detuvo. Inténtalo de nuevo o revisa la configuración de tu modelo.",
       "streamInterrupted": "El streaming terminó inesperadamente; el debate no se completó. Inténtalo de nuevo."
     },

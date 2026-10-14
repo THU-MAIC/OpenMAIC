@@ -227,6 +227,7 @@
     "softClosing": "Continue discussion",
     "error": {
       "toolCallingRequired": "Classroom chat requires a model that supports tool calling. Select one for the classroom slot in Settings → Course Model Config, or contact your administrator if this setting is managed.",
+      "geminiNativeRequired": "Gemini classroom interaction requires Google native. Add Google (google preset) in Settings → Model Services, then select it for “Classroom” in Course Model Config. If this configuration is managed, contact your administrator.",
       "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
       "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
     },

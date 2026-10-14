@@ -534,6 +534,8 @@ AZURE_OPENAI_MODELS=your-deployment-name
 
 如需连接其他 OpenAI 兼容的 LLM 服务，请在 `openmaic.yml` 中声明一个带 `baseUrl` 和 `models` 的 `openai-compatible` 服务商，或在 **设置 → 模型服务 → 语言模型** 中用 **添加服务商** 添加。
 
+Gemini 课堂互动请使用原生 `google` 预设：在**设置 → 模型服务**中添加 Google，并在**课程模型配置**中为**课堂互动**选择该模型。Pi 会提前拒绝 Google 官方 OpenAI 兼容端点（`https://generativelanguage.googleapis.com/v1beta/openai`）并提示迁移；兼容路线的工具调用支持由 [#1556](https://github.com/THU-MAIC/OpenMAIC/issues/1556) 跟踪。此检查仅识别该官方端点，无法识别任意第三方网关背后的上游。
+
 ### 本地模型（Ollama 和 Lemonade）
 
 Ollama 和 Lemonade 不需要 API key；本地服务的 base URL 应写在服务端配置中，以通过 SSRF 校验：

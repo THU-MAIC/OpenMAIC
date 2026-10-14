@@ -18,6 +18,7 @@ import type { ResolvedModel } from '@/lib/server/resolve-model';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { ProviderId, ThinkingConfig } from '@/lib/types/provider';
 
+import { isPiGeminiCompatibleRoute, PiGeminiNativeRequiredError } from './pi-gemini-route';
 import { checkRequirement, type ResolvedModelTarget, type SlotResolution } from './resolve-slot';
 import { lookupStage, requestMayChoose, SlotDisabledError, SlotUnassignedError } from './runtime';
 
@@ -149,6 +150,17 @@ export async function slotLanguageModel(
     : resolution.requirements;
   const unmet = requirements.find((check) => check.status === 'unmet');
   if (unmet) throw new SlotRequirementError(resolution.slot, unmet.requirement);
+  // Pi also excludes this known incompatible transport route; unknown capabilities still pass.
+  const incompatibleRoute = (target: ResolvedModelTarget) => {
+    const registry = getProvider(target.registryId as ProviderId);
+    return isPiGeminiCompatibleRoute(
+      registry?.type,
+      target.baseUrl || registry?.defaultBaseUrl || undefined,
+    );
+  };
+  if (requireToolCalling && incompatibleRoute(resolution)) {
+    throw new PiGeminiNativeRequiredError();
+  }
   const resolved = await languageModelFor(resolution, resolution.thinking);
   // Retries go to the slot's fallback and nowhere else: none attached means none.
   const { fallback } = resolution;
@@ -159,7 +171,8 @@ export async function slotLanguageModel(
       checkRequirement('toolCalling', resolution.capability, fallback).status === 'unmet');
   attachModelFallback(resolved.model, async () => {
     // A retry on a model that cannot do what the slot needs would only fail again.
-    if (!fallback || fallbackUnmet) return null;
+    if (!fallback || fallbackUnmet || (requireToolCalling && incompatibleRoute(fallback)))
+      return null;
     const built = await languageModelFor(fallback, resolution.thinking);
     return { model: built.model, modelString: built.modelString };
   });

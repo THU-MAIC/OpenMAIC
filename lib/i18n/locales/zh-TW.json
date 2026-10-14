@@ -227,6 +227,7 @@
     "softClosing": "繼續討論",
     "error": {
       "toolCallingRequired": "課堂聊天需要支援工具呼叫的模型。請在設定 → 課程模型配置中為「課堂互動」選擇此類模型；如果此設定由管理員管理，請聯絡管理員。",
+      "geminiNativeRequired": "Gemini 課堂互動需要使用 Google 原生路線。請在設定 → 模型服務中新增 Google（google 預設），再在課程模型配置中為「課堂互動」選擇該模型；如果配置由管理員管理，請聯絡管理員。",
       "emptyAgentResponses": "智能體連續無回應,討論已停止。請重新嘗試或檢查模型設定。",
       "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
     },
