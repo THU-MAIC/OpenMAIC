@@ -566,7 +566,7 @@ describe('classroom scene generation retries', () => {
           ]);
         }
         if (plan.type === 'interactive') {
-          return '<!DOCTYPE html><html><body><button id="reset">Reset fixture</button><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
+          return '<!DOCTYPE html><html><body><button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
         }
         return JSON.stringify(slideContent);
       };
@@ -626,10 +626,10 @@ describe('classroom scene generation retries', () => {
         ['content', 'slide'],
         ['actions', 'slide'],
         ['content', 'interactive'],
-        ['actions', 'interactive'],
         ['content', 'quiz'],
         ['actions', 'quiz'],
       ]);
+      expect(mocks.generateSceneActions.mock.calls[1][3].targetLanguage).toBe('zh-CN');
       const language = result.stage.languageDirective!;
       for (const required of [
         '简体中文',
@@ -663,7 +663,7 @@ describe('classroom scene generation retries', () => {
       expect(mocks.generateSceneContent.mock.calls[2][0].keyPoints.join('\n')).not.toContain(
         '多选',
       );
-      expect(mocks.callLLM).toHaveBeenCalledTimes(6);
+      expect(mocks.callLLM).toHaveBeenCalledTimes(5);
       for (let i = 0; i < calls.length; i++) {
         expect(mocks.callLLM.mock.calls[i][0].messages).toEqual([
           { role: 'system', content: calls[i].system },
@@ -1209,114 +1209,100 @@ describe('classroom scene generation retries', () => {
     });
   }
 
-  describe('compact widget action contract uses the existing bounded retry', () => {
-    async function useActualInteractiveActions(responses: string[], withSchema = true) {
+  describe('compact deterministic guidance preserves the existing pipeline and review', () => {
+    async function useActualInteractiveGuidance(
+      options: { schema?: boolean; controls?: boolean } = {},
+    ) {
       const actual =
         await vi.importActual<typeof import('@openmaic/generation')>('@openmaic/generation');
+      const controls =
+        '<button type="button" id="step-next" data-role="next">Next</button>' +
+        '<button type="button" id="step-back" data-role="back">Back</button>' +
+        '<button type="button" id="step-reset" data-role="reset">Reset</button>' +
+        '<span id="step-status" data-role="status">Unverified state</span>' +
+        '<span id="step-progress" data-role="progress">Unverified progress</span>';
+      const html =
+        '<html><body><!-- UNVERIFIED_HTML_MUST_REACH_REVIEW -->' +
+        (options.controls === false ? '' : controls) +
+        (options.schema === false
+          ? ''
+          : '<script type="application/json" id="widget-config">{"type":"simulation","exposedVariables":[]}</script>') +
+        '</body></html>';
       mocks.generateSceneContent.mockImplementation((plan) =>
-        plan.type === 'interactive'
-          ? {
-              widgetType: 'simulation',
-              html:
-                '<html><body><input data-var="energy" id="energy">' +
-                (withSchema
-                  ? '<script type="application/json" id="widget-config">{"type":"simulation","exposedVariables":["energy"]}</script>'
-                  : '') +
-                '</body></html>',
-            }
-          : contentForOutline(plan),
+        plan.type === 'interactive' ? { widgetType: 'simulation', html } : contentForOutline(plan),
       );
-      mocks.generateSceneActions.mockImplementation((plan, content, aiCall, options) =>
+      mocks.generateSceneActions.mockImplementation((plan, content, aiCall, context) =>
         plan.type === 'interactive'
-          ? actual.generateSceneActions(plan, content, aiCall, options)
+          ? actual.generateSceneActions(plan, content, aiCall, context)
           : [],
       );
-      let entered!: () => void;
-      const firstCall = new Promise<void>((resolve) => {
-        entered = resolve;
-      });
-      let index = 0;
       mocks.callLLM.mockImplementation(async () => {
-        entered();
-        if (index >= responses.length) throw new Error('Unexpected extra model attempt');
-        return { text: responses[index++] };
+        throw new Error('Unexpected provider request');
       });
-      return { firstCall };
+      return html;
     }
-    const unknown =
-      '[{"type":"action","name":"widget_setState","params":{"state":{"energy":42,"advanceTo":3}}}]';
-    const valid = '[{"type":"action","name":"widget_setState","params":{"state":{"energy":42}}}]';
 
-    it('retries a model state-contract failure once and only then assembles the accepted actions', async () => {
-      vi.useFakeTimers();
-      try {
-        const { firstCall: started } = await useActualInteractiveActions([unknown, valid]);
-        const operation = generateRequiredWithProgress();
-        await started;
-        await vi.advanceTimersByTimeAsync(1201);
-        await operation;
-        expect(mocks.callLLM).toHaveBeenCalledTimes(2);
-        for (const [params, , sdkRetry] of mocks.callLLM.mock.calls) {
-          expect(params.maxRetries).toBe(0);
-          expect(sdkRetry).toBeUndefined();
-        }
-        expect(mocks.generateSceneActions.mock.calls.map(([plan]) => plan.type)).toEqual([
-          'slide',
-          'interactive',
-          'interactive',
-          'quiz',
-        ]);
-        expect(mocks.retryOptions.mock.calls.every(([options]) => options.maxRetries === 1)).toBe(
-          true,
-        );
-        expect(mocks.reviewClassroomContent).toHaveBeenCalledTimes(1);
-        expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
-      } finally {
-        vi.useRealTimers();
-      }
+    it('uses zero action SDK calls and passes unchanged HTML plus the guide into review', async () => {
+      const html = await useActualInteractiveGuidance();
+      await generateRequiredWithProgress();
+      expect(mocks.callLLM).not.toHaveBeenCalled();
+      expect(mocks.generateSceneActions.mock.calls.map(([plan]) => plan.type)).toEqual([
+        'slide',
+        'interactive',
+        'quiz',
+      ]);
+      expect(mocks.generateSceneActions.mock.calls[1][3].targetLanguage).toBe('zh-CN');
+      expect(mocks.retryOptions.mock.calls.every(([options]) => options.maxRetries === 1)).toBe(
+        true,
+      );
+      const review = mocks.reviewClassroomContent.mock.calls[0][0];
+      const scene = review.material.scenes.find(
+        (item: { type: string }) => item.type === 'interactive',
+      );
+      expect(scene.content.html).toBe(html);
+      expect(scene.actions).toHaveLength(7);
+      expect(
+        scene.actions.every(
+          (action: { type: string }) =>
+            action.type === 'speech' || action.type === 'widget_highlight',
+        ),
+      ).toBe(true);
+      expect(review.requirements).toEqual(requiredInput());
+      expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects two invalid responses without a third call, later scenes, review, audio or persistence', async () => {
-      vi.useFakeTimers();
-      try {
-        const { firstCall: started } = await useActualInteractiveActions([unknown, unknown]);
-        const rejected = expect(generateRequiredWithProgress()).rejects.toMatchObject({
+    it.each([{ schema: false }, { controls: false }])(
+      'fails immutable structure before SDK/retry/downstream (%j)',
+      async (options) => {
+        await useActualInteractiveGuidance(options);
+        await expect(generateRequiredWithProgress()).rejects.toMatchObject({
           name: 'CorrectionWidgetActionError',
-          isRetryable: true,
+          isRetryable: false,
         });
-        await started;
-        await vi.advanceTimersByTimeAsync(1201);
-        await rejected;
-        expect(mocks.callLLM).toHaveBeenCalledTimes(2);
-        expect(mocks.generateSceneContent.mock.calls.map(([plan]) => plan.type)).toEqual([
-          'slide',
-          'interactive',
-        ]);
+        expect(mocks.callLLM).not.toHaveBeenCalled();
         expect(mocks.generateSceneActions.mock.calls.map(([plan]) => plan.type)).toEqual([
           'slide',
           'interactive',
+        ]);
+        expect(mocks.generateSceneContent.mock.calls.map(([plan]) => plan.type)).toEqual([
+          'slide',
           'interactive',
         ]);
         expect(mocks.reviewClassroomContent).not.toHaveBeenCalled();
         expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
         expect(mocks.persistClassroom).not.toHaveBeenCalled();
-      } finally {
-        vi.useRealTimers();
-      }
-    });
+      },
+    );
 
-    it('fails an immutable missing declaration before the provider and without an action retry', async () => {
-      await useActualInteractiveActions([], false);
-      await expect(generateRequiredWithProgress()).rejects.toMatchObject({
-        name: 'CorrectionWidgetActionError',
-        isRetryable: false,
-      });
+    it('does not turn structural guidance into a successful HTML review', async () => {
+      const html = await useActualInteractiveGuidance();
+      mocks.reviewClassroomContent.mockRejectedValueOnce(new Error('Unaccepted HTML state facts'));
+      await expect(generateRequiredWithProgress()).rejects.toThrow('Unaccepted HTML state facts');
+      const scene = mocks.reviewClassroomContent.mock.calls[0][0].material.scenes.find(
+        (item: { type: string }) => item.type === 'interactive',
+      );
+      expect(scene.content.html).toBe(html);
       expect(mocks.callLLM).not.toHaveBeenCalled();
-      expect(mocks.generateSceneActions.mock.calls.map(([plan]) => plan.type)).toEqual([
-        'slide',
-        'interactive',
-      ]);
-      expect(mocks.reviewClassroomContent).not.toHaveBeenCalled();
       expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
       expect(mocks.persistClassroom).not.toHaveBeenCalled();
     });

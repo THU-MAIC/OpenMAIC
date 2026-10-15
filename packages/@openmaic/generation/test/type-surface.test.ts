@@ -36,9 +36,16 @@ type _SceneContentKeys = Assert<
 type _SceneActionKeys = Assert<
   Equal<
     keyof SceneActionsOptions,
-    'ctx' | 'agents' | 'userProfile' | 'languageDirective' | 'userRequirements' | 'logger'
+    | 'ctx'
+    | 'agents'
+    | 'userProfile'
+    | 'languageDirective'
+    | 'userRequirements'
+    | 'logger'
+    | 'targetLanguage'
   >
 >;
+type _SceneActionLocale = Assert<Equal<SceneActionsOptions['targetLanguage'], string | undefined>>;
 type _BuildKeys = Assert<Equal<keyof BuildCompleteSceneOptions, 'sceneId'>>;
 type _PBLInputKeys = Assert<
   Equal<
@@ -72,3 +79,5 @@ void (null as unknown as _SceneContentKeys);
 void (null as unknown as _SceneActionKeys);
 void (null as unknown as _BuildKeys);
 void (null as unknown as _PBLInputKeys);
+
+void (null as unknown as _SceneActionLocale);

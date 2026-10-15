@@ -631,6 +631,9 @@ importers:
       nanoid:
         specifier: ^5.1.6
         version: 5.1.14
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7

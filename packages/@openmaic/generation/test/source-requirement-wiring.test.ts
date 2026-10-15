@@ -70,7 +70,7 @@ function contentOutput(outline: SceneOutline): string {
       },
     ]);
   if (outline.type === 'pbl') return validPBLResponse();
-  return '<!DOCTYPE html><html><body><button id="step">step</button><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
+  return '<!DOCTYPE html><html><body><button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
 }
 
 describe('complete source data reaches actual scene model calls', () => {
@@ -90,7 +90,7 @@ describe('complete source data reaches actual scene model calls', () => {
     ).map((widgetType) => ({ ...widgetOutline(), widgetType })),
   ];
   it.each(outlines)(
-    'grounds $type $widgetType content and actions without extra calls',
+    'grounds $type $widgetType model calls and keeps compact guidance model-free',
     async (outline) => {
       const contentCalls: Array<[string, string]> = [];
       const content = await generateSceneContent(
@@ -110,13 +110,11 @@ describe('complete source data reaches actual scene model calls', () => {
         content!,
         async (system, user) => {
           actionCalls.push([system, user]);
-          return outline.widgetType === 'simulation'
-            ? '[{"type":"text","content":"Offline fixture speech."}]'
-            : '[]';
+          return '[]';
         },
-        { userRequirements: source },
+        { userRequirements: source, targetLanguage: 'zh-CN' },
       );
-      expect(actionCalls).toHaveLength(1);
+      expect(actionCalls).toHaveLength(outline.widgetType === 'simulation' ? 0 : 1);
       actionCalls.forEach(([system, user]) => capturedSource(system, user));
     },
   );
@@ -234,7 +232,7 @@ describe('validated code-bound compact presentation profile', () => {
     expect(system).toContain('REVEAL_ELEMENT');
     expect(user).toContain('请使用简体中文授课。');
     expect(content).toMatchObject({
-      html: expect.stringContaining('id="step"'),
+      html: expect.stringContaining('id="step-next"'),
       widgetType: 'simulation',
     });
   });

@@ -800,6 +800,7 @@ export async function generateClassroom(
           agents,
           languageDirective,
           userRequirements: requirements,
+          ...(codeBound ? { targetLanguage: 'zh-CN' } : {}),
         }),
       {
         label: `scene ${index + 1}/${outlines.length} actions`,
