@@ -70,7 +70,7 @@ function contentOutput(outline: SceneOutline): string {
       },
     ]);
   if (outline.type === 'pbl') return validPBLResponse();
-  return '<!DOCTYPE html><html><body><button id="step">step</button><script type="application/json" id="widget-config">{}</script></body></html>';
+  return '<!DOCTYPE html><html><body><button id="step">step</button><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
 }
 
 describe('complete source data reaches actual scene model calls', () => {
@@ -110,7 +110,9 @@ describe('complete source data reaches actual scene model calls', () => {
         content!,
         async (system, user) => {
           actionCalls.push([system, user]);
-          return '[]';
+          return outline.widgetType === 'simulation'
+            ? '[{"type":"text","content":"Offline fixture speech."}]'
+            : '[]';
         },
         { userRequirements: source },
       );
@@ -224,6 +226,9 @@ describe('validated code-bound compact presentation profile', () => {
     expect(system).toContain('# Source-bound correction hand-simulation widget');
     expect(system).not.toContain('### 7. Visible Animation');
     expect(system).toContain('SET_WIDGET_STATE');
+    expect(system).toContain('Render each step from one coherent current state');
+    expect(system).toContain('its displayed expression and value must change together');
+    expect(system).toContain('explicitly label them as a precomputed comparison');
     expect(system).toContain('HIGHLIGHT_ELEMENT');
     expect(system).toContain('ANNOTATE_ELEMENT');
     expect(system).toContain('REVEAL_ELEMENT');
