@@ -487,7 +487,9 @@ describe('material library routes and tools (PGlite)', () => {
         details: { status: 'not_movable', materialIds: ['private-internal-id'] },
       });
       expect(JSON.stringify(move.content)).toContain(moveRefused);
-      expect(JSON.stringify(move.content)).not.toContain('private-internal-id');
+      expect(move.content).toMatchObject([
+        { text: expect.stringContaining('\nmaterialIds: private-internal-id') },
+      ]);
     },
   );
 

@@ -2280,12 +2280,9 @@
         "moveNotMovable": "لم تُنقل أي مادة. بعض المواد المحددة غير متاحة أو لا يمكن نقلها.",
         "toolFolderNameTooLong": "اسم المجلد طويل جدًا (40 حرفًا بنصف العرض أو 20 حرفًا بالعرض الكامل كحد أقصى).",
         "toolFolderLimit": "بلغت قاعدة المعرفة الحد الأقصى وهو {{limit}} مجلدًا.",
-        "revisionRequired": "لمتابعة القراءة، مرّر إصدار الصفحة السابقة؛ وللبدء من جديد اقرأ من الموضع 0.",
-        "materialIdsRequired": "حدد المواد قبل انتظار تحليلها في قاعدة المعرفة.",
-        "sourceRequired": "يمكن تحليل المواد الأصلية فقط.",
-        "invalidSearchQuery": "يجب أن يحتوي نص البحث على 1 إلى 200 حرف.",
         "mediaUnsupported": "يمكن استخدام الصور أو الفيديو أو الصوت فقط كوسائط للدورة.",
-        "mediaStorageFull": "لا توجد مساحة كافية لحفظ هذه الوسائط. أفرغ مساحة ثم حاول مجددًا."
+        "mediaStorageFull": "لا توجد مساحة كافية لحفظ هذه الوسائط. أفرغ مساحة ثم حاول مجددًا.",
+        "mediaNotFound": "لم يُعثر على مادة الوسائط أو لا تحتوي على ملف وسائط متاح."
       },
       "actions": {
         "parse": "تحليل",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "تعذّر إرفاق {{name}} ({{reason}}). افتح قاعدة المعرفة لمعرفة السبب وإعادة التحليل.",
       "materialAttached": "موجودة بالفعل في هذه المحادثة",
       "materialStaged": "موجودة بالفعل في هذه الرسالة",
-      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج"
+      "materialsCapped": "تُعرض أول {{count}} مواد — تابع الكتابة لتضييق النتائج",
+      "materialUnavailableGuidance": "لا يمكن إرفاق {{name}}. {{guidance}} يمكنك إدارة المادة من صفحة قاعدة المعرفة."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

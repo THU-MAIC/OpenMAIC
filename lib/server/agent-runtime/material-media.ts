@@ -81,7 +81,7 @@ export function buildMaterialMediaTool(deps: MaterialMediaDeps): AgentTool<never
       const material = await resolve(deps.sessionId, params.materialId, params.scope ?? 'session');
       if (!material?.hasBytes) {
         return {
-          content: [{ type: 'text', text: copy.error('materialNotFound') }],
+          content: [{ type: 'text', text: copy.error('mediaNotFound') }],
           details: { materialId: params.materialId },
           isError: true,
         };

@@ -505,6 +505,9 @@ describe('material agent tools', () => {
       status: 'revision_required',
       revision: 'session:mat_visible',
     });
+    expect(result.content).toMatchObject([
+      { text: expect.stringContaining('The current revision is \"session:mat_visible\"') },
+    ]);
     expect(isErrorOf(result)).toBe(true);
   });
 
@@ -1295,10 +1298,10 @@ describe('material agent tools', () => {
       'search_material',
     );
     await expect(search.execute('call_1', { query: '' } as never)).rejects.toThrow(
-      '搜索文字须为 1 至 200 个字符。',
+      'search_material query must contain 1 to 200 characters',
     );
     await expect(search.execute('call_2', { query: 'x'.repeat(201) } as never)).rejects.toThrow(
-      '搜索文字须为 1 至 200 个字符。',
+      'search_material query must contain 1 to 200 characters',
     );
   });
 });

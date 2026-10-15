@@ -1290,7 +1290,7 @@ export function WorkspaceRail({
             Filing is a drop onto a folder row; UNFILING needs somewhere to drop
             too, and the row that used to serve ("unfiled") is gone. So the
             empty space below the tree takes the drop: it is armed only while a
-            course is in flight, it says what it will do, and it lights up whole
+            course from a folder is in flight, it says what it will do, and it lights up whole
             when the pointer is actually over it. It is pinned to the panel's
             foot
             (see `.ws-ground-drop`) because a tree this deep would otherwise put

@@ -2280,12 +2280,9 @@
         "moveNotMovable": "未移动任何资料。部分所选资料不可用或无法移动。",
         "toolFolderNameTooLong": "文件夹名称过长，最多支持 40 个半角字符或 20 个全角字符。",
         "toolFolderLimit": "知识库已达到 {{limit}} 个文件夹的上限。",
-        "revisionRequired": "继续读取时请传入上一页返回的版本；如需从头读取，请从位置 0 开始。",
-        "materialIdsRequired": "等待知识库解析前，请先指定资料。",
-        "sourceRequired": "只能解析原始资料。",
-        "invalidSearchQuery": "搜索文字须为 1 至 200 个字符。",
         "mediaUnsupported": "只有图片、视频或音频资料可以用作课程媒体。",
-        "mediaStorageFull": "没有足够空间保存这份媒体，请释放空间后重试。"
+        "mediaStorageFull": "没有足够空间保存这份媒体，请释放空间后重试。",
+        "mediaNotFound": "找不到这份媒体资料，或它没有可用的媒体文件。"
       },
       "actions": {
         "parse": "解析",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "{{name}} 无法附加（{{reason}}）。请在知识库中查看原因并重新解析。",
       "materialAttached": "本会话已有",
       "materialStaged": "已在这条消息里",
-      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围"
+      "materialsCapped": "只显示前 {{count}} 份材料，继续输入可缩小范围",
+      "materialUnavailableGuidance": "{{name}} 无法附加。{{guidance}}可在知识库页面处理。"
     },
     "heroTitle": "今天想创造点什么？",
     "heroSubtitle": "说出你的想法，把它变成一段可以亲历的学习旅程",

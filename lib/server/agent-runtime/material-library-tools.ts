@@ -274,7 +274,7 @@ export function buildMaterialLibraryTools(
         case 'not_movable':
           return result(
             { status: 'not_movable', materialIds: outcome.materialIds },
-            (await copyNow()).error('moveNotMovable'),
+            `${(await copyNow()).error('moveNotMovable')}\nmaterialIds: ${outcome.materialIds.join(', ')}`,
             true,
           );
         case 'too_many':

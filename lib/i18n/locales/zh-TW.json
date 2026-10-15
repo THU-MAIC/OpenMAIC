@@ -2265,12 +2265,9 @@
         "moveNotMovable": "未移動任何資料。部分所選資料無法使用或移動。",
         "toolFolderNameTooLong": "資料夾名稱過長，最多支援 40 個半形字元或 20 個全形字元。",
         "toolFolderLimit": "知識庫已達 {{limit}} 個資料夾的上限。",
-        "revisionRequired": "繼續讀取時請傳入上一頁傳回的版本；如需從頭讀取，請從位置 0 開始。",
-        "materialIdsRequired": "等待知識庫解析前，請先指定資料。",
-        "sourceRequired": "只能解析原始資料。",
-        "invalidSearchQuery": "搜尋文字須為 1 至 200 個字元。",
         "mediaUnsupported": "只有圖片、影片或音訊資料可用作課程媒體。",
-        "mediaStorageFull": "沒有足夠空間儲存這份媒體，請釋放空間後重試。"
+        "mediaStorageFull": "沒有足夠空間儲存這份媒體，請釋放空間後重試。",
+        "mediaNotFound": "找不到這份媒體資料，或它沒有可用的媒體檔案。"
       },
       "actions": {
         "parse": "解析",
@@ -2333,7 +2330,8 @@
       "materialUnavailable": "{{name}} 無法附加（{{reason}}）。請在知識庫中查看原因並重新解析。",
       "materialAttached": "本會話已有",
       "materialStaged": "已在這則訊息裡",
-      "materialsCapped": "只顯示前 {{count}} 份材料，繼續輸入可縮小範圍"
+      "materialsCapped": "只顯示前 {{count}} 份材料，繼續輸入可縮小範圍",
+      "materialUnavailableGuidance": "{{name}} 無法附加。{{guidance}}可在知識庫頁面處理。"
     },
     "heroTitle": "今天想創造點什麼？",
     "heroSubtitle": "說出你的想法，把它變成一段可以親歷的學習旅程",

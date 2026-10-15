@@ -2280,12 +2280,9 @@
         "moveNotMovable": "자료가 이동되지 않았습니다. 일부 선택한 자료를 사용할 수 없거나 이동할 수 없습니다.",
         "toolFolderNameTooLong": "폴더 이름이 너무 깁니다(반각 40자 또는 전각 20자까지).",
         "toolFolderLimit": "지식 베이스의 폴더 수가 최대 {{limit}}개에 도달했습니다.",
-        "revisionRequired": "계속 읽으려면 이전 페이지의 버전을 전달하세요. 처음부터 읽으려면 위치 0에서 시작하세요.",
-        "materialIdsRequired": "지식 베이스 분석을 기다리기 전에 자료를 지정하세요.",
-        "sourceRequired": "원본 자료만 분석할 수 있습니다.",
-        "invalidSearchQuery": "검색어는 1~200자여야 합니다.",
         "mediaUnsupported": "이미지, 동영상 또는 오디오 자료만 수업 미디어로 사용할 수 있습니다.",
-        "mediaStorageFull": "이 미디어를 저장할 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요."
+        "mediaStorageFull": "이 미디어를 저장할 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요.",
+        "mediaNotFound": "미디어 자료를 찾을 수 없거나 사용 가능한 미디어 파일이 없습니다."
       },
       "actions": {
         "parse": "분석",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "{{name}}을(를) 첨부할 수 없습니다({{reason}}). 지식 베이스에서 이유를 확인하고 다시 분석하세요.",
       "materialAttached": "이 대화에 이미 있습니다",
       "materialStaged": "이 메시지에 이미 있습니다",
-      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요"
+      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요",
+      "materialUnavailableGuidance": "{{name}}을(를) 첨부할 수 없습니다. {{guidance}} 지식 베이스 페이지에서 처리할 수 있습니다."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

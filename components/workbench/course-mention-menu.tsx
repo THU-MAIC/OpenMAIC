@@ -386,18 +386,24 @@ export function CourseMentionMenu({
                 // The folder only when it is in one; nothing, and no separator, at the top level.
                 const where = [candidate.folderName, status].filter(Boolean).join(' · ');
                 // Why it cannot be picked, in the page's words, and where it can
-                // be parsed again: the knowledge base page, not this menu (#1880).
+                // be handled: the knowledge base page, not this menu (#1880).
                 // Not `disabled`: a disabled button takes no hover or focus, so
                 // it could show no tooltip.
                 const label = unavailable
-                  ? t('workspace.courseMention.materialUnavailable', {
-                      name: candidate.name,
-                      reason: candidate.reasonCode
-                        ? t(`workspace.knowledgeBase.failure.${candidate.reasonCode}.description`, {
+                  ? candidate.reasonCode
+                    ? t('workspace.courseMention.materialUnavailableGuidance', {
+                        name: candidate.name,
+                        guidance: t(
+                          `workspace.knowledgeBase.failure.${candidate.reasonCode}.description`,
+                          {
                             minutes: MEDIA_MAX_DURATION_SEC / 60,
-                          })
-                        : status,
-                    })
+                          },
+                        ),
+                      })
+                    : t('workspace.courseMention.materialUnavailable', {
+                        name: candidate.name,
+                        reason: status,
+                      })
                   : t('workspace.courseMention.attachMaterial', { name: candidate.name });
                 const option = (
                   <button

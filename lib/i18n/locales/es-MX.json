@@ -2280,12 +2280,9 @@
         "moveNotMovable": "No se movió ningún material. Algunos materiales seleccionados no están disponibles o no se pueden mover.",
         "toolFolderNameTooLong": "El nombre de la carpeta es demasiado largo (máximo 40 caracteres de ancho medio o 20 de ancho completo).",
         "toolFolderLimit": "La base de conocimientos alcanzó el máximo de {{limit}} carpetas.",
-        "revisionRequired": "Para continuar, proporciona la versión de la página anterior; para empezar de nuevo, lee desde la posición 0.",
-        "materialIdsRequired": "Selecciona materiales antes de esperar su análisis.",
-        "sourceRequired": "Solo se pueden analizar materiales originales.",
-        "invalidSearchQuery": "La búsqueda debe contener entre 1 y 200 caracteres.",
         "mediaUnsupported": "Solo imágenes, videos o audios pueden usarse como medios del curso.",
-        "mediaStorageFull": "No hay espacio suficiente para este medio. Libera espacio e inténtalo de nuevo."
+        "mediaStorageFull": "No hay espacio suficiente para este medio. Libera espacio e inténtalo de nuevo.",
+        "mediaNotFound": "No se encontró el material multimedia o no tiene archivos multimedia disponibles."
       },
       "actions": {
         "parse": "Analizar",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "No se puede adjuntar {{name}} ({{reason}}). Abre la base de conocimientos para ver por qué y analizarlo de nuevo.",
       "materialAttached": "Ya está en esta conversación",
       "materialStaged": "Ya está en este mensaje",
-      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar"
+      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar",
+      "materialUnavailableGuidance": "No se puede adjuntar {{name}}. {{guidance}} Puedes gestionarlo en la página de la base de conocimientos."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

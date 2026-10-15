@@ -2280,12 +2280,9 @@
         "moveNotMovable": "Không có tài liệu nào được di chuyển. Một số tài liệu đã chọn không khả dụng hoặc không thể di chuyển.",
         "toolFolderNameTooLong": "Tên thư mục quá dài (tối đa 40 ký tự nửa chiều rộng hoặc 20 ký tự toàn chiều rộng).",
         "toolFolderLimit": "Cơ sở tri thức đã đạt giới hạn {{limit}} thư mục.",
-        "revisionRequired": "Để đọc tiếp, hãy truyền phiên bản của trang trước; để đọc lại từ đầu, bắt đầu ở vị trí 0.",
-        "materialIdsRequired": "Chọn tài liệu trước khi chờ phân tích trong cơ sở tri thức.",
-        "sourceRequired": "Chỉ có thể phân tích tài liệu gốc.",
-        "invalidSearchQuery": "Nội dung tìm kiếm phải có từ 1 đến 200 ký tự.",
         "mediaUnsupported": "Chỉ có thể dùng hình ảnh, video hoặc âm thanh làm phương tiện của khóa học.",
-        "mediaStorageFull": "Không đủ dung lượng để lưu nội dung này. Hãy giải phóng dung lượng rồi thử lại."
+        "mediaStorageFull": "Không đủ dung lượng để lưu nội dung này. Hãy giải phóng dung lượng rồi thử lại.",
+        "mediaNotFound": "Không tìm thấy tài liệu đa phương tiện hoặc tài liệu không có tệp đa phương tiện khả dụng."
       },
       "actions": {
         "parse": "Phân tích",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "Không thể đính kèm {{name}} ({{reason}}). Mở kho kiến thức để xem lý do và phân tích lại.",
       "materialAttached": "Đã có trong cuộc trò chuyện này",
       "materialStaged": "Đã có trong tin nhắn này",
-      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp"
+      "materialsCapped": "Đang hiện {{count}} tài liệu đầu tiên — gõ tiếp để thu hẹp",
+      "materialUnavailableGuidance": "Không thể đính kèm {{name}}. {{guidance}} Bạn có thể xử lý tài liệu trên trang cơ sở tri thức."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

@@ -328,13 +328,13 @@ describe('material media error wording', () => {
   it.each([
     [
       'zh-CN',
-      '资料不存在或不可访问。',
+      '找不到这份媒体资料，或它没有可用的媒体文件。',
       '只有图片、视频或音频资料可以用作课程媒体。',
       '没有足够空间保存这份媒体，请释放空间后重试。',
     ],
     [
       'en-US',
-      'Material not found.',
+      'Media material not found or has no media bytes.',
       'Only image, video or audio materials can be used as course media.',
       'There is not enough storage for this media. Free space, then try again.',
     ],
@@ -360,6 +360,8 @@ describe('material media error wording', () => {
         hasBytes: true,
         read: vi.fn(),
       };
+      resolve.mockResolvedValue({ ...handle, hasBytes: false });
+      expect(await run()).toMatchObject({ isError: true, content: [{ text: missing }] });
       resolve.mockResolvedValue(handle);
       handle.read.mockResolvedValue({ bytes: Buffer.from('text'), mime: 'text/plain' });
       expect(await run()).toMatchObject({ isError: true, content: [{ text: unsupported }] });

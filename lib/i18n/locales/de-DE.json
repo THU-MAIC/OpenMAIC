@@ -2280,12 +2280,9 @@
         "moveNotMovable": "Nichts wurde verschoben. Einige ausgewählte Materialien sind nicht verfügbar oder können nicht verschoben werden.",
         "toolFolderNameTooLong": "Der Ordnername ist zu lang (höchstens 40 Zeichen mit halber oder 20 mit voller Breite).",
         "toolFolderLimit": "Die Wissensdatenbank hat das Maximum von {{limit}} Ordnern erreicht.",
-        "revisionRequired": "Gib zum Weiterlesen die Version der vorherigen Seite an. Beginne zum Neustart bei Position 0.",
-        "materialIdsRequired": "Wähle Materialien aus, bevor du auf die Analyse wartest.",
-        "sourceRequired": "Nur Originalmaterialien können analysiert werden.",
-        "invalidSearchQuery": "Der Suchtext muss 1 bis 200 Zeichen enthalten.",
         "mediaUnsupported": "Nur Bilder, Videos oder Audiodateien können als Kursmedien verwendet werden.",
-        "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut."
+        "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut.",
+        "mediaNotFound": "Das Medienmaterial wurde nicht gefunden oder hat keine verfügbaren Mediendaten."
       },
       "actions": {
         "parse": "Analysieren",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "{{name}} kann nicht angehängt werden ({{reason}}). Öffnen Sie die Wissensbasis, um den Grund zu sehen und die Datei erneut zu analysieren.",
       "materialAttached": "Schon in dieser Unterhaltung",
       "materialStaged": "Schon in dieser Nachricht",
-      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen"
+      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
+      "materialUnavailableGuidance": "{{name}} kann nicht angehängt werden. {{guidance}} Du kannst das Material auf der Seite der Wissensdatenbank verwalten."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

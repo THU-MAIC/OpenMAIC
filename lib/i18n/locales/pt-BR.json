@@ -2280,12 +2280,9 @@
         "moveNotMovable": "Nenhum material foi movido. Alguns materiais selecionados estão indisponíveis ou não podem ser movidos.",
         "toolFolderNameTooLong": "O nome da pasta é longo demais (até 40 caracteres de meia largura ou 20 de largura completa).",
         "toolFolderLimit": "A base de conhecimento atingiu o máximo de {{limit}} pastas.",
-        "revisionRequired": "Para continuar, informe a versão da página anterior; para recomeçar, leia a partir da posição 0.",
-        "materialIdsRequired": "Selecione materiais antes de aguardar a análise.",
-        "sourceRequired": "Somente materiais originais podem ser analisados.",
-        "invalidSearchQuery": "A busca deve conter de 1 a 200 caracteres.",
         "mediaUnsupported": "Somente imagens, vídeos ou áudios podem ser usados como mídia do curso.",
-        "mediaStorageFull": "Não há espaço suficiente para esta mídia. Libere espaço e tente novamente."
+        "mediaStorageFull": "Não há espaço suficiente para esta mídia. Libere espaço e tente novamente.",
+        "mediaNotFound": "O material de mídia não foi encontrado ou não contém arquivos de mídia disponíveis."
       },
       "actions": {
         "parse": "Analisar",
@@ -2348,7 +2345,8 @@
       "materialUnavailable": "Não é possível anexar {{name}} ({{reason}}). Abra a base de conhecimento para ver o motivo e analisar de novo.",
       "materialAttached": "Já está nesta conversa",
       "materialStaged": "Já está nesta mensagem",
-      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar"
+      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
+      "materialUnavailableGuidance": "Não é possível anexar {{name}}. {{guidance}} Você pode gerenciá-lo na página da base de conhecimento."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

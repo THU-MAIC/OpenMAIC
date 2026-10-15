@@ -766,7 +766,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
           content: [
             {
               type: 'text' as const,
-              text: (await copyNow()).error('revisionRequired'),
+              text: `A read at a non-zero offset must pass the revision returned with the previous page. The current revision is "${revision}"; to start over, read from offset 0.`,
             },
           ],
           details: { status: 'revision_required' as const, materialId, revision },
@@ -844,7 +844,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       }
 
       if (params.query.length === 0 || params.query.length > 200) {
-        throw new Error((await copyNow()).error('invalidSearchQuery'));
+        throw new Error('search_material query must contain 1 to 200 characters');
       }
       const needle = foldCase(params.query);
       let deadline = now() + SEARCH_TIME_BUDGET_MS;
@@ -987,8 +987,8 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       const copy = await copyNow();
       const material = await resolve(deps.sessionId, params.materialId, scopeOf(params.scope));
       throwIfAborted(signal);
-      if (!material) return notFoundResult(await copyNow());
-      if (!isSource(material)) throw new Error((await copyNow()).error('sourceRequired'));
+      if (!material) return notFoundResult(copy);
+      if (!isSource(material)) throw new Error('extract_material only accepts source materials.');
 
       let state: ReportedExtraction & { stats?: unknown };
       let started = false;
@@ -996,7 +996,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         const observation = deps.extractionWatcher?.observe();
         const ensured = await ensureOwnerExtraction(material.entry);
         throwIfAborted(signal);
-        if (!ensured) return notFoundResult(await copyNow());
+        if (!ensured) return notFoundResult(copy);
         started = ensured.queued;
         if (started) {
           deps.onLibraryChanged?.({
@@ -1051,7 +1051,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       if (scope === 'library' && !params.materialIds) {
         return {
           content: [
-            { type: 'text' as const, text: (await copyNow()).error('materialIdsRequired') },
+            { type: 'text' as const, text: 'Library scope requires materialIds to wait for.' },
           ],
           details: { status: 'material_ids_required' as const },
           isError: true,
