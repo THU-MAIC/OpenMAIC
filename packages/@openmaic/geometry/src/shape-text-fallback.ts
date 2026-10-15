@@ -54,7 +54,7 @@ export function shapeToTextFallback(shape: PPTShapeElement): PPTTextElement | nu
     defaultColor,
     fill,
     vAlign: label.align === 'bottom' ? 'bottom' : label.align === 'top' ? 'top' : 'middle',
-    ...(finite(label.lineHeight) !== undefined ? { lineHeight: label.lineHeight } : {}),
+    lineHeight: finite(label.lineHeight) ?? 1.625,
     ...(finite(label.wordSpace) !== undefined ? { wordSpace: label.wordSpace } : {}),
     paragraphSpace: finite(label.paragraphSpace) ?? 5,
     ...(label.type !== undefined ? { textType: label.type } : {}),

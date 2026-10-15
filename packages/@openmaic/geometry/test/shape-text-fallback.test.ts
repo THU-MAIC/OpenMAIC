@@ -73,6 +73,17 @@ describe('shared shape-to-text fallback', () => {
     expect(fallback.fill).toBe('rgb(17, 24, 39)');
   });
 
+  it.each([undefined, NaN, Infinity])(
+    'uses the shape label default line height when the override is %s',
+    (lineHeight) => {
+      const fallback = shapeToTextFallback({
+        ...shape,
+        text: { ...shape.text!, lineHeight },
+      });
+      expect(fallback?.lineHeight).toBe(1.625);
+    },
+  );
+
   it.each(['', '  ', '<p></p>', '<p>&nbsp;</p>'])('omits empty labels: %s', (content) => {
     expect(shapeToTextFallback({ ...shape, text: { ...shape.text!, content } })).toBeNull();
   });
