@@ -2271,7 +2271,21 @@
         "notMovable": "Ce document ne peut pas être déplacé",
         "gone": "Il n’existe plus",
         "save": "L’opération a échoué. Réessayez",
-        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord"
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord",
+        "materialNotFound": "Document introuvable ou inaccessible.",
+        "folderNotFound": "Dossier introuvable ou inaccessible.",
+        "textUnavailable": "Le texte du document est indisponible.",
+        "derivative": "Un document dérivé porte le nom de sa source ; renommez la source.",
+        "moveTooMany": "Déplacez au maximum {{limit}} documents à la fois.",
+        "moveNotMovable": "Aucun document déplacé. Certains documents sélectionnés sont indisponibles ou ne peuvent pas être déplacés.",
+        "toolFolderNameTooLong": "Le nom du dossier est trop long (40 caractères demi-chasse ou 20 caractères pleine chasse maximum).",
+        "toolFolderLimit": "La base de connaissances a atteint la limite de {{limit}} dossiers.",
+        "revisionRequired": "Pour continuer, indiquez la version de la page précédente ; pour recommencer, lisez à partir de la position 0.",
+        "materialIdsRequired": "Sélectionnez les documents avant d’attendre leur analyse.",
+        "sourceRequired": "Seuls les documents sources peuvent être analysés.",
+        "invalidSearchQuery": "La recherche doit contenir de 1 à 200 caractères.",
+        "mediaUnsupported": "Seuls les images, vidéos ou fichiers audio peuvent servir de médias du cours.",
+        "mediaStorageFull": "L’espace disponible ne suffit pas pour ce média. Libérez de l’espace, puis réessayez."
       },
       "actions": {
         "parse": "Analyser",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "Cette action est irréversible.",
         "folderTitle": "Supprimer le dossier « {{name}} » ?",
         "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à un administrateur d’en configurer un."
       }
     },
     "untitledCourse": "未命名课堂",

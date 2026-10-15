@@ -19,6 +19,7 @@ vi.mock('@/lib/hooks/use-i18n', () => ({
 }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 
+import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
 import {
   useComposerMaterials,
@@ -618,7 +619,7 @@ describe('the @ menu with the knowledge base', () => {
     const reason = failed.getAttribute('aria-label') ?? '';
     expect(reason).toContain('workspace.courseMention.materialUnavailable');
     // The page's reason, and the page to parse it again from -- not this menu.
-    expect(reason).toContain('workspace.knowledgeBase.failure.service_unavailable.label');
+    expect(reason).toContain('workspace.knowledgeBase.failure.service_unavailable.description');
     await act(async () => failed.click());
     expect(onPickMaterial).not.toHaveBeenCalled();
     const textarea = mounted.container.querySelector('textarea')!;
@@ -629,6 +630,34 @@ describe('the @ menu with the knowledge base', () => {
     expect(failed.getAttribute('aria-selected')).toBe('false');
     await mounted.dispose();
   });
+
+  it.each([false, true])(
+    'keeps reason-specific guidance and duration in the %s searchable picker',
+    async (searchable) => {
+      const mounted = await renderMenu({
+        candidates: [],
+        ...(searchable ? { search: { query: '', onChange: () => undefined } } : {}),
+        materials: [
+          material('long', { extractionStatus: 'failed', reasonCode: 'media_too_long' }),
+          material('unknown', { extractionStatus: 'failed' }),
+        ],
+        onPickMaterial: vi.fn(),
+      });
+      const long = mounted.container.querySelector(
+        '[data-testid="workbench-material-option-long"]',
+      )!;
+      const label = long.getAttribute('aria-label')!;
+      expect(label).toContain('workspace.knowledgeBase.failure.media_too_long.description');
+      expect(label).toContain(String(MEDIA_MAX_DURATION_SEC / 60));
+      expect(long.textContent).toContain('workspace.knowledgeBase.failure.media_too_long.label');
+      expect(
+        mounted.container
+          .querySelector('[data-testid="workbench-material-option-unknown"]')!
+          .getAttribute('aria-label'),
+      ).toContain('workspace.knowledgeBase.status.failed');
+      await mounted.dispose();
+    },
+  );
 
   it('names what the search and the menu offer: classrooms and materials, materials alone, or classrooms alone', async () => {
     const search = { query: '', onChange: () => undefined };

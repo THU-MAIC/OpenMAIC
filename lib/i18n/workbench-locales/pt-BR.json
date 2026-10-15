@@ -239,7 +239,8 @@
       "parseFailed": "Falha na análise",
       "folderExisted": "A pasta já existia",
       "unchanged": "Sem alteração",
-      "movedOutOfFolder": "Retirado da pasta"
+      "movedOutOfFolder": "Retirado da pasta",
+      "material": "{{count}} material"
     },
     "error": {
       "materialExtraction": "O processamento do material falhou",

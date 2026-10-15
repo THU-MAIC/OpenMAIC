@@ -2271,7 +2271,21 @@
         "notMovable": "Este material no se puede mover",
         "gone": "Ya no existe",
         "save": "No funcionó. Inténtalo de nuevo",
-        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero"
+        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero",
+        "materialNotFound": "Material no encontrado o inaccesible.",
+        "folderNotFound": "Carpeta no encontrada o inaccesible.",
+        "textUnavailable": "El texto del material no está disponible.",
+        "derivative": "El material derivado usa el nombre del original; cambia el nombre del original.",
+        "moveTooMany": "Mueve como máximo {{limit}} materiales a la vez.",
+        "moveNotMovable": "No se movió ningún material. Algunos materiales seleccionados no están disponibles o no se pueden mover.",
+        "toolFolderNameTooLong": "El nombre de la carpeta es demasiado largo (máximo 40 caracteres de ancho medio o 20 de ancho completo).",
+        "toolFolderLimit": "La base de conocimientos alcanzó el máximo de {{limit}} carpetas.",
+        "revisionRequired": "Para continuar, proporciona la versión de la página anterior; para empezar de nuevo, lee desde la posición 0.",
+        "materialIdsRequired": "Selecciona materiales antes de esperar su análisis.",
+        "sourceRequired": "Solo se pueden analizar materiales originales.",
+        "invalidSearchQuery": "La búsqueda debe contener entre 1 y 200 caracteres.",
+        "mediaUnsupported": "Solo imágenes, videos o audios pueden usarse como medios del curso.",
+        "mediaStorageFull": "No hay espacio suficiente para este medio. Libera espacio e inténtalo de nuevo."
       },
       "actions": {
         "parse": "Analizar",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "Esta acción no se puede deshacer.",
         "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
         "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "No hay un servicio de análisis configurado para este tipo de archivo. Pide a un administrador que lo configure."
       }
     },
     "untitledCourse": "未命名课堂",

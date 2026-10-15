@@ -2271,7 +2271,21 @@
         "notMovable": "这份资料不能移动",
         "gone": "它已经不存在了",
         "save": "操作没有成功，请重试",
-        "notEmpty": "文件夹里还有资料，请先移走"
+        "notEmpty": "文件夹里还有资料，请先移走",
+        "materialNotFound": "资料不存在或不可访问。",
+        "folderNotFound": "文件夹不存在或不可访问。",
+        "textUnavailable": "资料的文字内容不可用。",
+        "derivative": "衍生资料沿用原资料名称，请重命名原资料。",
+        "moveTooMany": "每次最多移动 {{limit}} 份资料。",
+        "moveNotMovable": "未移动任何资料。部分所选资料不可用或无法移动。",
+        "toolFolderNameTooLong": "文件夹名称过长，最多支持 40 个半角字符或 20 个全角字符。",
+        "toolFolderLimit": "知识库已达到 {{limit}} 个文件夹的上限。",
+        "revisionRequired": "继续读取时请传入上一页返回的版本；如需从头读取，请从位置 0 开始。",
+        "materialIdsRequired": "等待知识库解析前，请先指定资料。",
+        "sourceRequired": "只能解析原始资料。",
+        "invalidSearchQuery": "搜索文字须为 1 至 200 个字符。",
+        "mediaUnsupported": "只有图片、视频或音频资料可以用作课程媒体。",
+        "mediaStorageFull": "没有足够空间保存这份媒体，请释放空间后重试。"
       },
       "actions": {
         "parse": "解析",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "此操作不能撤销。",
         "folderTitle": "删除文件夹“{{name}}”？",
         "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "尚未配置可处理此类文件的解析服务，请联系管理员完成配置。"
       }
     },
     "untitledCourse": "未命名课堂",

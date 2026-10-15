@@ -2271,7 +2271,21 @@
         "notMovable": "Dieses Material kann nicht verschoben werden",
         "gone": "Es existiert nicht mehr",
         "save": "Das hat nicht geklappt. Versuche es erneut",
-        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst"
+        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst",
+        "materialNotFound": "Material nicht gefunden oder nicht zugänglich.",
+        "folderNotFound": "Ordner nicht gefunden oder nicht zugänglich.",
+        "textUnavailable": "Der Text des Materials ist nicht verfügbar.",
+        "derivative": "Ein abgeleitetes Material übernimmt den Namen der Quelle. Benenne die Quelle um.",
+        "moveTooMany": "Verschiebe höchstens {{limit}} Materialien auf einmal.",
+        "moveNotMovable": "Nichts wurde verschoben. Einige ausgewählte Materialien sind nicht verfügbar oder können nicht verschoben werden.",
+        "toolFolderNameTooLong": "Der Ordnername ist zu lang (höchstens 40 Zeichen mit halber oder 20 mit voller Breite).",
+        "toolFolderLimit": "Die Wissensdatenbank hat das Maximum von {{limit}} Ordnern erreicht.",
+        "revisionRequired": "Gib zum Weiterlesen die Version der vorherigen Seite an. Beginne zum Neustart bei Position 0.",
+        "materialIdsRequired": "Wähle Materialien aus, bevor du auf die Analyse wartest.",
+        "sourceRequired": "Nur Originalmaterialien können analysiert werden.",
+        "invalidSearchQuery": "Der Suchtext muss 1 bis 200 Zeichen enthalten.",
+        "mediaUnsupported": "Nur Bilder, Videos oder Audiodateien können als Kursmedien verwendet werden.",
+        "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut."
       },
       "actions": {
         "parse": "Analysieren",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "Das lässt sich nicht rückgängig machen.",
         "folderTitle": "Ordner „{{name}}“ löschen?",
         "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Für diesen Dateityp ist kein Parser eingerichtet. Bitte einen Administrator, einen einzurichten."
       }
     },
     "untitledCourse": "未命名课堂",

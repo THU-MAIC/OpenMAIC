@@ -2271,7 +2271,21 @@
         "notMovable": "Este material não pode ser movido",
         "gone": "Ele não existe mais",
         "save": "Não deu certo. Tente novamente",
-        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro",
+        "materialNotFound": "Material não encontrado ou inacessível.",
+        "folderNotFound": "Pasta não encontrada ou inacessível.",
+        "textUnavailable": "O texto do material está indisponível.",
+        "derivative": "Um material derivado usa o nome da fonte; renomeie a fonte.",
+        "moveTooMany": "Mova no máximo {{limit}} materiais por vez.",
+        "moveNotMovable": "Nenhum material foi movido. Alguns materiais selecionados estão indisponíveis ou não podem ser movidos.",
+        "toolFolderNameTooLong": "O nome da pasta é longo demais (até 40 caracteres de meia largura ou 20 de largura completa).",
+        "toolFolderLimit": "A base de conhecimento atingiu o máximo de {{limit}} pastas.",
+        "revisionRequired": "Para continuar, informe a versão da página anterior; para recomeçar, leia a partir da posição 0.",
+        "materialIdsRequired": "Selecione materiais antes de aguardar a análise.",
+        "sourceRequired": "Somente materiais originais podem ser analisados.",
+        "invalidSearchQuery": "A busca deve conter de 1 a 200 caracteres.",
+        "mediaUnsupported": "Somente imagens, vídeos ou áudios podem ser usados como mídia do curso.",
+        "mediaStorageFull": "Não há espaço suficiente para esta mídia. Libere espaço e tente novamente."
       },
       "actions": {
         "parse": "Analisar",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
         "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Não há um serviço de análise configurado para este tipo de arquivo. Peça a um administrador para configurá-lo."
       }
     },
     "untitledCourse": "未命名课堂",

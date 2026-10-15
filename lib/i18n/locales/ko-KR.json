@@ -2271,7 +2271,21 @@
         "notMovable": "이 자료는 이동할 수 없습니다",
         "gone": "더 이상 존재하지 않습니다",
         "save": "처리하지 못했습니다. 다시 시도하세요",
-        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요"
+        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요",
+        "materialNotFound": "자료를 찾을 수 없거나 접근할 수 없습니다.",
+        "folderNotFound": "폴더를 찾을 수 없거나 접근할 수 없습니다.",
+        "textUnavailable": "자료의 텍스트를 사용할 수 없습니다.",
+        "derivative": "파생 자료는 원본 이름을 사용합니다. 원본 자료의 이름을 변경하세요.",
+        "moveTooMany": "한 번에 최대 {{limit}}개의 자료를 이동할 수 있습니다.",
+        "moveNotMovable": "자료가 이동되지 않았습니다. 일부 선택한 자료를 사용할 수 없거나 이동할 수 없습니다.",
+        "toolFolderNameTooLong": "폴더 이름이 너무 깁니다(반각 40자 또는 전각 20자까지).",
+        "toolFolderLimit": "지식 베이스의 폴더 수가 최대 {{limit}}개에 도달했습니다.",
+        "revisionRequired": "계속 읽으려면 이전 페이지의 버전을 전달하세요. 처음부터 읽으려면 위치 0에서 시작하세요.",
+        "materialIdsRequired": "지식 베이스 분석을 기다리기 전에 자료를 지정하세요.",
+        "sourceRequired": "원본 자료만 분석할 수 있습니다.",
+        "invalidSearchQuery": "검색어는 1~200자여야 합니다.",
+        "mediaUnsupported": "이미지, 동영상 또는 오디오 자료만 수업 미디어로 사용할 수 있습니다.",
+        "mediaStorageFull": "이 미디어를 저장할 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요."
       },
       "actions": {
         "parse": "분석",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
         "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "이 파일 형식에 맞는 분석 서비스가 설정되지 않았습니다. 관리자에게 설정을 요청하세요."
       }
     },
     "untitledCourse": "未命名课堂",

@@ -2271,7 +2271,21 @@
         "notMovable": "Không thể chuyển tài liệu này",
         "gone": "Mục này không còn tồn tại",
         "save": "Không thực hiện được. Hãy thử lại",
-        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước"
+        "notEmpty": "Thư mục vẫn còn tài liệu. Hãy chuyển chúng đi trước",
+        "materialNotFound": "Không tìm thấy tài liệu hoặc không có quyền truy cập.",
+        "folderNotFound": "Không tìm thấy thư mục hoặc không có quyền truy cập.",
+        "textUnavailable": "Văn bản của tài liệu không khả dụng.",
+        "derivative": "Tài liệu phái sinh dùng tên của tài liệu gốc; hãy đổi tên tài liệu gốc.",
+        "moveTooMany": "Mỗi lần chỉ di chuyển tối đa {{limit}} tài liệu.",
+        "moveNotMovable": "Không có tài liệu nào được di chuyển. Một số tài liệu đã chọn không khả dụng hoặc không thể di chuyển.",
+        "toolFolderNameTooLong": "Tên thư mục quá dài (tối đa 40 ký tự nửa chiều rộng hoặc 20 ký tự toàn chiều rộng).",
+        "toolFolderLimit": "Cơ sở tri thức đã đạt giới hạn {{limit}} thư mục.",
+        "revisionRequired": "Để đọc tiếp, hãy truyền phiên bản của trang trước; để đọc lại từ đầu, bắt đầu ở vị trí 0.",
+        "materialIdsRequired": "Chọn tài liệu trước khi chờ phân tích trong cơ sở tri thức.",
+        "sourceRequired": "Chỉ có thể phân tích tài liệu gốc.",
+        "invalidSearchQuery": "Nội dung tìm kiếm phải có từ 1 đến 200 ký tự.",
+        "mediaUnsupported": "Chỉ có thể dùng hình ảnh, video hoặc âm thanh làm phương tiện của khóa học.",
+        "mediaStorageFull": "Không đủ dung lượng để lưu nội dung này. Hãy giải phóng dung lượng rồi thử lại."
       },
       "actions": {
         "parse": "Phân tích",
@@ -2300,6 +2314,9 @@
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
         "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Chưa cấu hình dịch vụ phân tích cho loại tệp này. Hãy nhờ quản trị viên cấu hình."
       }
     },
     "untitledCourse": "未命名课堂",

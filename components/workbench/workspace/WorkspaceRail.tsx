@@ -599,6 +599,9 @@ export function WorkspaceRail({
   );
 
   const drag = useTreeDrag({ onReorder: handleReorder, onMoveToFolder: handleDropIntoFolder });
+  const carriedFromFolder =
+    drag.dragKind === 'course' &&
+    Boolean(courses.classrooms.find((course) => course.id === drag.dragId)?.folderId);
 
   /**
    * The keyboard's version of the same gesture: Alt+↑/↓ on a focused row moves
@@ -1300,9 +1303,9 @@ export function WorkspaceRail({
             between two rows still commits nothing. */}
         {tab === 'courses' && foldersAvailable ? (
           <TreeGroundDrop
-            armed={drag.dragKind === 'course'}
-            active={drag.folderTarget === ''}
-            dropProps={drag.folderProps()}
+            armed={carriedFromFolder}
+            active={carriedFromFolder && drag.folderTarget === ''}
+            dropProps={carriedFromFolder ? drag.folderProps() : {}}
           />
         ) : null}
       </div>

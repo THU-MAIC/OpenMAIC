@@ -62,7 +62,8 @@ export interface MaterialModelCopy {
   /** A parse state as the page names it. */
   statusLabel(status: string): string;
   /** Why a parse failed; an unknown or legacy code reads as the generic failure. */
-  failure(code: unknown): MaterialFailureForModel;
+  failure(code: unknown, context?: 'library' | 'conversation'): MaterialFailureForModel;
+  error(key: keyof PageCopy['error'], values?: Record<string, number>): string;
   /** The page's name for "not in a folder". */
   readonly topLevel: string;
 }
@@ -83,14 +84,22 @@ export async function materialModelCopy(locale: Locale): Promise<MaterialModelCo
           return page.status.stored;
       }
     },
-    failure(code) {
+    error(key, values) {
+      return page.error[key].replace(/{{(\w+)}}/g, (_, name: string) =>
+        String(values?.[name] ?? ''),
+      );
+    },
+    failure(code, context = 'library') {
       const reasonCode = extractionReasonCodeOf(code);
       if (!reasonCode) return { reason: page.status.failed };
       const copy = page.failure[reasonCode];
       return {
         reasonCode,
         reason: copy.label,
-        guidance: copy.description.replace('{{minutes}}', String(MEDIA_MAX_DURATION_SEC / 60)),
+        guidance: (context === 'conversation' && reasonCode === 'service_unavailable'
+          ? page.conversationFailure.serviceUnavailable
+          : copy.description
+        ).replace('{{minutes}}', String(MEDIA_MAX_DURATION_SEC / 60)),
       };
     },
     topLevel: page.topLevel,
