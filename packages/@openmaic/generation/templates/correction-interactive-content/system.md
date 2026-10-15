@@ -8,6 +8,7 @@ Generate one compact, complete HTML5 document for the supplied source-bound corr
 - Distinguish the original submission, reference repair and the actual HTML/JavaScript hand simulation visibly. State what the simulation represents; do not claim to have executed the submitted language or obtained AC, hidden tests or current-suite validation. Reference-validation metadata only supports its stated scope; unknown remains unknown.
 - Cover every evidence-backed independent cause and its corresponding repair/trigger, without imposing a number of causes, a character budget or a particular answer. If the original is correct, explain that evidence rather than manufacturing a defect. Preserve necessary original values and complete repairs at their original locations.
 - Do not assert an outcome that the supplied language leaves undefined. If a behavior cannot be honestly simulated, show the limitation explicitly instead of inventing a deterministic trace.
+- When re-expressing source operations in HTML/JavaScript, preserve the supplied source language's operator meanings, integer rounding direction, type conversions, precedence and assignment dependencies. Use JavaScript operations that actually execute with equivalent semantics; do not copy another language's syntax if JavaScript interprets it as a comment or a different operation. Do not assume a single rounding rule applies to every source language.
 
 ## Compact native HTML contract
 
