@@ -23,14 +23,19 @@ export const INLINE_MATH_ROOT_ATTRIBUTE = 'data-inline-math-root';
 export const MAX_INLINE_MATH_SOURCE = 2_000;
 
 /**
- * Typesetting budget per pass over one prose root, counting only formulas not
- * already in the typeset cache. Within it formulas are typeset before paint;
- * the rest are typeset in idle time, a chunk of the same size at a time, so a
- * slide packed with large formulas cannot freeze the page. Ordinary prose (a
- * text box with a few dozen short formulas) fits in one pass.
+ * Bound uncached typesetting work in a batch. Live prose roots share a batch;
+ * standalone renderInlineMath calls get their own. Ordinary prose (a text box
+ * with a few dozen short formulas) fits before paint; the rest runs in idle time.
  */
 export const INLINE_MATH_SYNC_SOURCE_BUDGET = 4_000;
 export const INLINE_MATH_SYNC_FORMULA_BUDGET = 100;
+
+/**
+ * Also bound inserted markup, including cache hits: short matrix sources can
+ * expand to thousands of nodes whose style/layout cost comes after typesetting.
+ * Uses the serialized size already recorded by the cache, not a DOM traversal.
+ */
+const INLINE_MATH_SYNC_MARKUP_BUDGET = 128_000;
 
 /**
  * Hard cap per prose root, counting every formula in document order: past it,
@@ -50,7 +55,8 @@ const handled = new WeakSet<Element>();
  */
 const TYPESET_CACHE_MAX_MARKUP = 2_000_000;
 const TYPESET_CACHE_MAX_ENTRY = 64_000;
-const typesetCache = new Map<string, { readonly formula: Element | null; readonly size: number }>();
+type TypesetEntry = { readonly formula: Element | null; readonly size: number };
+const typesetCache = new Map<string, TypesetEntry>();
 let typesetCacheSize = 0;
 
 /** Typeset one formula, or `null` to keep its source as text. */
@@ -81,7 +87,7 @@ function typesetUncached(doc: Document, latex: string): Element | null {
   return formula;
 }
 
-function typeset(doc: Document, latex: string): Element | null {
+function typeset(doc: Document, latex: string): TypesetEntry {
   let entry = typesetCache.get(latex);
   if (entry) {
     // Refresh recency.
@@ -100,10 +106,7 @@ function typeset(doc: Document, latex: string): Element | null {
       }
     }
   }
-  if (!entry.formula) return null;
-  return entry.formula.ownerDocument === doc
-    ? (entry.formula.cloneNode(true) as Element)
-    : (doc.importNode(entry.formula, true) as Element);
+  return entry;
 }
 
 export interface RenderInlineMathOptions {
@@ -141,11 +144,23 @@ function showCapped(element: Element, latex: string): void {
  * Returns `true` when formulas were left for a later pass by the budget.
  */
 export function renderInlineMath(root: ParentNode, options: RenderInlineMathOptions = {}): boolean {
+  return renderPass(root, options, newBudget());
+}
+
+type TypesetBudget = { source: number; formulas: number; markup: number; full: boolean };
+
+function newBudget(): TypesetBudget {
+  return { source: 0, formulas: 0, markup: 0, full: false };
+}
+
+function renderPass(
+  root: ParentNode,
+  options: RenderInlineMathOptions,
+  budget: TypesetBudget,
+): boolean {
   const doc = (root as Node).ownerDocument ?? (root as Document);
   let rootSource = 0;
   let rootFormulas = 0;
-  let passSource = 0;
-  let passFormulas = 0;
   let pending = false;
   for (const element of root.querySelectorAll(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
     // Inside a formula replaced earlier in this pass.
@@ -160,24 +175,44 @@ export function renderInlineMath(root: ParentNode, options: RenderInlineMathOpti
       continue;
     }
     if (handled.has(element) && !capped.has(element)) continue;
+    if (!options.complete && budget.full) {
+      pending = true;
+      continue;
+    }
     if (!typesetCache.has(latex)) {
       if (
         !options.complete &&
-        passFormulas > 0 &&
-        (passSource + latex.length > INLINE_MATH_SYNC_SOURCE_BUDGET ||
-          passFormulas >= INLINE_MATH_SYNC_FORMULA_BUDGET)
+        budget.formulas > 0 &&
+        (budget.source + latex.length > INLINE_MATH_SYNC_SOURCE_BUDGET ||
+          budget.formulas >= INLINE_MATH_SYNC_FORMULA_BUDGET)
       ) {
+        budget.full = true;
         pending = true;
         continue;
       }
-      passSource += latex.length;
-      passFormulas += 1;
+      budget.source += latex.length;
+      budget.formulas += 1;
     }
-    const formula = typeset(doc, latex);
-    if (!formula) {
+    const entry = typeset(doc, latex);
+    if (!entry.formula) {
       showSource(element, latex);
       continue;
     }
+    // Always allow one formula to make progress, even if it exceeds a batch.
+    if (
+      !options.complete &&
+      budget.markup > 0 &&
+      budget.markup + entry.size > INLINE_MATH_SYNC_MARKUP_BUDGET
+    ) {
+      budget.full = true;
+      pending = true;
+      continue;
+    }
+    budget.markup += entry.size;
+    const formula =
+      entry.formula.ownerDocument === doc
+        ? (entry.formula.cloneNode(true) as Element)
+        : (doc.importNode(entry.formula, true) as Element);
     handled.add(formula);
     element.replaceWith(formula);
   }
@@ -243,16 +278,45 @@ function whenIdle(run: () => void): IdleHandle {
   return { cancel: () => clear.call(scope, handle) };
 }
 
-/** Typeset what a pass left over, one budget-sized chunk per idle period. */
-function finishWhenIdle(root: Element): () => void {
-  let handle: IdleHandle | null = null;
-  const step = () => {
-    handle = null;
-    if (!root.isConnected) return;
-    if (renderInlineMath(root)) handle = whenIdle(step);
-  };
-  handle = whenIdle(step);
-  return () => handle?.cancel();
+// One batch across live roots, not one allowance per text box/table cell.
+const pendingRoots = new Set<Element>();
+let syncBudget: TypesetBudget | null = null;
+let idleHandle: IdleHandle | null = null;
+
+function schedulePendingMath(): void {
+  if (idleHandle) return;
+  const handle = whenIdle(() => {
+    // A cancelled callback must not drain work queued by a later mount.
+    if (idleHandle !== handle) return;
+    idleHandle = null;
+    const budget = newBudget();
+    syncBudget = budget;
+    for (const root of pendingRoots) {
+      if (!root.isConnected || !renderPass(root, {}, budget)) pendingRoots.delete(root);
+      if (budget.full) break;
+    }
+    // Reset this allowance at the next idle boundary, even if the last root
+    // finished: a synchronous commit after this callback shares its work.
+    if (pendingRoots.size || budget.formulas || budget.markup) schedulePendingMath();
+  });
+  idleHandle = handle;
+}
+
+function renderLiveMath(root: Element): void {
+  syncBudget ??= newBudget();
+  if (renderPass(root, {}, syncBudget)) pendingRoots.add(root);
+  else pendingRoots.delete(root);
+  // Even a completed root shares its allowance until the next idle period.
+  schedulePendingMath();
+}
+
+function cancelPendingMath(root: Element): void {
+  pendingRoots.delete(root);
+  if (!pendingRoots.size) {
+    idleHandle?.cancel();
+    idleHandle = null;
+    syncBudget = null;
+  }
 }
 
 /**
@@ -261,14 +325,21 @@ function finishWhenIdle(root: Element): () => void {
  * any re-render (not only when `html` changes), which would put the stored
  * source spans back. Formulas already typeset are skipped and cached renders
  * are cloned, so a commit that left the markup alone costs one query. What the
- * budget leaves over is typeset in idle time; the next commit, an unmount or
- * new content cancels that and starts over from the markup then in place.
+ * shared budget leaves over is typeset in idle time, using the current markup.
+ * Repeated commits preserve the batch budget; unmounting removes queued work.
  * Never updates React state.
  */
 export function useInlineMath(ref: RefObject<Element | null>, html: string): void {
   useLayoutEffect(() => {
     const root = ref.current;
-    if (!root || !html.includes(INLINE_MATH_ATTRIBUTE)) return;
-    if (renderInlineMath(root)) return finishWhenIdle(root);
+    if (!root) return;
+    if (html.includes(INLINE_MATH_ATTRIBUTE)) renderLiveMath(root);
+    else pendingRoots.delete(root);
   });
+  // A commit is not a yield: cancelling here on every render would let a run
+  // of synchronous updates repeatedly spend a fresh batch before paint.
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (root) return () => cancelPendingMath(root);
+  }, [ref]);
 }

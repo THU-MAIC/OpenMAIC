@@ -336,6 +336,9 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     Array.from({ length: 40 }, (_, k) => `\\sqrt{${index}_{${k}}}`)
       .join('')
       .padEnd(1_900);
+  // Short source, but thousands of rendered nodes across a few formulas.
+  const matrix = (index: number) =>
+    `\\begin{pmatrix}${Array.from({ length: 40 }, (_, k) => `a_{${index + k}}`).join('&')}\\end{pmatrix}`;
 
   /**
    * Idle callbacks that run only when the test flushes them, so idle-time work
@@ -413,6 +416,107 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     const root = host(sources.map((source) => `<p>${stored(source)}</p>`).join(''));
     expect(renderInlineMath(root, { complete: true })).toBe(false);
     expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(sources.length);
+  });
+
+  it.each(['cold', 'warm'] as const)(
+    'budgets rendered size for short matrix sources with a %s cache',
+    (cache) => {
+      const sources = Array.from({ length: 8 }, (_, index) =>
+        matrix(index + (cache === 'cold' ? 200 : 300)),
+      );
+      expect(sources.join('').length).toBeLessThan(INLINE_MATH_SYNC_SOURCE_BUDGET);
+      const html = sources.map((source) => `<p>${stored(source)}</p>`).join('');
+      if (cache === 'warm') renderInlineMath(host(html), { complete: true });
+      const root = host(html);
+
+      expect(renderInlineMath(root)).toBe(true);
+      const first = root.querySelectorAll('.katex[data-inline-math]').length;
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThan(sources.length);
+      let count = first;
+      for (let pass = 0; pass < sources.length && count < sources.length; pass += 1) {
+        renderInlineMath(root);
+        const next = root.querySelectorAll('.katex[data-inline-math]').length;
+        expect(next).toBeGreaterThan(count);
+        count = next;
+      }
+      expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(sources.length);
+    },
+  );
+
+  it('shares a batch across prose roots and finishes them through one idle queue', () => {
+    const idle = idleQueue();
+    const sources = Array.from({ length: 8 }, (_, index) => matrix(index + 400));
+    // A revisit must be bounded even when every formula is already cached.
+    renderInlineMath(host(sources.map(stored).join('')), { complete: true });
+    const elements = sources.map((source, index) => longText(`matrix-${index}`, [source]));
+    const view = render(
+      <>
+        {elements.map((element) => (
+          <BaseTextElement key={element.id} elementInfo={element} />
+        ))}
+      </>,
+    );
+    const first = view.container.querySelectorAll('.katex[data-inline-math]').length;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(sources.length);
+    expect(idle.callbacks.size).toBe(1);
+
+    idle.flush();
+    expect(view.container.querySelectorAll('.katex[data-inline-math]')).toHaveLength(
+      sources.length,
+    );
+    view.unmount();
+  });
+
+  it('ignores a cancelled callback after another root mounts', () => {
+    const idle = idleQueue();
+    const first = render(
+      <BaseTextElement
+        elementInfo={longText(
+          'old',
+          Array.from({ length: 8 }, (_, i) => matrix(i + 600)),
+        )}
+      />,
+    );
+    const cancelled = idle.callbacks.values().next().value!;
+    first.unmount();
+    const next = render(
+      <BaseTextElement
+        elementInfo={longText(
+          'new',
+          Array.from({ length: 8 }, (_, i) => matrix(i + 700)),
+        )}
+      />,
+    );
+    const before = next.container.innerHTML;
+    cancelled();
+    expect(next.container.innerHTML).toBe(before);
+    idle.flush();
+    expect(next.container.querySelectorAll('.katex[data-inline-math]')).toHaveLength(8);
+    next.unmount();
+  });
+
+  it('removes unmounted roots without cancelling the remaining roots', () => {
+    const idle = idleQueue();
+    const elements = Array.from({ length: 8 }, (_, index) =>
+      longText(`removed-${index}`, [matrix(index + 500)]),
+    );
+    const content = (items: PPTTextElement[]) => (
+      <>
+        {items.map((element) => (
+          <BaseTextElement key={element.id} elementInfo={element} />
+        ))}
+      </>
+    );
+    const view = render(content(elements));
+    const removed = view.container.querySelectorAll('[data-inline-math-root]')[7];
+    const before = removed.innerHTML;
+    view.rerender(content(elements.slice(0, -1)));
+    idle.flush();
+    expect(removed.innerHTML).toBe(before);
+    expect(view.container.querySelectorAll('.katex[data-inline-math]')).toHaveLength(7);
+    view.unmount();
   });
 
   it('shows formulas past the hard cap as text', () => {
@@ -504,7 +608,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     expect(replacement).not.toHaveBeenCalledWith(handle);
   });
 
-  it('keeps progress through repeated commits with formulas too large to cache', () => {
+  it('preserves progress and the batch budget through repeated commits with uncacheable formulas', () => {
     const idle = idleQueue();
     const sources = Array.from({ length: 6 }, (_, index) => huge(index + 80));
     expect(sources.every((source) => source.length <= MAX_INLINE_MATH_SOURCE)).toBe(true);
@@ -568,7 +672,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
       const first = typeset()[0];
       for (let commit = 1; commit <= 5; commit += 1) {
         mounted.rerender(view(commit * 10));
-        expect(typeset().length).toBeGreaterThanOrEqual(previous);
+        expect(typeset().length).toBe(previous);
         expect(typeset()[0]).toBe(first);
         previous = typeset().length;
       }
