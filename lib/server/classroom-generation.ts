@@ -481,8 +481,10 @@ export async function generateClassroom(
   const resolveSceneContentCall = async (outlineType?: string) => {
     const stage = (outlineType ? `scene-content:${outlineType}` : 'scene-content') as LlmStage;
     const { model, outputWindow, thinking } = await resolveStageModel(stage);
+    const contentLLM =
+      codeBound && outlineType === 'interactive' ? callWithBudget(180_000) : boundedLLM;
     const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-      const result = await boundedLLM(
+      const result = await contentLLM(
         {
           model,
           messages: [

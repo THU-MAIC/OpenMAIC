@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { jsonSchema } from 'ai';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -1208,6 +1208,283 @@ describe('classroom scene generation retries', () => {
       }
     });
   }
+
+  describe('bounded code-bound interactive content requests', () => {
+    let timeout: MockInstance<typeof AbortSignal.timeout>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+        const controller = new AbortController();
+        setTimeout(
+          () => controller.abort(new DOMException('Timed out', 'TimeoutError')),
+          milliseconds,
+        );
+        return controller.signal;
+      });
+    });
+
+    afterEach(() => {
+      timeout.mockRestore();
+      vi.useRealTimers();
+    });
+
+    function pendingInteractive(ignoreAbort = false, exactReason = false) {
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let complete!: () => void;
+      let signal: AbortSignal | undefined;
+      mocks.generateSceneContent.mockImplementation(async (sceneOutline, aiCall) => {
+        if (sceneOutline.type === 'interactive') await aiCall('interactive content', 'full source');
+        return contentForOutline(sceneOutline);
+      });
+      mocks.callLLM.mockImplementationOnce((parameters) => {
+        signal = parameters.abortSignal;
+        return new Promise((resolve, reject) => {
+          complete = () => resolve({ text: 'offline complete HTML fixture' });
+          if (!ignoreAbort) {
+            signal!.addEventListener(
+              'abort',
+              () =>
+                reject(exactReason ? signal!.reason : new DOMException('Aborted', 'AbortError')),
+              { once: true },
+            );
+          }
+          entered();
+        });
+      });
+      return {
+        started,
+        finish: () => complete(),
+        get signal() {
+          return signal!;
+        },
+      };
+    }
+
+    function expectNoLaterStages() {
+      expect(mocks.generateSceneContent.mock.calls.map(([scene]) => scene.type)).toEqual([
+        'slide',
+        'interactive',
+      ]);
+      expect(mocks.generateSceneActions.mock.calls.map(([scene]) => scene.type)).toEqual(['slide']);
+      expect(mocks.reviewClassroomContent).not.toHaveBeenCalled();
+      expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
+      expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    }
+
+    for (const required of [true, false]) {
+      it(`keeps all other content/actions at 75 seconds and review at 120 seconds (codeBound=${required})`, async () => {
+        mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
+          success: true,
+          data: {
+            languageDirective: 'Use English.',
+            outlines: ['slide', 'interactive', 'quiz'].map((type, order) => ({
+              ...outline,
+              id: `ordinary-${type}`,
+              type,
+              order,
+            })),
+          },
+        });
+        mocks.generateSceneContent.mockImplementation(async (sceneOutline, aiCall) => {
+          await aiCall(`content:${sceneOutline.type}`, 'content source');
+          return contentForOutline(sceneOutline);
+        });
+        mocks.generateSceneActions.mockImplementation(async (sceneOutline, _content, aiCall) => {
+          await aiCall(`actions:${sceneOutline.type}`, 'actions source');
+          return [];
+        });
+        mocks.createClassroomContentCallbacks.mockImplementation((aiCall) => ({
+          review: () => aiCall('review', 'complete material'),
+        }));
+        mocks.reviewClassroomContent.mockImplementation(async ({ material, callbacks }) => {
+          await callbacks.review();
+          return { material, proof: testProof };
+        });
+        if (required) await generateRequiredWithProgress();
+        else await generateWithProgress();
+        expect(timeout.mock.calls.map(([milliseconds]) => milliseconds)).toEqual(
+          required
+            ? [720_000, 75_000, 75_000, 180_000, 75_000, 75_000, 75_000, 120_000]
+            : [720_000, 75_000, 75_000, 75_000, 75_000, 75_000, 75_000],
+        );
+        expect(mocks.callLLM.mock.calls.map(([params]) => params.messages[0].content)).toEqual([
+          'content:slide',
+          'actions:slide',
+          'content:interactive',
+          'actions:interactive',
+          'content:quiz',
+          'actions:quiz',
+          ...(required ? ['review'] : []),
+        ]);
+        for (const [params, , retry] of mocks.callLLM.mock.calls) {
+          expect(params.maxRetries).toBe(0);
+          expect(retry).toBeUndefined();
+        }
+        if (required)
+          expect(mocks.retryOptions.mock.calls.every(([options]) => options.maxRetries === 1)).toBe(
+            true,
+          );
+      });
+    }
+
+    it('accepts a complete interactive result at 179999ms', async () => {
+      const pending = pendingInteractive();
+      const operation = generateRequiredWithProgress();
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(179_999);
+      expect(pending.signal.aborted).toBe(false);
+      expect(mocks.generateSceneActions).toHaveBeenCalledTimes(1);
+      pending.finish();
+      await expect(operation).resolves.toHaveProperty('result.id');
+      expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+      expect(mocks.persistClassroom).toHaveBeenCalledTimes(1);
+    });
+
+    it('aborts the actual interactive provider signal at 180000ms and starts no later stages', async () => {
+      const pending = pendingInteractive();
+      const rejected = expect(generateRequiredWithProgress()).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(179_999);
+      expect(pending.signal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(pending.signal.aborted).toBe(true);
+      await rejected;
+      expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+      expectNoLaterStages();
+    });
+
+    it('uses the exact timeout reason and permits only the existing one content retry', async () => {
+      const pending = pendingInteractive(false, true);
+      let retryEntered!: () => void;
+      const retryStarted = new Promise<void>((resolve) => {
+        retryEntered = resolve;
+      });
+      let retrySignal!: AbortSignal;
+      mocks.callLLM.mockImplementation((parameters) => {
+        retrySignal = parameters.abortSignal;
+        return new Promise((_resolve, reject) => {
+          retrySignal.addEventListener('abort', () => reject(retrySignal.reason), { once: true });
+          retryEntered();
+        });
+      });
+      const rejected = expect(generateRequiredWithProgress()).rejects.toMatchObject({
+        name: 'TimeoutError',
+      });
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(180_000);
+      expect(pending.signal.reason).toMatchObject({ name: 'TimeoutError' });
+      await vi.advanceTimersByTimeAsync(1201);
+      await retryStarted;
+      expect(retrySignal.aborted).toBe(false);
+      expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(180_000);
+      await rejected;
+      expect(retrySignal.reason).toMatchObject({ name: 'TimeoutError' });
+      expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+      for (const [parameters, , sdkRetry] of mocks.callLLM.mock.calls) {
+        expect(parameters.maxRetries).toBe(0);
+        expect(sdkRetry).toBeUndefined();
+      }
+      expect(timeout.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+        720_000, 180_000, 180_000,
+      ]);
+      expect(mocks.generateSceneContent.mock.calls.map(([scene]) => scene.type)).toEqual([
+        'slide',
+        'interactive',
+        'interactive',
+      ]);
+      expect(mocks.generateSceneActions.mock.calls.map(([scene]) => scene.type)).toEqual(['slide']);
+      expect(mocks.retryOptions.mock.calls.every(([options]) => options.maxRetries === 1)).toBe(
+        true,
+      );
+      expect(mocks.reviewClassroomContent).not.toHaveBeenCalled();
+      expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
+      expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    });
+
+    it('lets parent cancellation preempt the interactive budget', async () => {
+      const parent = new AbortController();
+      const pending = pendingInteractive();
+      const rejected = expect(
+        generateRequiredWithProgress({}, parent.signal),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(1000);
+      parent.abort();
+      await rejected;
+      expect(pending.signal.aborted).toBe(true);
+      expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+      expectNoLaterStages();
+    });
+
+    it('lets the original 720-second whole-job deadline preempt a later interactive request', async () => {
+      const pending = pendingInteractive();
+      const content = mocks.generateSceneContent.getMockImplementation()!;
+      let enterSlide!: () => void;
+      const slideStarted = new Promise<void>((resolve) => {
+        enterSlide = resolve;
+      });
+      let finishSlide!: () => void;
+      mocks.generateSceneContent.mockImplementation(async (...args) => {
+        if (args[0].type === 'slide') {
+          await new Promise<void>((resolve) => {
+            finishSlide = resolve;
+            enterSlide();
+          });
+          return contentForOutline(args[0]);
+        }
+        return content(...args);
+      });
+      const rejected = expect(generateRequiredWithProgress()).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+      await slideStarted;
+      await vi.advanceTimersByTimeAsync(600_000);
+      finishSlide();
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(pending.signal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+      expect(pending.signal.aborted).toBe(true);
+      expect(timeout.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([720_000, 180_000]);
+      expect(mocks.callLLM).toHaveBeenCalledTimes(1);
+      expectNoLaterStages();
+    });
+
+    it('discards late HTML and preserves only the existing one content retry', async () => {
+      const pending = pendingInteractive(true);
+      const retryFailure = Object.assign(new Error('non-retryable fixture'), { statusCode: 401 });
+      mocks.callLLM.mockRejectedValueOnce(retryFailure);
+      const rejected = expect(generateRequiredWithProgress()).rejects.toBe(retryFailure);
+      await pending.started;
+      await vi.advanceTimersByTimeAsync(180_001);
+      expect(pending.signal.aborted).toBe(true);
+      expect(mocks.generateSceneActions).toHaveBeenCalledTimes(1);
+      pending.finish();
+      await vi.advanceTimersByTimeAsync(1201);
+      await rejected;
+      expect(mocks.callLLM).toHaveBeenCalledTimes(2);
+      expect(mocks.generateSceneContent.mock.calls.map(([scene]) => scene.type)).toEqual([
+        'slide',
+        'interactive',
+        'interactive',
+      ]);
+      expect(mocks.generateSceneActions.mock.calls.map(([scene]) => scene.type)).toEqual(['slide']);
+      expect(mocks.retryOptions.mock.calls.every(([options]) => options.maxRetries === 1)).toBe(
+        true,
+      );
+      expect(mocks.reviewClassroomContent).not.toHaveBeenCalled();
+      expect(mocks.generateTTSForClassroom).not.toHaveBeenCalled();
+      expect(mocks.persistClassroom).not.toHaveBeenCalled();
+    });
+  });
 
   describe('code-bound scene thinking defaults', () => {
     const flash = { provider: 'openai.chat', modelId: 'deepseek-ai/DeepSeek-V4-Flash' };
