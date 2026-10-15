@@ -83,6 +83,32 @@ describe('scene API retry boundary', () => {
     mocks.resolveVocationalActive.mockReturnValue(false);
   });
 
+  it('forwards complete source unchanged through both split scene APIs', async () => {
+    vi.resetModules();
+    const requirements = {
+      requirement: '完整原题\r\n原码 cin >> row;  \r\n',
+      codeContextRequired: true,
+      codemateSource: {
+        title: 'Crop',
+        content: 'complete statement',
+        code: 'cin >> row;  \r\n',
+        correctedCode: 'cout << row;\r\n',
+        language: 'cpp',
+      },
+    };
+    mocks.generateSceneContent.mockResolvedValue({ elements: [], remark: 'ok' });
+    mocks.generateSceneActions.mockResolvedValue([]);
+    mocks.buildCompleteScene.mockReturnValue({ id: 'scene', type: 'slide', actions: [] });
+    const content = await import('@/app/api/generate/scene-content/route');
+    const actions = await import('@/app/api/generate/scene-actions/route');
+    expect((await content.POST(mockRequest({ requirements }))).status).toBe(200);
+    expect(
+      (await actions.POST(mockRequest({ requirements, content: { elements: [] } }))).status,
+    ).toBe(200);
+    expect(mocks.generateSceneContent.mock.calls[0][2].userRequirements).toBe(requirements);
+    expect(mocks.generateSceneActions.mock.calls[0][3].userRequirements).toBe(requirements);
+  });
+
   it('disables AI SDK retries for scene-content model calls', async () => {
     vi.resetModules();
     mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {

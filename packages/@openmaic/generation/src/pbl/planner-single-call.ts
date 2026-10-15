@@ -22,6 +22,7 @@
 import { parseJsonResponse } from '../json-repair.js';
 import { noopGenerationLogger } from '../logger.js';
 import type { AICallFn } from '../pipeline-types.js';
+import { withSourceRequirement } from '../source-requirement.js';
 import { normalizeProjectRuntime, normalizeScenario } from './operations/kernel/progress.js';
 import {
   PlannerV2Error,
@@ -480,6 +481,7 @@ export async function generatePBLV2ProjectSingleCall(
   callbacks?: PlannerV2Callbacks,
 ): Promise<PBLProjectV2> {
   const log = callbacks?.logger ?? noopGenerationLogger;
+  aiCall = withSourceRequirement(aiCall, input.courseContext.userRequirements);
   const pblConfig = input.outline.pblConfig;
   if (!pblConfig) {
     throw new PlannerV2Error(

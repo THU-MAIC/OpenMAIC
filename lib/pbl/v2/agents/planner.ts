@@ -31,6 +31,7 @@ import {
   PlannerV2Error,
   emptyProject,
   buildPlannerSystemPrompt,
+  buildSourceGroundedPrompt,
   newId,
   instructorProjectAnchor,
   applyPlannerProficiency,
@@ -139,6 +140,14 @@ export async function generatePBLV2Project(
     scenarioRoleplay,
   );
 
+  const groundedPrompt = buildSourceGroundedPrompt(
+    {
+      system: systemPrompt,
+      user: 'Design the PBL project now. Call the tools in the documented order; do not write narrative text.',
+    },
+    input.courseContext.userRequirements,
+  );
+
   // Tool implementations. Each one validates its inputs, mutates
   // `project`, fires a progress event, and returns a small result the
   // LLM uses to continue (the result is what's serialized into the
@@ -155,9 +164,8 @@ export async function generatePBLV2Project(
   await callLLM(
     {
       model,
-      system: systemPrompt,
-      prompt:
-        'Design the PBL project now. Call the tools in the documented order; do not write narrative text.',
+      system: groundedPrompt.system,
+      prompt: groundedPrompt.user,
       tools,
       stopWhen: [plannerDesignAccepted(), stepCountIs(MAX_PLANNER_STEPS)],
       onStepFinish: ({ toolCalls }) => {

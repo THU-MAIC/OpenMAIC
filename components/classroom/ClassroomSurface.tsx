@@ -281,6 +281,7 @@ export function ClassroomSurface({
           agents: params.agents,
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
+          requirements: params.requirements,
         });
 
       const imageMapping: Record<string, string> = {};
@@ -386,7 +387,11 @@ export function ClassroomSurface({
               </div>
             </div>
           ) : (
-            <Stage classroomId={classroomId} onRetryOutline={retrySingleOutline} codemateEmbed={codemateEmbed} />
+            <Stage
+              classroomId={classroomId}
+              onRetryOutline={retrySingleOutline}
+              codemateEmbed={codemateEmbed}
+            />
           )}
         </div>
       </MediaStageProvider>

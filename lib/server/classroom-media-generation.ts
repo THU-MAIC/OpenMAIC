@@ -27,6 +27,7 @@ import {
   resolveVideoModel,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
@@ -35,6 +36,7 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
@@ -248,79 +250,273 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // TTS generation
 // ---------------------------------------------------------------------------
 
+export type ClassroomTTSFailureReason =
+  | 'provider-unavailable'
+  | 'credentials-unavailable'
+  | 'model-unavailable'
+  | 'voice-context-required'
+  | 'storage-unavailable'
+  | 'invalid-speech'
+  | 'synthesis-failed'
+  | 'empty-audio'
+  | 'invalid-audio'
+  | 'storage-failed'
+  | 'cancelled'
+  | 'timeout';
+
+export interface ClassroomTTSReport {
+  status: 'completed' | 'partial' | 'unavailable' | 'skipped';
+  ready: boolean;
+  required: boolean;
+  /** Number of speech actions supplied to this call before internal splitting. */
+  inputSpeechCount: number;
+  /** Counts refer to the final speech actions, including split chunks. */
+  total: number;
+  succeeded: number;
+  failed: number;
+  providerId?: TTSProviderId;
+  modelId?: string;
+  reason?: ClassroomTTSFailureReason | 'no-speech' | 'incomplete';
+  failures: Array<{
+    sceneId: string;
+    actionId: string;
+    reason: ClassroomTTSFailureReason;
+  }>;
+}
+
+export class ClassroomTTSGenerationError extends Error {
+  readonly code = 'CLASSROOM_TTS_REQUIRED_INCOMPLETE';
+
+  constructor(readonly report: ClassroomTTSReport) {
+    super('Required classroom speech audio is incomplete');
+    this.name = 'ClassroomTTSGenerationError';
+  }
+}
+
+function firstClassroomTTSProvider(): TTSProviderId | undefined {
+  return Object.entries(getServerTTSProviders())
+    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
+    .map(([id]) => id as TTSProviderId)[0];
+}
+
+function splitClassroomSpeech(scenes: Scene[], providerId: TTSProviderId): void {
+  for (const scene of scenes) {
+    if (!scene.actions) continue;
+    // Keep malformed speech for explicit failure accounting, never stringify it.
+    scene.actions = scene.actions.flatMap((action) =>
+      action.type === 'speech' && typeof action.text === 'string'
+        ? splitLongSpeechActions([action], providerId)
+        : [action],
+    );
+  }
+}
+
+/** Prepare the same speech chunks before factual review; no synthesis or I/O. */
+export function prepareClassroomSpeechForTTS(scenes: Scene[]): void {
+  const providerId = firstClassroomTTSProvider();
+  if (providerId) splitClassroomSpeech(scenes, providerId);
+}
+
 export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
-): Promise<void> {
-  const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
-  await ensureDir(audioDir);
-
-  // Resolve TTS provider (exclude browser-native-tts and operator force-disabled
-  // providers — server precedence, #665).
-  const ttsProviderIds = Object.entries(getServerTTSProviders())
-    .filter(([id, info]) => id !== 'browser-native-tts' && !info.disabled)
-    .map(([id]) => id);
-  if (ttsProviderIds.length === 0) {
-    log.warn('No server TTS provider configured, skipping TTS generation');
-    return;
+  options: { required?: boolean; signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<ClassroomTTSReport> {
+  const speechEntries = () =>
+    scenes.flatMap((scene) =>
+      (scene.actions || [])
+        .filter((action) => action.type === 'speech')
+        .map((action) => ({ scene, action: action as ServerTransportSpeechAction })),
+    );
+  const report: ClassroomTTSReport = {
+    status: 'unavailable',
+    ready: false,
+    required: options.required === true,
+    inputSpeechCount: speechEntries().length,
+    total: speechEntries().length,
+    succeeded: 0,
+    failed: 0,
+    failures: [],
+  };
+  const settled = new Set<ServerTransportSpeechAction>();
+  // AIOJ-required speech gets one bounded budget for the whole batch.
+  // Optional legacy callers retain their existing behavior unless they opt in.
+  const requestedTimeout = options.timeoutMs ?? (report.required ? 180_000 : undefined);
+  const localTimeout =
+    requestedTimeout === undefined
+      ? undefined
+      : AbortSignal.timeout(
+          Number.isFinite(requestedTimeout) && requestedTimeout > 0
+            ? Math.min(180_000, Math.max(1, Math.floor(requestedTimeout)))
+            : 180_000,
+        );
+  const signals = [options.signal, localTimeout].filter((value): value is AbortSignal => !!value);
+  const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+  const finish = () => {
+    if (!report.ready) {
+      // Do not log provider error objects or narration/student/voice-sample text.
+      log.warn('Classroom speech audio is not complete', {
+        required: report.required,
+        total: report.total,
+        succeeded: report.succeeded,
+        failed: report.failed,
+        reason: report.reason,
+      });
+      if (report.required) throw new ClassroomTTSGenerationError(report);
+    }
+    return report;
+  };
+  const throwIfCancelled = () => {
+    if (!signal?.aborted) return;
+    // Caller cancellation wins over the local batch deadline when both fired.
+    const callerAborted = options.signal?.aborted === true;
+    const reason = callerAborted
+      ? options.signal?.reason?.name === 'TimeoutError'
+        ? 'timeout'
+        : 'cancelled'
+      : 'timeout';
+    for (const { scene, action } of speechEntries()) {
+      if (settled.has(action)) continue;
+      delete action.audioId;
+      delete action.audioUrl;
+      action.audioInvalidated = true;
+      report.failed += 1;
+      report.failures.push({ sceneId: scene.id, actionId: action.id, reason });
+      settled.add(action);
+    }
+    report.ready = false;
+    report.status = report.succeeded ? 'partial' : 'unavailable';
+    report.reason = reason;
+    finish();
+    throw new DOMException(
+      'Classroom speech synthesis was cancelled',
+      reason === 'timeout' ? 'TimeoutError' : 'AbortError',
+    );
+  };
+  const blocked = (reason: ClassroomTTSFailureReason) => {
+    throwIfCancelled();
+    report.reason = reason;
+    report.failed = report.total;
+    report.failures = speechEntries().map(({ scene, action }) => ({
+      sceneId: scene.id,
+      actionId: action.id,
+      reason,
+    }));
+    return finish();
+  };
+  throwIfCancelled();
+  if (!report.total) {
+    report.status = report.required ? 'unavailable' : 'skipped';
+    report.reason = 'no-speech';
+    return finish();
   }
 
-  const providerId = ttsProviderIds[0] as TTSProviderId;
+  const providerId = firstClassroomTTSProvider();
+  if (!providerId) return blocked('provider-unavailable');
+  report.providerId = providerId;
   const apiKey = resolveTTSApiKey(providerId);
   const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
-  if (ttsProvider?.requiresApiKey && !apiKey) {
-    log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
-    return;
-  }
+  if (ttsProvider?.requiresApiKey && !apiKey) return blocked('credentials-unavailable');
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
   const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
-  if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
-    log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
-    return;
+  if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID)
+    return blocked('voice-context-required');
+
+  let modelId: string;
+  try {
+    // Undefined means unconfigured; an explicitly empty resolver result is not a fallback pin.
+    modelId =
+      resolveTTSModel(providerId, undefined, voice) ??
+      DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] ??
+      '';
+  } catch {
+    return blocked('model-unavailable');
+  }
+  if (!modelId && ttsProvider?.models?.length) return blocked('model-unavailable');
+  report.modelId = modelId;
+  throwIfCancelled();
+  splitClassroomSpeech(scenes, providerId);
+  report.total = speechEntries().length;
+  throwIfCancelled();
+
+  const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
+  try {
+    throwIfCancelled();
+    await ensureDir(audioDir);
+    throwIfCancelled();
+  } catch {
+    throwIfCancelled();
+    return blocked('storage-unavailable');
   }
 
-  for (const scene of scenes) {
-    if (!scene.actions) continue;
-
-    // Split long speech actions into multiple shorter ones before TTS generation,
-    // mirroring the client-side approach. Each sub-action gets its own audio file.
-    scene.actions = splitLongSpeechActions(scene.actions, providerId);
-
-    // Use scene order to make audio IDs unique across scenes
-    const sceneOrder = scene.order;
-
-    for (const action of scene.actions) {
-      if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-      const speechAction = action as ServerTransportSpeechAction;
-      // Server transport emits the derived id plus the serving URL; the
-      // client-side converter collapses the pair into one pool asset on
-      // first load. Browser generation allocates pool ids directly.
-      const audioId = `tts_s${sceneOrder}_${action.id}`;
-
-      try {
-        const result = await generateTTS(
-          {
-            providerId,
-            modelId: DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '',
-            apiKey,
-            baseUrl: ttsBaseUrl,
-            voice,
-            speed: speechAction.speed,
-          },
-          speechAction.text,
-        );
-
-        const filename = `${audioId}.${result.format || format}`;
-        await fs.writeFile(path.join(audioDir, filename), result.audio);
-
-        speechAction.audioId = audioId;
-        speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
-        log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
-      } catch (err) {
-        log.warn(`TTS generation failed for action ${action.id}:`, err);
+  for (const { scene, action } of speechEntries()) {
+    throwIfCancelled();
+    // A failed attempt must not leave stale audio references for different text.
+    delete action.audioId;
+    delete action.audioUrl;
+    action.audioInvalidated = true;
+    const fail = (reason: ClassroomTTSFailureReason) => {
+      report.failed += 1;
+      report.failures.push({ sceneId: scene.id, actionId: action.id, reason });
+      settled.add(action);
+    };
+    if (typeof action.text !== 'string' || !action.text.trim()) {
+      fail('invalid-speech');
+      continue;
+    }
+    let result: Awaited<ReturnType<typeof generateTTS>>;
+    try {
+      throwIfCancelled();
+      result = await generateTTS(
+        { providerId, modelId, apiKey, baseUrl: ttsBaseUrl, voice, speed: action.speed, signal },
+        action.text,
+      );
+      throwIfCancelled();
+    } catch {
+      throwIfCancelled();
+      fail('synthesis-failed');
+      continue;
+    }
+    if (!(result?.audio instanceof Uint8Array) || !result.audio.byteLength) {
+      fail('empty-audio');
+      continue;
+    }
+    const audioId = `tts_s${scene.order}_${action.id}`;
+    const audioFormat = result.format || format;
+    if (!/^[a-z0-9]{1,12}$/i.test(audioFormat)) {
+      fail('invalid-audio');
+      continue;
+    }
+    // Required audio must be measurable encoded audio, not a JSON/text error body.
+    // This reuses the existing WAV/MP3 container parser, not a playback/fidelity claim.
+    if (report.required) {
+      const duration = measureAudioDuration(result.audio, audioFormat);
+      if (duration === null || !Number.isFinite(duration) || duration <= 0) {
+        fail('invalid-audio');
+        continue;
       }
     }
+    const filename = `${audioId}.${audioFormat}`;
+    try {
+      throwIfCancelled();
+      await fs.writeFile(path.join(audioDir, filename), result.audio, { signal });
+      throwIfCancelled();
+    } catch {
+      throwIfCancelled();
+      fail('storage-failed');
+      continue;
+    }
+    action.audioId = audioId;
+    action.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
+    delete action.audioInvalidated;
+    report.succeeded += 1;
+    settled.add(action);
   }
+  throwIfCancelled();
+  report.ready = report.total > 0 && report.succeeded === report.total && report.failed === 0;
+  report.status = report.ready ? 'completed' : report.succeeded ? 'partial' : 'unavailable';
+  if (!report.ready) report.reason = 'incomplete';
+  return finish();
 }

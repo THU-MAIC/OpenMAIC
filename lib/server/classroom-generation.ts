@@ -1,5 +1,9 @@
 import { nanoid } from 'nanoid';
-import { callLLM } from '@/lib/ai/llm';
+import { callLLM, getGlobalThinkingConfig } from '@/lib/ai/llm';
+import {
+  getClassroomContentOutputOptions,
+  getClassroomContentThinkingConfig,
+} from '@/lib/server/classroom-content-transport';
 import { createStageAPI } from '@/lib/api/stage-api';
 import type { StageStore } from '@/lib/api/stage-api-types';
 import {
@@ -9,8 +13,11 @@ import {
   generateSceneContent,
   PBLGenerationError,
   withGenerationRetry,
+  validateSourceRequirements,
+  type CodemateClassroomSource,
   type AICallFn,
   type AgentInfo,
+  type SceneOutline,
 } from '@openmaic/generation';
 import { createSceneWithActions } from '@/lib/server/scene-generation';
 import { generatePBLV2Project } from '@/lib/pbl/v2/agents/planner';
@@ -31,13 +38,84 @@ import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
+  prepareClassroomSpeechForTTS,
 } from '@/lib/server/classroom-media-generation';
+import {
+  CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS,
+  createClassroomContentCallbacks,
+  reviewClassroomContent,
+  matchesClassroomContentProof,
+  ClassroomContentReviewError,
+  type ClassroomContentProof,
+  type ClassroomContentStructuredCall,
+} from '@/lib/server/classroom-content-review';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Classroom');
+
+/** Server-owned task shells, never a diagnosis or a factual content pass. */
+function createCorrectionPlan(requirements: UserRequirements): {
+  languageDirective: string;
+  courseTitle: string;
+  outlines: SceneOutline[];
+} {
+  validateSourceRequirements(requirements);
+  if (requirements.codeContextRequired !== true || !requirements.codemateSource) {
+    throw new Error('Complete code source context is required');
+  }
+  return {
+    languageDirective:
+      '本 AIOJ 编程纠错课的新授课文字统一使用简体中文，包括讲义、教师讲解与字幕、互动控件标签与提示、练习题干、选项和解析。代码与标识符、原题原文引用、程序输入输出必须逐字保留，不翻译、不改写。',
+    courseTitle: requirements.codemateSource.title,
+    outlines: [
+      {
+        id: 'correction-source-analysis',
+        type: 'slide',
+        title: '源码分析与修复核对',
+        description:
+          '核对完整题意、合法输入与原始提交，只列有源码证据支持的缺陷；原码无错时明确说明，不强制改写。',
+        teachingObjective: '核对全部独立根因、必要原值及原位置上的完整修复；不预设原码必错。',
+        keyPoints: [
+          '从完整原题和原码逐项验证独立根因及触发条件，不以早期诊断代替源码证据。',
+          '有缺陷时覆盖全部必要原值与完整原位置修复；没有缺陷时说明依据，允许等价正确实现。',
+        ],
+        order: 1,
+      },
+      {
+        id: 'correction-interactive-demo',
+        type: 'interactive',
+        title: '互动验证',
+        description:
+          '依据完整源码选择合法输入与初态，制作可操作演示，提供输入操作、分步观察与重置，并显示有依据的状态变化。',
+        teachingObjective:
+          '操作完整演示，并区分原始提交、参考修正与实际 HTML/JS 手算实现的证据边界。',
+        keyPoints: [
+          '提供合法输入、明确初态、实际可用的操作控件与重置，状态和显示必须一致。',
+          '分别标明原码、参考码与 HTML/JS 手算；只说明有依据且有定义的变化，不伪造执行或评测结论。',
+        ],
+        widgetType: 'simulation',
+        widgetOutline: { concept: '源码行为与修复核对' },
+        order: 2,
+      },
+      {
+        id: 'correction-understanding-check',
+        type: 'quiz',
+        title: '理解检测',
+        description: '依据完整题意和源码核对结果生成理解检测，答案、判分与解释必须一致。',
+        teachingObjective: '判断有证据支持的源码结论与完整修复，而非记忆预设答案。',
+        keyPoints: [
+          '使用可明确判分的单选题，覆盖源码核对中的必要条件与完整修复或无需修复的依据。',
+          '正确选项及解释须有源码依据；错误干扰项应明确作为选项，不当作事实主张。',
+        ],
+        quizConfig: { questionCount: 2, difficulty: 'easy', questionTypes: ['single'] },
+        order: 3,
+      },
+    ],
+  };
+}
 
 export function containPBLGenerationError(error: unknown, sceneTitle: string): null {
   if (!(error instanceof PBLGenerationError)) throw error;
@@ -47,6 +125,8 @@ export function containPBLGenerationError(error: unknown, sceneTitle: string): n
 
 export interface GenerateClassroomInput {
   requirement: string;
+  codeContextRequired?: boolean;
+  codemateSource?: CodemateClassroomSource;
   pdfContent?: { text: string; images: string[] };
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
@@ -65,6 +145,7 @@ export type ClassroomGenerationStep =
   | 'generating_outlines'
   | 'generating_scenes'
   | 'generating_media'
+  | 'reviewing_content'
   | 'generating_tts'
   | 'persisting'
   | 'completed';
@@ -84,6 +165,7 @@ export interface GenerateClassroomResult {
   scenes: Scene[];
   scenesCount: number;
   createdAt: string;
+  contentReview?: ClassroomContentProof;
 }
 
 function createInMemoryStore(stage: Stage): StageStore {
@@ -177,12 +259,57 @@ export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
     baseUrl: string;
+    signal?: AbortSignal;
     onProgress?: (progress: ClassroomGenerationProgress) => Promise<void> | void;
   },
 ): Promise<GenerateClassroomResult> {
   const { requirement, pdfContent } = input;
+  // These bounds cancel the real transport; a late result cannot start paid
+  // follow-up stages or reach persistence after this job has expired.
+  const generationSignal = options.signal
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(720_000)])
+    : AbortSignal.timeout(720_000);
+  generationSignal.throwIfAborted();
+  const reportProgress = async (progress: ClassroomGenerationProgress) => {
+    generationSignal.throwIfAborted();
+    await options.onProgress?.(progress);
+    generationSignal.throwIfAborted();
+  };
+  const callWithBudget =
+    (deadlineMs: number): typeof callLLM =>
+    async (params, source, retryOptions, thinking) => {
+      generationSignal.throwIfAborted();
+      const abortSignal = AbortSignal.any([
+        generationSignal,
+        AbortSignal.timeout(deadlineMs),
+        ...(params.abortSignal ? [params.abortSignal] : []),
+      ]);
+      const result = await callLLM(
+        { ...params, abortSignal, maxRetries: 0 },
+        source,
+        retryOptions ? { ...retryOptions, retries: 0 } : undefined,
+        thinking,
+      );
+      abortSignal.throwIfAborted();
+      generationSignal.throwIfAborted();
+      return result;
+    };
+  const boundedLLM = callWithBudget(75_000);
+  const contentReviewLLM = callWithBudget(CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS);
+  // Capture the full host material once; model output/outline never replaces it.
+  const requirements: UserRequirements = Object.freeze({
+    requirement,
+    ...(input.codeContextRequired !== undefined
+      ? { codeContextRequired: input.codeContextRequired }
+      : {}),
+    ...(input.codemateSource !== undefined
+      ? { codemateSource: structuredClone(input.codemateSource) }
+      : {}),
+  });
+  validateSourceRequirements(requirements);
+  const codeBound = requirements.codeContextRequired === true;
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'initializing',
     progress: 5,
     message: 'Initializing classroom generation',
@@ -215,22 +342,46 @@ export async function generateClassroom(
   let searchQueryModel = languageModel;
   let searchQueryThinking = classroomThinking;
 
-  const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    const result = await callLLM(
-      {
-        model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxOutputTokens: modelInfo?.outputWindow,
-      },
-      'generate-classroom',
-      undefined,
-      classroomThinking,
-    );
-    return result.text;
-  };
+  const createAiCall =
+    (
+      llm: typeof callLLM,
+      outputOptions?: ReturnType<typeof getClassroomContentOutputOptions>,
+      thinking: ThinkingConfig | undefined = classroomThinking,
+    ): AICallFn =>
+    async (systemPrompt, userPrompt, _images) => {
+      const result = await llm(
+        {
+          model: languageModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: modelInfo?.outputWindow,
+          ...outputOptions,
+        },
+        'generate-classroom',
+        undefined,
+        thinking,
+      );
+      return result.text;
+    };
+
+  const aiCall = createAiCall(boundedLLM);
+  // Only complete-content review/repair uses the bounded JSON/reasoning options.
+  // Keep raw text for the strict schema, hash, JSON Pointer and quote checks.
+  const contentReviewAiCall = createAiCall(
+    contentReviewLLM,
+    getClassroomContentOutputOptions(languageModel),
+    getClassroomContentThinkingConfig(languageModel, classroomThinking),
+  );
+  // The response schema is generated only from the helper's immutable server packet.
+  // Keep this separate from AICallFn's optional images argument and ordinary calls.
+  const contentReviewStructuredCall: ClassroomContentStructuredCall = (system, user, schema) =>
+    createAiCall(
+      contentReviewLLM,
+      getClassroomContentOutputOptions(languageModel, schema),
+      getClassroomContentThinkingConfig(languageModel, classroomThinking),
+    )(system, user);
 
   // Per-stage model resolution for the scene pipeline. The classroom used to
   // bind a single `languageModel` (from the `generate-classroom` stage) into one
@@ -301,6 +452,25 @@ export async function generateClassroom(
     }
   };
 
+  // A scene default only: explicit stage/classroom and shared global settings win.
+  const resolveSceneThinkingConfig = (
+    model: LanguageModel,
+    configured: ThinkingConfig | undefined,
+  ): ThinkingConfig | undefined => {
+    if (
+      !codeBound ||
+      configured !== undefined ||
+      typeof model !== 'object' ||
+      model === null ||
+      !('provider' in model) ||
+      model.provider !== 'openai.chat' ||
+      !('modelId' in model) ||
+      model.modelId !== 'deepseek-ai/DeepSeek-V4-Flash'
+    )
+      return configured;
+    return getGlobalThinkingConfig() ?? { mode: 'disabled', enabled: false };
+  };
+
   // scene-content routes per outline type via the composite key
   // `scene-content:<type>` (slide/quiz/interactive/pbl), falling back to the
   // base `scene-content` route — same resolution the browser UI uses at
@@ -312,7 +482,7 @@ export async function generateClassroom(
     const stage = (outlineType ? `scene-content:${outlineType}` : 'scene-content') as LlmStage;
     const { model, outputWindow, thinking } = await resolveStageModel(stage);
     const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-      const result = await callLLM(
+      const result = await boundedLLM(
         {
           model,
           messages: [
@@ -324,7 +494,7 @@ export async function generateClassroom(
         },
         'generate-classroom-scene',
         undefined,
-        thinking,
+        resolveSceneThinkingConfig(model, thinking),
       );
       return result.text;
     };
@@ -338,7 +508,7 @@ export async function generateClassroom(
     if (agentProfilesAiCall) return agentProfilesAiCall;
     const { model, outputWindow, thinking } = await resolveStageModel('agent-profiles');
     agentProfilesAiCall = async (systemPrompt, userPrompt, _images) => {
-      const result = await callLLM(
+      const result = await boundedLLM(
         {
           model,
           messages: [
@@ -362,7 +532,7 @@ export async function generateClassroom(
     if (sceneActionsAiCall) return sceneActionsAiCall;
     const { model, outputWindow, thinking } = await resolveStageModel('scene-actions');
     sceneActionsAiCall = async (systemPrompt, userPrompt, _images) => {
-      const result = await callLLM(
+      const result = await boundedLLM(
         {
           model,
           messages: [
@@ -374,7 +544,7 @@ export async function generateClassroom(
         },
         'generate-classroom-scene',
         undefined,
-        thinking,
+        resolveSceneThinkingConfig(model, thinking),
       );
       return result.text;
     };
@@ -382,7 +552,7 @@ export async function generateClassroom(
   };
 
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    const result = await callLLM(
+    const result = await boundedLLM(
       {
         model: searchQueryModel,
         messages: [
@@ -398,13 +568,10 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const requirements: UserRequirements = {
-    requirement,
-  };
   const vocationalActive = resolveVocationalActive(requirements);
   const pdfText = pdfContent?.text || undefined;
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'researching',
     progress: 10,
     message: 'Researching topic',
@@ -413,7 +580,7 @@ export async function generateClassroom(
 
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
-  if (input.enableWebSearch) {
+  if (input.enableWebSearch && !codeBound) {
     const webSearchConfig = resolveClassroomWebSearchConfig(input);
     if (webSearchConfig) {
       // Re-resolve the query-rewrite model only when explicitly routed. If
@@ -464,25 +631,21 @@ export async function generateClassroom(
     }
   }
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'generating_outlines',
     progress: 15,
-    message: 'Generating scene outlines',
+    message: codeBound ? 'Preparing correction lesson sections' : 'Generating scene outlines',
     scenesGenerated: 0,
   });
 
-  const outlinesResult = await generateSceneOutlinesFromRequirements(
-    requirements,
-    pdfText,
-    undefined,
-    aiCall,
-    {
-      imageGenerationEnabled: input.enableImageGeneration,
-      videoGenerationEnabled: input.enableVideoGeneration,
-      researchContext,
-      // NO teacherContext — agents haven't been generated yet
-    },
-  );
+  const outlinesResult = codeBound
+    ? { success: true as const, data: createCorrectionPlan(requirements) }
+    : await generateSceneOutlinesFromRequirements(requirements, pdfText, undefined, aiCall, {
+        imageGenerationEnabled: !codeBound && input.enableImageGeneration,
+        videoGenerationEnabled: !codeBound && input.enableVideoGeneration,
+        researchContext,
+        // NO teacherContext — agents haven't been generated yet
+      });
 
   if (!outlinesResult.success || !outlinesResult.data) {
     log.error('Failed to generate outlines:', outlinesResult.error);
@@ -494,7 +657,7 @@ export async function generateClassroom(
     `Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective}, courseTitle: ${courseTitle ?? 'n/a'})`,
   );
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'generating_outlines',
     progress: 30,
     message: `Generated ${outlines.length} scene outlines`,
@@ -561,7 +724,7 @@ export async function generateClassroom(
     });
     const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
 
-    await options.onProgress?.({
+    await reportProgress({
       step: 'generating_scenes',
       progress: Math.max(progressStart, 31),
       message: `Generating scene ${index + 1}/${outlines.length}: ${safeOutline.title}`,
@@ -576,7 +739,7 @@ export async function generateClassroom(
       const nextAttempt = Math.min(event.attempt + 1, event.maxAttempts);
       const message = `Retrying scene ${index + 1}/${outlines.length} ${phase} (${nextAttempt}/${event.maxAttempts}): ${safeOutline.title}`;
       log.warn(`${message} — ${event.reason}`);
-      await options.onProgress?.({
+      await reportProgress({
         step: 'generating_scenes',
         progress: Math.max(progressStart, 31),
         message,
@@ -596,6 +759,7 @@ export async function generateClassroom(
             generateSceneContent(safeOutline, contentCall.aiCall, {
               agents,
               languageDirective,
+              userRequirements: requirements,
               allowProceduralSkill: vocationalActive,
               ...(safeOutline.type === 'pbl'
                 ? {
@@ -603,7 +767,7 @@ export async function generateClassroom(
                       generatePBLV2Project(
                         input,
                         contentCall.model,
-                        callLLM,
+                        boundedLLM,
                         { logger: log },
                         contentCall.thinking,
                       ),
@@ -612,6 +776,8 @@ export async function generateClassroom(
             }),
           {
             label: `scene ${index + 1}/${outlines.length} content`,
+            ...(codeBound ? { maxRetries: 1 } : {}),
+            signal: generationSignal,
             shouldRetryResult: (result) => result === null,
             onRetry: (event) => reportSceneRetry('content', event),
           },
@@ -631,9 +797,12 @@ export async function generateClassroom(
         generateSceneActions(safeOutline, content, actionsAiCall, {
           agents,
           languageDirective,
+          userRequirements: requirements,
         }),
       {
         label: `scene ${index + 1}/${outlines.length} actions`,
+        ...(codeBound ? { maxRetries: 1 } : {}),
+        signal: generationSignal,
         onRetry: (event) => reportSceneRetry('actions', event),
       },
     );
@@ -647,7 +816,7 @@ export async function generateClassroom(
 
     generatedScenes += 1;
     const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
-    await options.onProgress?.({
+    await reportProgress({
       step: 'generating_scenes',
       progress: Math.min(progressEnd, 90),
       message: `Generated ${generatedScenes}/${outlines.length} scenes`,
@@ -656,16 +825,20 @@ export async function generateClassroom(
     });
   }
 
-  const scenes = store.getState().scenes;
+  let scenes = store.getState().scenes;
   log.info(`Pipeline complete: ${scenes.length} scenes generated`);
 
   if (scenes.length === 0) {
     throw new Error('No scenes were generated');
   }
+  if (codeBound && scenes.length !== outlines.length) {
+    throw new ClassroomContentReviewError('material_incomplete');
+  }
+  generationSignal.throwIfAborted();
 
   // Phase: Media generation (after all scenes generated)
-  if (input.enableImageGeneration || input.enableVideoGeneration) {
-    await options.onProgress?.({
+  if (!codeBound && (input.enableImageGeneration || input.enableVideoGeneration)) {
+    await reportProgress({
       step: 'generating_media',
       progress: 90,
       message: 'Generating media files',
@@ -682,9 +855,44 @@ export async function generateClassroom(
     }
   }
 
-  // Phase: TTS generation
-  if (input.enableTTS) {
-    await options.onProgress?.({
+  // Fix speech chunks before review so synthesis cannot silently change the
+  // final teaching text/IDs that were actually checked.
+  if (input.enableTTS || codeBound) prepareClassroomSpeechForTTS(scenes);
+  let finalMaterial = { stage, scenes };
+  let contentReview: ClassroomContentProof | undefined;
+  if (codeBound) {
+    await reportProgress({
+      step: 'reviewing_content',
+      progress: 91,
+      message: 'Checking complete classroom teaching content',
+      scenesGenerated: scenes.length,
+      totalScenes: outlines.length,
+    });
+    const checked = await reviewClassroomContent({
+      requirements,
+      material: finalMaterial,
+      callbacks: createClassroomContentCallbacks(contentReviewAiCall, {
+        structuredCall: contentReviewStructuredCall,
+      }),
+      expectedSceneCount: outlines.length,
+    });
+    generationSignal.throwIfAborted();
+    finalMaterial = checked.material;
+    contentReview = checked.proof;
+    scenes = finalMaterial.scenes;
+  }
+  const validateBeforeWrite = (material: { stage: Stage; scenes: Scene[] }) => {
+    generationSignal.throwIfAborted();
+    if (
+      codeBound &&
+      (!contentReview || !matchesClassroomContentProof(requirements, material, contentReview))
+    )
+      throw new ClassroomContentReviewError('binding_mismatch');
+  };
+
+  // Required AIOJ classroom narration cannot be disabled by a request flag.
+  if (input.enableTTS || codeBound) {
+    await reportProgress({
       step: 'generating_tts',
       progress: 94,
       message: 'Generating TTS audio',
@@ -693,14 +901,19 @@ export async function generateClassroom(
     });
 
     try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl);
+      await generateTTSForClassroom(scenes, stageId, options.baseUrl, {
+        required: codeBound,
+        signal: generationSignal,
+      });
       log.info('TTS generation complete');
     } catch (err) {
+      generationSignal.throwIfAborted();
+      if (codeBound) throw err;
       log.warn('TTS generation phase failed, continuing:', err);
     }
   }
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'persisting',
     progress: 98,
     message: 'Persisting classroom data',
@@ -708,18 +921,22 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
+  validateBeforeWrite(finalMaterial);
   const persisted = await persistClassroom(
     {
       id: stageId,
-      stage,
+      stage: finalMaterial.stage,
       scenes,
     },
     options.baseUrl,
+    { signal: generationSignal, contentReview, validateBeforeWrite },
   );
+  // Storage normalization is covered before its atomic document write, too.
+  validateBeforeWrite({ stage: persisted.stage, scenes: persisted.scenes });
 
   log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
 
-  await options.onProgress?.({
+  await reportProgress({
     step: 'completed',
     progress: 100,
     message: 'Classroom generation completed',
@@ -730,9 +947,10 @@ export async function generateClassroom(
   return {
     id: persisted.id,
     url: persisted.url,
-    stage,
-    scenes,
+    stage: persisted.stage,
+    scenes: persisted.scenes,
     scenesCount: scenes.length,
     createdAt: persisted.createdAt,
+    ...(contentReview ? { contentReview } : {}),
   };
 }

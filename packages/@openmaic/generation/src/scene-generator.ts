@@ -40,6 +40,7 @@ import {
 } from './prompt-formatters.js';
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
+import { withSourceRequirement, validateSourceRequirements } from './source-requirement.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -97,7 +98,7 @@ export interface SceneContentOptions {
   languageDirective?: string;
   /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
   targetLanguage?: string;
-  /** Original course request/profile, used by PBL v2 for explicit learner-level signals. */
+  /** Complete original request/material, used by every content prompt as user data. */
   userRequirements?: UserRequirements;
   allowProceduralSkill?: boolean;
   /**
@@ -123,6 +124,7 @@ export interface SceneActionsOptions {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  userRequirements?: UserRequirements;
   logger?: GenerationLogger;
 }
 
@@ -250,6 +252,11 @@ export async function generateSceneContent(
     editDirective,
     baselineContent,
   } = options;
+  validateSourceRequirements(userRequirements);
+  // Interactive and PBL own source binding; each actual call receives one complete data block.
+  if (outline.type !== 'pbl' && outline.type !== 'interactive') {
+    aiCall = withSourceRequirement(aiCall, userRequirements);
+  }
 
   // Unified path for interactive scenes (both normal and ultra mode)
   if (outline.type === 'interactive') {
@@ -273,6 +280,7 @@ export async function generateSceneContent(
 
     // Route to widget generation (handles all 5 types)
     return generateWidgetContent(outline, aiCall, languageDirective, {
+      userRequirements,
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
@@ -295,6 +303,7 @@ export async function generateSceneContent(
         baselineContent,
         log,
         options.onFailure,
+        userRequirements?.codeContextRequired === true,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective, log, options.onFailure);
@@ -613,6 +622,7 @@ async function generateSlideContent(
   baselineContent?: GeneratedSlideContent,
   log: GenerationLogger = noopGenerationLogger,
   onFailure?: (failure: SceneContentFailure) => void,
+  codeBoundCorrection = false,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -769,6 +779,17 @@ async function generateSlideContent(
       `${instructionBlock}\n` +
       `Preserve everything the instruction does not mention.${imageRule} ` +
       `Return the full updated slide content in the same schema.`;
+  }
+
+  if (codeBoundCorrection) {
+    userPrompt += `
+
+## Source-bound correction slide profile
+Use compact JSON and the fewest readable text/code blocks needed; omit decorative shapes, repeated headings and repeated prose.
+Keep every evidence-backed independent cause, its trigger and necessary original values. Show each complete repair visibly at its original source location, preserving source operators/whitespace; do not leave the repair only in speech or later quiz feedback. If the original is correct, explain why and do not invent a repair.
+Do not impose a hard element, character or cause count, drop required changes, or shrink text to illegibility. Keep original submission, reference repair and any hand simulation distinct; reference validation supports only its supplied scope, and unknown remains unknown.
+The complete source data is unchanged. These presentation choices do not replace the existing final content review.
+`;
   }
 
   const response = await aiCall(prompts.system, userPrompt, visionImages);
@@ -1007,6 +1028,7 @@ async function generatePBLSceneContent(
     courseContext: {
       allOutlines: [outline],
       languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+      ...(userRequirements ? { userRequirements } : {}),
     },
     user: userRequirements
       ? {
@@ -1119,12 +1141,16 @@ export async function generateWidgetContent(
   aiCall: AICallFn,
   languageDirective?: string,
   options: {
+    userRequirements?: UserRequirements;
     allowProceduralSkill?: boolean;
     logger?: GenerationLogger;
     onFailure?: (failure: SceneContentFailure) => void;
   } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
+  aiCall = withSourceRequirement(aiCall, options.userRequirements);
+  // Source validation above must succeed before the trusted host flag selects this profile.
+  const codeBoundCorrection = options.userRequirements?.codeContextRequired === true;
   const widgetType = outline.widgetType;
   const widgetOutline = outline.widgetOutline;
 
@@ -1139,7 +1165,9 @@ export async function generateWidgetContent(
 
   switch (widgetType) {
     case 'simulation':
-      promptId = PROMPT_IDS.SIMULATION_CONTENT;
+      promptId = codeBoundCorrection
+        ? PROMPT_IDS.CORRECTION_INTERACTIVE_CONTENT
+        : PROMPT_IDS.SIMULATION_CONTENT;
       variables = {
         conceptName: widgetOutline.concept || outline.title,
         conceptOverview: outline.description,
@@ -1616,6 +1644,7 @@ export async function generateSceneActions(
   options: SceneActionsOptions = {},
 ): Promise<Action[]> {
   const { ctx, agents, userProfile, languageDirective } = options;
+  aiCall = withSourceRequirement(aiCall, options.userRequirements);
   const log = options.logger ?? noopGenerationLogger;
   const agentsText = formatAgentsForPrompt(agents);
 

@@ -13,7 +13,7 @@ import type {
   PBLRoleType,
   PBLThreadSeat as ContractPBLThreadSeat,
 } from '@openmaic/dsl';
-import type { SceneOutline } from '../outline-types.js';
+import type { SceneOutline, UserRequirements } from '../outline-types.js';
 
 export type {
   PBLProject,
@@ -576,6 +576,8 @@ export interface PBLPlannerV2Input {
     /** Language directive string (e.g. "Reply in Simplified Chinese").
      *  Inherited from the course generation context. */
     languageDirective: string;
+    /** Complete source data retained across single-call and host loop planning. */
+    userRequirements?: UserRequirements;
   };
   /** Optional learner profile from `UserRequirements`. */
   user?: {

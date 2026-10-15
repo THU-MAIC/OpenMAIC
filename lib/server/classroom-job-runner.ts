@@ -1,6 +1,9 @@
 import { createLogger } from '@/lib/logger';
 import { generateClassroom, type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import {
+  getClassroomGenerationJobRunnerMap,
+  readClassroomGenerationJob,
+  releaseClassroomGenerationJobRunner,
   markClassroomGenerationJobFailed,
   markClassroomGenerationJobRunning,
   markClassroomGenerationJobSucceeded,
@@ -8,7 +11,7 @@ import {
 } from '@/lib/server/classroom-job-store';
 
 const log = createLogger('ClassroomJob');
-const runningJobs = new Map<string, Promise<void>>();
+const runningJobs = getClassroomGenerationJobRunnerMap();
 
 export function runClassroomGenerationJob(
   jobId: string,
@@ -20,14 +23,20 @@ export function runClassroomGenerationJob(
     return existing;
   }
 
+  // Freeze the input exactly once before the first asynchronous boundary.
+  const snapshot = structuredClone(input);
   const jobPromise = (async () => {
     try {
-      await markClassroomGenerationJobRunning(jobId);
+      const job = await readClassroomGenerationJob(jobId);
+      if (!job || job.status !== 'queued') return;
+      if (!(await markClassroomGenerationJobRunning(jobId, snapshot))) return;
 
-      const result = await generateClassroom(input, {
+      const result = await generateClassroom(snapshot, {
         baseUrl,
         onProgress: async (progress) => {
-          await updateClassroomGenerationJobProgress(jobId, progress);
+          const current = await updateClassroomGenerationJobProgress(jobId, progress);
+          if (current.status !== 'running')
+            throw new Error('Classroom generation job is no longer active');
         },
       });
 
@@ -41,6 +50,7 @@ export function runClassroomGenerationJob(
         log.error(`Failed to persist failed status for job ${jobId}:`, markFailedError);
       }
     } finally {
+      releaseClassroomGenerationJobRunner(jobId);
       runningJobs.delete(jobId);
     }
   })();

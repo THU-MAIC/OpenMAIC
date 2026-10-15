@@ -20,9 +20,28 @@ export interface PdfImage {
 
 export type ImageMapping = Record<string, string>;
 
+/** Complete AIOJ material supplied by the host, never inferred from a title/prompt. */
+export interface CodemateClassroomSource {
+  title: string;
+  content: string;
+  code: string;
+  correctedCode: string;
+  language: string;
+  /** Diagnosis claims remain hypotheses; original problem/code take precedence. */
+  analysis?: unknown;
+  referenceValidation?: {
+    status: 'stored-passed' | 'unknown';
+    scope: string;
+    codeHash?: string;
+  };
+}
+
 /** Free-form requirements accepted by outline generation. */
 export interface UserRequirements {
   requirement: string;
+  /** Explicit host flag; missing code source fails before model generation. */
+  codeContextRequired?: boolean;
+  codemateSource?: CodemateClassroomSource;
   userNickname?: string;
   userBio?: string;
   webSearch?: boolean;

@@ -205,6 +205,7 @@ export async function fetchSceneActions(
     previousSpeeches?: string[];
     userProfile?: string;
     languageDirective?: string;
+    requirements?: UserRequirements;
   },
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<SceneActionsResult>,
@@ -612,6 +613,7 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  requirements?: UserRequirements;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -716,6 +718,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
+              requirements: params.requirements,
             },
             signal,
           );
@@ -811,6 +814,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               previousSpeeches,
               userProfile: params.userProfile,
               languageDirective: params.languageDirective,
+              requirements: params.requirements,
             },
             signal,
           );
@@ -964,6 +968,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
+            requirements: params.requirements,
           },
           signal,
         );
@@ -992,6 +997,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             previousSpeeches,
             userProfile: params.userProfile,
             languageDirective: params.languageDirective,
+            requirements: params.requirements,
           },
           signal,
         );

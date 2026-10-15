@@ -101,7 +101,9 @@ export {
   formatImagePlaceholder,
   formatTeacherPersonaForPrompt,
 } from './prompt-formatters.js';
+export { buildSourceGroundedPrompt, validateSourceRequirements } from './source-requirement.js';
 export type {
+  CodemateClassroomSource,
   ImageMapping,
   MediaGenerationRequest,
   PdfImage,

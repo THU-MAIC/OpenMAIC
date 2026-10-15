@@ -1,5 +1,6 @@
 import { after, type NextRequest } from 'next/server';
 import { nanoid } from 'nanoid';
+import { validateSourceRequirements } from '@openmaic/generation';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
@@ -18,6 +19,10 @@ export async function POST(req: NextRequest) {
     requirementSnippet = rawBody.requirement?.substring(0, 60);
     const body: GenerateClassroomInput = {
       requirement: rawBody.requirement || '',
+      ...(rawBody.codeContextRequired !== undefined
+        ? { codeContextRequired: rawBody.codeContextRequired }
+        : {}),
+      ...(rawBody.codemateSource !== undefined ? { codemateSource: rawBody.codemateSource } : {}),
       ...(rawBody.pdfContent ? { pdfContent: rawBody.pdfContent } : {}),
 
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
@@ -38,6 +43,12 @@ export async function POST(req: NextRequest) {
 
     if (!requirement) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
+    }
+
+    try {
+      validateSourceRequirements(body);
+    } catch {
+      return apiError('INVALID_REQUEST', 400, 'Invalid classroom source context');
     }
 
     const baseUrl = buildRequestOrigin(req);

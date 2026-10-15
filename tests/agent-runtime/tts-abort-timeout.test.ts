@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
+import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import { buildCourseAudioAndDeckTools } from '@/lib/server/agent-runtime/course-edit/tools';
 import type { CourseDocument, CourseStore } from '@/lib/server/agent-runtime/course-tools';
 import { synthesizeSceneNarration } from '@/lib/server/agent-runtime/scene-tts';
@@ -75,6 +75,55 @@ describe('TTS abort propagation and per-request timeout', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('caps configured request timeouts and passes the bounded signal to the actual transport', async () => {
+    const previous = process.env.TTS_REQUEST_TIMEOUT_MS;
+    const timeoutSignals: AbortSignal[] = [];
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => {
+      const signal = new AbortController().signal;
+      timeoutSignals.push(signal);
+      return signal;
+    });
+    const transport = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      async () =>
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        }),
+    );
+    // Encoded response bytes only exercise transport wiring, not real speech quality.
+    const cases: Array<[string | undefined, number]> = [
+      ['999999999', 120000],
+      ['120000.9', 120000],
+      ['80.9', 80],
+      ['0.25', 1],
+      ['Infinity', 30000],
+      ['-1', 30000],
+      [undefined, 30000],
+    ];
+    try {
+      for (const [configured, bound] of cases) {
+        if (configured === undefined) delete process.env.TTS_REQUEST_TIMEOUT_MS;
+        else process.env.TTS_REQUEST_TIMEOUT_MS = configured;
+        await generateTTS(
+          {
+            providerId: 'openai-tts',
+            modelId: 'operator-pinned-model',
+            apiKey: 'test-only-key',
+            voice: 'alloy',
+          },
+          'Hello',
+        );
+        expect(timeout).toHaveBeenLastCalledWith(bound);
+        const request = transport.mock.calls.at(-1)?.[1];
+        expect(request?.signal).toBe(timeoutSignals.at(-1));
+      }
+      expect(transport).toHaveBeenCalledTimes(cases.length);
+    } finally {
+      if (previous === undefined) delete process.env.TTS_REQUEST_TIMEOUT_MS;
+      else process.env.TTS_REQUEST_TIMEOUT_MS = previous;
+    }
   });
 
   it('rejects at the per-request timeout with the retryable error when the provider hangs', async () => {

@@ -381,12 +381,14 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         imageMapping[id] = src;
       }
       const agents = doc.stage.generatedAgentConfigs;
+      const userRequirements = await deps.getUserRequirements?.(params.stageId);
       let content: Awaited<ReturnType<typeof generateSceneContent>>;
       let contentFailure: SceneContentFailureCode | undefined;
       try {
         content = await generateSceneContent(outline, aiCallFor(sceneContentStage(params.type)), {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
+          userRequirements,
           allowProceduralSkill: true,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
@@ -445,6 +447,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         await actionGenerator(outline, content, aiCallFor('scene-actions'), {
           agents,
           languageDirective: doc.stage.languageDirective ?? '',
+          userRequirements,
         }),
       );
       const built = buildCompleteScene(outline, content, actions, params.stageId, {
@@ -532,6 +535,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
             agents: doc.stage.generatedAgentConfigs,
             languageDirective: doc.stage.languageDirective ?? '',
             userProfile: params.styleDirective,
+            userRequirements: await deps.getUserRequirements?.(params.stageId),
           },
         ),
       );

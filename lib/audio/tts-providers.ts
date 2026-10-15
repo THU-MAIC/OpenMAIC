@@ -145,16 +145,19 @@ export class QwenTTSError extends Error {
 /**
  * Per-request bound for one TTS provider call, ported from the reference
  * runtime's TTS bounds (30s request timeouts on the managed TTS clients).
- * Overridable via `TTS_REQUEST_TIMEOUT_MS` (ms) for deployments with slower
+ * Overridable up to 120s via `TTS_REQUEST_TIMEOUT_MS` (ms) for slower
  * upstreams; a hung provider fails the call with this error instead of
  * wedging the session.
  */
 const DEFAULT_TTS_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_TTS_REQUEST_TIMEOUT_MS = 120_000;
 
 function ttsRequestTimeoutMs(): number {
   const raw = process.env.TTS_REQUEST_TIMEOUT_MS?.trim();
   const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TTS_REQUEST_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.min(MAX_TTS_REQUEST_TIMEOUT_MS, Math.max(1, Math.floor(parsed)))
+    : DEFAULT_TTS_REQUEST_TIMEOUT_MS;
 }
 
 /**

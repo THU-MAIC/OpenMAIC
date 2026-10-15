@@ -98,14 +98,8 @@ export interface UploadedDocument {
  * Simplified user requirements for course generation
  * All details (topic, duration, style, etc.) should be included in the requirement text
  */
-export interface UserRequirements {
-  requirement: string; // Single free-form text for all user input
-  userNickname?: string; // Student nickname for personalization
-  userBio?: string; // Student background for personalization
-  webSearch?: boolean; // Enable web search for richer context
-  interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
-  taskEngineMode?: boolean; // Enable vocational task-engine generation path
-}
+export type UserRequirements = import('@openmaic/generation').UserRequirements;
+export type CodemateClassroomSource = import('@openmaic/generation').CodemateClassroomSource;
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
 

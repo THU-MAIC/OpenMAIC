@@ -15,7 +15,7 @@ import {
   type SceneGenerationContext,
   type AgentInfo,
 } from '@openmaic/generation';
-import type { SceneOutline } from '@/lib/types/generation';
+import type { SceneOutline, UserRequirements } from '@/lib/types/generation';
 import type {
   GeneratedSlideContent,
   GeneratedQuizContent,
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       previousSpeeches: incomingPreviousSpeeches,
       userProfile,
       languageDirective,
+      requirements,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
       previousSpeeches?: string[];
       userProfile?: string;
       languageDirective?: string;
+      requirements?: UserRequirements;
     };
 
     // Validate required fields
@@ -162,6 +164,7 @@ export async function POST(req: NextRequest) {
       agents,
       userProfile,
       languageDirective,
+      userRequirements: requirements,
     });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);

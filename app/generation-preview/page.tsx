@@ -1000,6 +1000,7 @@ function GenerationPreviewContent() {
           previousSpeeches: [],
           userProfile,
           languageDirective,
+          requirements: currentSession.requirements,
         },
         signal,
         FOREGROUND_SCENE_RETRY_OPTIONS,
@@ -1044,6 +1045,7 @@ function GenerationPreviewContent() {
           agents,
           userProfile,
           languageDirective,
+          requirements: currentSession.requirements,
         }),
       );
 

@@ -16,6 +16,7 @@ import { uniquifyMediaElementIds } from './outline-media.js';
 import type { ImageMapping, PdfImage, SceneOutline, UserRequirements } from './outline-types.js';
 import type { AICallFn, GenerationResult } from './pipeline-types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
+import { buildSourceGroundedPrompt, validateSourceRequirements } from './source-requirement.js';
 
 export const DEFAULT_LANGUAGE_DIRECTIVE =
   'Teach in the language that matches the user requirement.';
@@ -83,6 +84,7 @@ export function buildOutlinePrompt(
   requirements: UserRequirements,
   context: OutlinePromptContext = {},
 ): { system: string; user: string } {
+  validateSourceRequirements(requirements);
   const { pdfText, pdfImages } = context;
   const { availableImagesText } = buildAvailableImages(pdfImages, context);
 
@@ -113,7 +115,10 @@ export function buildOutlinePrompt(
     throw new Error('Prompt template not found');
   }
 
-  return prompts;
+  // Ordinary outlines already carry requirement verbatim; preserve their prompt contract.
+  return requirements.codemateSource || requirements.codeContextRequired === true
+    ? buildSourceGroundedPrompt(prompts, requirements)
+    : prompts;
 }
 
 /** Generate scene outlines from user requirements. */

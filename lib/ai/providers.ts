@@ -1600,7 +1600,38 @@ function getCompatThinkingBodyParams(
   providerId: ProviderId,
   modelId: string,
   config: ThinkingConfig,
+  baseUrl?: string,
 ): Record<string, unknown> | undefined {
+  // SiliconFlow uses a vendor toggle; reasoning_effort does not disable it.
+  // Restrict this compatibility alias to the actual HTTPS service origins and
+  // exact custom model. Only the server review getter supplies the scoped high
+  // request; ordinary enabled/high calls must retain their existing body.
+  const scopedReviewHigh =
+    getThinkingMode(config) === 'enabled' &&
+    config.effort === 'high' &&
+    'compatRequestScope' in config &&
+    config.compatRequestScope === 'classroom-content-review';
+  if (
+    providerId === 'openai' &&
+    modelId === 'deepseek-ai/DeepSeek-V4-Flash' &&
+    (getThinkingMode(config) === 'disabled' || scopedReviewHigh) &&
+    baseUrl
+  ) {
+    try {
+      const endpoint = new URL(baseUrl);
+      if (
+        endpoint.protocol === 'https:' &&
+        !endpoint.port &&
+        ['api.siliconflow.cn', 'api.siliconflow.com'].includes(endpoint.hostname)
+      )
+        return scopedReviewHigh
+          ? { enable_thinking: true, reasoning_effort: 'high' }
+          : { enable_thinking: false };
+    } catch {
+      /* Preserve existing handling for an invalid configured endpoint. */
+    }
+  }
+
   // This model is served through an OpenAI-compatible gateway even when the
   // deployment uses the `openai` provider slot. The gateway's chat template
   // toggle is neither OpenAI's `reasoning_effort` nor DeepSeek's native
@@ -2108,7 +2139,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               ? getDefaultThinkingConfig(getCatalogThinkingCapability(providerId, config.modelId))
               : undefined);
           if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
+            const extra = getCompatThinkingBodyParams(
+              providerId,
+              config.modelId,
+              thinking,
+              effectiveBaseUrl,
+            );
             if (extra) {
               try {
                 const body = JSON.parse(init.body);

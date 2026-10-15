@@ -96,7 +96,7 @@ const UNIQUE_MODEL_THINKING_MAP: Map<string, ModelThinkingInfo> = (() => {
 })();
 
 /** Global thinking override from environment variable */
-function getGlobalThinkingConfig(): ThinkingConfig | undefined {
+export function getGlobalThinkingConfig(): ThinkingConfig | undefined {
   if (process.env.LLM_THINKING_DISABLED === 'true') {
     return { mode: 'disabled', enabled: false };
   }

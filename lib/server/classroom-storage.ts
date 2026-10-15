@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
+import type { ClassroomContentProof } from '@/lib/server/classroom-content-review';
 import {
   ClassroomAudioImportError,
   prepareClassroomAudioAssets,
@@ -23,14 +24,22 @@ export async function ensureClassroomJobsDir() {
   await ensureDir(CLASSROOM_JOBS_DIR);
 }
 
-export async function writeJsonFileAtomic(filePath: string, data: unknown) {
+export async function writeJsonFileAtomic(filePath: string, data: unknown, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const dir = path.dirname(filePath);
   await ensureDir(dir);
 
   const tempFilePath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   const content = JSON.stringify(data, null, 2);
-  await fs.writeFile(tempFilePath, content, 'utf-8');
-  await fs.rename(tempFilePath, filePath);
+  try {
+    signal?.throwIfAborted();
+    await fs.writeFile(tempFilePath, content, { encoding: 'utf-8', signal });
+    signal?.throwIfAborted();
+    await fs.rename(tempFilePath, filePath);
+  } catch (error) {
+    await fs.rm(tempFilePath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 export function buildRequestOrigin(req: NextRequest): string {
@@ -44,6 +53,7 @@ export interface PersistedClassroomData {
   stage: Stage;
   scenes: Scene[];
   createdAt: string;
+  contentReview?: ClassroomContentProof;
 }
 
 export function isValidClassroomId(id: string): boolean {
@@ -71,7 +81,13 @@ export async function persistClassroom(
     audioAssets?: unknown;
   },
   baseUrl: string,
+  options: {
+    signal?: AbortSignal;
+    contentReview?: ClassroomContentProof;
+    validateBeforeWrite?: (material: { stage: Stage; scenes: Scene[] }) => void;
+  } = {},
 ): Promise<PersistedClassroomData & { url: string }> {
+  options.signal?.throwIfAborted();
   if (typeof data.id !== 'string' || !isValidClassroomId(data.id)) {
     throw new ClassroomAudioImportError('Invalid classroom id');
   }
@@ -83,16 +99,20 @@ export async function persistClassroom(
     `/api/classroom-media/${data.id}/audio`,
     scenes,
   );
+  options.signal?.throwIfAborted();
+  options.validateBeforeWrite?.({ stage: data.stage, scenes });
   const classroomData: PersistedClassroomData = {
     id: data.id,
     stage: data.stage,
     scenes,
     createdAt: new Date().toISOString(),
+    ...(options.contentReview ? { contentReview: options.contentReview } : {}),
   };
 
   await ensureClassroomsDir();
   const filePath = path.join(CLASSROOMS_DIR, `${data.id}.json`);
-  await writeJsonFileAtomic(filePath, classroomData);
+  options.signal?.throwIfAborted();
+  await writeJsonFileAtomic(filePath, classroomData, options.signal);
 
   return {
     ...classroomData,
