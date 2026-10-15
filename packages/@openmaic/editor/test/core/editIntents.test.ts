@@ -97,6 +97,23 @@ describe('shape geometry write validation', () => {
     ).toThrow(/commands/);
   });
 
+  it('rejects changing an extra viewBox entry on a historical shape', () => {
+    const shape = shapeElement('shape', {
+      viewBox: [200, 100, 1] as unknown as [number, number],
+    });
+    const content = slideContent([shape]);
+    expect(() =>
+      applyEditIntents(content, [
+        {
+          type: 'element.update',
+          id: shape.id,
+          props: { viewBox: [200, 100, 2] as unknown as [number, number] },
+        },
+      ]),
+    ).toThrow(/viewBox/);
+    expect(content.canvas.elements[0]).toEqual(shape);
+  });
+
   it('rejects duplicating historical bad shapes without changing the source', () => {
     const content = slideContent([
       shapeElement('valid'),

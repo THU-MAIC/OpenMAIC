@@ -96,4 +96,24 @@ describe('shared shape-to-text fallback', () => {
       }),
     ).not.toBeNull();
   });
+  it('does not copy an invalid model-provided label type into the text element', () => {
+    const malformed = {
+      ...shape,
+      text: { ...shape.text!, type: { bad: true } },
+    } as unknown as PPTShapeElement;
+    expect(shapeToTextFallback(malformed)).not.toHaveProperty('textType');
+    expect(
+      shapeToTextFallback({ ...shape, text: { ...shape.text!, type: 'itemTitle' } }),
+    ).toHaveProperty('textType', 'itemTitle');
+  });
+  it('copies only supported hyperlink fields from malformed source data', () => {
+    const malformed = {
+      ...shape,
+      link: { type: 'web', target: 'https://example.com', unexpected: { bad: true } },
+    } as unknown as PPTShapeElement;
+    expect(shapeToTextFallback(malformed)?.link).toEqual({
+      type: 'web',
+      target: 'https://example.com',
+    });
+  });
 });

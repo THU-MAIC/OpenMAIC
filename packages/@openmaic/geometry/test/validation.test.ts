@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SVGPathData } from 'svg-pathdata';
-import { validateSvgPath, validateShapeGeometry } from '../src/index.js';
+import { shapeGeometryChanged, validateSvgPath, validateShapeGeometry } from '../src/index.js';
+import type { PPTShapeElement } from '@openmaic/dsl';
 
 describe('SVG path validation', () => {
   it.each([
@@ -144,5 +145,19 @@ describe('shape geometry', () => {
       ok: false,
       error: { code: 'resource_limit' },
     });
+  });
+  it('recognizes changes to every entry of a malformed historical viewBox', () => {
+    const before = { ...shape, viewBox: [10, 10, 1] } as unknown as PPTShapeElement;
+    const after = { ...before, viewBox: [10, 10, 2] } as unknown as PPTShapeElement;
+    expect(shapeGeometryChanged(before, after)).toBe(true);
+    expect(validateShapeGeometry(after)).toMatchObject({
+      ok: false,
+      error: { field: 'viewBox' },
+    });
+  });
+  it('allows style edits when non-finite historical geometry is unchanged', () => {
+    const before = { ...shape, viewBox: [NaN, 10] } as PPTShapeElement;
+    const after = { ...before, viewBox: [NaN, 10] as [number, number], fill: '#123456' };
+    expect(shapeGeometryChanged(before, after)).toBe(false);
   });
 });

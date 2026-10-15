@@ -1,5 +1,18 @@
-import type { PPTShapeElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTShapeElement, PPTTextElement, TextType } from '@openmaic/dsl';
 import tinycolor from 'tinycolor2';
+
+const TEXT_TYPES: ReadonlySet<string> = new Set<TextType>([
+  'title',
+  'subtitle',
+  'content',
+  'item',
+  'itemTitle',
+  'notes',
+  'header',
+  'footer',
+  'partNumber',
+  'itemNumber',
+]);
 
 /** One bounded text projection for generated and historical invalid shapes. */
 export function shapeToTextFallback(shape: PPTShapeElement): PPTTextElement | null {
@@ -42,7 +55,7 @@ export function shapeToTextFallback(shape: PPTShapeElement): PPTTextElement | nu
     ...(shape.link &&
     (shape.link.type === 'web' || shape.link.type === 'slide') &&
     typeof shape.link.target === 'string'
-      ? { link: { ...shape.link } }
+      ? { link: { type: shape.link.type, target: shape.link.target } }
       : {}),
     ...(typeof shape.lock === 'boolean' ? { lock: shape.lock } : {}),
     ...(typeof shape.name === 'string' ? { name: shape.name } : {}),
@@ -57,7 +70,9 @@ export function shapeToTextFallback(shape: PPTShapeElement): PPTTextElement | nu
     lineHeight: finite(label.lineHeight) ?? 1.625,
     ...(finite(label.wordSpace) !== undefined ? { wordSpace: label.wordSpace } : {}),
     paragraphSpace: finite(label.paragraphSpace) ?? 5,
-    ...(label.type !== undefined ? { textType: label.type } : {}),
+    ...(typeof label.type === 'string' && TEXT_TYPES.has(label.type)
+      ? { textType: label.type as TextType }
+      : {}),
     ...(finite(shape.opacity) !== undefined
       ? { opacity: Math.max(0, Math.min(1, shape.opacity!)) }
       : {}),

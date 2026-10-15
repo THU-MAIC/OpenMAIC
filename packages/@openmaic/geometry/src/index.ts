@@ -335,12 +335,15 @@ export function validateShapeGeometry(
 
 /** Validate only changed geometry so unrelated edits of historical shapes work. */
 export function shapeGeometryChanged(before: PPTShapeElement, after: PPTShapeElement): boolean {
+  const viewBoxChanged =
+    Array.isArray(before.viewBox) && Array.isArray(after.viewBox)
+      ? before.viewBox.length !== after.viewBox.length ||
+        before.viewBox.some((value, index) => !Object.is(value, after.viewBox[index]))
+      : !Object.is(before.viewBox, after.viewBox);
   return (
     before.path !== after.path ||
     !Object.is(before.width, after.width) ||
     !Object.is(before.height, after.height) ||
-    before.viewBox?.length !== after.viewBox?.length ||
-    !Object.is(before.viewBox?.[0], after.viewBox?.[0]) ||
-    !Object.is(before.viewBox?.[1], after.viewBox?.[1])
+    viewBoxChanged
   );
 }

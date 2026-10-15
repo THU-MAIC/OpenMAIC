@@ -144,7 +144,7 @@ docs: add CONTRIBUTING.md
 
 ## Changing a Published Package
 
-Four packages under `packages/@openmaic/` are published to npm: `dsl`, `storage`, `renderer`, and `importer`. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
+The `@openmaic` packages listed in [`scripts/openmaic-packages.mjs`](scripts/openmaic-packages.mjs) are published to npm. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
 
 **If your PR changes a publishable file in one of those packages, bump that package's `version` in its `package.json` in the same PR.** CI enforces this, and without the bump you will see:
 

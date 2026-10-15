@@ -80,6 +80,20 @@ describe('agent shape write validation', () => {
       ).toMatchObject({ ok: true });
     },
   );
+  it('rejects changing an extra viewBox entry on a historical shape', () => {
+    const slide = content();
+    const shape = slide.canvas.elements[0];
+    if (shape.type !== 'shape') throw new Error('expected shape');
+    shape.viewBox = [100, 100, 1] as unknown as [number, number];
+    expect(() =>
+      applySlideEditOperation(slide, {
+        type: 'element.update',
+        elementId: 'shape',
+        patch: { viewBox: [100, 100, 2] as unknown as [number, number] },
+      }),
+    ).toThrow(/viewBox/);
+    expect(shape.viewBox).toEqual([100, 100, 1]);
+  });
   it.each(['M0 0 Z1 1', 'M0 0 L1e999 0', '<svg/>'])(
     'rejects an invalid complete new path: %s',
     (path) => {
