@@ -132,38 +132,57 @@ async function assertOptionsLayout(page: Page) {
   await expect(group).toBeVisible({ timeout: 25_000 });
   await expect(group.locator('button')).toHaveCount(4);
   await expect(page.locator('[class~="group/bubble"]')).toHaveCount(0);
+  await expect(page.getByTestId('cue-user-panel')).toBeVisible();
   await settle(page);
   const metrics = await group.evaluate((element) => {
     const rect = element.getBoundingClientRect();
-    const panel = element.closest('[data-testid="cue-user-panel"]')!.getBoundingClientRect();
+    const slot = element.closest('[data-testid="cue-user-suggested-bubble"]')!;
+    const surface = slot.firstElementChild!.getBoundingClientRect();
+    const cue = document.querySelector('[data-testid="cue-user-panel"]')!.getBoundingClientRect();
+    const cueContainsOptions = !!element.closest('[data-testid="cue-user-panel"]');
     const buttons = [...element.querySelectorAll('button')].map((button) => {
       const bounds = button.getBoundingClientRect();
       return {
         top: bounds.top,
-        bottom: bounds.bottom,
+        right: bounds.right,
         title: button.title,
         label: button.textContent,
       };
     });
     return {
-      panelHeight: panel.height,
+      cueContainsOptions,
+      bubble: {
+        left: surface.left,
+        right: surface.right,
+        top: surface.top,
+        bottom: surface.bottom,
+        height: surface.height,
+      },
+      cue: { left: cue.left, right: cue.right },
       top: rect.top,
       bottom: rect.bottom,
+      right: rect.right,
+      viewportWidth: innerWidth,
       viewportHeight: innerHeight,
-      scrollWidth: element.scrollWidth,
-      clientWidth: element.clientWidth,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
       buttons,
     };
   });
-  expect(metrics.panelHeight).toBeLessThanOrEqual(192);
-  expect(metrics.top).toBeGreaterThanOrEqual(0);
-  expect(metrics.bottom).toBeLessThanOrEqual(metrics.viewportHeight);
-  expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
-  expect(new Set(metrics.buttons.map((button) => Math.round(button.top))).size).toBe(1);
+  // Suggested replies sit in the user's bubble slot, not under the centered cue.
+  expect(metrics.cueContainsOptions).toBe(false);
+  expect(metrics.bubble.height).toBeLessThanOrEqual(110);
+  expect(metrics.bubble.top).toBeGreaterThanOrEqual(0);
+  expect(metrics.bubble.bottom).toBeLessThanOrEqual(metrics.viewportHeight);
+  expect(metrics.bubble.left).toBeGreaterThan(metrics.viewportWidth / 2);
+  expect(metrics.bubble.left).toBeGreaterThanOrEqual(metrics.cue.right);
+  // Long labels wrap into rows and scroll vertically inside the bubble.
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
+  expect(new Set(metrics.buttons.map((button) => Math.round(button.top))).size).toBeGreaterThan(1);
   for (const [index, button] of metrics.buttons.entries()) {
     expect(button.title).toBe(OPTIONS[index]);
     expect(button.label).toBe(OPTIONS[index]);
-    expect(button.bottom).toBeLessThanOrEqual(metrics.bottom);
+    expect(button.right).toBeLessThanOrEqual(metrics.right + 1);
   }
   return metrics;
 }
@@ -289,6 +308,7 @@ test('no-options cue keeps the main idle animation in normal and fullscreen view
   await sendText(page, 'Ask an open-ended question');
   await expect(page.getByTestId('cue-user-panel')).toBeVisible({ timeout: 25_000 });
   await expect(page.getByTestId('cue-user-options')).toHaveCount(0);
+  await expect(page.getByTestId('cue-user-suggested-bubble')).toHaveCount(0);
   await expect(page.locator('[class~="group/bubble"]')).toHaveCount(0);
   expect(await geometry(page)).toEqual(idle);
   await expect(page.getByTestId('cue-user-panel')).toContainText('Your turn');
@@ -296,6 +316,7 @@ test('no-options cue keeps the main idle animation in normal and fullscreen view
   await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await expect(page.getByTestId('cue-user-panel')).toBeVisible();
   await expect(page.getByTestId('cue-user-options')).toHaveCount(0);
+  await expect(page.getByTestId('cue-user-suggested-bubble')).toHaveCount(0);
   await expect(page.locator('[class~="group/bubble"]')).toHaveCount(0);
   expect(requests).toHaveLength(1);
 });

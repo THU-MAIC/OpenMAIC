@@ -159,7 +159,42 @@ describe('Roundtable suggested replies', () => {
   );
 
   it.each([false, true])(
-    'bounds four long replies in a single scrolling region (fullscreen=%s)',
+    'renders replies as a suggested user bubble, not inside the centered cue (fullscreen=%s)',
+    async (isPresenting) => {
+      await render({ isPresenting, cueUserOptions: ['Show an example', 'Keep going'] });
+      const bubble = container.querySelector('[data-testid="cue-user-suggested-bubble"]');
+      const replies = container.querySelector('[data-testid="cue-user-options"]');
+      expect(bubble).not.toBeNull();
+      expect(bubble?.contains(replies)).toBe(true);
+      expect(
+        container.querySelector('[data-testid="cue-user-panel"] [data-testid="cue-user-options"]'),
+      ).toBeNull();
+      // Outlined "you could say" variant, never the filled "you said" bubble.
+      const surface = bubble!.firstElementChild!.classList;
+      expect(surface.contains('border-dashed')).toBe(true);
+      expect(surface.contains('rounded-br-sm')).toBe(true);
+      expect(surface.contains('bg-purple-600/95')).toBe(false);
+      if (!isPresenting) expect(bubble?.getAttribute('class')).toContain('justify-end');
+    },
+  );
+
+  it.each([false, true])(
+    'hides the suggested bubble while the text input is open (fullscreen=%s)',
+    async (isPresenting) => {
+      await render({ isPresenting, cueUserOptions: ['Show an example', 'Keep going'] });
+      const cueButton = container.querySelector(
+        '[data-testid="cue-user-panel"] button',
+      ) as HTMLButtonElement;
+      act(() => cueButton.click());
+      expect(container.querySelector('textarea')).not.toBeNull();
+      await vi.waitFor(() =>
+        expect(container.querySelector('[data-testid="cue-user-suggested-bubble"]')).toBeNull(),
+      );
+    },
+  );
+
+  it.each([false, true])(
+    'wraps four long replies in one bounded, vertically scrolling region (fullscreen=%s)',
     async (isPresenting) => {
       const options = ['a', 'b', 'c', 'd'].map((label) => label.repeat(60));
       await render({ isPresenting, cueUserOptions: options });
@@ -167,8 +202,13 @@ describe('Roundtable suggested replies', () => {
       expect(regions).toHaveLength(1);
       const replies = regions[0];
       expect(replies?.querySelectorAll('button')).toHaveLength(4);
-      expect(replies?.getAttribute('class')).toContain('overflow-x-auto');
-      expect(replies?.getAttribute('class')).toContain('flex-nowrap');
+      const classes = replies?.getAttribute('class') ?? '';
+      expect(classes).toContain('flex-wrap');
+      expect(classes).toContain('overflow-y-auto');
+      expect(classes).toContain('max-h-[3.75rem]');
+      for (const button of replies!.querySelectorAll('button')) {
+        expect(button.getAttribute('class')).toContain('truncate');
+      }
       expect(container.querySelector('[data-bubble-role]')).toBeNull();
       if (!isPresenting) {
         expect(

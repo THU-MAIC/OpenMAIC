@@ -231,6 +231,12 @@ export function Roundtable({
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [userMessage, setUserMessage] = useState<string | null>(null);
+  // Fade the last visible row of suggested replies while more are scrolled below.
+  const [quickRepliesClipped, setQuickRepliesClipped] = useState(false);
+  const measureQuickReplies = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    setQuickRepliesClipped(el.scrollHeight - el.scrollTop - el.clientHeight > 2);
+  }, []);
   const nonPresentationInputRef = useRef<HTMLTextAreaElement>(null);
   const agentScrollRef = useRef<HTMLDivElement>(null);
   const bubbleScrollRef = useRef<HTMLDivElement>(null);
@@ -759,12 +765,23 @@ export function Roundtable({
   ) : null;
   const quickReplyLabels = cueUserOptions?.filter((label) => label.trim()) ?? [];
   const hasQuickReplies = quickReplyLabels.length > 0;
+  const showSuggestedReplies =
+    hasQuickReplies && !!isCueUser && !bubbleRole && !thinkingState && !isInputOpen && !isVoiceOpen;
+  // Suggested replies render as a "draft" user bubble: same slot, radius and
+  // avatar placement as the real user bubble, but outlined instead of filled
+  // so it reads as "you could say" rather than "you said".
   const quickReplies = hasQuickReplies ? (
     <div
       data-testid="cue-user-options"
       role="group"
       aria-label={t('roundtable.yourTurn')}
-      className="flex w-full min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto overflow-y-hidden py-1"
+      ref={measureQuickReplies}
+      onScroll={(event) => measureQuickReplies(event.currentTarget)}
+      className={cn(
+        'flex min-w-0 max-h-[3.75rem] flex-wrap content-start gap-1.5 overflow-y-auto overscroll-contain scrollbar-hide',
+        quickRepliesClipped &&
+          '[mask-image:linear-gradient(to_bottom,#000_calc(100%-16px),transparent)]',
+      )}
     >
       {quickReplyLabels.map((label, index) => (
         <button
@@ -777,13 +794,25 @@ export function Roundtable({
             event.stopPropagation();
             handleQuickReply(label);
           }}
-          className="max-w-[min(18rem,100%)] shrink-0 truncate rounded-full border border-purple-200 bg-white/90 px-3 py-1.5 text-xs text-purple-700 shadow-sm transition-colors hover:bg-purple-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-purple-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-700 dark:bg-gray-800/90 dark:text-purple-300 dark:hover:bg-gray-700"
+          className="h-[1.6875rem] max-w-full shrink-0 truncate rounded-full border border-purple-200 bg-white px-3 @max-[36rem]:px-2 text-[13px] leading-[1.5625rem] text-purple-700 shadow-[0_1px_2px_rgba(88,28,135,0.06)] transition-colors hover:border-purple-400 hover:bg-purple-600 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-purple-500 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 dark:border-purple-700/70 dark:bg-gray-900/70 dark:text-purple-200 dark:hover:border-purple-400 dark:hover:bg-purple-500 dark:hover:text-white"
         >
           {label}
         </button>
       ))}
     </div>
   ) : null;
+  const suggestedReplyAvatar = (
+    <div
+      className="absolute -right-2.5 -top-2.5 z-20 pointer-events-none select-none"
+      title={t('roundtable.you')}
+    >
+      <div className="w-6 h-6 rounded-full overflow-hidden border-2 border-purple-300 dark:border-purple-500 bg-white dark:bg-gray-900 shadow-sm">
+        <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
+      </div>
+    </div>
+  );
+  const suggestedReplyBubbleClass =
+    'relative flex flex-col rounded-2xl rounded-br-sm border border-dashed border-purple-300 bg-[#faf7ff] pl-3 pr-5 py-2.5 dark:border-purple-400/50 dark:bg-[#1f1830]';
 
   if (isPresenting) {
     return (
@@ -958,11 +987,7 @@ export function Roundtable({
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.92, y: 8 }}
                 transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-                className={cn(
-                  'pointer-events-auto',
-                  hasQuickReplies &&
-                    'flex w-[min(480px,calc(100vw-3rem))] max-w-full max-h-[192px] flex-col items-center gap-2',
-                )}
+                className="pointer-events-auto"
               >
                 <button
                   onClick={() => (asrEnabled ? handleToggleVoice() : handleToggleInput())}
@@ -971,7 +996,6 @@ export function Roundtable({
                   {asrEnabled ? <Mic className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
                   {t('roundtable.yourTurn')}
                 </button>
-                {quickReplies}
               </motion.div>
             )}
           </AnimatePresence>
@@ -1021,6 +1045,31 @@ export function Roundtable({
             buttonState={enrichedPlaybackView?.buttonState}
             isPaused={isDiscussionPaused || engineMode === 'paused'}
           />
+
+          {/* Suggested replies — draft user bubble above the dock */}
+          <AnimatePresence>
+            {showSuggestedReplies && (
+              <motion.div
+                key="presentation-suggested-replies"
+                data-testid="cue-user-suggested-bubble"
+                initial={{ opacity: 0, x: 20, y: 12 }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
+                exit={{ opacity: 0, y: 8, transition: { duration: 0.12 } }}
+                transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
+                className="pointer-events-auto w-[min(420px,calc(100vw-3rem))]"
+              >
+                <div
+                  className={cn(
+                    suggestedReplyBubbleClass,
+                    'shadow-[0_18px_50px_-24px_rgba(88,28,135,0.45)]',
+                  )}
+                >
+                  {suggestedReplyAvatar}
+                  {quickReplies}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Dock */}
           <AnimatePresence>
@@ -1342,7 +1391,7 @@ export function Roundtable({
         </div>
 
         {/* Center: Interaction stage */}
-        <div className={cn('flex-1 relative mx-3 mb-2', hasQuickReplies && 'min-w-0')}>
+        <div className="flex-1 relative mx-3 mb-2">
           {/* End flash banner (Issue 3) */}
           <AnimatePresence>
             {endFlashVisible && (
@@ -1377,7 +1426,7 @@ export function Roundtable({
                 if (isRecording || isProcessing) cancelRecording();
               }
             }}
-            className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default"
+            className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default @container"
           >
             {elementReferencePill && (
               <div className="absolute left-1/2 top-2 z-30 -translate-x-1/2">{referencePill}</div>
@@ -1541,7 +1590,8 @@ export function Roundtable({
                   transition={{ duration: 0.35, ease: [0.21, 1, 0.36, 1] }}
                   className={cn(
                     'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2.5',
-                    hasQuickReplies && 'w-full max-w-full px-6',
+                    // On a narrow stage the suggested-reply bubble needs the full width.
+                    showSuggestedReplies && '@max-[36rem]:hidden',
                   )}
                 >
                   {/* Button with ripple effect */}
@@ -1674,7 +1724,32 @@ export function Roundtable({
                   >
                     {t('roundtable.yourTurn')}
                   </motion.span>
-                  {quickReplies}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Suggested replies — draft user bubble in the user-bubble slot */}
+            <AnimatePresence>
+              {showSuggestedReplies && (
+                <motion.div
+                  key="suggested-replies"
+                  data-testid="cue-user-suggested-bubble"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8, transition: { duration: 0.12 } }}
+                  transition={{ duration: 0.2, ease: [0.21, 1, 0.36, 1] }}
+                  className="w-full flex justify-end relative z-10"
+                >
+                  {/* On wide stages the width stops short of the centered mic cue */}
+                  <div
+                    className={cn(
+                      suggestedReplyBubbleClass,
+                      'w-full @[36rem]:w-[min(420px,calc(50%-3.5rem))] max-h-[110px] shadow-sm @max-[36rem]:pl-2 @max-[36rem]:pr-3',
+                    )}
+                  >
+                    {suggestedReplyAvatar}
+                    {quickReplies}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -3,19 +3,20 @@ import { Type, type Static } from 'typebox';
 import type { StatelessEvent } from '@/lib/types/chat';
 import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 
+// Length and count bounds are guidance for the model, not schema constraints:
+// an over-limit call is normalized in execute (trimmed, capped, deduplicated)
+// instead of being rejected by argument validation and losing the cue.
 const CueUserParams = Type.Object({
   prompt: Type.Optional(
     Type.String({
-      description: 'Optional short prompt for handing the turn back to the user.',
-      maxLength: 240,
+      description:
+        'Optional short prompt for handing the turn back to the user (at most 240 characters; longer text is truncated).',
     }),
   ),
   options: Type.Optional(
-    Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
+    Type.Array(Type.String(), {
       description:
-        'Two to four short, mutually exclusive suggested replies. Omit for open-ended questions.',
-      minItems: 2,
-      maxItems: 4,
+        'Two to four short, mutually exclusive suggested replies, each at most 60 characters. Omit for open-ended questions. Extra, duplicate, empty or over-long items are dropped or truncated.',
     }),
   ),
 });
