@@ -300,7 +300,7 @@ describe('connecting a token plan', () => {
 
 describe('Kimi account setup', () => {
   it.each(['kimi', 'kimi-coding-plan'])(
-    'offers shared credentials and fills search in the wizard for %s',
+    'shares chat, search and fetch credentials while preserving wizard defaults for %s',
     async (presetId) => {
       const view = viewOf(await configure(addPlan(presetId)));
       const preset = view.presets.find((entry) => entry.id === presetId)!;
@@ -313,6 +313,16 @@ describe('Kimi account setup', () => {
       expect(searchEntries).toHaveLength(1);
       expect(searchEntries[0].provider?.id).toBe(presetId);
       expect(searchEntries[0].provider?.key?.set).toBe(true);
+      const fetchEntries = serviceEntries(view, 'webFetch', ['kimi']).filter(
+        (entry) => entry.provider && entry.registryId === 'kimi',
+      );
+      expect(fetchEntries).toHaveLength(1);
+      expect(fetchEntries[0].provider).toBe(searchEntries[0].provider);
+      expect(assignments).not.toHaveProperty('webFetch');
+      expect(view.slots.find((slot) => slot.slot === 'webFetch')?.effective).toMatchObject({
+        status: 'assigned',
+        registryId: 'builtin',
+      });
     },
   );
 });
