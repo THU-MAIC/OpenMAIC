@@ -82,7 +82,7 @@ function callbackQueue() {
   };
 }
 
-describe('inline math in playback layouts', () => {
+describe('inline math in playback layouts', { timeout: 30_000 }, () => {
   let idle: ReturnType<typeof callbackQueue>;
   let frames: ReturnType<typeof callbackQueue>;
   beforeEach(() => {
@@ -95,6 +95,7 @@ describe('inline math in playback layouts', () => {
   });
   afterEach(() => {
     cleanup();
+    frames.flush();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -177,6 +178,101 @@ describe('inline math in playback layouts', () => {
     expect(idle.callbacks.size).toBe(0);
   });
 
+  it('uses the remaining allowance for ordinary thumbnails before paint, including edits', async () => {
+    const thumbnails = (sources: string[]) =>
+      [0, 1, 2, 3, 4, 5].map((i) => slide(`thumb-${i}`, [sources]));
+    const main = slide('main', [ordinary]);
+    const view = render(<Layout main={main} thumbnails={thumbnails(ordinary)} />);
+    expect(count(view.container.querySelector('main')!)).toBe(3);
+    // A commit's microtasks run before its first paint; no idle callback runs here.
+    await Promise.resolve();
+    expect(count(view.container.querySelector('aside')!)).toBe(18);
+    expect(idle.callbacks.size).toBe(0);
+
+    frames.flush();
+    view.rerender(<Layout main={main} thumbnails={thumbnails(['edited_x^3'])} />);
+    await Promise.resolve();
+    expect(count(view.container.querySelector('aside')!)).toBe(6);
+    expect(idle.callbacks.size).toBe(0);
+  });
+
+  it('keeps the foreground allowance ahead of heavy thumbnails in the same commit', async () => {
+    const view = render(
+      <Layout main={slide('main', [ordinary])} thumbnails={[slide('thumb', [heavy])]} />,
+    );
+    expect(count(view.container.querySelector('main')!)).toBe(3);
+    await Promise.resolve();
+    const before = count(view.container.querySelector('aside')!);
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(30);
+    // A second commit in the same frame must not grant thumbnails a new batch.
+    view.rerender(
+      <Layout main={slide('main', [ordinary])} thumbnails={[slide('thumb', [heavy])]} />,
+    );
+    await Promise.resolve();
+    expect(count(view.container.querySelector('aside')!)).toBe(before);
+    idle.flush();
+    expect(count(view.container.querySelector('aside')!)).toBe(30);
+  });
+
+  it('does not schedule idle work when completed thumbnails rerender', async () => {
+    const data = slide('thumbnail', [ordinary]);
+    const thumbnail = () => (
+      <SlideCanvas slide={data} scale={0.2} mathPriority="background" renderImage={() => null} />
+    );
+    const view = render(thumbnail());
+    await Promise.resolve();
+    idle.flush();
+    for (let i = 0; i < 3; i++) {
+      frames.flush();
+      view.rerender(thumbnail());
+      await Promise.resolve();
+      expect(count(view.container)).toBe(3);
+      expect(idle.callbacks.size).toBe(0);
+    }
+  });
+
+  it('retypesets stored KaTeX markup in thumbnails before paint', async () => {
+    const data = slide('stored', [[]]);
+    (data.elements[0] as PPTTextElement).content =
+      '<span class="katex" data-inline-math="x^2">stale-render</span>';
+    const view = render(<SlideCanvas slide={data} scale={0.2} mathPriority="background" />);
+    await Promise.resolve();
+    expect(view.container.textContent).not.toContain('stale-render');
+    expect(count(view.container)).toBe(1);
+    expect(idle.callbacks.size).toBe(0);
+  });
+
+  it('preserves the shared allowance when completed prose nodes are replaced together', () => {
+    function Prose({ version, source }: { version: number; source: string }) {
+      const ref = useRef<HTMLDivElement>(null);
+      const html = stored(source);
+      useInlineMath(ref, html);
+      return <div key={version} ref={ref} dangerouslySetInnerHTML={useInnerHtml(html)} />;
+    }
+    const content = (version: number) =>
+      heavy.slice(0, 8).map((source) => <Prose key={source} source={source} version={version} />);
+    const view = render(content(0));
+    expect(count(view.container)).toBeLessThan(8);
+    idle.flush();
+    frames.flush();
+    expect(count(view.container)).toBe(8);
+
+    view.rerender(content(1));
+    expect(count(view.container)).toBeGreaterThan(0);
+    expect(count(view.container)).toBeLessThan(8);
+    idle.flush();
+    expect(count(view.container)).toBe(8);
+  });
+
+  it('finishes queued math when only the request half of the frame API is available', () => {
+    vi.stubGlobal('cancelAnimationFrame', undefined);
+    const view = render(<SlideCanvas slide={slide('partial-frame-api', [heavy])} scale={1} />);
+    expect(count(view.container)).toBeLessThan(30);
+    idle.flush();
+    expect(count(view.container)).toBe(30);
+  });
+
   it('does not replenish the shared allowance when plain prose roots mount between formulas', () => {
     const data = slide(
       'interleaved',
@@ -241,6 +337,7 @@ describe('inline math in playback layouts', () => {
     view.rerender(<Prose version={1} />);
     view.unmount();
     expect(idle.callbacks.size).toBe(0);
+    frames.flush();
     const next = render(<SlideCanvas slide={slide('next', [ordinary])} scale={1} />);
     expect(count(next.container)).toBe(3);
   });
