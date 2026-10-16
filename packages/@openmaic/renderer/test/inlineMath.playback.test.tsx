@@ -56,6 +56,21 @@ function Layout({ main, thumbnails }: { main: Slide; thumbnails: Slide[] }) {
   );
 }
 
+function Thumbnails({ slides }: { slides: Slide[] }) {
+  return slides.map((item) => (
+    <div key={item.id} data-testid={item.id}>
+      <SlideCanvas
+        slide={item}
+        scale={0.2}
+        mathPriority="background"
+        // SlideThumbnail supplies fresh media callbacks on each store update.
+        renderImage={() => null}
+        renderVideo={() => null}
+      />
+    </div>
+  ));
+}
+
 // Native work is deliberately advanced at the frame/idle boundaries under test.
 function callbackQueue() {
   const callbacks = new Map<number, () => void>();
@@ -100,7 +115,7 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the first ordinary canvas synchronous when thumbnails precede it', () => {
+  it('keeps the first ordinary canvas synchronous when thumbnails precede it', async () => {
     const view = render(
       <Layout
         main={slide('main', [ordinary])}
@@ -108,19 +123,21 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       />,
     );
     expect(count(view.container.querySelector('main')!)).toBe(3);
+    await Promise.resolve();
     idle.flush();
     expect(count(view.container.querySelector('aside')!)).toBe(90);
   });
 
   it.each(['ordinary', 'heavy'] as const)(
     'prioritizes a newly opened %s canvas over pending thumbnails',
-    (kind) => {
+    async (kind) => {
       const first = slide('first', [ordinary]);
       const thumbnails = [0, 1, 2].map((i) => slide(`thumb-${i}`, [heavy]));
       const view = render(<Layout main={first} thumbnails={[]} />);
       frames.flush();
       // The near-viewport observer mounts thumbnails after the initial commit.
       view.rerender(<Layout main={first} thumbnails={thumbnails} />);
+      await Promise.resolve();
       frames.flush();
       idle.step();
       const target = kind === 'ordinary' ? ordinary : heavy;
@@ -230,6 +247,86 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       expect(count(view.container)).toBe(3);
       expect(idle.callbacks.size).toBe(0);
     }
+  });
+
+  it('keeps pending heavy thumbnails in idle time during mixed streaming rerenders', async () => {
+    const slides = Array.from({ length: 7 }, (_, i) =>
+      slide(`thumb-${i}`, [i % 2 ? heavy : ordinary]),
+    );
+    const view = render(<Thumbnails slides={slides} />);
+    await Promise.resolve();
+    expect(count(view.getByTestId('thumb-0'))).toBe(3);
+    const heavyCount = () =>
+      [1, 3, 5].reduce((total, i) => total + count(view.getByTestId(`thumb-${i}`)), 0);
+    const before = heavyCount();
+    expect(before).toBeLessThan(90);
+
+    for (let tick = 0; tick < 30; tick++) {
+      frames.flush();
+      view.rerender(<Thumbnails slides={slides} />);
+      await Promise.resolve();
+      // Unrelated updates must not move existing idle work ahead of paint.
+      expect(heavyCount()).toBe(before);
+    }
+    idle.flush();
+    expect(heavyCount()).toBe(90);
+    expect(count(view.container)).toBe(102);
+  });
+
+  it('renders an edited ordinary thumbnail before paint behind pending heavy thumbnails', async () => {
+    const small = slide('small', [ordinary]);
+    const dense = [0, 1, 2].map((i) => slide(`dense-${i}`, [heavy]));
+    const view = render(<Thumbnails slides={[small]} />);
+    await Promise.resolve();
+    expect(count(view.getByTestId('small'))).toBe(3);
+
+    frames.flush();
+    view.rerender(<Thumbnails slides={[...dense, small]} />);
+    await Promise.resolve();
+    const heavyCount = () =>
+      dense.reduce((total, item) => total + count(view.getByTestId(item.id)), 0);
+    const before = heavyCount();
+    expect(before).toBeLessThan(90);
+
+    frames.flush();
+    view.rerender(
+      <Thumbnails
+        slides={[...dense, slide('small', [['edited_p^3', 'edited_q+2', 'edited_r']])]}
+      />,
+    );
+    await Promise.resolve();
+    expect(count(view.getByTestId('small'))).toBe(3);
+    expect(heavyCount()).toBe(before);
+    idle.flush();
+    expect(count(view.container)).toBe(93);
+  });
+
+  it('preserves foreground priority when a thumbnail is promoted before its microtask', async () => {
+    const thumbnail = slide('thumbnail', [heavy]);
+    const target = slide('target', [heavy]);
+    const content = (priority: 'normal' | 'background') => (
+      <>
+        <aside>
+          <SlideCanvas slide={thumbnail} scale={0.2} mathPriority="background" />
+        </aside>
+        <main>
+          <SlideCanvas slide={target} scale={1} mathPriority={priority} />
+        </main>
+      </>
+    );
+    const view = render(content('background'));
+    view.rerender(content('normal'));
+    const main = view.container.querySelector('main')!;
+    const before = count(main);
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(30);
+    await Promise.resolve();
+    const sidebarBefore = count(view.container.querySelector('aside')!);
+    idle.step();
+    expect(count(main)).toBeGreaterThan(before);
+    expect(count(view.container.querySelector('aside')!)).toBe(sidebarBefore);
+    idle.flush();
+    expect(count(view.container)).toBe(60);
   });
 
   it('retypesets stored KaTeX markup in thumbnails before paint', async () => {
