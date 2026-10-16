@@ -879,8 +879,16 @@
         "exitFullscreen": "Vollbild des Arbeitsbereichs beenden",
         "exitNativeFullscreen": "Vollbild beenden",
         "returnToHero": "Zurück zur Projektübersicht",
+
         "breadcrumbOverview": "Übersicht",
-        "breadcrumbCurrent": "Arbeitsbereich"
+        "breadcrumbCurrent": "Arbeitsbereich",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "Sprich mit {{name}} über deinen Fortschritt...",
@@ -987,7 +995,14 @@
         "fileRead": "Gelesen: {{filename}} · {{size}} KB",
         "submittedBadge": "Eingereicht ({{count}})",
         "receiptFile": "Datei: {{filename}}",
-        "receiptTemplate": "Für diese Aufgabe eingereichte Arbeit ({{label}})."
+        "receiptTemplate": "Für diese Aufgabe eingereichte Arbeit ({{label}}).",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "Für dieses Projekt ist kein KI-Agent konfiguriert."

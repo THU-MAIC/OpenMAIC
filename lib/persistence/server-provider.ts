@@ -19,6 +19,7 @@ import { resolveAssetQuotaBytes } from '@/lib/persistence/asset-quota';
 import { ensureLegacyClassroomImportSchema } from '@/lib/persistence/legacy-classroom-imports';
 import { ensureOwnerMaterialSchema } from '@/lib/persistence/owner-materials';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
+import { ensurePBLRepoRegistrySchema } from '@/lib/persistence/pbl-repo-registry';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { ensureWorkspaceModelConfigSchema } from '@/lib/persistence/workspace-model-config';
 import { ensureStageMetaSchema } from '@/lib/persistence/stage-meta';
@@ -81,6 +82,7 @@ async function createServerPersistenceProvider(
       await ensureDocumentSchema(locked);
       await ensureStageMetaSchema(locked);
       await ensureOwnerMaterialSchema(locked);
+      await ensurePBLRepoRegistrySchema(locked);
       await ensureAssetSchema(locked);
       await ensureLegacyClassroomImportSchema(locked);
       await ensureWorkspaceModelConfigSchema(locked);

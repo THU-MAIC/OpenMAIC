@@ -879,8 +879,16 @@
         "exitFullscreen": "Выйти из полноэкранного режима",
         "exitNativeFullscreen": "Выйти из полноэкранного режима",
         "returnToHero": "Назад к обзору проекта",
+
         "breadcrumbOverview": "Обзор",
-        "breadcrumbCurrent": "Рабочая область"
+        "breadcrumbCurrent": "Рабочая область",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "Обсудите прогресс с {{name}}...",
@@ -987,7 +995,14 @@
         "fileRead": "Прочитано: {{filename}} · {{size}} КБ",
         "submittedBadge": "Отправлено ({{count}})",
         "receiptFile": "Файл: {{filename}}",
-        "receiptTemplate": "Отправлена работа по заданию ({{label}})."
+        "receiptTemplate": "Отправлена работа по заданию ({{label}}).",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "Для этого проекта не настроен AI-агент."

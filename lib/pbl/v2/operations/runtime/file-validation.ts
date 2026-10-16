@@ -30,6 +30,8 @@ export const TEXT_FILE_EXTENSIONS = new Set([
   'jsx',
   'ts',
   'tsx',
+  'ets', // HarmonyOS ArkTS source
+  'json5', // HarmonyOS config (module.json5, etc.)
   'py',
   'java',
   'c',

@@ -32,7 +32,7 @@ export type {
   PBLUiPhase,
 } from '@openmaic/dsl';
 
-export type PBLSubmissionKind = 'text' | 'file' | 'link';
+export type PBLSubmissionKind = 'text' | 'file' | 'link' | 'git';
 
 export type PBLEvaluationKind = 'task' | 'milestone' | 'final';
 
@@ -119,6 +119,23 @@ export interface PBLSubmission {
   /** Optional LLM-generated summary, used to keep evaluator prompts
    *  small when the raw content is long. */
   summary?: string;
+  /** Git-backed submission provenance. Present only when `kind === 'git'`. */
+  gitConfig?: {
+    /** Host provider. */
+    provider: 'gitea';
+    /** Learner fork full name (owner/repo). */
+    fullName: string;
+    /** Branch/tag ref the commit was pushed to. */
+    ref: string;
+    /** Commit SHA this submission pins. */
+    commitSha: string;
+    /** What produced this submission:
+     *  - `push` — automatic lightweight static feedback from a push webhook
+     *  - `pinned` — learner explicitly pinned this SHA for formal rubric scoring */
+    trigger: 'push' | 'pinned';
+    /** Relative paths changed in this push (diff-scoped feedback). */
+    changedFiles?: string[];
+  };
   /** ISO timestamp. */
   createdAt: string;
 }
@@ -550,6 +567,14 @@ export type PBLProjectV2 = RuntimeOverlay<
     pendingHandover?: PBLHandover;
     pendingTaskCompletion?: PBLPendingTaskCompletion;
     pendingOpenTaskPriorQuizResults?: PriorQuizResult[];
+    /** Git integration for this project. Present once the learner's fork has
+     *  been provisioned on the Git host. */
+    gitConfig?: {
+      /** Host provider. */
+      provider: 'gitea';
+      /** Learner fork full name (owner/repo). */
+      fullName: string;
+    };
   }
 >;
 

@@ -879,8 +879,16 @@
         "exitFullscreen": "Salir del espacio de trabajo en pantalla completa",
         "exitNativeFullscreen": "Salir de pantalla completa",
         "returnToHero": "Volver al resumen del proyecto",
+
         "breadcrumbOverview": "Resumen",
-        "breadcrumbCurrent": "Espacio de trabajo"
+        "breadcrumbCurrent": "Espacio de trabajo",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "Platica con {{name}} sobre tu avance...",
@@ -987,7 +995,14 @@
         "fileRead": "Leído: {{filename}} · {{size}} KB",
         "submittedBadge": "Entregado ({{count}})",
         "receiptFile": "Archivo: {{filename}}",
-        "receiptTemplate": "Trabajo entregado para esta tarea ({{label}})."
+        "receiptTemplate": "Trabajo entregado para esta tarea ({{label}}).",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "No hay un agente IA configurado para este proyecto."

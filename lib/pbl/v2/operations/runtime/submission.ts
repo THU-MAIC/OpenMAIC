@@ -32,6 +32,7 @@ export function addSubmission(
     mimeType?: string;
     fileUrl?: string;
     summary?: string;
+    gitConfig?: PBLSubmission['gitConfig'];
   },
 ): PBLSubmission {
   const sub: PBLSubmission = {
@@ -44,6 +45,7 @@ export function addSubmission(
     mimeType: args.mimeType,
     fileUrl: args.fileUrl,
     summary: args.summary,
+    gitConfig: args.gitConfig,
     createdAt: new Date().toISOString(),
   };
   project.submissions.push(sub);

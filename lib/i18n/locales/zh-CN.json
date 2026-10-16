@@ -879,8 +879,16 @@
         "exitFullscreen": "退出全屏工作台",
         "exitNativeFullscreen": "退出全屏",
         "returnToHero": "返回项目主页",
+
         "breadcrumbOverview": "项目首页",
-        "breadcrumbCurrent": "工作台"
+        "breadcrumbCurrent": "工作台",
+        "enrollRepo": "开通仓库",
+        "enrolling": "开通中…",
+        "copyCloneUrl": "复制克隆地址",
+        "copied": "已复制",
+        "openRepo": "打开仓库",
+        "repoTokenTail": "凭证尾号 {{tail}}",
+        "enrollFailed": "开通失败：{{error}}"
       },
       "chat": {
         "placeholder": "和 {{name}} 聊聊你的进度...",
@@ -987,7 +995,14 @@
         "fileRead": "已读取：{{filename}} · {{size}} KB",
         "submittedBadge": "已提交（{{count}}）",
         "receiptFile": "文件：{{filename}}",
-        "receiptTemplate": "已提交本任务产出（{{label}}）。"
+        "receiptTemplate": "已提交本任务产出（{{label}}）。",
+        "gitTab": "提交评判",
+        "shaPlaceholder": "输入提交 SHA，例如 7f3a9c2",
+        "previewDiff": "预览 diff",
+        "previewLoading": "拉取 diff…",
+        "shaInvalid": "SHA 格式不正确（应为 7~64 位十六进制字符）。",
+        "repoRequired": "请先在顶部「开通仓库」后再提交评判。",
+        "gitSubmitSummary": "Git 提交 {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "这个项目还没有配置 AI 角色。"

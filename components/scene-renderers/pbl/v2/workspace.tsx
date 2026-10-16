@@ -13,9 +13,10 @@
 
 import type { PBLMilestone, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import Image from 'next/image';
-import { Maximize2, Workflow } from 'lucide-react';
+import { Check, Copy, ExternalLink, GitBranch, Maximize2, Workflow } from 'lucide-react';
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -29,11 +30,14 @@ import { PBLV2RightPanelTabs } from './right-panel-tabs';
 import { shouldShowScenarioBriefing } from './scenario-briefing-gate';
 import { cn } from '@/lib/utils/cn';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useStageStore } from '@/lib/store/stage';
+import { enrollRepo, fetchRepo, type RepoView } from '@/lib/pbl/v2/api/git-client';
 import type { CSSProperties } from 'react';
 import { runOneStream, type StreamDisplayState, type StreamStatus } from './use-instructor-stream';
 import type { PBLProjectPatch } from '@/lib/pbl/v2/api/sse';
 
 interface Props {
+  readonly sceneId: string;
   readonly project: PBLProjectV2;
   readonly onProjectChange: (next: PBLProjectV2) => void;
   /** Leave the workspace and go back to the Hero, keeping all progress.
@@ -105,6 +109,7 @@ interface CompleteTaskPayload {
 }
 
 export function PBLV2Workspace({
+  sceneId,
   project,
   onProjectChange,
   onReturnToHero,
@@ -351,7 +356,9 @@ export function PBLV2Workspace({
       }}
     >
       <WorkspaceTopBar
+        sceneId={sceneId}
         project={project}
+        onProjectChange={onProjectChange}
         activeMilestoneIndex={activeMilestoneIndex}
         panelWidths={panelWidths}
         onReturnToHero={onReturnToHero}
@@ -418,13 +425,17 @@ export function PBLV2Workspace({
 }
 
 function WorkspaceTopBar({
+  sceneId,
   project,
+  onProjectChange,
   activeMilestoneIndex,
   panelWidths,
   onReturnToHero,
   onExpand,
 }: {
+  readonly sceneId: string;
   readonly project: PBLProjectV2;
+  readonly onProjectChange: (next: PBLProjectV2) => void;
   readonly activeMilestoneIndex: number;
   readonly panelWidths: typeof DEFAULT_PANEL_WIDTHS;
   readonly onReturnToHero: () => void;
@@ -514,6 +525,15 @@ function WorkspaceTopBar({
         </div>
       </div>
 
+      <div
+        className={cn(
+          'relative col-start-5 hidden min-w-0 items-center justify-end gap-2 lg:flex',
+          onExpand ? 'pr-11' : 'pr-2',
+        )}
+      >
+        <RepoStatusControl project={project} sceneId={sceneId} onProjectChange={onProjectChange} />
+      </div>
+
       {onExpand && (
         <button
           type="button"
@@ -526,6 +546,170 @@ function WorkspaceTopBar({
         </button>
       )}
     </header>
+  );
+}
+
+/**
+ * Compact repo enrollment / status control for the workspace top bar. On mount
+ * it reads the learner's fork from the registry (`GET /git/repo`) and renders
+ * one of three states: an "开通仓库" button (not yet enrolled), a ready pill
+ * (full name + copy-clone-url + open-repo + token tail), or a bare placeholder
+ * while the initial fetch is in flight. Enrolling POSTs `/git/enroll` and
+ * backfills `project.gitConfig = { provider:'gitea', fullName }` so the
+ * "提交评判" flow can resolve the fork. All of it is best-effort — a fetch or
+ * provision failure surfaces inline without interrupting the workspace.
+ */
+function RepoStatusControl({
+  project,
+  sceneId,
+  onProjectChange,
+}: {
+  readonly project: PBLProjectV2;
+  readonly sceneId: string;
+  readonly onProjectChange: (next: PBLProjectV2) => void;
+}) {
+  const { t } = useI18n();
+  const stageId = useStageStore((s) => s.stage?.id);
+  const [status, setStatus] = useState<'loading' | 'none' | 'ready'>('loading');
+  const [repo, setRepo] = useState<RepoView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Merge gitConfig onto the LIVE project (read from the store at call time) so
+  // a defensive backfill can never clobber a concurrent stream's newer state.
+  const applyGitConfig = useCallback(
+    (fullName: string) => {
+      const liveContent = useStageStore.getState().scenes.find((s) => s.id === sceneId)?.content as
+        | { projectV2?: PBLProjectV2 }
+        | undefined;
+      const base = liveContent?.projectV2 ?? project;
+      if (base.gitConfig?.fullName === fullName) return;
+      onProjectChange({ ...base, gitConfig: { provider: 'gitea', fullName } });
+    },
+    [sceneId, project, onProjectChange],
+  );
+
+  useEffect(() => {
+    if (!stageId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const found = await fetchRepo(stageId);
+        if (cancelled) return;
+        setRepo(found);
+        setStatus(found ? 'ready' : 'none');
+        if (found) applyGitConfig(found.fullName);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+        setStatus('none');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Fetch once per stage; `applyGitConfig` reads the live project from the
+    // store at call time, so a stale closure is harmless (and depending on it
+    // would re-fetch on every project render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageId]);
+
+  const handleEnroll = useCallback(async () => {
+    if (!stageId || enrolling) return;
+    setEnrolling(true);
+    setError(null);
+    try {
+      // domainId is stamped by callers that run the optional domain-profile
+      // framework; this client does not require it (the registry keeps the
+      // column nullable for that follow-up).
+      const created = await enrollRepo({ stageId, sceneId });
+      setRepo(created);
+      setStatus('ready');
+      applyGitConfig(created.fullName);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnrolling(false);
+    }
+  }, [stageId, enrolling, sceneId, applyGitConfig]);
+
+  const handleCopy = useCallback(async () => {
+    if (!repo) return;
+    try {
+      await navigator.clipboard.writeText(repo.cloneUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable; ignore */
+    }
+  }, [repo]);
+
+  if (status === 'loading') {
+    return <span className="h-4 w-4 animate-pulse rounded-full bg-white/10" />;
+  }
+
+  if (status === 'none') {
+    return (
+      <div className="flex min-w-0 items-center gap-1.5">
+        {error && (
+          <span className="max-w-[150px] truncate text-[10px] text-amber-200/80" title={error}>
+            {error}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleEnroll}
+          disabled={enrolling || !stageId}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/15 px-2.5 py-1.5 text-[11px] font-medium text-primary-foreground transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          {enrolling ? t('pbl.v2.workspace.enrolling') : t('pbl.v2.workspace.enrollRepo')}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5">
+      <span
+        className="flex min-w-0 items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200/90"
+        title={repo?.fullName}
+      >
+        <GitBranch className="h-3.5 w-3.5 shrink-0" />
+        <span className="max-w-[140px] truncate">{repo?.fullName}</span>
+      </span>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-cyan-100/[0.18] bg-white/[0.06] text-indigo-100/85 transition-colors hover:bg-white/[0.12]"
+        aria-label={t('pbl.v2.workspace.copyCloneUrl')}
+        title={t('pbl.v2.workspace.copyCloneUrl')}
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-emerald-300" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </button>
+      {repo?.htmlUrl && (
+        <a
+          href={repo.htmlUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-cyan-100/[0.18] bg-white/[0.06] text-indigo-100/85 transition-colors hover:bg-white/[0.12]"
+          aria-label={t('pbl.v2.workspace.openRepo')}
+          title={t('pbl.v2.workspace.openRepo')}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      )}
+      {repo?.tokenLastEight && (
+        <span className="hidden shrink-0 text-[10px] text-muted-foreground xl:inline">
+          {t('pbl.v2.workspace.repoTokenTail', { tail: repo.tokenLastEight })}
+        </span>
+      )}
+    </div>
   );
 }
 

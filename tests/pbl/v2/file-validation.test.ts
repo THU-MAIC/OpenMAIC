@@ -23,6 +23,13 @@ describe('PBL v2 — file upload type validation', () => {
     it('deliberately excludes .ipynb', () => {
       expect(TEXT_FILE_EXTENSIONS.has('ipynb')).toBe(false);
     });
+
+    it('includes HarmonyOS ArkTS (.ets) and config (.json5) extensions', () => {
+      expect(TEXT_FILE_EXTENSIONS.has('ets')).toBe(true);
+      expect(TEXT_FILE_EXTENSIONS.has('json5')).toBe(true);
+      expect(isValidTextFile(file('Index.ets', ''))).toBe(true);
+      expect(isValidTextFile(file('module.json5', ''))).toBe(true);
+    });
   });
 
   describe('TEXT_FILE_ACCEPT', () => {

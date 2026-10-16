@@ -879,8 +879,16 @@
         "exitFullscreen": "الخروج من ملء الشاشة",
         "exitNativeFullscreen": "الخروج من ملء الشاشة",
         "returnToHero": "العودة إلى نظرة عامة على المشروع",
+
         "breadcrumbOverview": "نظرة عامة",
-        "breadcrumbCurrent": "مساحة العمل"
+        "breadcrumbCurrent": "مساحة العمل",
+        "enrollRepo": "Provision repo",
+        "enrolling": "Provisioning…",
+        "copyCloneUrl": "Copy clone URL",
+        "copied": "Copied",
+        "openRepo": "Open repo",
+        "repoTokenTail": "Token tail {{tail}}",
+        "enrollFailed": "Provision failed: {{error}}"
       },
       "chat": {
         "placeholder": "تحدث مع {{name}} عن تقدمك...",
@@ -987,7 +995,14 @@
         "fileRead": "تمت القراءة: {{filename}} · {{size}} ك.ب",
         "submittedBadge": "تم التسليم ({{count}})",
         "receiptFile": "ملف: {{filename}}",
-        "receiptTemplate": "تم تسليم عمل هذه المهمة ({{label}})."
+        "receiptTemplate": "تم تسليم عمل هذه المهمة ({{label}}).",
+        "gitTab": "Submit for judging",
+        "shaPlaceholder": "Commit SHA, e.g. 7f3a9c2",
+        "previewDiff": "Preview diff",
+        "previewLoading": "Fetching diff…",
+        "shaInvalid": "Invalid SHA (expect 7–64 hex characters).",
+        "repoRequired": "Provision your repo from the top bar before submitting for judging.",
+        "gitSubmitSummary": "Git commit {{sha}} · {{repo}}"
       },
       "agentTabs": {
         "noAgent": "لم يتم تكوين وكيل ذكاء اصطناعي لهذا المشروع."
