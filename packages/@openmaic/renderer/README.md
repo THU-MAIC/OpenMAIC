@@ -84,7 +84,7 @@ The canvas auto-fits its parent container. The parent must have a defined `width
 
 ### `<SlideCanvas slide effects? renderImage? renderVideo? onElementClick? scale? background? />`
 
-The main read-only entry. Reads everything from props; zero global state.
+The main read-only entry. Reads slide data and rendering options from props.
 
 ```ts
 interface SlideCanvasProps {
@@ -97,12 +97,21 @@ interface SlideCanvasProps {
   renderImage?: (el, src, defaultContent) => ReactNode;
   renderVideo?: (el) => ReactNode;
   videoInteractive?: boolean;           // defaults true; set false to disable video pointer interaction
+  mathPriority?: 'normal' | 'background'; // defaults normal; use background for thumbnails
   onElementClick?: (el, event) => void;
   elementIdPrefix?: string;
   className?: string;
   style?: CSSProperties;
 }
 ```
+
+Inline formulas share a bounded rendering budget so dense slides can yield
+between batches. Ordinary foreground slides render synchronously; a short
+formula following heavy content in the same frame may also be deferred.
+Use `mathPriority="background"` for thumbnails: their formulas render in idle
+time after foreground canvases, without spending the foreground's synchronous
+allowance. Snapshot APIs still finish all formulas synchronously within the
+existing per-prose-root hard caps.
 
 ### Play-time effects
 

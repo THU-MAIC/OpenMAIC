@@ -136,7 +136,7 @@ export async function slideToPng(
       root!.render(createElement(SlideCanvas, { slide, chrome: false }));
     });
     // Typeset every inline formula now, root by root: the live renderer
-    // leaves what its per-pass budget does not cover to idle time, after this
+    // leaves what the shared live budget does not cover to idle time, after this
     // capture.
     completeInlineMath(container);
 
