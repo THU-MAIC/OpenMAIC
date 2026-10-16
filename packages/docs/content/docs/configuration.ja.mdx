@@ -813,6 +813,7 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 | --- | --- | --- |
 | `builtin` | 不要 | ローカルの Readability/Turndown。PDF は `document` スロットを使用 |
 | `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
+| `firecrawl` | Firecrawl の API キー（`preset: firecrawl`） | ホスト型の Markdown 抽出（ページの本文）。PDF の URL にも対応 |
 
 ```yaml
 providers:
@@ -827,5 +828,7 @@ slots:
 `kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。メンテナーが実際のキーで `POST https://api.kimi.com/coding/v1/fetch` をテストし、応答に `{ markdown, title, url }` が含まれることを確認しました。国際エンドポイントの利用可否は引き続き未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
 
 **設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
+
+`kimi` と異なり、`firecrawl` は専用のキーを使います。`openmaic.yml` で `preset: firecrawl` のプロバイダーと `apiKey`（例: `${FIRECRAWL_API_KEY}`）を宣言するか、**設定 → モデルサービス → Webページ取得** でキーを入力します。Bearer 認証で `POST /v2/scrape` を送り、ページの本文を Markdown で取得します。既定のベース URL は `https://api.firecrawl.dev` です。セルフホストの Firecrawl のベース URL は、管理者が `openmaic.yml` で宣言する必要があります。
 
 ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。

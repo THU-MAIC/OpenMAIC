@@ -8,7 +8,7 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 describe('web fetch registry and configuration', () => {
   it('lists and looks up each provider', () => {
-    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi']);
+    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi', 'firecrawl']);
     for (const provider of Object.values(WEB_FETCH_PROVIDERS))
       expect(getWebFetchProvider(provider.id)).toBe(provider);
   });
@@ -43,6 +43,19 @@ describe('web fetch registry and configuration', () => {
       baseUrl: 'https://api.moonshot.cn/v1',
     });
     expect(getProviderPreset('kimi')?.capabilities).toHaveProperty('chat');
+  });
+  it('validates and resolves a Firecrawl assignment with its own key', () => {
+    const config = parseModelConfig(
+      'providers:\n  reader:\n    preset: firecrawl\n    apiKey: test-key\nslots:\n  webFetch: reader\n',
+    );
+    expect(resolveSlot('webFetch', [{ source: 'deployment', config }])).toMatchObject({
+      status: 'assigned',
+      registryId: 'firecrawl',
+      apiKey: 'test-key',
+    });
+    expect(getProviderPreset('firecrawl')?.capabilities).toEqual({
+      webFetch: { registryId: 'firecrawl' },
+    });
   });
   it('accepts an explicit builtin assignment without credentials', () => {
     expect(parseModelConfig('slots:\n  webFetch: builtin\n').slots?.webFetch).toBe('builtin');

@@ -36,7 +36,7 @@ description: Встроенные модели и список провайде�
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Загрузка веб-страниц | `builtin`, `kimi`, `kimi-coding-plan` |
+| Загрузка веб-страниц | `builtin`, `kimi`, `kimi-coding-plan`, `firecrawl` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -159,4 +159,4 @@ description: Встроенные модели и список провайде�
 
 ## Загрузка веб-страниц
 
-По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.
+По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. `firecrawl` использует собственный ключ Firecrawl и вызывает `/v2/scrape`. Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ Kimi общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.

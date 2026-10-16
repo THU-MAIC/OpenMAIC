@@ -36,7 +36,7 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
-| Webページ取得 | `builtin`、`kimi`、`kimi-coding-plan` |
+| Webページ取得 | `builtin`、`kimi`、`kimi-coding-plan`、`firecrawl` |
 | ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
@@ -159,4 +159,4 @@ Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` 
 
 ## Webページ取得
 
-`webFetch` スロットの既定は、キー不要の `builtin`（Readability と Turndown。PDF は引き続き `document` を使用）です。`kimi` と `kimi-coding-plan` は、それぞれのプロバイダーのキーと API ベース URL をホスト型抽出に再利用します。Moonshot Open Platform は `/tools/fetch`、Coding Plan は `/fetch` を使用します。フォールバックはありません。モデルサービスやコースモデル設定でサービスを選ぶか、`openmaic.yml` で `slots.webFetch` を指定します。キーはチャットと共有されます。すべてのサービスで、ローカルのセッション許可と公開アドレスの検査を行い、結果を信頼できないデータとして扱います。
+`webFetch` スロットの既定は、キー不要の `builtin`（Readability と Turndown。PDF は引き続き `document` を使用）です。`kimi` と `kimi-coding-plan` は、それぞれのプロバイダーのキーと API ベース URL をホスト型抽出に再利用します。Moonshot Open Platform は `/tools/fetch`、Coding Plan は `/fetch` を使用します。`firecrawl` は専用の Firecrawl キーを使い、`/v2/scrape` を呼び出します。フォールバックはありません。モデルサービスやコースモデル設定でサービスを選ぶか、`openmaic.yml` で `slots.webFetch` を指定します。Kimi のキーはチャットと共有されます。すべてのサービスで、ローカルのセッション許可と公開アドレスの検査を行い、結果を信頼できないデータとして扱います。

@@ -813,6 +813,7 @@ slots:
 | --- | --- | --- |
 | `builtin` | 无需凭据 | 本地 Readability/Turndown 读取服务；PDF 使用 `document` 槽位 |
 | `kimi` | 已有 Kimi 服务商的密钥和基础地址 | 托管 Markdown 提取服务，也接收 PDF 网址 |
+| `firecrawl` | Firecrawl API 密钥（`preset: firecrawl`） | 托管 Markdown 提取服务，返回页面主体内容，也接收 PDF 网址 |
 
 ```yaml
 providers:
@@ -827,5 +828,7 @@ slots:
 `kimi` 和 `kimi-coding-plan` 预设都提供 `webFetch`。使用 Coding Plan 凭据时，请指定 `preset: kimi-coding-plan`，其默认基础地址为 `https://api.kimi.com/coding/v1`；显式配置的基础地址会保留。Moonshot 开放平台地址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。两者都发送带有 `{ "url": ... }` 的 `POST` 请求，并使用 Bearer 身份验证。适配器接受 `markdown` 或 `content`。维护者使用真实密钥测试了 `POST https://api.kimi.com/coding/v1/fetch`，确认响应包含 `{ markdown, title, url }`；国际端点的可用性仍未验证。请求遵循服务商的 `proxy` 设置和标准代理环境变量。
 
 在 **设置 → 模型服务 → 网页抓取** 中使用已有服务商凭据。该密钥与同一服务商的对话服务共享，修改或移除密钥也会影响对话。在 **课程模型配置 → 网页抓取** 中选择读取服务。管理员锁定后，卡片为只读。首次设置会保留内置默认值，直到明确选择其他读取服务。工作区凭据可使用官方 API 基础地址；自定义抓取地址和代理必须由管理员在 `openmaic.yml` 中声明。
+
+与 `kimi` 不同，`firecrawl` 使用单独的密钥：在 `openmaic.yml` 中声明 `preset: firecrawl` 的服务商并设置 `apiKey`（例如 `${FIRECRAWL_API_KEY}`），或在 **设置 → 模型服务 → 网页抓取** 中填写密钥。它以 Bearer 认证发送 `POST /v2/scrape`，以 Markdown 返回页面主体内容。默认基础地址为 `https://api.firecrawl.dev`；自托管 Firecrawl 的基础地址须由管理员在 `openmaic.yml` 中声明。
 
 网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。

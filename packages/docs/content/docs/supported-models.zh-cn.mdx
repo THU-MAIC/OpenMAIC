@@ -36,7 +36,7 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | 图像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 视频 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
 | 联网搜索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
-| 网页抓取 | `builtin`、`kimi`、`kimi-coding-plan` |
+| 网页抓取 | `builtin`、`kimi`、`kimi-coding-plan`、`firecrawl` |
 | 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
@@ -159,4 +159,4 @@ Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 
 
 ## 网页抓取
 
-`webFetch` 槽位默认使用无需密钥的 `builtin` 读取服务（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都复用对应服务商的密钥和 API 基础地址进行托管提取。Moonshot 开放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。没有回退服务。可在模型服务或课程模型配置中选择读取服务，也可在 `openmaic.yml` 中指定 `slots.webFetch`。密钥与对话共享。所有读取服务都保留本地会话授权、公开地址检查和不可信结果边界。
+`webFetch` 槽位默认使用无需密钥的 `builtin` 读取服务（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都复用对应服务商的密钥和 API 基础地址进行托管提取。Moonshot 开放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。`firecrawl` 使用单独的 Firecrawl 密钥，调用 `/v2/scrape`。没有回退服务。可在模型服务或课程模型配置中选择读取服务，也可在 `openmaic.yml` 中指定 `slots.webFetch`。Kimi 的密钥与对话共享。所有读取服务都保留本地会话授权、公开地址检查和不可信结果边界。
