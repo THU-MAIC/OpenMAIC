@@ -140,6 +140,46 @@ afterEach(() => {
 });
 
 describe('chat RuntimeStore cutover', () => {
+  describe('without Web Locks (non-secure context, #1800)', () => {
+    beforeEach(() => {
+      // Web Locks are only exposed in secure contexts; plain HTTP on a LAN or
+      // VPN address has no navigator.locks at all.
+      vi.stubGlobal('navigator', {});
+    });
+
+    it('saves and reloads chats on the default store instead of failing', async () => {
+      const store = makeRuntimeStore();
+      const saved = session({ title: 'LAN save', updatedAt: 3_000 });
+      await expect(
+        saveChatSessions(STAGE_ID, [saved], { store, learnerKey: LEARNER_KEY }),
+      ).resolves.toBeUndefined();
+      await expect(
+        loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY }),
+      ).resolves.toMatchObject([{ id: saved.id, title: 'LAN save' }]);
+    });
+
+    it('keeps a chat another tab created that this tab never saw', async () => {
+      const store = makeRuntimeStore();
+      const first = session({ id: 'tab-a', title: 'Tab A', updatedAt: 3_000 });
+      const second = session({ id: 'tab-b', title: 'Tab B', updatedAt: 3_100 });
+      await loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY });
+      await Promise.all([
+        saveChatSessions(STAGE_ID, [first], {
+          store,
+          learnerKey: LEARNER_KEY,
+          snapshot: { sessions: [], restoreMarker: null },
+        }),
+        saveChatSessions(STAGE_ID, [second], {
+          store,
+          learnerKey: LEARNER_KEY,
+          snapshot: { sessions: [], restoreMarker: null },
+        }),
+      ]);
+      const loaded = await loadChatSessions(STAGE_ID, { store, learnerKey: LEARNER_KEY });
+      expect(loaded.map((chat) => chat.id).sort()).toEqual(['tab-a', 'tab-b']);
+    });
+  });
+
   it('persists chat sessions as replayable RuntimeStore records and loads them back', async () => {
     const store = makeRuntimeStore();
     const legacyStore = new MemoryLegacyChatStore();
