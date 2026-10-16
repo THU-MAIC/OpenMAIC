@@ -2154,7 +2154,7 @@
         },
         "webFetch": {
           "name": "Récupération web",
-          "desc": "Lire les pages web autorisées dans la session avec le fournisseur choisi."
+          "desc": "Permet à l’agent de lire les pages web autorisées dans la session."
         }
       },
       "source": {
@@ -2168,6 +2168,7 @@
         "lines": {
           "rewrite": "Requête",
           "search": "Recherche",
+          "fetch": "Lecture",
           "image": "Image",
           "video": "Vidéo"
         }

@@ -2045,7 +2045,7 @@
       },
       "picker": {
         "follow": "跟隨{{name}}",
-        "providers": "Provider",
+        "providers": "供應商",
         "providerDefault": "預設模型",
         "modelId": "模型 ID",
         "use": "使用",
@@ -2139,7 +2139,7 @@
         },
         "webFetch": {
           "name": "網頁擷取",
-          "desc": "使用所選供應商讀取工作階段中已獲准的網頁。"
+          "desc": "供智慧體讀取工作階段中已獲准的網頁。"
         }
       },
       "source": {
@@ -2153,6 +2153,7 @@
         "lines": {
           "rewrite": "改寫",
           "search": "搜尋",
+          "fetch": "擷取",
           "image": "圖像",
           "video": "影片"
         }

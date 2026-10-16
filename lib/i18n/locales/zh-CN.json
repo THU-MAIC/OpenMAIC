@@ -2060,7 +2060,7 @@
       },
       "picker": {
         "follow": "跟随{{name}}",
-        "providers": "Provider",
+        "providers": "服务商",
         "providerDefault": "默认模型",
         "modelId": "模型 ID",
         "use": "使用",
@@ -2154,7 +2154,7 @@
         },
         "webFetch": {
           "name": "网页抓取",
-          "desc": "使用所选服务商读取会话中已获准的网页。"
+          "desc": "供智能体读取会话中已获准的网页。"
         }
       },
       "source": {
@@ -2168,6 +2168,7 @@
         "lines": {
           "rewrite": "改写",
           "search": "搜索",
+          "fetch": "抓取",
           "image": "图像",
           "video": "视频"
         }

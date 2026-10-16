@@ -2154,7 +2154,7 @@
         },
         "webFetch": {
           "name": "Lấy trang web",
-          "desc": "Đọc các trang web được cho phép trong phiên bằng nhà cung cấp đã chọn."
+          "desc": "Để tác tử đọc các trang web được cho phép trong phiên."
         }
       },
       "source": {
@@ -2168,6 +2168,7 @@
         "lines": {
           "rewrite": "Truy vấn",
           "search": "Tìm kiếm",
+          "fetch": "Đọc trang",
           "image": "Ảnh",
           "video": "Video"
         }

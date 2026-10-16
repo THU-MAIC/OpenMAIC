@@ -2154,7 +2154,7 @@
         },
         "webFetch": {
           "name": "Web Fetch",
-          "desc": "Read session-approved web pages with the selected provider."
+          "desc": "Lets the agent read web pages approved in the session."
         }
       },
       "source": {
@@ -2168,6 +2168,7 @@
         "lines": {
           "rewrite": "Query",
           "search": "Search",
+          "fetch": "Fetch",
           "image": "Image",
           "video": "Video"
         }

@@ -185,6 +185,12 @@ describe('modelSettingsView', () => {
       source: { kind: 'workspace' },
     });
     expect(slot('course.content')).not.toHaveProperty('serverDefault');
+    // Unset, web fetch uses the built-in reader, offered as the server default.
+    expect(slot('webFetch')).toMatchObject({
+      source: { kind: 'default' },
+      serverDefault: 'builtin',
+      effective: { status: 'assigned', providerId: 'builtin' },
+    });
     expect(slot('image')).toMatchObject({ locked: false, source: { kind: 'unconfigured' } });
     expect(slot('agent.title')).toMatchObject({ configOnly: true });
   });

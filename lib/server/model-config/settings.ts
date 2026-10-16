@@ -547,7 +547,10 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         : {}),
       ...(Object.hasOwn(deploymentSlots, id)
         ? { serverDefault: deploymentSlots[id as keyof typeof deploymentSlots] }
-        : {}),
+        : // Unset, web fetch falls back to the built-in reader: the server's default.
+          definition.capability === 'webFetch'
+          ? { serverDefault: implicitId }
+          : {}),
       effective: effectiveFor(id, layers),
     };
   });
