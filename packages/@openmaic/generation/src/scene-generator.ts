@@ -32,6 +32,7 @@ import type {
 } from './outline-types.js';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
+import { checkWidgetIdentifiers } from './widget-js-identifiers.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -1403,6 +1404,15 @@ export async function generateWidgetContent(
     log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
     options.onFailure?.({ code: 'invalid-model-output' });
     return null;
+  }
+
+  if (codeBoundCorrection && widgetType === 'simulation') {
+    const checked = checkWidgetIdentifiers(html);
+    if (!checked.ok) {
+      log.warn(`Rejected correction widget identifier check (${checked.kind})`);
+      options.onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
   }
 
   // Extract widget config from HTML if present

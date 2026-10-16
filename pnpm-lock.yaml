@@ -622,6 +622,15 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:^
         version: link:../dsl
+      acorn:
+        specifier: 8.16.0
+        version: 8.16.0
+      eslint-scope:
+        specifier: 8.4.0
+        version: 8.4.0
+      globals:
+        specifier: 16.4.0
+        version: 16.4.0
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.3

@@ -76,6 +76,9 @@
   },
   "dependencies": {
     "@openmaic/dsl": "workspace:^",
+    "acorn": "8.16.0",
+    "eslint-scope": "8.4.0",
+    "globals": "16.4.0",
     "jsonrepair": "^3.13.2",
     "katex": "^0.16.22",
     "nanoid": "^5.1.6",
