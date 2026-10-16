@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 /**
  * Runner-level pins for capability-registered `web_search` wiring.
  *
@@ -15,7 +16,7 @@
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { AgentSessionMaterial, ClaimedAgentSession } from '@openmaic/storage';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   randomUUID: vi.fn(() => 'runner-test-uuid'),
@@ -205,6 +206,7 @@ interface BuildAgentOptions {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   mocks.listSessionMaterials.mockResolvedValue([]);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
@@ -530,4 +532,19 @@ describe('web_search runner registration', () => {
 
     expect(options.systemPrompt).not.toContain('## Registered session materials');
   });
+});
+
+afterEach(() => setDeploymentConfigForTests());
+it('omits fetch_url and its prompt when the webFetch slot is disabled', async () => {
+  mocks.resolveWebSearchCapability.mockResolvedValue(null);
+  setDeploymentConfigForTests({
+    layer: { source: 'deployment', config: { slots: { webFetch: null } } },
+    legacy: false,
+    notices: [],
+  });
+  const options = await runToBuildAgent();
+  expect(options.tools.map((tool) => tool.name)).not.toContain('fetch_url');
+  expect(options.allowedToolNames?.has('fetch_url')).toBe(false);
+  expect(options.systemPrompt).not.toContain('## Fetch URL');
+  expect(options.systemPrompt).not.toContain('`fetch_url`');
 });

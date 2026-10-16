@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Встроенный сервис чтения"
     },
     "modelCount": "моделей",
     "modelSingular": "модель",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1825,7 @@
       "capTts": "Синтез речи",
       "capVideo": "Генерация видео",
       "capWebSearch": "Веб-поиск",
+      "capWebFetch": "Загрузка веб-страниц",
       "saved": "Настройки подключения сохранены",
       "stageInteractive": "Интерактив",
       "stageSlide": "Слайды",
@@ -1947,7 +1949,8 @@
         "providers": "Настройте доступы, адреса API и каталоги моделей для служб языковых моделей",
         "tts": "Настройте службы синтеза речи, голоса и модели",
         "video": "Настройте доступы и каталоги моделей служб генерации видео",
-        "webSearch": "Настройте службы веб-поиска и источники поиска"
+        "webSearch": "Настройте службы веб-поиска и источники поиска",
+        "webFetch": "Настроить сервисы извлечения содержимого веб-страниц"
       },
       "nav": "Сервисы моделей",
       "notConfigured": "Не настроено",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "Разбор документов",
           "desc": "Читает загруженные документы."
+        },
+        "webFetch": {
+          "name": "Загрузка веб-страниц",
+          "desc": "Позволяет агенту читать разрешённые в сеансе веб-страницы."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "Запрос",
           "search": "Поиск",
+          "fetch": "Чтение",
           "image": "Изобр.",
           "video": "Видео"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "Сервер не подтвердил импорт."
       }
     },
-    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера."
+    "serverConfiguredAddOwn": "Чтобы использовать свои учётные данные, добавьте отдельного провайдера.",
+    "webFetchSettings": "Загрузка веб-страниц",
+    "webFetchHint": "Выберите способ чтения веб-страниц. Размещённым сервисам передаются только публичные URL, разрешённые в сеансе. Результаты остаются недоверенными данными; при ошибке сервис не меняется.",
+    "webFetchApiKey": "Ключ API",
+    "webFetchSharedKeyHint": "Этот ключ также используется для чата с этим провайдером. Его изменение или удаление влияет на чат."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

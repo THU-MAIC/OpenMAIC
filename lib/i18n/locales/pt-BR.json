@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Leitor integrado"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1825,7 @@
       "capTts": "Síntese de voz",
       "capVideo": "Geração de vídeo",
       "capWebSearch": "Pesquisa na web",
+      "capWebFetch": "Buscar páginas web",
       "saved": "Ajustes de conexão salvos",
       "stageInteractive": "Interativo",
       "stageSlide": "Slides",
@@ -1947,7 +1949,8 @@
         "providers": "Configure credenciais, endpoints e catálogos de modelos dos serviços de modelos de linguagem",
         "tts": "Configure serviços de síntese de voz, vozes e modelos",
         "video": "Configure credenciais e catálogos de modelos dos serviços de geração de vídeo",
-        "webSearch": "Configure serviços de busca na web e fontes de recuperação"
+        "webSearch": "Configure serviços de busca na web e fontes de recuperação",
+        "webFetch": "Configurar serviços de extração de páginas web"
       },
       "nav": "Serviços de modelo",
       "notConfigured": "Não configurado",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "Análise de documentos",
           "desc": "Lê os documentos enviados."
+        },
+        "webFetch": {
+          "name": "Buscar páginas web",
+          "desc": "Permite ao agente ler páginas web autorizadas na sessão."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "Consulta",
           "search": "Busca",
+          "fetch": "Leitura",
           "image": "Imagem",
           "video": "Vídeo"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "O servidor não confirmou a importação."
       }
     },
-    "serverConfiguredAddOwn": "Para usar suas próprias credenciais, adicione um provedor separado."
+    "serverConfiguredAddOwn": "Para usar suas próprias credenciais, adicione um provedor separado.",
+    "webFetchSettings": "Buscar páginas web",
+    "webFetchHint": "Escolha como ler as páginas web. Os serviços hospedados recebem URLs públicas autorizadas na sessão. Os resultados continuam sendo dados não confiáveis, e falhas não mudam o leitor.",
+    "webFetchApiKey": "Chave de API",
+    "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

@@ -143,6 +143,13 @@ describe('modelSettingsView', () => {
         source: 'workspace',
         key: { set: true, mask: '…9876' },
       },
+      {
+        id: 'builtin',
+        preset: 'builtin',
+        presetName: 'Built-in reader',
+        presetKind: 'single',
+        source: 'deployment',
+      },
     ]);
     // Each provider lists the models it serves per capability, for the pickers.
     expect(view.providers[0].capabilities.chat?.models).toContainEqual(
@@ -178,6 +185,12 @@ describe('modelSettingsView', () => {
       source: { kind: 'workspace' },
     });
     expect(slot('course.content')).not.toHaveProperty('serverDefault');
+    // Unset, web fetch uses the built-in reader, offered as the server default.
+    expect(slot('webFetch')).toMatchObject({
+      source: { kind: 'default' },
+      serverDefault: 'builtin',
+      effective: { status: 'assigned', providerId: 'builtin' },
+    });
     expect(slot('image')).toMatchObject({ locked: false, source: { kind: 'unconfigured' } });
     expect(slot('agent.title')).toMatchObject({ configOnly: true });
   });
@@ -202,7 +215,7 @@ describe('modelSettingsView', () => {
       revision: 2,
       unreadableSecrets: [],
     });
-    expect(view.providers.map((provider) => provider.id)).toEqual(['operator']);
+    expect(view.providers.map((provider) => provider.id)).toEqual(['operator', 'builtin']);
     const slot = (id: string) => view.slots.find((entry) => entry.slot === id)!;
     // The dormant llm choice is neither shown nor used: the server default is.
     expect(slot('llm')).not.toHaveProperty('assignment');

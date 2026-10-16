@@ -4,6 +4,7 @@
  * provider form's change. Kept apart from the components so they can be
  * tested without a DOM.
  */
+import { isOfficialWebSearchBaseUrl } from '@/lib/web-search/constants';
 import type { SlotCapability } from '@/lib/config/model-slots';
 
 import {
@@ -19,7 +20,11 @@ import {
 type SlotAssignment = Exclude<SlotView['assignment'], undefined>;
 
 /** Capabilities whose providers serve without a model to pick. */
-export const PROVIDER_ONLY_CAPABILITIES: readonly SlotCapability[] = ['webSearch', 'document'];
+export const PROVIDER_ONLY_CAPABILITIES: readonly SlotCapability[] = [
+  'webSearch',
+  'webFetch',
+  'document',
+];
 
 /** `providerId:modelId`, or the provider alone for its default model. */
 export function modelRef(providerId: string, modelId?: string): string {
@@ -190,6 +195,11 @@ export function wizardAssignments(
     if (!model || !isFillable(slot)) continue;
     const offered = provider.capabilities[slot.capability];
     if (!offered) continue;
+    if (
+      slot.capability === 'webSearch' &&
+      !isOfficialWebSearchBaseUrl(offered.registryId ?? model, provider.baseUrl)
+    )
+      continue;
     if (offered.models.some((entry) => entry.id === model)) {
       set[slotId] = modelRef(providerId, model);
     } else if (offered.models.length === 0 && slot.capability !== 'chat') {
@@ -385,6 +395,7 @@ export const PRESET_GROUPS = [
   'asr',
   'image',
   'video',
+  'webFetch',
   'webSearch',
   'document',
 ] as const;
@@ -443,8 +454,21 @@ export function slotKey(slot: string): string {
  * A provider's name for display: its preset's name when the provider is named
  * after the preset, else its own id (two providers of one preset stay apart).
  */
-export function providerLabel(view: ModelSettingsView, providerId: string): string {
+export function providerLabel(
+  view: ModelSettingsView,
+  providerId: string,
+  t?: (key: string) => string,
+): string {
   const provider = view.providers.find((entry) => entry.id === providerId);
+  if (provider && provider.preset === providerId && t) {
+    const metadata = view.webFetchProviders?.find(
+      (entry) => entry.id === provider.capabilities.webFetch?.registryId,
+    );
+    if (metadata?.nameKey) {
+      const name = t(metadata.nameKey);
+      if (name !== metadata.nameKey) return name;
+    }
+  }
   return provider && provider.preset === providerId ? provider.presetName : providerId;
 }
 

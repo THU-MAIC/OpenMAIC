@@ -138,12 +138,15 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 
 - **データディレクトリを残してください。** 1.2.0 は作業ディレクトリに同じ `data/` がある状態で（または同じ `OPENMAIC_CLASSROOMS_DIR` で）起動します。Compose では同じ `openmaic-data` ボリュームを使います。1.1.x が `data/classrooms` にファイルとして保存した授業は、起動後にバックグラウンドで一度だけデータベースへインポートされます。このディレクトリなしで起動したサーバーにはインポートするものがありません。
 - **ID モードを先に設定してください。** インポートされた授業は、その起動時に設定されているオーナーのものになります。シングルユーザー（`OWNER_SINGLE_USER=true`）またはチーム共有オーナー（`PERSISTENCE_SHARED_OWNER_ID`）が設定されていればそのオーナー、そうでなければ（匿名モード）専用オーナー `system:legacy-classrooms` です。後者の場合、授業は以前のリンクから読み取り専用で開け、どのライブラリにも表示されません。各授業のインポートは一度だけなので、匿名モードでインポートされた授業は、後から ID モードを設定しても `system:legacy-classrooms` のままです。
+- **モデルを列挙してください。** サーバー管理の認証情報を使い、選択されたモデルを上流へ送るプロバイダー（チャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索）には、明示的なモデルリスト（`*_MODELS`、または `openmaic.yml`・`server-providers.yml` のプロバイダー配下の `models`）が必要です。リストがない場合、認可されるのは既定・フォールバック・スロットで参照されるモデルだけで、リストのないこうしたプロバイダーは起動ログに表示されます。Tavily やドキュメントパーサーなど、モデル選択のないサービスにリストは不要です。[モデル認可](./configuration.mdx#サーバー管理プロバイダーのモデル認可)を参照してください。
+- **render-service はアプリと一緒に更新してください。** MP4 動画エクスポートを使っている場合は、すべての render-service インスタンスをアプリと同時か、それより先に更新してください。レンダリングジョブはオーナーに紐づき、新旧バージョンが混在すると安全側に失敗します（リクエストを拒否します）。
+- **教室のモデルを確認してください。** Pi 教室チャットは、組み込みカタログでツール呼び出し非対応とされているモデル（`tool_calling_required`）と、Google の OpenAI 互換 Gemini エンドポイント（`gemini_native_required`）を拒否します。Gemini はネイティブの `google` プリセットで設定してください。[LLM プロバイダー](./configuration.mdx#llm-プロバイダー)を参照してください。
 
 ブラウザのデータ（授業、モデル設定、カスタムエージェント）は、各ブラウザがアップグレード後のアプリを初めて開いたときに一度だけインポートされます。モデル設定の移行は[設定](./configuration.mdx#旧設定からの移行)を、破壊的変更の一覧は [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md) を参照してください。
 
 ## Vercel（1.1.x まで）
 
-サーバーレスでのデプロイは OpenMAIC 1.1.x までサポートされ、[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) の Deploy ボタンは `release/1.1.x` ブランチをデプロイします。このようなデプロイは、後でデータを失わずに常駐ホストへ移行できます。新しいホストの `DATABASE_URL` を（使っていた場合は）元のデータベースに向け、同じアドレスで公開してください。ブラウザはサイトごとにデータを保存しており、訪問者のブラウザにある授業は、各ブラウザがアップグレード後のアプリを初めて開いたときにインポートされます。
+サーバーレスでのデプロイは OpenMAIC 1.1.x までサポートされ、`release/1.1.x` ブランチを Vercel にデプロイする手順は[リポジトリの README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) にあります。このようなデプロイは、後でデータを失わずに常駐ホストへ移行できます。新しいホストの `DATABASE_URL` を（使っていた場合は）元のデータベースに向け、同じアドレスで公開してください。ブラウザはサイトごとにデータを保存しており、訪問者のブラウザにある授業は、各ブラウザがアップグレード後のアプリを初めて開いたときにインポートされます。
 
 ## オプション：MP4 動画エクスポート
 
@@ -155,7 +158,7 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 docker compose --profile video-export up --build
 ```
 
-Compose は `RENDER_SERVICE_URL` を通じて OpenMAIC とレンダリングサービスを接続します。このプロファイルを有効にしないか、レンダリングサービスが利用できない場合は、エクスポートはプロジェクト ZIP のダウンロードにフォールバックし、ローカル CLI でのレンダリングを想定します。レンダリングサービスは分離されたネットワークで動作し、起動時に `NET_ADMIN` 権限が必要です。詳細や独立デプロイ方法はリポジトリの [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) を参照してください。
+Compose は `RENDER_SERVICE_URL` を通じて OpenMAIC とレンダリングサービスを接続します。このプロファイルを有効にしないか、レンダリングサービスが利用できない場合は、エクスポートはプロジェクト ZIP のダウンロードにフォールバックし、ローカル CLI でのレンダリングを想定します。レンダリングサービスは分離されたネットワークで動作し、起動時に `NET_ADMIN` 権限が必要です。詳細や独立デプロイ方法はリポジトリの [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) を参照してください。アップグレード時は、レンダリングサービスをアプリと同時か、それより先に更新してください。
 
 ## 環境変数
 

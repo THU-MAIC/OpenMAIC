@@ -79,6 +79,7 @@ export type SceneContentFailureCode = 'prompt-unavailable' | 'invalid-model-outp
 
 export interface SceneContentFailure {
   code: SceneContentFailureCode;
+  message?: string;
 }
 
 export interface SceneContentOptions {
@@ -801,10 +802,19 @@ async function generateSlideContent(
     return null;
   }
 
+  const invalidRotation = findInvalidShapeRotation(generatedData.elements);
+  if (invalidRotation) {
+    log.error(invalidRotation);
+    onFailure?.({ code: 'invalid-model-output', message: invalidRotation });
+    return null;
+  }
+
   log.debug(`Got ${generatedData.elements.length} elements for: ${outline.title}`);
 
   // Debug: Log image elements before resolution
-  const imageElements = generatedData.elements.filter((el) => el.type === 'image');
+  const imageElements = generatedData.elements.filter(
+    (el) => el && typeof el === 'object' && el.type === 'image',
+  );
   if (imageElements.length > 0) {
     log.debug(
       `Image elements before resolution:`,
@@ -873,6 +883,26 @@ async function generateSlideContent(
     background,
     remark: generatedData.remark || outline.description,
   };
+}
+
+function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): string | undefined {
+  for (const [index, element] of elements.entries()) {
+    if (!element || typeof element !== 'object') {
+      continue;
+    }
+    if (element.type !== 'shape' || !Object.prototype.hasOwnProperty.call(element, 'rotate')) {
+      continue;
+    }
+
+    const rotate = element.rotate;
+    if (rotate === null || (typeof rotate === 'number' && Number.isFinite(rotate))) {
+      continue;
+    }
+
+    const received = typeof rotate === 'number' ? String(rotate) : JSON.stringify(rotate);
+    return `Invalid shape rotation at shape[${index}].rotate: expected a finite number in degrees or null, received ${received}`;
+  }
+  return undefined;
 }
 
 /**

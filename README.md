@@ -43,7 +43,7 @@
 
 ## 🗞️ News
 
-- **2026-10-04** — [v1.2.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0-rc.1) (pre-release): **server-first.** Until 1.1.x, the browser drove course generation step by step and kept courses, keys and model settings itself, so closing the tab stopped a course halfway, every browser had to be configured on its own, and the headless API ran a separate pipeline. In 1.2.0 the server owns all of it: generation runs on the server and survives closed tabs and restarts, models are configured once in `openmaic.yml` (with defaults, locks and an option to forbid user keys), materials are parsed as soon as they are attached, and the web app and the API share one pipeline. It needs PostgreSQL and a long-running server; Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x). Read the [changelog](CHANGELOG.md) before upgrading.
+- **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0): **server-first is stable.** Generation runs on the server and survives closed tabs and restarts, models are configured once in `openmaic.yml` (defaults, locks, and an option to forbid user keys), materials are parsed as soon as they are attached, and the web app and the API share one pipeline. New: [classroom export](packages/docs/content/docs/getting-started.mdx#export-a-classroom), as a PPTX that keeps every scene or as one offline HTML file that plays the lesson. It needs PostgreSQL and a long-running server; Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x). Read [Upgrading from 1.1.x](packages/docs/content/docs/deployment.mdx#upgrading-from-11x) before upgrading.
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2): security — provider requests connect only to validated addresses and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)).
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1): security — hardened MinerU Cloud parsing ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)).
 - **2026-09-24** — [v1.1.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.0): agentic classroom chat (ask about any slide element, interactive, or whiteboard drawing); settings rebuilt around the course workflow; Token Plan connections.
@@ -80,7 +80,7 @@ https://github.com/user-attachments/assets/8f3f1e5f-1468-4e93-8054-afeeea683a61
 - **Multi-agent classroom** — AI teachers and peers lecture, discuss, and interact with you in real time
 - **Rich scene types** — Slides, quizzes, interactive HTML simulations, and project-based learning (PBL)
 - **Whiteboard & TTS** — Agents draw diagrams, write formulas, and explain out loud
-- **Export anywhere** — Download editable `.pptx` slides or interactive `.html` pages
+- **[Export anywhere](packages/docs/content/docs/getting-started.mdx#export-a-classroom)** — A `.pptx` that keeps every scene, one offline `.html` file that plays the whole lesson, or a classroom ZIP to move it to another deployment
 - **[Agent workbench integration](#-agent-workbench-integration)** — The OpenMAIC Skill supports OpenClaw, Codex, DeepSeek, WorkBuddy, and more — generate classrooms from Feishu, Slack, Telegram, 20+ messaging apps, or your IDE
 
 ## 🚀 Quick Start
@@ -131,16 +131,17 @@ The slots you write are the server's defaults; users can change them, or connect
 | Slots, presets, fallbacks, `lock`, `allowUserKeys`, `OPENMAIC_SECRET_KEY` | [Configuration](packages/docs/content/docs/configuration.mdx) |
 | Every provider preset and model ID | [Supported models](packages/docs/content/docs/supported-models.mdx) |
 | Upgrading: provider variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` still work without `openmaic.yml`; `MODEL_ROUTES` must become slots | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
+| Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list (`*_MODELS`), plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
 
 **Providers:** OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Gemini, DeepSeek, Qwen, Kimi, MiniMax, Grok (xAI), OpenRouter, TokenDance, Doubao, Tencent Hunyuan/TokenHub, Xiaomi MiMo, GLM (Zhipu), Ollama, [Lemonade](#lemonade-local-ai) and [FunASR](#funasr-local-asr) (local), and any OpenAI-compatible API.
 
 > [!TIP]
-> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, and web-grounded research. The least friction is a single key that covers all of them (see the token plan examples below), with a fast long-context model such as `deepseek-v4.1-flash` as the default.
+> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, web search, and web fetch. A token plan configures the capabilities it supports with one key (see the examples below). Choose a fast long-context model such as `deepseek-v4.1-flash` as the default.
 
 <details>
 <summary><b>More examples</b>: token plans, Xiaomi MiMo and GLM, Amazon Bedrock</summary>
 
-Token plan quick example (one key for chat, image, video, TTS and web search; `tokendance` works the same way):
+MiniMax token plan quick example (one key for chat, image, video, TTS and web search; `tokendance` works the same way):
 
 ```yaml
 providers:
@@ -466,7 +467,7 @@ It's opt-in. Start it with the `video-export` compose profile:
 docker compose --profile video-export up --build
 ```
 
-The app auto-detects the service via `RENDER_SERVICE_URL` (preset in `docker-compose.yml`) and enables one-click MP4 rendering. Without the profile — or when `RENDER_SERVICE_URL` is unset — export degrades to downloading the project ZIP for local CLI rendering. See [`render-service/README.md`](render-service/README.md) for standalone setup and tuning (`RENDER_MAX_CONCURRENCY`, etc.).
+The app auto-detects the service via `RENDER_SERVICE_URL` (preset in `docker-compose.yml`) and enables one-click MP4 rendering. Without the profile — or when `RENDER_SERVICE_URL` is unset — export degrades to downloading the project ZIP for local CLI rendering. See [`render-service/README.md`](render-service/README.md) for standalone setup and tuning (`RENDER_MAX_CONCURRENCY`, etc.). When upgrading, upgrade the render-service together with the app or before it: render jobs are bound to their owner, and a mix of old and new versions fails closed.
 
 ### Optional: MinerU (Advanced Document Parsing)
 
@@ -855,9 +856,12 @@ Optional config in `~/.openclaw/openclaw.json`:
 
 | Format | Description |
 |--------|-------------|
-| **PowerPoint (.pptx)** | Fully editable slides with images, charts, and LaTeX formulas |
-| **Interactive HTML** | Self-contained web pages with interactive simulations |
+| **PowerPoint (.pptx)** | Editable slides with images, charts, and LaTeX formulas. Interactive, quiz, and PBL scenes can stay in place as placeholder slides with an **Open online** button and a QR code |
+| **Resource Pack** | The PPTX plus each interactive scene as a self-contained web page |
+| **Offline HTML** | One file that plays the classroom without a network connection: narration with captions, spotlight and laser, slide video, quizzes and interactive scenes; with or without narration |
 | **Classroom ZIP** | Full classroom export (course structure + media) for backup or sharing |
+
+See [Exporting a classroom](packages/docs/content/docs/getting-started.mdx#export-a-classroom) for the options, the ZIP that classrooms over 400 MB are saved as, and opening an exported file on a phone.
 
 Importing a classroom ZIP stores its embedded audio, images, video, and posters in the server asset pool before saving the course, so other browsers resolve those assets without the importing browser's cache. A ZIP is also a way to move a course between deployments: export it from one and import it on the other.
 

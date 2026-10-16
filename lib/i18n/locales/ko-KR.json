@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "내장 리더"
     },
     "modelCount": "개 모델",
     "modelSingular": "개 모델",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1825,7 @@
       "capTts": "음성 합성",
       "capVideo": "영상 생성",
       "capWebSearch": "웹 검색",
+      "capWebFetch": "웹 페이지 가져오기",
       "saved": "연결 설정이 저장되었습니다",
       "stageInteractive": "인터랙티브",
       "stageSlide": "슬라이드",
@@ -1947,7 +1949,8 @@
         "providers": "언어 모델 서비스의 자격 증명, API 주소, 모델 카탈로그를 설정합니다",
         "tts": "음성 합성 서비스, 보이스, 모델을 설정합니다",
         "video": "영상 생성 서비스의 자격 증명과 모델 카탈로그를 설정합니다",
-        "webSearch": "웹 검색 서비스와 검색 소스를 설정합니다"
+        "webSearch": "웹 검색 서비스와 검색 소스를 설정합니다",
+        "webFetch": "웹 페이지 추출 서비스 설정"
       },
       "nav": "모델 서비스",
       "notConfigured": "미구성",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "문서 분석",
           "desc": "업로드한 문서를 읽습니다."
+        },
+        "webFetch": {
+          "name": "웹 페이지 가져오기",
+          "desc": "에이전트가 세션에서 허용된 웹 페이지를 읽는 데 사용합니다."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "쿼리",
           "search": "검색",
+          "fetch": "가져오기",
           "image": "이미지",
           "video": "동영상"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "서버가 가져오기를 확인하지 않았습니다."
       }
     },
-    "serverConfiguredAddOwn": "본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요."
+    "serverConfiguredAddOwn": "본인 자격 증명을 사용하려면 별도의 제공업체를 추가하세요.",
+    "webFetchSettings": "웹 페이지 가져오기",
+    "webFetchHint": "웹 페이지를 읽는 방법을 선택하세요. 호스팅 서비스에는 세션에서 허용된 공개 URL만 전달됩니다. 결과는 신뢰할 수 없는 데이터로 취급하며, 실패해도 다른 서비스로 전환하지 않습니다.",
+    "webFetchApiKey": "API 키",
+    "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

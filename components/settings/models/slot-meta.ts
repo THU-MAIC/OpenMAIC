@@ -46,6 +46,7 @@ export const CAPABILITY_ICONS: Record<SlotCapability, LucideIcon> = {
   asr: Mic,
   image: ImageIcon,
   video: Film,
+  webFetch: FileText,
   webSearch: Search,
   document: FileText,
 };

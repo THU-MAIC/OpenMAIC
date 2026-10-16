@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Trình đọc tích hợp"
     },
     "modelCount": "model",
     "modelSingular": "mô hình",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Gói token",
       "title": "Thiết lập gói token",
-      "desc": "Chọn nhà cung cấp gói token và nhập khóa — hệ thống sẽ tự cấu hình mọi loại nội dung tương thích (model ngôn ngữ / ảnh / video / giọng nói / tìm web).",
+      "desc": "Chọn nhà cung cấp gói token và nhập khóa — hệ thống sẽ tự cấu hình mọi loại nội dung tương thích (model ngôn ngữ / ảnh / video / giọng nói / tìm web / lấy trang web).",
       "selectPlan": "Chọn nhà cung cấp",
       "apiKey": "Khóa API",
       "updateKey": "Cập nhật khóa",
@@ -1824,6 +1825,7 @@
       "capTts": "Tổng hợp giọng nói",
       "capVideo": "Tạo video",
       "capWebSearch": "Tìm kiếm web",
+      "capWebFetch": "Lấy trang web",
       "saved": "Đã lưu cài đặt kết nối",
       "stageInteractive": "Tương tác",
       "stageSlide": "Trang slide",
@@ -1947,7 +1949,8 @@
         "providers": "Cấu hình thông tin xác thực, điểm cuối và danh mục mô hình của dịch vụ mô hình ngôn ngữ",
         "tts": "Cấu hình dịch vụ tổng hợp giọng nói, giọng đọc và mô hình",
         "video": "Cấu hình thông tin xác thực và danh mục mô hình của dịch vụ tạo video",
-        "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất"
+        "webSearch": "Cấu hình dịch vụ tìm kiếm web và nguồn truy xuất",
+        "webFetch": "Cấu hình dịch vụ trích xuất trang web"
       },
       "nav": "Dịch vụ mô hình",
       "notConfigured": "Chưa cấu hình",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "Phân tích tài liệu",
           "desc": "Đọc các tài liệu đã tải lên."
+        },
+        "webFetch": {
+          "name": "Lấy trang web",
+          "desc": "Để tác tử đọc các trang web được cho phép trong phiên."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "Truy vấn",
           "search": "Tìm kiếm",
+          "fetch": "Đọc trang",
           "image": "Ảnh",
           "video": "Video"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "Máy chủ không xác nhận đã nhập."
       }
     },
-    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác."
+    "serverConfiguredAddOwn": "Muốn dùng thông tin đăng nhập riêng, hãy thêm một nhà cung cấp khác.",
+    "webFetchSettings": "Lấy trang web",
+    "webFetchHint": "Chọn cách đọc trang web. Dịch vụ lưu trữ chỉ nhận URL công khai được cho phép trong phiên. Kết quả vẫn là dữ liệu không đáng tin cậy và lỗi không làm chuyển sang dịch vụ khác.",
+    "webFetchApiKey": "Khóa API",
+    "webFetchSharedKeyHint": "Khóa này cũng được dùng để trò chuyện với nhà cung cấp này. Thay đổi hoặc xóa khóa sẽ ảnh hưởng đến trò chuyện."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

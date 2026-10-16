@@ -138,12 +138,15 @@ PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 - **保留数据目录。** 启动 1.2.0 时，工作目录里要有原来的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 时沿用同一个 `openmaic-data` 卷。1.1.x 以文件形式保存在 `data/classrooms` 下的课堂，会在启动后于后台导入数据库一次；没有这个目录的服务器没有可导入的内容。
 - **先设置身份模式。** 导入时，这些课堂归属于那次启动时配置的所有者：设置了单用户（`OWNER_SINGLE_USER=true`）或团队共享所有者（`PERSISTENCE_SHARED_OWNER_ID`）时归它们所有；否则（匿名模式）归专用所有者 `system:legacy-classrooms`，此时它们只能通过原链接以只读方式打开，也不会出现在任何课程库中。每个课堂只导入一次，所以在匿名模式下导入的课堂，之后即使再设置身份模式，也仍然属于 `system:legacy-classrooms`。
+- **列出模型。** 每个使用服务端托管凭据、并把所选模型发往上游的服务商（对话、图像、视频、语音合成、语音识别、基于模型的联网搜索）都需要显式的模型列表（`*_MODELS`，或 `openmaic.yml`、`server-providers.yml` 中该服务商下的 `models`）。没有列表时，只有默认模型、回退模型和槽位引用的模型获得授权；启动日志会逐一列出这类缺少列表的服务商。Tavily、文档解析器等没有模型选择的服务不需要列表。见[模型授权](./configuration.mdx#服务端托管服务商的模型授权)。
+- **渲染服务与应用一起升级。** 如果使用 MP4 视频导出，请在升级应用的同时或之前升级所有 render-service 实例：渲染任务绑定到所有者，新旧版本混用时会安全失败（拒绝请求）。
+- **检查课堂互动模型。** Pi 课堂对话会拒绝内置模型目录标明不支持工具调用的模型（`tool_calling_required`），也会拒绝 Google 的 OpenAI 兼容 Gemini 端点（`gemini_native_required`）。Gemini 请使用原生 `google` 预设，见 [LLM 提供方](./configuration.mdx#llm-提供方)。
 
 浏览器中的数据（课程、模型设置、自定义智能体）会在每个浏览器首次打开升级后的应用时导入一次。迁移模型设置见[配置](./configuration.mdx#从旧配置迁移)，完整的破坏性变更列表见 [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md)。
 
 ## Vercel（1.1.x 及以前）
 
-Serverless 部署支持到 OpenMAIC 1.1.x，[仓库 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 中的 Deploy 按钮部署的是 `release/1.1.x` 分支。这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址——浏览器按站点保存数据，访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。
+Serverless 部署支持到 OpenMAIC 1.1.x，[仓库 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 介绍了如何在 Vercel 上部署 `release/1.1.x` 分支。这样的部署之后可以迁移到常驻主机而不丢失数据：把新主机的 `DATABASE_URL` 指向原来使用的数据库（如果用过），并沿用同一个访问地址——浏览器按站点保存数据，访客浏览器中的课程会在每个浏览器首次打开升级后的应用时导入。
 
 ## 可选：MP4 视频导出
 
@@ -155,7 +158,7 @@ Serverless 部署支持到 OpenMAIC 1.1.x，[仓库 README](https://github.com/T
 docker compose --profile video-export up --build
 ```
 
-Compose 会通过 `RENDER_SERVICE_URL` 让 OpenMAIC 连接渲染服务。未启用该 profile，或渲染服务不可用时，导出会退化为下载项目 ZIP，供本地 CLI 渲染。渲染服务使用隔离网络，启动时需要 `NET_ADMIN` capability；更多限制和独立部署方式见仓库的 [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md)。
+Compose 会通过 `RENDER_SERVICE_URL` 让 OpenMAIC 连接渲染服务。未启用该 profile，或渲染服务不可用时，导出会退化为下载项目 ZIP，供本地 CLI 渲染。渲染服务使用隔离网络，启动时需要 `NET_ADMIN` capability；更多限制和独立部署方式见仓库的 [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md)。升级时，请在升级应用的同时或之前升级渲染服务。
 
 ## 环境变量
 

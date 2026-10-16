@@ -2,8 +2,8 @@
  * Token Plan presets — multi-modal.
  *
  * A token plan (e.g. MiniMax) is often a single key that spans LLM + image +
- * video + TTS + web-search. A preset declares, per modality, the target provider
- * id + base URL in that modality's registry. "One-click apply" fills the key into
+ * video + TTS + web search + web fetch. A preset declares, per modality, the
+ * target provider id + base URL in that modality's registry. "One-click apply" fills the key into
  * every declared modality and lights it up; modalities not declared here are
  * simply "not adapted yet" (at our best — add an entry later to extend).
  *
@@ -17,7 +17,7 @@ import type { ProviderType } from '@/lib/types/provider';
 export type PresetCategory = 'official' | 'aggregator' | 'token_plan' | 'third_party';
 
 /** The modalities a token plan can be applied to. ASR is omitted = not adapted. */
-export type TokenPlanModality = 'llm' | 'image' | 'video' | 'tts' | 'webSearch';
+export type TokenPlanModality = 'llm' | 'image' | 'video' | 'tts' | 'webSearch' | 'webFetch';
 
 /** Where a token plan maps in one modality's provider registry. */
 export interface TokenPlanModalityTarget {
@@ -75,7 +75,14 @@ export interface TokenPlanPreset {
 }
 
 /** Human-facing order of modalities in the apply result. */
-export const MODALITY_ORDER: TokenPlanModality[] = ['llm', 'image', 'video', 'tts', 'webSearch'];
+export const MODALITY_ORDER: TokenPlanModality[] = [
+  'llm',
+  'image',
+  'video',
+  'tts',
+  'webSearch',
+  'webFetch',
+];
 
 /**
  * Built-in token plans.
@@ -87,9 +94,9 @@ export const MODALITY_ORDER: TokenPlanModality[] = ['llm', 'image', 'video', 'tt
  * muddied the "one key, every modality" promise.
  *
  * - TokenDance: LLM/image/video/TTS/web-search through one gateway key.
- * - MiniMax: full-set template — every modality has a working adapter
- *   (LLM/image/video/TTS/web-search).
+ * - MiniMax: LLM/image/video/TTS/web-search adapters.
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
+ * - Kimi Coding Plan: LLM/web-search/web-fetch via the plan key.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
@@ -293,22 +300,23 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       },
     },
   },
-  // ── Kimi Coding Plan（末位 = 最低优先级）────────────────────────────────
-  // LLM-only: the Coding Plan key authenticates against the plan's DEDICATED
+  // ── Kimi Coding Plan (last = lowest priority) ───────────────────────────
+  // The Coding Plan key authenticates against the plan's DEDICATED
   // endpoint (https://www.kimi.com/code/docs/) — api.kimi.com/coding/v1,
   // international api.kimi.ai/coding/v1 — NOT Moonshot's Open Platform
   // (api.moonshot.cn/v1): sending plan keys there fails with
   // "Not found the model kimi-for-coding or Permission denied" (review P0 on
-  // #1664). The plan rides the EXISTING `kimi` direct provider (dual identity,
-  // same slot as minimax/doubao — the enrollment marker keeps personal keys
-  // safe, and connecting the plan intentionally takes over the slot, see
-  // #1645); disconnect restores the registry default (Moonshot endpoint) for
-  // personal keys. Seeding overrides the mainline to K2.8 (official model id
-  // `kimi-for-coding`); every follow-mainline LLM station inherits it. No
-  // image/video/TTS/web-search adaptation: those modalities are simply not
-  // declared and stay untouched. Priority note: placed LAST in
-  // TOKEN_PLAN_PRESETS, so when any other plan is enabled, Kimi yields the
-  // mainline/stage slots to it.
+  // #1664). The plan uses the existing `kimi` registry adapters for chat,
+  // search and fetch, with one Coding Plan key and base URL. Its workspace
+  // provider uses the `kimi-coding-plan` preset, keeping personal Kimi keys
+  // separate. Connecting intentionally takes over the declared slots (see
+  // #1645), subject to administrator locks and the user's conflict choice;
+  // disconnecting removes the plan's assignments and restores server defaults
+  // (the implicit builtin reader for fetch when no reader was configured).
+  // The mainline defaults to `kimi-for-coding`; every follow-mainline LLM
+  // station inherits it. Image/video/TTS are not declared and stay untouched.
+  // Priority note: placed LAST in TOKEN_PLAN_PRESETS, so Kimi yields only
+  // slots that a higher-priority connected plan also recommends.
   {
     id: 'kimi',
     name: 'Kimi',
@@ -328,6 +336,8 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         defaultModels: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
         defaultModelId: 'kimi-for-coding',
       },
+      webSearch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
+      webFetch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
     },
   },
 ];

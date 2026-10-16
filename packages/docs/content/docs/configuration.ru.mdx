@@ -127,6 +127,7 @@ Amazon Bedrock (`preset: bedrock`) подписывает запросы цеп�
 | `asr` | asr | — | Распознавание речи (голосовой ввод, расшифровка аудио и видео) |
 | `image` | image | — | Генерация изображений |
 | `video` | video | — | Генерация видео |
+| `webFetch` | webFetch | — | Извлечение веб-страниц (по умолчанию `builtin`) |
 | `webSearch` | webSearch | — | Веб-поиск |
 | `document` | document | — | Сервис разбора документов (MinerU, MinerU Cloud, AliDocMind). Встроенному извлечению текста из PDF сервис не нужен |
 
@@ -171,7 +172,7 @@ slots:
 
 ### Резервные модели
 
-Резервные модели применяются только к слотам языковых моделей: `llm` и всем слотам под ним. `fallback` в слоте `tts`, `asr`, `image`, `video`, `webSearch` или `document` отклоняется — при запуске для `openmaic.yml` и при сохранении в настройках моделей.
+Резервные модели применяются только к слотам языковых моделей: `llm` и всем слотам под ним. `fallback` в слоте `tts`, `asr`, `image`, `video`, `webSearch`, `webFetch` или `document` отклоняется — при запуске для `openmaic.yml` и при сохранении в настройках моделей.
 
 `fallback` слота используется один раз, если вызов основной модели после её собственных повторов завершился сбоем, допускающим повтор: временная ошибка SDK, таймаут, сетевая ошибка, ограничение частоты запросов (429), нехватка мощности (503) или пустой ответ. Если провайдер явно отказал из-за исчерпанной квоты (OpenAI-совместимый код вроде `insufficient_quota`, при любом HTTP-статусе), вызов на основной модели не повторяется и сразу переходит на резервную модель. Отказы по соображениям безопасности контента и другие ошибки 4xx к резервной модели не приводят. Резервная модель работает и для обычных, и для потоковых вызовов и использует параметры `thinking` слота.
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # эти слоты и все слоты под ними
 
 - Каждый слот из `lock` должен быть записан в `slots` (`null` тоже считается: `video: null` вместе с `lock: [video]` выключает видео для всех). Неизвестный слот или закреплённый слот, не записанный в `slots`, останавливает сервер при запуске с указанием позиции (`lock.1: ...`).
 - Закреплённый слот закрепляет и своих потомков: при `lock: [llm]` ни один пользователь не может задать `course.outline` или другой слот языковой модели, и все они разрешаются только по `openmaic.yml`.
-- `lock: all` закрепляет все слоты, записанные и нет; корень возможности, не записанный в `slots`, тогда не настроен ни для кого.
+- `lock: all` закрепляет все слоты, записанные и нет; корень возможности, не записанный в `slots`, тогда не настроен ни для кого. Однако неуказанный `webFetch` использует `builtin`; для отключения задайте `webFetch: null`.
 - `null`, значение по умолчанию и закрепление сочетаются естественно: одно `video: null` выключено, пока пользователь не включит; с `lock: [video]` остаётся выключенным.
 
 Настройки принимают один из трёх видов в зависимости от конфигурации:
@@ -406,7 +407,7 @@ slots:
     api: openai-completions
 ```
 
-Как только появляется `openmaic.yml`, переменные провайдеров сами по себе ничего не настраивают: провайдер TTS, изображений, документов или веб-поиска, заданный только переменными (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …), больше не используется, и ни одна возможность не получает провайдера по умолчанию. Объявите каждый используемый провайдер в `providers` и назначьте `tts`, `image`, `document`, `webSearch` (а также `asr`, `video`) в `slots`, как в примере с переменными окружения выше; неназначенный слот остаётся ненастроенным, если рабочее пространство не назначит его в настройках моделей.
+Как только появляется `openmaic.yml`, переменные провайдеров сами по себе ничего не настраивают: провайдер TTS, изображений, документов или веб-поиска, заданный только переменными (`TTS_MINIMAX_API_KEY`, `IMAGE_SEEDREAM_API_KEY`, `PDF_MINERU_BASE_URL`, `TAVILY_API_KEY`, …), больше не используется, и возможности, кроме `webFetch`, не получают провайдера по умолчанию. Объявите каждый используемый провайдер в `providers` и назначьте `tts`, `image`, `document`, `webSearch` (а также `asr`, `video`) в `slots`, как в примере с переменными окружения выше; неназначенный слот другой возможности остаётся ненастроенным, если рабочее пространство не назначит его в настройках моделей.
 
 Затем удалите `MODEL_ROUTES`, `DEFAULT_MODEL` и `MODEL_FALLBACK`.
 
@@ -456,7 +457,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi runtime требует поддержки вызова инструментов/функций моделью. Если выбранная модель или провайдер не поддерживает вызов инструментов, установите `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (или `0`) и пересоберите приложение, чтобы использовать прежний путь чата.
+Pi runtime требует поддержки вызова инструментов/функций моделью. Модель, которая во встроенном каталоге отмечена как не поддерживающая вызов инструментов, отклоняется до инференса с `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), а **Настройка моделей курса** указывает это требование у слота класса. Если выбранная модель или провайдер не поддерживает вызов инструментов, установите `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (или `0`) и пересоберите приложение, чтобы использовать прежний путь чата.
 
 В Docker Compose файл `.env.local` загружается через `env_file` во время выполнения и не используется для подстановки аргументов сборки. Пересоберите приложение с явным значением переменной, как показано ниже. Изменение только окружения запущенного контейнера не меняет путь чата, выбранный при сборке клиента и сервера.
 
@@ -619,6 +620,28 @@ slots:
 
 `IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, `IMAGE_GLM_` и `IMAGE_LEMONADE_`.
 
+GLM Image (Zhipu CogView) генерирует изображения моделями CogView (`cogview-3-flash`, `cogview-4`):
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # Необязательно:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+Или через переменные окружения:
+
+```bash
+IMAGE_GLM_API_KEY=
+# Необязательно:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
 Lemonade — локальный сервис, не требует ключа:
 
 ```bash
@@ -746,13 +769,13 @@ web-search:
 
 Переменные окружения по отдельным полям переопределяют соответствующие настройки в YAML. Ключи должны совпадать с зарегистрированными в коде ID провайдеров, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily` или `searxng`. Неизвестные ID нельзя использовать для регистрации кастомных LLM провайдеров.
 
-## Model authorization for server-managed providers
+## Авторизация моделей для провайдеров с серверными ключами
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+Для провайдеров, которые отправляют выбранную модель вверх по цепочке с учётными данными развертывания, задайте явный список `models` в `openmaic.yml` (`providers.<id>.models`) или соответствующую переменную окружения `*_MODELS` / список `models` в разделе `server-providers.yml`. Это относится к чату, изображениям, видео, синтезу речи, распознаванию речи и веб-поиску на основе моделей. Идентификаторы моделей сравниваются точно, с учётом регистра, после удаления окружающих пробелов при загрузке конфигурации. Детерминированные псевдонимы адаптеров авторизуются по объявленному идентификатору модели. Запросы к моделям вне списка возвращают HTTP 403 с `PROVIDER_DISABLED` и сообщением «This model is not authorized for server-managed credentials».
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**Несовместимое изменение:** без явного списка доступны только модели развертывания по умолчанию и резервные модели, а также основные и резервные модели, на которые ссылаются слоты этой возможности. В устаревшей конфигурации `DEFAULT_MODEL` и `MODEL_FALLBACK` разрешают модели чата. Медиаслот, указывающий только провайдера, разрешает одну модель адаптера по умолчанию, а не весь каталог пресета. Назначения в рабочем пространстве не расширяют набор, разрешённый развертыванием. Регистрация и синтез голосов также должны разрешать модель, выбранную для совместимости голоса.
 
-To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+Для миграции перечислите все модели, которые пользователи должны иметь возможность выбрать, перезапустите сервер и обновите выборы в рабочих пространствах, которые больше не разрешены. Для каждого провайдера с учётными данными, но без списка, журнал запуска называет параметр, который нужно добавить. Собственные учётные данные пользователей и локальные провайдеры без ключа, такие как Ollama и Lemonade, не затрагиваются. Провайдер без учётных данных не ограничивается, поэтому не направляйте его на шлюз, который сам добавляет учётные данные вышестоящего сервиса (например, внутренний OpenAI-совместимый прокси): выдайте шлюзу ключ и настройте его как провайдер с учётными данными и списком `models` или ограничьте модели в самом шлюзе. Парсерам документов и сервисам поиска без выбора модели (например, Tavily) список моделей не нужен.
 
 ```yaml
 providers:
@@ -764,4 +787,52 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+Эквивалент в устаревшей конфигурации: `OPENAI_API_KEY=...` и `OPENAI_MODELS=gpt-5.4-mini`. Для медиа используйте префикс возможности, например `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` и `WEB_SEARCH_CLAUDE_MODELS`.
+
+### Чат и веб-поиск Kimi
+
+Объявите одну учётную запись Kimi и назначьте ей оба слота:
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # Необязательно: https://api.moonshot.ai/v1 для международной Open Platform.
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+Для ключа Coding Plan укажите `preset: kimi-coding-plan` и `llm: kimi:kimi-for-coding`; базовый URL по умолчанию — `https://api.kimi.com/coding/v1`. Ключи Open Platform и Coding Plan должны использовать соответствующие им базовые URL. В устаревшей конфигурации `KIMI_API_KEY` и необязательная `KIMI_BASE_URL` предоставляют учётные данные для поиска только после явного включения: задайте `WEB_SEARCH_KIMI_ENABLED=true` или добавьте `web-search.kimi` в `server-providers.yml` (например, с `enabled: true`). Одни лишь учётные данные чата не включают поиск и не меняют поискового провайдера по умолчанию. `WEB_SEARCH_KIMI_ENABLED=false` отключает поиск Kimi даже при назначенном слоте. `WEB_SEARCH_KIMI_ENABLED` — единственный переключатель поиска Kimi. `KIMI_MODELS` применяется только к чату. При конфликте устаревших учётных записей чата и поиска выводится предупреждение, а запись поиска пропускается; для разных учётных записей объявите отдельные ID провайдеров в `openmaic.yml`. Если существует `openmaic.yml`, явно объявите провайдера и назначьте слоты. Настройки и мастер первого запуска позволяют использовать обе возможности через одну учётную запись.
+
+
+Конечная точка выбирается по базовому пути: после удаления завершающих косых черт путь, оканчивающийся на `/coding/v1`, использует `/search`, а остальные — `/tools/search_pro`. Пользовательские прокси, настроенные в развертывании, должны сохранять эту структуру путей. Мастер рекомендует поиск только для официальных базовых URL учётных записей, поэтому пользовательский прокси чата рабочего пространства не получает назначение поиска автоматически.
+
+Если существует `openmaic.yml`, объявите `providers.<id>: { preset: kimi }` и назначьте `slots.webSearch: <id>`; устаревшая переменная `WEB_SEARCH_KIMI_ENABLED` не может назначить этот слот.
+
+## Слот провайдера загрузки веб-страниц
+
+`webFetch` выбирает сервис чтения для инструмента агента `fetch_url`. В старой, пустой и YAML-конфигурации по умолчанию используется `builtin`, в том числе когда корень не указан при `lock: all`. Явное `webFetch: null` отключает загрузку и убирает инструмент и его инструкции из последующих запусков. Каждый запрос использует одного провайдера без резервного или дополнительного сервиса. Недействительная ссылка на провайдера или адрес рабочего пространства, запрещённый политикой, приводит к сбою всего запуска агента при разрешении возможностей, ещё до старта агента, как и для `webSearch`. Это ошибка конфигурации, а не результат неудачного вызова `fetch_url`; переключения на встроенный сервис не происходит.
+
+| Провайдер | Учётные данные | Извлечение |
+| --- | --- | --- |
+| `builtin` | Не нужны | Локальный Readability/Turndown; PDF используют слот `document` |
+| `kimi` | Ключ и базовый URL существующего провайдера Kimi | Размещённый сервис извлечения Markdown, включая URL файлов PDF |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+Оба пресета, `kimi` и `kimi-coding-plan`, предоставляют `webFetch`. Для учётных данных Coding Plan используйте `preset: kimi-coding-plan`; его базовый URL по умолчанию — `https://api.kimi.com/coding/v1`. Явно заданный базовый URL сохраняется. Базовые URL Moonshot Open Platform (`https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1`) используют `/tools/fetch`, Coding Plan — `/fetch`. Оба отправляют `POST` с `{ "url": ... }` и Bearer-аутентификацией. Адаптер принимает `markdown` или `content`. Мейнтейнер проверил `POST https://api.kimi.com/coding/v1/fetch` с действующим ключом и подтвердил ответ `{ markdown, title, url }`; доступность международных адресов пока не проверена. Запросы учитывают настройку `proxy` провайдера и стандартные переменные окружения прокси.
+
+Используйте существующие учётные данные в **Настройки → Сервисы моделей → Загрузка веб-страниц** и выберите сервис в **Настройка моделей курса → Загрузка веб-страниц**. Ключ также используется чатом с этим провайдером: его изменение или удаление влияет на чат. Закреплённые администратором карточки доступны только для чтения. Первичная настройка сохраняет встроенный сервис, пока другой не выбран явно. Учётные данные рабочего пространства могут использовать официальные базовые URL API; собственные адреса загрузки и прокси администратор должен объявить в `openmaic.yml`.
+
+До передачи URL размещённому сервису выполняются проверка разрешённых URL сеанса, строгая нормализация URL и проверка всех адресов локального DNS. Те же проверки применяются к возвращённому конечному URL до принятия содержимого. Размещённый сервис управляет собственным DNS и промежуточными перенаправлениями, поэтому локальные проверки не могут закрепить его сетевые подключения. Текст остаётся недоверенными данными: применяются обнаружение страниц проверки доступа, ограничения размера в байтах, отметка об усечении, прежнее сохранение веб-материалов и формат результата `{trusted, untrusted}`.

@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "組み込みリーダー"
     },
     "modelCount": "モデル",
     "modelSingular": "モデル",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1825,7 @@
       "capTts": "音声合成",
       "capVideo": "動画生成",
       "capWebSearch": "ウェブ検索",
+      "capWebFetch": "Webページ取得",
       "saved": "接続設定を保存しました",
       "stageInteractive": "インタラクティブ",
       "stageSlide": "スライド",
@@ -1947,7 +1949,8 @@
         "providers": "言語モデルサービスの認証情報・API アドレス・モデルカタログを設定します",
         "tts": "音声合成サービス・ボイス・モデルを設定します",
         "video": "動画生成サービスの認証情報とモデルカタログを設定します",
-        "webSearch": "ウェブ検索サービスと検索ソースを設定します"
+        "webSearch": "ウェブ検索サービスと検索ソースを設定します",
+        "webFetch": "Webページの抽出サービスを設定"
       },
       "nav": "モデルサービス",
       "notConfigured": "未設定",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "ドキュメント解析",
           "desc": "アップロードされたドキュメントを読み取ります。"
+        },
+        "webFetch": {
+          "name": "Webページ取得",
+          "desc": "エージェントがセッションで許可されたWebページを読み取るために使います。"
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "クエリ",
           "search": "検索",
+          "fetch": "取得",
           "image": "画像",
           "video": "動画"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "サーバーがインポートを確認しませんでした。"
       }
     },
-    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。"
+    "serverConfiguredAddOwn": "独自の認証情報を使うには、別のプロバイダーを追加してください。",
+    "webFetchSettings": "Webページ取得",
+    "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
+    "webFetchApiKey": "APIキー",
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

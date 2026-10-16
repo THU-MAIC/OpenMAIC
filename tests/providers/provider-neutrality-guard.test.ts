@@ -38,6 +38,7 @@ const REGISTRY_SOURCES: readonly RegistrySource[] = [
   { file: 'lib/media/image-providers.ts', declarations: ['IMAGE_PROVIDERS'] },
   { file: 'lib/media/video-providers.ts', declarations: ['VIDEO_PROVIDERS'] },
   { file: 'lib/web-search/constants.ts', declarations: ['WEB_SEARCH_PROVIDERS'] },
+  { file: 'lib/web-fetch/registry.ts', declarations: ['WEB_FETCH_PROVIDERS'] },
   { file: 'lib/pdf/constants.ts', declarations: ['PDF_PROVIDERS'] },
   {
     file: 'lib/document/extractors/manifest.ts',
@@ -80,6 +81,7 @@ const PROVIDER_NEUTRAL_FILES = [
   'lib/server/generation/steps/research.ts',
   'lib/server/generation/steps/material-analysis.ts',
   'lib/audio/voice-registration-client.ts',
+  'lib/server/agent-runtime/fetch-url.ts',
   'lib/web-search/index.ts',
   'lib/server/web-search-config.ts',
   // Registry-based document dispatch
@@ -177,7 +179,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['anthropic', 2],
       ['google', 4],
       ['deepseek', 2],
-      ['kimi', 2],
+      ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
       ['siliconflow', 2],
@@ -273,6 +275,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/web-search/index.ts',
     'Temporary: web-search execution still uses a central provider switch.',
     [
+      ['kimi', 4],
       ['baidu', 9],
       ['bocha', 4],
       ['brave', 4],
@@ -288,6 +291,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/web-search-config.ts',
     'Temporary: web-search URL and option validation are still provider-specific.',
     [
+      ['kimi', 1],
       ['baidu', 8],
       ['tavily', 3],
       ['bocha', 7],
@@ -391,6 +395,8 @@ function deriveVendorVocabulary(readSource: (file: string) => string): string[] 
   const terms = new Set<string>();
 
   for (const providerId of providerIds) {
+    // The keyless builtin reader is an implementation category, not a vendor.
+    if (providerId === 'builtin') continue;
     const distinctiveParts = providerId
       .split(/[^a-z0-9]+/u)
       .filter((part) => part.length >= 3 && !GENERIC_ID_PARTS.has(part));

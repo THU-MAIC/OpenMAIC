@@ -127,6 +127,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
 | `video` | video | — | توليد الفيديو |
+| `webFetch` | webFetch | — | استخراج صفحات الويب (الافتراضي: `builtin`) |
 | `webSearch` | webSearch | — | البحث على الويب |
 | `document` | document | — | خدمة تحليل المستندات (MinerU وMinerU Cloud وAliDocMind). لا يحتاج استخراج نص PDF المدمج إلى خدمة |
 
@@ -171,7 +172,7 @@ slots:
 
 ### النماذج الاحتياطية
 
-تنطبق النماذج الاحتياطية على خانات النماذج اللغوية فقط: `llm` وكل الخانات تحته. يُرفض `fallback` في خانة `tts` أو `asr` أو `image` أو `video` أو `webSearch` أو `document`، عند بدء التشغيل في `openmaic.yml` وعند الحفظ في إعدادات النماذج.
+تنطبق النماذج الاحتياطية على خانات النماذج اللغوية فقط: `llm` وكل الخانات تحته. يُرفض `fallback` في خانة `tts` أو `asr` أو `image` أو `video` أو `webSearch` أو `webFetch` أو `document`، عند بدء التشغيل في `openmaic.yml` وعند الحفظ في إعدادات النماذج.
 
 يُجرَّب `fallback` الخاص بالخانة مرة واحدة عندما يفشل استدعاء النموذج الأساسي، بعد محاولاته الخاصة، بفشل قابل لإعادة المحاولة: خطأ عابر من SDK، أو انتهاء المهلة، أو خطأ شبكة، أو تجاوز حد المعدل (429)، أو نقص السعة (503)، أو مخرجات فارغة. أما إذا رفض المزود الطلب صراحةً لنفاد الحصة (برمز متوافق مع OpenAI مثل `insufficient_quota`، أيًّا كانت حالة HTTP)، فلا يُعاد الاستدعاء على النموذج الأساسي، بل ينتقل فورًا إلى النموذج الاحتياطي. رفض المحتوى لأسباب السلامة وأخطاء 4xx الأخرى لا تؤدي إلى الرجوع الاحتياطي. ينطبق الرجوع الاحتياطي على الاستدعاءات العادية والمتدفقة معًا، ويستخدم معاملات `thinking` الخاصة بالخانة.
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # هذه الخانات وكل الخانات تحتها
 
 - يجب أن تكون كل خانة يذكرها `lock` مكتوبة تحت `slots` (و`null` يُحتسب: `video: null` مع `lock: [video]` يبقي الفيديو موقوفًا للجميع). الخانة المجهولة، أو الخانة المقفلة التي لا يكتبها `slots`، توقف الخادم عند بدء التشغيل مع ذكر موضعها (`lock.1: ...`).
 - الخانة المقفلة تثبّت أبناءها أيضًا: مع `lock: [llm]` لا يستطيع أي مستخدم ضبط `course.outline` أو أي خانة أخرى لنموذج اللغة، وتُحل كلها من `openmaic.yml` وحده.
-- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع.
+- `lock: all` يثبّت كل الخانات، مكتوبة أو لا؛ ويصبح جذر القدرة الذي لا يكتبه `slots` غير مُهيأ للجميع. لكن `webFetch` غير المحدد يستخدم `builtin`؛ ولتعطيله اضبط `webFetch: null`.
 - تجتمع `null` والقيمة الافتراضية والقفل كما هو متوقع: `video: null` وحدها موقوفة حتى يشغّلها مستخدم؛ ومع `lock: [video]` تبقى موقوفة.
 
 تأخذ الإعدادات أحد ثلاثة أشكال، بحسب الإعداد:
@@ -406,7 +407,7 @@ slots:
     api: openai-completions
 ```
 
-بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل أي قدرة على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانة غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
+بمجرد وجود `openmaic.yml` لا تضبط متغيرات المزودين وحدها أي شيء: مزود تحويل النص إلى كلام أو الصور أو المستندات أو البحث على الويب الذي لم يكن له سوى متغيراته (`TTS_MINIMAX_API_KEY` و`IMAGE_SEEDREAM_API_KEY` و`PDF_MINERU_BASE_URL` و`TAVILY_API_KEY` …) لم يعد يُستخدم، ولا تحصل القدرات الأخرى، باستثناء `webFetch`، على مزود افتراضي. صرّح بكل مزود تستخدمه تحت `providers` وعيّن `tts` و`image` و`document` و`webSearch` (و`asr` و`video`) في `slots`، كما في مثال متغيرات البيئة أعلاه؛ وتبقى الخانات الأخرى غير المعيّنة غير مُعدّة ما لم تعيّنها مساحة عمل في إعدادات النماذج.
 
 ثم احذف `MODEL_ROUTES` و`DEFAULT_MODEL` و`MODEL_FALLBACK`.
 
@@ -456,7 +457,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-تعتمد محادثة Pi على دعم النموذج لاستدعاء الأدوات/الدوال. إذا كان النموذج أو الموفر المحدد لا يدعم استدعاء الأدوات، فاضبط `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (أو `0`) وأعد البناء لاستخدام مسار المحادثة القديم.
+تعتمد محادثة Pi على دعم النموذج لاستدعاء الأدوات/الدوال. يُرفض النموذج الذي يذكر الكتالوج المدمج أنه لا يدعم استدعاء الأدوات قبل الاستدلال، مع `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`)، ويشير **إعداد نماذج المقرر** إلى هذا الشرط عند خانة الصف. إذا كان النموذج أو الموفر المحدد لا يدعم استدعاء الأدوات، فاضبط `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (أو `0`) وأعد البناء لاستخدام مسار المحادثة القديم.
 
 في Docker Compose، يُحمَّل ملف `.env.local` عبر `env_file` وقت التشغيل، ولا يُستخدم لاستبدال متغيرات وسائط البناء. أعد البناء مع تحديد القيمة صراحةً كما في الأمر التالي؛ فتغيير بيئة التشغيل وحدها لا يغيّر مسار المحادثة الذي اختير عند بناء العميل والخادم.
 
@@ -619,6 +620,28 @@ slots:
 
 `IMAGE_OPENAI_`، `IMAGE_SEEDREAM_`، `IMAGE_QWEN_IMAGE_`، `IMAGE_NANO_BANANA_`، `IMAGE_MINIMAX_`، `IMAGE_GROK_`، `IMAGE_GLM_` و `IMAGE_LEMONADE_`.
 
+يولّد GLM Image (Zhipu CogView) الصور بنماذج CogView (`cogview-3-flash` و`cogview-4`):
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # اختياري:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+أو اضبطه عبر متغيرات البيئة:
+
+```bash
+IMAGE_GLM_API_KEY=
+# اختياري:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
 Lemonade خدمة محلية ولا تحتاج إلى مفتاح API:
 
 ```bash
@@ -746,13 +769,13 @@ web-search:
 
 تتجاوز متغيرات البيئة حقول YAML المطابقة حقلًا بحقل. يجب أن تستخدم المفاتيح معرفات الموفرين المسجلين في الكود مثل `openai`، `doubao-tts`، `openai-whisper`، `mineru`، `alidocmind`، `seedream`، `seedance`، `exa`، `tavily` أو `searxng`. لا يمكن تسجيل معرفات غير معروفة هنا كموفري LLM مخصصين.
 
-## Model authorization for server-managed providers
+## تفويض النماذج لدى المزودين المدارين من الخادم
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+للمزودين الذين يرسلون النموذج المختار إلى الخدمة الأصلية باستخدام بيانات اعتماد النشر، اضبط قائمة `models` صريحة في `openmaic.yml` (`providers.<id>.models`)، أو متغير البيئة `*_MODELS` المقابل / قائمة `models` في قسم `server-providers.yml`. ينطبق ذلك على المحادثة والصور والفيديو وتحويل النص إلى كلام والتعرف على الكلام والبحث على الويب المعتمد على النماذج. تُطابَق معرّفات النماذج مطابقة تامة، مع مراعاة حالة الأحرف، بعد إزالة المسافات المحيطة عند تحميل الإعدادات. تُفوَّض الأسماء المستعارة الحتمية للمحوّلات بمعرّف النموذج المُعلَن. تُعيد طلبات النماذج غير المدرجة HTTP 403 مع `PROVIDER_DISABLED` والرسالة «This model is not authorized for server-managed credentials».
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**تغيير كاسر:** من دون قائمة صريحة، لا يمكن استخدام إلا النماذج الافتراضية والاحتياطية للنشر، والنماذج الأساسية والاحتياطية التي تشير إليها خانات تلك القدرة. في الإعدادات القديمة، يفوّض `DEFAULT_MODEL` و`MODEL_FALLBACK` نماذج المحادثة. خانة الوسائط التي تذكر المزود فقط تفوّض النموذج الافتراضي الوحيد للمحوّل، ولا تفوّض كتالوج الإعداد المسبق كله. لا يمكن لتعيينات مساحة العمل توسيع المجموعة المفوَّضة في النشر. ويجب أن يفوّض تسجيل الأصوات وتوليفها أيضًا أي نموذج يُختار لتوافق الصوت.
 
-To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+للانتقال، اذكر كل نموذج ينبغي أن يتمكن المستخدمون من اختياره، وأعد تشغيل الخادم، وحدّث اختيارات مساحات العمل التي لم تعد مفوَّضة. تذكر سجلات التشغيل الإعداد الواجب إضافته لكل مزود لديه بيانات اعتماد بلا قائمة. لا تتأثر بيانات اعتماد المستخدمين الخاصة بمزوديهم، ولا المزودون المحليون الذين لا يحتاجون إلى مفتاح مثل Ollama وLemonade. المزود المضبوط دون بيانات اعتماد غير مقيَّد، فلا توجّهه إلى بوابة تضيف بيانات اعتماد خاصة بها نحو الخدمة الأصلية (مثل وكيل داخلي متوافق مع OpenAI): أعطِ تلك البوابة مفتاحًا واضبطها مزودًا ببيانات اعتماد وقائمة `models`، أو قيّد النماذج في البوابة نفسها. لا تحتاج محللات المستندات وخدمات البحث التي لا تختار نموذجًا (مثل Tavily) إلى قائمة نماذج.
 
 ```yaml
 providers:
@@ -764,4 +787,52 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
+
+### محادثة Kimi والبحث على الويب
+
+أعلن حساب Kimi واحدًا وعيّن له الخانتين:
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # اختياري: https://api.moonshot.ai/v1 للمنصة المفتوحة الدولية.
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+لمفتاح Coding Plan، استخدم `preset: kimi-coding-plan` و`llm: kimi:kimi-for-coding`؛ عنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يجب إقران مفاتيح المنصة المفتوحة وCoding Plan بالعناوين الأساسية المطابقة لها. في الإعدادات القديمة، لا يوفّر `KIMI_API_KEY` و`KIMI_BASE_URL` الاختياري بيانات اعتماد البحث إلا بعد التفعيل الصريح: اضبط `WEB_SEARCH_KIMI_ENABLED=true` أو أضف `web-search.kimi` في `server-providers.yml` (مثلًا مع `enabled: true`). لا تفعّل بيانات اعتماد المحادثة وحدها البحث ولا تغيّر مزود البحث الافتراضي. يعطّل `WEB_SEARCH_KIMI_ENABLED=false` بحث Kimi حتى عند تعيين خانة له. `WEB_SEARCH_KIMI_ENABLED` هو المفتاح الوحيد لبحث Kimi. ينطبق `KIMI_MODELS` على المحادثة فقط. عند تعارض حسابَي المحادثة والبحث في الإعدادات القديمة، يظهر تحذير ويُتخطّى إدخال البحث؛ أعلن معرّفات مزودين منفصلة في `openmaic.yml` عند الحاجة إلى حسابات منفصلة. عند وجود `openmaic.yml`، أعلن المزود وعيّن الخانات صراحةً. تتيح الإعدادات ومعالج التشغيل الأول استخدام القدرتين من الحساب نفسه.
+
+
+يعتمد اختيار نقطة النهاية على المسار الأساسي: بعد إزالة الشرطات المائلة الختامية، يستخدم المسار المنتهي بـ `/coding/v1` نقطة `/search`، وتستخدم المسارات الأخرى `/tools/search_pro`. يجب أن تحافظ الوكلاء المخصصة المضبوطة في النشر على بنية المسار هذه. يوصي المعالج بالبحث لعناوين الحسابات الرسمية فقط، لذلك لا يحصل وكيل المحادثة المخصص لمساحة العمل على تعيين بحث تلقائيًا.
+
+عند وجود `openmaic.yml`، أعلن `providers.<id>: { preset: kimi }` وعيّن `slots.webSearch: <id>`؛ لا يستطيع المتغير القديم `WEB_SEARCH_KIMI_ENABLED` تعيين هذه الخانة.
+
+## خانة مزوّد جلب صفحات الويب
+
+تحدد `webFetch` خدمة القراءة التي تستخدمها أداة الوكيل `fetch_url`. الخدمة الافتراضية هي `builtin` في الإعدادات القديمة والفارغة وملفات YAML، حتى عند عدم تحديد هذه الخانة تحت `lock: all`. يؤدي ضبط `webFetch: null` صراحةً إلى تعطيل الجلب وإزالة الأداة وتعليماتها من عمليات التشغيل اللاحقة. يستخدم كل طلب مزوّدًا واحدًا دون مزوّد احتياطي أو تصعيد إلى خدمة أخرى. تؤدي الإشارة غير الصالحة إلى مزوّد أو عنوان خدمة في مساحة العمل ترفضه السياسة إلى فشل تشغيل الوكيل بالكامل أثناء تحديد الإمكانات، قبل بدء الوكيل، كما في `webSearch`. هذا خطأ في الإعدادات وليس نتيجة فشل من `fetch_url`، ولا يتم الانتقال إلى القارئ المدمج.
+
+| المزوّد | بيانات الاعتماد | الاستخراج |
+| --- | --- | --- |
+| `builtin` | غير مطلوبة | قارئ Readability/Turndown محلي؛ تستخدم ملفات PDF خانة `document` |
+| `kimi` | مفتاح المزوّد Kimi الحالي وعنوانه الأساسي | خدمة مستضافة لاستخراج Markdown، تشمل روابط PDF |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+يوفر كلا الإعدادين المسبقين `kimi` و`kimi-coding-plan` قدرة `webFetch`. لبيانات اعتماد Coding Plan، استخدم `preset: kimi-coding-plan`؛ وعنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يُحافظ على أي عنوان أساسي مضبوط صراحةً. تستخدم عناوين Moonshot Open Platform (`https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1`) المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يرسل كلاهما طلب `POST` يحتوي على `{ "url": ... }` مع مصادقة Bearer. يقبل المهايئ `markdown` أو `content`. اختبر أحد المشرفين `POST https://api.kimi.com/coding/v1/fetch` باستخدام مفتاح فعلي وأكد الاستجابة `{ markdown, title, url }`؛ لا يزال توافر العناوين الدولية غير متحقق منه. تراعي الطلبات إعداد `proxy` الخاص بالمزوّد ومتغيرات بيئة الوكيل القياسية.
+
+استخدم بيانات الاعتماد الحالية في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**، واختر القارئ في **إعداد نماذج المقرر ← جلب صفحات الويب**. يُستخدم المفتاح نفسه للدردشة مع هذا المزوّد؛ تغييره أو حذفه يؤثر في الدردشة أيضًا. تكون البطاقة للقراءة فقط عندما يثبّتها المسؤول. يحتفظ الإعداد الأولي بالقارئ المدمج حتى اختيار قارئ آخر صراحةً. يمكن لبيانات اعتماد مساحة العمل استخدام عناوين API الأساسية الرسمية؛ أما عناوين الجلب المخصصة والوكلاء فيجب أن يعلنها المسؤول في `openmaic.yml`.
+
+قبل إرسال رابط إلى خدمة مستضافة، تُطبق بوابة روابط الجلسة والتطبيع الصارم للرابط وفحص جميع عناوين DNS المحلية. تُطبق الفحوص نفسها على الرابط النهائي الذي تعيده الخدمة قبل قبول المحتوى. تتحكم الخدمات المستضافة في DNS والتحويلات الوسيطة الخاصة بها، لذلك لا تستطيع الفحوص المحلية تثبيت اتصالاتها الشبكية. يظل النص بيانات غير موثوقة، ويخضع لاكتشاف صفحات التحقق وحدود الحجم بالبايت وعلامة الاقتطاع، مع حفظ مواد الويب وصيغة النتيجة `{trusted, untrusted}` كما في السابق.

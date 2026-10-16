@@ -12,6 +12,7 @@
  * start the server (see `validateModelConfiguration`, called from
  * instrumentation).
  */
+import { DEFAULT_WEB_FETCH_PROVIDER } from '@/lib/web-fetch/registry';
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
@@ -308,6 +309,12 @@ function crossCheck(
     }
     // Own keys only: `constructor` and friends are not declared providers.
     const provider = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
+    if (
+      !provider &&
+      getSlot(slot).capability === 'webFetch' &&
+      providerId === DEFAULT_WEB_FETCH_PROVIDER.id
+    )
+      return;
     if (!provider) {
       issues.push(`${at}: provider ${shown(providerId, at)} is not declared under providers`);
       return;
