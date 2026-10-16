@@ -221,16 +221,66 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
   });
 });
 
-it('shows Kimi fetch in the capability list and applies it after confirming the builtin conflict', async () => {
+it('shows Kimi fetch in the capability list and connects without a builtin conflict', async () => {
   const panel = mountPanel(null);
   await connectPlan('Kimi');
   expect(document.body.textContent).toContain('settings.tokenPlan.capWebFetch');
   expect(document.body.textContent).toContain('settings.webFetchSettings');
   act(() => byText('settings.webFetchSettings').click());
   expect(document.body.querySelector('ul')?.textContent).toContain('kimi');
-  expect(dialog()?.textContent).toContain('Built-in reader');
-  expect(panel.changes).toEqual([]);
-  act(() => byText('settings.tokenPlan.applyRecommended', '[role="alertdialog"] button').click());
-  await flush();
+  expect(dialog()).toBeNull();
+  expect(panel.changes).toHaveLength(2);
   expect(panel.config()?.slots?.webFetch).toBe('kimi-coding-plan');
+});
+
+it.each(['keep', 'overwrite'] as const)(
+  'confirms a personal Kimi fetch choice and applies %s',
+  async (mode) => {
+    let initial = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'personal',
+      preset: 'kimi',
+      apiKey: 'sk-personal-key',
+    });
+    initial = await applyModelSettingsChange(initial, {
+      kind: 'slots',
+      set: { webFetch: 'personal' },
+    });
+    const panel = mountPanel(initial);
+    await connectPlan('Kimi');
+    expect(dialog()?.textContent).toContain('personal');
+    expect(panel.changes).toEqual([]);
+    act(() =>
+      byText(
+        mode === 'keep' ? 'settings.tokenPlan.applyKeep' : 'settings.tokenPlan.applyRecommended',
+        '[role="alertdialog"] button',
+      ).click(),
+    );
+    await flush();
+    expect(panel.config()?.slots?.webFetch).toBe(mode === 'keep' ? 'personal' : 'kimi-coding-plan');
+  },
+);
+
+it('confirms an explicit null fetch choice and preserves it when keeping the setup', async () => {
+  const initial = await applyModelSettingsChange(null, { kind: 'slots', set: { webFetch: null } });
+  const panel = mountPanel(initial);
+  await connectPlan('Kimi');
+  expect(dialog()).not.toBeNull();
+  expect(panel.changes).toEqual([]);
+  act(() => byText('settings.tokenPlan.applyKeep', '[role="alertdialog"] button').click());
+  await flush();
+  expect(panel.config()?.slots?.webFetch).toBeNull();
+});
+
+it('takes over the builtin reader when keeping an explicit chat choice', async () => {
+  const panel = mountPanel(await workspaceWithOwnPicks());
+  await connectPlan('Kimi');
+  expect(dialog()!.querySelectorAll('li')).toHaveLength(1);
+  expect(dialog()?.textContent).not.toContain('Built-in reader');
+  act(() => byText('settings.tokenPlan.applyKeep', '[role="alertdialog"] button').click());
+  await flush();
+  expect(panel.config()?.slots).toMatchObject({
+    llm: 'ds:deepseek-v4-pro',
+    webFetch: 'kimi-coding-plan',
+  });
 });

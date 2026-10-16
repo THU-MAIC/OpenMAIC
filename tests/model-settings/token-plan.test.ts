@@ -359,33 +359,91 @@ describe('Kimi wizard endpoints', () => {
 });
 
 describe('token plan web fetch', () => {
-  it('connects Kimi with the Coding Plan base and disconnects back to builtin', async () => {
+  it.each(['keep', 'overwrite'] as const)(
+    'connects without a builtin conflict in %s mode and reconnects after disconnect',
+    async (mode) => {
+      const view = viewOf(null);
+      const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
+      const server = serverApply(null);
+      expect(connectConflicts(view, preset)).toEqual([]);
+      const result = await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', mode);
+      expect(result).toMatchObject({ status: 'done', assigned: ['llm', 'webFetch', 'webSearch'] });
+      expect(server.config()?.slots).toMatchObject({ webFetch: 'kimi-coding-plan' });
+      const connected = viewOf(server.config());
+      expect(connected.slots.find((slot) => slot.slot === 'webFetch')?.effective).toMatchObject({
+        status: 'assigned',
+        providerId: 'kimi-coding-plan',
+        registryId: 'kimi',
+      });
+      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
+      expect(
+        resolveSlot('webFetch', [{ source: 'workspace', config: server.config()! }]),
+      ).toMatchObject({
+        status: 'assigned',
+        registryId: 'kimi',
+        baseUrl: 'https://api.kimi.com/coding/v1',
+      });
+      await server.apply({ kind: 'remove-provider', id: 'kimi-coding-plan' });
+      expect(server.config()?.slots ?? {}).not.toHaveProperty('webFetch');
+      expect(
+        viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
+      ).toMatchObject({ status: 'assigned', providerId: 'builtin', registryId: 'builtin' });
+      const disconnected = viewOf(server.config());
+      expect(connectConflicts(disconnected, preset)).toEqual([]);
+      await connectTokenPlan(server.apply, disconnected, preset, 'sk-new-plan-key', 'keep');
+      expect(server.config()?.slots?.webFetch).toBe('kimi-coding-plan');
+    },
+  );
+
+  it.each(['keep', 'overwrite'] as const)(
+    'confirms an explicit personal reader and applies %s mode',
+    async (mode) => {
+      const initial = await configure(addPlan('kimi'), {
+        kind: 'slots',
+        set: { webFetch: 'kimi' },
+      });
+      const view = viewOf(initial);
+      const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
+      expect(connectConflicts(view, preset)).toMatchObject([
+        { slot: { slot: 'webFetch' }, current: 'kimi', from: 'workspace' },
+      ]);
+      const server = serverApply(initial);
+      await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', mode);
+      expect(server.config()?.slots?.webFetch).toBe(mode === 'keep' ? 'kimi' : 'kimi-coding-plan');
+      await server.apply({ kind: 'remove-provider', id: 'kimi-coding-plan' });
+      expect(
+        viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
+      ).toMatchObject({ status: 'assigned', providerId: mode === 'keep' ? 'kimi' : 'builtin' });
+      expect(server.config()?.providers?.kimi).toEqual(initial.providers?.kimi);
+    },
+  );
+
+  it('treats an explicit workspace builtin assignment as a choice', async () => {
+    const config = await configure(addPlan('kimi-coding-plan'), {
+      kind: 'slots',
+      set: { webFetch: 'builtin' },
+    });
+    const view = viewOf(config);
+    const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
+    expect(connectConflicts(view, preset)).toMatchObject([
+      { slot: { slot: 'webFetch' }, current: 'builtin', from: 'workspace' },
+    ]);
+    const recommendation = recommendationIn(view, 'kimi-coding-plan');
+    expect(tokenPlanAssignments(view, recommendation, 'keep')).not.toHaveProperty('webFetch');
+    expect(tokenPlanAssignments(view, recommendation, 'overwrite')).toHaveProperty(
+      'webFetch',
+      'kimi-coding-plan',
+    );
+  });
+
+  it('fills the implicit builtin default even when a deployment provider uses the builtin id', async () => {
+    deployment({ providers: { builtin: { preset: 'kimi', apiKey: 'sk-operator' } } });
     const view = viewOf(null);
     const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
+    expect(connectConflicts(view, preset)).toEqual([]);
     const server = serverApply(null);
-    expect(connectConflicts(view, preset).map(({ slot }) => slot.slot)).toEqual(['webFetch']);
-    const result = await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', 'overwrite');
-    expect(result).toMatchObject({ status: 'done', assigned: ['llm', 'webFetch', 'webSearch'] });
-    expect(server.config()?.slots).toMatchObject({ webFetch: 'kimi-coding-plan' });
-    const connected = viewOf(server.config());
-    expect(connected.slots.find((slot) => slot.slot === 'webFetch')?.effective).toMatchObject({
-      status: 'assigned',
-      providerId: 'kimi-coding-plan',
-      registryId: 'kimi',
-    });
-    const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
-    expect(
-      resolveSlot('webFetch', [{ source: 'workspace', config: server.config()! }]),
-    ).toMatchObject({
-      status: 'assigned',
-      registryId: 'kimi',
-      baseUrl: 'https://api.kimi.com/coding/v1',
-    });
-    await server.apply({ kind: 'remove-provider', id: 'kimi-coding-plan' });
-    expect(server.config()?.slots ?? {}).not.toHaveProperty('webFetch');
-    expect(
-      viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
-    ).toMatchObject({ status: 'assigned', providerId: 'builtin', registryId: 'builtin' });
+    await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', 'keep');
+    expect(server.config()?.slots?.webFetch).toBe('kimi-coding-plan');
   });
 
   it('leaves fetch with Kimi when a higher-priority plan does not declare it', async () => {
@@ -455,18 +513,32 @@ describe('token plan web fetch', () => {
     },
   );
 
-  it('restores the deployment reader when the plan is disconnected', async () => {
-    deployment({
-      providers: { reader: { preset: 'kimi', apiKey: 'sk-operator' } },
-      slots: { webFetch: 'reader' },
-    });
-    const view = viewOf(null);
-    const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
-    const server = serverApply(null);
-    await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', 'overwrite');
-    await server.apply({ kind: 'remove-provider', id: 'kimi-coding-plan' });
-    expect(
-      viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
-    ).toMatchObject({ status: 'assigned', providerId: 'reader', registryId: 'kimi' });
-  });
+  it.each(['reader', 'builtin'])(
+    'confirms and restores the deployment reader %s after disconnect',
+    async (readerId) => {
+      deployment({
+        providers: { [readerId]: { preset: 'kimi', apiKey: 'sk-operator' } },
+        slots: { webFetch: readerId },
+      });
+      const view = viewOf(null);
+      const preset = view.presets.find((entry) => entry.id === 'kimi-coding-plan')!;
+      expect(connectConflicts(view, preset)).toMatchObject([
+        { slot: { slot: 'webFetch' }, current: readerId, from: 'default' },
+      ]);
+      const server = serverApply(null);
+      await connectTokenPlan(server.apply, view, preset, 'sk-plan-key', 'keep');
+      expect(server.config()?.slots).not.toHaveProperty('webFetch');
+      await connectTokenPlan(
+        server.apply,
+        viewOf(server.config()),
+        preset,
+        'sk-plan-key',
+        'overwrite',
+      );
+      await server.apply({ kind: 'remove-provider', id: 'kimi-coding-plan' });
+      expect(
+        viewOf(server.config()).slots.find((slot) => slot.slot === 'webFetch')?.effective,
+      ).toMatchObject({ status: 'assigned', providerId: readerId, registryId: 'kimi' });
+    },
+  );
 });

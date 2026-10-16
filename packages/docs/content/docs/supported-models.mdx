@@ -20,7 +20,9 @@ A preset is a built-in provider template: which vendor, which endpoint, and whic
 | `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
 | `kimi-coding-plan` | Kimi Coding Plan | Chat, web search, web fetch |
 
-Connecting Kimi Coding Plan in **Settings → Token Plan** recommends chat, web search and web fetch together, using the Coding Plan key and `https://api.kimi.com/coding/v1`. Applying the plan setup replaces the builtin reader with Kimi; disconnecting restores the server default (the builtin reader when no reader is configured). Locked slots stay unchanged, and choosing to keep the current setup preserves explicit assignments, including `null`. Plans that do not declare web fetch leave it untouched.
+Connecting Kimi Coding Plan in **Settings → Token Plan** recommends chat, web search and web fetch together, using the Coding Plan key and `https://api.kimi.com/coding/v1`. If web fetch only uses the implicit builtin default, connecting assigns Kimi directly without a conflict, even when keeping the current setup. Explicit workspace choices (including `null`) and deployment-configured non-builtin readers or `null` use the existing conflict choices. Disconnecting removes the plan's assignments and restores the server default (the builtin reader when no reader is configured); it does not restore a prior explicit workspace choice. Locked slots stay unchanged. Plans that do not declare web fetch leave it untouched.
+
+The first-run wizard leaves web fetch on the builtin reader; only connecting the plan through the Token Plan settings page applies its fetch recommendation.
 
 `openai-compatible` connects any OpenAI-compatible chat server: it needs a `baseUrl`, and its `models` list is what the model settings offer.
 
