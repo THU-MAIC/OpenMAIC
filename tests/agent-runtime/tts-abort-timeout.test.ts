@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
@@ -25,7 +26,8 @@ vi.mock('@/lib/server/provider-config', async (importOriginal) => ({
   resolveTTSModel: () => '',
 }));
 // The tts slot resolves to a managed OpenAI TTS provider at a gateway.
-vi.mock('@/lib/server/model-config/media', () => ({
+vi.mock('@/lib/server/model-config/media', async (original) => ({
+  ...(await original<typeof import('@/lib/server/model-config/media')>()),
   serverMediaConnection: async () => mocks.providers(),
 }));
 
@@ -79,6 +81,18 @@ function courseDoc(): CourseDocument {
 
 describe('TTS abort propagation and per-request timeout', () => {
   beforeEach(() => {
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            'openai-tts': { preset: 'openai-tts', apiKey: 'sk-test', models: ['gpt-4o-mini-tts'] },
+          },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
     mocks.providers.mockReset();
     mocks.persist.mockReset();
     mocks.fetch.mockReset();

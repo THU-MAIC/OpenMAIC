@@ -18,7 +18,7 @@ A preset is a built-in provider template: which vendor, which endpoint, and whic
 | `minimax` | MiniMax | Chat, image, video, TTS, web search |
 | `tokendance` | TokenDance | Chat, image, video, TTS, web search |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Chat, image, video, TTS, web search |
-| `kimi-coding-plan` | Kimi coding plan | Chat |
+| `kimi-coding-plan` | Kimi Coding Plan | Chat, web search |
 
 `openai-compatible` connects any OpenAI-compatible chat server: it needs a `baseUrl`, and its `models` list is what the model settings offer.
 
@@ -31,7 +31,7 @@ All preset IDs:
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
+| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -136,5 +136,18 @@ Most web search providers have no model selector, so slots usually name them by 
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### Kimi web search
+
+The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both serve chat and web search with one API key and base URL. Assign `webSearch` to the same provider used for chat; no second key or search model is needed.
+
+Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.
+
+Chat credentials alone do not enable search in legacy configuration. Opt in with `WEB_SEARCH_KIMI_ENABLED=true` or an explicit `web-search.kimi` entry in `server-providers.yml`. In `openmaic.yml`, explicitly assign the `webSearch` slot. The wizard recommends search only for official account bases.
+
+Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; every other base uses `/tools/search_pro`. Custom proxies configured in `openmaic.yml` must preserve that path layout.
+
+When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.

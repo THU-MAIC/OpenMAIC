@@ -11,7 +11,7 @@ OpenMAIC 有三个配置来源，各自只负责一件事：
 | Web 端的模型设置 | 工作区的用户 | 用户自己的服务商，以及 `openmaic.yml` 未锁定槽位的分配，保存在数据库中 | 立即生效 |
 | 环境变量（`.env.local`、容器 Secret） | 运维人员 | `openmaic.yml` 引用的密钥，以及其他所有服务端选项 | 启动时 |
 
-除 `DATABASE_URL` 外，所有环境变量都是可选的（见[部署](./deployment.mdx)）。全部环境变量见 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)，可以从 [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) 开始编写模型配置，预设和模型 ID 见[支持的模型](./supported-models.mdx)。
+`DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
 早期版本只能通过服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 配置模型。除 `MODEL_ROUTES` 外，这些方式目前仍然可用，但已弃用，见[从旧配置迁移](#从旧配置迁移)。
 
@@ -97,7 +97,7 @@ allowUserKeys: false               # 用户只能在这些服务商中选择，�
 | `preset` | 是 | 使用哪个内置预设，见[支持的模型 → 预设](./supported-models.mdx#预设)。 |
 | `apiKey` | 通常需要 | API key。不需要 key 的服务（本地服务、Brave、SearXNG、unpdf）可以省略。 |
 | `baseUrl` | 部分预设需要 | 替代预设自带端点的地址。`openai-compatible`、`azure`、`searxng` 和 `mineru` 必填。 |
-| `models` | 否 | 该服务商提供的对话模型 ID，即模型设置里列出的选项。对 `openai-compatible` 来说这是模型设置唯一的列表来源。它不限制 `slots` 里能写哪些模型。 |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | 否 | 该服务商请求使用的 HTTP 代理地址。 |
 | `credentials` | 部分预设需要 | 不使用单个 key 的服务所需的密钥对。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
 | `options` | 否 | 非机密的、服务商特有的设置，例如 `voxcpm-tts` 的 `backend`。名称由字母、数字、`_` 和 `-` 组成；值为字符串、数字或布尔值（不能嵌套映射或列表），可以使用 `${VAR}`。模型设置会显示 options，因此绝不要在其中放 key。仅限部署：模型设置无法设置它们。 |
@@ -456,7 +456,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 对话运行时依赖模型的工具／函数调用能力。如果所选模型或 provider 不支持工具调用，请设置 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）并重新构建，以使用旧版对话链路。
+Pi 对话运行时依赖模型的工具／函数调用能力。内置模型目录标明不支持工具调用的模型会在推理前被拒绝，返回 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**课程模型配置**也会在课堂互动槽位上注明这一要求。如果所选模型或 provider 不支持工具调用，请设置 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）并重新构建，以使用旧版对话链路。
 
 使用 Docker Compose 时，`.env.local` 由 `env_file` 在运行时加载，不参与构建参数插值。请按下面的命令显式传入构建时配置并重新构建；只修改运行时环境不会改变已构建的客户端和服务端对话路径。
 
@@ -533,6 +533,8 @@ AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
 如需连接其他 OpenAI 兼容的 LLM 服务，请在 `openmaic.yml` 中声明一个带 `baseUrl` 和 `models` 的 `openai-compatible` 服务商，或在 **设置 → 模型服务 → 语言模型** 中用 **添加服务商** 添加。
+
+Gemini 课堂互动请使用原生 `google` 预设：在**设置 → 模型服务**中添加 Google，并在**课程模型配置**中为**课堂互动**选择该模型。Pi 会提前拒绝 Google 官方 OpenAI 兼容端点（`https://generativelanguage.googleapis.com/v1beta/openai`）并提示迁移；兼容路线的工具调用支持由 [#1556](https://github.com/THU-MAIC/OpenMAIC/issues/1556) 跟踪。此检查仅识别该官方端点，无法识别任意第三方网关背后的上游。
 
 ### 本地模型（Ollama 和 Lemonade）
 
@@ -765,3 +767,46 @@ web-search:
 ```
 
 环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。
+
+## 服务端托管服务商的模型授权
+
+对于使用部署凭据把所选模型发往上游的服务商，请在 `openmaic.yml` 中设置显式的 `models` 列表（`providers.<id>.models`），或设置对应的 `*_MODELS` 环境变量 / `server-providers.yml` 中该部分的 `models` 列表。这适用于对话、图像、视频、语音合成、语音识别和基于模型的联网搜索。模型 ID 在加载配置时去掉首尾空白后精确匹配，区分大小写。确定性的适配器别名按声明的模型 ID 授权。请求未列出的模型会返回 HTTP 403，错误码 `PROVIDER_DISABLED`，消息为“This model is not authorized for server-managed credentials”。
+
+**破坏性变更：** 没有显式列表时，只能使用部署的默认/回退模型，以及该能力的槽位所引用的主模型/回退模型。在旧版配置下，`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 授权对话模型。只写服务商的媒体槽位只授权该适配器的默认模型，不授权该预设的整个模型目录。工作区的分配无法扩大部署的授权范围。音色注册和合成也必须授权为音色兼容性而选择的模型。
+
+迁移时，列出用户应能选择的每个模型，重启服务，并更新不再获授权的工作区选择。对于有凭据但没有列表的服务商，启动日志会指出需要添加的设置。用户自己的服务商凭据，以及 Ollama、Lemonade 这类无需 key 的本地服务商不受影响。未配置凭据的服务商不受限制，因此不要把它指向会自行添加上游凭据的网关（例如内部的 OpenAI 兼容代理）：请给该网关一个 key，把它配置为带 `models` 列表的有凭据服务商，或在网关本身限制模型。没有模型选择的文档解析器和搜索服务（如 Tavily）不需要模型列表。
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi 对话与联网搜索
+
+声明一个 Kimi 账号，并将两个槽位都分配给它：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 可选：国际版开放平台使用 https://api.moonshot.ai/v1。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在旧版配置中，只有显式启用后，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 才会为搜索提供凭据：设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中添加 `web-search.kimi`（例如设置 `enabled: true`）。仅有对话凭据不会启用搜索，也不会改变默认搜索服务商。即使槽位已分配给 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍会禁用 Kimi 搜索。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜索的唯一开关。 `KIMI_MODELS` 仅适用于对话。旧版对话和搜索账号冲突时会产生警告，并跳过搜索条目；如需使用不同账号，请在 `openmaic.yml` 中声明不同的服务商 ID。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。
+
+
+端点选择取决于基础路径：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。部署配置的自定义代理必须保留这一布局。向导只为官方账号地址推荐搜索，因此工作区自定义对话代理不会自动获得搜索分配。
+
+存在 `openmaic.yml` 时，请声明 `providers.<id>: { preset: kimi }` 并分配 `slots.webSearch: <id>`；旧版变量 `WEB_SEARCH_KIMI_ENABLED` 无法分配该槽位。

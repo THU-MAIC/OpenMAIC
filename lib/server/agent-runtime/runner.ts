@@ -5,6 +5,7 @@
  * claims, lease generations, event ordering, cancellation, and conversation
  * recovery. A client connection is never part of the execution lifetime.
  */
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
@@ -1889,7 +1890,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         if (!leaseLost) await store.releaseLease(id, WORKER_ID);
       } else {
         if (!terminalFrameEmitted) {
-          emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
+          emit(LIFECYCLE.sessionEnd, {
+            status: 'failed',
+            error: message,
+            ...(error instanceof ModelAuthorizationError
+              ? { errorCode: error.code, statusCode: error.httpStatus }
+              : {}),
+          });
         }
         await flushAll(false);
         const settled = await store.finishSession(id, WORKER_ID, {
@@ -1919,7 +1926,13 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (!leaseLost) await store.releaseLease(id, WORKER_ID).catch(() => {});
     } else {
       if (!terminalFrameEmitted) {
-        emit(LIFECYCLE.sessionEnd, { status: 'failed', error: message });
+        emit(LIFECYCLE.sessionEnd, {
+          status: 'failed',
+          error: message,
+          ...(error instanceof ModelAuthorizationError
+            ? { errorCode: error.code, statusCode: error.httpStatus }
+            : {}),
+        });
       }
       await flushAll(false).catch(() => {});
       const settled = await store

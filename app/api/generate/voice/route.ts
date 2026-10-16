@@ -13,6 +13,8 @@
  *
  * POST /api/generate/voice
  */
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
+import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import {
@@ -207,6 +209,8 @@ export async function POST(req: NextRequest) {
       return apiSuccess({ voiceId, deleted: true, vendorDeleted: true, localOnly: false });
     }
 
+    authorizeMediaModel(connection, 'tts', cfg.model);
+
     // Already registered → no-op (also avoids a redundant re-register when the
     // client offered a cached clip but the voice is still live on the backend).
     const lookup = childSignal(deadline.signal, EXISTS_LOOKUP_SLICE_MS);
@@ -272,6 +276,8 @@ export async function POST(req: NextRequest) {
       mimeType: clip.mimeType,
     });
   } catch (error) {
+    const authorization = modelAuthorizationResponse(error);
+    if (authorization) return authorization;
     log.error(
       `Voice registration failed [provider=${providerId ?? 'unknown'}, voiceId=${voiceId ?? 'unknown'}]:`,
       error,

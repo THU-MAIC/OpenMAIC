@@ -6,6 +6,7 @@
  * which keeps resolving the slot (with the request's deprecated provider
  * headers) and mapping failures to its responses.
  */
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import {
   generateVideo,
   normalizeVideoOptions,
@@ -91,6 +92,7 @@ export async function generateVideoStep(
     );
   }
 
+  authorizeMediaModel(connection, 'video', model);
   const { resume, onProviderTask } = input;
   const endpoint = videoTaskEndpoint(providerId, baseUrl);
   if (

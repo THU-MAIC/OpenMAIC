@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createLogger } from '@/lib/logger';
@@ -34,64 +35,88 @@ describe('outline step — standard branch prompt parity on a dropped image (N3)
     });
   });
 
-  test('drops an unresolvable image from the standard prompt text and the attachments', async () => {
-    vi.resetModules();
-    const dataUrlFor = (bytes: string) =>
-      `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`;
-    // The pre-resolution drops img_2 (its id does not resolve server-side);
-    // img_1 resolves to bytes.
-    resolveVisionImagesMock.mockImplementation(async (images: Array<{ id: string; src: string }>) =>
-      images
-        .filter((image) => image.src !== 'ast_gone')
-        .map((image) => ({ ...image, src: dataUrlFor(`outline-bytes-${image.id}`) })),
-    );
-    streamLLMMock.mockReturnValue({
-      textStream: (async function* () {
-        yield JSON.stringify({
-          languageDirective: 'Teach in English.',
-          outlines: [
-            {
-              id: 'scene_1',
-              type: 'slide',
-              title: 'Safety Checklist',
-              description: 'Inspect the device.',
-              keyPoints: ['Inspect', 'Calibrate'],
-              order: 1,
-            },
-          ],
-        });
-      })(),
-    });
+  test.each([
+    { failure: 'unresolvable', interactiveMode: false },
+    { failure: 'undecodable', interactiveMode: false },
+    { failure: 'unresolvable', interactiveMode: true },
+    { failure: 'undecodable', interactiveMode: true },
+  ])(
+    'drops a $failure image with interactiveMode=$interactiveMode from text and attachments',
+    async ({ failure, interactiveMode }) => {
+      vi.resetModules();
+      const png = await sharp({
+        create: { width: 32, height: 24, channels: 3, background: 'white' },
+      })
+        .png()
+        .toBuffer();
+      const dataUrlFor = (bytes: string) =>
+        `data:image/png;base64,${Buffer.concat([png, Buffer.from(bytes)]).toString('base64')}`;
+      // The pre-resolution drops img_2 (its id does not resolve server-side);
+      // img_1 resolves to bytes.
+      resolveVisionImagesMock.mockImplementation(
+        async (images: Array<{ id: string; src: string }>) =>
+          images
+            .filter((image) => failure !== 'unresolvable' || image.src !== 'ast_gone')
+            .map((image) => ({
+              ...image,
+              src:
+                image.id === 'img_2'
+                  ? `data:image/png;base64,${Buffer.from('undecodable').toString('base64')}`
+                  : dataUrlFor(`outline-bytes-${image.id}`),
+            })),
+      );
+      streamLLMMock.mockReturnValue({
+        textStream: (async function* () {
+          yield JSON.stringify({
+            languageDirective: 'Teach in English.',
+            outlines: [
+              {
+                id: 'scene_1',
+                type: 'slide',
+                title: 'Safety Checklist',
+                description: 'Inspect the device.',
+                keyPoints: ['Inspect', 'Calibrate'],
+                order: 1,
+              },
+            ],
+          });
+        })(),
+      });
 
-    await generate({
-      pdfImages: [
-        { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
-        { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
-      ],
-      imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
-    });
+      await generate({
+        pdfImages: [
+          { id: 'img_1', src: '', pageNumber: 1, width: 100, height: 100 },
+          { id: 'img_2', src: '', pageNumber: 2, width: 200, height: 100 },
+        ],
+        imageMapping: { img_1: 'ast_ok', img_2: 'ast_gone' },
+        interactiveMode,
+      });
 
-    // The standard branch ran with a vision-enabled model, so the LLM call is
-    // multimodal and its text half is the standard prompt's user text.
-    const streamParams = streamLLMMock.mock.calls[0][0] as {
-      system: string;
-      messages: Array<{
-        role: string;
-        content: Array<{ type: string; text?: string; image?: string }>;
-      }>;
-    };
-    expect(streamParams.messages).toBeDefined();
-    const content = streamParams.messages[0].content;
-    const textPart = content.find((part) => part.type === 'text');
-    // img_1 is promised `[see attached]` and IS attached; img_2's text
-    // mention is gone together with its attachment.
-    expect(textPart?.text).toContain('img_1');
-    expect(textPart?.text).toContain('[see attached]');
-    expect(textPart?.text).not.toContain('img_2');
-    const imageParts = content.filter((part) => part.type === 'image');
-    expect(imageParts).toHaveLength(1);
-    expect(imageParts[0]?.image).toBe(Buffer.from('outline-bytes-img_1').toString('base64'));
-  });
+      // The standard branch ran with a vision-enabled model, so the LLM call is
+      // multimodal and its text half is the standard prompt's user text.
+      const streamParams = streamLLMMock.mock.calls[0][0] as {
+        system: string;
+        messages: Array<{
+          role: string;
+          content: Array<{ type: string; text?: string; image?: string }>;
+        }>;
+      };
+      expect(streamParams.messages).toBeDefined();
+      const content = streamParams.messages[0].content;
+      const textPart = content.find((part) => part.type === 'text');
+      // img_1 is promised `[see attached]` and IS attached; img_2's text
+      // mention is gone together with its attachment.
+      expect(textPart?.text).toContain('img_1');
+      expect(textPart?.text).toContain('[see attached]');
+      expect(textPart?.text).not.toContain('img_2');
+      const imageParts = content.filter((part) => part.type === 'image');
+      expect(imageParts).toHaveLength(1);
+      expect(resolveVisionImagesMock).toHaveBeenCalledTimes(1);
+      expect(imageParts[0]?.image).toBe(
+        Buffer.concat([png, Buffer.from('outline-bytes-img_1')]).toString('base64'),
+      );
+    },
+  );
 });
 
 /**
@@ -102,11 +127,15 @@ describe('outline step — standard branch prompt parity on a dropped image (N3)
 async function generate(body: {
   pdfImages: Array<Pick<PdfImage, 'id' | 'src' | 'pageNumber' | 'width' | 'height'>>;
   imageMapping: ImageMapping;
+  interactiveMode?: boolean;
 }) {
   const { generateOutlines } = await import('@/lib/server/generation/steps/outline');
   return generateOutlines(
     {
-      requirements: { requirement: 'Teach a safety checklist course.' },
+      requirements: {
+        requirement: 'Teach a safety checklist course.',
+        interactiveMode: body.interactiveMode,
+      },
       pdfText: 'Inspect the device before calibration.',
       pdfImages: body.pdfImages as PdfImage[],
       imageMapping: body.imageMapping,

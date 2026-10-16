@@ -67,7 +67,14 @@ describe('provider presets', () => {
     );
     // The coding plan is not the Moonshot open platform, so the chat provider keeps its id.
     expect(getProviderPreset('kimi')?.kind).toBe('single');
-    expect(Object.keys(getProviderPreset('kimi-coding-plan')!.capabilities)).toEqual(['chat']);
+    expect(Object.keys(getProviderPreset('kimi-coding-plan')!.capabilities)).toEqual([
+      'chat',
+      'webSearch',
+    ]);
+    expect(getProviderPreset('kimi')?.capabilities).toEqual({
+      chat: { registryId: 'kimi' },
+      webSearch: { registryId: 'kimi' },
+    });
   });
 
   it('carries plan recommendations onto slots', () => {

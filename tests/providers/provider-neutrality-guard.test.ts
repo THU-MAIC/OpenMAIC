@@ -171,13 +171,13 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'Temporary: provider configuration is still a mixed catalog and resolver composition root.',
     [
       ['qwen', 20],
-      ['openai', 23],
+      ['openai', 24],
       ['azure', 6],
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
       ['deepseek', 2],
-      ['kimi', 2],
+      ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
       ['siliconflow', 2],
@@ -273,6 +273,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/web-search/index.ts',
     'Temporary: web-search execution still uses a central provider switch.',
     [
+      ['kimi', 4],
       ['baidu', 9],
       ['bocha', 4],
       ['brave', 4],
@@ -288,6 +289,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/web-search-config.ts',
     'Temporary: web-search URL and option validation are still provider-specific.',
     [
+      ['kimi', 1],
       ['baidu', 8],
       ['tavily', 3],
       ['bocha', 7],

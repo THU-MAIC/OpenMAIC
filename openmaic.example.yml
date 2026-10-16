@@ -10,6 +10,14 @@
 # optional; uncomment the ones you want and set the variables they name.
 #
 # - providers: the accounts the server can call.
+#   For every model capability, models is an authorization allowlist, not just a picker list.
+#   Deployment slot models and fallbacks for that capability are also authorized.
+#   Provider-only media slots authorize only their single adapter default.
+#   Set models for each provider with credentials; restart after changes.
+#   A provider with neither has no authorized models. SDK catalogues and
+#   workspace assignments never grant access to additional server-paid models.
+#   These rules also apply to connection tests. With legacy configuration,
+#   use <PREFIX>_MODELS and/or DEFAULT_MODEL / MODEL_FALLBACK.
 # - slots: which provider and model each use of AI gets by default. Users
 #   may change them in the model settings; slots left out are theirs to set.
 # - lock: the slots fixed for everyone, each with its whole subtree.
@@ -29,6 +37,7 @@ providers:
   openai:
     preset: openai
     apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.5]
 
   # --- Optional providers ----------------------------------------------------
 

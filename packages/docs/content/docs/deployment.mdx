@@ -138,12 +138,15 @@ Before the first start of 1.2.0:
 
 - **Keep the data directory.** Start 1.2.0 with the same `data/` in its working directory (or the same `OPENMAIC_CLASSROOMS_DIR`), or the same `openmaic-data` volume with Compose. Classrooms that 1.1.x saved as files under `data/classrooms` are imported into the database once, in the background after startup; a server started without that directory has nothing to import.
 - **Set the identity mode first.** The import gives those classrooms to the owner configured at that start: the single user (`OWNER_SINGLE_USER=true`) or the shared team owner (`PERSISTENCE_SHARED_OWNER_ID`), and otherwise (anonymous mode) the dedicated owner `system:legacy-classrooms`, under which they open read-only from their old links and appear in no library. Each classroom is imported only once, so classrooms imported in anonymous mode stay with `system:legacy-classrooms` even if you set an identity mode later.
+- **List the models.** Every provider with server-managed credentials that sends a selected model upstream (chat, image, video, speech, transcription, model-based web search) needs an explicit model list (`*_MODELS`, or `models` under the provider in `openmaic.yml` or `server-providers.yml`). Without one, only the default, fallback and slot models are authorized, and the startup log names each such provider that has no list. Services without model selection, such as Tavily or a document parser, need no list. See [Model authorization](./configuration.mdx#model-authorization-for-server-managed-providers).
+- **Upgrade the render-service with the app.** If you run MP4 video export, upgrade every render-service instance together with the app or before it: render jobs are bound to their owner, and a mix of old and new versions fails closed.
+- **Check the classroom model.** Pi classroom chat refuses a model that the built-in catalogue lists without tool calling (`tool_calling_required`) and Google's OpenAI-compatible Gemini endpoint (`gemini_native_required`). Configure Gemini with the native `google` preset; see [LLM providers](./configuration.mdx#llm-providers).
 
 Browser data (courses, model settings, custom agents) is imported once per browser, the first time that browser opens the upgraded app. See [Configuration](./configuration.mdx#migrating-from-the-legacy-configuration) for moving model settings and the [changelog](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md) for the full list of breaking changes.
 
 ## Vercel (up to 1.1.x)
 
-Serverless deployment is supported up to OpenMAIC 1.1.x, and the Deploy button in the [repository README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) deploys the `release/1.1.x` branch. Such a deployment can move to a long-running host later without losing data: point the new host's `DATABASE_URL` at the database it used, if it used one, and serve it at the same address: browsers keep their data per site, and the courses visitors kept there are imported the first time each browser opens the upgraded app.
+Serverless deployment is supported up to OpenMAIC 1.1.x, and the [repository README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) describes how to deploy the `release/1.1.x` branch on Vercel. Such a deployment can move to a long-running host later without losing data: point the new host's `DATABASE_URL` at the database it used, if it used one, and serve it at the same address: browsers keep their data per site, and the courses visitors kept there are imported the first time each browser opens the upgraded app.
 
 ## Optional: MP4 video export
 
@@ -155,7 +158,7 @@ Enable the `video-export` profile:
 docker compose --profile video-export up --build
 ```
 
-Compose connects OpenMAIC to the rendering service through `RENDER_SERVICE_URL`. If the profile is disabled or the rendering service is unavailable, export falls back to downloading the project ZIP for rendering with the local CLI. The rendering service uses an isolated network and requires the `NET_ADMIN` capability at startup. See [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) for more limitations and standalone deployment instructions.
+Compose connects OpenMAIC to the rendering service through `RENDER_SERVICE_URL`. If the profile is disabled or the rendering service is unavailable, export falls back to downloading the project ZIP for rendering with the local CLI. The rendering service uses an isolated network and requires the `NET_ADMIN` capability at startup. See [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md) for more limitations and standalone deployment instructions. When upgrading, upgrade the render-service together with the app or before it.
 
 ## Environment variables
 

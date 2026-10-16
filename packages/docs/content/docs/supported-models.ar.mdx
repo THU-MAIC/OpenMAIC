@@ -18,7 +18,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | `minimax` | MiniMax | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `tokendance` | TokenDance | المحادثة والصور والفيديو وTTS والبحث على الويب |
 | `volcengine-ark` | Volcengine Ark Agent Plan | المحادثة والصور والفيديو وTTS والبحث على الويب |
-| `kimi-coding-plan` | Kimi coding plan | المحادثة |
+| `kimi-coding-plan` | Kimi coding plan | المحادثة والبحث على الويب |
 
 يربط `openai-compatible` أي خادم محادثة متوافق مع OpenAI: يحتاج إلى `baseUrl`، وتعرض إعدادات النماذج قائمة `models` الخاصة به.
 
@@ -31,7 +31,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` |
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`veo` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
-| البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`searxng` |
+| البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`kimi` و`kimi-coding-plan` و`searxng` |
 | تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
@@ -136,5 +136,18 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### بحث Kimi على الويب
+
+يتيح الإعدادان المسبقان `kimi` (Moonshot Open Platform) و`kimi-coding-plan` المحادثة والبحث على الويب باستخدام مفتاح API وعنوان URL أساسي واحد. عيّن `webSearch` للمزود نفسه المستخدم للمحادثة؛ فلا حاجة إلى مفتاح إضافي أو نموذج بحث منفصل.
+
+يستخدم عنوانا Open Platform الأساسيان `https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1` المسار `/tools/search_pro`. يُجمع نص النتيجة من مقاطع الصفحة، ويُستخدم الملخص عند غيابها. ويستخدم عنوانا خطة البرمجة `https://api.kimi.com/coding/v1` و`https://api.kimi.ai/coding/v1` المسار `/search` مع تفعيل جلب الصفحات. تكون الأولوية لنص الصفحة ثم للملخص. يعيد كل طلب 20 نتيجة كحد أقصى.
+
+في الإعدادات القديمة، لا تؤدي بيانات اعتماد المحادثة وحدها إلى تفعيل البحث. اضبط `WEB_SEARCH_KIMI_ENABLED=true` أو أضف إدخال `web-search.kimi` صراحةً إلى `server-providers.yml`. وفي `openmaic.yml`، عيّن خانة `webSearch` صراحةً. لا يوصي معالج الإعداد بالبحث إلا للحسابات التي تستخدم عنوان URL أساسيًا رسميًا.
+
+يُختار مسار الطلب وفق مسار عنوان URL الأساسي: بعد إزالة الشرطات المائلة النهائية، يُستخدم `/search` إذا انتهى المسار بـ `/coding/v1`، ويُستخدم `/tools/search_pro` في الحالات الأخرى. يجب أن تحافظ خدمات الوكيل المخصصة المضبوطة في `openmaic.yml` على بنية المسار هذه.
+
+عند وجود `openmaic.yml`، يجب تعريف `providers.<id>: { preset: kimi }` وتعيين `slots.webSearch: <id>`؛ فمتغير الإعدادات القديمة `WEB_SEARCH_KIMI_ENABLED` لا يعيّن هذه الخانة.

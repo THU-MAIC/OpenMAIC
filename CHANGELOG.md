@@ -6,6 +6,82 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-16
+
+1.2.0 is the **server-first** release. Course generation, model configuration, courses and media, and identity move to the server, and the browser becomes a client. It needs PostgreSQL and a long-running Node.js server; serverless hosts, Vercel included, stay on 1.1.x. This section collects what is new in 1.2.0 beyond the rc.1 and rc.2 sections below, including classroom export, which landed before rc.2 but was not recorded there. Coming from 1.1.x:
+
+- Read **Breaking Changes** and **Before you upgrade** under [1.2.0-rc.1](#120-rc1---2026-10-04): `DATABASE_URL` is required, `MODEL_ROUTES` without `openmaic.yml` stops the server at startup, the browser no longer sends provider settings, and `POST /api/generate-classroom` takes `{ requirement, materialIds? }`.
+- Back up the database, choose an identity mode before the first start, keep `data/`, and set `OPENMAIC_SECRET_KEY` when several instances share the database.
+- Read the breaking change under [1.2.0-rc.2](#120-rc2---2026-10-11): every provider with server-managed credentials needs an explicit model list (`*_MODELS`, or `models` in `openmaic.yml`), and the render-service must be upgraded together with or before the app.
+- Pi classroom chat now refuses models that cannot call tools and Google's OpenAI-compatible Gemini endpoint (see **Behavior Changes**).
+- The deployment guide's [Upgrading from 1.1.x](packages/docs/content/docs/deployment.mdx#upgrading-from-11x) table lists every step.
+
+### Highlights
+
+- **Classroom export.** New since 1.2.0-rc.1, first recorded here.
+  - **The PPTX keeps the whole lesson.** Interactive, quiz and PBL scenes stay where they are in the lesson as placeholder slides with an **Open online** button and a QR code that open the scene in the online classroom; quiz placeholders list the question stems, PBL placeholders the goal and milestones. **Export PPTX** and **Export Resource Pack** become submenus: with placeholder slides (recommended) or slides only. [#1811](https://github.com/THU-MAIC/OpenMAIC/pull/1811) [#1819](https://github.com/THU-MAIC/OpenMAIC/pull/1819) [#1823](https://github.com/THU-MAIC/OpenMAIC/pull/1823) [#1693](https://github.com/THU-MAIC/OpenMAIC/pull/1693) (menu refactor by @Tiyatrotist)
+  - **Offline HTML.** **Export as HTML** produces one self-contained file that plays the classroom without a network connection: narration with captions, spotlight and laser, auto-advancing slides, slide video, discussion cards and interactive widget actions. Quiz, interactive and PBL scenes hold after their narration until the learner moves on. Choose **With narration and video** or **Without narration**. When JavaScript does not run, the file shows a short message instead of a blank page. [#1813](https://github.com/THU-MAIC/OpenMAIC/pull/1813) [#1842](https://github.com/THU-MAIC/OpenMAIC/pull/1842) [#1848](https://github.com/THU-MAIC/OpenMAIC/pull/1848) [#1850](https://github.com/THU-MAIC/OpenMAIC/pull/1850)
+  - **Large classrooms.** A classroom that would exceed 400 MB as one file is exported as a ZIP of `classroom.html` with `audio/`, `media/` and `images/` folders; extract it before opening `classroom.html`. [#1845](https://github.com/THU-MAIC/OpenMAIC/pull/1845)
+  - Related fixes: line charts keep their lines in Safari (`@openmaic/renderer` 0.1.12) [#1825](https://github.com/THU-MAIC/OpenMAIC/pull/1825); offline exports drop web-font fallbacks instead of logging a CSP error for each [#1826](https://github.com/THU-MAIC/OpenMAIC/pull/1826); narration is labelled by its real audio container, which also stops WAV clips in `.maic.zip` exports from showing a 12-hour duration in Safari [#1842](https://github.com/THU-MAIC/OpenMAIC/pull/1842).
+- **Inline math survives saving.** Formulas typed in the slide text editor are stored as their LaTeX source and typeset by the clients, instead of being flattened on save and losing the source; the server never typesets authored input, and a formula over 2000 characters is shown as LaTeX text. Render-service slide previews typeset them with KaTeX styles (`@openmaic/renderer` 0.1.14), and the PPTX export writes each inline formula as one run of LaTeX text. [#1829](https://github.com/THU-MAIC/OpenMAIC/pull/1829) [#1904](https://github.com/THU-MAIC/OpenMAIC/pull/1904)
+
+### Behavior Changes
+
+- Pi classroom chat refuses a model whose catalogue entry says it cannot call tools, before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`) and a localized explanation; Course Model Config notes the requirement on the classroom slot. Legacy chat, quiz grading and PBL are unaffected. [#1894](https://github.com/THU-MAIC/OpenMAIC/pull/1894)
+- Pi classroom chat refuses Google's official OpenAI-compatible Gemini endpoint (`generativelanguage.googleapis.com/v1beta/openai`) with `400 MODEL_CONFIG_INVALID` (`reason: gemini_native_required`). Configure Gemini with the native `google` preset; the configuration guides describe the move. [#1897](https://github.com/THU-MAIC/OpenMAIC/pull/1897)
+
+### Features
+
+- Image generation: GLM (Zhipu CogView) provider `glm-image`, with `cogview-3-flash` (default) and `cogview-4`. Configure it with `IMAGE_GLM_API_KEY` or in `openmaic.yml`. [#1832](https://github.com/THU-MAIC/OpenMAIC/pull/1832) (by @Cham1229)
+- Settings: user-editable provider credentials (language model, speech, transcription, web search, image, video and document services) show a notice that the key is sent to the server hosting this instance, so it should be entered only on a deployment you trust. [#1158](https://github.com/THU-MAIC/OpenMAIC/pull/1158) (by @yipwingtim)
+- Embedders: `configureGenerationRunHooks`, registered once at boot like `configurePersistenceHooks`, lets a host admit or refuse run starts (`authorizeStart`), run each execution in its own async context (`wrapExecution`), mark its own failures non-retryable (`classifyFailure`) and receive run events (`onRunEvent`). Nothing changes when no hooks are registered. [#1807](https://github.com/THU-MAIC/OpenMAIC/pull/1807)
+
+### Security
+
+- Agent: user-authored skill content is enclosed in a closing marker derived from its content hash, so a skill body can no longer fake the end of its user-authored block or close the skill envelope early. [#1816](https://github.com/THU-MAIC/OpenMAIC/pull/1816)
+- Math: the app's KaTeX and Temml render paths (slides, whiteboard, quizzes, editor, chat Markdown, PPTX export, importer, offline exports) disable formula-defined macros (`\def`, `\newcommand`, `\let`, …), force `trust: false` and cap `maxExpand`, so a short formula cannot expand into an expensive render (`safeKatexOptions` in `@openmaic/dsl` 0.11.3). Generated interactive pages keep their own KaTeX auto-render settings; that script runs inside the sandboxed interactive frame, not in the app. [#1827](https://github.com/THU-MAIC/OpenMAIC/pull/1827)
+- Sanitizer: inline style values containing a backslash are refused, so CSS escapes cannot get past the blocked-token check. Defence in depth: no URL-accepting property is currently allowed. [#1815](https://github.com/THU-MAIC/OpenMAIC/pull/1815)
+
+### Bug Fixes
+
+- Server: a long-running server no longer slows down with every request it serves. Each request's owner-bound document store created its own `AsyncLocalStorage`, which stays registered for the life of the process, so the cost of every promise grew until the event loop stalled; all stores now share one. [#1871](https://github.com/THU-MAIC/OpenMAIC/pull/1871)
+- Generation: an explicit provider plan or balance exhaustion is reported as `PROVIDER_QUOTA_EXHAUSTED`, with localized guidance and Retry on the generation preview and classroom failure cards, and is no longer retried within a model call or step. A configured LLM fallback is still used; ordinary 429s keep their retries. [#1831](https://github.com/THU-MAIC/OpenMAIC/pull/1831) [#1861](https://github.com/THU-MAIC/OpenMAIC/pull/1861) (by @YizukiAme)
+- Generation: images sent to vision calls (outline, scene content, scene actions, PBL evaluation) that are over 1 MiB of base64 or 2048 px, animated, CMYK, 16-bit or in another format are re-encoded as JPEG within those limits; an image that still does not fit or cannot be decoded is dropped with a warning instead of failing the step. Data URLs are parsed without a regex (`@openmaic/generation` 0.3.19). [#1902](https://github.com/THU-MAIC/OpenMAIC/pull/1902)
+- Generation: interactive pages publish one explicit current state and games build their state before the first render, Start or reset, so generated pages no longer abort initialization (`@openmaic/generation` 0.3.16). [#1795](https://github.com/THU-MAIC/OpenMAIC/pull/1795) (by @Ethereal49)
+- Generation: a model-supplied rotation of a generated slide shape is kept instead of reset to zero, and the slide prompt defines rotation (degrees, clockwise around the centre) (`@openmaic/generation` 0.3.18, 0.3.20). [#1855](https://github.com/THU-MAIC/OpenMAIC/pull/1855) [#1872](https://github.com/THU-MAIC/OpenMAIC/pull/1872) (by @Hahaa909)
+- Workbench: a material over the server's upload cap is refused in the browser before any bytes are sent, with the "file too large" message, instead of after a full upload behind a buffering proxy. [#1887](https://github.com/THU-MAIC/OpenMAIC/pull/1887)
+- Import: a ZIP classroom import no longer deletes the course it just created when the server committed the write but the response was lost. [#1864](https://github.com/THU-MAIC/OpenMAIC/pull/1864) (by @Duang777)
+- Pi classroom chat: malformed table, code and slide reference snapshots and empty members of `storeState.scenes` answer `400 INVALID_REQUEST` instead of a `500` or a failed stream. [#1752](https://github.com/THU-MAIC/OpenMAIC/pull/1752) [#1893](https://github.com/THU-MAIC/OpenMAIC/pull/1893) (by @Frank-zhu2000)
+- Speech: a client-supplied TTS base URL on a local network is refused with a message that no longer suggests `ALLOW_LOCAL_NETWORKS`, which does not apply to client-supplied endpoints; such a service has to be configured by the operator. [#1798](https://github.com/THU-MAIC/OpenMAIC/pull/1798) (by @mvanhorn)
+- Renderer: cancelling idle typesetting uses the scheduling pair it started with. This unblocked publishing `@openmaic/renderer` 0.1.14 and `@openmaic/editor` 0.0.11; renderer 0.1.13 was never published. [#1901](https://github.com/THU-MAIC/OpenMAIC/pull/1901)
+
+### Packages
+
+- New since rc.2: `@openmaic/renderer` 0.1.14 (0.1.13, referenced by rc.2, was never published) and `@openmaic/generation` 0.3.20 (rc.2 had 0.3.18). `@openmaic/editor` 0.0.11 is the version rc.2 referenced, first published with this release. Unchanged from rc.2: `@openmaic/dsl` 0.11.3, `@openmaic/importer` 0.3.1 and `@openmaic/storage` 0.37.3.
+
+### Known issues
+
+- On iPhone, an exported HTML file does not play inside WeChat or the Files preview; open it in Safari or another browser. [#1847](https://github.com/THU-MAIC/OpenMAIC/issues/1847)
+- Long formulas in an exported PPTX may wrap onto several lines in PowerPoint and WPS. [#1905](https://github.com/THU-MAIC/OpenMAIC/issues/1905)
+- With the renderer-based editor off (`NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED`), the legacy canvas editor flattens the inline formulas in a text box to plain text when that text is edited. [#1868](https://github.com/THU-MAIC/OpenMAIC/issues/1868)
+
+### Other Changes
+
+- Tests and CI: the suite runs reliably on Windows and newer Node.js runtimes and under load, boot tests no longer start real background workers, and the PostgreSQL CI job runs every app contract suite. [#1803](https://github.com/THU-MAIC/OpenMAIC/pull/1803) [#1828](https://github.com/THU-MAIC/OpenMAIC/pull/1828) [#1890](https://github.com/THU-MAIC/OpenMAIC/pull/1890) [#1867](https://github.com/THU-MAIC/OpenMAIC/pull/1867) [#1907](https://github.com/THU-MAIC/OpenMAIC/pull/1907) (with @Cham1229, @BeAIcoder and @YizukiAme)
+
+## [1.2.0-rc.2] - 2026-10-11
+
+### Security
+
+- Enforce model authorization for server-managed providers across chat, media, speech, model-based web search and workspace model assignments. Unauthorized and unknown model ids return the same HTTP 403 response before provider access. Users' own credentials continue to work. [#1879](https://github.com/THU-MAIC/OpenMAIC/pull/1879) (with @13ob0)
+- Render jobs are bound to the requesting owner. The render-service and app must be upgraded together; upgrade every service instance (or drain old instances) together with or before the app. Old/new version mixes fail closed through a dedicated owner-bound job namespace. [#1884](https://github.com/THU-MAIC/OpenMAIC/pull/1884) (by @Duang777)
+- Deleted courses no longer serve their legacy classroom media: `/api/classroom-media/<id>/...` checks the course lifecycle before touching the filesystem and answers a tombstoned course with the same 404 as a missing file. Successful responses are `private, max-age=300, must-revalidate` instead of `public, immutable`. [#1883](https://github.com/THU-MAIC/OpenMAIC/pull/1883) (by @Duang777)
+
+### Breaking change: server-managed model authorization
+
+- Set `*_MODELS` for every provider with server-managed credentials, or set `models` under each provider in `openmaic.yml` / `server-providers.yml`. Without a list, only deployment default/fallback and capability slot references authorize models; preset catalogues and workspace assignments do not. Provider-only media slots authorize a single adapter default. Services without model ids need no list. Providers configured without credentials (local Ollama, Lemonade) are not restricted; a keyless gateway that adds its own upstream credential should be given a key and a model list.
+- Migration: list the model ids users should be able to select (including voice compatibility models), restart the server, then update workspace selections that are no longer authorized. A startup warning names the configuration setting for each provider with credentials but no explicit list.
+
 ### Bug Fixes
 
 - S3 asset storage: `@openmaic/storage` 0.37.3 supports path-style addressing for S3-compatible object stores such as MinIO and Ceph. Set `AWS_S3_FORCE_PATH_STYLE=true` (or `1`) together with `AWS_ENDPOINT_URL_S3` so objects are addressed as `endpoint/bucket/key`; leaving it unset keeps the existing behaviour for Amazon S3 (#1686).

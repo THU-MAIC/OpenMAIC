@@ -9,6 +9,7 @@
  */
 import { attachModelFallback } from '@/lib/ai/model-fallbacks';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { presetIdFor } from '@/lib/config/preset-ids';
 import { getModel, getProvider, isProviderKeyRequired } from '@/lib/ai/providers';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
@@ -17,7 +18,8 @@ import type { ResolvedModel } from '@/lib/server/resolve-model';
 import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { ProviderId, ThinkingConfig } from '@/lib/types/provider';
 
-import type { ResolvedModelTarget, SlotResolution } from './resolve-slot';
+import { isPiGeminiCompatibleRoute, PiGeminiNativeRequiredError } from './pi-gemini-route';
+import { checkRequirement, type ResolvedModelTarget, type SlotResolution } from './resolve-slot';
 import { lookupStage, requestMayChoose, SlotDisabledError, SlotUnassignedError } from './runtime';
 
 export type AssignedSlot = Extract<SlotResolution, { status: 'assigned' }>;
@@ -135,17 +137,42 @@ export class SlotRequirementError extends Error {
   }
 }
 
-export async function slotLanguageModel(resolution: AssignedSlot): Promise<SlotResolvedModel> {
+export async function slotLanguageModel(
+  resolution: AssignedSlot,
+  requireToolCalling = false,
+): Promise<SlotResolvedModel> {
   // Only a requirement the catalogue says is unmet refuses; unknown models pass.
-  const unmet = resolution.requirements.find((check) => check.status === 'unmet');
+  const requirements = requireToolCalling
+    ? [
+        ...resolution.requirements,
+        checkRequirement('toolCalling', resolution.capability, resolution),
+      ]
+    : resolution.requirements;
+  const unmet = requirements.find((check) => check.status === 'unmet');
   if (unmet) throw new SlotRequirementError(resolution.slot, unmet.requirement);
+  // Pi also excludes this known incompatible transport route; unknown capabilities still pass.
+  const incompatibleRoute = (target: ResolvedModelTarget) => {
+    const registry = getProvider(target.registryId as ProviderId);
+    return isPiGeminiCompatibleRoute(
+      registry?.type,
+      target.baseUrl || registry?.defaultBaseUrl || undefined,
+    );
+  };
+  if (requireToolCalling && incompatibleRoute(resolution)) {
+    throw new PiGeminiNativeRequiredError();
+  }
   const resolved = await languageModelFor(resolution, resolution.thinking);
   // Retries go to the slot's fallback and nowhere else: none attached means none.
   const { fallback } = resolution;
-  const fallbackUnmet = resolution.fallbackRequirements?.some((check) => check.status === 'unmet');
+  const fallbackUnmet =
+    resolution.fallbackRequirements?.some((check) => check.status === 'unmet') ||
+    (requireToolCalling &&
+      fallback &&
+      checkRequirement('toolCalling', resolution.capability, fallback).status === 'unmet');
   attachModelFallback(resolved.model, async () => {
     // A retry on a model that cannot do what the slot needs would only fail again.
-    if (!fallback || fallbackUnmet) return null;
+    if (!fallback || fallbackUnmet || (requireToolCalling && incompatibleRoute(fallback)))
+      return null;
     const built = await languageModelFor(fallback, resolution.thinking);
     return { model: built.model, modelString: built.modelString };
   });
@@ -155,6 +182,8 @@ export async function slotLanguageModel(resolution: AssignedSlot): Promise<SlotR
 export interface StageModelOptions {
   stage: LlmStage;
   workspaceId: string | null;
+  /** Pi's tool requirement does not apply to other consumers of the classroom slot. */
+  requireToolCalling?: boolean;
   /**
    * What the request still names the old way (x-model and friends), or
    * undefined when it names nothing. Consulted only where requestMayChoose
@@ -172,13 +201,27 @@ export async function resolveStageModel({
   stage,
   workspaceId,
   legacyRequest,
+  requireToolCalling = false,
 }: StageModelOptions): Promise<ResolvedModel> {
   const resolution = await lookupStage(stage, workspaceId);
   if (requestMayChoose(resolution)) {
     const requested = await legacyRequest?.();
-    if (requested) return requested;
+    if (requested) {
+      if (
+        requireToolCalling &&
+        checkRequirement('toolCalling', 'chat', {
+          registryId: requested.providerId,
+          modelId: requested.modelId,
+          catalogue: getProviderPreset(presetIdFor('chat', requested.providerId))
+            ?.trustsModelCatalogue,
+        }).status === 'unmet'
+      ) {
+        throw new SlotRequirementError(resolution.slot, 'toolCalling');
+      }
+      return requested;
+    }
   }
-  if (resolution.status === 'assigned') return slotLanguageModel(resolution);
+  if (resolution.status === 'assigned') return slotLanguageModel(resolution, requireToolCalling);
   if (resolution.status === 'disabled') throw new SlotDisabledError(resolution.slot);
   throw new SlotUnassignedError(resolution.slot);
 }

@@ -366,6 +366,107 @@ describe('lectureActionPersistParams', () => {
 
 describe('runPiSingleRequest', () => {
   it.each([
+    ['qa', 'tool_calling_required', 'toolCallingRequired'],
+    ['discussion', 'tool_calling_required', 'toolCallingRequired'],
+    ['qa', 'gemini_native_required', 'geminiNativeRequired'],
+    ['discussion', 'gemini_native_required', 'geminiNativeRequired'],
+  ] as const)(
+    'shows the localized configuration error for %s (%s)',
+    async (sessionType, reason, key) => {
+      const response = new Response(
+        JSON.stringify({
+          errorCode: 'MODEL_CONFIG_INVALID',
+          reason,
+          error: 'Server English explanation',
+        }),
+        { status: 400 },
+      );
+      const json = vi.spyOn(response, 'json');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => response),
+      );
+      const onEvent = vi.fn();
+      const onResponseAccepted = vi.fn();
+      try {
+        await expect(
+          runPiSingleRequest(
+            'session-1',
+            {
+              messages: [],
+              storeState: {
+                stage: null,
+                scenes: [],
+                currentSceneId: null,
+                mode: 'autonomous',
+                whiteboardOpen: false,
+              },
+              config: { agentIds: ['teacher'] },
+            },
+            new AbortController(),
+            sessionType,
+            () => ({ onEvent, onIterationEnd: vi.fn() }),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            { current: vi.fn() },
+            (key) => `translated:${key}`,
+            onResponseAccepted,
+          ),
+        ).rejects.toThrow(`translated:chat.error.${key}`);
+        expect(json).toHaveBeenCalledOnce();
+        expect(onEvent).not.toHaveBeenCalled();
+        expect(onResponseAccepted).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it.each([
+    ['not JSON', 400],
+    ['{}', 400],
+    ['{"reason":"unknown"}', 400],
+    ['{"reason":"gemini_native_required"}', 500],
+    ['{"reason":"tool_calling_required"}', 500],
+  ])('keeps the status fallback for %s (%s)', async (body, status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(body, { status })),
+    );
+    try {
+      await expect(
+        runPiSingleRequest(
+          'session-1',
+          {
+            messages: [],
+            storeState: {
+              stage: null,
+              scenes: [],
+              currentSceneId: null,
+              mode: 'autonomous',
+              whiteboardOpen: false,
+            },
+            config: { agentIds: ['teacher'] },
+          },
+          new AbortController(),
+          'qa',
+          () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          { current: vi.fn() },
+          (key) => key,
+        ),
+      ).rejects.toThrow(`Pi chat request failed: ${status}`);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
     'removed-before-post',
     'runtime-authoritative',
     'server-rejected',

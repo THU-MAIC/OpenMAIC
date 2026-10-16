@@ -78,6 +78,19 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Enter a topic or upload learning material, then click Generate; the AI teachers will build a complete, multi-scene classroom. Supported material formats depend on the selected parser and typically include PDF, Office documents, Markdown/plain text, images, and some audio/video formats. Consult the parser's supported formats for the exact range.
 
+## Export a classroom
+
+Once a classroom and its media have finished generating, the download button at the top right of the classroom opens the export menu:
+
+- **Export PPTX**: editable slides. **With placeholder slides (recommended)** keeps interactive, quiz and project-based learning scenes where they are in the lesson, each as a slide with an **Open online** button and a QR code that open the scene in the online classroom. **Slides only** leaves those scenes out.
+- **Export Resource Pack**: the same PPTX choice, plus each interactive scene as a self-contained web page.
+- **Export as HTML**: one self-contained file that plays the classroom without a network connection, with narration and captions, spotlight and laser, slide video, discussion cards and interactive scenes. Quiz, interactive and project scenes wait until the learner moves on. A project-based learning scene keeps only its briefing (goal and milestones); continuing the project needs the online classroom and a network connection. If the export reports assets it couldn't bundle, those parts of interactive scenes don't show in the offline HTML; they are still available in the online classroom. **With narration and video** plays like the classroom; **Without narration** makes a smaller file that paces the captions by reading time and leaves videos out.
+- **Export Classroom ZIP**: the course structure and media, to back the classroom up or import it on another OpenMAIC deployment.
+
+A classroom that would exceed 400 MB as one HTML file is saved as a ZIP instead: extract the whole ZIP and open `classroom.html`, keeping the `audio/`, `media/` and `images/` folders next to it.
+
+The exported HTML file needs a web browser with JavaScript. On a phone, open it in a browser such as Safari or Chrome: on iPhone it does not play inside WeChat or the Files preview.
+
 ## Build for production
 
 ```bash

@@ -26,6 +26,7 @@ import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers'
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
+  CredentialStorageHint,
   EndpointServerOnlyHint,
   RegionalEndpointField,
   ServerConfiguredNotice,
@@ -275,6 +276,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
               )}
             </div>
           </div>
+          {isDoubao && <CredentialStorageHint />}
           {isDoubao && entry.provider?.key?.set && (
             <p className="text-xs text-muted-foreground">
               {t('settings.serverConfig.keyStored', { mask: entry.provider.key.mask ?? '' })}

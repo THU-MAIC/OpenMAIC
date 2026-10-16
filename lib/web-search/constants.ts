@@ -68,6 +68,22 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     icon: '/logos/claude.svg',
     models: CLAUDE_WEB_SEARCH_MODELS,
   },
+  kimi: {
+    id: 'kimi',
+    name: 'Kimi',
+    sharedChatProviderId: 'kimi',
+    enableEnvVar: 'WEB_SEARCH_KIMI_ENABLED',
+    officialBaseUrls: [
+      'https://api.moonshot.cn/v1',
+      'https://api.moonshot.ai/v1',
+      'https://api.kimi.com/coding/v1',
+      'https://api.kimi.ai/coding/v1',
+    ],
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
+    endpointPath: '/tools/search_pro',
+    icon: '/logos/kimi.png',
+  },
   minimax: {
     id: 'minimax',
     name: 'MiniMax',
@@ -207,4 +223,16 @@ export function getWebSearchProviderDisplayName(
  */
 export function getAllWebSearchProviders(): WebSearchProviderConfig[] {
   return Object.values(WEB_SEARCH_PROVIDERS);
+}
+
+/** Whether a shared search account's typed base is one of its official endpoints. */
+export function isOfficialWebSearchBaseUrl(providerId: string, baseUrl?: string): boolean {
+  const allowed = WEB_SEARCH_PROVIDERS[providerId as WebSearchProviderId]?.officialBaseUrls;
+  if (!allowed || !baseUrl) return true;
+  try {
+    const normalized = new URL(baseUrl.trim()).toString().replace(/\/+$/, '');
+    return allowed.includes(normalized);
+  } catch {
+    return false;
+  }
 }

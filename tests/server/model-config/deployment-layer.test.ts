@@ -7,9 +7,12 @@ import type { ServerConfig } from '@/lib/server/provider-config';
 const legacy = vi.hoisted(() => ({
   providers: {} as ServerConfig['providers'],
   disabledTts: new Set<string>(),
+  webSearch: {} as ServerConfig['webSearch'],
+  disabledWebSearch: new Set<string>(),
 }));
 
-vi.mock('@/lib/server/provider-config', () => ({
+vi.mock('@/lib/server/provider-config', async (original) => ({
+  ...(await original<typeof import('@/lib/server/provider-config')>()),
   getServerProviderConfig: (): ServerConfig => ({
     providers: legacy.providers,
     tts: {},
@@ -17,13 +20,13 @@ vi.mock('@/lib/server/provider-config', () => ({
     pdf: {},
     image: {},
     video: {},
-    webSearch: {},
+    webSearch: legacy.webSearch,
     disabled: {
       tts: legacy.disabledTts,
       asr: new Set(),
       image: new Set(),
       video: new Set(),
-      webSearch: new Set(),
+      webSearch: legacy.disabledWebSearch,
     },
   }),
 }));
@@ -38,11 +41,19 @@ let dir: string;
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openmaic-deployment-layer-'));
   vi.spyOn(process, 'cwd').mockReturnValue(dir);
-  for (const name of ['OPENMAIC_CONFIG', 'DEFAULT_MODEL', 'MODEL_ROUTES', 'MODEL_FALLBACK']) {
+  for (const name of [
+    'OPENMAIC_CONFIG',
+    'DEFAULT_MODEL',
+    'MODEL_ROUTES',
+    'MODEL_FALLBACK',
+    'WEB_SEARCH_KIMI_ENABLED',
+  ]) {
     vi.stubEnv(name, '');
   }
   legacy.providers = {};
   legacy.disabledTts = new Set();
+  legacy.webSearch = {};
+  legacy.disabledWebSearch = new Set();
 });
 
 afterEach(() => {
@@ -60,7 +71,7 @@ describe('loadDeploymentLayer', () => {
     legacy.providers = { openai: { apiKey: 'sk-openai' } };
     vi.stubEnv('DEFAULT_MODEL', ' openai:gpt-5.6 ');
     const { layer, legacy: translated, notices } = loadDeploymentLayer();
-    expect(notices).toHaveLength(1);
+    expect(notices).toHaveLength(2);
     expect(notices[0]).toMatch(DEPRECATED);
     // One deployment layer: the providers, and the default model as a server
     // default, exactly as openmaic.yml's slots (nothing locked).
@@ -112,7 +123,7 @@ describe('loadDeploymentLayer', () => {
     const { layer, notices } = loadDeploymentLayer();
     expect(layer?.config.slots).toEqual({ llm: 'ds:deepseek-v4-pro' });
     expect(layer?.config.providers).toEqual({ ds: { preset: 'deepseek', apiKey: 'sk-ds' } });
-    expect(notices).toHaveLength(1);
+    expect(notices).toHaveLength(2);
     expect(notices[0]).toMatch(/^openmaic\.yml is present/);
   });
 
@@ -124,5 +135,104 @@ describe('loadDeploymentLayer', () => {
       legacy: false,
       notices: [],
     });
+  });
+  it('logs each missing model-list warning only once at startup', async () => {
+    legacy.providers = { openai: { apiKey: 'operator-secret' } };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    runtime.deploymentConfig();
+    runtime.deploymentConfig();
+    const warnings = warn.mock.calls.map(([message]) => String(message));
+    expect(warnings.filter((message) => message.includes('no explicit model list'))).toHaveLength(
+      1,
+    );
+    expect(warnings.join('\n')).toContain(
+      'OPENAI_MODELS or server-providers.yml providers.openai.models',
+    );
+    expect(warnings.join('\n')).toContain('only default/fallback models are usable');
+    expect(warnings.join('\n')).not.toContain('operator-secret');
+    runtime.setDeploymentConfigForTests();
+  });
+
+  it('names the YAML models key for every credentialed provider without a list', () => {
+    fs.writeFileSync(
+      path.join(dir, 'openmaic.yml'),
+      `providers:
+  chat:
+    preset: openai
+    apiKey: operator-chat
+  speech:
+    preset: openai-tts
+    apiKey: operator-speech
+  listed:
+    preset: seedream
+    apiKey: operator-image
+    models: [listed-model]
+  keyless:
+    preset: ollama
+`,
+    );
+    const warnings = loadDeploymentLayer().notices;
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain('providers.chat.models');
+    expect(warnings[1]).toContain('providers.speech.models');
+    expect(warnings.join('\n')).not.toContain('operator-chat');
+  });
+});
+
+describe('file-backed search opt-in warning', () => {
+  it('logs the ignored opt-in warning once, with an actionable slot assignment and no key', async () => {
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', 'true');
+    legacy.webSearch = { kimi: { apiKey: 'operator-search-secret' } };
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'slots:\n  video: null\n');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    const first = runtime.deploymentConfig();
+    expect(first.layer?.config.slots?.webSearch).toBeUndefined();
+    expect(runtime.deploymentConfig()).toBe(first);
+    const messages = warn.mock.calls.map(([message]) => String(message));
+    expect(
+      messages.filter((message) => message.includes('WEB_SEARCH_KIMI_ENABLED is set')),
+    ).toHaveLength(1);
+    expect(messages.join('\n')).toContain('preset: kimi');
+    expect(messages.join('\n')).toContain('assign slots.webSearch');
+    expect(messages.join('\n')).not.toContain('operator-search-secret');
+    runtime.setDeploymentConfigForTests();
+  });
+
+  it.each(['null', 'search'])(
+    'does not warn when slots.webSearch is explicitly %s',
+    (assignment) => {
+      vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', 'true');
+      legacy.webSearch = { kimi: { apiKey: 'key' } };
+      fs.writeFileSync(
+        path.join(dir, 'openmaic.yml'),
+        `providers:\n  search:\n    preset: kimi\n    apiKey: key\n    models: [kimi-k3]\nslots:\n  webSearch: ${assignment}\n`,
+      );
+      expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
+    },
+  );
+
+  it('does not warn for an absent opt-in, disabled search, or an unloaded provider', () => {
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'slots:\n  video: null\n');
+    legacy.webSearch = { kimi: { apiKey: 'key' } };
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', 'false');
+    legacy.disabledWebSearch.add('kimi');
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', 'true');
+    legacy.disabledWebSearch.clear();
+    legacy.webSearch = {};
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
+  });
+
+  it('does not warn when legacy opt-in serves search without openmaic.yml', () => {
+    vi.stubEnv('WEB_SEARCH_KIMI_ENABLED', 'true');
+    legacy.webSearch = { kimi: { apiKey: 'key' } };
+    const deployment = loadDeploymentLayer();
+    expect(deployment.layer?.config.slots?.webSearch).toBe('kimi');
+    expect(deployment.notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
   });
 });

@@ -11,7 +11,7 @@ OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役�
 | Web アプリのモデル設定 | ワークスペースのユーザー | ユーザー自身のプロバイダーと、`openmaic.yml` がロックしていないスロットの割り当て。データベースに保存 | 即時 |
 | 環境変数（`.env.local`、コンテナの Secret） | 運用者 | `openmaic.yml` が参照するシークレットと、その他すべてのサーバーオプション | 起動時 |
 
-`DATABASE_URL` 以外の環境変数はすべて任意です（[デプロイ](./deployment.mdx)を参照）。すべての環境変数は [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) に、モデル設定のひな形は [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) に、プリセットとモデル ID は[対応モデル](./supported-models.mdx)にあります。
+`DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
 以前のリリースでは、モデルはプロバイダー環境変数、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_ROUTES` でしか設定できませんでした。`MODEL_ROUTES` を除き、これらは現在も動作しますが非推奨です。[旧設定からの移行](#旧設定からの移行)を参照してください。
 
@@ -19,7 +19,7 @@ OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役�
 
 ### 基本概念
 
-- **プロバイダー（provider）**：サーバーが呼び出せる 1 つのアカウント。たとえば OpenAI のキー、MiniMax の Token Plan、セルフホストの OpenAI 互換サーバーなど。各プロバイダーには自分で決める ID と、どのベンダーでどの機能をカバーするかを示す**プリセット（preset）**があります。
+- **プロバイダー（provider）**：サーバーが呼び出せる 1 つのアカウント。たとえば OpenAI のキー、MiniMax の Token Plan、セルフホストの OpenAI 互換サーバーなど。各プロバイダーには自分で決める ID と、どのベンダーでどの機能をカバーするかを示す**プリセット**（preset）があります。
 - **スロット（slot）**：製品の中で AI を使う箇所。たとえばコースのアウトライン、スライドの内容、音声合成、Web 検索など。スロットは機能ごとに 1 本の木を構成し、割り当てのないスロットは親スロットに従います。
 - **割り当て（assignment）**：スロットが使うプロバイダーとモデル（`provider:model`）。呼び出しパラメーターとフォールバックモデルを付けることもでき、`null` でスロットを無効にできます。
 
@@ -97,7 +97,7 @@ allowUserKeys: false               # ユーザーはこれらのプロバイダ�
 | `preset` | はい | 使用する組み込みプリセット。[対応モデル → プリセット](./supported-models.mdx#プリセット)を参照。 |
 | `apiKey` | 通常は必要 | API キー。キー不要のサービス（ローカルサーバー、Brave、SearXNG、unpdf）では省略します。 |
 | `baseUrl` | 一部のプリセット | プリセット既定のエンドポイントの代わりに呼ぶ URL。`openai-compatible`、`azure`、`searxng`、`mineru` では必須です。 |
-| `models` | いいえ | このプロバイダーがチャット用に提供するモデル ID。モデル設定に表示される一覧です。`openai-compatible` ではこれがモデル設定の唯一の一覧です。`slots` に書けるモデルを制限するものではありません。 |
+| `models` | For server-managed credentials | Authorized model ids. Deployment slot defaults/fallbacks for the capability are also authorized; catalogues and workspace assignments do not grant additional models. |
 | `proxy` | いいえ | このプロバイダーへのリクエストに使う HTTP プロキシの URL。 |
 | `credentials` | 一部のプリセット | 単一のキーを使わないサービス用のキーペア。AliDocMind は `accessKeyId` と `accessKeySecret` を使います。 |
 | `options` | いいえ | 秘密でない、プロバイダー固有の設定。たとえば `voxcpm-tts` の `backend`。名前は英数字、`_`、`-` で、値は文字列・数値・真偽値（ネストしたマップやリストは不可）です。`${VAR}` も使えます。オプションはモデル設定に表示されるため、キーを入れてはいけません。デプロイ専用で、モデル設定からは設定できません。 |
@@ -456,7 +456,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
+Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。組み込みカタログでツール呼び出し非対応とされているモデルは推論前に `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`）で拒否され、**コースモデル設定**でも教室スロットにこの要件が表示されます。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
 
 Docker Compose では、`.env.local` は `env_file` により実行時に読み込まれ、ビルド引数の変数展開には使われません。次のコマンドでビルド時の値を明示して再ビルドしてください。実行時の環境変数だけを変更しても、ビルド済みのクライアントとサーバーの対話経路は変わりません。
 
@@ -533,6 +533,8 @@ AZURE_OPENAI_MODELS=your-deployment-name
 ```
 
 別の OpenAI 互換 LLM サービスに接続するには、`openmaic.yml` で `baseUrl` と `models` を指定した `openai-compatible` プロバイダーを宣言するか、**設定 → モデルサービス → 言語モデル** の **プロバイダーを追加** で追加してください。
+
+Gemini の教室チャットにはネイティブの `google` プリセットを使います。**設定 → モデルサービス**で Google を追加し、**コースモデル設定**の**教室**で選択してください。Pi は Google 公式の OpenAI 互換エンドポイント（`https://generativelanguage.googleapis.com/v1beta/openai`）を早期に拒否し、移行を案内します。互換経路のツール呼び出し対応は [#1556](https://github.com/THU-MAIC/OpenMAIC/issues/1556) で追跡しています。このチェックは公式エンドポイントのみを識別し、任意のサードパーティゲートウェイの接続先は識別できません。
 
 ### ローカルモデル（Ollama と Lemonade）
 
@@ -616,6 +618,28 @@ slots:
 画像生成プロバイダーは `IMAGE_<PROVIDER>_API_KEY` と任意の `IMAGE_<PROVIDER>_BASE_URL` を使います。対応 prefix は以下の通りです：
 
 `IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_GLM_`、`IMAGE_LEMONADE_`
+
+GLM Image（Zhipu CogView）は CogView モデル（`cogview-3-flash`、`cogview-4`）で画像を生成します：
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # 任意:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+環境変数でも設定できます：
+
+```bash
+IMAGE_GLM_API_KEY=
+# 任意:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
 
 Lemonade はローカルサービスで API key 不要です：
 
@@ -743,3 +767,46 @@ web-search:
 ```
 
 環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。
+
+## サーバー管理プロバイダーのモデル認可
+
+デプロイの認証情報を使って選択されたモデルを上流へ送るプロバイダーには、`openmaic.yml` で明示的な `models` リスト（`providers.<id>.models`）を設定するか、対応する `*_MODELS` 環境変数 / `server-providers.yml` の該当セクションの `models` リストを設定してください。対象はチャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索です。モデル ID は設定読み込み時に前後の空白を除いたうえで、大文字小文字も含め完全一致で照合されます。決定的なアダプターエイリアスは、宣言されたモデル ID で認可されます。リストにないモデルへのリクエストは HTTP 403、`PROVIDER_DISABLED`、メッセージ「This model is not authorized for server-managed credentials」を返します。
+
+**破壊的変更：** 明示的なリストがない場合に使えるのは、デプロイの既定/フォールバックモデルと、その機能のスロットが参照するプライマリ/フォールバックモデルだけです。旧設定では `DEFAULT_MODEL` と `MODEL_FALLBACK` がチャットモデルを認可します。プロバイダーのみを指定したメディアスロットは、そのアダプターの既定モデル 1 つだけを認可し、プリセットのカタログ全体は認可しません。ワークスペースの割り当てでデプロイの認可範囲を広げることはできません。音声登録と合成でも、音声互換性のために選ばれたモデルを認可する必要があります。
+
+移行するには、ユーザーが選べるべきモデルをすべて列挙し、サーバーを再起動し、認可されなくなったワークスペースの選択を更新してください。認証情報があってリストのないプロバイダーについては、追加すべき設定が起動ログに表示されます。ユーザー自身のプロバイダー認証情報と、Ollama や Lemonade のような key 不要のローカルプロバイダーは影響を受けません。認証情報なしで設定されたプロバイダーは制限されないため、独自に上流の認証情報を付加するゲートウェイ（社内の OpenAI 互換プロキシなど）に向けないでください。そのゲートウェイに key を与えて `models` リスト付きの認証情報ありプロバイダーとして設定するか、ゲートウェイ側でモデルを制限してください。モデル選択のないドキュメントパーサーや検索サービス（Tavily など）にはモデルリストは不要です。
+
+```yaml
+providers:
+  openai:
+    preset: openai
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-5.4-mini]
+slots:
+  llm: openai:gpt-5.4-mini
+```
+
+旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi のチャットと Web 検索
+
+Kimi アカウントを 1 つ宣言し、両方のスロットを割り当てます：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 任意：国際版 Open Platform では https://api.moonshot.ai/v1 を使用します。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 旧設定では、明示的に有効化した場合にのみ `KIMI_API_KEY` と任意の `KIMI_BASE_URL` が検索の認証情報を提供します。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を追加します（例：`enabled: true`）。チャットの認証情報だけでは検索は有効にならず、既定の検索プロバイダーも変わりません。スロットに割り当てられていても、`WEB_SEARCH_KIMI_ENABLED=false` は Kimi 検索を無効にします。`WEB_SEARCH_KIMI_ENABLED` が Kimi 検索の唯一のスイッチです。 `KIMI_MODELS` はチャットにのみ適用されます。旧設定のチャットと検索でアカウントが競合すると警告が出て、検索エントリーはスキップされます。別々のアカウントを使う場合は、`openmaic.yml` で別々のプロバイダー ID を宣言してください。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。
+
+
+エンドポイントはベースパスに応じて選択されます。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。デプロイで設定するカスタムプロキシも、このパス構成を維持する必要があります。ウィザードが検索を推奨するのは公式アカウントのベース URL のみなので、ワークスペースのカスタムチャットプロキシに検索が自動で割り当てられることはありません。
+
+`openmaic.yml` が存在する場合は、`providers.<id>: { preset: kimi }` を宣言して `slots.webSearch: <id>` を割り当ててください。旧環境変数 `WEB_SEARCH_KIMI_ENABLED` ではこのスロットを割り当てられません。

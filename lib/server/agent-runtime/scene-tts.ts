@@ -1,3 +1,4 @@
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -64,6 +65,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     (connection.origin === 'configuration'
       ? slotTTSModel(providerId, model, voice)
       : resolveTTSModel(providerId, model, voice)) || '';
+  authorizeMediaModel(connection, 'tts', modelId);
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];

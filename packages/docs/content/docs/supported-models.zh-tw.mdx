@@ -18,7 +18,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | `minimax` | MiniMax | 對話、圖像、影片、TTS、網路搜尋 |
 | `tokendance` | TokenDance | 對話、圖像、影片、TTS、網路搜尋 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 對話、圖像、影片、TTS、網路搜尋 |
-| `kimi-coding-plan` | Kimi 程式設計方案 | 對話 |
+| `kimi-coding-plan` | Kimi 程式設計方案 | 對話、網路搜尋 |
 
 `openai-compatible` 用於連接任何 OpenAI 相容的對話服務：需要填寫 `baseUrl`，模型設定中提供的就是它的 `models` 清單。
 
@@ -31,7 +31,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 影片 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 網路搜尋 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| 網路搜尋 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
 | 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
@@ -136,5 +136,18 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### Kimi 網路搜尋
+
+`kimi` 範本（Moonshot Open Platform）和 `kimi-coding-plan` 範本都支援使用同一個 API key 和 Base URL 進行對話與網路搜尋。將 `webSearch` 指向對話使用的同一供應商，不需要額外的金鑰或搜尋模型。
+
+Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 使用 `/tools/search_pro`，搜尋結果內文由頁面片段串接而成，沒有內文時改用摘要。程式設計方案的 `https://api.kimi.com/coding/v1` 和 `https://api.kimi.ai/coding/v1` 使用 `/search` 並啟用頁面擷取，優先使用頁面內文，其次使用摘要。每次請求最多傳回 20 筆結果。
+
+在舊版設定中，僅設定對話金鑰不會啟用搜尋。請設定 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中明確加入 `web-search.kimi`。使用 `openmaic.yml` 時，需要明確指定 `webSearch` 插槽。首次執行精靈僅為使用官方 Base URL 的帳戶建議搜尋。
+
+端點依 Base URL 的路徑選擇：移除結尾斜線後，以 `/coding/v1` 結尾的路徑使用 `/search`，其他路徑使用 `/tools/search_pro`。在 `openmaic.yml` 中設定的自訂代理必須保留這個端點路徑結構。
+
+存在 `openmaic.yml` 時，必須宣告 `providers.<id>: { preset: kimi }` 並指定 `slots.webSearch: <id>`；舊版環境變數 `WEB_SEARCH_KIMI_ENABLED` 無法為該插槽指定供應商。

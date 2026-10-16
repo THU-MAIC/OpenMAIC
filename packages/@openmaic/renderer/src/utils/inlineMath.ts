@@ -217,17 +217,30 @@ export function useInnerHtmlGrid(cells: readonly (readonly string[])[]): { __htm
 
 type IdleHandle = { cancel(): void };
 
+type IdleScope = typeof globalThis & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+/**
+ * Run `run` when the page is idle. The scheduling functions are read once,
+ * here, and the handle is always cancelled with the function from the same
+ * pair: the global may be replaced or removed between scheduling and
+ * cancelling (polyfills, test stubs), and a handle from one implementation
+ * means nothing to another.
+ */
 function whenIdle(run: () => void): IdleHandle {
-  const scope = globalThis as typeof globalThis & {
-    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
-    cancelIdleCallback?: (handle: number) => void;
-  };
-  if (scope.requestIdleCallback && scope.cancelIdleCallback) {
-    const handle = scope.requestIdleCallback(run, { timeout: 500 });
-    return { cancel: () => scope.cancelIdleCallback!(handle) };
+  const scope = globalThis as IdleScope;
+  const request = scope.requestIdleCallback;
+  const cancel = scope.cancelIdleCallback;
+  if (typeof request === 'function' && typeof cancel === 'function') {
+    const handle = request.call(scope, run, { timeout: 500 });
+    return { cancel: () => cancel.call(scope, handle) };
   }
-  const handle = setTimeout(run, 16);
-  return { cancel: () => clearTimeout(handle) };
+  const schedule = scope.setTimeout;
+  const clear = scope.clearTimeout;
+  const handle = schedule.call(scope, run, 16);
+  return { cancel: () => clear.call(scope, handle) };
 }
 
 /** Typeset what a pass left over, one budget-sized chunk per idle period. */

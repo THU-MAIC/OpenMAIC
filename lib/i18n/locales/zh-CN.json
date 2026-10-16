@@ -226,6 +226,8 @@
     "endQA": "结束问答",
     "softClosing": "继续讨论",
     "error": {
+      "toolCallingRequired": "课堂聊天需要支持工具调用的模型。请在设置 → 课程模型配置中为「课堂互动」选择此类模型；如果该设置由管理员管理，请联系管理员。",
+      "geminiNativeRequired": "Gemini 课堂互动需要使用 Google 原生路线。请在设置 → 模型服务中添加 Google（google 预设），再在课程模型配置中为「课堂互动」选择该模型；如果配置由管理员管理，请联系管理员。",
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
     },
@@ -1265,6 +1267,8 @@
     },
     "apiKey": "API密钥",
     "apiKeyDesc": "配置你的API密钥",
+    "credentialStorageHint": "已加密保存在本实例服务器",
+    "credentialStorageHintDetail": "凭据会加密保存在此实例的服务器上，并由服务器代你调用服务。此部署的运营者可能访问这些凭据，请只在你信任的实例上输入。",
     "apiBaseUrl": "API端点地址",
     "apiBaseUrlDesc": "配置你的API端点地址",
     "apiKeyRequired": "API密钥不能为空",
@@ -1802,7 +1806,7 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。",
       "statusConnected": "已连接",
-      "keyStorage": "密钥加密保存在服务器上，之后不再显示。连接后会将该套餐推荐的模型应用到课程环节；如果会替换环节当前所用的模型（你选的模型或服务端默认值），会先征求你的确认。",
+      "applyModelsNote": "连接后会将该套餐推荐的模型应用到课程环节；如果会替换环节当前所用的模型（你选的模型或服务端默认值），会先征求你的确认。",
       "saveKey": "保存并启用",
       "cancelKeyUpdate": "取消更新",
       "manageAccount": "管理账号",
@@ -2116,7 +2120,7 @@
         },
         "classroom": {
           "name": "课堂互动",
-          "desc": "学习过程中的讨论、测验批改和项目。"
+          "desc": "学习过程中的讨论、测验批改和项目。课堂聊天需要支持工具调用的模型。"
         },
         "agent": {
           "name": "智能体",

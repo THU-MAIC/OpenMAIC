@@ -1,3 +1,4 @@
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { randomUUID } from 'node:crypto';
 
 import type { PgAgentSessionMaterialStore } from '@openmaic/storage/material/pg';
@@ -39,7 +40,8 @@ export async function runNextMaterialExtraction(
       claim.material.id,
       workerId,
       reason,
-      isTransientExtractionError(error),
+      // An authorization refusal stays refused until the deployment changes.
+      error instanceof ModelAuthorizationError ? false : isTransientExtractionError(error),
     );
   } finally {
     clearInterval(heartbeat);

@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { StepRefusal } from '@/lib/server/generation/steps/context';
@@ -36,6 +37,21 @@ const connection: MediaConnection = {
 describe('narration step', () => {
   beforeEach(() => {
     vi.resetModules();
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            seedream: { preset: 'seedream', apiKey: 'image-key' },
+            seedance: { preset: 'seedance', apiKey: 'video-key' },
+            'openai-tts': { preset: 'openai-tts', apiKey: 'server-key' },
+          },
+          slots: { image: 'seedream', video: 'seedance', tts: 'openai-tts:gpt-4o-mini-tts' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
     mocks.generateTTS.mockReset();
     mocks.generateTTS.mockResolvedValue({ audio: new Uint8Array([1, 2, 3]), format: 'mp3' });
     mocks.resolveMediaSlot.mockReset();

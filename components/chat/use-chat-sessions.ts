@@ -413,11 +413,18 @@ export async function runPiSingleRequest(
   });
 
   if (!response.ok) {
-    if (reference?.kind === 'whiteboard_element') {
-      const errorBody = await response.json().catch(() => null);
-      if (errorBody?.reason === 'whiteboard_reference_changed') {
-        throw new Error(t('chat.elementReference.whiteboardChanged'));
-      }
+    const errorBody = await response.json().catch(() => null);
+    if (
+      reference?.kind === 'whiteboard_element' &&
+      errorBody?.reason === 'whiteboard_reference_changed'
+    ) {
+      throw new Error(t('chat.elementReference.whiteboardChanged'));
+    }
+    if (response.status === 400 && errorBody?.reason === 'gemini_native_required') {
+      throw new Error(t('chat.error.geminiNativeRequired'));
+    }
+    if (response.status === 400 && errorBody?.reason === 'tool_calling_required') {
+      throw new Error(t('chat.error.toolCallingRequired'));
     }
     throw new Error(`Pi chat request failed: ${response.status}`);
   }

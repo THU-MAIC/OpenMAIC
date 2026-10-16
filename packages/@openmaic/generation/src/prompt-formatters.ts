@@ -100,6 +100,21 @@ export function formatImagePlaceholder(img: PdfImage): string {
   return `- **${img.id}**: image${sourceInfo} page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
+/** Parse a base64 data URL without scanning its payload with a regular expression. */
+export function parseBase64DataUrl(src: string): { mimeType: string; base64: string } | null {
+  if (!src.startsWith('data:')) return null;
+  const comma = src.indexOf(',');
+  if (comma === -1) return null;
+  const header = src.slice(5, comma);
+  if (!header.endsWith(';base64')) return null;
+  const mediaType = header.slice(0, -';base64'.length);
+  const semicolon = mediaType.indexOf(';');
+  const mimeType = semicolon === -1 ? mediaType : mediaType.slice(0, semicolon);
+  const base64 = src.slice(comma + 1);
+  if (!mimeType || !base64) return null;
+  return { mimeType, base64 };
+}
+
 /**
  * Build a multimodal user content array for the AI SDK.
  * Interleaves text and images so the model can associate img_id with actual image.
@@ -123,12 +138,12 @@ export function buildVisionUserContent(
       }
       parts.push({ type: 'text', text: `\n**${img.id}**${dimInfo}:` });
       // Strip data URI prefix — AI SDK only accepts http(s) URLs or raw base64
-      const dataUriMatch = img.src.match(/^data:([^;]+);base64,(.+)$/);
-      if (dataUriMatch) {
+      const dataUrl = parseBase64DataUrl(img.src);
+      if (dataUrl) {
         parts.push({
           type: 'image',
-          image: dataUriMatch[2],
-          mimeType: dataUriMatch[1],
+          image: dataUrl.base64,
+          mimeType: dataUrl.mimeType,
         });
       } else {
         parts.push({ type: 'image', image: img.src });

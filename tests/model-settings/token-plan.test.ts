@@ -9,6 +9,8 @@ import type {
   ModelSettingsChange,
   ModelSettingsView,
 } from '@/lib/model-settings/client';
+import { wizardAssignments } from '@/lib/model-settings/edit';
+import { serviceEntries } from '@/lib/model-settings/services';
 import {
   connectConflicts,
   connectTokenPlan,
@@ -161,6 +163,7 @@ describe('token plan recommendation', () => {
     });
     expect(recommendationIn(viewOf(config), 'kimi-coding-plan')).toEqual({
       llm: 'kimi-coding-plan:kimi-for-coding',
+      webSearch: 'kimi-coding-plan',
     });
   });
 });
@@ -292,5 +295,50 @@ describe('connecting a token plan', () => {
     });
     expect(server.config()?.providers).not.toHaveProperty('tokendance-2');
     expect(server.config()?.slots).toMatchObject({ llm: 'tokendance:cogevol-base' });
+  });
+});
+
+describe('Kimi account setup', () => {
+  it.each(['kimi', 'kimi-coding-plan'])(
+    'offers shared credentials and fills search in the wizard for %s',
+    async (presetId) => {
+      const view = viewOf(await configure(addPlan(presetId)));
+      const preset = view.presets.find((entry) => entry.id === presetId)!;
+      const assignments = wizardAssignments(view, preset, presetId);
+      expect(assignments).toHaveProperty('webSearch', presetId);
+      expect(assignments.llm).toMatch(new RegExp(`^${presetId}:`));
+      const searchEntries = serviceEntries(view, 'webSearch', ['kimi']).filter(
+        (entry) => entry.provider,
+      );
+      expect(searchEntries).toHaveLength(1);
+      expect(searchEntries[0].provider?.id).toBe(presetId);
+      expect(searchEntries[0].provider?.key?.set).toBe(true);
+    },
+  );
+});
+
+describe('Kimi wizard endpoints', () => {
+  it.each(['kimi', 'kimi-coding-plan'])(
+    'does not assign search to a custom proxy account for %s',
+    async (presetId) => {
+      const view = viewOf(await configure(addPlan(presetId)));
+      // Even if a view offers search, the wizard must check the typed endpoint.
+      view.providers[0] = { ...view.providers[0], baseUrl: 'https://proxy.openmaic.test/v1' };
+      const preset = view.presets.find((entry) => entry.id === presetId)!;
+      expect(wizardAssignments(view, preset, presetId)).not.toHaveProperty('webSearch');
+      expect(wizardAssignments(view, preset, presetId)).toHaveProperty('llm');
+    },
+  );
+
+  it.each([
+    'https://api.moonshot.cn/v1',
+    'https://api.moonshot.ai/v1',
+    'https://api.kimi.com/coding/v1',
+    'https://api.kimi.ai/coding/v1/',
+  ])('allows an official search account base %s', async (baseUrl) => {
+    const view = viewOf(await configure(addPlan('kimi')));
+    view.providers[0] = { ...view.providers[0], baseUrl };
+    const preset = view.presets.find((entry) => entry.id === 'kimi')!;
+    expect(wizardAssignments(view, preset, 'kimi')).toHaveProperty('webSearch', 'kimi');
   });
 });

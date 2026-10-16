@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
-import { describe, expect, it } from 'vitest';
+import fs from 'fs';
+import { describe, expect, it, vi } from 'vitest';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { parseModelConfig } from '@/lib/server/model-config/openmaic-yml';
 import { resolveSlot } from '@/lib/server/model-config/resolve-slot';
@@ -363,5 +364,99 @@ describe('translateLegacyConfig output', () => {
       fallback: { providerId: 'deepseek', modelId: 'deepseek-v4-flash' },
     });
     expect(resolveSlot('tts', layers)).toMatchObject({ registryId: 'minimax-tts' });
+  });
+});
+
+it('loads the real legacy Google compatible env through translation, slots and Pi resolution', async () => {
+  const snapshot = { ...process.env };
+  const exists = fs.existsSync.bind(fs);
+  const boundary = vi
+    .spyOn(fs, 'existsSync')
+    .mockImplementation((path) =>
+      /(?:openmaic|server-providers)\.ya?ml$/.test(String(path)) ? false : exists(path),
+    );
+  let runtime: typeof import('@/lib/server/model-config/runtime') | undefined;
+  try {
+    // Hermetic env and file boundary: the production env loader and translation stay real.
+    for (const name of Object.keys(process.env)) {
+      if (
+        /(?:_API_KEY|_BASE_URL|_MODELS|_ENABLED|_PROXY)$/.test(name) ||
+        [
+          'OPENMAIC_CONFIG',
+          'DEFAULT_MODEL',
+          'MODEL_ROUTES',
+          'MODEL_FALLBACK',
+          'DATABASE_URL',
+        ].includes(name)
+      )
+        delete process.env[name];
+    }
+    process.env.OPENAI_API_KEY = 'test-placeholder-key';
+    process.env.OPENAI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai';
+    process.env.OPENAI_MODELS = 'gemini-3.8-flash';
+    process.env.DEFAULT_MODEL = 'openai:gemini-3.8-flash';
+    vi.resetModules();
+    runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    const loaded = runtime.deploymentConfig();
+    expect(loaded).toMatchObject({
+      legacy: true,
+      layer: {
+        config: {
+          providers: { openai: { baseUrl: process.env.OPENAI_BASE_URL } },
+          slots: { llm: 'openai:gemini-3.8-flash' },
+        },
+      },
+    });
+    expect(await runtime.lookupStage('chat-adapter', null)).toMatchObject({
+      status: 'assigned',
+      registryId: 'openai',
+      modelId: 'gemini-3.8-flash',
+      baseUrl: process.env.OPENAI_BASE_URL,
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await expect(
+      resolveModel({ stage: 'chat-adapter', requireToolCalling: true }),
+    ).rejects.toMatchObject({ name: 'PiGeminiNativeRequiredError' });
+    await expect(resolveModel({ stage: 'quiz-grade' })).resolves.toMatchObject({
+      modelId: 'gemini-3.8-flash',
+    });
+  } finally {
+    runtime?.setDeploymentConfigForTests();
+    boundary.mockRestore();
+    for (const name of Object.keys(process.env)) if (!(name in snapshot)) delete process.env[name];
+    Object.assign(process.env, snapshot);
+    vi.resetModules();
+  }
+});
+
+describe('shared legacy account collisions', () => {
+  it.each([
+    { apiKey: 'search-key', baseUrl: 'https://api.moonshot.cn/v1' },
+    { apiKey: 'chat-key', baseUrl: 'https://api.kimi.com/coding/v1' },
+  ])('warns and skips a conflicting search account without replacing chat: %j', (search) => {
+    const chat = { apiKey: 'chat-key', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-k3'] };
+    const { config, notices } = translateLegacyConfig(
+      server({ providers: { kimi: chat }, webSearch: { kimi: search } }),
+    );
+    expect(config.providers?.kimi).toMatchObject(chat);
+    expect(config.slots?.webSearch).toBeUndefined();
+    expect(notices).toEqual([
+      expect.stringContaining('webSearch.kimi conflicts with the existing provider "kimi"'),
+    ]);
+    expect(notices.join(' ')).not.toContain('chat-key');
+    expect(notices.join(' ')).not.toContain('search-key');
+  });
+
+  it('keeps chat model pins when an opted-in search entry shares the account', () => {
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { kimi: { apiKey: 'shared-key', models: ['kimi-k3'] } },
+        webSearch: { kimi: { apiKey: 'shared-key' } },
+      }),
+    );
+    expect(notices).toEqual([]);
+    expect(config.providers?.kimi.models).toEqual(['kimi-k3']);
+    expect(config.slots?.webSearch).toBe('kimi');
   });
 });

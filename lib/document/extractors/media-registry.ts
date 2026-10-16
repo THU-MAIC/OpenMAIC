@@ -1,3 +1,4 @@
+import { getMediaExtractorManifestEntry } from './manifest';
 import { mediaBackedExtractorProviders } from './media';
 import { localMediaExtractorProvider } from './local-media';
 import type {
@@ -58,6 +59,11 @@ export async function selectMediaExtractorProvider(options: {
     }
     const reason = await availabilityReason(preferred);
     if (reason) {
+      if (
+        getMediaExtractorManifestEntry(preferred.id)?.requiresServerASR &&
+        options.input.config.asrError
+      )
+        throw options.input.config.asrError;
       throw new Error(`Media extractor "${preferred.id}" is unavailable: ${reason}`);
     }
     return preferred;
@@ -67,6 +73,11 @@ export async function selectMediaExtractorProvider(options: {
   for (const provider of supported) {
     if (!(await availabilityReason(provider))) return provider;
   }
+  if (
+    options.input.config.asrError &&
+    supported.some((provider) => getMediaExtractorManifestEntry(provider.id)?.requiresServerASR)
+  )
+    throw options.input.config.asrError;
   throw new Error(
     `Media extraction is unavailable for "${options.mimeType}". Configure AliDocMind credentials for cloud extraction, or install ffmpeg (including ffprobe) and configure a server ASR provider for local extraction.`,
   );

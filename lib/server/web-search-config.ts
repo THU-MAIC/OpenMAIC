@@ -1,3 +1,4 @@
+import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import {
   resolveServerWebSearchProviderId,
   isServerConfiguredProvider,
@@ -38,6 +39,7 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
   // The bare root is accepted for convenience; the Claude adapter normalizes it
   // to the /v1 root, since the AI SDK appends "/messages" to the base URL.
   claude: ['https://api.anthropic.com', 'https://api.anthropic.com/v1'],
+  kimi: [],
   minimax: [
     'https://api.minimaxi.com',
     'https://api.minimaxi.com/v1',
@@ -93,6 +95,7 @@ export function resolveSafeClientWebSearchBaseUrl(
 
   const allowed = [
     ...OFFICIAL_CLIENT_BASE_URLS[providerId],
+    ...(WEB_SEARCH_PROVIDERS[providerId].officialBaseUrls ?? []),
     ...tokenPlanClientBaseUrls(providerId),
   ].map(normalizeBaseUrl);
   if (!allowed.includes(normalized)) {
@@ -253,6 +256,7 @@ export function webSearchConfigFromConnection(
     connection.origin === 'default'
       ? requestedSearchModel(providerId, requested)
       : connection.modelId;
+  authorizeMediaModel(connection, 'webSearch', model);
   return {
     providerId,
     apiKey,
