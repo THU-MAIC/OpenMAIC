@@ -19,7 +19,13 @@ const LATEX = '\\sqrt{x}+\\frac{a}{b}';
 
 // Vitest does not expose global afterEach, so RTL's automatic cleanup is off.
 // Unmount before restoring scheduling functions, including in filtered runs.
-afterEach(() => cleanup());
+afterEach(async () => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  // Unmounting is not a frame boundary; separate each test's live budget.
+  await new Promise(requestAnimationFrame);
+});
 
 /** Stored prose: the formula as source only. */
 function stored(latex: string): string {
@@ -320,11 +326,6 @@ describe('slide elements typeset inline formulas', () => {
 // Typesetting ~1,000 formulas takes well under a second alone but can pass the
 // 5 s default when the release gate runs several package suites at once.
 describe('inline math typesetting budget', { timeout: 30_000 }, () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-  });
-
   /**
    * A distinct formula padded with trailing whitespace to 1,900 source
    * characters. The budget counts source characters, so two of these fill a

@@ -170,6 +170,12 @@ jobs:
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test
 
+      - name: Unit Tests (renderer)
+        run: pnpm --filter @openmaic/renderer test
+
+      - name: Unit Tests (editor)
+        run: pnpm --filter @openmaic/editor test
+
       - name: TypeScript (generation)
         run: pnpm --filter @openmaic/generation run typecheck
 

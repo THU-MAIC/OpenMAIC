@@ -298,6 +298,7 @@ const pendingRoots = new Map<Element, MathPriority>();
 let syncBudget: TypesetBudget | null = null;
 let cancelSyncReset: (() => void) | null = null;
 let idleJob: { cancel?: () => void } | null = null;
+let backgroundScheduled = false;
 
 function resetSyncBudget(): void {
   cancelSyncReset?.();
@@ -314,7 +315,7 @@ function synchronousBudget(): TypesetBudget {
         cancelSyncReset = null;
       }
     };
-    if (typeof requestAnimationFrame === 'function') {
+    if (typeof requestAnimationFrame === 'function' && typeof cancelAnimationFrame === 'function') {
       const cancel = cancelAnimationFrame;
       const handle = requestAnimationFrame(reset);
       cancelSyncReset = () => cancel(handle);
@@ -327,8 +328,22 @@ function synchronousBudget(): TypesetBudget {
   return syncBudget;
 }
 
+function renderPendingMath(priority: MathPriority, budget: TypesetBudget): void {
+  for (const [root, queuedPriority] of [...pendingRoots]) {
+    if (queuedPriority !== priority) continue;
+    pendingRoots.delete(root);
+    if (root.isConnected && renderPass(root, {}, budget)) pendingRoots.set(root, priority);
+    if (budget.full) break;
+  }
+}
+
 function schedulePendingMath(): void {
-  if (idleJob || !pendingRoots.size) return;
+  if (!pendingRoots.size) {
+    idleJob?.cancel?.();
+    idleJob = null;
+    return;
+  }
+  if (idleJob) return;
   const job: { cancel?: () => void } = {};
   idleJob = job;
   job.cancel = whenIdle(() => {
@@ -338,12 +353,7 @@ function schedulePendingMath(): void {
     resetSyncBudget();
     const budget = newBudget();
     for (const priority of ['normal', 'background'] as const) {
-      for (const [root, queuedPriority] of [...pendingRoots]) {
-        if (queuedPriority !== priority) continue;
-        pendingRoots.delete(root);
-        if (root.isConnected && renderPass(root, {}, budget)) pendingRoots.set(root, priority);
-        if (budget.full) break;
-      }
+      renderPendingMath(priority, budget);
       if (budget.full) break;
     }
     schedulePendingMath();
@@ -351,9 +361,23 @@ function schedulePendingMath(): void {
 }
 
 function renderLiveMath(root: Element, priority: MathPriority): void {
-  if (priority === 'background' || renderPass(root, {}, synchronousBudget())) {
+  if (priority === 'background') {
     pendingRoots.set(root, priority);
-  } else pendingRoots.delete(root);
+    // Let all foreground layout effects run first, then use only this frame's
+    // remaining allowance before paint. Completed roots cost a scan, no idle job.
+    if (!backgroundScheduled) {
+      backgroundScheduled = true;
+      queueMicrotask(() => {
+        backgroundScheduled = false;
+        if (!pendingRoots.size) return;
+        renderPendingMath('background', synchronousBudget());
+        schedulePendingMath();
+      });
+    }
+    return;
+  }
+  if (renderPass(root, {}, synchronousBudget())) pendingRoots.set(root, priority);
+  else pendingRoots.delete(root);
   schedulePendingMath();
 }
 
@@ -362,7 +386,6 @@ function cancelPendingMath(root: Element): void {
   if (!pendingRoots.size) {
     idleJob?.cancel?.();
     idleJob = null;
-    resetSyncBudget();
   }
 }
 

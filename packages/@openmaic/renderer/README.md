@@ -108,10 +108,10 @@ interface SlideCanvasProps {
 Inline formulas share a bounded rendering budget so dense slides can yield
 between batches. Ordinary foreground slides render synchronously; a short
 formula following heavy content in the same frame may also be deferred.
-Use `mathPriority="background"` for thumbnails: their formulas render in idle
-time after foreground canvases, without spending the foreground's synchronous
-allowance. Snapshot APIs still finish all formulas synchronously within the
-existing per-prose-root hard caps.
+Use `mathPriority="background"` for thumbnails: after foreground layout effects,
+they use the frame's remaining allowance before paint. Any remaining formulas
+render in idle time after foreground canvases. Snapshot APIs still finish all
+formulas synchronously within the existing per-prose-root hard caps.
 
 ### Play-time effects
 
