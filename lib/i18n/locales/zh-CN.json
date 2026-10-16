@@ -1825,6 +1825,7 @@
       "capTts": "语音合成",
       "capVideo": "视频生成",
       "capWebSearch": "联网搜索",
+      "capWebFetch": "网页抓取",
       "saved": "连接设置已保存",
       "stageInteractive": "互动页面",
       "stageSlide": "课件页面",

@@ -4,8 +4,8 @@
  *
  * A plan is a workspace provider of a token-plan preset. Connecting it (or
  * saving a new key for it) assigns the preset's recommendations — the default
- * model, the course stages it names, and its image, video, speech and search
- * services — to the slots, as one `slots` change against the view's revision.
+ * model, the course stages it names, and its image, video, speech, search and
+ * fetch services — to the slots, as one `slots` change against the view's revision.
  * What those slots use now (the workspace's own assignments and the server's
  * defaults written on them) is replaced when the user chooses the plan's
  * setup, and kept otherwise (only slots with neither are filled). Slots the
@@ -113,7 +113,7 @@ export function tokenPlanRecommendation(
     if (offered.models.some((entry) => entry.id === model)) {
       recommendation[slotId] = modelRef(provider.id, model);
     } else if (offered.models.length === 0 && slot.capability !== 'chat') {
-      // A service without models to pick (web search): the provider by itself.
+      // A service without models to pick (web search or fetch): the provider by itself.
       recommendation[slotId] = provider.id;
     }
   }

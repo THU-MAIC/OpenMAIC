@@ -1825,6 +1825,7 @@
       "capTts": "음성 합성",
       "capVideo": "영상 생성",
       "capWebSearch": "웹 검색",
+      "capWebFetch": "웹 페이지 가져오기",
       "saved": "연결 설정이 저장되었습니다",
       "stageInteractive": "인터랙티브",
       "stageSlide": "슬라이드",

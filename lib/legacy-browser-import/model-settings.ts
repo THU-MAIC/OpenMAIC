@@ -139,6 +139,7 @@ const TOKEN_PLAN_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   video: 'video',
   tts: 'tts',
   webSearch: 'webSearch',
+  webFetch: 'webFetch',
 };
 
 /** Capabilities a slot names without a model: the provider's own default. */
@@ -337,7 +338,8 @@ export function planModelSettingsImport(
     });
     chatIds.set(llm.providerId, id);
     for (const [modality, target] of Object.entries(plan.modalities)) {
-      if (modality === 'llm' || !target) continue;
+      // Web fetch did not exist in the legacy browser settings.
+      if (modality === 'llm' || modality === 'webFetch' || !target) continue;
       const capability = TOKEN_PLAN_CAPABILITY[modality as TokenPlanModality] as ServiceCapability;
       const service = serviceMap(state, capability)?.[target.providerId];
       if (text(service?.apiKey) === key) planServices.set(`${capability}:${target.providerId}`, id);

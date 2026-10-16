@@ -20,6 +20,8 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
 | `kimi-coding-plan` | Kimi コーディングプラン | チャット、Web 検索、Webページ取得 |
 
+**設定 → Token Plan** で Kimi Coding Plan を接続すると、プランのキーと `https://api.kimi.com/coding/v1` を共有するチャット、ウェブ検索、ウェブ取得が推奨されます。プランの設定を適用すると内蔵リーダーが Kimi に切り替わり、切断するとサーバーの既定値（リーダー未設定時は内蔵リーダー）に戻ります。ロックされたスロットは変更されません。現在の設定を保持する場合は、`null` を含む明示的な割り当てが維持されます。ウェブ取得を宣言しないプランは、このスロットを変更しません。
+
 `openai-compatible` は任意の OpenAI 互換チャットサーバーに接続します。`baseUrl` が必要で、モデル設定に表示されるのはその `models` 一覧です。
 
 すべてのプリセット ID：

@@ -106,8 +106,8 @@ function byText(text: string, selector = 'button'): HTMLElement {
   return found;
 }
 
-async function connectTokenDance(key = 'td-key-123456') {
-  act(() => byText('TokenDance').click());
+async function connectPlan(name: string, key = 'td-key-123456') {
+  act(() => byText(name).click());
   const input = document.body.querySelector<HTMLInputElement>(
     '[aria-label="settings.tokenPlan.apiKey"]',
   )!;
@@ -126,7 +126,7 @@ const dialog = () => document.body.querySelector('[role="alertdialog"]');
 describe('Token Plan → connecting applies the plan’s recommended configuration', () => {
   it('on a fresh workspace, assigns llm and the course stages without asking', async () => {
     const panel = mountPanel(null);
-    await connectTokenDance();
+    await connectPlan('TokenDance');
     expect(dialog()).toBeNull();
     expect(panel.changes).toEqual([
       { kind: 'provider', id: 'tokendance', preset: 'tokendance', apiKey: 'td-key-123456' },
@@ -148,7 +148,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
 
   it('asks before replacing the models the workspace picked, and lists them', async () => {
     const panel = mountPanel(await workspaceWithOwnPicks());
-    await connectTokenDance();
+    await connectPlan('TokenDance');
     // Nothing is written until the user chooses.
     expect(panel.changes).toEqual([]);
     const shown = dialog();
@@ -163,7 +163,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
 
   it("“Use plan's recommended setup” overwrites the workspace's picks in one change", async () => {
     const panel = mountPanel(await workspaceWithOwnPicks());
-    await connectTokenDance();
+    await connectPlan('TokenDance');
     act(() => byText('settings.tokenPlan.applyRecommended', '[role="alertdialog"] button').click());
     await flush();
     expect(panel.changes).toHaveLength(2);
@@ -183,7 +183,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
 
   it('“Keep my current setup” connects and fills only the empty slots', async () => {
     const panel = mountPanel(await workspaceWithOwnPicks());
-    await connectTokenDance();
+    await connectPlan('TokenDance');
     act(() => byText('settings.tokenPlan.applyKeep', '[role="alertdialog"] button').click());
     await flush();
     expect(panel.changes[0]).toMatchObject({ kind: 'provider', id: 'tokendance' });
@@ -209,7 +209,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
       lock: ['course.content.slide'],
     });
     const panel = mountPanel(picks);
-    await connectTokenDance();
+    await connectPlan('TokenDance');
     const rows = [...dialog()!.querySelectorAll('li')].map((row) => row.textContent);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatch(/^llm/);
@@ -219,4 +219,18 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
     expect(set).not.toHaveProperty('course.content.slide');
     expect(set.llm).toMatch(/^tokendance:/);
   });
+});
+
+it('shows Kimi fetch in the capability list and applies it after confirming the builtin conflict', async () => {
+  const panel = mountPanel(null);
+  await connectPlan('Kimi');
+  expect(document.body.textContent).toContain('settings.tokenPlan.capWebFetch');
+  expect(document.body.textContent).toContain('settings.webFetchSettings');
+  act(() => byText('settings.webFetchSettings').click());
+  expect(document.body.querySelector('ul')?.textContent).toContain('kimi');
+  expect(dialog()?.textContent).toContain('Built-in reader');
+  expect(panel.changes).toEqual([]);
+  act(() => byText('settings.tokenPlan.applyRecommended', '[role="alertdialog"] button').click());
+  await flush();
+  expect(panel.config()?.slots?.webFetch).toBe('kimi-coding-plan');
 });

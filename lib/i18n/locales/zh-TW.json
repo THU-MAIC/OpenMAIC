@@ -1810,6 +1810,7 @@
       "capTts": "語音合成",
       "capVideo": "影片生成",
       "capWebSearch": "網路搜尋",
+      "capWebFetch": "網頁擷取",
       "saved": "連線設定已儲存",
       "stageInteractive": "互動頁面",
       "stageSlide": "課件頁面",

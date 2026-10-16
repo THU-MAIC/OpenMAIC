@@ -6,9 +6,13 @@ import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
+import { MODALITY_ORDER, TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
 import { getSlot, isSlotId, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
-import { PROVIDER_PRESETS, getProviderPreset } from '@/lib/config/provider-presets';
+import {
+  PROVIDER_PRESETS,
+  getProviderPreset,
+  tokenPlanToPreset,
+} from '@/lib/config/provider-presets';
 
 const REGISTRIES: Record<SlotCapability, Record<string, unknown>> = {
   chat: PROVIDERS,
@@ -107,4 +111,23 @@ it('preserves the Coding Plan endpoint for web fetch', () => {
     registryId: 'kimi',
     baseUrl: 'https://api.kimi.com/coding/v1',
   });
+});
+
+it('lets any token plan declare a fetch provider and endpoint', () => {
+  expect(MODALITY_ORDER).toContain('webFetch');
+  const preset = tokenPlanToPreset({
+    id: 'fetch-plan',
+    name: 'Fetch Plan',
+    category: 'token_plan',
+    modalities: { webFetch: { providerId: 'kimi', baseUrl: 'https://api.kimi.ai/coding/v1' } },
+  });
+  expect(preset.capabilities).toEqual({
+    webFetch: { registryId: 'kimi', baseUrl: 'https://api.kimi.ai/coding/v1' },
+  });
+  expect(preset.recommended).toEqual({ webFetch: 'kimi' });
+  expect(getProviderPreset('kimi-coding-plan')?.recommended).toMatchObject({
+    webFetch: 'kimi',
+    webSearch: 'kimi',
+  });
+  expect(getProviderPreset('kimi')?.recommended).not.toHaveProperty('webFetch');
 });

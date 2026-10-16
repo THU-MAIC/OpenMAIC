@@ -1825,6 +1825,7 @@
       "capTts": "Speech synthesis",
       "capVideo": "Video generation",
       "capWebSearch": "Web search",
+      "capWebFetch": "Web Fetch",
       "saved": "Connection settings saved",
       "stageInteractive": "Interactive",
       "stageSlide": "Slides",

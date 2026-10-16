@@ -20,6 +20,8 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | `volcengine-ark` | 火山方舟 Agent Plan | 對話、圖像、影片、TTS、網路搜尋 |
 | `kimi-coding-plan` | Kimi 程式設計方案 | 對話、網路搜尋、網頁擷取 |
 
+在**設定 → Token Plan** 中連接 Kimi Coding Plan，會同時推薦對話、網路搜尋和網頁擷取，共用方案金鑰和 `https://api.kimi.com/coding/v1`。套用方案設定會將內建讀取器替換為 Kimi；中斷連接後恢復伺服器預設值（未設定讀取器時為內建讀取器）。鎖定的欄位保持不變，選擇保留目前設定會保留明確指定的值，包括 `null`。未宣告網頁擷取的方案不會修改該欄位。
+
 `openai-compatible` 用於連接任何 OpenAI 相容的對話服務：需要填寫 `baseUrl`，模型設定中提供的就是它的 `models` 清單。
 
 全部範本 ID：

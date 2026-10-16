@@ -1825,6 +1825,7 @@
       "capTts": "音声合成",
       "capVideo": "動画生成",
       "capWebSearch": "ウェブ検索",
+      "capWebFetch": "Webページ取得",
       "saved": "接続設定を保存しました",
       "stageInteractive": "インタラクティブ",
       "stageSlide": "スライド",

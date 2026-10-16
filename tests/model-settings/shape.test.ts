@@ -135,8 +135,18 @@ describe('a mixed deployment (llm locked, user keys allowed)', () => {
     expect(settingsSections(view).tokenPlan).toBe(true);
   });
 
-  it('hides Token Plan when no plan can fill an unlocked slot', () => {
+  it('keeps Kimi available when only web fetch can still be set', () => {
     const view = viewFor({ ...config, lock: ['llm', 'tts', 'image', 'video', 'webSearch'] });
+    expect(tokenPlanCanChange(view, plan(view, 'kimi-coding-plan'))).toBe(true);
+    expect(tokenPlanCanChange(view, plan(view, 'tokendance'))).toBe(false);
+    expect(settingsSections(view).tokenPlan).toBe(true);
+  });
+
+  it('hides Token Plan when no plan can fill an unlocked slot', () => {
+    const view = viewFor({
+      ...config,
+      lock: ['llm', 'tts', 'image', 'video', 'webSearch', 'webFetch'],
+    });
     for (const preset of view.presets.filter((entry) => entry.kind === 'token-plan')) {
       expect(tokenPlanCanChange(view, preset)).toBe(false);
     }
