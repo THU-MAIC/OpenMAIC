@@ -1799,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Gói token",
       "title": "Thiết lập gói token",
-      "desc": "Chọn nhà cung cấp gói token và nhập khóa — hệ thống sẽ tự cấu hình mọi loại nội dung tương thích (model ngôn ngữ / ảnh / video / giọng nói / tìm web).",
+      "desc": "Chọn nhà cung cấp gói token và nhập khóa — hệ thống sẽ tự cấu hình mọi loại nội dung tương thích (model ngôn ngữ / ảnh / video / giọng nói / tìm web / lấy trang web).",
       "selectPlan": "Chọn nhà cung cấp",
       "apiKey": "Khóa API",
       "updateKey": "Cập nhật khóa",

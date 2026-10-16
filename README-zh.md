@@ -136,12 +136,12 @@ slots:
 **支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
 > [!TIP]
-> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段与联网检索都会参与生成。最省事的方式是用一个 Key 覆盖全部模态（见下方的 Token Plan 示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
+> **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段、联网检索与网页抓取都会参与生成。Token Plan 可以用一个 Key 配置该套餐支持的能力（见下方示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
 
 <details>
 <summary><b>更多示例</b>：Token Plan、小米 MiMo 与智谱 GLM、Amazon Bedrock</summary>
 
-Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
+MiniMax Token Plan 快速示例（一个 Key 同时覆盖对话、图像、视频、TTS 与联网搜索；`tokendance` 用法相同）：
 
 ```yaml
 providers:

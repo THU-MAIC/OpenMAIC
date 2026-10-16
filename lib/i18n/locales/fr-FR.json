@@ -1799,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Forfait de jetons",
       "title": "Configuration du forfait de jetons",
-      "desc": "Choisissez votre fournisseur de forfait de jetons et saisissez la clé : toutes les modalités prises en charge sont configurées automatiquement (LLM, image, vidéo, parole, recherche web).",
+      "desc": "Choisissez votre fournisseur de forfait de jetons et saisissez la clé : toutes les modalités prises en charge sont configurées automatiquement (LLM, image, vidéo, parole, recherche web, récupération web).",
       "selectPlan": "Choisir un fournisseur",
       "apiKey": "Clé d’API",
       "updateKey": "Mettre à jour la clé",

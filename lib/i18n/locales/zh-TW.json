@@ -1784,7 +1784,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan 一鍵設定",
-      "desc": "選擇你的 Token Plan 服務商並填入金鑰，將自動設定所有已適配的模態（語言模型/影像/影片/語音/網路搜尋）。",
+      "desc": "選擇你的 Token Plan 服務商並填入金鑰，將自動設定所有已適配的模態（語言模型/影像/影片/語音/網路搜尋/網頁擷取）。",
       "selectPlan": "選擇服務商",
       "apiKey": "API 金鑰",
       "updateKey": "更新金鑰",

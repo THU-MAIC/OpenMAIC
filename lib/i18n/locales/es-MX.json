@@ -1799,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Plan de tokens",
       "title": "Configuración del plan de tokens",
-      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web).",
+      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web/obtención de páginas web).",
       "selectPlan": "Seleccionar proveedor",
       "apiKey": "Clave API",
       "updateKey": "Actualizar clave",

@@ -136,12 +136,12 @@ The slots you write are the server's defaults; users can change them, or connect
 **Providers:** OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Gemini, DeepSeek, Qwen, Kimi, MiniMax, Grok (xAI), OpenRouter, TokenDance, Doubao, Tencent Hunyuan/TokenHub, Xiaomi MiMo, GLM (Zhipu), Ollama, [Lemonade](#lemonade-local-ai) and [FunASR](#funasr-local-asr) (local), and any OpenAI-compatible API.
 
 > [!TIP]
-> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, and web-grounded research. The least friction is a single key that covers all of them (see the token plan examples below), with a fast long-context model such as `deepseek-v4.1-flash` as the default.
+> **Recommended setup:** OpenMAIC is at its best with every modality turned on — generated illustrations, narration, video clips, web search, and web fetch. A token plan configures the capabilities it supports with one key (see the examples below). Choose a fast long-context model such as `deepseek-v4.1-flash` as the default.
 
 <details>
 <summary><b>More examples</b>: token plans, Xiaomi MiMo and GLM, Amazon Bedrock</summary>
 
-Token plan quick example (one key for chat, image, video, TTS and web search; `tokendance` works the same way):
+MiniMax token plan quick example (one key for chat, image, video, TTS and web search; `tokendance` works the same way):
 
 ```yaml
 providers:

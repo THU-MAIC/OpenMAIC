@@ -1799,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan 一键配置",
-      "desc": "选择你的 Token Plan 服务商并填入密钥，将自动配置所有已适配的模态(语言模型/图像/视频/语音/网络搜索)。",
+      "desc": "选择你的 Token Plan 服务商并填入密钥，将自动配置所有已适配的模态(语言模型/图像/视频/语音/网络搜索/网页抓取)。",
       "selectPlan": "选择服务商",
       "apiKey": "API 密钥",
       "updateKey": "更新密钥",

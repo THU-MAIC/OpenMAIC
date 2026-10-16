@@ -1799,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token-Tarif",
       "title": "Token-Tarif einrichten",
-      "desc": "Wähle deinen Token-Tarifanbieter und gib den Schlüssel ein – damit werden alle angebundenen Modalitäten automatisch konfiguriert (LLM/Bild/Video/Sprachausgabe/Websuche).",
+      "desc": "Wähle deinen Token-Tarifanbieter und gib den Schlüssel ein – damit werden alle angebundenen Modalitäten automatisch konfiguriert (LLM/Bild/Video/Sprachausgabe/Websuche/Webseiten abrufen).",
       "selectPlan": "Anbieter auswählen",
       "apiKey": "API-Schlüssel",
       "updateKey": "Schlüssel aktualisieren",
