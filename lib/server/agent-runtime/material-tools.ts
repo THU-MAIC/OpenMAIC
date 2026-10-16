@@ -229,9 +229,9 @@ export interface MaterialToolDependencies {
 }
 
 /** The fail-closed answer: a referenced id does not exist or is not visible here. */
-function notFoundResult() {
+function notFoundResult(copy: MaterialModelCopy) {
   return {
-    content: [{ type: 'text' as const, text: 'Material not found.' }],
+    content: [{ type: 'text' as const, text: copy.error('materialNotFound') }],
     details: { status: 'not_found' as const },
     // The top-level isError is what the event log's error audit reads
     // (`data->>'isError'`); a missing material is a genuine failure of the
@@ -241,9 +241,9 @@ function notFoundResult() {
 }
 
 /** A text-bearing material whose recorded text no longer resolves. */
-function textUnavailableResult(materialId: string) {
+function textUnavailableResult(materialId: string, copy: MaterialModelCopy) {
   return {
-    content: [{ type: 'text' as const, text: 'Material text is unavailable.' }],
+    content: [{ type: 'text' as const, text: copy.error('textUnavailable') }],
     details: { status: 'text_unavailable' as const, materialId },
     isError: true,
   };
@@ -388,11 +388,12 @@ function reportedExtraction(
   status: ExtractionStatus,
   storedReasonCode: unknown,
   copy: MaterialModelCopy,
+  context: 'library' | 'conversation' = 'library',
 ): ReportedExtraction {
   return {
     status,
     statusLabel: copy.statusLabel(status),
-    ...(status === 'failed' ? copy.failure(storedReasonCode) : {}),
+    ...(status === 'failed' ? copy.failure(storedReasonCode, context) : {}),
   };
 }
 
@@ -414,7 +415,7 @@ function publicSessionExtractionOf(
   const { error: _diagnostic, reasonCode, stats, status, ...rest } = extraction;
   return {
     ...rest,
-    ...reportedExtraction(status, reasonCode, copy),
+    ...reportedExtraction(status, reasonCode, copy, 'conversation'),
     ...(stats ? { stats: (({ diagnostics: _hidden, ...counts }) => counts)(stats) } : {}),
   };
 }
@@ -723,7 +724,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       throwIfAborted(signal);
       const material = await resolve(deps.sessionId, params.materialId, scopeOf(params.scope));
       throwIfAborted(signal);
-      if (!material) return notFoundResult();
+      if (!material) return notFoundResult(await copyNow());
 
       if (material.origin === 'session') {
         const { record } = material;
@@ -743,7 +744,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         if (record.kind !== 'extraction' && record.kind !== 'transcript' && record.kind !== 'web') {
           return unsupportedKindResult(record.id, record.kind);
         }
-        if (record.textAssetId === null) return textUnavailableResult(record.id);
+        if (record.textAssetId === null) return textUnavailableResult(record.id, await copyNow());
       } else {
         const { entry } = material;
         if (entry.kind !== 'source') return unsupportedKindResult(entry.id, entry.kind);
@@ -757,7 +758,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       });
       throwIfAborted(signal);
       const materialId = resolvedMaterialId(material);
-      if (read === null) return textUnavailableResult(materialId);
+      if (read === null) return textUnavailableResult(materialId, await copyNow());
       const { text, revision } = read;
       const requested = params.offset ?? 0;
       if (requested > 0 && params.revision === undefined) {
@@ -831,7 +832,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       if (params.materialId) {
         const material = await resolve(deps.sessionId, params.materialId, scope);
         throwIfAborted(signal);
-        if (!material) return notFoundResult();
+        if (!material) return notFoundResult(await copyNow());
         materials = [material];
       } else if (scope === 'library') {
         // Every source with text, newest first, a page at a time: only the
@@ -986,7 +987,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
       const copy = await copyNow();
       const material = await resolve(deps.sessionId, params.materialId, scopeOf(params.scope));
       throwIfAborted(signal);
-      if (!material) return notFoundResult();
+      if (!material) return notFoundResult(copy);
       if (!isSource(material)) throw new Error('extract_material only accepts source materials.');
 
       let state: ReportedExtraction & { stats?: unknown };
@@ -995,7 +996,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
         const observation = deps.extractionWatcher?.observe();
         const ensured = await ensureOwnerExtraction(material.entry);
         throwIfAborted(signal);
-        if (!ensured) return notFoundResult();
+        if (!ensured) return notFoundResult(copy);
         started = ensured.queued;
         if (started) {
           deps.onLibraryChanged?.({
@@ -1066,7 +1067,7 @@ export function buildMaterialTools(deps: MaterialToolDependencies): AgentTool<ne
           const found = await Promise.all(
             params.materialIds.map((materialId) => resolve(deps.sessionId, materialId, scope)),
           );
-          if (found.some((material) => material === null)) return notFoundResult();
+          if (found.some((material) => material === null)) return notFoundResult(await copyNow());
           resolved = found as ResolvedMaterial[];
         } else {
           resolved = (await listSessionScope(deps.sessionId)).filter(isSource);

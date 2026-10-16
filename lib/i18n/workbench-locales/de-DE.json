@@ -239,7 +239,8 @@
       "parseFailed": "Analyse fehlgeschlagen",
       "folderExisted": "Ordner gab es bereits",
       "unchanged": "Keine Änderung",
-      "movedOutOfFolder": "Aus dem Ordner verschoben"
+      "movedOutOfFolder": "Aus dem Ordner verschoben",
+      "material": "{{count}} Material"
     },
     "error": {
       "materialExtraction": "Materialaufbereitung fehlgeschlagen",

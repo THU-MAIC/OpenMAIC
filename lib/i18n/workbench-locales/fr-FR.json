@@ -239,7 +239,8 @@
       "parseFailed": "Échec de l’analyse",
       "folderExisted": "Le dossier existait déjà",
       "unchanged": "Aucun changement",
-      "movedOutOfFolder": "Sorti du dossier"
+      "movedOutOfFolder": "Sorti du dossier",
+      "material": "{{count}} document"
     },
     "error": {
       "materialExtraction": "L'extraction du document a échoué",

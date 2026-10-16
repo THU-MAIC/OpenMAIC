@@ -599,6 +599,9 @@ export function WorkspaceRail({
   );
 
   const drag = useTreeDrag({ onReorder: handleReorder, onMoveToFolder: handleDropIntoFolder });
+  const carriedFromFolder =
+    drag.dragKind === 'course' &&
+    Boolean(courses.classrooms.find((course) => course.id === drag.dragId)?.folderId);
 
   /**
    * The keyboard's version of the same gesture: Alt+↑/↓ on a focused row moves
@@ -1287,7 +1290,7 @@ export function WorkspaceRail({
             Filing is a drop onto a folder row; UNFILING needs somewhere to drop
             too, and the row that used to serve ("unfiled") is gone. So the
             empty space below the tree takes the drop: it is armed only while a
-            course is in flight, it says what it will do, and it lights up whole
+            course from a folder is in flight, it says what it will do, and it lights up whole
             when the pointer is actually over it. It is pinned to the panel's
             foot
             (see `.ws-ground-drop`) because a tree this deep would otherwise put
@@ -1300,9 +1303,9 @@ export function WorkspaceRail({
             between two rows still commits nothing. */}
         {tab === 'courses' && foldersAvailable ? (
           <TreeGroundDrop
-            armed={drag.dragKind === 'course'}
-            active={drag.folderTarget === ''}
-            dropProps={drag.folderProps()}
+            armed={carriedFromFolder}
+            active={carriedFromFolder && drag.folderTarget === ''}
+            dropProps={carriedFromFolder ? drag.folderProps() : {}}
           />
         ) : null}
       </div>

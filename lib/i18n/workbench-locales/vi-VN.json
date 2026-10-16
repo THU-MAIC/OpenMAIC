@@ -239,7 +239,8 @@
       "parseFailed": "Phân tích thất bại",
       "folderExisted": "Thư mục đã có sẵn",
       "unchanged": "Không thay đổi",
-      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục"
+      "movedOutOfFolder": "Đã chuyển ra khỏi thư mục",
+      "material": "{{count}} tài liệu"
     },
     "error": {
       "materialExtraction": "Bóc tách tài liệu thất bại",

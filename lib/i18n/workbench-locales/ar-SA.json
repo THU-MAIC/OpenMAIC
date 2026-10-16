@@ -239,7 +239,8 @@
       "parseFailed": "فشل التحليل",
       "folderExisted": "المجلد موجود بالفعل",
       "unchanged": "لا تغيير",
-      "movedOutOfFolder": "نُقل خارج المجلد"
+      "movedOutOfFolder": "نُقل خارج المجلد",
+      "material": "{{count}} مادة"
     },
     "error": {
       "materialExtraction": "فشل تحليل المادة",

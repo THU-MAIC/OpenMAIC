@@ -452,6 +452,47 @@ describe('material library routes and tools (PGlite)', () => {
     ).toBe(404);
   });
 
+  it.each([
+    ['zh-CN', '文件夹不存在或不可访问。', '资料不存在或不可访问。', '未移动任何资料。'],
+    ['en-US', 'Folder not found.', 'Material not found.', 'Nothing was moved.'],
+  ] as const)(
+    'localizes genuine organization failures in %s without changing statuses',
+    async (locale, folderMissing, materialMissing, moveRefused) => {
+      await boot();
+      const tools = buildMaterialLibraryTools({
+        ownerId: ACCOUNT,
+        sessionId: 'ses-run',
+        locale: () => locale,
+      });
+      const run = (name: string, args: Record<string, unknown>) =>
+        tools.find((tool) => tool.name === name)!.execute('call', args as never);
+      const folder = await run('rename_material_folder', { folderId: 'missing', name: 'Updated' });
+      expect(folder).toMatchObject({
+        isError: true,
+        details: { status: 'not_found' },
+        content: [{ type: 'text', text: folderMissing }],
+      });
+      const source = await run('rename_material', { materialId: 'missing', name: 'Updated' });
+      expect(source).toMatchObject({
+        isError: true,
+        details: { status: 'not_found' },
+        content: [{ type: 'text', text: materialMissing }],
+      });
+      const move = await run('move_materials', {
+        materialIds: ['private-internal-id'],
+        folderId: 'top-level',
+      });
+      expect(move).toMatchObject({
+        isError: true,
+        details: { status: 'not_movable', materialIds: ['private-internal-id'] },
+      });
+      expect(JSON.stringify(move.content)).toContain(moveRefused);
+      expect(move.content).toMatchObject([
+        { text: expect.stringContaining('\nmaterialIds: private-internal-id') },
+      ]);
+    },
+  );
+
   it('refuses a retired owner’s request, while a run of it keeps organizing for the account', async () => {
     const h = await boot();
     await seedSource(h, 'src-anon', { owner: ANON });
@@ -1113,7 +1154,7 @@ describe('material library routes and tools (PGlite)', () => {
       [],
       createWorkbenchTranslator('en-US'),
     );
-    expect(row.chips.map((chip) => chip.label)).toEqual(['1 materials']);
+    expect(row.chips.map((chip) => chip.label)).toEqual(['1 material']);
   });
 
   it('lists sources only, with folder names and what a conversation has attached', async () => {

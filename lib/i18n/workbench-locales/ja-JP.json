@@ -239,7 +239,8 @@
       "parseFailed": "解析失敗",
       "folderExisted": "フォルダはすでにありました",
       "unchanged": "変更なし",
-      "movedOutOfFolder": "フォルダーの外へ移動しました"
+      "movedOutOfFolder": "フォルダーの外へ移動しました",
+      "material": "{{count}} 件の素材"
     },
     "error": {
       "materialExtraction": "素材の解析に失敗しました",

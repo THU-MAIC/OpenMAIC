@@ -2271,7 +2271,18 @@
         "notMovable": "This material cannot be moved",
         "gone": "It no longer exists",
         "save": "That did not work. Try again",
-        "notEmpty": "This folder still holds materials. Move them out first"
+        "notEmpty": "This folder still holds materials. Move them out first",
+        "materialNotFound": "Material not found.",
+        "folderNotFound": "Folder not found.",
+        "textUnavailable": "Material text is unavailable.",
+        "derivative": "A derivative is named after its source; rename the source instead.",
+        "moveTooMany": "Move at most {{limit}} materials at a time.",
+        "moveNotMovable": "Nothing was moved. Some selected materials are unavailable or cannot be moved.",
+        "toolFolderNameTooLong": "The folder name is too long (at most 40 half-width or 20 full-width characters).",
+        "toolFolderLimit": "The knowledge base already has the maximum of {{limit}} folders.",
+        "mediaUnsupported": "Only image, video or audio materials can be used as course media.",
+        "mediaStorageFull": "There is not enough storage for this media. Free space, then try again.",
+        "mediaNotFound": "Media material not found or has no media bytes."
       },
       "actions": {
         "parse": "Parse",
@@ -2300,6 +2311,9 @@
         "cannotUndo": "This cannot be undone.",
         "folderTitle": "Delete the folder “{{name}}”?",
         "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "No parser is configured for this file type. Ask an administrator to configure one."
       }
     },
     "untitledCourse": "Untitled course",
@@ -2331,7 +2345,8 @@
       "materialUnavailable": "{{name}} can't be attached ({{reason}}). Open the knowledge base to see why and parse it again.",
       "materialAttached": "Already in this conversation",
       "materialStaged": "Already on this message",
-      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down"
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down",
+      "materialUnavailableGuidance": "{{name}} can't be attached. {{guidance}} You can manage it on the knowledge base page."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
