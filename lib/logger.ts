@@ -14,7 +14,7 @@ function isJsonFormat(): boolean {
 function formatError(error: Error): string {
   const head = `${error.name}: ${error.message}`;
   if (!error.stack) return head;
-  return error.stack.includes(error.message) ? error.stack : `${head}\n${error.stack}`;
+  return error.stack.startsWith(head) ? error.stack : `${head}\n${error.stack}`;
 }
 
 function formatLine(level: LogLevel, tag: string, args: unknown[]): string {

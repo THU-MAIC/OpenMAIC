@@ -31,4 +31,15 @@ describe('createLogger error formatting', () => {
     error.stack = undefined;
     expect(logged(error)).toContain('Error: no stack');
   });
+  it('adds the header when the message only appears inside a frame', () => {
+    const error = new TypeError('fetch');
+    error.stack = 'fetch@http://host/app.js:1:1';
+    expect(logged(error)).toContain('TypeError: fetch\nfetch@http://host/app.js:1:1');
+  });
+
+  it('adds the header for an empty message with a frame-only stack', () => {
+    const error = new Error('');
+    error.stack = 'work@http://host/app.js:1:1';
+    expect(logged(error)).toContain('Error: \nwork@http://host/app.js:1:1');
+  });
 });
