@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useMemo, type RefObject } from 'react';
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import katex from 'katex';
 import { safeKatexOptions } from '@openmaic/dsl';
 
@@ -24,8 +24,8 @@ export const MAX_INLINE_MATH_SOURCE = 2_000;
 
 /**
  * Bound uncached typesetting work in a batch. Live prose roots share a batch;
- * standalone renderInlineMath calls get their own. Ordinary prose (a text box
- * with a few dozen short formulas) fits before paint; the rest runs in idle time.
+ * standalone renderInlineMath calls get their own. Ordinary slides fit before
+ * paint; mixed/dense slides may defer even short formulas to idle time.
  */
 export const INLINE_MATH_SYNC_SOURCE_BUDGET = 4_000;
 export const INLINE_MATH_SYNC_FORMULA_BUDGET = 100;
@@ -58,6 +58,10 @@ const TYPESET_CACHE_MAX_ENTRY = 64_000;
 type TypesetEntry = { readonly formula: Element | null; readonly size: number };
 const typesetCache = new Map<string, TypesetEntry>();
 let typesetCacheSize = 0;
+// Keep a rejected render with its source node until it can be inserted. Unlike
+// the shared cache, this also covers large entries and cannot be overwritten by
+// another root. Replacing/removing the prose releases its pending renders.
+const deferredTypesets = new WeakMap<Element, { latex: string; entry: TypesetEntry }>();
 
 /** Typeset one formula, or `null` to keep its source as text. */
 function typesetUncached(doc: Document, latex: string): Element | null {
@@ -175,11 +179,16 @@ function renderPass(
       continue;
     }
     if (handled.has(element) && !capped.has(element)) continue;
-    if (!options.complete && budget.full) {
+    const deferred = deferredTypesets.get(element);
+    const prepared = deferred?.latex === latex ? deferred.entry : undefined;
+    const cached = prepared ?? typesetCache.get(latex);
+    // Preserve source order within a root, but let a later root use cached
+    // formulas that fit in the space left by a rejected large formula.
+    if (!options.complete && (pending || (budget.full && !cached))) {
       pending = true;
       continue;
     }
-    if (!typesetCache.has(latex)) {
+    if (!cached) {
       if (
         !options.complete &&
         budget.formulas > 0 &&
@@ -193,7 +202,7 @@ function renderPass(
       budget.source += latex.length;
       budget.formulas += 1;
     }
-    const entry = typeset(doc, latex);
+    const entry = prepared ?? typeset(doc, latex);
     if (!entry.formula) {
       showSource(element, latex);
       continue;
@@ -206,6 +215,7 @@ function renderPass(
     ) {
       budget.full = true;
       pending = true;
+      deferredTypesets.set(element, { latex, entry });
       continue;
     }
     budget.markup += entry.size;
@@ -214,6 +224,7 @@ function renderPass(
         ? (entry.formula.cloneNode(true) as Element)
         : (doc.importNode(entry.formula, true) as Element);
     handled.add(formula);
+    deferredTypesets.delete(element);
     element.replaceWith(formula);
   }
   return pending;
@@ -278,44 +289,80 @@ function whenIdle(run: () => void): IdleHandle {
   return { cancel: () => clear.call(scope, handle) };
 }
 
-// One batch across live roots, not one allowance per text box/table cell.
-const pendingRoots = new Set<Element>();
-let syncBudget: TypesetBudget | null = null;
-let idleHandle: IdleHandle | null = null;
+type MathPriority = 'normal' | 'background';
+export const InlineMathPriorityContext = createContext<MathPriority>('normal');
 
-function schedulePendingMath(): void {
-  if (idleHandle) return;
-  const handle = whenIdle(() => {
-    // A cancelled callback must not drain work queued by a later mount.
-    if (idleHandle !== handle) return;
-    idleHandle = null;
-    const budget = newBudget();
-    syncBudget = budget;
-    for (const root of pendingRoots) {
-      if (!root.isConnected || !renderPass(root, {}, budget)) pendingRoots.delete(root);
-      if (budget.full) break;
-    }
-    // Reset this allowance at the next idle boundary, even if the last root
-    // finished: a synchronous commit after this callback shares its work.
-    if (pendingRoots.size || budget.formulas || budget.markup) schedulePendingMath();
-  });
-  idleHandle = handle;
+// One queue, with foreground canvases ahead of thumbnails and round-robin roots
+// within each priority. DOM insertion remains bounded across all roots.
+const pendingRoots = new Map<Element, MathPriority>();
+let syncBudget: TypesetBudget | null = null;
+let cancelSyncReset: (() => void) | null = null;
+let idleJob: { cancel?: () => void } | null = null;
+
+function resetSyncBudget(): void {
+  cancelSyncReset?.();
+  cancelSyncReset = null;
+  syncBudget = null;
 }
 
-function renderLiveMath(root: Element): void {
-  syncBudget ??= newBudget();
-  if (renderPass(root, {}, syncBudget)) pendingRoots.add(root);
-  else pendingRoots.delete(root);
-  // Even a completed root shares its allowance until the next idle period.
+function synchronousBudget(): TypesetBudget {
+  if (!syncBudget) {
+    const budget = (syncBudget = newBudget());
+    const reset = () => {
+      if (syncBudget === budget) {
+        syncBudget = null;
+        cancelSyncReset = null;
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      const cancel = cancelAnimationFrame;
+      const handle = requestAnimationFrame(reset);
+      cancelSyncReset = () => cancel(handle);
+    } else {
+      const cancel = clearTimeout;
+      const handle = setTimeout(reset, 16);
+      cancelSyncReset = () => cancel(handle);
+    }
+  }
+  return syncBudget;
+}
+
+function schedulePendingMath(): void {
+  if (idleJob || !pendingRoots.size) return;
+  const job: { cancel?: () => void } = {};
+  idleJob = job;
+  job.cancel = whenIdle(() => {
+    // A cancelled callback must not drain work queued by a later mount.
+    if (idleJob !== job) return;
+    idleJob = null;
+    resetSyncBudget();
+    const budget = newBudget();
+    for (const priority of ['normal', 'background'] as const) {
+      for (const [root, queuedPriority] of [...pendingRoots]) {
+        if (queuedPriority !== priority) continue;
+        pendingRoots.delete(root);
+        if (root.isConnected && renderPass(root, {}, budget)) pendingRoots.set(root, priority);
+        if (budget.full) break;
+      }
+      if (budget.full) break;
+    }
+    schedulePendingMath();
+  }).cancel;
+}
+
+function renderLiveMath(root: Element, priority: MathPriority): void {
+  if (priority === 'background' || renderPass(root, {}, synchronousBudget())) {
+    pendingRoots.set(root, priority);
+  } else pendingRoots.delete(root);
   schedulePendingMath();
 }
 
 function cancelPendingMath(root: Element): void {
   pendingRoots.delete(root);
   if (!pendingRoots.size) {
-    idleHandle?.cancel();
-    idleHandle = null;
-    syncBudget = null;
+    idleJob?.cancel?.();
+    idleJob = null;
+    resetSyncBudget();
   }
 }
 
@@ -326,20 +373,39 @@ function cancelPendingMath(root: Element): void {
  * source spans back. Formulas already typeset are skipped and cached renders
  * are cloned, so a commit that left the markup alone costs one query. What the
  * shared budget leaves over is typeset in idle time, using the current markup.
- * Repeated commits preserve the batch budget; unmounting removes queued work.
+ * Pending roots stay in that queue on unchanged commits (including when an
+ * external caller rewrites the HTML). New content can use the current frame's
+ * synchronous allowance. Unmounting or replacing a root removes its queued work.
  * Never updates React state.
  */
 export function useInlineMath(ref: RefObject<Element | null>, html: string): void {
+  const priority = useContext(InlineMathPriorityContext);
+  const previous = useRef<{ root: Element | null; html: string; priority: MathPriority }>(null);
   useLayoutEffect(() => {
     const root = ref.current;
+    const before = previous.current;
+    if (before?.root && before.root !== root) cancelPendingMath(before.root);
+    previous.current = { root, html, priority };
     if (!root) return;
-    if (html.includes(INLINE_MATH_ATTRIBUTE)) renderLiveMath(root);
-    else pendingRoots.delete(root);
+    if (!html.includes(INLINE_MATH_ATTRIBUTE)) {
+      if (pendingRoots.has(root)) cancelPendingMath(root);
+      return;
+    }
+    if (
+      before?.root === root &&
+      before.html === html &&
+      before.priority === priority &&
+      pendingRoots.has(root)
+    )
+      return;
+    renderLiveMath(root, priority);
   });
   // A commit is not a yield: cancelling here on every render would let a run
   // of synchronous updates repeatedly spend a fresh batch before paint.
   useLayoutEffect(() => {
-    const root = ref.current;
-    if (root) return () => cancelPendingMath(root);
-  }, [ref]);
+    return () => {
+      if (previous.current?.root) cancelPendingMath(previous.current.root);
+      previous.current = null;
+    };
+  }, []);
 }

@@ -260,6 +260,7 @@ export function SlideThumbnail({
   return (
     <div className={containerClass} style={containerStyle}>
       <SlideCanvas
+        mathPriority="background"
         slide={resolved.slide}
         chrome={false}
         renderImage={(element, src, defaultContent) =>

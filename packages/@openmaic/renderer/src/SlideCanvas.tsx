@@ -23,8 +23,11 @@ import { SpotlightOverlay } from './effects/SpotlightOverlay';
 import { LaserOverlay } from './effects/LaserOverlay';
 import { useOptionalSlideContext } from './context';
 import { SLIDE_RENDERER_STYLES } from './styles';
+import { InlineMathPriorityContext } from './utils/inlineMath';
 
 export interface SlideCanvasProps {
+  /** Defer thumbnail formulas until foreground canvases finish. Defaults to normal. */
+  mathPriority?: 'normal' | 'background';
   /**
    * Single slide data (PPTist-style). May be omitted when this component is
    * rendered inside a `<SlideRendererProvider>` that supplies it.
@@ -213,23 +216,25 @@ export function SlideCanvas(props: SlideCanvasProps) {
             transform: `scale(${canvasScale})`,
           }}
         >
-          {visibleElements.map((element) => (
-            <SlideElement
-              key={element.id}
-              elementInfo={element}
-              elementIndex={elementIndexById.get(element.id) ?? 1}
-              theme={slide.theme}
-              renderImage={renderImage}
-              renderVideo={renderVideo}
-              renderText={renderText}
-              renderShapeLabel={renderShapeLabel}
-              renderTable={renderTable}
-              videoInteractive={videoInteractive}
-              onElementClick={onElementClick}
-              idPrefix={elementIdPrefix}
-              dragOffset={dragOffsets?.get(element.id)}
-            />
-          ))}
+          <InlineMathPriorityContext.Provider value={props.mathPriority ?? 'normal'}>
+            {visibleElements.map((element) => (
+              <SlideElement
+                key={element.id}
+                elementInfo={element}
+                elementIndex={elementIndexById.get(element.id) ?? 1}
+                theme={slide.theme}
+                renderImage={renderImage}
+                renderVideo={renderVideo}
+                renderText={renderText}
+                renderShapeLabel={renderShapeLabel}
+                renderTable={renderTable}
+                videoInteractive={videoInteractive}
+                onElementClick={onElementClick}
+                idPrefix={elementIdPrefix}
+                dragOffset={dragOffsets?.get(element.id)}
+              />
+            ))}
+          </InlineMathPriorityContext.Provider>
 
           {highlights.map((highlight) => {
             const element = visibleElements.find((el) => el.id === highlight.elementId);

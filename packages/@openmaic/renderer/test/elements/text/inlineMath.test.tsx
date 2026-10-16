@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { ReactElement } from 'react';
 import katex from 'katex';
-import { render } from '@testing-library/react';
+import { cleanup, render } from '@testing-library/react';
 import type { PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BaseShapeElement } from '../../../src/elements/shape/BaseShapeElement';
@@ -16,6 +16,10 @@ import {
 } from '../../../src/utils/inlineMath';
 
 const LATEX = '\\sqrt{x}+\\frac{a}{b}';
+
+// Vitest does not expose global afterEach, so RTL's automatic cleanup is off.
+// Unmount before restoring scheduling functions, including in filtered runs.
+afterEach(() => cleanup());
 
 /** Stored prose: the formula as source only. */
 function stored(latex: string): string {
