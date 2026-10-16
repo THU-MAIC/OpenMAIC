@@ -125,6 +125,7 @@ export function translateLegacyConfig(
   const providers: NonNullable<ModelConfigFile['providers']> = {};
   /** Provider ids translated from the providers (chat) section. */
   const chatProviders = new Set<string>();
+  const rejected = new Set<string>();
 
   for (const section of Object.keys(SECTION_CAPABILITY) as Section[]) {
     const capability = SECTION_CAPABILITY[section];
@@ -148,6 +149,23 @@ export function translateLegacyConfig(
       }
       if (preset.requiresBaseUrl && !provider.baseUrl) {
         notices.push(`${section}.${registryId} is not carried over: it needs a base URL`);
+        continue;
+      }
+      const existing = providers[id];
+      if (existing) {
+        // Shared accounts may occur in both sections, but search must never
+        // replace chat credentials or its model pins.
+        if (
+          existing.apiKey !== checked.data.apiKey ||
+          existing.baseUrl !== checked.data.baseUrl ||
+          existing.proxy !== checked.data.proxy ||
+          JSON.stringify(existing.credentials) !== JSON.stringify(checked.data.credentials)
+        ) {
+          notices.push(
+            `${section}.${registryId} conflicts with the existing provider "${id}"; this entry is not carried over. Use separate provider ids in openmaic.yml for separate accounts`,
+          );
+          rejected.add(`${section}.${registryId}`);
+        }
         continue;
       }
       providers[id] = checked.data;
@@ -214,8 +232,10 @@ export function translateLegacyConfig(
   // priority), with the first pinned model, else the provider's default.
   for (const [section, slot] of MEDIA_DEFAULTS) {
     const capability = SECTION_CAPABILITY[section];
-    const usable = Object.entries(server[section]).filter(([registryId]) =>
-      Object.hasOwn(providers, legacyProviderId(capability, registryId)),
+    const usable = Object.entries(server[section]).filter(
+      ([registryId]) =>
+        !rejected.has(`${section}.${registryId}`) &&
+        Object.hasOwn(providers, legacyProviderId(capability, registryId)),
     );
     const preferred =
       section === 'webSearch'

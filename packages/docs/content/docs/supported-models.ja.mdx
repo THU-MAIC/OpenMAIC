@@ -18,7 +18,11 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | `minimax` | MiniMax | チャット、画像、動画、TTS、Web 検索 |
 | `tokendance` | TokenDance | チャット、画像、動画、TTS、Web 検索 |
 | `volcengine-ark` | Volcengine Ark Agent Plan | チャット、画像、動画、TTS、Web 検索 |
-| `kimi-coding-plan` | Kimi コーディングプラン | チャット |
+| `kimi-coding-plan` | Kimi コーディングプラン | チャット、Web 検索、Webページ取得 |
+
+**設定 → Token Plan** で Kimi Coding Plan を接続すると、プランのキーと `https://api.kimi.com/coding/v1` を共有するチャット、ウェブ検索、ウェブ取得が推奨されます。ウェブ取得が暗黙の内蔵リーダーの既定値のみを使っている場合、現在の設定を保持する場合も、競合の確認なしで Kimi が直接割り当てられます。ワークスペースの明示的な選択（`null` を含む）と、デプロイ設定の内蔵以外のリーダーまたは `null` には既存の競合時の選択肢が適用されます。切断するとプランの割り当てが削除され、サーバーの既定値（リーダー未設定時は内蔵リーダー）に戻りますが、以前のワークスペースの明示的な選択は復元されません。ロックされたスロットは変更されません。ウェブ取得を宣言しないプランは、このスロットを変更しません。
+
+初回設定ウィザードではウェブ取得に内蔵リーダーを維持し、Token Plan 設定ページからプランを接続した場合にのみ、その取得の推奨設定が適用されます。
 
 `openai-compatible` は任意の OpenAI 互換チャットサーバーに接続します。`baseUrl` が必要で、モデル設定に表示されるのはその `models` 一覧です。
 
@@ -31,7 +35,8 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
+| Webページ取得 | `builtin`、`kimi`、`kimi-coding-plan` |
 | ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
@@ -136,5 +141,22 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### Kimi の Web 検索
+
+`kimi` プリセット（Moonshot Open Platform）と `kimi-coding-plan` プリセットは、同じ API キーとベース URL でチャットと Web 検索を提供します。`webSearch` をチャットと同じプロバイダーに割り当てれば、追加のキーや検索モデルは不要です。
+
+Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` は `/tools/search_pro` を使用します。結果の本文はページの断片を連結し、本文がなければ要約を使用します。コーディングプランの `https://api.kimi.com/coding/v1` と `https://api.kimi.ai/coding/v1` は `/search` を使用し、ページの取得を有効にします。結果には要約よりもページ本文を優先します。1 回のリクエストで返す結果は最大 20 件です。
+
+従来の設定では、チャットの認証情報だけで検索が有効になることはありません。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を明示的に追加してください。`openmaic.yml` では `webSearch` スロットを明示的に割り当てます。ウィザードが検索を推奨するのは、公式のベース URL を使用するアカウントだけです。
+
+エンドポイントはベース URL のパスで決まります。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。`openmaic.yml` で設定するカスタムプロキシも、このパス構造を維持する必要があります。
+
+`openmaic.yml` がある場合、従来の環境変数 `WEB_SEARCH_KIMI_ENABLED` だけでは検索スロットは割り当てられないため、`providers.<id>: { preset: kimi }` を宣言し、`slots.webSearch: <id>` を指定してください。
+
+## Webページ取得
+
+`webFetch` スロットの既定は、キー不要の `builtin`（Readability と Turndown。PDF は引き続き `document` を使用）です。`kimi` と `kimi-coding-plan` は、それぞれのプロバイダーのキーと API ベース URL をホスト型抽出に再利用します。Moonshot Open Platform は `/tools/fetch`、Coding Plan は `/fetch` を使用します。フォールバックはありません。モデルサービスやコースモデル設定でサービスを選ぶか、`openmaic.yml` で `slots.webFetch` を指定します。キーはチャットと共有されます。すべてのサービスで、ローカルのセッション許可と公開アドレスの検査を行い、結果を信頼できないデータとして扱います。

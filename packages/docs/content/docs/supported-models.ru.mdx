@@ -18,7 +18,11 @@ description: Встроенные модели и список провайде�
 | `minimax` | MiniMax | Чат, изображения, видео, TTS, веб-поиск |
 | `tokendance` | TokenDance | Чат, изображения, видео, TTS, веб-поиск |
 | `volcengine-ark` | Volcengine Ark Agent Plan | Чат, изображения, видео, TTS, веб-поиск |
-| `kimi-coding-plan` | Kimi coding plan | Чат |
+| `kimi-coding-plan` | Kimi coding plan | Чат, веб-поиск, загрузка веб-страниц |
+
+Подключение Kimi Coding Plan в **Настройки → Token Plan** рекомендует чат, веб-поиск и загрузку веб-страниц с общим ключом тарифа и адресом `https://api.kimi.com/coding/v1`. Если загрузка использует только неявный встроенный ридер по умолчанию, подключение сразу назначает Kimi без подтверждения конфликта, даже при сохранении текущих настроек. Явные назначения рабочего пространства (включая `null`), а также невстроенный ридер или `null`, заданные развёртыванием, обрабатываются через существующий выбор при конфликте. Отключение удаляет назначения тарифа и восстанавливает серверное значение по умолчанию (встроенный ридер, если другой не настроен), но не прежний явный выбор рабочего пространства. Закреплённые слоты не меняются. Тарифы, не объявляющие загрузку веб-страниц, не меняют этот слот.
+
+Мастер первого запуска оставляет загрузку веб-страниц на встроенном ридере; рекомендация тарифа для загрузки применяется только при подключении через страницу настроек Token Plan.
 
 `openai-compatible` подключает любой OpenAI-совместимый чат-сервер: ему нужен `baseUrl`, а настройки моделей предлагают его список `models`.
 
@@ -31,7 +35,8 @@ description: Встроенные модели и список провайде�
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `searxng` |
+| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Загрузка веб-страниц | `builtin`, `kimi`, `kimi-coding-plan` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -136,5 +141,22 @@ description: Встроенные модели и список провайде�
 | Brave Search    | `brave`     |
 | Baidu           | `baidu`     |
 | MiniMax         | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao          | `doubao`    |
 | SearXNG         | `searxng`   |
+
+### Веб-поиск Kimi
+
+Пресеты `kimi` (Moonshot Open Platform) и `kimi-coding-plan` используют один API-ключ и базовый URL для чата и веб-поиска. Назначьте `webSearch` тому же провайдеру, что и чат: отдельный ключ или модель поиска не нужны.
+
+Базовые URL Open Platform `https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1` используют `/tools/search_pro`. Текст результата собирается из фрагментов страницы; если их нет, используется краткое описание. Базовые URL coding plan `https://api.kimi.com/coding/v1` и `https://api.kimi.ai/coding/v1` используют `/search` с включённой загрузкой страниц. Предпочтение отдаётся тексту страницы, затем краткому описанию. Один запрос возвращает не более 20 результатов.
+
+В старой конфигурации учётные данные чата сами по себе не включают поиск. Установите `WEB_SEARCH_KIMI_ENABLED=true` или явно добавьте запись `web-search.kimi` в `server-providers.yml`. В `openmaic.yml` явно назначьте слот `webSearch`. Мастер настройки рекомендует поиск только для аккаунтов с официальным базовым URL.
+
+Эндпоинт выбирается по пути базового URL: после удаления завершающих косых черт путь, оканчивающийся на `/coding/v1`, использует `/search`; все остальные используют `/tools/search_pro`. Пользовательские прокси, настроенные в `openmaic.yml`, должны сохранять эту структуру пути.
+
+Если есть `openmaic.yml`, объявите `providers.<id>: { preset: kimi }` и задайте `slots.webSearch: <id>`: переменная старой конфигурации `WEB_SEARCH_KIMI_ENABLED` не назначает этот слот.
+
+## Загрузка веб-страниц
+
+По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.

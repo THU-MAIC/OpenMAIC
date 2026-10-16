@@ -15,6 +15,7 @@
  * workspace provider's endpoint was typed by a user: it is validated like a
  * caller-supplied base URL, and a workspace may not set a proxy.
  */
+import { getWebFetchProvider } from '@/lib/web-fetch/registry';
 import { assertDeploymentModelAuthorized, selectsUpstreamModel } from './model-authorization';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { getSlot, type SlotId } from '@/lib/config/model-slots';
@@ -68,7 +69,7 @@ export class WorkspaceEndpointError extends Error {
 
 export type MediaSlot = Extract<
   SlotId,
-  'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'document'
+  'tts' | 'asr' | 'image' | 'video' | 'webSearch' | 'webFetch' | 'document'
 >;
 
 export interface MediaConnection {
@@ -144,7 +145,14 @@ async function fromTarget(
         'A proxy can only be configured by the deployment (openmaic.yml)',
       );
     }
-    if (target.customBaseUrl) {
+    if (
+      target.customBaseUrl &&
+      !(
+        slot === 'webFetch' &&
+        target.baseUrl &&
+        getWebFetchProvider(target.registryId)?.acceptsWorkspaceBaseUrl?.(target.baseUrl)
+      )
+    ) {
       throw new WorkspaceEndpointError(
         `A custom endpoint for ${slot} can only be configured by the deployment (openmaic.yml)`,
       );

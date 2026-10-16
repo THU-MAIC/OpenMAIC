@@ -646,3 +646,24 @@ describe('saveModelSettingsProposal', () => {
     });
   });
 });
+
+it('imports an enrolled Kimi plan without inventing a historical fetch assignment', () => {
+  const proposal = buildModelSettingsProposal({
+    providerId: 'kimi',
+    modelId: 'kimi-for-coding',
+    providersConfig: { kimi: { apiKey: 'sk-plan-key' } },
+    tokenPlanEnrollments: { kimi: 'kimi' },
+    webSearchProviderId: 'kimi',
+    webSearchEnabled: true,
+    webSearchProvidersConfig: { kimi: { apiKey: 'sk-plan-key', enabled: true } },
+  });
+  expect(proposal?.providers?.['kimi-coding-plan']).toMatchObject({
+    preset: 'kimi-coding-plan',
+    apiKey: 'sk-plan-key',
+  });
+  expect(proposal?.slots).toMatchObject({
+    llm: 'kimi-coding-plan:kimi-for-coding',
+    webSearch: 'kimi-coding-plan',
+  });
+  expect(proposal?.slots).not.toHaveProperty('webFetch');
+});

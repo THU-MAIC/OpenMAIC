@@ -40,7 +40,36 @@ describe('scene generation primitives', () => {
     expect(aiCall).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves finite rotation supplied for generated shapes', async () => {
+  it.each([0, 36.5, -12.25])(
+    'preserves finite rotation %s supplied for generated shapes',
+    async (rotate) => {
+      const aiCall: AICallFn = vi.fn(async () =>
+        JSON.stringify({
+          elements: [
+            {
+              type: 'shape',
+              left: 320,
+              top: 70,
+              width: 300,
+              height: 300,
+              path: 'M 0 0 L 1 0 L 1 1 L 0 1 Z',
+              viewBox: [1, 1],
+              fill: '#5b9bd5',
+              fixedRatio: false,
+              rotate,
+            },
+          ],
+        }),
+      );
+
+      const content = await generateSceneContent(slideOutline(), aiCall);
+      expect(content).not.toBeNull();
+      if (!content || !('elements' in content)) throw new Error('expected slide content');
+      expect(content.elements[0]).toMatchObject({ type: 'shape', rotate });
+    },
+  );
+
+  it('rejects an invalid shape rotation with a diagnostic', async () => {
     const aiCall: AICallFn = vi.fn(async () =>
       JSON.stringify({
         elements: [
@@ -53,8 +82,65 @@ describe('scene generation primitives', () => {
             path: 'M 0 0 L 1 0 L 1 1 L 0 1 Z',
             viewBox: [1, 1],
             fill: '#5b9bd5',
-            fixedRatio: false,
-            rotate: 36.5,
+            rotate: 'thirty-six degrees',
+          },
+        ],
+      }),
+    );
+    const failures: Array<{ code: string; message?: string }> = [];
+
+    const content = await generateSceneContent(slideOutline(), aiCall, {
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(content).toBeNull();
+    expect(failures).toEqual([
+      {
+        code: 'invalid-model-output',
+        message: expect.stringContaining('shape[0].rotate'),
+      },
+    ]);
+  });
+
+  it('reports non-finite shape rotations by value', async () => {
+    const aiCall: AICallFn = vi.fn(
+      async () =>
+        '{"elements":[{"type":"shape","left":320,"top":70,"width":300,"height":300,"path":"M 0 0 L 1 0 L 1 1 L 0 1 Z","viewBox":[1,1],"fill":"#5b9bd5","rotate":1e400}]}',
+    );
+    const failures: Array<{ code: string; message?: string }> = [];
+
+    const content = await generateSceneContent(slideOutline(), aiCall, {
+      onFailure: (failure) => failures.push(failure),
+    });
+
+    expect(content).toBeNull();
+    expect(failures[0]?.message).toContain('received Infinity');
+  });
+
+  it('skips null elements before validating shape rotations', async () => {
+    const aiCall: AICallFn = vi.fn(async () => '{"elements":[null]}');
+
+    const content = await generateSceneContent(slideOutline(), aiCall);
+
+    expect(content).not.toBeNull();
+    if (!content || !('elements' in content)) throw new Error('expected slide content');
+    expect(content.elements).toEqual([]);
+  });
+
+  it('treats a null shape rotation as the missing-angle default', async () => {
+    const aiCall: AICallFn = vi.fn(async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'shape',
+            left: 320,
+            top: 70,
+            width: 300,
+            height: 300,
+            path: 'M 0 0 L 1 0 L 1 1 L 0 1 Z',
+            viewBox: [1, 1],
+            fill: '#5b9bd5',
+            rotate: null,
           },
         ],
       }),
@@ -63,7 +149,7 @@ describe('scene generation primitives', () => {
     const content = await generateSceneContent(slideOutline(), aiCall);
     expect(content).not.toBeNull();
     if (!content || !('elements' in content)) throw new Error('expected slide content');
-    expect(content.elements[0]).toMatchObject({ type: 'shape', rotate: 36.5 });
+    expect(content.elements[0]).toMatchObject({ type: 'shape', rotate: 0 });
   });
 
   it('generates quiz content through the json-output-rules prompt path', async () => {

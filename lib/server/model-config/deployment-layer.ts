@@ -14,6 +14,8 @@ import {
   type ServerConfig,
   type ServerProviderEntry,
 } from '@/lib/server/provider-config';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { ModelConfigFile } from './openmaic-yml';
 import { translateLegacyConfig } from '@/lib/server/model-config/legacy-config';
 import { loadModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import { presetIdFor } from '@/lib/config/preset-ids';
@@ -63,6 +65,24 @@ function hasLegacyConfiguration(): boolean {
   );
 }
 
+/** Explain why a legacy search opt-in cannot fill an unassigned file-backed slot. */
+function ignoredSearchOptInNotices(file: ModelConfigFile): string[] {
+  if (file.slots?.webSearch !== undefined) return [];
+  const server = getServerProviderConfig();
+  return Object.values(WEB_SEARCH_PROVIDERS)
+    .filter(
+      (provider) =>
+        provider.enableEnvVar &&
+        process.env[provider.enableEnvVar]?.trim() &&
+        server.webSearch[provider.id] &&
+        !server.disabled.webSearch.has(provider.id),
+    )
+    .map(
+      (provider) =>
+        `${provider.enableEnvVar} is set but openmaic.yml is present; declare a provider with preset: ${provider.sharedChatProviderId ?? provider.id} and assign slots.webSearch to that provider to use ${provider.name} search`,
+    );
+}
+
 /**
  * Reads the process environment and working directory, like the legacy
  * loaders it translates (which cache what they read). Throws
@@ -76,6 +96,7 @@ export function loadDeploymentLayer(): DeploymentLayer {
       layer: { source: 'deployment', config: file },
       legacy: false,
       notices: [
+        ...ignoredSearchOptInNotices(file),
         ...(legacy
           ? [
               'openmaic.yml is present, so slot resolution uses it and not the legacy provider variables, server-providers.yml, DEFAULT_MODEL, MODEL_ROUTES or MODEL_FALLBACK',

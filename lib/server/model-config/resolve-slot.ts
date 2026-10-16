@@ -19,6 +19,7 @@
  *
  * This is pure: it takes the layers as input and builds no SDK clients.
  */
+import { DEFAULT_WEB_FETCH_PROVIDER } from '@/lib/web-fetch/registry';
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
 import {
   assertDeploymentModelAuthorized,
@@ -191,6 +192,14 @@ function resolveTarget(
   const { providerId, modelId } = parsed;
   if (modelId === undefined && capability === 'chat' && !providerOnly) {
     throw new SlotResolutionError(`${at}: a chat model needs "providerId:modelId"`);
+  }
+  if (capability === 'webFetch' && providerId === defaultWebFetchProviderId(layers)) {
+    return {
+      providerId,
+      providerSource: 'deployment',
+      presetId: DEFAULT_WEB_FETCH_PROVIDER.id,
+      registryId: DEFAULT_WEB_FETCH_PROVIDER.id,
+    };
   }
   const found = findProvider(providerId, layers);
   // Errors name the path, never a value taken from the reference: a key pasted
@@ -368,9 +377,33 @@ export function resolveSlot(
       ...(fallbackRequirements ? { fallbackRequirements } : {}),
     };
   }
+  if (capability === 'webFetch') {
+    const provider = DEFAULT_WEB_FETCH_PROVIDER;
+    return {
+      status: 'assigned',
+      slot,
+      resolvedAt: slot,
+      capability,
+      providerId: defaultWebFetchProviderId(layers),
+      providerSource: 'deployment',
+      presetId: provider.id,
+      registryId: provider.id,
+      source: lockingNode(deployment?.config, slot) !== undefined ? 'locked' : 'default',
+      locked: lockingNode(deployment?.config, slot) !== undefined,
+      requirements: [],
+    };
+  }
   return {
     status: 'unassigned',
     slot,
     ...(lockingNode(deployment?.config, slot) !== undefined ? { locked: true as const } : {}),
   };
+}
+
+/** Stable display id for the implicit keyless reader, without shadowing configured providers. */
+export function defaultWebFetchProviderId(layers: readonly ModelConfigLayer[]): string {
+  let id = DEFAULT_WEB_FETCH_PROVIDER.id;
+  const deployment = layers.find((layer) => layer.source === 'deployment');
+  while (Object.hasOwn(deployment?.config.providers ?? {}, id)) id += '-default';
+  return id;
 }

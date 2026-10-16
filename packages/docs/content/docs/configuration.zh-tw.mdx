@@ -127,6 +127,7 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
 | `image` | image | — | 圖像生成 |
 | `video` | video | — | 影片生成 |
+| `webFetch` | webFetch | — | 網頁內容擷取（預設：`builtin`） |
 | `webSearch` | webSearch | — | 網路搜尋 |
 | `document` | document | — | 文件解析服務（MinerU、MinerU Cloud、AliDocMind）。內建的 PDF 文字擷取不需要服務 |
 
@@ -171,7 +172,7 @@ slots:
 
 ### 備援模型
 
-備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
+備援模型只適用於語言模型插槽，也就是 `llm` 及其下的所有插槽。在 `tts`、`asr`、`image`、`video`、`webSearch`、`webFetch` 或 `document` 插槽上寫 `fallback` 會被拒絕：`openmaic.yml` 在啟動時拒絕，模型設定在儲存時拒絕。
 
 當主模型的呼叫在自身重試之後仍以可重試的方式失敗時，會改用插槽的 `fallback` 再試一次。可重試的失敗包括：SDK 判定的暫時性錯誤、逾時、網路錯誤、限流（429）、容量不足（503）或輸出為空。供應商明確回傳額度用盡時（OpenAI 相容格式的額度錯誤碼，例如 `insufficient_quota`，不論 HTTP 狀態碼），不會在主模型上重試，呼叫會直接改用備援模型。內容安全拒絕和其他 4xx 錯誤不會觸發備援。備援對一般呼叫和串流呼叫都有效，並沿用插槽的 `thinking` 參數。
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # 這些插槽及其下所有插槽
 
 - `lock` 列出的每個插槽都必須在 `slots` 中寫出（`null` 也算：`video: null` 加 `lock: [video]` 會對所有人關閉影片）。未知插槽，或 `slots` 中沒有寫出的鎖定插槽，會讓服務在啟動時拒絕執行，並指出其位置（`lock.1: ...`）。
 - 鎖定的插槽同時固定其子插槽：使用 `lock: [llm]` 時，任何使用者都不能設定 `course.outline` 或其他語言模型插槽，它們全部只依 `openmaic.yml` 解析。
-- `lock: all` 固定所有插槽，無論是否寫出；`slots` 沒寫的能力根插槽因此對所有人都是未設定。
+- `lock: all` 固定所有插槽，無論是否寫出；`slots` 沒寫的能力根插槽因此對所有人都是未設定。但未指定的 `webFetch` 仍使用 `builtin`；設定 `webFetch: null` 可將其關閉。
 - `null`、伺服器端預設值與鎖定可以組合：只寫 `video: null` 時預設關閉，使用者可以開啟；加上 `lock: [video]` 後維持關閉。
 
 設定介面會依照設定呈現三種形態之一：
@@ -406,7 +407,7 @@ slots:
     api: openai-completions
 ```
 
-一旦存在 `openmaic.yml`，供應商變數本身就不再設定任何東西：只靠變數設定的 TTS、圖像、文件或網路搜尋供應商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不會得到預設供應商。請把用到的每個供應商寫進 `providers`，並在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的環境變數範例；未指定的槽位保持未設定，除非某個工作區在模型設定中為它指定。
+一旦存在 `openmaic.yml`，供應商變數本身就不再設定任何東西：只靠變數設定的 TTS、圖像、文件或網路搜尋供應商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，除 `webFetch` 外，其他能力也不會得到預設供應商。請把用到的每個供應商寫進 `providers`，並在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的環境變數範例；未指定的其他槽位保持未設定，除非某個工作區在模型設定中為它指定。
 
 然後刪除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -456,7 +457,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 對話執行時依賴模型的工具／函式呼叫能力。如果所選模型或 provider 不支援工具呼叫，請設定 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）並重新建置，以使用舊版對話鏈路。
+Pi 對話執行時依賴模型的工具／函式呼叫能力。內建模型目錄標明不支援工具呼叫的模型會在推理前被拒絕，回傳 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**課程模型配置**也會在課堂互動插槽上註明這項要求。如果所選模型或 provider 不支援工具呼叫，請設定 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）並重新建置，以使用舊版對話鏈路。
 
 使用 Docker Compose 時，`.env.local` 由 `env_file` 在執行時載入，不參與建置參數插值。請依下方指令明確傳入建置時設定並重新建置；只修改執行時環境不會改變已建置的用戶端與伺服器對話路徑。
 
@@ -619,6 +620,28 @@ slots:
 
 `IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_GLM_` 和 `IMAGE_LEMONADE_`。
 
+GLM 圖像（智譜 CogView）使用 CogView 模型（`cogview-3-flash`、`cogview-4`）產生圖片：
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # 可選:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+也可以透過環境變數設定：
+
+```bash
+IMAGE_GLM_API_KEY=
+# 可選:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
 Lemonade 是本機服務，不需要 key：
 
 ```bash
@@ -746,13 +769,13 @@ web-search:
 
 環境變數會逐欄位覆蓋 YAML 中的同名 provider 設定。鍵名必須使用程式碼中已註冊的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在這裡註冊為自訂 LLM provider。
 
-## Model authorization for server-managed providers
+## 伺服器端託管供應商的模型授權
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+對於使用部署憑證把所選模型送往上游的供應商，請在 `openmaic.yml` 中設定明確的 `models` 清單（`providers.<id>.models`），或設定對應的 `*_MODELS` 環境變數 / `server-providers.yml` 中該區段的 `models` 清單。這適用於對話、圖像、影片、語音合成、語音辨識和基於模型的網路搜尋。模型 ID 在載入設定時去掉首尾空白後精確比對，區分大小寫。確定性的轉接器別名依宣告的模型 ID 授權。請求未列出的模型會回傳 HTTP 403，錯誤碼 `PROVIDER_DISABLED`，訊息為「This model is not authorized for server-managed credentials」。
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**破壞性變更：** 沒有明確清單時，只能使用部署的預設/備援模型，以及該能力的插槽所引用的主要/備援模型。在舊版設定下，`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 授權對話模型。只寫供應商的媒體插槽只授權該轉接器的預設模型，不授權該預設的整個模型目錄。工作區的指派無法擴大部署的授權範圍。音色註冊和合成也必須授權為音色相容性而選擇的模型。
 
-To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+遷移時，列出使用者應能選擇的每個模型，重新啟動服務，並更新不再獲授權的工作區選擇。對於有憑證但沒有清單的供應商，啟動日誌會指出需要新增的設定。使用者自己的供應商憑證，以及 Ollama、Lemonade 這類不需要 key 的本機供應商不受影響。未設定憑證的供應商不受限制，因此不要把它指向會自行加上上游憑證的閘道（例如內部的 OpenAI 相容代理）：請給該閘道一個 key，把它設定為帶 `models` 清單的有憑證供應商，或在閘道本身限制模型。沒有模型選擇的文件解析器和搜尋服務（如 Tavily）不需要模型清單。
 
 ```yaml
 providers:
@@ -764,4 +787,52 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+舊版等價寫法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒體能力使用能力字首，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi 對話與網路搜尋
+
+宣告一個 Kimi 帳號，並將兩個插槽都指派給它：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 可選：國際版開放平台使用 https://api.moonshot.ai/v1。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+使用 Coding Plan 金鑰時，請設定 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其預設位址為 `https://api.kimi.com/coding/v1`。開放平台和 Coding Plan 金鑰必須使用各自對應的基礎 URL。 在舊版設定中，只有明確啟用後，`KIMI_API_KEY` 和可選的 `KIMI_BASE_URL` 才會為搜尋提供憑證：設定 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中新增 `web-search.kimi`（例如設定 `enabled: true`）。僅有對話憑證不會啟用搜尋，也不會改變預設搜尋供應商。即使插槽已指派給 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍會停用 Kimi 搜尋。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜尋的唯一開關。 `KIMI_MODELS` 僅適用於對話。舊版對話和搜尋帳號衝突時會產生警告，並略過搜尋項目；若需使用不同帳號，請在 `openmaic.yml` 中宣告不同的供應商 ID。 存在 `openmaic.yml` 時，請明確宣告供應商並指派插槽。設定和首次使用精靈允許透過同一帳號使用兩項能力。
+
+
+端點選擇取決於基礎路徑：移除結尾斜線後，以 `/coding/v1` 結尾的路徑使用 `/search`，其他路徑使用 `/tools/search_pro`。部署設定的自訂代理必須保留此路徑配置。精靈只為官方帳號位址推薦搜尋，因此工作區自訂對話代理不會自動取得搜尋指派。
+
+存在 `openmaic.yml` 時，請宣告 `providers.<id>: { preset: kimi }` 並指派 `slots.webSearch: <id>`；舊版變數 `WEB_SEARCH_KIMI_ENABLED` 無法指派該插槽。
+
+## 網頁擷取服務插槽
+
+`webFetch` 決定智慧體的 `fetch_url` 工具使用哪個讀取服務。在舊版設定、空設定和 YAML 設定中，預設使用 `builtin`；即使 `lock: all` 下沒有指定該根插槽也是如此。明確設定 `webFetch: null` 會關閉擷取，並從後續執行中移除該工具及其提示。每次請求只使用一個供應商，不會備援或升級至其他服務。無效的供應商參照或被政策拒絕的工作區端點會在智慧體啟動前的能力解析階段導致整個智慧體執行失敗，與 `webSearch` 一致。這屬於設定錯誤，並非 `fetch_url` 傳回的失敗結果，也不會自動改用內建讀取服務。
+
+| 供應商 | 憑證 | 內容擷取 |
+| --- | --- | --- |
+| `builtin` | 無需憑證 | 本機 Readability/Turndown 讀取服務；PDF 使用 `document` 插槽 |
+| `kimi` | 既有 Kimi 供應商的金鑰和基底網址 | 託管 Markdown 擷取服務，也接收 PDF 網址 |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+`kimi` 和 `kimi-coding-plan` 預設都提供 `webFetch`。使用 Coding Plan 憑證時，請指定 `preset: kimi-coding-plan`，其預設基底網址為 `https://api.kimi.com/coding/v1`；明確設定的基底網址會保留。Moonshot 開放平台網址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。兩者都傳送帶有 `{ "url": ... }` 的 `POST` 請求，並使用 Bearer 驗證。介接器接受 `markdown` 或 `content`。維護者使用真實金鑰測試了 `POST https://api.kimi.com/coding/v1/fetch`，確認回應包含 `{ markdown, title, url }`；國際端點的可用性仍未驗證。請求遵循供應商的 `proxy` 設定及標準代理環境變數。
+
+在 **設定 → 模型服務 → 網頁擷取** 中使用既有供應商憑證。此金鑰與同一供應商的對話服務共用，修改或移除金鑰也會影響對話。在 **課程模型設定 → 網頁擷取** 中選擇讀取服務。管理員鎖定後，卡片為唯讀。首次設定會保留內建預設值，直到明確選擇其他讀取服務。工作區憑證可使用官方 API 基底網址；自訂擷取網址與代理必須由管理員在 `openmaic.yml` 中宣告。
+
+網址轉送至託管服務之前，必須通過工作階段網址授權、嚴格網址正規化及全部本機 DNS 位址檢查。接收內容前，也會對服務回傳的最終網址執行相同檢查。託管服務控制其自身的 DNS 和中間重新導向，本機檢查無法固定其網路連線。回傳的文字仍是不可信資料，經過驗證頁面偵測、位元組限制和截斷標記處理，並沿用網頁素材持久化及 `{trusted, untrusted}` 結果結構。

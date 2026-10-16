@@ -429,3 +429,34 @@ it('loads the real legacy Google compatible env through translation, slots and P
     vi.resetModules();
   }
 });
+
+describe('shared legacy account collisions', () => {
+  it.each([
+    { apiKey: 'search-key', baseUrl: 'https://api.moonshot.cn/v1' },
+    { apiKey: 'chat-key', baseUrl: 'https://api.kimi.com/coding/v1' },
+  ])('warns and skips a conflicting search account without replacing chat: %j', (search) => {
+    const chat = { apiKey: 'chat-key', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-k3'] };
+    const { config, notices } = translateLegacyConfig(
+      server({ providers: { kimi: chat }, webSearch: { kimi: search } }),
+    );
+    expect(config.providers?.kimi).toMatchObject(chat);
+    expect(config.slots?.webSearch).toBeUndefined();
+    expect(notices).toEqual([
+      expect.stringContaining('webSearch.kimi conflicts with the existing provider "kimi"'),
+    ]);
+    expect(notices.join(' ')).not.toContain('chat-key');
+    expect(notices.join(' ')).not.toContain('search-key');
+  });
+
+  it('keeps chat model pins when an opted-in search entry shares the account', () => {
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { kimi: { apiKey: 'shared-key', models: ['kimi-k3'] } },
+        webSearch: { kimi: { apiKey: 'shared-key' } },
+      }),
+    );
+    expect(notices).toEqual([]);
+    expect(config.providers?.kimi.models).toEqual(['kimi-k3']);
+    expect(config.slots?.webSearch).toBe('kimi');
+  });
+});

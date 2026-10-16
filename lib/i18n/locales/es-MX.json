@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "Lector integrado"
     },
     "modelCount": "modelos",
     "modelSingular": "modelo",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Plan de tokens",
       "title": "Configuración del plan de tokens",
-      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web).",
+      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web/obtención de páginas web).",
       "selectPlan": "Seleccionar proveedor",
       "apiKey": "Clave API",
       "updateKey": "Actualizar clave",
@@ -1824,6 +1825,7 @@
       "capTts": "Síntesis de voz",
       "capVideo": "Generación de video",
       "capWebSearch": "Búsqueda web",
+      "capWebFetch": "Obtener páginas web",
       "saved": "Ajustes de conexión guardados",
       "stageInteractive": "Interactivo",
       "stageSlide": "Diapositivas",
@@ -1947,7 +1949,8 @@
         "providers": "Configura credenciales, endpoints y catálogos de modelos de los servicios de modelos de lenguaje",
         "tts": "Configura servicios de síntesis de voz, voces y modelos",
         "video": "Configura credenciales y catálogos de modelos de los servicios de generación de video",
-        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación"
+        "webSearch": "Configura servicios de búsqueda web y fuentes de recuperación",
+        "webFetch": "Configurar servicios de extracción de páginas web"
       },
       "nav": "Servicios de modelos",
       "notConfigured": "Sin configurar",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "Análisis de documentos",
           "desc": "Lee los documentos subidos."
+        },
+        "webFetch": {
+          "name": "Obtener páginas web",
+          "desc": "Permite al agente leer páginas web autorizadas en la sesión."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "Consulta",
           "search": "Búsqueda",
+          "fetch": "Lectura",
           "image": "Imagen",
           "video": "Video"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "El servidor no confirmó que se importara."
       }
     },
-    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte."
+    "serverConfiguredAddOwn": "Para usar tus propias credenciales, agrega un proveedor aparte.",
+    "webFetchSettings": "Obtener páginas web",
+    "webFetchHint": "Elige cómo leer las páginas web. Los servicios alojados reciben URL públicas autorizadas en la sesión. Los resultados siguen siendo datos no confiables y los errores no cambian el lector.",
+    "webFetchApiKey": "Clave de API",
+    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

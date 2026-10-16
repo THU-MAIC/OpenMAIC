@@ -19,7 +19,7 @@ OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役�
 
 ### 基本概念
 
-- **プロバイダー（provider）**：サーバーが呼び出せる 1 つのアカウント。たとえば OpenAI のキー、MiniMax の Token Plan、セルフホストの OpenAI 互換サーバーなど。各プロバイダーには自分で決める ID と、どのベンダーでどの機能をカバーするかを示す**プリセット（preset）**があります。
+- **プロバイダー（provider）**：サーバーが呼び出せる 1 つのアカウント。たとえば OpenAI のキー、MiniMax の Token Plan、セルフホストの OpenAI 互換サーバーなど。各プロバイダーには自分で決める ID と、どのベンダーでどの機能をカバーするかを示す**プリセット**（preset）があります。
 - **スロット（slot）**：製品の中で AI を使う箇所。たとえばコースのアウトライン、スライドの内容、音声合成、Web 検索など。スロットは機能ごとに 1 本の木を構成し、割り当てのないスロットは親スロットに従います。
 - **割り当て（assignment）**：スロットが使うプロバイダーとモデル（`provider:model`）。呼び出しパラメーターとフォールバックモデルを付けることもでき、`null` でスロットを無効にできます。
 
@@ -127,6 +127,7 @@ Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェ�
 | `asr` | asr | — | 音声認識（音声入力、音声・動画の文字起こし） |
 | `image` | image | — | 画像生成 |
 | `video` | video | — | 動画生成 |
+| `webFetch` | webFetch | — | Webページ抽出（既定：`builtin`） |
 | `webSearch` | webSearch | — | Web 検索 |
 | `document` | document | — | ドキュメント解析サービス（MinerU、MinerU Cloud、AliDocMind）。組み込みの PDF テキスト抽出にはサービスは不要です |
 
@@ -171,7 +172,7 @@ slots:
 
 ### フォールバック
 
-フォールバックは言語モデルのスロット、つまり `llm` とその下のすべてのスロットにだけ適用されます。`tts`、`asr`、`image`、`video`、`webSearch`、`document` のスロットに書いた `fallback` は拒否されます（`openmaic.yml` では起動時、モデル設定では保存時）。
+フォールバックは言語モデルのスロット、つまり `llm` とその下のすべてのスロットにだけ適用されます。`tts`、`asr`、`image`、`video`、`webSearch`、`webFetch`、`document` のスロットに書いた `fallback` は拒否されます（`openmaic.yml` では起動時、モデル設定では保存時）。
 
 主モデルの呼び出しが自身の再試行の後も再試行可能な失敗で終わった場合、スロットの `fallback` で一度だけ再試行します。再試行可能な失敗とは、SDK が一時的と判断したエラー、タイムアウト、ネットワークエラー、レート制限（429）、容量不足（503）、または空の出力です。プロバイダーがクォータ切れを明示的に返した場合（`insufficient_quota` などの OpenAI 互換のクォータコード。HTTP ステータスは問いません）は、主モデルで再試行せず、すぐにフォールバックに切り替えます。コンテンツ安全性による拒否やその他の 4xx エラーではフォールバックしません。フォールバックは通常の呼び出しとストリーミング呼び出しの両方に適用され、スロットの `thinking` パラメーターを使います。
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # これらのスロットとその下のすべてのスロ
 
 - `lock` に挙げるスロットはすべて `slots` に書かれている必要があります（`null` も含みます。`video: null` と `lock: [video]` で全員の動画が無効のままになります）。未知のスロットや、`slots` に書かれていないロック対象のスロットがあると、位置（`lock.1: ...`）を示してサーバーは起動しません。
 - ロックしたスロットは子も固定します。`lock: [llm]` では、どのユーザーも `course.outline` などの言語モデルスロットを設定できず、すべて `openmaic.yml` だけで解決されます。
-- `lock: all` は書かれているかどうかにかかわらずすべてのスロットを固定します。`slots` に書かれていない機能のルートは、全員に対して未設定になります。
+- `lock: all` は書かれているかどうかにかかわらずすべてのスロットを固定します。`slots` に書かれていない機能のルートは、全員に対して未設定になります。ただし未指定の `webFetch` は `builtin` を使用し、`webFetch: null` で無効にできます。
 - `null`、サーバーの既定値、ロックは組み合わせて使えます。`video: null` だけなら既定で無効でユーザーが有効にでき、`lock: [video]` を加えると無効のままです。
 
 設定画面は、構成に応じて次の三つの形のいずれかになります。
@@ -406,7 +407,7 @@ slots:
     api: openai-completions
 ```
 
-`openmaic.yml` が存在すると、プロバイダー変数だけでは何も設定されません。変数だけで設定していた TTS、画像、ドキュメント、Web 検索のプロバイダー（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` など）は使われなくなり、どの機能にもデフォルトのプロバイダーは割り当てられません。使用するプロバイダーをすべて `providers` に宣言し、上の環境変数の例と同様に `slots` で `tts`、`image`、`document`、`webSearch`（および `asr`、`video`）を割り当ててください。割り当てられていないスロットは、ワークスペースがモデル設定で割り当てない限り未設定のままです。
+`openmaic.yml` が存在すると、プロバイダー変数だけでは何も設定されません。変数だけで設定していた TTS、画像、ドキュメント、Web 検索のプロバイダー（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` など）は使われなくなり、`webFetch` 以外の機能にはデフォルトのプロバイダーは割り当てられません。使用するプロバイダーをすべて `providers` に宣言し、上の環境変数の例と同様に `slots` で `tts`、`image`、`document`、`webSearch`（および `asr`、`video`）を割り当ててください。割り当てられていないその他のスロットは、ワークスペースがモデル設定で割り当てない限り未設定のままです。
 
 その後 `MODEL_ROUTES`、`DEFAULT_MODEL`、`MODEL_FALLBACK` を削除します。
 
@@ -456,7 +457,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
+Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。組み込みカタログでツール呼び出し非対応とされているモデルは推論前に `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`）で拒否され、**コースモデル設定**でも教室スロットにこの要件が表示されます。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
 
 Docker Compose では、`.env.local` は `env_file` により実行時に読み込まれ、ビルド引数の変数展開には使われません。次のコマンドでビルド時の値を明示して再ビルドしてください。実行時の環境変数だけを変更しても、ビルド済みのクライアントとサーバーの対話経路は変わりません。
 
@@ -619,6 +620,28 @@ slots:
 
 `IMAGE_OPENAI_`、`IMAGE_SEEDREAM_`、`IMAGE_QWEN_IMAGE_`、`IMAGE_NANO_BANANA_`、`IMAGE_MINIMAX_`、`IMAGE_GROK_`、`IMAGE_GLM_`、`IMAGE_LEMONADE_`
 
+GLM Image（Zhipu CogView）は CogView モデル（`cogview-3-flash`、`cogview-4`）で画像を生成します：
+
+```yaml title="openmaic.yml"
+providers:
+  glm-image-service:
+    preset: glm-image
+    apiKey: ${IMAGE_GLM_API_KEY}
+    # 任意:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+
+slots:
+  image: glm-image-service:cogview-3-flash
+```
+
+環境変数でも設定できます：
+
+```bash
+IMAGE_GLM_API_KEY=
+# 任意:
+IMAGE_GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
 Lemonade はローカルサービスで API key 不要です：
 
 ```bash
@@ -746,13 +769,13 @@ web-search:
 
 環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。
 
-## Model authorization for server-managed providers
+## サーバー管理プロバイダーのモデル認可
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+デプロイの認証情報を使って選択されたモデルを上流へ送るプロバイダーには、`openmaic.yml` で明示的な `models` リスト（`providers.<id>.models`）を設定するか、対応する `*_MODELS` 環境変数 / `server-providers.yml` の該当セクションの `models` リストを設定してください。対象はチャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索です。モデル ID は設定読み込み時に前後の空白を除いたうえで、大文字小文字も含め完全一致で照合されます。決定的なアダプターエイリアスは、宣言されたモデル ID で認可されます。リストにないモデルへのリクエストは HTTP 403、`PROVIDER_DISABLED`、メッセージ「This model is not authorized for server-managed credentials」を返します。
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**破壊的変更：** 明示的なリストがない場合に使えるのは、デプロイの既定/フォールバックモデルと、その機能のスロットが参照するプライマリ/フォールバックモデルだけです。旧設定では `DEFAULT_MODEL` と `MODEL_FALLBACK` がチャットモデルを認可します。プロバイダーのみを指定したメディアスロットは、そのアダプターの既定モデル 1 つだけを認可し、プリセットのカタログ全体は認可しません。ワークスペースの割り当てでデプロイの認可範囲を広げることはできません。音声登録と合成でも、音声互換性のために選ばれたモデルを認可する必要があります。
 
-To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+移行するには、ユーザーが選べるべきモデルをすべて列挙し、サーバーを再起動し、認可されなくなったワークスペースの選択を更新してください。認証情報があってリストのないプロバイダーについては、追加すべき設定が起動ログに表示されます。ユーザー自身のプロバイダー認証情報と、Ollama や Lemonade のような key 不要のローカルプロバイダーは影響を受けません。認証情報なしで設定されたプロバイダーは制限されないため、独自に上流の認証情報を付加するゲートウェイ（社内の OpenAI 互換プロキシなど）に向けないでください。そのゲートウェイに key を与えて `models` リスト付きの認証情報ありプロバイダーとして設定するか、ゲートウェイ側でモデルを制限してください。モデル選択のないドキュメントパーサーや検索サービス（Tavily など）にはモデルリストは不要です。
 
 ```yaml
 providers:
@@ -764,4 +787,52 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi のチャットと Web 検索
+
+Kimi アカウントを 1 つ宣言し、両方のスロットを割り当てます：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 任意：国際版 Open Platform では https://api.moonshot.ai/v1 を使用します。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 旧設定では、明示的に有効化した場合にのみ `KIMI_API_KEY` と任意の `KIMI_BASE_URL` が検索の認証情報を提供します。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を追加します（例：`enabled: true`）。チャットの認証情報だけでは検索は有効にならず、既定の検索プロバイダーも変わりません。スロットに割り当てられていても、`WEB_SEARCH_KIMI_ENABLED=false` は Kimi 検索を無効にします。`WEB_SEARCH_KIMI_ENABLED` が Kimi 検索の唯一のスイッチです。 `KIMI_MODELS` はチャットにのみ適用されます。旧設定のチャットと検索でアカウントが競合すると警告が出て、検索エントリーはスキップされます。別々のアカウントを使う場合は、`openmaic.yml` で別々のプロバイダー ID を宣言してください。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。
+
+
+エンドポイントはベースパスに応じて選択されます。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。デプロイで設定するカスタムプロキシも、このパス構成を維持する必要があります。ウィザードが検索を推奨するのは公式アカウントのベース URL のみなので、ワークスペースのカスタムチャットプロキシに検索が自動で割り当てられることはありません。
+
+`openmaic.yml` が存在する場合は、`providers.<id>: { preset: kimi }` を宣言して `slots.webSearch: <id>` を割り当ててください。旧環境変数 `WEB_SEARCH_KIMI_ENABLED` ではこのスロットを割り当てられません。
+
+## Webページ取得のプロバイダースロット
+
+`webFetch` は、エージェントの `fetch_url` ツールで使う読み取りサービスを選択します。従来の設定、空の設定、YAML 設定では `builtin` が既定であり、`lock: all` でこのルートが未指定の場合も同様です。`webFetch: null` を明示すると取得が無効になり、以降の実行からツールとそのプロンプトが除かれます。各リクエストは一つのプロバイダーだけを使用し、フォールバックや別サービスへの切り替えはありません。無効なプロバイダー参照やポリシーで拒否されるワークスペースのエンドポイントは、`webSearch` と同様に、エージェント開始前の機能解決時に実行全体を失敗させます。これは設定エラーであり、`fetch_url` の失敗結果ではありません。組み込みサービスへの切り替えも行いません。
+
+| プロバイダー | 認証情報 | 抽出 |
+| --- | --- | --- |
+| `builtin` | 不要 | ローカルの Readability/Turndown。PDF は `document` スロットを使用 |
+| `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+`kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。メンテナーが実際のキーで `POST https://api.kimi.com/coding/v1/fetch` をテストし、応答に `{ markdown, title, url }` が含まれることを確認しました。国際エンドポイントの利用可否は引き続き未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
+
+**設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
+
+ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。

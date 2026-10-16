@@ -18,7 +18,11 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | `minimax` | MiniMax | 对话、图像、视频、TTS、联网搜索 |
 | `tokendance` | TokenDance | 对话、图像、视频、TTS、联网搜索 |
 | `volcengine-ark` | 火山方舟 Agent Plan | 对话、图像、视频、TTS、联网搜索 |
-| `kimi-coding-plan` | Kimi 编程套餐 | 对话 |
+| `kimi-coding-plan` | Kimi 编程套餐 | 对话、联网搜索、网页抓取 |
+
+在**设置 → Token Plan** 中连接 Kimi Coding Plan，会同时推荐对话、联网搜索和网页抓取，共用套餐密钥和 `https://api.kimi.com/coding/v1`。如果网页抓取仅使用隐式内置默认值，连接会直接分配 Kimi，不弹出冲突确认，即使选择保留当前配置也是如此。工作区的显式选择（包括 `null`）以及部署配置的非内置读取器或 `null` 仍按现有冲突选项处理。断开连接会移除套餐的分配，恢复服务端默认值（未配置读取器时为内置读取器），不会恢复此前工作区的显式选择。锁定的槽位保持不变，未声明网页抓取的套餐不会修改该槽位。
+
+首次设置向导会将网页抓取保留为内置读取器；只有通过 Token Plan 设置页面连接套餐，才会应用套餐的抓取推荐配置。
 
 `openai-compatible` 用于接入任意 OpenAI 兼容的对话服务：需要填写 `baseUrl`，模型设置中提供的就是它的 `models` 列表。
 
@@ -31,7 +35,8 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 图像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 视频 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 联网搜索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`searxng` |
+| 联网搜索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
+| 网页抓取 | `builtin`、`kimi`、`kimi-coding-plan` |
 | 文档解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（密钥对）认证。自托管的 TTS、ASR、图像、搜索和文档预设、密钥对预设以及 Bedrock 只能在 `openmaic.yml` 中配置，见[配置说明](./configuration.mdx)。
@@ -136,5 +141,22 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 | Brave Search | `brave`     |
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
+| Kimi         | `kimi`      |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### Kimi 联网搜索
+
+`kimi` 预设（Moonshot Open Platform）和 `kimi-coding-plan` 预设都支持使用同一个 API key 和 Base URL 进行对话与联网搜索。将 `webSearch` 指向对话使用的同一服务商，无需额外的密钥或搜索模型。
+
+Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 使用 `/tools/search_pro`，搜索结果正文由页面片段拼接而成，没有正文时回退到摘要。编程套餐的 `https://api.kimi.com/coding/v1` 和 `https://api.kimi.ai/coding/v1` 使用 `/search` 并启用页面抓取，优先使用页面正文，其次使用摘要。每次请求最多返回 20 条结果。
+
+在旧版配置中，仅配置对话密钥不会启用搜索。请设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.kimi`。使用 `openmaic.yml` 时，需要显式指定 `webSearch` 槽位。首次运行向导仅为使用官方 Base URL 的账户推荐搜索。
+
+端点按 Base URL 的路径选择：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。在 `openmaic.yml` 中配置的自定义代理必须保留这一端点路径结构。
+
+存在 `openmaic.yml` 时，必须声明 `providers.<id>: { preset: kimi }` 并指定 `slots.webSearch: <id>`；旧版环境变量 `WEB_SEARCH_KIMI_ENABLED` 无法为该槽位指定服务商。
+
+## 网页抓取
+
+`webFetch` 槽位默认使用无需密钥的 `builtin` 读取服务（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都复用对应服务商的密钥和 API 基础地址进行托管提取。Moonshot 开放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。没有回退服务。可在模型服务或课程模型配置中选择读取服务，也可在 `openmaic.yml` 中指定 `slots.webFetch`。密钥与对话共享。所有读取服务都保留本地会话授权、公开地址检查和不可信结果边界。

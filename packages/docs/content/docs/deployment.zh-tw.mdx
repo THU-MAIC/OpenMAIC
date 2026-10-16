@@ -89,6 +89,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 
 匿名模式下，擁有者 cookie 在正式環境中帶有 `Secure` 標記，`ACCESS_CODE` 的 cookie 也是如此。瀏覽器只在 HTTPS 或 `http://localhost` 上儲存 `Secure` cookie（Safari 連 localhost 也不儲存），因此透過純 HTTP 提供服務的部署必須設定 `COOKIE_SECURE=0`（必須正好是 `0`）：否則每個請求都會成為新的擁有者，寫入以 `403` 失敗，存取碼也會被反覆要求輸入。沒有 TLS 時 cookie 以明文傳輸，只應在可信任的網路中這樣做。
 
+在 `localhost` 以外的位址上使用純 HTTP（區域網路 IP、Tailscale IP 或 MagicDNS 網域）同樣不是安全環境，瀏覽器沒有 Web Locks API。OpenMAIC 在這種情況下仍會儲存，但同一課程的多個分頁之間不做協調：若兩個分頁修改同一個對話，以最後一次儲存為準；在一個分頁刪除的對話會保持刪除，即使另一個分頁當時仍在編輯它。在區域網路內用手機或平板存取時，建議使用 HTTPS，例如在服務前面用 `tailscale serve`。
+
 **`OPENMAIC_SECRET_KEY`** 用於加密在模型設定中儲存的供應商 key。未設定時，每個實例會在 `data/instance-secret.key` 中產生自己的金鑰，共用資料庫的實例之間就無法讀取彼此儲存的 key。請把它和資料庫備份放在一起，見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
 
 **多個實例**共用資料庫時，還需要共用同一個持久化資料目錄（工作目錄下的 `data/`，映像檔中為 `/app/data`；例如在每個實例上掛載同一個卷或網路檔案系統）。課程文件和產生的課程媒體儲存在 PostgreSQL（設定 `ASSET_S3_BUCKET` 時為 S3）中，但每個行程會把以下檔案放在自己的資料目錄裡：上傳的資料檔案及其擷取結果、由智慧體編輯的課程的講解與資料媒體（`data/classrooms`，或 `OPENMAIC_CLASSROOMS_DIR`）、用量紀錄（`data/usage`）以及自動產生的實例金鑰。由另一個實例接手的產生任務會從這裡讀取上傳的資料。
@@ -138,12 +140,15 @@ PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 - **保留資料目錄。** 啟動 1.2.0 時，工作目錄裡要有原本的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 時沿用同一個 `openmaic-data` 卷。1.1.x 以檔案形式儲存在 `data/classrooms` 下的課堂，會在啟動後於背景匯入資料庫一次；沒有這個目錄的伺服器沒有可匯入的內容。
 - **先設定身分模式。** 匯入時，這些課堂歸屬於那次啟動時設定的擁有者：設定了單一使用者（`OWNER_SINGLE_USER=true`）或團隊共用擁有者（`PERSISTENCE_SHARED_OWNER_ID`）時歸它們所有；否則（匿名模式）歸專用擁有者 `system:legacy-classrooms`，此時它們只能透過原連結以唯讀方式開啟，也不會出現在任何課程庫中。每個課堂只匯入一次，所以在匿名模式下匯入的課堂，之後即使再設定身分模式，也仍然屬於 `system:legacy-classrooms`。
+- **列出模型。** 每個使用伺服器端託管憑證、並把所選模型送往上游的供應商（對話、圖像、影片、語音合成、語音辨識、基於模型的網路搜尋）都需要明確的模型清單（`*_MODELS`，或 `openmaic.yml`、`server-providers.yml` 中該供應商下的 `models`）。沒有清單時，只有預設模型、備援模型和槽位引用的模型獲得授權；啟動日誌會逐一列出這類缺少清單的供應商。Tavily、文件解析器等沒有模型選擇的服務不需要清單。請見[模型授權](./configuration.mdx#伺服器端託管供應商的模型授權)。
+- **算繪服務與應用程式一起升級。** 如果使用 MP4 影片匯出，請在升級應用程式的同時或之前升級所有 render-service 執行個體：算繪工作綁定到擁有者，新舊版本混用時會安全失敗（拒絕請求）。
+- **檢查課堂互動模型。** Pi 課堂對話會拒絕內建模型目錄標明不支援工具呼叫的模型（`tool_calling_required`），也會拒絕 Google 的 OpenAI 相容 Gemini 端點（`gemini_native_required`）。Gemini 請使用原生 `google` 預設，請見 [LLM 供應商](./configuration.mdx#llm-供應商)。
 
 瀏覽器中的資料（課程、模型設定、自訂智慧體）會在每個瀏覽器首次開啟升級後的應用程式時匯入一次。遷移模型設定請見[設定](./configuration.mdx#從舊設定遷移)，完整的破壞性變更清單請見 [CHANGELOG](https://github.com/THU-MAIC/OpenMAIC/blob/main/CHANGELOG.md)。
 
 ## Vercel（1.1.x 及以前）
 
-Serverless 部署支援到 OpenMAIC 1.1.x，[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 中的 Deploy 按鈕部署的是 `release/1.1.x` 分支。這樣的部署之後可以遷移到常駐主機而不遺失資料：把新主機的 `DATABASE_URL` 指向原本使用的資料庫（如果有用），並沿用同一個存取位址——瀏覽器按網站儲存資料，訪客瀏覽器中的課程會在每個瀏覽器首次開啟升級後的應用程式時匯入。
+Serverless 部署支援到 OpenMAIC 1.1.x，[儲存庫 README](https://github.com/THU-MAIC/OpenMAIC#vercel-deployment-up-to-11x) 說明了如何在 Vercel 上部署 `release/1.1.x` 分支。這樣的部署之後可以遷移到常駐主機而不遺失資料：把新主機的 `DATABASE_URL` 指向原本使用的資料庫（如果有用），並沿用同一個存取位址——瀏覽器按網站儲存資料，訪客瀏覽器中的課程會在每個瀏覽器首次開啟升級後的應用程式時匯入。
 
 ## 選用：MP4 影片匯出
 
@@ -155,7 +160,7 @@ Serverless 部署支援到 OpenMAIC 1.1.x，[儲存庫 README](https://github.co
 docker compose --profile video-export up --build
 ```
 
-Compose 會透過 `RENDER_SERVICE_URL` 讓 OpenMAIC 連線至渲染服務。若未啟用此 profile，或渲染服務無法使用，匯出功能會改為下載專案 ZIP，以供本機 CLI 渲染。渲染服務使用隔離網路，啟動時需要 `NET_ADMIN` capability；其他限制與獨立部署方式請見儲存庫中的 [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md)。
+Compose 會透過 `RENDER_SERVICE_URL` 讓 OpenMAIC 連線至渲染服務。若未啟用此 profile，或渲染服務無法使用，匯出功能會改為下載專案 ZIP，以供本機 CLI 渲染。渲染服務使用隔離網路，啟動時需要 `NET_ADMIN` capability；其他限制與獨立部署方式請見儲存庫中的 [`render-service/README.md`](https://github.com/THU-MAIC/OpenMAIC/blob/main/render-service/README.md)。升級時，請在升級應用程式的同時或之前升級算繪服務。
 
 ## 環境變數
 

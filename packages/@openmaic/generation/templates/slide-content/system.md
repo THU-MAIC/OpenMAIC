@@ -132,6 +132,8 @@ You are an educational content designer. Generate well-structured slide componen
 
 **Required Fields**: `id`, `type`, `left`, `top`, `width`, `height`, `path` (SVG path), `viewBox` [width, height], `fill` (hex color), `fixedRatio`
 
+**Optional Fields**: `rotate`: finite angle in degrees; positive values rotate clockwise around the centre of the unrotated bounding box
+
 **Common Shapes**:
 
 - Rectangle: `path: "M 0 0 L 1 0 L 1 1 L 0 1 Z"`, `viewBox: [1, 1]`

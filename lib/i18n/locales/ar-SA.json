@@ -1350,7 +1350,8 @@
       "brave": "Brave Search",
       "baidu": "Baidu",
       "claude": "Claude",
-      "searxng": "SearXNG"
+      "searxng": "SearXNG",
+      "builtin": "القارئ المدمج"
     },
     "modelCount": "نماذج",
     "modelSingular": "نموذج",
@@ -1798,7 +1799,7 @@
     "tokenPlan": {
       "nav": "Token Plan",
       "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
       "apiKey": "API Key",
       "updateKey": "Update key",
@@ -1824,6 +1825,7 @@
       "capTts": "تحويل النص إلى كلام",
       "capVideo": "توليد الفيديو",
       "capWebSearch": "البحث في الويب",
+      "capWebFetch": "جلب صفحات الويب",
       "saved": "تم حفظ إعدادات الربط",
       "stageInteractive": "تفاعلي",
       "stageSlide": "شرائح الدرس",
@@ -1947,7 +1949,8 @@
         "providers": "هيّئ بيانات الاعتماد والعناوين وكتالوجات النماذج لخدمات النماذج اللغوية",
         "tts": "هيّئ خدمات تحويل النص إلى كلام والأصوات والنماذج",
         "video": "هيّئ بيانات الاعتماد وكتالوجات النماذج لخدمات توليد الفيديو",
-        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع"
+        "webSearch": "هيّئ خدمات البحث في الويب ومصادر الاسترجاع",
+        "webFetch": "إعداد خدمات استخراج محتوى صفحات الويب"
       },
       "nav": "خدمات النماذج",
       "notConfigured": "غير مهيّأ",
@@ -2149,6 +2152,10 @@
         "document": {
           "name": "تحليل المستندات",
           "desc": "يقرأ المستندات المرفوعة."
+        },
+        "webFetch": {
+          "name": "جلب صفحات الويب",
+          "desc": "يتيح للوكيل قراءة صفحات الويب المسموح بها في الجلسة."
         }
       },
       "source": {
@@ -2162,6 +2169,7 @@
         "lines": {
           "rewrite": "الاستعلام",
           "search": "البحث",
+          "fetch": "الجلب",
           "image": "صورة",
           "video": "فيديو"
         }
@@ -2194,7 +2202,11 @@
         "unconfirmed": "لم يؤكد الخادم أنه تم استيراده."
       }
     },
-    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً."
+    "serverConfiguredAddOwn": "لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "webFetchSettings": "جلب صفحات الويب",
+    "webFetchHint": "اختر طريقة قراءة صفحات الويب. تتلقى الخدمات المستضافة روابط عامة مسموحًا بها في الجلسة. تظل النتائج غير موثوقة، ولا يؤدي الفشل إلى تبديل القارئ.",
+    "webFetchApiKey": "مفتاح API",
+    "webFetchSharedKeyHint": "يُستخدم هذا المفتاح أيضًا للدردشة مع هذا المزوّد. تغييره أو حذفه يؤثر في الدردشة."
   },
   "workspace": {
     "untitledCourse": "未命名课堂",

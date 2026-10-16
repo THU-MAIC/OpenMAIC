@@ -127,6 +127,7 @@ Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境�
 | `asr` | asr | — | 语音识别（语音输入、音视频转写） |
 | `image` | image | — | 图像生成 |
 | `video` | video | — | 视频生成 |
+| `webFetch` | webFetch | — | 网页内容提取（默认：`builtin`） |
 | `webSearch` | webSearch | — | 联网搜索 |
 | `document` | document | — | 文档解析服务（MinerU、MinerU Cloud、AliDocMind）。内置的 PDF 文本提取不需要服务 |
 
@@ -171,7 +172,7 @@ slots:
 
 ### 回退模型
 
-回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
+回退模型只适用于语言模型槽位，即 `llm` 及其下的所有槽位。在 `tts`、`asr`、`image`、`video`、`webSearch`、`webFetch` 或 `document` 槽位上写 `fallback` 会被拒绝：`openmaic.yml` 在启动时拒绝，模型设置在保存时拒绝。
 
 当主模型的调用在自身重试之后仍然以可重试的方式失败时，会换用槽位的 `fallback` 再试一次。可重试的失败包括：SDK 判定的临时错误、超时、网络错误、限流（429）、容量不足（503）或输出为空。服务商明确返回额度用尽时（OpenAI 兼容格式的额度错误码，例如 `insufficient_quota`，不论 HTTP 状态码），不会在主模型上重试，调用会直接换用回退模型。内容安全拒绝和其他 4xx 错误不会触发回退。回退对普通调用和流式调用都生效，并沿用槽位的 `thinking` 参数。
 
@@ -192,7 +193,7 @@ lock: [llm, video]   # 这些槽位及其下所有槽位
 
 - `lock` 列出的每个槽位都必须在 `slots` 中写出（`null` 也算：`video: null` 加 `lock: [video]` 会对所有人关闭视频）。未知槽位，或 `slots` 中没有写出的锁定槽位，会让服务在启动时拒绝运行，并指出其位置（`lock.1: ...`）。
 - 锁定的槽位同时固定其子槽位：使用 `lock: [llm]` 时，任何用户都不能设置 `course.outline` 或其他语言模型槽位，它们全部只按 `openmaic.yml` 解析。
-- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。
+- `lock: all` 固定所有槽位，无论是否写出；`slots` 没写的能力根槽位因此对所有人都是未配置。但未指定的 `webFetch` 仍使用 `builtin`；设置 `webFetch: null` 可将其关闭。
 - `null`、服务端默认值与锁定可以组合：只写 `video: null` 时默认关闭，用户可以开启；加上 `lock: [video]` 后保持关闭。
 
 设置界面会根据配置呈现三种形态之一：
@@ -406,7 +407,7 @@ slots:
     api: openai-completions
 ```
 
-一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，任何能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的槽位保持未配置，除非某个工作区在模型设置中为它指定。
+一旦存在 `openmaic.yml`，服务商变量本身就不再配置任何东西：只靠变量配置的 TTS、图像、文档或网络搜索服务商（`TTS_MINIMAX_API_KEY`、`IMAGE_SEEDREAM_API_KEY`、`PDF_MINERU_BASE_URL`、`TAVILY_API_KEY` 等）不再被使用，除 `webFetch` 外，其他能力也不会得到默认服务商。请把用到的每个服务商写进 `providers`，并在 `slots` 中指定 `tts`、`image`、`document`、`webSearch`（以及 `asr`、`video`），做法同上面的环境变量示例；未指定的其他槽位保持未配置，除非某个工作区在模型设置中为它指定。
 
 然后删除 `MODEL_ROUTES`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK`。
 
@@ -456,7 +457,7 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 对话运行时依赖模型的工具／函数调用能力。如果所选模型或 provider 不支持工具调用，请设置 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）并重新构建，以使用旧版对话链路。
+Pi 对话运行时依赖模型的工具／函数调用能力。内置模型目录标明不支持工具调用的模型会在推理前被拒绝，返回 `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`），**课程模型配置**也会在课堂互动槽位上注明这一要求。如果所选模型或 provider 不支持工具调用，请设置 `NEXT_PUBLIC_PI_CHAT_ENABLED=false`（或 `0`）并重新构建，以使用旧版对话链路。
 
 使用 Docker Compose 时，`.env.local` 由 `env_file` 在运行时加载，不参与构建参数插值。请按下面的命令显式传入构建时配置并重新构建；只修改运行时环境不会改变已构建的客户端和服务端对话路径。
 
@@ -768,13 +769,13 @@ web-search:
 
 环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。
 
-## Model authorization for server-managed providers
+## 服务端托管服务商的模型授权
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+对于使用部署凭据把所选模型发往上游的服务商，请在 `openmaic.yml` 中设置显式的 `models` 列表（`providers.<id>.models`），或设置对应的 `*_MODELS` 环境变量 / `server-providers.yml` 中该部分的 `models` 列表。这适用于对话、图像、视频、语音合成、语音识别和基于模型的联网搜索。模型 ID 在加载配置时去掉首尾空白后精确匹配，区分大小写。确定性的适配器别名按声明的模型 ID 授权。请求未列出的模型会返回 HTTP 403，错误码 `PROVIDER_DISABLED`，消息为“This model is not authorized for server-managed credentials”。
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**破坏性变更：** 没有显式列表时，只能使用部署的默认/回退模型，以及该能力的槽位所引用的主模型/回退模型。在旧版配置下，`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 授权对话模型。只写服务商的媒体槽位只授权该适配器的默认模型，不授权该预设的整个模型目录。工作区的分配无法扩大部署的授权范围。音色注册和合成也必须授权为音色兼容性而选择的模型。
 
-To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
+迁移时，列出用户应能选择的每个模型，重启服务，并更新不再获授权的工作区选择。对于有凭据但没有列表的服务商，启动日志会指出需要添加的设置。用户自己的服务商凭据，以及 Ollama、Lemonade 这类无需 key 的本地服务商不受影响。未配置凭据的服务商不受限制，因此不要把它指向会自行添加上游凭据的网关（例如内部的 OpenAI 兼容代理）：请给该网关一个 key，把它配置为带 `models` 列表的有凭据服务商，或在网关本身限制模型。没有模型选择的文档解析器和搜索服务（如 Tavily）不需要模型列表。
 
 ```yaml
 providers:
@@ -786,4 +787,52 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
+
+### Kimi 对话与联网搜索
+
+声明一个 Kimi 账号，并将两个槽位都分配给它：
+
+```yaml
+providers:
+  kimi:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    # 可选：国际版开放平台使用 https://api.moonshot.ai/v1。
+    # baseUrl: https://api.moonshot.ai/v1
+slots:
+  llm: kimi:kimi-k3
+  webSearch: kimi
+```
+
+使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在旧版配置中，只有显式启用后，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 才会为搜索提供凭据：设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中添加 `web-search.kimi`（例如设置 `enabled: true`）。仅有对话凭据不会启用搜索，也不会改变默认搜索服务商。即使槽位已分配给 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍会禁用 Kimi 搜索。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜索的唯一开关。 `KIMI_MODELS` 仅适用于对话。旧版对话和搜索账号冲突时会产生警告，并跳过搜索条目；如需使用不同账号，请在 `openmaic.yml` 中声明不同的服务商 ID。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。
+
+
+端点选择取决于基础路径：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。部署配置的自定义代理必须保留这一布局。向导只为官方账号地址推荐搜索，因此工作区自定义对话代理不会自动获得搜索分配。
+
+存在 `openmaic.yml` 时，请声明 `providers.<id>: { preset: kimi }` 并分配 `slots.webSearch: <id>`；旧版变量 `WEB_SEARCH_KIMI_ENABLED` 无法分配该槽位。
+
+## 网页抓取服务槽位
+
+`webFetch` 决定智能体的 `fetch_url` 工具使用哪个读取服务。在旧版配置、空配置和 YAML 配置中，默认使用 `builtin`；即使 `lock: all` 下没有指定该根槽位也是如此。显式设置 `webFetch: null` 会关闭抓取，并从后续运行中移除该工具及其提示。每次请求只使用一个服务商，不会回退或升级到其他服务。无效的服务商引用或被策略拒绝的工作区端点会在智能体启动前的能力解析阶段导致整个智能体运行失败，与 `webSearch` 一致。这属于配置错误，并非 `fetch_url` 返回的失败结果，也不会自动改用内置读取服务。
+
+| 服务商 | 凭据 | 内容提取 |
+| --- | --- | --- |
+| `builtin` | 无需凭据 | 本地 Readability/Turndown 读取服务；PDF 使用 `document` 槽位 |
+| `kimi` | 已有 Kimi 服务商的密钥和基础地址 | 托管 Markdown 提取服务，也接收 PDF 网址 |
+
+```yaml
+providers:
+  reader:
+    preset: kimi
+    apiKey: ${KIMI_API_KEY}
+    baseUrl: https://api.moonshot.cn/v1
+slots:
+  webFetch: reader
+```
+
+`kimi` 和 `kimi-coding-plan` 预设都提供 `webFetch`。使用 Coding Plan 凭据时，请指定 `preset: kimi-coding-plan`，其默认基础地址为 `https://api.kimi.com/coding/v1`；显式配置的基础地址会保留。Moonshot 开放平台地址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。两者都发送带有 `{ "url": ... }` 的 `POST` 请求，并使用 Bearer 身份验证。适配器接受 `markdown` 或 `content`。维护者使用真实密钥测试了 `POST https://api.kimi.com/coding/v1/fetch`，确认响应包含 `{ markdown, title, url }`；国际端点的可用性仍未验证。请求遵循服务商的 `proxy` 设置和标准代理环境变量。
+
+在 **设置 → 模型服务 → 网页抓取** 中使用已有服务商凭据。该密钥与同一服务商的对话服务共享，修改或移除密钥也会影响对话。在 **课程模型配置 → 网页抓取** 中选择读取服务。管理员锁定后，卡片为只读。首次设置会保留内置默认值，直到明确选择其他读取服务。工作区凭据可使用官方 API 基础地址；自定义抓取地址和代理必须由管理员在 `openmaic.yml` 中声明。
+
+网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。
