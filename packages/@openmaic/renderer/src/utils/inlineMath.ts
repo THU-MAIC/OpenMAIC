@@ -295,6 +295,9 @@ export const InlineMathPriorityContext = createContext<MathPriority>('normal');
 // One queue, with foreground canvases ahead of thumbnails and round-robin roots
 // within each priority. DOM insertion remains bounded across all roots.
 const pendingRoots = new Map<Element, MathPriority>();
+// Only roots admitted by the current commits may use the pre-paint allowance.
+// Unchanged pending roots remain in the idle queue on parent rerenders.
+const backgroundRoots = new Set<Element>();
 let syncBudget: TypesetBudget | null = null;
 let cancelSyncReset: (() => void) | null = null;
 let idleJob: { cancel?: () => void } | null = null;
@@ -362,26 +365,34 @@ function schedulePendingMath(): void {
 
 function renderLiveMath(root: Element, priority: MathPriority): void {
   if (priority === 'background') {
-    pendingRoots.set(root, priority);
+    backgroundRoots.add(root);
     // Let all foreground layout effects run first, then use only this frame's
-    // remaining allowance before paint. Completed roots cost a scan, no idle job.
+    // remaining allowance for these roots, without advancing older idle work.
     if (!backgroundScheduled) {
       backgroundScheduled = true;
       queueMicrotask(() => {
         backgroundScheduled = false;
-        if (!pendingRoots.size) return;
-        renderPendingMath('background', synchronousBudget());
+        if (!backgroundRoots.size) return;
+        const budget = synchronousBudget();
+        for (const root of backgroundRoots) {
+          pendingRoots.delete(root);
+          if (root.isConnected && renderPass(root, {}, budget))
+            pendingRoots.set(root, 'background');
+        }
+        backgroundRoots.clear();
         schedulePendingMath();
       });
     }
     return;
   }
+  backgroundRoots.delete(root);
   if (renderPass(root, {}, synchronousBudget())) pendingRoots.set(root, priority);
   else pendingRoots.delete(root);
   schedulePendingMath();
 }
 
 function cancelPendingMath(root: Element): void {
+  backgroundRoots.delete(root);
   pendingRoots.delete(root);
   if (!pendingRoots.size) {
     idleJob?.cancel?.();
@@ -411,7 +422,7 @@ export function useInlineMath(ref: RefObject<Element | null>, html: string): voi
     previous.current = { root, html, priority };
     if (!root) return;
     if (!html.includes(INLINE_MATH_ATTRIBUTE)) {
-      if (pendingRoots.has(root)) cancelPendingMath(root);
+      cancelPendingMath(root);
       return;
     }
     if (
