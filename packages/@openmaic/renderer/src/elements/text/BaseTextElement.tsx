@@ -6,6 +6,7 @@ import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
+import { hasTextInsets } from '../shared/hasTextInsets';
 
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
@@ -26,15 +27,8 @@ export function BaseTextElement({
   const innerHtml = useInnerHtml(elementInfo.content);
   useInlineMath(proseRef, elementInfo.content);
   // Imported OOXML text carries its own bodyPr insets on the outer div.
-  // Adding the editor's default inset again shifts vertical text left and
-  // reduces the available line width for horizontal text.
-  const hasExplicitTextInsets = /^\s*<div\b[^>]*\sdata-pptx-text-insets\s*=\s*(["'])true\1/i.test(
-    elementInfo.content,
-  );
-  // Legacy saved slides predate the marker. Retain their existing inset behavior.
-  const hasTextInsets =
-    hasExplicitTextInsets ||
-    /^\s*<div\b[^>]*\bstyle\s*=\s*["'][^"']*\bpadding\s*:/i.test(elementInfo.content);
+  // Adding the editor's default inset again shifts the label and reduces line width.
+  const contentHasTextInsets = hasTextInsets(elementInfo.content);
 
   const vAlign = elementInfo.vAlign ?? 'top';
   const justifyContent =
@@ -83,7 +77,7 @@ export function BaseTextElement({
           style={{
             position: 'relative',
             boxSizing: 'border-box',
-            padding: hasTextInsets ? 0 : '10px',
+            padding: contentHasTextInsets ? 0 : '10px',
             overflowWrap: 'break-word',
             width: elementInfo.vertical ? 'auto' : '100%',
             height: elementInfo.vertical || fillHeight ? '100%' : 'auto',

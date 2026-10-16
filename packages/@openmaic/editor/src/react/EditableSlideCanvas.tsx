@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { PPTElement, PPTShapeElement, PPTTableElement, PPTTextElement } from '@openmaic/dsl';
+import { validateShapeGeometry } from '@openmaic/geometry';
 
 import { SlideCanvas, useViewportSize } from '@openmaic/renderer';
 import { SelectionOverlay } from './handles/SelectionOverlay';
@@ -101,6 +102,16 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   } = props;
 
   const activeSelection = selection ?? EMPTY_SELECTION;
+  const selectedElementId =
+    activeSelection.elementIds.length === 1 ? activeSelection.elementIds[0] : undefined;
+  // A historical shape may still render as text under the renderer's fallback,
+  // but changing its box or path would make the editor validate the malformed
+  // geometry and reject the commit. Do not preview gestures that cannot persist.
+  const selectedShapeGeometryWritable = useMemo(() => {
+    if (!selectedElementId) return true;
+    const selected = slide.elements.find((element) => element.id === selectedElementId);
+    return selected?.type !== 'shape' || validateShapeGeometry(selected).ok;
+  }, [selectedElementId, slide.elements]);
   const interactive = Boolean(onElementsChange || onSelectionChange);
   const textEditingEnabled = Boolean(onTextContentChange);
   const tableEditingEnabled = Boolean(onTableCellChange);
@@ -304,6 +315,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     scale: canvasScale,
     snapping,
     shapePathFormulas,
+    selectedElementId: selectedElementId ?? null,
     onElementsChange,
   });
 
@@ -320,6 +332,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   const { shapeKeypointDrag, onShapeKeypointPointerDown } = useShapeKeypointGesture({
     scale: canvasScale,
     shapePathFormulas,
+    selectedElementId: selectedElementId ?? null,
     onElementsChange,
   });
 
@@ -690,7 +703,8 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             elements.map((el) => {
               if (el.type === 'line') return null;
               if (!activeSelection.elementIds.includes(el.id) || el.lock) return null;
-              const handles = getResizeHandles(el);
+              const handles =
+                el.type === 'shape' && !selectedShapeGeometryWritable ? [] : getResizeHandles(el);
               const rotatable = canRotate(el);
               if (handles.length === 0 && !rotatable) return null;
               return (
@@ -720,7 +734,12 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             Boolean(onElementsChange) &&
             activeSelection.elementIds.length === 1 &&
             elements.map((el) => {
-              if (el.type !== 'shape' || !activeSelection.elementIds.includes(el.id)) return null;
+              if (
+                el.type !== 'shape' ||
+                !activeSelection.elementIds.includes(el.id) ||
+                !selectedShapeGeometryWritable
+              )
+                return null;
               return (
                 <ShapeKeypointHandles
                   key={`shape-keypoints-${el.id}`}

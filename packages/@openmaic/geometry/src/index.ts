@@ -56,7 +56,7 @@ const ARG_COUNTS: Readonly<Record<string, number>> = {
   Z: 0,
 };
 const NUMBER = /[+-]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][+-]?\d+)?/y;
-const whitespace = (c: string | undefined) => c !== undefined && /[ \t\r\n]/.test(c);
+const whitespace = (c: string | undefined) => c !== undefined && /[ \t\r\n\f]/.test(c);
 
 function fail(
   code: GeometryError['code'],
@@ -135,6 +135,13 @@ export function validateSvgPath(path: unknown, policy: Partial<PathLimits> = {})
         separated = true;
       }
       const flag = upper === 'A' && (arg === 3 || arg === 4);
+      if (i === path.length)
+        return fail(
+          'syntax',
+          'path',
+          flag ? 'Arc flag must be 0 or 1' : `Expected parameter ${arg + 1} of ${command}`,
+          i,
+        );
       // Signs and a second decimal point terminate the preceding number. Arc
       // flags are single digits and may be adjacent to each other and to x.
       const previousWasFlag = upper === 'A' && (arg === 4 || arg === 5);

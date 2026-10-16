@@ -17,6 +17,7 @@ import { BaseTextElement } from '../text/BaseTextElement';
 import { PatternDefs } from './PatternDefs';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
+import { hasTextInsets } from '../shared/hasTextInsets';
 
 export interface BaseShapeElementProps {
   elementInfo: PPTShapeElement;
@@ -95,7 +96,7 @@ function ValidShapeElement({
         justifyContent,
         overflowWrap: 'break-word',
         boxSizing: 'border-box',
-        padding: 10,
+        padding: hasTextInsets(text.content) ? 0 : 10,
         lineHeight: text.lineHeight ?? 1.625,
         letterSpacing: `${text.wordSpace || 0}px`,
         // PowerPoint/WPS 在 group flipH/flipV 时只镜像几何与位置，文字字形保持

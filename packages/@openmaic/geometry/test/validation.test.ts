@@ -18,6 +18,7 @@ describe('SVG path validation', () => {
     'M0 0 L0 0',
     '',
     '  ',
+    'M0\f0 L10\f10',
   ])('accepts standard path without changing its input: %s', (path) => {
     const result = validateSvgPath(path);
     expect(result).toMatchObject({ ok: true });
@@ -53,6 +54,13 @@ describe('SVG path validation', () => {
         message: expect.any(String),
         position: expect.any(Number),
       });
+  });
+
+  it('reports a missing command parameter before a separator error', () => {
+    expect(validateSvgPath('M0 0 L10')).toMatchObject({
+      ok: false,
+      error: { code: 'syntax', field: 'path', message: 'Expected parameter 2 of L', position: 8 },
+    });
   });
 
   it('rejects excessive length before reaching the dependency parser', () => {
