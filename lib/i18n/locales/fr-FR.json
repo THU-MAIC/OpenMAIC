@@ -2300,6 +2300,10 @@
         "cannotUndo": "Cette action est irréversible.",
         "folderTitle": "Supprimer le dossier « {{name}} » ?",
         "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+      },
+      "focus": {
+        "folderUnavailable": "Ce dossier ne se trouve plus dans la base de connaissances.",
+        "materialsUnavailable": "Ces documents ne figurent pas parmi les éléments chargés du premier niveau. Ils ont peut-être été déplacés ou supprimés. Recherchez leur nom de fichier."
       }
     },
     "untitledCourse": "未命名课堂",

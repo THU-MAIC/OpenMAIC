@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "ファイルが大きすぎます。{{limit}} MB 以下のファイルを選択してください。",
     "unsupportedType": "このファイル形式には対応していません。対応しているファイルを選択してください。",
     "quotaExceeded": "資料のアップロード上限に達しました。",
-    "storageFull": "ストレージの上限に達したため、この資料をアップロードできません。"
+    "storageFull": "ストレージの上限に達したため、この資料をアップロードできません。",
+    "stored": "ナレッジベースに {{count}} 件保存しました",
+    "view": "表示",
+    "viewFolder": "フォルダーを表示",
+    "viewTopLevel": "最上位を表示"
   },
   "skill": {
     "listFailed": "スキル一覧を読み込めませんでした",

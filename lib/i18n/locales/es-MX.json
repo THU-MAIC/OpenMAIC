@@ -2300,6 +2300,10 @@
         "cannotUndo": "Esta acción no se puede deshacer.",
         "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
         "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
+      },
+      "focus": {
+        "folderUnavailable": "Esta carpeta ya no está en la base de conocimientos.",
+        "materialsUnavailable": "No se encontraron estos materiales en los elementos cargados del nivel superior. Es posible que se hayan movido o eliminado. Busca por nombre de archivo."
       }
     },
     "untitledCourse": "未命名课堂",

@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "Die Datei ist zu groß. Wähle eine Datei mit höchstens {{limit}} MB aus.",
     "unsupportedType": "Dieser Dateityp wird nicht unterstützt. Wähle eine unterstützte Datei aus.",
     "quotaExceeded": "Upload-Limit für Materialien erreicht.",
-    "storageFull": "Der Speicherplatz ist voll. Dieses Material konnte nicht hochgeladen werden."
+    "storageFull": "Der Speicherplatz ist voll. Dieses Material konnte nicht hochgeladen werden.",
+    "stored": "{{count}} Dateien in der Wissensdatenbank gespeichert",
+    "view": "Ansehen",
+    "viewFolder": "Ordner ansehen",
+    "viewTopLevel": "Oberste Ebene ansehen"
   },
   "skill": {
     "listFailed": "Die Skill-Liste konnte nicht geladen werden",

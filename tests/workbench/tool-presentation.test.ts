@@ -572,11 +572,12 @@ describe('allowlist ↔ presentation reconciliation', () => {
     ...VOICE_CLONE_TOOL_NAMES,
     ...SKILL_EDIT_TOOL_NAMES,
     'create_skill',
-    // ask_user is the runner's minimal agent latch; web_search is
+    // ask_user is the runner's minimal agent latch; web_search and fetch_url are
     // capability-gated; `read` is Pi's native skill read, registered whenever
     // any skill is installed.
     'ask_user',
     'web_search',
+    'fetch_url',
     'read',
   ];
 
@@ -621,5 +622,43 @@ describe('allowlist ↔ presentation reconciliation', () => {
       expect(runnerTools).not.toContain(legacy);
       expect(presentTool(toolNode({ toolName: legacy })).label).toBe(legacy);
     }
+  });
+});
+
+describe('material library result links (#1924)', () => {
+  it.each([
+    ['create_material_folder', { folderId: 'f', created: true }],
+    ['create_material_folder', { folderId: 'f', created: false }],
+    ['rename_material_folder', { folderId: 'f', status: 'renamed' }],
+    ['rename_material_folder', { folderId: 'f', status: 'unchanged' }],
+    ['move_materials', { folderId: 'f' }],
+  ])('links %s to its result folder without optional labels/counts', (toolName, toolDetails) => {
+    const node = toolNode({ toolName, toolDetails, toolResultText: 'unchanged wire content' });
+    expect(presentTool(node).libraryLink).toEqual({
+      target: { kind: 'folder', folderId: 'f' },
+      label: 'folder',
+    });
+    expect(node.toolResultText).toBe('unchanged wire content');
+  });
+
+  it('links an explicit null result to the top level', () => {
+    expect(
+      presentTool(toolNode({ toolName: 'move_materials', toolDetails: { folderId: null } }))
+        .libraryLink,
+    ).toEqual({ target: { kind: 'top-level' }, label: 'topLevel' });
+  });
+
+  it.each([
+    { toolName: 'move_materials', toolDetails: {}, toolArgs: { folderId: 'top-level' } },
+    { toolName: 'move_materials', toolDetails: { folderId: 'top-level' }, toolState: 'failed' },
+    { toolName: 'create_material_folder', toolDetails: { folderId: 'f' }, toolState: 'running' },
+    { toolName: 'rename_material_folder', toolDetails: {} },
+    { toolName: 'rename_material', toolDetails: { folderId: 'f' } },
+    { toolName: 'list_materials', toolDetails: { folderId: 'f' } },
+    { toolName: 'list_material_folders', toolDetails: { folderId: 'f' } },
+    { toolName: 'extract_material', toolDetails: { folderId: 'f' } },
+    { toolName: 'create_material_folder', toolDetails: { folderId: null } },
+  ] satisfies Partial<ChatNode>[])('offers no action for $toolName / $toolState', (overrides) => {
+    expect(presentTool(toolNode(overrides)).libraryLink).toBeUndefined();
   });
 });

@@ -43,9 +43,12 @@ import { cn } from '@/lib/utils/cn';
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
 export function WorkspaceHome({
+  hidden = false,
+  onViewInLibrary,
   composerReset,
   discoveryContent,
   courseOptions,
@@ -55,6 +58,8 @@ export function WorkspaceHome({
   materialSeed,
   onMaterialSeedConsumed,
 }: {
+  readonly hidden?: boolean;
+  readonly onViewInLibrary?: (target: MaterialLibraryTarget) => void;
   readonly composerReset: number;
   readonly discoveryContent: ReactNode;
   /**
@@ -85,7 +90,10 @@ export function WorkspaceHome({
     <main
       data-testid="pro-workspace-home"
       aria-label={t('workspace.homeAria')}
-      className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
+      className={cn(
+        'ws-canvas relative min-w-0 flex-1 flex-col overflow-y-auto',
+        hidden ? 'hidden' : 'flex',
+      )}
     >
       {/* Below `md` the sidebar is gone, so the exit switch needs a home. A
           plain button, not a second ProBadge: two elements answering to
@@ -177,6 +185,7 @@ export function WorkspaceHome({
               gap is what says which of them the page is actually about. */}
           <div className={cn('mt-8', !swapped && 'ws-enter ws-d2')}>
             <ProLaunchPanel
+              onViewInLibrary={onViewInLibrary}
               autoFocus
               focusSignal={composerReset}
               variant="workspace"

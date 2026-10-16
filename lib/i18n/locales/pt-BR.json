@@ -2300,6 +2300,10 @@
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
         "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+      },
+      "focus": {
+        "folderUnavailable": "Esta pasta não está mais na base de conhecimento.",
+        "materialsUnavailable": "Estes materiais não foram encontrados nos itens carregados do nível superior. Podem ter sido movidos ou excluídos. Pesquise pelo nome do arquivo."
       }
     },
     "untitledCourse": "未命名课堂",

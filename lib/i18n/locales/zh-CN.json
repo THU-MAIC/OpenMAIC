@@ -2300,6 +2300,10 @@
         "cannotUndo": "此操作不能撤销。",
         "folderTitle": "删除文件夹“{{name}}”？",
         "folderContents": "{{count}} 个文件将移到顶层，不会删除任何文件。"
+      },
+      "focus": {
+        "folderUnavailable": "这个文件夹已不在知识库中。",
+        "materialsUnavailable": "没有在顶层的已加载部分找到这些资料，可能已被移动或删除。可以搜索文件名。"
       }
     },
     "untitledCourse": "未命名课堂",

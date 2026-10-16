@@ -88,7 +88,13 @@ export interface WorkbenchCourseOption {
 /**
  * Navigation capability supplied by `/workspace` to hosted chat content.
  */
+export type MaterialLibraryTarget =
+  | { readonly kind: 'folder'; readonly folderId: string }
+  | { readonly kind: 'top-level' }
+  | { readonly kind: 'materials'; readonly materialIds: readonly string[] };
+
 export interface WorkbenchCourseNavigation {
+  readonly openLibraryAt?: (target: MaterialLibraryTarget) => void;
   readonly openCourse: (courseId: string) => void;
   /** The one on screen; `null` when the right pane holds nothing. */
   readonly activeCourseId: string | null;

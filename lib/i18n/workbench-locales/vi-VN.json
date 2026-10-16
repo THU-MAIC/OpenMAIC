@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB.",
     "unsupportedType": "Loại tệp không được hỗ trợ. Vui lòng chọn tệp được hỗ trợ.",
     "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên.",
-    "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên."
+    "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên.",
+    "stored": "Đã lưu {{count}} tệp vào kho kiến thức",
+    "view": "Xem",
+    "viewFolder": "Xem thư mục",
+    "viewTopLevel": "Xem cấp cao nhất"
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",

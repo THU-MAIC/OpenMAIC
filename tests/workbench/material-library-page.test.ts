@@ -2413,3 +2413,128 @@ it('puts configuration guidance on unavailable parsing and keeps retry immediate
   await press(document.activeElement!, 'Escape');
   await page.dispose();
 });
+
+describe('opening at a location (#1924)', () => {
+  it('expands and focuses a folder; a folder read failure stays a node error', async () => {
+    library = (params) =>
+      params.get('folderId') === 'f1'
+        ? json({ error: 'unavailable' }, 503)
+        : json({ materials: [source('a')], limits: LIMITS });
+    const page = await openPage({
+      initialFocus: { kind: 'folder', folderId: 'f1' },
+      showBack: true,
+    });
+    expect(document.activeElement).toBe(page.query('kb-folder-toggle-f1'));
+    expect(page.query('kb-folder-toggle-f1')?.getAttribute('aria-expanded')).toBe('true');
+    expect(page.query('kb-focus-notice')).toBeNull();
+    expect(page.query('kb-folder-files-f1')?.querySelector('[role="alert"]')).not.toBeNull();
+    expect(page.query('kb-back')?.parentElement?.className).not.toContain('md:hidden');
+  });
+
+  it('reports a missing folder only after the owner listing succeeds', async () => {
+    const page = await openPage({ initialFocus: { kind: 'folder', folderId: 'gone' } });
+    expect(page.query('kb-focus-notice')?.textContent).toContain('focus.folderUnavailable');
+    expect(libraryCalls).toHaveLength(1);
+    expect(page.query('kb-back')?.parentElement?.className).toContain('md:hidden');
+  });
+
+  it.each([true, false])('top level has no missing-material notice (empty=%s)', async (empty) => {
+    library = () => json({ materials: empty ? [] : [source('a')], limits: LIMITS });
+    const page = await openPage({ initialFocus: { kind: 'top-level' } });
+    expect(page.query('kb-focus-notice')).toBeNull();
+    if (!empty) expect(page.query('kb-material-a')?.contains(document.activeElement)).toBe(true);
+    expect(libraryCalls).toHaveLength(1);
+  });
+
+  it('focuses the first loaded match, even when some requested materials are absent', async () => {
+    library = () =>
+      json({
+        materials: [
+          source('a', { extraction: { status: 'failed', reasonCode: 'service_unavailable' } }),
+        ],
+        limits: LIMITS,
+      });
+    const page = await openPage({
+      initialFocus: { kind: 'materials', materialIds: ['missing', 'a'] },
+    });
+    expect(document.activeElement).toBe(page.query('kb-material-menu-a'));
+    expect(page.query('kb-focus-notice')).toBeNull();
+  });
+
+  it.each(['moved', 'later-page', 'deleted'])(
+    'uses the same honest fallback for %s without paging',
+    async (reason) => {
+      library = () =>
+        json({
+          materials: [source('a')],
+          limits: LIMITS,
+          ...(reason === 'later-page' ? { nextBefore: 'cursor' } : {}),
+        });
+      const page = await openPage({
+        initialFocus: { kind: 'materials', materialIds: ['not-loaded'] },
+      });
+      expect(page.query('kb-focus-notice')?.textContent).toContain('focus.materialsUnavailable');
+      expect(page.query('kb-focus-notice')?.textContent).not.toContain('folderUnavailable');
+      expect(libraryCalls).toHaveLength(1);
+      expect(folderReads).toBe(1);
+    },
+  );
+
+  it('keeps the target through initial failure and focuses after Retry', async () => {
+    library = () => json({ error: 'unavailable' }, 503);
+    const page = await openPage({ initialFocus: { kind: 'folder', folderId: 'f1' } });
+    expect(page.query('kb-error')).not.toBeNull();
+    expect(page.query('kb-focus-notice')).toBeNull();
+    library = () => json({ materials: [], limits: LIMITS });
+    await act(async () => page.query('kb-retry')!.focus());
+    await page.click('kb-retry');
+    await settle();
+    expect(document.activeElement).toBe(page.query('kb-folder-toggle-f1'));
+    expect(page.query('kb-focus-notice')).toBeNull();
+  });
+
+  it.each(['search', 'focus'])('abandons delayed focus when the user starts %s', async (action) => {
+    const read = deferred<Response>();
+    library = () => read.promise;
+    const page = mount();
+    await page.render(
+      createElement(
+        MaterialLibraryPage,
+        props({ initialFocus: { kind: 'folder', folderId: 'f1' } }),
+      ),
+    );
+    if (action === 'search') await typeInto(page.query('kb-search') as HTMLInputElement, 'a');
+    else await act(async () => page.query('kb-upload')!.focus());
+    await act(async () => read.resolve(json({ materials: [source('a')], limits: LIMITS })));
+    await settle();
+    expect(page.query('kb-folder-toggle-f1')?.getAttribute('aria-expanded')).toBe('false');
+    expect(page.query('kb-focus-notice')).toBeNull();
+  });
+
+  it('never refocuses on revision or a new prop after the initial reveal', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const page = await openPage({ initialFocus: { kind: 'folder', folderId: 'f1' } });
+    await act(async () => page.query('kb-upload')!.focus());
+    await page.render(
+      createElement(
+        MaterialLibraryPage,
+        props({ initialFocus: { kind: 'folder', folderId: 'f2' } }),
+      ),
+    );
+    await act(async () =>
+      useWorkbenchStore.setState((s) => ({
+        materialLibraryRevision: s.materialLibraryRevision + 1,
+      })),
+    );
+    await settle();
+    expect(document.activeElement).toBe(page.query('kb-upload'));
+    expect(page.query('kb-folder-toggle-f2')?.getAttribute('aria-expanded')).toBe('false');
+  });
+});

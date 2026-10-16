@@ -6,7 +6,7 @@
  * base; code and APIs keep "material library" (§10).
  *
  * The shell mounts it only while `?view=library` is set and keeps the
- * conversation and classroom panes mounted, hidden, underneath it.
+ * conversation, classroom and home composer mounted, hidden, underneath it.
  *
  * One file-manager list (#1835 review): folders first, then the files in no
  * folder; a folder expands in place, one level deep, and pages on its own;
@@ -42,6 +42,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import type { MaterialExtractionReasonCode } from '@/lib/types/material-extraction-failure';
 import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
 import { toast } from 'sonner';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -565,7 +566,11 @@ const LAYOUT = {
 export function MaterialLibraryPage({
   onChatWithMaterial,
   onLeave,
+  initialFocus,
+  showBack = false,
 }: {
+  readonly initialFocus?: MaterialLibraryTarget;
+  readonly showBack?: boolean;
   /** Start a conversation with this source staged (the shell decides where). */
   readonly onChatWithMaterial: (material: WorkbenchMaterial) => void;
   /** Leave the page for what it covers (the compact header's way back). */
@@ -573,6 +578,8 @@ export function MaterialLibraryPage({
 }) {
   const { t, locale } = useI18n();
   const [queryInput, setQueryInput] = useState('');
+  const pendingFocus = useRef(initialFocus);
+  const [focusNotice, setFocusNotice] = useState<'folder' | 'materials' | null>(null);
   /** The query the list is read for: settled while typing, cleared at once. */
   const [query, setQuery] = useState('');
   useEffect(() => {
@@ -638,9 +645,10 @@ export function MaterialLibraryPage({
     const movedOn = (event: FocusEvent) => {
       if (
         event.target instanceof Element &&
-        !event.target.closest('[data-testid="kb-new-folder-row"]')
+        !event.target.closest('[data-testid="kb-new-folder-row"], [data-testid="kb-retry"]')
       ) {
         reveal.current = null;
+        pendingFocus.current = undefined;
       }
     };
     document.addEventListener('focusin', movedOn);
@@ -657,7 +665,8 @@ export function MaterialLibraryPage({
     return (
       active === null ||
       active === document.body ||
-      (active instanceof Element && active.closest('[data-testid="kb-new-folder-row"]') !== null)
+      (active instanceof Element &&
+        active.closest('[data-testid="kb-new-folder-row"], [data-testid="kb-retry"]') !== null)
     );
   };
   const revealArrived = () => {
@@ -707,6 +716,49 @@ export function MaterialLibraryPage({
   // the first row in view is remembered with its offset, and after each
   // render the scroll moves by however far that row went.
   const scroller = useRef<HTMLElement>(null);
+  // Like revealArrived above, inspect the committed DOM on each render; the
+  // pending ref is consumed before any state update, so this cannot loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (!target) return;
+    if (queryInput || !focusIsFree()) {
+      pendingFocus.current = undefined;
+      return;
+    }
+    // The first successful owner listing settles both folders and root. A
+    // failed initial read keeps the target pending for the existing Retry.
+    if (tree.root.status !== 'ready' || tree.error) return;
+    pendingFocus.current = undefined;
+    if (target.kind === 'folder') {
+      if (tree.folders.some((folder) => folder.id === target.folderId)) {
+        tree.expand(target.folderId);
+        reveal.current = { folderId: target.folderId };
+        revealArrived();
+      } else {
+        setFocusNotice('folder');
+        scroller.current?.scrollTo?.({ top: 0 });
+      }
+      return;
+    }
+    const material =
+      target.kind === 'materials'
+        ? tree.root.files.find((file) => target.materialIds.includes(file.materialId))
+        : tree.root.files[0];
+    if (target.kind === 'materials' && !material) setFocusNotice('materials');
+    const first = material ?? tree.root.files[0];
+    if (first) {
+      // Use the existing row's menu control; focus stays keyboard-accessible.
+      const row = [...(list.current?.querySelectorAll<HTMLElement>('[data-kb-row]') ?? [])].find(
+        (element) => element.dataset.testid === `kb-material-${first.materialId}`,
+      );
+      row?.scrollIntoView?.({ block: 'nearest' });
+      row?.querySelector<HTMLElement>('[data-testid^="kb-material-menu-"]')?.focus();
+    } else {
+      scroller.current?.scrollTo?.({ top: 0 });
+    }
+    // Inspect once per render until consumed; refresh/revision cannot rearm it.
+  });
   const scrollAnchor = useRef<{ readonly row: Element; readonly top: number } | null>(null);
   const rememberScrollAnchor = () => {
     const main = scroller.current;
@@ -1541,8 +1593,8 @@ export function MaterialLibraryPage({
       // Room for the sticky column names, so a row given the focus is not under them.
       className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto [overflow-anchor:none] [scroll-padding-top:2.75rem]"
     >
-      {/* Below `md` the rail is gone, so the page carries its own way out. */}
-      <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
+      {/* Link visits carry a way back at every width; rail visits keep the compact header. */}
+      <div className={cn('flex h-12 shrink-0 items-center px-4', !showBack && 'md:hidden')}>
         <button
           type="button"
           data-testid="kb-back"
@@ -1635,6 +1687,19 @@ export function MaterialLibraryPage({
         ) : null}
 
         <section aria-live="polite">
+          {focusNotice ? (
+            <p
+              data-testid="kb-focus-notice"
+              role="status"
+              className="mb-3 text-[13px] text-muted-foreground"
+            >
+              {t(
+                focusNotice === 'folder'
+                  ? 'workspace.knowledgeBase.focus.folderUnavailable'
+                  : 'workspace.knowledgeBase.focus.materialsUnavailable',
+              )}
+            </p>
+          ) : null}
           {tree.error && primary.status === 'ready' ? (
             <div
               data-testid="kb-stale"
