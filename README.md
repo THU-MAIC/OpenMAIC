@@ -31,7 +31,6 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/LangGraph-1.1-purple?style=flat-square" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
 </p>
 
@@ -942,7 +941,7 @@ OpenMAIC/
 │
 ├── lib/                        # Core business logic
 │   ├── generation/             #   Two-stage lesson generation pipeline
-│   ├── orchestration/          #   LangGraph multi-agent orchestration (director graph)
+│   ├── orchestration/          #   Agent registry, shared summarizers and types
 │   ├── playback/               #   Playback state machine (idle → playing → live)
 │   ├── action/                 #   Action execution engine (speech, whiteboard, effects)
 │   ├── ai/                     #   LLM provider abstraction
@@ -998,7 +997,7 @@ OpenMAIC/
 - **Generation Pipeline** (`@openmaic/generation`) — Two-stage: outline generation → scene content generation
 - **Agent Runtime** (`lib/server/agent-runtime/`) — PostgreSQL-backed sessions with leased execution, resume/steer semantics, skills, materials, and validated course tools
 - **Persistence Layer** (`@openmaic/storage`) — Swappable document, runtime, KV, asset, agent-session, material, and user-skill stores
-- **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
+- **Multi-Agent Orchestration** (`lib/chat/pi/`) — Server-side Pi director loop that hands each classroom turn to agents through `call_agent`
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
 - **Action Engine** (`lib/action/`) — Executes 21 action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)
 - **Storage Layer** (`@openmaic/storage`) — Runtime/Document/asset storage abstraction with a Postgres reference implementation; its HTTP contracts let you plug in any external storage service

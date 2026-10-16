@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **The legacy director-graph classroom chat is removed; classroom chat always runs on Pi.** [#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)
+  - Pi needs a Classroom model with tool calling: select one for **Classroom** in **Course Model Config**, or set the `classroom` slot (or the `llm` slot it inherits from) in `openmaic.yml`. For Gemini, use the native `google` preset.
+  - Remove `NEXT_PUBLIC_PI_CHAT_ENABLED`. A production build accepts only unset, an empty string, `true` or `1` (exact match) and fails with migration guidance on any other value. The Docker build arg and its Compose forwarding remain only to carry the value to that check.
+  - `POST /api/chat` is removed and answers `404`. With `ACCESS_CODE` set, an unauthenticated request still gets `401` first.
+
+### Other Changes
+
+- Dependencies: `@langchain/langgraph` is no longer installed. [#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)
+
 ## [1.2.0] - 2026-10-16
 
 1.2.0 is the **server-first** release. Course generation, model configuration, courses and media, and identity move to the server, and the browser becomes a client. It needs PostgreSQL and a long-running Node.js server; serverless hosts, Vercel included, stay on 1.1.x. This section collects what is new in 1.2.0 beyond the rc.1 and rc.2 sections below, including classroom export, which landed before rc.2 but was not recorded there. Coming from 1.1.x:

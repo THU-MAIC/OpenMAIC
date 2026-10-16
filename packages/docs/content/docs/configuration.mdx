@@ -438,9 +438,6 @@ Feature flags accept `true` or `1`; unless noted otherwise, all other values are
 # MAIC Editor (Pro mode)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi chat is enabled by default; uncomment the next line for legacy rollback
-# NEXT_PUBLIC_PI_CHAT_ENABLED=false
-
 # PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
 
@@ -457,13 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi chat requires model tool/function calling. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot. If the selected model or provider does not support tool calls, set `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (or `0`) and rebuild to use the legacy chat path.
+Classroom chat always runs on Pi, which requires a model with tool (function) calling: select one for **Classroom** in **Course Model Config**, or set the `classroom` slot (or the `llm` slot it inherits from) in `openmaic.yml`. For Gemini, use the native `google` preset rather than Google's OpenAI-compatible endpoint. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot.
 
-With Docker Compose, `.env.local` is loaded by `env_file` at runtime, not used for build-arg interpolation. Rebuild with an explicit build-time override as below; a runtime-only change leaves the built client and server on their original chat path.
-
-```bash
-NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
-```
+The old director-graph classroom chat has been removed, and `NEXT_PUBLIC_PI_CHAT_ENABLED` no longer selects a chat path. Remove it from your configuration: a production build accepts only unset, an empty string, `true` or `1` (exact match) and fails with migration guidance on any other value. With Docker Compose, the service `env_file` (`.env.local`) supplies runtime values, not build args.
 
 PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
 

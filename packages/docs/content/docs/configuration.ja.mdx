@@ -438,9 +438,6 @@ ACCESS_CODE=your-secret-code
 # MAIC Editor（Pro モード）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi 対話ランタイムはデフォルトで有効。従来経路へ戻す場合は次の行のコメントを解除
-# NEXT_PUBLIC_PI_CHAT_ENABLED=false
-
 # Pi 再生時の PPT・インタラクティブ教材参照（ビルド時フラグ。編集モードの参照には影響しません）
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
 
@@ -457,13 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi 対話ランタイムではモデルのツール／関数呼び出し機能が必要です。組み込みカタログでツール呼び出し非対応とされているモデルは推論前に `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`）で拒否され、**コースモデル設定**でも教室スロットにこの要件が表示されます。選択したモデルまたは provider がツール呼び出しに対応していない場合は、`NEXT_PUBLIC_PI_CHAT_ENABLED=false`（または `0`）を設定して再ビルドし、従来の対話経路を使用してください。
+教室チャットは常に Pi で動作し、ツール／関数呼び出しに対応したモデルが必要です。**コースモデル設定**の**教室**で対応モデルを選択するか、`openmaic.yml` の `classroom` スロット（または継承元の `llm` スロット）を設定してください。Gemini では Google の OpenAI 互換エンドポイントではなく、ネイティブの `google` プリセットを使います。 組み込みカタログでツール呼び出し非対応とされているモデルは推論前に `400 MODEL_CONFIG_INVALID`（`reason: tool_calling_required`）で拒否され、**コースモデル設定**でも教室スロットにこの要件が表示されます。
 
-Docker Compose では、`.env.local` は `env_file` により実行時に読み込まれ、ビルド引数の変数展開には使われません。次のコマンドでビルド時の値を明示して再ビルドしてください。実行時の環境変数だけを変更しても、ビルド済みのクライアントとサーバーの対話経路は変わりません。
-
-```bash
-NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
-```
+従来の director-graph 教室チャットは削除され、`NEXT_PUBLIC_PI_CHAT_ENABLED` で対話経路を選ぶことはできなくなりました。この変数は設定から削除してください。production ビルドが受け付けるのは未設定、空文字列、`true`、`1`（完全一致）のみで、それ以外の値では移行案内とともにビルドが失敗します。Docker Compose では、サービスの `env_file`（`.env.local`）が渡すのは実行時の値であり、ビルド引数には入りません。
 
 PPTX インポートはまだ実験的で、解析結果は完全に授業データフローに統合されていません。`NEXT_PUBLIC_*` 変数はビルド時スイッチで、Docker では build args で渡す必要があり、コンテナ実行時環境変数だけでは反映されません。
 

@@ -64,7 +64,6 @@ const PROVIDER_NEUTRAL_FILES = [
   // NOTE: lib/server/agent-runtime/agent-driver-model.ts is not on main yet.
   // Add it back here the moment the agent driver lands on main so the neutral
   // driver surface is guarded from day one.
-  'lib/orchestration/ai-sdk-adapter.ts',
   // Capability routes
   'app/api/generate/tts/route.ts',
   'app/api/generate/voice/route.ts',

@@ -492,7 +492,7 @@ export type StatelessEvent =
           }
         | { kind: 'projection'; stageId: string; lastSeq: number };
     }
-  | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string } }
+  | { type: 'cue_user'; data: { fromAgentId?: string; prompt?: string; options?: string[] } }
   | {
       type: 'done';
       data: {

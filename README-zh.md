@@ -31,7 +31,6 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/LangGraph-1.1-purple?style=flat-square" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
 </p>
 
@@ -826,7 +825,7 @@ OpenMAIC/
 │
 ├── lib/                        # 核心业务逻辑
 │   ├── generation/             #   两阶段课堂生成流水线
-│   ├── orchestration/          #   LangGraph 多智能体编排（导演图）
+│   ├── orchestration/          #   智能体注册表、共享摘要器与类型
 │   ├── playback/               #   回放状态机（idle → playing → live）
 │   ├── action/                 #   动作执行引擎（语音、白板、特效）
 │   ├── ai/                     #   LLM 服务商抽象层
@@ -878,7 +877,7 @@ OpenMAIC/
 ### 核心架构
 
 - **生成流水线** (`@openmaic/generation`) — 两阶段：大纲生成 → 场景内容生成
-- **多智能体编排** (`lib/orchestration/`) — 基于 LangGraph 的状态机，管理智能体轮次和讨论
+- **多智能体编排** (`lib/chat/pi/`) — 服务端 Pi 导演循环，通过 `call_agent` 把每轮课堂对话交给各智能体
 - **回放引擎** (`lib/playback/`) — 驱动课堂回放和实时互动的状态机
 - **动作引擎** (`lib/action/`) — 执行 21 种动作类型（语音、白板绘图/文字/形状/图表、聚光灯、激光笔…）
 - **存储层** (`@openmaic/storage`) — Runtime/Document/资产存储抽象，附 Postgres 参考实现，HTTP 契约可对接任意外部存储服务

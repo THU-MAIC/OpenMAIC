@@ -47,7 +47,6 @@ const ZERO_USAGE = {
 };
 const resolvedModel = { provider: 'test.provider', modelId: 'openmaic-resolved-model' };
 const envNames = [
-  'NEXT_PUBLIC_PI_CHAT_ENABLED',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME',
   'OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT',
   'TAVILY_API_KEY',
@@ -171,7 +170,6 @@ describe('PR2 Native Child route production wiring', () => {
   beforeEach(() => {
     vi.stubGlobal('IDBKeyRange', IDBKeyRange);
     for (const name of envNames) originalEnv.set(name, process.env[name]);
-    process.env.NEXT_PUBLIC_PI_CHAT_ENABLED = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME = 'true';
     process.env.OPENMAIC_ENABLE_PI_NATIVE_CHILD_SPOTLIGHT = 'true';
     delete process.env.TAVILY_API_KEY;

@@ -1,11 +1,7 @@
 import type { NextConfig } from 'next';
+import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 
 const nextConfig: NextConfig = {
-  env: {
-    // Pin even the unset/default value in both client and server bundles.
-    // A runtime-only override must not disable the route the built client uses.
-    NEXT_PUBLIC_PI_CHAT_ENABLED: process.env.NEXT_PUBLIC_PI_CHAT_ENABLED ?? '',
-  },
   output: 'standalone',
   outputFileTracingIncludes: {
     '/*': [
@@ -84,4 +80,28 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// NEXT_PUBLIC_PI_CHAT_ENABLED used to opt out of Pi into the legacy
+// director-graph classroom chat. That runtime is gone, so a production build
+// that still carries any value which once selected it fails instead of
+// silently switching the deployment to Pi. These values never did.
+const PI_CHAT_FLAG_VALUES_STILL_ACCEPTED = new Set(['', 'true', '1']);
+
+export default function config(phase: string): NextConfig {
+  const piChatFlag = process.env.NEXT_PUBLIC_PI_CHAT_ENABLED;
+  if (
+    phase === PHASE_PRODUCTION_BUILD &&
+    piChatFlag !== undefined &&
+    !PI_CHAT_FLAG_VALUES_STILL_ACCEPTED.has(piChatFlag)
+  ) {
+    throw new Error(
+      `NEXT_PUBLIC_PI_CHAT_ENABLED is set to ${JSON.stringify(piChatFlag)}, but the legacy ` +
+        'director-graph classroom chat has been removed and this variable can no longer ' +
+        'select it. Remove NEXT_PUBLIC_PI_CHAT_ENABLED, then select a model that supports ' +
+        'tool calling for Classroom (Settings → Course Model Config, or the `classroom` ' +
+        'slot in openmaic.yml and the `llm` slot it inherits from). For Gemini, use the ' +
+        'native `google` preset. If the model configuration is managed by an administrator, ' +
+        'ask them to make this change.',
+    );
+  }
+  return nextConfig;
+}

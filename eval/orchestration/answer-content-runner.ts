@@ -2,38 +2,50 @@
  * Agent Answer-Content Eval (#511 / #599 follow-up — the CONTENT layer)
  *
  * The director question-answering eval (answering-runner.ts) only checks that
- * the DIRECTOR routes to the teacher. It never generates the teacher's reply,
- * so it cannot catch the failure mode where the director routes correctly but
- * the dispatched agent's FIRST sentence still drifts (greets / opens a lecture /
+ * the DIRECTOR routes to the teacher. It never judges the teacher's reply, so
+ * it cannot catch the failure mode where the director routes correctly but the
+ * dispatched agent's FIRST sentence still drifts (greets / opens a lecture /
  * pivots) and only a LATER turn answers — "first sentence drifts, second answers".
  *
- * This eval closes that gap. For each scenario it runs the REAL agent-generate
- * inputs — buildStructuredPrompt() + convertMessagesToOpenAI() — against the
- * model, parses the structured output with the app's runtime parser, and uses an
- * LLM judge to decide:
+ * This eval closes that gap. Each sample is one in-process Pi classroom request
+ * (see pi-harness.ts): the director runs its full tool loop — it decides whether
+ * to read_scene — and dispatches children. The reply judged is the full text of
+ * the FIRST RECORDED call_agent attempt naming the scenario's teacher, taken
+ * from that attempt's own tool result (never peer text, a later teacher call,
+ * or the truncated preview). An LLM judge decides:
  *   - leads_with_answer  : did the FIRST sentence(s) address the literal ask?
  *   - answered_anywhere  : did the reply address it AT ALL (even if late)?
- * The gap (answered_anywhere && !leads_with_answer) quantifies the
- * drift-then-answer pathology directly.
+ *
+ * Limits of this measurement:
+ *   - Pi caps a teacher reply at 1–2 short sentences, about the size of the
+ *     two-sentence opening the judge reads, so the two metrics nearly coincide.
+ *   - A sample scores 0 without a judge call when the run fails, no teacher
+ *     attempt is recorded, or the first recorded one is skipped, marked
+ *     isError, or has no text. So the score includes the routing step.
+ *   - Only failures the trace exposes count. A teacher attempt rejected by the
+ *     tool schema is not recorded, so a later recorded one is judged. A legacy
+ *     child whose provider fails after streaming partial text is not marked as
+ *     failed; that partial text is judged as the student would see it. Scores
+ *     can therefore be overstated, and a judged reply is not proof of a
+ *     complete answer or of an error-free run.
+ *   - Results are a Pi baseline; they are not comparable with the retired
+ *     single-prompt A/B.
  *
  * Scenarios are synthetic and anonymized, authored from a real-world failure
  * taxonomy (opening-lecture override, ignored format/capability/navigation
  * request, ignored correction, frustration re-ask, adjacent pivot, vague
  * clarify) plus clean controls. No real user data is included.
  *
- * A/B (mirrors answering-runner's rule-13 strip):
- *   - baseline  : agent-system with the "Responding to the User's Turn" section stripped
- *   - with_rule : agent-system as-shipped
- *
- * Pass criterion: with_rule mean leads_with_answer rate >= EVAL_PASS_THRESHOLD
- * (default 0.7). Δ vs baseline is reported as informational.
+ * Pass criterion: leads_with_answer rate >= EVAL_PASS_THRESHOLD (default 0.7)
+ * per scenario.
  *
  * Required env:
- *   EVAL_AGENT_MODEL   Model used to generate the agent reply (or DEFAULT_MODEL)
+ *   EVAL_AGENT_MODEL   Model for the whole Pi chain (director and children);
+ *                      falls back to DEFAULT_MODEL
  *   EVAL_JUDGE_MODEL   Model used as the answer judge
  * Optional env:
- *   EVAL_SAMPLES        Samples per (scenario, variant). Default 3.
- *   EVAL_PASS_THRESHOLD Min with_rule leads rate per scenario. Default 0.7.
+ *   EVAL_SAMPLES        Samples per scenario. Default 3.
+ *   EVAL_PASS_THRESHOLD Min leads rate per scenario. Default 0.7.
  *   EVAL_SCENARIO       Filter to a single scenario by case_id.
  *
  * Output: eval/orchestration/results-answer-content/<model>/<timestamp>/report.md
@@ -42,20 +54,19 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { callLLM } from '@/lib/ai/llm';
-import { buildStructuredPrompt } from '@/lib/orchestration/prompt-builder';
-import { convertMessagesToOpenAI } from '@/lib/orchestration/summarizers/message-converter';
-import {
-  createParserState,
-  parseStructuredChunk,
-  finalizeParser,
-} from '@/lib/orchestration/stateless-generate';
-import { type AgentConfig, getActionsForRole } from '@/lib/orchestration/registry/types';
+import type { LanguageModel } from 'ai';
 import type { AgentTurnSummary } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveEvalModel } from '../shared/resolve-model';
 import { createRunDir } from '../shared/run-dir';
 import { judgeAnswer, type AnswerVerdict } from './answer-content-judge';
+import {
+  callAgentTrace,
+  runPiClassroomRequest,
+  scenarioAgentConfig,
+  type EvalModel,
+  type PiDone,
+} from './pi-harness';
 import type { ScenarioAgent } from './types';
 
 const OUTPUT_DIR = 'eval/orchestration/results-answer-content';
@@ -72,7 +83,7 @@ interface ScenarioTurn {
   text: string;
 }
 
-interface ContentScenario {
+export interface ContentScenario {
   case_id: string;
   category: string;
   description: string;
@@ -81,10 +92,10 @@ interface ContentScenario {
   turns: ScenarioTurn[];
   answerKey: string;
   expectedPreFix?: string;
-  /** Classroom context so the assembled prompt matches the live shape/bulk:
-   * a topical slide scene, the stage (incl. languageDirective), and the
-   * student profile. Shapes mirror StatelessChatRequest.storeState. Use `scenes`
-   * + `currentSceneId` for a multi-slide deck (e.g. so "skip to next page" is
+  /** Classroom context so the request matches the live shape/bulk: a topical
+   * slide scene, the stage (incl. languageDirective), and the student
+   * profile. Shapes mirror StatelessChatRequest.storeState. Use `scenes` +
+   * `currentSceneId` for a multi-slide deck (e.g. so "skip to next page" is
    * well-posed); `scene` is the single-slide shorthand. */
   scene?: unknown;
   scenes?: unknown[];
@@ -94,13 +105,13 @@ interface ContentScenario {
   mode?: 'autonomous' | 'playback';
 }
 
-type Variant = 'baseline' | 'with_rule';
-
-interface SampleResult {
-  variant: Variant;
+export interface SampleResult {
   leadText: string;
   fullText: string;
   verdict: AnswerVerdict;
+  /** Why no teacher reply was judged; the sample scores 0. */
+  noReply?: string;
+  /** Run failure; the sample scores 0. */
   error?: string;
 }
 
@@ -110,42 +121,19 @@ interface VariantAgg {
   answeredRate: number;
 }
 
-interface ScenarioResult {
+interface ScenarioResult extends VariantAgg {
   case_id: string;
   category: string;
   description: string;
-  baseline: VariantAgg;
-  withRule: VariantAgg;
-  delta: number;
   passes: boolean;
 }
 
 // ==================== Input construction ====================
 
-/** Build a full AgentConfig for the teacher from the scenario spec. */
-function buildTeacherConfig(scenario: ContentScenario): AgentConfig {
-  const spec = scenario.agents.find((a) => a.id === scenario.teacherAgentId) ?? scenario.agents[0];
-  return {
-    id: spec.id,
-    name: spec.name,
-    role: spec.role,
-    persona: spec.persona,
-    avatar: '🧑‍🏫',
-    color: '#6d28d9',
-    // Use the canonical role action set (incl. play_video + full whiteboard) so
-    // the assembled prompt's available-actions section matches production.
-    allowedActions: getActionsForRole(spec.role),
-    priority: spec.priority,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
-    isDefault: true,
-  };
-}
-
 /** Store state from the scenario's classroom context (slide scene + stage),
- * so buildStructuredPrompt produces the same "# Current State" shape/bulk as
- * the live agent-generate path. Falls back to an empty state if a scenario
- * omits context. */
+ * as the app sends it. The director reads scene content itself (read_scene);
+ * nothing is preloaded into the prompt. Falls back to an empty state if a
+ * scenario omits context. */
 function buildStoreState(scenario: ContentScenario): StatelessChatRequest['storeState'] {
   const scenes = scenario.scenes ?? (scenario.scene ? [scenario.scene] : []);
   const currentSceneId =
@@ -159,7 +147,7 @@ function buildStoreState(scenario: ContentScenario): StatelessChatRequest['store
   } as unknown as StatelessChatRequest['storeState'];
 }
 
-/** Turn list -> the UIMessage[] shape convertMessagesToOpenAI expects. */
+/** Turn list -> the UIMessage[] history of a classroom request. */
 function buildMessages(scenario: ContentScenario): StatelessChatRequest['messages'] {
   const nameById = new Map(scenario.agents.map((a) => [a.id, a.name]));
   const messages = scenario.turns.map((turn, i) => {
@@ -182,7 +170,7 @@ function buildMessages(scenario: ContentScenario): StatelessChatRequest['message
   return messages as unknown as StatelessChatRequest['messages'];
 }
 
-/** Prior agent turns -> AgentTurnSummary[] for peer context in the prompt. */
+/** Prior agent turns -> AgentTurnSummary[] for the director's peer context. */
 function buildAgentResponses(scenario: ContentScenario): AgentTurnSummary[] {
   const nameById = new Map(scenario.agents.map((a) => [a.id, a.name]));
   return scenario.turns
@@ -199,32 +187,44 @@ function buildAgentResponses(scenario: ContentScenario): AgentTurnSummary[] {
     });
 }
 
-/**
- * Remove the "# Responding to the User's Turn" section from an assembled agent
- * system prompt to build the pre-fix baseline. Bounded by the next section header.
- */
-function stripAnsweringSection(prompt: string): string {
-  const re = /\n# Responding to the User's Turn[\s\S]*?(?=\n# Current State)/;
-  if (!re.test(prompt)) {
-    throw new Error(
-      'answer-content-runner: "# Responding to the User\'s Turn" section not found in agent prompt; baseline cannot be constructed',
-    );
-  }
-  return prompt.replace(re, '\n');
+export function buildRequest(scenario: ContentScenario): StatelessChatRequest {
+  return {
+    messages: buildMessages(scenario),
+    storeState: buildStoreState(scenario),
+    config: {
+      agentIds: scenario.agents.map((agent) => agent.id),
+      agentConfigs: scenario.agents.map((agent) => scenarioAgentConfig(agent)),
+      sessionType: 'qa',
+    },
+    directorState: {
+      turnCount: 0,
+      agentResponses: buildAgentResponses(scenario),
+      whiteboardLedger: [],
+    },
+    userProfile: scenario.userProfile,
+    apiKey: '',
+  };
 }
 
-/** Extract ordered text blocks from a structured agent response. */
-function extractTexts(raw: string): string[] {
-  const state = createParserState();
-  const streamed = parseStructuredChunk(raw, state);
-  if (streamed.textChunks.length > 0) return streamed.textChunks;
-  // Recover only when the model emitted plain prose (never opened a JSON array) —
-  // finalizeParser then surfaces that prose as text. If an array WAS started but
-  // yielded no text (e.g. actions-only), the correct result is "no text"; we must
-  // not fall through to finalizeParser's raw-buffer fallback, which would surface
-  // action JSON as fake speech.
-  if (!state.jsonStarted) return finalizeParser(state).textChunks;
-  return [];
+/** The first recorded teacher call_agent attempt and its full reply text, or why there is none. */
+export function firstTeacherReply(
+  done: PiDone,
+  teacherAgentId: string,
+): { text: string } | { noReply: string } {
+  const call = callAgentTrace(done).find(
+    (entry) => (entry.args as { agentId?: unknown } | undefined)?.agentId === teacherAgentId,
+  );
+  if (!call) return { noReply: 'director never called the teacher' };
+  const details = call.details as
+    | { skipped?: boolean; reason?: string; text?: unknown }
+    | undefined;
+  if (details?.skipped) {
+    return { noReply: `first teacher call skipped: ${details.reason ?? 'unknown'}` };
+  }
+  if (call.isError) return { noReply: 'first teacher call failed' };
+  const text = typeof details?.text === 'string' ? details.text.trim() : '';
+  if (!text) return { noReply: 'first teacher call produced no text' };
+  return { text };
 }
 
 /** Split into sentences across both Latin and CJK terminators, keeping order. */
@@ -260,28 +260,27 @@ function lastUserMessage(scenario: ContentScenario): string {
   return '';
 }
 
-async function sampleVariant(
+export async function sampleScenario(
   scenario: ContentScenario,
-  variant: Variant,
-  systemPrompt: string,
-  openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
-  agentModel: Awaited<ReturnType<typeof resolveEvalModel>>['model'],
-  judgeModel: Awaited<ReturnType<typeof resolveEvalModel>>['model'],
-  studentMessage: string,
+  evalModel: EvalModel,
+  judgeModel: LanguageModel,
   samples: number,
 ): Promise<SampleResult[]> {
+  const studentMessage = lastUserMessage(scenario);
   const tasks = Array.from({ length: samples }, async (): Promise<SampleResult> => {
     try {
-      const gen = await callLLM(
-        {
-          model: agentModel,
-          messages: [{ role: 'system', content: systemPrompt }, ...openaiMessages],
-        },
-        `eval-answer-content-${variant}`,
-      );
-      const texts = extractTexts(gen.text);
-      const leadText = leadFromTexts(texts);
-      const fullText = texts.join(' ');
+      const { done } = await runPiClassroomRequest(buildRequest(scenario), evalModel);
+      const reply = firstTeacherReply(done, scenario.teacherAgentId);
+      if ('noReply' in reply) {
+        return {
+          leadText: '',
+          fullText: '',
+          verdict: { leads_with_answer: false, answered_anywhere: false, reason: reply.noReply },
+          noReply: reply.noReply,
+        };
+      }
+      const leadText = leadFromTexts([reply.text]);
+      const fullText = reply.text;
       const verdict = await judgeAnswer(
         judgeModel,
         studentMessage,
@@ -289,11 +288,10 @@ async function sampleVariant(
         leadText,
         fullText,
       );
-      return { variant, leadText, fullText, verdict };
+      return { leadText, fullText, verdict };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return {
-        variant,
         leadText: '',
         fullText: '',
         verdict: { leads_with_answer: false, answered_anywhere: false, reason: msg, error: true },
@@ -304,7 +302,7 @@ async function sampleVariant(
   return Promise.all(tasks);
 }
 
-function aggregate(samples: SampleResult[]): VariantAgg {
+export function aggregate(samples: SampleResult[]): VariantAgg {
   // Errors count as failures for an eval gate: the denominator is ALL requested
   // samples, so a scenario cannot "pass" on one good sample while the rest error
   // out. An errored sample (generation or judge failure) contributes 0.
@@ -331,38 +329,37 @@ function writeReport(
 ): string {
   const lines: string[] = [];
   const overallPass = results.every((r) => r.passes);
-  const meanBaseLeads = results.reduce((a, r) => a + r.baseline.leadsRate, 0) / results.length;
-  const meanRuleLeads = results.reduce((a, r) => a + r.withRule.leadsRate, 0) / results.length;
-  const meanRuleAnswered =
-    results.reduce((a, r) => a + r.withRule.answeredRate, 0) / results.length;
+  const meanLeads = results.reduce((a, r) => a + r.leadsRate, 0) / results.length;
+  const meanAnswered = results.reduce((a, r) => a + r.answeredRate, 0) / results.length;
 
-  lines.push(`# Agent Answer-Content Eval`, ``);
+  lines.push(`# Agent Answer-Content Eval (Pi)`, ``);
   lines.push(`- **Date**: ${new Date().toISOString()}`);
-  lines.push(`- **Agent model**: ${modelStr}`);
+  lines.push(`- **Model (director and children)**: ${modelStr}`);
   lines.push(`- **Judge model**: ${judgeStr}`);
-  lines.push(`- **Samples per (scenario, variant)**: ${samples}`);
-  lines.push(`- **with_rule leads-with-answer threshold**: ${pct(threshold)}`);
+  lines.push(`- **Samples per scenario**: ${samples}`);
+  lines.push(`- **Leads-with-answer threshold**: ${pct(threshold)}`);
+  lines.push(
+    `- **Reply judged**: full text of the first recorded call_agent attempt naming the teacher. Samples score 0 out of all requested samples on a run or judge error, no recorded teacher attempt, or a first one that is skipped, marked isError or empty.`,
+  );
+  lines.push(
+    `- **Limits**: only failures the trace exposes score 0 — a schema-rejected teacher attempt is not recorded (a later one is judged), and a legacy child provider failure after partial text is judged on that text, so scores can be overstated and a judged reply does not prove a complete answer or an error-free run. Pi caps teacher replies at 1–2 sentences, so leads-with-answer and answered-anywhere nearly coincide; the score includes the director's routing; a Pi baseline, not comparable with the retired prompt A/B. Route authorization and tool-capability checks are not exercised.`,
+  );
   lines.push(``);
   lines.push(`## Aggregate`, ``);
-  lines.push(`| Variant | Mean leads-with-answer | Mean answered-anywhere |`);
-  lines.push(`|---|---|---|`);
-  lines.push(`| baseline (no answering rule) | ${pct(meanBaseLeads)} | — |`);
-  lines.push(`| with_rule (as-shipped) | ${pct(meanRuleLeads)} | ${pct(meanRuleAnswered)} |`);
-  lines.push(``);
-  lines.push(
-    `**Drift-then-answer gap (with_rule)**: answered-anywhere ${pct(meanRuleAnswered)} − leads ${pct(meanRuleLeads)} = **${pct(Math.max(0, meanRuleAnswered - meanRuleLeads))}** of replies answered only AFTER a drifting opener.`,
-  );
+  lines.push(`| Mean leads-with-answer | Mean answered-anywhere |`);
+  lines.push(`|---|---|`);
+  lines.push(`| ${pct(meanLeads)} | ${pct(meanAnswered)} |`);
   lines.push(``);
   lines.push(`Overall verdict: **${overallPass ? 'PASS' : 'FAIL'}**`, ``);
 
   lines.push(`## Per scenario`, ``);
-  lines.push(
-    `| # | case_id | category | baseline leads | with_rule leads | with_rule answered | Δ leads | pass? |`,
-  );
+  lines.push(`| # | case_id | category | leads | answered | no reply | errors | pass? |`);
   lines.push(`|---|---|---|---|---|---|---|---|`);
   results.forEach((r, i) => {
+    const noReply = r.samples.filter((s) => s.noReply).length;
+    const errors = r.samples.filter((s) => s.error || s.verdict.error).length;
     lines.push(
-      `| ${i + 1} | ${r.case_id} | ${r.category} | ${pct(r.baseline.leadsRate)} | ${pct(r.withRule.leadsRate)} | ${pct(r.withRule.answeredRate)} | ${pct(r.delta)} | ${r.passes ? '✓' : '✗'} |`,
+      `| ${i + 1} | ${r.case_id} | ${r.category} | ${pct(r.leadsRate)} | ${pct(r.answeredRate)} | ${noReply} | ${errors} | ${r.passes ? '✓' : '✗'} |`,
     );
   });
   lines.push(``);
@@ -371,13 +368,15 @@ function writeReport(
   for (const r of results) {
     lines.push(`### ${r.case_id} ${r.passes ? '✓' : '✗'}`, ``);
     lines.push(`- ${r.description}`);
-    lines.push(
-      `- baseline leads ${pct(r.baseline.leadsRate)}; with_rule leads ${pct(r.withRule.leadsRate)} / answered ${pct(r.withRule.answeredRate)}; Δ leads ${pct(r.delta)}`,
-    );
-    lines.push(``, `<details><summary>with_rule samples</summary>`, ``);
-    for (const s of r.withRule.samples) {
+    lines.push(`- leads ${pct(r.leadsRate)} / answered ${pct(r.answeredRate)}`);
+    lines.push(``, `<details><summary>samples</summary>`, ``);
+    for (const s of r.samples) {
       if (s.error) {
         lines.push(`- ERROR: ${s.error}`);
+        continue;
+      }
+      if (s.noReply) {
+        lines.push(`- **NO_TEACHER_REPLY** — ${s.noReply}`);
         continue;
       }
       const tag = s.verdict.leads_with_answer
@@ -428,13 +427,10 @@ async function main() {
   const samples = Number(process.env.EVAL_SAMPLES || '3');
   const threshold = Number(process.env.EVAL_PASS_THRESHOLD || '0.7');
 
-  console.log('=== Agent Answer-Content Eval ===');
-  console.log(`Agent: ${modelStr} | Judge: ${judgeStr} | Samples/variant: ${samples}`);
+  console.log('=== Agent Answer-Content Eval (Pi) ===');
+  console.log(`Model: ${modelStr} | Judge: ${judgeStr} | Samples: ${samples}`);
 
-  const { model: agentModel } = await resolveEvalModel(
-    'EVAL_AGENT_MODEL',
-    process.env.DEFAULT_MODEL,
-  );
+  const evalModel = await resolveEvalModel('EVAL_AGENT_MODEL', process.env.DEFAULT_MODEL);
   const { model: judgeModel } = await resolveEvalModel('EVAL_JUDGE_MODEL');
   const scenarios = loadScenarios();
   if (scenarios.length === 0) {
@@ -453,59 +449,17 @@ async function main() {
   const results: ScenarioResult[] = [];
   for (const sc of scenarios) {
     process.stdout.write(`  - ${sc.case_id} ... `);
-
-    const teacher = buildTeacherConfig(sc);
-    const storeState = buildStoreState(sc);
-    const agentResponses = buildAgentResponses(sc);
-    const withRulePrompt = buildStructuredPrompt(
-      teacher,
-      storeState,
-      undefined,
-      [],
-      sc.userProfile,
-      agentResponses,
-    );
-    const baselinePrompt = stripAnsweringSection(withRulePrompt);
-    const openaiMessages = convertMessagesToOpenAI(buildMessages(sc), sc.teacherAgentId);
-    const studentMessage = lastUserMessage(sc);
-
-    const [bs, ws] = await Promise.all([
-      sampleVariant(
-        sc,
-        'baseline',
-        baselinePrompt,
-        openaiMessages,
-        agentModel,
-        judgeModel,
-        studentMessage,
-        samples,
-      ),
-      sampleVariant(
-        sc,
-        'with_rule',
-        withRulePrompt,
-        openaiMessages,
-        agentModel,
-        judgeModel,
-        studentMessage,
-        samples,
-      ),
-    ]);
-    const baseline = aggregate(bs);
-    const withRule = aggregate(ws);
-    const delta = withRule.leadsRate - baseline.leadsRate;
-    const passes = withRule.leadsRate >= threshold;
+    const agg = aggregate(await sampleScenario(sc, evalModel, judgeModel, samples));
+    const passes = agg.leadsRate >= threshold;
     results.push({
       case_id: sc.case_id,
       category: sc.category,
       description: sc.description,
-      baseline,
-      withRule,
-      delta,
+      ...agg,
       passes,
     });
     console.log(
-      `baseline=${pct(baseline.leadsRate)} with_rule=${pct(withRule.leadsRate)} answered=${pct(withRule.answeredRate)} ${passes ? 'PASS' : 'FAIL'}`,
+      `leads=${pct(agg.leadsRate)} answered=${pct(agg.answeredRate)} ${passes ? 'PASS' : 'FAIL'}`,
     );
   }
 
@@ -516,7 +470,13 @@ async function main() {
   process.exit(overallPass ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+// Run only as the CLI entry point, so tests can import the runner's functions.
+const isEntryPoint =
+  process.argv[1] !== undefined &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isEntryPoint) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

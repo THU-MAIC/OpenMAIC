@@ -1,11 +1,22 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type, type Static } from 'typebox';
 import type { StatelessEvent } from '@/lib/types/chat';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 
+// Length and count bounds are guidance for the model, not schema constraints:
+// an over-limit call is normalized in execute (trimmed, capped, deduplicated)
+// instead of being rejected by argument validation and losing the cue.
 const CueUserParams = Type.Object({
   prompt: Type.Optional(
     Type.String({
-      description: 'Optional short prompt for handing the turn back to the user.',
+      description:
+        'Optional short prompt for handing the turn back to the user (at most 240 characters; longer text is truncated).',
+    }),
+  ),
+  options: Type.Optional(
+    Type.Array(Type.String(), {
+      description:
+        'Two to four short, mutually exclusive suggested replies, each at most 60 characters. Omit for open-ended questions. Extra, duplicate, empty or over-long items are dropped or truncated.',
     }),
   ),
 });
@@ -62,9 +73,13 @@ export function buildCueUserTool(opts: {
         };
       }
 
+      const options = normalizeCueUserOptions(params.options);
+      const fromAgentId = opts.getLastAgentId();
+      const prompt = params.prompt?.trim().slice(0, 240);
       const emitted = await opts.cueUser({
-        fromAgentId: opts.getLastAgentId(),
-        prompt: params.prompt,
+        ...(fromAgentId ? { fromAgentId } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(options ? { options } : {}),
       });
       return {
         content: [
