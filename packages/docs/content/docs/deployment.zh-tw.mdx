@@ -89,6 +89,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 
 匿名模式下，擁有者 cookie 在正式環境中帶有 `Secure` 標記，`ACCESS_CODE` 的 cookie 也是如此。瀏覽器只在 HTTPS 或 `http://localhost` 上儲存 `Secure` cookie（Safari 連 localhost 也不儲存），因此透過純 HTTP 提供服務的部署必須設定 `COOKIE_SECURE=0`（必須正好是 `0`）：否則每個請求都會成為新的擁有者，寫入以 `403` 失敗，存取碼也會被反覆要求輸入。沒有 TLS 時 cookie 以明文傳輸，只應在可信任的網路中這樣做。
 
+在 `localhost` 以外的位址上使用純 HTTP（區域網路 IP、Tailscale IP 或 MagicDNS 網域）同樣不是安全環境，瀏覽器沒有 Web Locks API。OpenMAIC 在這種情況下仍會儲存，但同一課程的多個分頁之間不做協調：若兩個分頁修改同一個對話，以最後一次儲存為準；在一個分頁刪除的對話會保持刪除，即使另一個分頁當時仍在編輯它。在區域網路內用手機或平板存取時，建議使用 HTTPS，例如在服務前面用 `tailscale serve`。
+
 **`OPENMAIC_SECRET_KEY`** 用於加密在模型設定中儲存的供應商 key。未設定時，每個實例會在 `data/instance-secret.key` 中產生自己的金鑰，共用資料庫的實例之間就無法讀取彼此儲存的 key。請把它和資料庫備份放在一起，見[金鑰與 OPENMAIC_SECRET_KEY](./configuration.mdx#金鑰與-openmaic_secret_key)。
 
 **多個實例**共用資料庫時，還需要共用同一個持久化資料目錄（工作目錄下的 `data/`，映像檔中為 `/app/data`；例如在每個實例上掛載同一個卷或網路檔案系統）。課程文件和產生的課程媒體儲存在 PostgreSQL（設定 `ASSET_S3_BUCKET` 時為 S3）中，但每個行程會把以下檔案放在自己的資料目錄裡：上傳的資料檔案及其擷取結果、由智慧體編輯的課程的講解與資料媒體（`data/classrooms`，或 `OPENMAIC_CLASSROOMS_DIR`）、用量紀錄（`data/usage`）以及自動產生的實例金鑰。由另一個實例接手的產生任務會從這裡讀取上傳的資料。
