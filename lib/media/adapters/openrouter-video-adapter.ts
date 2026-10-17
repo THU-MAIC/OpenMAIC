@@ -28,6 +28,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
+import { MAX_PROVIDER_MEDIA_BYTES, readResponseBodyWithLimit } from '../bounded-download';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { runPolledTask, type PollResult, type PolledTaskControl } from '../polled-task';
 import { requireModel } from '../require-model';
@@ -85,8 +86,11 @@ async function fetchVideoDataUrl(
     throw new Error(`OpenRouter video download failed (${response.status}): ${text}`);
   }
   const mimeType = response.headers.get('content-type') || 'video/mp4';
-  const buffer = await response.arrayBuffer();
-  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+  const clip = await readResponseBodyWithLimit(response, {
+    maxBytes: MAX_PROVIDER_MEDIA_BYTES,
+    label: 'OpenRouter video download',
+  });
+  return `data:${mimeType};base64,${clip.toString('base64')}`;
 }
 
 /** Map a polled job onto the shared polled-task result union. */

@@ -33,6 +33,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 import { mediaFetchFor } from '../media-fetch';
+import { MAX_PROVIDER_MEDIA_BYTES, readResponseBodyWithLimit } from '../bounded-download';
 import { connectivityHttpFailure, connectivityTransportFailure } from '../probe-auth';
 import { runPolledTask, type TerminalResult, type PolledTaskControl } from '../polled-task';
 import { assertNotRedirected } from '../redirect-guard';
@@ -128,8 +129,11 @@ async function downloadVideo(
   }
 
   const mimeType = response.headers.get('content-type') || 'video/mp4';
-  const buffer = await response.arrayBuffer();
-  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+  const clip = await readResponseBodyWithLimit(response, {
+    maxBytes: MAX_PROVIDER_MEDIA_BYTES,
+    label: 'Veo video download',
+  });
+  return `data:${mimeType};base64,${clip.toString('base64')}`;
 }
 
 async function resolveCompletedOperation(
