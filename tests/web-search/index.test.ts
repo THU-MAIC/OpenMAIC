@@ -5,6 +5,7 @@ const searchWithBraveMock = vi.hoisted(() => vi.fn());
 const searchWithClaudeMock = vi.hoisted(() => vi.fn());
 const searchWithBaiduMock = vi.hoisted(() => vi.fn());
 const searchWithTavilyMock = vi.hoisted(() => vi.fn());
+const searchWithDeepSeekMock = vi.hoisted(() => vi.fn());
 const searchWithKimiMock = vi.hoisted(() => vi.fn());
 const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
@@ -30,6 +31,8 @@ vi.mock('@/lib/web-search/baidu', () => ({
 vi.mock('@/lib/web-search/tavily', () => ({
   searchWithTavily: searchWithTavilyMock,
 }));
+
+vi.mock('@/lib/web-search/deepseek', () => ({ searchWithDeepSeek: searchWithDeepSeekMock }));
 
 vi.mock('@/lib/web-search/kimi', () => ({ searchWithKimi: searchWithKimiMock }));
 
@@ -355,6 +358,7 @@ describe('searchWeb', () => {
       { providerId: 'baidu', adapter: searchWithBaiduMock },
       { providerId: 'claude', adapter: searchWithClaudeMock },
       { providerId: 'kimi', adapter: searchWithKimiMock },
+      { providerId: 'deepseek', adapter: searchWithDeepSeekMock },
       { providerId: 'minimax', adapter: searchWithMiniMaxMock },
       { providerId: 'doubao', adapter: searchWithDoubaoMock },
       {

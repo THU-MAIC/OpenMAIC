@@ -782,6 +782,25 @@ slots:
 
 旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
 
+### DeepSeek 联网搜索与网页抓取
+
+`deepseek` 预设在对话、联网搜索和托管 Markdown 提取之间共享 `DEEPSEEK_API_KEY` 和 API 基础地址。搜索使用 `POST /v1/tools/search`，最多返回 50 条结果，查询按 Unicode code point 截断到 128 个字符，优先使用 `summary`，为空时回退到 `snippet`。抓取使用 `POST /v1/tools/fetch`，读取 `content` 和非空的可选 `title`。
+
+旧版配置需要设置 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.deepseek`。仅配置对话凭据不会启用搜索或替换已有搜索默认项。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 会强制禁用搜索。存在 `openmaic.yml` 时，旧版变量不能指定槽位，必须显式声明服务商并指定 `webSearch` 和/或 `webFetch`。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
+
 ### Kimi 对话与联网搜索
 
 声明一个 Kimi 账号，并将两个槽位都分配给它：
@@ -813,6 +832,7 @@ slots:
 | --- | --- | --- |
 | `builtin` | 无需凭据 | 本地 Readability/Turndown 读取服务；PDF 使用 `document` 槽位 |
 | `kimi` | 已有 Kimi 服务商的密钥和基础地址 | 托管 Markdown 提取服务，也接收 PDF 网址 |
+| `deepseek` | 现有 DeepSeek 对话密钥和 API 基础地址 | 托管 Markdown 提取 |
 
 ```yaml
 providers:
@@ -825,6 +845,8 @@ slots:
 ```
 
 `kimi` 和 `kimi-coding-plan` 预设都提供 `webFetch`。使用 Coding Plan 凭据时，请指定 `preset: kimi-coding-plan`，其默认基础地址为 `https://api.kimi.com/coding/v1`；显式配置的基础地址会保留。Moonshot 开放平台地址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。两者都发送带有 `{ "url": ... }` 的 `POST` 请求，并使用 Bearer 身份验证。适配器接受 `markdown` 或 `content`。维护者使用真实密钥测试了 `POST https://api.kimi.com/coding/v1/fetch`，确认响应包含 `{ markdown, title, url }`；国际端点的可用性仍未验证。请求遵循服务商的 `proxy` 设置和标准代理环境变量。
+
+DeepSeek 也通过 `deepseek` 预设提供托管 Markdown 提取，复用对话密钥和 API 基础地址。按上面的示例显式指定 `webFetch`，调用 `/v1/tools/fetch`，并保留部署配置中的网关地址。超时和仅对传输错误重试一次的行为与 Kimi 相同，不重试 HTTP 错误或无效响应。
 
 在 **设置 → 模型服务 → 网页抓取** 中使用已有服务商凭据。该密钥与同一服务商的对话服务共享，修改或移除密钥也会影响对话。在 **课程模型配置 → 网页抓取** 中选择读取服务。管理员锁定后，卡片为只读。首次设置会保留内置默认值，直到明确选择其他读取服务。工作区凭据可使用官方 API 基础地址；自定义抓取地址和代理必须由管理员在 `openmaic.yml` 中声明。
 

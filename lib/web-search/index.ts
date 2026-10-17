@@ -2,6 +2,7 @@ import { searchWithBaidu } from './baidu';
 import { searchWithBocha } from './bocha';
 import { searchWithBrave } from './brave';
 import { searchWithClaude } from './claude';
+import { searchWithDeepSeek } from './deepseek';
 import { searchWithDoubao } from './doubao';
 import { searchWithExa } from './exa';
 import { searchWithKimi } from './kimi';
@@ -65,6 +66,8 @@ export async function searchWeb(params: {
         maxResults,
         ...abortOptions,
       });
+    case 'deepseek':
+      return searchWithDeepSeek({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'doubao':
       return searchWithDoubao({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'exa':

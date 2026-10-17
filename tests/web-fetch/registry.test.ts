@@ -8,7 +8,7 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 describe('web fetch registry and configuration', () => {
   it('lists and looks up each provider', () => {
-    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi']);
+    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi', 'deepseek']);
     for (const provider of Object.values(WEB_FETCH_PROVIDERS))
       expect(getWebFetchProvider(provider.id)).toBe(provider);
   });

@@ -35,8 +35,8 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` |
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`veo` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
-| البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`kimi` و`kimi-coding-plan` و`searxng` |
-| جلب صفحات الويب | `builtin` و`kimi` و`kimi-coding-plan` |
+| البحث على الويب | `tavily` و`exa` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`kimi` و`kimi-coding-plan` و`searxng` |
+| جلب صفحات الويب | `builtin` و`deepseek` و`kimi` و`kimi-coding-plan` |
 | تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
@@ -142,8 +142,28 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
 | Kimi         | `kimi`      |
+| DeepSeek | `deepseek` |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### البحث وجلب الصفحات باستخدام DeepSeek
+
+يشترك الإعداد `deepseek` في `DEEPSEEK_API_KEY` وعنوان API الأساسي بين المحادثة والبحث واستخراج Markdown المستضاف. يستخدم البحث `POST /v1/tools/search` ويعيد حتى 50 نتيجة، ويقتطع الاستعلام إلى 128 نقطة ترميز Unicode. يستخدم `summary` ثم `snippet` عند فراغه. يستخدم الجلب `POST /v1/tools/fetch` ويقرأ `content` و`title` الاختياري غير الفارغ.
+
+في الإعدادات القديمة، فعّل `WEB_SEARCH_DEEPSEEK_ENABLED=true` أو أضف `web-search.deepseek` صراحةً إلى `server-providers.yml`. بيانات اعتماد المحادثة وحدها لا تفعّل البحث ولا تستبدل مزود البحث الافتراضي الحالي. يعطّل `WEB_SEARCH_DEEPSEEK_ENABLED=false` البحث قسرًا. عند وجود `openmaic.yml` لا يستطيع المتغير القديم تعيين خانة؛ أعلن المزود وعيّن `webSearch` و/أو `webFetch` صراحةً.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### بحث Kimi على الويب
 
@@ -160,3 +180,5 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 ## جلب صفحات الويب
 
 تستخدم خانة `webFetch` افتراضيًا القارئ `builtin` دون مفتاح (Readability وTurndown؛ وتظل ملفات PDF تستخدم `document`). يعيد كل من `kimi` و`kimi-coding-plan` استخدام مفتاح مزوّده والعنوان الأساسي لواجهة API للاستخراج المستضاف. يستخدم Moonshot Open Platform المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. لا توجد خدمة احتياطية. اختر القارئ في خدمات النماذج أو إعداد نماذج المقرر، أو اضبط `slots.webFetch` في `openmaic.yml`. المفتاح مشترك مع الدردشة. تحتفظ جميع الخدمات بفحوص الجلسة والعناوين العامة المحلية وتعيد بيانات غير موثوقة.
+
+يوفر DeepSeek أيضًا استخراج Markdown المستضاف عبر الإعداد `deepseek` مع إعادة استخدام مفتاح المحادثة وعنوان API الأساسي. عيّن `webFetch` صراحةً كما في المثال أعلاه. يستخدم `/v1/tools/fetch` ويحفظ عنوان البوابة المضبوط في النشر. المهل الزمنية وإعادة المحاولة مرة واحدة لأخطاء النقل فقط مماثلة لـ Kimi، دون إعادة أخطاء HTTP أو الاستجابات غير الصالحة.

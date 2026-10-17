@@ -40,6 +40,7 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
   // to the /v1 root, since the AI SDK appends "/messages" to the base URL.
   claude: ['https://api.anthropic.com', 'https://api.anthropic.com/v1'],
   kimi: [],
+  deepseek: [],
   minimax: [
     'https://api.minimaxi.com',
     'https://api.minimaxi.com/v1',

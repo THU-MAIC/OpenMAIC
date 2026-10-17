@@ -197,6 +197,7 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
   webSearch: {
     ...WEB_SEARCH_ENV_MAP,
     WEB_SEARCH_KIMI: 'kimi',
+    WEB_SEARCH_DEEPSEEK: 'deepseek',
   },
 };
 

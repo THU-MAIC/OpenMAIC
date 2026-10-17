@@ -131,3 +131,12 @@ it('lets any token plan declare a fetch provider and endpoint', () => {
   });
   expect(getProviderPreset('kimi')?.recommended).not.toHaveProperty('webFetch');
 });
+
+it('shares one DeepSeek account across chat, search and fetch without recommending tool assignments', () => {
+  expect(getProviderPreset('deepseek')?.capabilities).toEqual({
+    chat: { registryId: 'deepseek' },
+    webSearch: { registryId: 'deepseek' },
+    webFetch: { registryId: 'deepseek', baseUrl: undefined },
+  });
+  expect(getProviderPreset('deepseek')?.recommended).toBeUndefined();
+});

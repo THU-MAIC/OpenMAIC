@@ -303,6 +303,24 @@ describe('connecting a token plan', () => {
   });
 });
 
+describe('DeepSeek account setup', () => {
+  it('assigns chat without automatically enabling search in the wizard', async () => {
+    const config = await configure(addPlan('deepseek'));
+    const view = viewOf(config);
+    const preset = view.presets.find((entry) => entry.id === 'deepseek')!;
+    const assignments = wizardAssignments(view, preset, 'deepseek');
+    expect(assignments.llm).toMatch(/^deepseek:/);
+    expect(assignments).not.toHaveProperty('webSearch');
+    const configured = await applyModelSettingsChange(config, { kind: 'slots', set: assignments });
+    expect(configured.slots).not.toHaveProperty('webSearch');
+    const searchEntries = serviceEntries(viewOf(configured), 'webSearch', ['deepseek']).filter(
+      (entry) => entry.provider,
+    );
+    expect(searchEntries).toHaveLength(1);
+    expect(searchEntries[0].provider?.id).toBe('deepseek');
+  });
+});
+
 describe('Kimi account setup', () => {
   it.each(['kimi', 'kimi-coding-plan'])(
     'shares chat, search and fetch credentials while preserving wizard defaults for %s',

@@ -35,8 +35,8 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 画像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 動画 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
-| Webページ取得 | `builtin`、`kimi`、`kimi-coding-plan` |
+| Web 検索 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
+| Webページ取得 | `builtin`、`deepseek`、`kimi`、`kimi-coding-plan` |
 | ドキュメント解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng`、`mineru` には `baseUrl` が必要で、`alidocmind` は `credentials`（キーペア）で認証します。セルフホストの TTS・ASR・画像・検索・ドキュメントのプリセット、キーペアのプリセット、Bedrock は `openmaic.yml` でのみ設定できます。[設定説明](./configuration.mdx)を参照してください。
@@ -142,8 +142,28 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
 | Kimi         | `kimi`      |
+| DeepSeek | `deepseek` |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### DeepSeek の Web 検索と取得
+
+`deepseek` プリセットはチャット、Web 検索、ホスト型 Markdown 抽出で `DEEPSEEK_API_KEY` と API ベース URL を共有します。検索は `POST /v1/tools/search` を使い、最大 50 件を返します。クエリは Unicode コードポイント単位で 128 文字に切り詰め、結果には `summary`、空の場合は `snippet` を使います。取得は `POST /v1/tools/fetch` を使い、`content` と空でない任意の `title` を読み取ります。
+
+旧設定では `WEB_SEARCH_DEEPSEEK_ENABLED=true`、または `server-providers.yml` の明示的な `web-search.deepseek` エントリーで有効にします。チャットの認証情報だけでは検索を有効にせず、既存の検索の既定値も変更しません。`WEB_SEARCH_DEEPSEEK_ENABLED=false` は検索を強制無効化します。`openmaic.yml` がある場合、旧変数はスロットを割り当てられません。プロバイダーを宣言し、`webSearch` と／または `webFetch` を明示的に割り当ててください。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi の Web 検索
 
@@ -160,3 +180,5 @@ Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` 
 ## Webページ取得
 
 `webFetch` スロットの既定は、キー不要の `builtin`（Readability と Turndown。PDF は引き続き `document` を使用）です。`kimi` と `kimi-coding-plan` は、それぞれのプロバイダーのキーと API ベース URL をホスト型抽出に再利用します。Moonshot Open Platform は `/tools/fetch`、Coding Plan は `/fetch` を使用します。フォールバックはありません。モデルサービスやコースモデル設定でサービスを選ぶか、`openmaic.yml` で `slots.webFetch` を指定します。キーはチャットと共有されます。すべてのサービスで、ローカルのセッション許可と公開アドレスの検査を行い、結果を信頼できないデータとして扱います。
+
+DeepSeek は `deepseek` プリセットでホスト型 Markdown 抽出も提供し、チャットのキーと API ベースを共有します。上の例のように `webFetch` を明示的に割り当てます。`/v1/tools/fetch` を使い、デプロイで指定したゲートウェイのベースを保持します。タイムアウトと転送エラーのみ 1 回再試行する動作は Kimi と同じで、HTTP エラーや不正な応答は再試行しません。

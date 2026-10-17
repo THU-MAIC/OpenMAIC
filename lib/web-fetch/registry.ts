@@ -1,4 +1,5 @@
 import { builtin } from './providers/builtin';
+import { deepseek } from './providers/deepseek';
 import { kimi } from './providers/kimi';
 import type { WebFetchProvider } from './types';
 
@@ -6,6 +7,7 @@ import type { WebFetchProvider } from './types';
 export const WEB_FETCH_PROVIDERS: Readonly<Record<string, WebFetchProvider>> = {
   builtin,
   kimi,
+  deepseek,
 };
 export const DEFAULT_WEB_FETCH_PROVIDER = builtin;
 export function getWebFetchProvider(id: string): WebFetchProvider | undefined {

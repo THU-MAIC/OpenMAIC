@@ -59,6 +59,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_KIMI',
+  'WEB_SEARCH_DEEPSEEK',
   'BRAVE',
   'SEARXNG',
   'WEB_SEARCH_CLAUDE',
@@ -1372,4 +1373,192 @@ describe('Kimi search opt-in', () => {
       expect(resolveServerWebSearchProviderId()).toBe(disabled ? undefined : 'kimi');
     },
   );
+});
+
+describe('DeepSeek shared search credentials', () => {
+  beforeEach(() => {
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for('openmaic.model-config.deployment')];
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    clearProviderEnv();
+    yamlOverride = null;
+  });
+  it.each([undefined, 'deepseek-env-key'])(
+    'reuses the legacy YAML chat base and model pins with env key %s',
+    async (envKey) => {
+      if (envKey) process.env.DEEPSEEK_API_KEY = envKey;
+      process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+      yamlOverride = `providers:
+  deepseek:
+    apiKey: deepseek-yaml-key
+    baseUrl: https://api.deepseek.com/v1
+    models: [deepseek-chat]
+`;
+      const { getServerProviderConfig } = await import('@/lib/server/provider-config');
+      const config = getServerProviderConfig();
+      expect(config.webSearch.deepseek).toMatchObject({
+        apiKey: config.providers.deepseek.apiKey,
+        baseUrl: config.providers.deepseek.baseUrl,
+      });
+      expect(config.webSearch.deepseek.models).toBeUndefined();
+      expect(config.providers.deepseek.models).toEqual(['deepseek-chat']);
+      expect(config.webSearch.deepseek.apiKey).toBe(envKey || 'deepseek-yaml-key');
+    },
+  );
+
+  it.each([
+    'https://api.deepseek.com',
+    'https://api.deepseek.com/v1',
+    'https://gateway.example/v1',
+  ])('reuses DeepSeek chat credentials at %s', async (baseUrl) => {
+    process.env.DEEPSEEK_API_KEY = 'deepseek-key';
+    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+    process.env.DEEPSEEK_BASE_URL = baseUrl;
+    const config = await import('@/lib/server/provider-config');
+    expect(config.resolveWebSearchApiKey('deepseek', undefined)).toBe('deepseek-key');
+    expect(config.resolveWebSearchBaseUrl('deepseek')).toBe(baseUrl);
+    expect(config.getServerProviderConfig().webSearch.deepseek).toMatchObject({
+      apiKey: 'deepseek-key',
+      baseUrl,
+    });
+  });
+});
+
+describe('DeepSeek search opt-in', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    clearProviderEnv();
+    yamlOverride = null;
+  });
+
+  it.each([
+    [undefined, undefined],
+    ['SEARXNG_BASE_URL', 'searxng'],
+    ['TAVILY_API_KEY', 'tavily'],
+  ])(
+    'keeps chat credentials out of default search selection with %s',
+    async (envName, expected) => {
+      process.env.DEEPSEEK_API_KEY = 'chat-key';
+      if (envName)
+        process.env[envName] =
+          envName === 'SEARXNG_BASE_URL' ? 'https://search.openmaic.test' : 'search-key';
+      const {
+        getServerProviderConfig,
+        resolveServerWebSearchProviderId,
+        getServerWebSearchProviders,
+      } = await import('@/lib/server/provider-config');
+      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+      const config = getServerProviderConfig();
+      expect(config.webSearch).not.toHaveProperty('deepseek');
+      expect(getServerWebSearchProviders()).not.toHaveProperty('deepseek');
+      expect(resolveServerWebSearchProviderId()).toBe(expected);
+      expect(translateLegacyConfig(config).config.slots?.webSearch).toBe(expected);
+    },
+  );
+
+  it('activates search only with the capability-specific opt-in and does not inherit chat model pins', async () => {
+    process.env.DEEPSEEK_API_KEY = 'chat-key';
+    process.env.DEEPSEEK_MODELS = 'deepseek-chat';
+    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+      await import('@/lib/server/provider-config');
+    const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+    const config = getServerProviderConfig();
+    expect(config.webSearch.deepseek.apiKey).toBe('chat-key');
+    expect(config.webSearch.deepseek.models).toBeUndefined();
+    expect(config.providers.deepseek.models).toEqual(['deepseek-chat']);
+    expect(resolveServerWebSearchProviderId()).toBe('deepseek');
+    expect(translateLegacyConfig(config).config.slots?.webSearch).toBe('deepseek');
+  });
+
+  it.each([
+    ['SEARXNG_BASE_URL', 'https://search.openmaic.test', 'searxng'],
+    ['BRAVE_BASE_URL', 'https://search.brave.com', 'brave'],
+    ['WEB_SEARCH_DOUBAO_API_KEY', 'doubao-key', 'doubao'],
+  ])(
+    'keeps an existing %s search default after opting into DeepSeek',
+    async (envName, value, expected) => {
+      process.env.DEEPSEEK_API_KEY = 'chat-key';
+      process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+      process.env[envName] = value;
+      const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+        await import('@/lib/server/provider-config');
+      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
+      const server = getServerProviderConfig();
+      expect(Object.keys(server.webSearch)).toEqual([expected, 'deepseek']);
+      expect(resolveServerWebSearchProviderId()).toBe(expected);
+      const { config } = translateLegacyConfig(server);
+      expect(resolveSlot('webSearch', [{ source: 'deployment', config }])).toMatchObject({
+        registryId: expected,
+      });
+      expect(
+        resolveSlot('webSearch', [
+          {
+            source: 'deployment',
+            config: {
+              ...config,
+              slots: { ...config.slots, webSearch: 'deepseek' },
+            },
+          },
+        ]),
+      ).toMatchObject({ registryId: 'deepseek', apiKey: 'chat-key' });
+    },
+  );
+
+  it('accepts explicit YAML search opt-in without a second key', async () => {
+    yamlOverride =
+      'providers:\n  deepseek:\n    apiKey: chat-key\nweb-search:\n  deepseek:\n    enabled: true\n';
+    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+      await import('@/lib/server/provider-config');
+    expect(getServerProviderConfig().webSearch.deepseek.apiKey).toBe('chat-key');
+    expect(resolveServerWebSearchProviderId()).toBe('deepseek');
+  });
+
+  it('does not activate search without credentials or with an unrelated enabled variable alone', async () => {
+    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+    const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+    expect(resolveServerWebSearchProviderId()).toBeUndefined();
+    vi.resetModules();
+    delete process.env.WEB_SEARCH_DEEPSEEK_ENABLED;
+    process.env.DEEPSEEK_API_KEY = 'chat-key';
+    process.env.DEEPSEEK_ENABLED = 'true';
+    const next = await import('@/lib/server/provider-config');
+    expect(next.resolveServerWebSearchProviderId()).toBeUndefined();
+  });
+
+  it.each([
+    ['false', undefined, true],
+    [undefined, 'false', false],
+    ['true', 'false', false],
+  ])(
+    'uses only the search switch %s and ignores an unrelated chat variable %s',
+    async (enabled, alias, disabled) => {
+      yamlOverride =
+        'providers:\n  deepseek:\n    apiKey: chat-key\nweb-search:\n  deepseek:\n    enabled: true\n';
+      if (enabled) process.env.WEB_SEARCH_DEEPSEEK_ENABLED = enabled;
+      if (alias) process.env.DEEPSEEK_ENABLED = alias;
+      const { isServerProviderDisabled, resolveServerWebSearchProviderId } =
+        await import('@/lib/server/provider-config');
+      expect(isServerProviderDisabled('webSearch', 'deepseek')).toBe(disabled);
+      expect(resolveServerWebSearchProviderId()).toBe(disabled ? undefined : 'deepseek');
+    },
+  );
+});
+
+it('keeps an already enabled Kimi search default when DeepSeek is also enabled', async () => {
+  vi.resetModules();
+  clearProviderEnv();
+  yamlOverride = null;
+  process.env.KIMI_API_KEY = 'existing-key';
+  process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
+  process.env.DEEPSEEK_API_KEY = 'new-key';
+  process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
+  const { getServerProviderConfig, resolveServerWebSearchProviderId } =
+    await import('@/lib/server/provider-config');
+  const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
+  const server = getServerProviderConfig();
+  expect(Object.keys(server.webSearch)).toEqual(['kimi', 'deepseek']);
+  expect(resolveServerWebSearchProviderId()).toBe('kimi');
+  expect(translateLegacyConfig(server).config.slots?.webSearch).toBe('kimi');
 });
