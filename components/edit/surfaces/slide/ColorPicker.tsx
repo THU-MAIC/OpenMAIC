@@ -54,6 +54,13 @@ export function ColorPicker({
   onCommit,
   className = 'w-[224px]',
 }: ColorPickerProps) {
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   // Local mirror so the picker UI stays responsive while dragging without
   // round-tripping through ProseMirror + store on every tick.
   const [color, setColor] = useState(value);
@@ -95,6 +102,8 @@ export function ColorPicker({
     if (!EyeDropper) return;
     try {
       const result = await new EyeDropper().open();
+      // 刷新会话会卸载旧画布及其文本工具栏；旧取色请求不能写入新的编辑器。
+      if (!mounted.current) return;
       handleCommit(result.sRGBHex);
     } catch {
       // User dismissed the OS picker — nothing to do.

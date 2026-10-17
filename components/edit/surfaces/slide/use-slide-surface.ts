@@ -3,6 +3,7 @@
 import { produce } from 'immer';
 import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { toast } from 'sonner';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -35,6 +36,8 @@ export function buildInsertItems(
   // then captures the next click/drag and creates a text box at that rect.
   creatingType?: string,
 ): InsertPaletteItem[] {
+  // FileReader 先完成后才触发 onPick，因此须在展示入口时绑定会话，而非读取完成时。
+  const epoch = useSlideEditSession.getState().epoch;
   const armText = () => {
     const cs = useCanvasStore.getState();
     cs.setCreatingElement(creatingType === 'text' ? null : { type: 'text' });
@@ -56,7 +59,7 @@ export function buildInsertItems(
       onInvoke: () => {}, // popover-only: CommandBar's InsertButton ignores onInvoke when popoverContent is set
       popoverContent: () =>
         React.createElement(ImagePicker, {
-          onPick: insertImageElement,
+          onPick: (src) => insertImageElement(src, epoch),
         }),
     },
   ];
@@ -85,19 +88,20 @@ const IMAGE_MAX_H = 400;
  * dispatched on `Image` load; if the source fails to load, we still insert
  * at the factory's hardcoded default so the user sees something.
  */
-export function insertImageElement(src: string): void {
+export function insertImageElement(src: string, capturedEpoch?: number): void {
   const id = createElementId('image');
   // Bind the insert to the scene that was active at click time. Image
   // sizing is resolved asynchronously (Image.onload), and the user may
   // switch slides before it resolves — without this guard the element
   // would be applied to whatever session is current when onload fires,
   // i.e. inserted into the wrong slide.
-  const targetSceneId = useSlideEditSession.getState().sceneId;
+  const { sceneId: targetSceneId, epoch: currentEpoch } = useSlideEditSession.getState();
+  const epoch = capturedEpoch ?? currentEpoch;
   const dispatch = (width?: number, height?: number) => {
     if (useSlideEditSession.getState().sceneId !== targetSceneId) return;
     const base = createDefaultImageElement(id, src);
     const element = width && height ? { ...base, width, height } : base;
-    useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+    useSlideEditSession.getState().applyOp({ type: 'element.add', element }, epoch);
   };
   if (typeof window === 'undefined') {
     dispatch();
@@ -165,24 +169,28 @@ export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): 
  * Replace an image element's source. Clears any stale `clip`: the new source's
  * aspect ratio may differ, so the old crop rect would no longer be meaningful.
  */
-export function replaceImageSrc(elementId: string, src: string): void {
+export function replaceImageSrc(elementId: string, src: string, epoch?: number): void {
   useSlideEditSession
     .getState()
-    .applyOp({ type: 'element.update', elementId, patch: { src, clip: undefined } });
+    .applyOp({ type: 'element.update', elementId, patch: { src, clip: undefined } }, epoch);
 }
 
 /** Toggle horizontal/vertical flip on an image element. */
-export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V'): void {
+export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V', epoch?: number): void {
   const patch = axis === 'H' ? { flipH: !el.flipH } : { flipV: !el.flipV };
-  useSlideEditSession.getState().applyOp({ type: 'element.update', elementId: el.id, patch });
+  useSlideEditSession
+    .getState()
+    .applyOp({ type: 'element.update', elementId: el.id, patch }, epoch);
 }
 
 /** Set the slide-level background (solid color or image). */
-export function updateSlideBackground(background: SlideBackground): void {
-  useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } });
+export function updateSlideBackground(background: SlideBackground, epoch?: number): void {
+  useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } }, epoch);
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
+const LEGACY_GESTURE_HANDLERS = ['onmousemove', 'onmouseup', 'ontouchmove', 'ontouchend'] as const;
+type LegacyGestureHandlers = Partial<Pick<Document, (typeof LEGACY_GESTURE_HANDLERS)[number]>>;
 
 function currentSlideContent(sceneId: string): SlideContent | null {
   const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
@@ -235,6 +243,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
 
 interface SlideCanvasController {
   readonly controller: SceneDataController;
+  readonly canvasKey: string;
   /**
    * Spread onto the canvas wrapper. Tracks whether a pointer gesture is in
    * flight so a renderer commit can be classified as a real user edit vs
@@ -244,6 +253,8 @@ interface SlideCanvasController {
     readonly onPointerDownCapture: () => void;
     readonly onPointerUpCapture: () => void;
     readonly onPointerCancelCapture: () => void;
+    readonly onMouseDownCapture: () => void;
+    readonly onTouchStartCapture: () => void;
   };
 }
 
@@ -255,6 +266,7 @@ interface SlideCanvasController {
  * "restore unsaved" UX — the stage store is the source of truth).
  */
 export function useSlideCanvasController(): SlideCanvasController {
+  const { t } = useI18n();
   const sceneId = useStageStore((s) => {
     const scene = s.scenes.find((x) => x.id === s.currentSceneId) ?? null;
     return scene && scene.type === 'slide' ? scene.id : '';
@@ -262,6 +274,9 @@ export function useSlideCanvasController(): SlideCanvasController {
   // Re-render (and thus re-feed SceneProvider's getSnapshot) on every
   // history move (apply / commit / undo / redo).
   useSlideEditSession((s) => s.history);
+  const epoch = useSlideEditSession((s) => s.epoch);
+  const conflictNotice = useSlideEditSession((s) => s.conflictNotice);
+  const shownConflictNotice = useRef(conflictNotice);
 
   // True only while a pointer gesture is in flight. The renderer commits a
   // geometry edit synchronously inside its mouseup handler (still within
@@ -269,9 +284,37 @@ export function useSlideCanvasController(): SlideCanvasController {
   // no gesture. Cleared on a macrotask after pointerup so the synchronous
   // commit still observes `true`.
   const gestureRef = useRef(false);
+  const ownedLegacyHandlers = useRef<LegacyGestureHandlers>({});
+  useLayoutEffect(() => {
+    gestureRef.current = false;
+    return () => {
+      // 旧画布使用 document.on*；只清理此画布手势实际安装且仍归它持有的处理器。
+      for (const key of LEGACY_GESTURE_HANDLERS) {
+        if (
+          ownedLegacyHandlers.current[key] &&
+          document[key] === ownedLegacyHandlers.current[key]
+        ) {
+          document[key] = null;
+        }
+      }
+      ownedLegacyHandlers.current = {};
+    };
+  }, [epoch]);
+  useLayoutEffect(() => {
+    if (shownConflictNotice.current === conflictNotice) return;
+    shownConflictNotice.current = conflictNotice;
+    const canvas = useCanvasStore.getState();
+    canvas.clearSelection();
+    canvas.setScalingState(false);
+    canvas.setCreatingElement(null);
+    toast.info(t('edit.contentUpdated'));
+  }, [conflictNotice, t]);
+
   useEffect(() => {
     const finishGesture = () => {
+      const capturedEpoch = useSlideEditSession.getState().epoch;
       setTimeout(() => {
+        if (useSlideEditSession.getState().epoch !== capturedEpoch) return;
         gestureRef.current = false;
         useSlideEditSession.getState().setGestureActive(false);
       }, 0);
@@ -283,30 +326,56 @@ export function useSlideCanvasController(): SlideCanvasController {
       window.removeEventListener('pointercancel', finishGesture);
     };
   }, []);
-  const gestureProps = useMemo(
-    () => ({
+  const gestureProps = useMemo(() => {
+    const captureLegacyGesture = () => {
+      const before: LegacyGestureHandlers = {
+        onmousemove: document.onmousemove,
+        onmouseup: document.onmouseup,
+        ontouchmove: document.ontouchmove,
+        ontouchend: document.ontouchend,
+      };
+      // 缩放/旋转控件会阻止冒泡；微任务在它们同步安装处理器之后检查归属。
+      queueMicrotask(() => {
+        for (const key of LEGACY_GESTURE_HANDLERS) {
+          if (!document[key] || document[key] === before[key]) continue;
+          if (useSlideEditSession.getState().epoch !== epoch) {
+            document[key] = null;
+          } else {
+            Object.assign(ownedLegacyHandlers.current, { [key]: document[key] });
+          }
+        }
+      });
+    };
+    return {
+      onMouseDownCapture: captureLegacyGesture,
+      onTouchStartCapture: captureLegacyGesture,
       onPointerDownCapture: () => {
+        if (useSlideEditSession.getState().epoch !== epoch) return;
         gestureRef.current = true;
         useSlideEditSession.getState().setGestureActive(true);
       },
       onPointerUpCapture: () => {
         setTimeout(() => {
+          if (useSlideEditSession.getState().epoch !== epoch) return;
           gestureRef.current = false;
           useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
       onPointerCancelCapture: () => {
         setTimeout(() => {
+          if (useSlideEditSession.getState().epoch !== epoch) return;
           gestureRef.current = false;
           useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
-    }),
-    [],
-  );
+    };
+  }, [epoch]);
 
-  useEffect(() => {
-    if (!sceneId) return;
+  useLayoutEffect(() => {
+    if (!sceneId) {
+      if (useSlideEditSession.getState().sceneId) useSlideEditSession.getState().end();
+      return;
+    }
     const content = currentSlideContent(sceneId);
     if (content && useSlideEditSession.getState().sceneId !== sceneId) {
       useSlideEditSession.getState().seed(sceneId, content);
@@ -323,18 +392,21 @@ export function useSlideCanvasController(): SlideCanvasController {
       // it on every history move so this is always the up-to-date content.
       getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
       updateSceneData: (updater) => {
-        const base =
-          useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
+        const session = useSlideEditSession.getState();
+        // 旧 Canvas 的 mouseup / ResizeObserver 即使晚到，也不能覆盖刷新后的内容。
+        if (session.sceneId !== sceneId || session.epoch !== epoch) return;
+        const base = session.history?.present ?? currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
-        useSlideEditSession.getState().commitContent(next, gestureRef.current);
+        session.commitContent(next, gestureRef.current, epoch);
       },
     }),
-    [sceneId],
+    [sceneId, epoch],
   );
 
   return {
     controller,
+    canvasKey: `${sceneId}:${epoch}`,
     gestureProps,
   };
 }

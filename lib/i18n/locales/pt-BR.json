@@ -320,6 +320,7 @@
     "stopListening": "Parar gravação"
   },
   "edit": {
+    "contentUpdated": "O conteúdo foi atualizado. Esta ação não foi aplicada. Tente novamente.",
     "proMode": "Pro",
     "undo": "Desfazer",
     "redo": "Refazer",

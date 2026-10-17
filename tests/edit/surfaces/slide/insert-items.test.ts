@@ -6,20 +6,12 @@ import {
   insertTableElement,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
-import { createDefaultLatexElement } from '@/lib/edit/slide-edit-elements';
+import {
+  createDefaultImageElement,
+  createDefaultLatexElement,
+} from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
-
-function seedSlideSession(elements: unknown[] = []) {
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  useSlideEditSession.setState({
-    history: {
-      past: [],
-      present: { type: 'slide', canvas: { id: 's', elements } } as any,
-      future: [],
-    },
-  } as any);
-  /* eslint-enable @typescript-eslint/no-explicit-any */
-}
+import { seedSlideSession } from './session-fixture';
 
 describe('slide insert palette', () => {
   beforeEach(() => seedSlideSession());
@@ -128,7 +120,7 @@ describe('slide element deletion', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('deleteSlideElement deletes an existing element through the canonical operation', () => {
-    seedSlideSession([{ id: 'img-9', type: 'image', src: 'image.png' }]);
+    seedSlideSession([createDefaultImageElement('img-9', 'image.png')]);
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
 
     deleteSlideElement('img-9');

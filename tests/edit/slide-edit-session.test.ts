@@ -1,16 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultSlide, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
 import type { PPTTextElement } from '@openmaic/dsl';
-import type { SlideContent } from '@/lib/types/stage';
+import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { EditorTransaction } from '@openmaic/editor/core';
 
 // Mock the canonical stage store so we can assert write-through: every
 // history move in the session (applyOp / user commit / non-user commit /
 // undo / redo) must call updateScene with the new content. Seed must NOT
 // touch the stage store (it only adopts the existing content as the
 // in-memory baseline).
-const updateScene = vi.fn();
+const canonical = { scenes: [] as Scene[] };
+const updateScene = vi.fn((sceneId: string, updates: Partial<Scene>) => {
+  canonical.scenes = canonical.scenes.map((scene) =>
+    scene.id === sceneId ? ({ ...scene, ...updates } as Scene) : scene,
+  );
+});
+
 vi.mock('@/lib/store/stage', () => ({
-  useStageStore: { getState: () => ({ updateScene }) },
+  useStageStore: { getState: () => ({ scenes: canonical.scenes, updateScene }) },
 }));
 
 // Imported AFTER the mock setup (vi.mock is hoisted by Vitest).
@@ -26,14 +33,29 @@ function makeContent(): SlideContent {
   return { type: 'slide', canvas: slide };
 }
 
+function seed(sceneId = 'scene-1', content = makeContent()): void {
+  canonical.scenes = [
+    {
+      id: sceneId,
+      stageId: 'stage-1',
+      order: 0,
+      title: 'Slide',
+      type: 'slide',
+      content,
+    } as Scene,
+  ];
+  useSlideEditSession.getState().seed(sceneId, content);
+}
+
 describe('useSlideEditSession (auto-save to stage store)', () => {
   beforeEach(() => {
     useSlideEditSession.getState().end();
+    canonical.scenes = [];
     updateScene.mockClear();
   });
 
   it('seed adopts a baseline without touching the stage store', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const { sceneId, history } = useSlideEditSession.getState();
     expect(sceneId).toBe('scene-1');
     expect(history?.past).toEqual([]);
@@ -44,7 +66,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('applyOp advances history by one step AND writes through to the stage store', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     useSlideEditSession.getState().applyOp({
       type: 'element.update',
       elementId: 'text-1',
@@ -62,11 +84,11 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('rejects a transaction captured by a previous scene', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const staleSceneId = useSlideEditSession.getState().sceneId!;
     const nextScene = makeContent();
     nextScene.canvas.id = 'slide-2';
-    useSlideEditSession.getState().seed('scene-2', nextScene);
+    seed('scene-2', nextScene);
 
     useSlideEditSession.getState().applyTransactionForScene(staleSceneId, {
       origin: 'toolbar',
@@ -79,7 +101,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('applyOp ignores a no-op against a missing element (no stage write)', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     useSlideEditSession.getState().applyOp({
       type: 'element.update',
       elementId: 'does-not-exist',
@@ -91,7 +113,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('user-driven commit records one undo step + writes through', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const next = structuredClone(useSlideEditSession.getState().history!.present);
     next.canvas.elements[0].left = 88;
     next.canvas.elements[0].top = 99;
@@ -106,7 +128,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
     // Auto-fit height IS the new canonical state, so it must reach the
     // stage store. But it must NOT push an undo step (the reflow can
     // chase a user resize; wiping past/future would silently break undo).
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const normalized = structuredClone(useSlideEditSession.getState().history!.present);
     (normalized.canvas.elements[0] as PPTTextElement).height = 999;
     useSlideEditSession.getState().commitContent(normalized, false);
@@ -121,7 +143,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('a non-user commit after a user edit preserves the undo stack (and writes through both)', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const resized = structuredClone(useSlideEditSession.getState().history!.present);
     resized.canvas.elements[0].width = 640;
     useSlideEditSession.getState().commitContent(resized, true);
@@ -151,7 +173,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
     // a later redo resurrects the pre-undo snapshot and silently discards
     // the normalization (canvas/store diverge). The non-user commit must
     // clear `future` so redo is a no-op.
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     const resized = structuredClone(useSlideEditSession.getState().history!.present);
     resized.canvas.elements[0].width = 640;
     useSlideEditSession.getState().commitContent(resized, true);
@@ -186,7 +208,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('undo / redo move between history states AND write through on each move', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     useSlideEditSession.getState().applyOp({
       type: 'element.update',
       elementId: 'text-1',
@@ -202,7 +224,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('repeated non-user commits each write through but never grow past/future', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     for (let i = 0; i < 3; i++) {
       const n = structuredClone(useSlideEditSession.getState().history!.present);
       (n.canvas.elements[0] as PPTTextElement).height = 100 + i;
@@ -216,7 +238,7 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
   });
 
   it('end clears the session (no further write-through possible)', () => {
-    useSlideEditSession.getState().seed('scene-1', makeContent());
+    seed();
     useSlideEditSession.getState().end();
     expect(useSlideEditSession.getState().sceneId).toBeNull();
     expect(useSlideEditSession.getState().history).toBeNull();
@@ -228,5 +250,184 @@ describe('useSlideEditSession (auto-save to stage store)', () => {
       patch: { left: 1 },
     });
     expect(updateScene).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSlideEditSession (external canonical updates)', () => {
+  const transaction: EditorTransaction = {
+    origin: 'toolbar',
+    history: 'record',
+    operations: [{ type: 'element.update', elementId: 'text-1', patch: { left: 999 } }],
+  };
+  const snapshot = () => {
+    const next = structuredClone(useSlideEditSession.getState().history!.present);
+    next.canvas.elements[0].left = 999;
+    return next;
+  };
+
+  beforeEach(() => {
+    useSlideEditSession.getState().end();
+    canonical.scenes = [];
+    updateScene.mockClear();
+  });
+
+  it.each([
+    ['toolbar operation', () => useSlideEditSession.getState().applyOp(transaction.operations[0])],
+    ['transaction', () => useSlideEditSession.getState().applyTransaction(transaction)],
+    [
+      'scene transaction',
+      () => useSlideEditSession.getState().applyTransactionForScene('scene-1', transaction),
+    ],
+    ['canvas snapshot', () => useSlideEditSession.getState().commitContent(snapshot(), true)],
+    [
+      'auto-height normalization',
+      () => useSlideEditSession.getState().commitContent(snapshot(), false),
+    ],
+    ['undo', () => useSlideEditSession.getState().undo()],
+    ['redo', () => useSlideEditSession.getState().redo()],
+    [
+      'missing-element operation',
+      () =>
+        useSlideEditSession.getState().applyOp({
+          type: 'element.update',
+          elementId: 'missing',
+          patch: { left: 999 },
+        }),
+    ],
+  ] as const)('refreshes instead of overwriting Agent changes on %s', (_name, run) => {
+    seed();
+    useSlideEditSession.getState().applyOp({
+      type: 'element.update',
+      elementId: 'text-1',
+      patch: { rotate: 10 },
+    });
+    useSlideEditSession.getState().applyOp({
+      type: 'element.update',
+      elementId: 'text-1',
+      patch: { rotate: 20 },
+    });
+    useSlideEditSession.getState().undo();
+    expect(useSlideEditSession.getState().history?.past).toHaveLength(1);
+    expect(useSlideEditSession.getState().history?.future).toHaveLength(1);
+    useSlideEditSession.getState().setGestureActive(true);
+
+    // Agent 更新与本地编辑基线不同；既不能覆写，也不能在新文档上重放旧历史。
+    const external = makeContent();
+    (external.canvas.elements[0] as PPTTextElement).content = '<p>Agent update</p>';
+    external.canvas.elements[0].left = 720;
+    canonical.scenes = [{ ...canonical.scenes[0], content: external } as Scene];
+    const { epoch, conflictNotice } = useSlideEditSession.getState();
+    updateScene.mockClear();
+
+    run();
+
+    const refreshed = useSlideEditSession.getState();
+    expect(updateScene).not.toHaveBeenCalled();
+    expect(canonical.scenes[0].content).toBe(external);
+    expect(refreshed.canonicalContent).toBe(external);
+    expect(refreshed.history?.present).toEqual({ ...external, schemaVersion: 1 });
+    expect(refreshed.history?.past).toEqual([]);
+    expect(refreshed.history?.future).toEqual([]);
+    expect(refreshed.gestureActive).toBe(false);
+    expect(refreshed.epoch).toBe(epoch + 1);
+    expect(refreshed.conflictNotice).toBe(conflictNotice + 1);
+  });
+
+  it.each(['undo', 'redo'] as const)(
+    'detects a conflict even when %s has no history step',
+    (action) => {
+      seed();
+      const external = makeContent();
+      external.canvas.elements[0].left = 720;
+      canonical.scenes = [{ ...canonical.scenes[0], content: external } as Scene];
+      const notice = useSlideEditSession.getState().conflictNotice;
+
+      useSlideEditSession.getState()[action]();
+
+      expect(updateScene).not.toHaveBeenCalled();
+      expect(useSlideEditSession.getState().history?.present.canvas.elements[0].left).toBe(720);
+      expect(useSlideEditSession.getState().conflictNotice).toBe(notice + 1);
+    },
+  );
+
+  it('keeps the raw baseline separate from schema migration and accepts successive own writes', () => {
+    const raw = makeContent();
+    seed('scene-1', raw);
+    const { epoch, conflictNotice } = useSlideEditSession.getState();
+    expect(raw.schemaVersion).toBeUndefined();
+    expect(useSlideEditSession.getState().history?.present.schemaVersion).toBe(1);
+    expect(useSlideEditSession.getState().canonicalContent).toBe(raw);
+
+    // 元数据更新可以重建内容对象；内容没有变化就不应中断编辑会话。
+    canonical.scenes = [{ ...canonical.scenes[0], content: structuredClone(raw) } as Scene];
+    useSlideEditSession.getState().applyTransaction(transaction);
+    useSlideEditSession.getState().undo();
+    useSlideEditSession.getState().redo();
+
+    const current = useSlideEditSession.getState();
+    expect(updateScene).toHaveBeenCalledTimes(3);
+    expect(current.history?.present.canvas.elements[0].left).toBe(999);
+    expect(current.canonicalContent).toBe(canonical.scenes[0].content);
+    expect(current.epoch).toBe(epoch);
+    expect(current.conflictNotice).toBe(conflictNotice);
+  });
+
+  it.each(['operation', 'snapshot', 'transaction'] as const)(
+    'rejects a delayed %s from the old epoch and allows an explicit retry',
+    (kind) => {
+      seed();
+      const stale = snapshot();
+      const capturedEpoch = useSlideEditSession.getState().epoch;
+      const external = makeContent();
+      external.canvas.elements[0].left = 720;
+      canonical.scenes = [{ ...canonical.scenes[0], content: external } as Scene];
+      useSlideEditSession.getState().undo();
+      const refreshedNotice = useSlideEditSession.getState().conflictNotice;
+
+      if (kind === 'operation') {
+        useSlideEditSession.getState().applyOp(transaction.operations[0], capturedEpoch);
+      } else if (kind === 'snapshot') {
+        useSlideEditSession.getState().commitContent(stale, true, capturedEpoch);
+      } else {
+        useSlideEditSession
+          .getState()
+          .applyTransactionForScene('scene-1', transaction, capturedEpoch);
+      }
+
+      expect(updateScene).not.toHaveBeenCalled();
+      expect(useSlideEditSession.getState().conflictNotice).toBe(refreshedNotice);
+      expect(useSlideEditSession.getState().history?.present.canvas.elements[0].left).toBe(720);
+
+      useSlideEditSession.getState().applyOp(transaction.operations[0]);
+      expect(updateScene).toHaveBeenCalledTimes(1);
+      expect(useSlideEditSession.getState().history?.present.canvas.elements[0].left).toBe(999);
+      expect(useSlideEditSession.getState().conflictNotice).toBe(refreshedNotice);
+    },
+  );
+
+  it.each(['deleted', 'changed type'] as const)('ends the session when the scene is %s', (kind) => {
+    seed();
+    const epoch = useSlideEditSession.getState().epoch;
+    canonical.scenes =
+      kind === 'deleted'
+        ? []
+        : [
+            {
+              ...canonical.scenes[0],
+              type: 'quiz',
+              content: { type: 'quiz', questions: [] },
+            } as Scene,
+          ];
+
+    useSlideEditSession.getState().applyTransaction(transaction);
+
+    expect(updateScene).not.toHaveBeenCalled();
+    expect(useSlideEditSession.getState()).toMatchObject({
+      sceneId: null,
+      history: null,
+      canonicalContent: null,
+      gestureActive: false,
+      epoch: epoch + 1,
+    });
   });
 });

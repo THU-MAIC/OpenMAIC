@@ -336,6 +336,7 @@
     "proModeDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editar con el modo Pro."
   },
   "edit": {
+    "contentUpdated": "El contenido se actualizó. Esta acción no se aplicó. Inténtalo de nuevo.",
     "proMode": "Pro",
     "undo": "Deshacer",
     "redo": "Rehacer",

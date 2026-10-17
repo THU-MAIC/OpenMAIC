@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { PPTImageElement } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
 import { replaceImageSrc, toggleImageFlip } from './use-slide-surface';
+import { useSlideEditSession } from './slide-edit-session';
 
 const BTN =
   'flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100';
@@ -17,6 +18,7 @@ const BTN =
  */
 export function ImageActions({ element }: { readonly element: PPTImageElement }) {
   const { t } = useI18n();
+  const epoch = useSlideEditSession((s) => s.epoch);
   return (
     <div className="flex items-center gap-1">
       <Popover>
@@ -37,7 +39,7 @@ export function ImageActions({ element }: { readonly element: PPTImageElement })
           onOpenAutoFocus={(e) => e.preventDefault()}
           className="w-72"
         >
-          <ImagePicker onPick={(src) => replaceImageSrc(element.id, src)} />
+          <ImagePicker onPick={(src) => replaceImageSrc(element.id, src, epoch)} />
         </PopoverContent>
       </Popover>
       <button
@@ -45,7 +47,7 @@ export function ImageActions({ element }: { readonly element: PPTImageElement })
         aria-label={t('edit.image.flipH')}
         title={t('edit.image.flipH')}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => toggleImageFlip(element, 'H')}
+        onClick={() => toggleImageFlip(element, 'H', epoch)}
         className={BTN}
       >
         <FlipHorizontal className="h-4 w-4" />
@@ -55,7 +57,7 @@ export function ImageActions({ element }: { readonly element: PPTImageElement })
         aria-label={t('edit.image.flipV')}
         title={t('edit.image.flipV')}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => toggleImageFlip(element, 'V')}
+        onClick={() => toggleImageFlip(element, 'V', epoch)}
         className={BTN}
       >
         <FlipVertical className="h-4 w-4" />
