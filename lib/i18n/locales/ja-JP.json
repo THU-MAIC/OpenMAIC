@@ -475,6 +475,7 @@
       "moreActions": "その他の操作",
       "rename": "名前を変更",
       "sceneIncomplete": "このページの内容が未完成です",
+      "sceneHasErrors": "このページにはエラーがあります",
       "addPage": "ページを追加",
       "nextPage": "次のページ",
       "prevPage": "前のページ"
