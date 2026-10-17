@@ -95,6 +95,8 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
    * the run's preview while its outline waits). Null otherwise.
    */
   generation: { status: CourseRunStatus; href: string } | null;
+  /** Skipped clips reported when this course finished generating. */
+  narrationUnvoiced: number;
   /** The paused run's failure; cleared while the run proceeds. */
   failure: RunCourseFailure | null;
   /** Retry the failed scene of a paused run. */
@@ -284,6 +286,7 @@ export function useRunCourse(input: { classroomId: string; ready: boolean }): {
             href: courseRunHref({ id: view.runId, state: view.state, stageId: input.classroomId }),
           }
         : null,
+    narrationUnvoiced: view?.state === 'completed' ? view.narrationUnvoiced : 0,
     retryOutline,
   };
 }

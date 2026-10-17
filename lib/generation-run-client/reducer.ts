@@ -39,6 +39,7 @@ export function viewFromSnapshot(snapshot: RunSnapshot): RunView {
     readyScenes: {},
     skippedScenes: {},
     error: snapshot.error,
+    narrationUnvoiced: snapshot.narrationUnvoiced ?? 0,
     // A failure's identity is the seq of the event that reported it, the same
     // whether it is read from the snapshot or from the event itself.
     failedSeq: snapshot.error ? (snapshot.error.failureSeq ?? snapshot.seq) : 0,
@@ -185,6 +186,9 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
       next.stageId = (data.stageId as string) ?? next.stageId;
       return next;
     case 'scene_ready': {
+      if (typeof data.narrationUnvoiced === 'number') {
+        next.narrationUnvoiced = Math.max(next.narrationUnvoiced, data.narrationUnvoiced);
+      }
       const index = Number(data.index);
       const isNew = !(index in next.readyScenes);
       next.readyScenes = { ...next.readyScenes, [index]: String(data.sceneId) };

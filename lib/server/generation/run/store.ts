@@ -205,6 +205,7 @@ export function runSnapshot(run: StoredRun): GenerationRunSnapshot {
     stageId: run.stageId,
     progress: run.progress,
     error: run.error,
+    narrationUnvoiced: run.narrationUnvoiced,
     ...(run.outlineAutoConfirmAt ? { outlineAutoConfirmAt: run.outlineAutoConfirmAt } : {}),
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,

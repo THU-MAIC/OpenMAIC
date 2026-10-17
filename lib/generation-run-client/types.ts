@@ -34,6 +34,8 @@ export interface RunSnapshot {
   stageId: string | null;
   progress: GenerationRunProgress;
   error: GenerationRunFailure | null;
+  /** Speech clips left unvoiced during generation (for example, storage was full). */
+  narrationUnvoiced?: number;
   /** A `countdown` run waiting for its outline: when the run confirms it itself (ISO). */
   outlineAutoConfirmAt?: string;
   createdAt: string;
@@ -80,6 +82,8 @@ export interface RunView {
   readyScenes: Record<number, string>;
   skippedScenes: SkippedScenes;
   error: GenerationRunFailure | null;
+  /** Cumulative skipped clips, as recorded by the run (not current missing audio). */
+  narrationUnvoiced: number;
   /** The seq of the failure the run is paused at (the key of its Retry command). */
   failedSeq: number;
   media: Record<string, RunMediaView>;

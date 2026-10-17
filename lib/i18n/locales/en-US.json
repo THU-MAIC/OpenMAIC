@@ -1135,6 +1135,7 @@
     "materialTooLarge": "{{name}} is too large: a material can be at most {{size}}."
   },
   "generation": {
+    "narrationWarning": "During course generation, {{count}} speech clips were left without audio. Check storage capacity and voice settings, then regenerate missing narration in the timeline.",
     "quotaExhausted": "Generation quota has been exhausted. Check your plan allowance or account balance, or contact your administrator before retrying.",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",

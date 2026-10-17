@@ -250,6 +250,8 @@ export interface GenerationRunSnapshot {
   stageId: string | null;
   progress: GenerationRunProgress;
   error: GenerationRunFailure | null;
+  /** Cumulative speech clips left unvoiced during generation, not current missing audio. */
+  narrationUnvoiced?: number;
   /** A `countdown` run waiting for its outline: when the run confirms it itself (ISO). */
   outlineAutoConfirmAt?: string;
   createdAt: string;
@@ -308,7 +310,7 @@ export const GENERATION_RUN_EVENT_TYPES = [
   'agents',
   /** `{ stageId }`: the course document exists (its first scene is ready). */
   'course_created',
-  /** `{ index, sceneId, order }`: a scene was appended to the course. */
+  /** `{ index, sceneId, order, narrationUnvoiced }`: a scene was appended; cumulative skipped clips. */
   'scene_ready',
   /** `{ stageId }`: every scene is in the course. */
   'completed',

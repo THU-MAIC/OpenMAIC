@@ -1135,6 +1135,7 @@
     "materialTooLarge": "{{name}} es demasiado grande: un material puede medir como máximo {{size}}."
   },
   "generation": {
+    "narrationWarning": "Durante la generación del curso, {{count}} segmentos quedaron sin audio. Revisa el espacio de almacenamiento y la configuración de voz, y vuelve a generar la narración faltante en la línea de tiempo.",
     "quotaExhausted": "Se ha agotado la cuota de generación. Revisa la cuota de tu plan o el saldo de tu cuenta, o contacta al administrador antes de volver a intentarlo.",
     "pdfLoadFailed": "Error al cargar el archivo PDF, inténtalo de nuevo",
     "pdfParseFailed": "Error al procesar el PDF",
