@@ -104,6 +104,8 @@ import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/e
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
+import type { WorkbenchComposerPrefill } from '@/lib/workbench/interactive-repair-prefill';
+import { useRepairComposerPrefill } from '@/lib/workbench/use-repair-composer-prefill';
 
 const NO_ELEMENT_REFS: ElementRef[] = [];
 const NO_COURSE_REFS: CourseRef[] = [];
@@ -111,6 +113,9 @@ const NO_COURSE_REFS: CourseRef[] = [];
 export function WorkbenchChat({
   hosted = false,
   adjacentPanelOpen = false,
+  paneSessionId,
+  prefill = null,
+  onPrefillConsumed,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -125,6 +130,12 @@ export function WorkbenchChat({
    * changes, so a hosted chat must not use that value to size its transcript.
    */
   adjacentPanelOpen?: boolean;
+  /** Selected session in the workspace pane, independent of chat attach timing. */
+  paneSessionId?: string | null;
+  /** Product-owned draft text staged by another workbench pane; never auto-sent. */
+  prefill?: WorkbenchComposerPrefill | null;
+  /** Acknowledge one-shot prefill consumption so a remount cannot replay stale text. */
+  onPrefillConsumed?: (id: number) => void;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -136,6 +147,7 @@ export function WorkbenchChat({
    * staged against `composerOwnerId`, and `submit` routes through `start`.
    */
   const draftConversation = useWorkbenchDraftConversation();
+  const navigation = useWorkbenchCourseNavigation();
   const composerOwnerId = sessionId ?? draftConversation?.ownerKey ?? null;
   const canSend = sessionId !== null || draftConversation !== null;
   const chat = useWorkbenchStore((s) => s.chat);
@@ -242,6 +254,7 @@ export function WorkbenchChat({
    */
   const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
   // flight returns, which can be tens of seconds. Without this the button just
@@ -260,6 +273,22 @@ export function WorkbenchChat({
   // mention is that the agent is told, not that it infers from what is open.
   useCourseRefsOwnerLifecycle(composerOwnerId);
   const courseRefs = useCourseRefsForSession(composerOwnerId);
+
+  useRepairComposerPrefill({
+    prefill,
+    composerOwnerId,
+    expectedOwnerId:
+      paneSessionId === undefined
+        ? composerOwnerId
+        : (paneSessionId ?? draftConversation?.ownerKey ?? null),
+    draft,
+    navigation,
+    replaceDraft,
+    onConsumed: onPrefillConsumed,
+    t,
+    untitledCourse: t('workspace.untitledCourse'),
+  });
+
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live
@@ -306,7 +335,6 @@ export function WorkbenchChat({
   // "the classrooms this conversation is involved with" any more: a classroom is
   // picked per answer, and what an answer touched is a row in the transcript
   // (`lib/workbench/run-courses`), not a standing property of the chat.
-  const navigation = useWorkbenchCourseNavigation();
   /**
    * The classroom picker: one menu, ONE open state, two ways in.
    *
