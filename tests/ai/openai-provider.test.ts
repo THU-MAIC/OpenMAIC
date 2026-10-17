@@ -633,6 +633,7 @@ describe('OpenAI provider defaults', () => {
       { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
     ],
     ['xiaomi', 'mimo-v2.5', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+    ['iflytek', 'spark-x2.5', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     [
       'deepseek',
       'deepseek-v4-pro',
