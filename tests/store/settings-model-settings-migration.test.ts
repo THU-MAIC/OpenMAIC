@@ -48,6 +48,26 @@ async function hydrate(state: Record<string, unknown>, version: number) {
 }
 
 describe('settings store v4 → v5', () => {
+  it('leaves a fresh speech preference unset without bumping the persisted version', async () => {
+    const { useSettingsStore: store } = await import('@/lib/store/settings');
+    await store.persist.rehydrate();
+    expect(store.getState().asrLanguage).toBe('');
+    store.getState().setPlaybackSpeed(1.25);
+    await vi.waitFor(async () => {
+      const blob = await kv.get<{ state: { asrLanguage: string }; version: number }>(
+        'settings-storage',
+        'account',
+      );
+      expect(blob?.version).toBe(5);
+      expect(blob?.state.asrLanguage).toBe('');
+    });
+  });
+
+  it.each([4, 5])('preserves a saved zh-CN speech choice at version %i', async (version) => {
+    const store = await hydrate({ asrLanguage: 'zh-CN' }, version);
+    expect(store.getState().asrLanguage).toBe('zh-CN');
+  });
+
   it('sets the browser model settings aside for import', async () => {
     const store = await hydrate(
       {

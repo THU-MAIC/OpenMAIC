@@ -132,7 +132,11 @@ function AgentVoicePill({
       const previewText = t('settings.ttsTestTextDefault');
 
       if (providerId === 'browser-native-tts') {
-        const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
+        const { promise, cancel } = playBrowserTTSPreview({
+          text: previewText,
+          voice: voiceId,
+          locale,
+        });
         previewCancelRef.current = cancel;
         try {
           await promise;
@@ -409,7 +413,11 @@ function TeacherVoicePill({
       const previewText = t('settings.ttsTestTextDefault');
 
       if (providerId === 'browser-native-tts') {
-        const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
+        const { promise, cancel } = playBrowserTTSPreview({
+          text: previewText,
+          voice: voiceId,
+          locale,
+        });
         previewCancelRef.current = cancel;
         try {
           await promise;
