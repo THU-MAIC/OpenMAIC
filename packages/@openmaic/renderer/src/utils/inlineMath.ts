@@ -292,113 +292,128 @@ function whenIdle(run: () => void): IdleHandle {
 type MathPriority = 'normal' | 'background';
 export const InlineMathPriorityContext = createContext<MathPriority>('normal');
 
-// One queue, with foreground canvases ahead of thumbnails and round-robin roots
-// within each priority. DOM insertion remains bounded across all roots.
-const pendingRoots = new Map<Element, MathPriority>();
-// Only roots admitted by the current commits may use the pre-paint allowance.
-// Unchanged pending roots remain in the idle queue on parent rerenders.
-const backgroundRoots = new Set<Element>();
-let syncBudget: TypesetBudget | null = null;
-let cancelSyncReset: (() => void) | null = null;
-let idleJob: { cancel?: () => void } | null = null;
-let backgroundScheduled = false;
+/**
+ * Own the live queues and shared frame allowance. Foreground layout effects
+ * spend first; a microtask then admits the current commits' background roots.
+ * Removing a root cancels its work without replenishing the allowance.
+ */
+function createLiveMath() {
+  // Idle work rotates roots within each priority, with foreground canvases first.
+  const queuedRoots = new Map<Element, MathPriority>();
+  // Only newly admitted background roots may spend the remaining frame allowance.
+  const prePaintCandidates = new Set<Element>();
+  let frameBudget: TypesetBudget | null = null;
+  let cancelFrameReset: (() => void) | null = null;
+  let idleJob: { cancel?: () => void } | null = null;
+  let prePaintScheduled = false;
 
-function resetSyncBudget(): void {
-  cancelSyncReset?.();
-  cancelSyncReset = null;
-  syncBudget = null;
-}
+  function resetFrameBudget(): void {
+    cancelFrameReset?.();
+    cancelFrameReset = null;
+    frameBudget = null;
+  }
 
-function synchronousBudget(): TypesetBudget {
-  if (!syncBudget) {
-    const budget = (syncBudget = newBudget());
-    const reset = () => {
-      if (syncBudget === budget) {
-        syncBudget = null;
-        cancelSyncReset = null;
+  function frameAllowance(): TypesetBudget {
+    if (!frameBudget) {
+      const budget = (frameBudget = newBudget());
+      const reset = () => {
+        if (frameBudget === budget) {
+          frameBudget = null;
+          cancelFrameReset = null;
+        }
+      };
+      if (
+        typeof requestAnimationFrame === 'function' &&
+        typeof cancelAnimationFrame === 'function'
+      ) {
+        const cancel = cancelAnimationFrame;
+        const handle = requestAnimationFrame(reset);
+        cancelFrameReset = () => cancel(handle);
+      } else {
+        const cancel = clearTimeout;
+        const handle = setTimeout(reset, 16);
+        cancelFrameReset = () => cancel(handle);
       }
-    };
-    if (typeof requestAnimationFrame === 'function' && typeof cancelAnimationFrame === 'function') {
-      const cancel = cancelAnimationFrame;
-      const handle = requestAnimationFrame(reset);
-      cancelSyncReset = () => cancel(handle);
-    } else {
-      const cancel = clearTimeout;
-      const handle = setTimeout(reset, 16);
-      cancelSyncReset = () => cancel(handle);
     }
+    return frameBudget;
   }
-  return syncBudget;
-}
 
-function renderPendingMath(priority: MathPriority, budget: TypesetBudget): void {
-  for (const [root, queuedPriority] of [...pendingRoots]) {
-    if (queuedPriority !== priority) continue;
-    pendingRoots.delete(root);
-    if (root.isConnected && renderPass(root, {}, budget)) pendingRoots.set(root, priority);
-    if (budget.full) break;
-  }
-}
-
-function schedulePendingMath(): void {
-  if (!pendingRoots.size) {
-    idleJob?.cancel?.();
-    idleJob = null;
-    return;
-  }
-  if (idleJob) return;
-  const job: { cancel?: () => void } = {};
-  idleJob = job;
-  job.cancel = whenIdle(() => {
-    // A cancelled callback must not drain work queued by a later mount.
-    if (idleJob !== job) return;
-    idleJob = null;
-    resetSyncBudget();
-    const budget = newBudget();
-    for (const priority of ['normal', 'background'] as const) {
-      renderPendingMath(priority, budget);
+  function renderIdleRoots(priority: MathPriority, budget: TypesetBudget): void {
+    for (const [root, queuedPriority] of [...queuedRoots]) {
+      if (queuedPriority !== priority) continue;
+      queuedRoots.delete(root);
+      if (root.isConnected && renderPass(root, {}, budget)) queuedRoots.set(root, priority);
       if (budget.full) break;
     }
-    schedulePendingMath();
-  }).cancel;
-}
+  }
 
-function renderLiveMath(root: Element, priority: MathPriority): void {
-  if (priority === 'background') {
-    backgroundRoots.add(root);
-    // Let all foreground layout effects run first, then use only this frame's
-    // remaining allowance for these roots, without advancing older idle work.
-    if (!backgroundScheduled) {
-      backgroundScheduled = true;
-      queueMicrotask(() => {
-        backgroundScheduled = false;
-        if (!backgroundRoots.size) return;
-        const budget = synchronousBudget();
-        for (const root of backgroundRoots) {
-          pendingRoots.delete(root);
-          if (root.isConnected && renderPass(root, {}, budget))
-            pendingRoots.set(root, 'background');
-        }
-        backgroundRoots.clear();
-        schedulePendingMath();
-      });
+  function scheduleIdle(): void {
+    if (!queuedRoots.size) {
+      idleJob?.cancel?.();
+      idleJob = null;
+      return;
     }
-    return;
+    if (idleJob) return;
+    const job: { cancel?: () => void } = {};
+    idleJob = job;
+    job.cancel = whenIdle(() => {
+      // A cancelled callback must not drain work queued by a later mount.
+      if (idleJob !== job) return;
+      idleJob = null;
+      resetFrameBudget();
+      const budget = newBudget();
+      for (const priority of ['normal', 'background'] as const) {
+        renderIdleRoots(priority, budget);
+        if (budget.full) break;
+      }
+      scheduleIdle();
+    }).cancel;
   }
-  backgroundRoots.delete(root);
-  if (renderPass(root, {}, synchronousBudget())) pendingRoots.set(root, priority);
-  else pendingRoots.delete(root);
-  schedulePendingMath();
+
+  function flushPrePaint(): void {
+    prePaintScheduled = false;
+    if (!prePaintCandidates.size) return;
+    const budget = frameAllowance();
+    // Visit every newly admitted root: cached formulas may fit after an earlier
+    // root fills the allowance. Older queued roots remain in idle time.
+    for (const root of prePaintCandidates) {
+      queuedRoots.delete(root);
+      if (root.isConnected && renderPass(root, {}, budget)) queuedRoots.set(root, 'background');
+    }
+    prePaintCandidates.clear();
+    scheduleIdle();
+  }
+
+  return {
+    isQueued: (root: Element): boolean => queuedRoots.has(root),
+
+    render(root: Element, priority: MathPriority): void {
+      if (priority === 'background') {
+        prePaintCandidates.add(root);
+        if (!prePaintScheduled) {
+          prePaintScheduled = true;
+          queueMicrotask(flushPrePaint);
+        }
+        return;
+      }
+      prePaintCandidates.delete(root);
+      if (renderPass(root, {}, frameAllowance())) queuedRoots.set(root, priority);
+      else queuedRoots.delete(root);
+      scheduleIdle();
+    },
+
+    remove(root: Element): void {
+      prePaintCandidates.delete(root);
+      queuedRoots.delete(root);
+      if (!queuedRoots.size) {
+        idleJob?.cancel?.();
+        idleJob = null;
+      }
+    },
+  };
 }
 
-function cancelPendingMath(root: Element): void {
-  backgroundRoots.delete(root);
-  pendingRoots.delete(root);
-  if (!pendingRoots.size) {
-    idleJob?.cancel?.();
-    idleJob = null;
-  }
-}
+const liveMath = createLiveMath();
 
 /**
  * Typeset the inline formulas of prose injected into `ref` as `html`. Runs
@@ -410,6 +425,8 @@ function cancelPendingMath(root: Element): void {
  * Pending roots stay in that queue on unchanged commits (including when an
  * external caller rewrites the HTML). New content can use the current frame's
  * synchronous allowance. Unmounting or replacing a root removes its queued work.
+ * Foreground roots run in layout effects; background roots use the remaining
+ * allowance in a microtask, following the nearest InlineMathPriorityContext.
  * Never updates React state.
  */
 export function useInlineMath(ref: RefObject<Element | null>, html: string): void {
@@ -418,27 +435,27 @@ export function useInlineMath(ref: RefObject<Element | null>, html: string): voi
   useLayoutEffect(() => {
     const root = ref.current;
     const before = previous.current;
-    if (before?.root && before.root !== root) cancelPendingMath(before.root);
+    if (before?.root && before.root !== root) liveMath.remove(before.root);
     previous.current = { root, html, priority };
     if (!root) return;
     if (!html.includes(INLINE_MATH_ATTRIBUTE)) {
-      cancelPendingMath(root);
+      liveMath.remove(root);
       return;
     }
     if (
       before?.root === root &&
       before.html === html &&
       before.priority === priority &&
-      pendingRoots.has(root)
+      liveMath.isQueued(root)
     )
       return;
-    renderLiveMath(root, priority);
+    liveMath.render(root, priority);
   });
-  // A commit is not a yield: cancelling here on every render would let a run
-  // of synchronous updates repeatedly spend a fresh batch before paint.
+  // Only clean up on unmount: per-commit removal would discard pending queue
+  // membership and let unchanged rerenders reenter the pre-paint path.
   useLayoutEffect(() => {
     return () => {
-      if (previous.current?.root) cancelPendingMath(previous.current.root);
+      if (previous.current?.root) liveMath.remove(previous.current.root);
       previous.current = null;
     };
   }, []);
