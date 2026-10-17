@@ -12,6 +12,7 @@ export type WebSearchProviderId =
   | 'brave'
   | 'baidu'
   | 'claude'
+  | 'deepseek'
   | 'kimi'
   | 'minimax'
   | 'doubao'

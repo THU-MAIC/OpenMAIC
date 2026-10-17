@@ -782,6 +782,25 @@ slots:
 
 المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
 
+### البحث وجلب الصفحات باستخدام DeepSeek
+
+يشترك الإعداد `deepseek` في `DEEPSEEK_API_KEY` وعنوان API الأساسي بين المحادثة والبحث واستخراج Markdown المستضاف. يستخدم البحث `POST /v1/tools/search` ويعيد حتى 50 نتيجة، ويقتطع الاستعلام إلى 128 نقطة ترميز Unicode. يستخدم `summary` ثم `snippet` عند فراغه. يستخدم الجلب `POST /v1/tools/fetch` ويقرأ `content` و`title` الاختياري غير الفارغ.
+
+في الإعدادات القديمة، فعّل `WEB_SEARCH_DEEPSEEK_ENABLED=true` أو أضف `web-search.deepseek` صراحةً إلى `server-providers.yml`. بيانات اعتماد المحادثة وحدها لا تفعّل البحث ولا تستبدل مزود البحث الافتراضي الحالي. يعطّل `WEB_SEARCH_DEEPSEEK_ENABLED=false` البحث قسرًا. عند وجود `openmaic.yml` لا يستطيع المتغير القديم تعيين خانة؛ أعلن المزود وعيّن `webSearch` و/أو `webFetch` صراحةً.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
+
 ### محادثة Kimi والبحث على الويب
 
 أعلن حساب Kimi واحدًا وعيّن له الخانتين:
@@ -813,6 +832,7 @@ slots:
 | --- | --- | --- |
 | `builtin` | غير مطلوبة | قارئ Readability/Turndown محلي؛ تستخدم ملفات PDF خانة `document` |
 | `kimi` | مفتاح المزوّد Kimi الحالي وعنوانه الأساسي | خدمة مستضافة لاستخراج Markdown، تشمل روابط PDF |
+| `deepseek` | مفتاح محادثة DeepSeek وعنوان API الأساسي | استخراج Markdown المستضاف |
 
 ```yaml
 providers:
@@ -825,6 +845,8 @@ slots:
 ```
 
 يوفر كلا الإعدادين المسبقين `kimi` و`kimi-coding-plan` قدرة `webFetch`. لبيانات اعتماد Coding Plan، استخدم `preset: kimi-coding-plan`؛ وعنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يُحافظ على أي عنوان أساسي مضبوط صراحةً. تستخدم عناوين Moonshot Open Platform (`https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1`) المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يرسل كلاهما طلب `POST` يحتوي على `{ "url": ... }` مع مصادقة Bearer. يقبل المهايئ `markdown` أو `content`. اختبر أحد المشرفين `POST https://api.kimi.com/coding/v1/fetch` باستخدام مفتاح فعلي وأكد الاستجابة `{ markdown, title, url }`؛ لا يزال توافر العناوين الدولية غير متحقق منه. تراعي الطلبات إعداد `proxy` الخاص بالمزوّد ومتغيرات بيئة الوكيل القياسية.
+
+يوفر DeepSeek أيضًا استخراج Markdown المستضاف عبر الإعداد `deepseek` مع إعادة استخدام مفتاح المحادثة وعنوان API الأساسي. عيّن `webFetch` صراحةً كما في المثال أعلاه. يستخدم `/v1/tools/fetch` ويحفظ عنوان البوابة المضبوط في النشر. المهل الزمنية وإعادة المحاولة مرة واحدة لأخطاء النقل فقط مماثلة لـ Kimi، دون إعادة أخطاء HTTP أو الاستجابات غير الصالحة.
 
 استخدم بيانات الاعتماد الحالية في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**، واختر القارئ في **إعداد نماذج المقرر ← جلب صفحات الويب**. يُستخدم المفتاح نفسه للدردشة مع هذا المزوّد؛ تغييره أو حذفه يؤثر في الدردشة أيضًا. تكون البطاقة للقراءة فقط عندما يثبّتها المسؤول. يحتفظ الإعداد الأولي بالقارئ المدمج حتى اختيار قارئ آخر صراحةً. يمكن لبيانات اعتماد مساحة العمل استخدام عناوين API الأساسية الرسمية؛ أما عناوين الجلب المخصصة والوكلاء فيجب أن يعلنها المسؤول في `openmaic.yml`.
 

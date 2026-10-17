@@ -109,6 +109,17 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     requiresBaseUrl: true,
     endpointPath: '/search',
   },
+  deepseek: {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    sharedChatProviderId: 'deepseek',
+    enableEnvVar: 'WEB_SEARCH_DEEPSEEK_ENABLED',
+    officialBaseUrls: ['https://api.deepseek.com', 'https://api.deepseek.com/v1'],
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    endpointPath: '/tools/search',
+    icon: '/logos/deepseek.svg',
+  },
 };
 
 /** Default model for Claude web search (Sonnet tier: balanced speed/cost for search + summarize). */

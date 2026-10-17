@@ -35,8 +35,8 @@ description: Встроенные модели и список провайде�
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Загрузка веб-страниц | `builtin`, `kimi`, `kimi-coding-plan` |
+| Веб-поиск | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Загрузка веб-страниц | `builtin`, `deepseek`, `kimi`, `kimi-coding-plan` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -142,8 +142,28 @@ description: Встроенные модели и список провайде�
 | Baidu           | `baidu`     |
 | MiniMax         | `minimax`   |
 | Kimi         | `kimi`      |
+| DeepSeek | `deepseek` |
 | Doubao          | `doubao`    |
 | SearXNG         | `searxng`   |
+
+### Веб-поиск и загрузка DeepSeek
+
+Пресет `deepseek` использует общие `DEEPSEEK_API_KEY` и базовый URL API для чата, веб-поиска и размещённого извлечения Markdown. Поиск вызывает `POST /v1/tools/search`, возвращает до 50 результатов и обрезает запрос до 128 кодовых точек Unicode. Текст берётся из `summary`, а при его отсутствии — из `snippet`. Загрузка вызывает `POST /v1/tools/fetch` и читает `content` и необязательный непустой `title`.
+
+В старой конфигурации включите `WEB_SEARCH_DEEPSEEK_ENABLED=true` или явно добавьте `web-search.deepseek` в `server-providers.yml`. Одни учётные данные чата не включают поиск и не заменяют текущий поисковый сервис по умолчанию. `WEB_SEARCH_DEEPSEEK_ENABLED=false` принудительно отключает поиск. При наличии `openmaic.yml` старая переменная не назначает слот: явно объявите провайдера и назначьте `webSearch` и/или `webFetch`.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Веб-поиск Kimi
 
@@ -160,3 +180,5 @@ description: Встроенные модели и список провайде�
 ## Загрузка веб-страниц
 
 По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.
+
+DeepSeek также предоставляет размещённое извлечение Markdown через пресет `deepseek` с ключом и базовым URL чата. Явно назначьте `webFetch`, как в примере выше. Используется `/v1/tools/fetch`, адрес шлюза из развёртывания сохраняется. Тайм-ауты и одна повторная попытка только при транспортной ошибке совпадают с Kimi; HTTP-ошибки и неверные ответы не повторяются.

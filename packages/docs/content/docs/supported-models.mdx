@@ -35,8 +35,8 @@ All preset IDs:
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `veo`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Web fetch | `builtin`, `kimi`, `kimi-coding-plan` |
+| Web search | `tavily`, `exa`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Web fetch | `builtin`, `deepseek`, `kimi`, `kimi-coding-plan` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -142,8 +142,28 @@ Most web search providers have no model selector, so slots usually name them by 
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
 | Kimi         | `kimi`      |
+| DeepSeek | `deepseek` |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### DeepSeek web search and fetch
+
+The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
+
+In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi web search
 
@@ -160,3 +180,5 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 ## Web fetch
 
 The `webFetch` slot defaults to the keyless `builtin` reader (Readability and Turndown; PDFs still use `document`). Both `kimi` and `kimi-coding-plan` reuse their provider's key and API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`, while Coding Plan uses `/fetch`. There is no fallback. Choose the reader in Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`. The key is shared with chat. All readers retain local session and public-address checks and untrusted results.
+
+DeepSeek also offers hosted Markdown extraction through the `deepseek` preset, reusing the chat key and API base. Assign `webFetch` explicitly as shown above. It uses `/v1/tools/fetch`; an explicit deployment gateway base is preserved. It retains the same transport deadlines and single transport-error retry as Kimi, without retrying HTTP errors or invalid responses.

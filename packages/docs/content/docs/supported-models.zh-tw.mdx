@@ -35,8 +35,8 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 影片 | `seedance`、`kling`、`veo`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 網路搜尋 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`kimi`、`kimi-coding-plan`、`searxng` |
-| 網頁擷取 | `builtin`、`kimi`、`kimi-coding-plan` |
+| 網路搜尋 | `tavily`、`exa`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
+| 網頁擷取 | `builtin`、`deepseek`、`kimi`、`kimi-coding-plan` |
 | 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
@@ -142,8 +142,28 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | Baidu        | `baidu`     |
 | MiniMax      | `minimax`   |
 | Kimi         | `kimi`      |
+| DeepSeek | `deepseek` |
 | Doubao       | `doubao`    |
 | SearXNG      | `searxng`   |
+
+### DeepSeek 網路搜尋與網頁擷取
+
+`deepseek` 預設在對話、網路搜尋和託管 Markdown 擷取之間共用 `DEEPSEEK_API_KEY` 與 API 基底位址。搜尋使用 `POST /v1/tools/search`，最多傳回 50 筆結果，查詢依 Unicode code point 截斷至 128 個字元，優先使用 `summary`，空白時改用 `snippet`。擷取使用 `POST /v1/tools/fetch`，讀取 `content` 與非空的選填 `title`。
+
+舊版設定需使用 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 明確加入 `web-search.deepseek`。僅設定對話憑證不會啟用搜尋或取代現有預設搜尋。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 會強制停用搜尋。有 `openmaic.yml` 時，舊版變數無法指定插槽，必須明確宣告提供者並指定 `webSearch` 和／或 `webFetch`。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi 網路搜尋
 
@@ -160,3 +180,5 @@ Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 
 ## 網頁擷取
 
 `webFetch` 插槽預設使用不需金鑰的 `builtin` 讀取服務（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都重用對應供應商的金鑰和 API 基底網址進行託管擷取。Moonshot 開放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。沒有備援服務。可在模型服務或課程模型設定中選擇讀取服務，也可在 `openmaic.yml` 中指定 `slots.webFetch`。金鑰與對話共用。所有讀取服務都保留本機工作階段授權、公開位址檢查和不可信結果邊界。
+
+DeepSeek 也透過 `deepseek` 預設提供託管 Markdown 擷取，共用對話金鑰與 API 基底位址。依上述範例明確指定 `webFetch`，呼叫 `/v1/tools/fetch`，並保留部署中的閘道位址。逾時與僅對傳輸錯誤重試一次的行為與 Kimi 相同，不重試 HTTP 錯誤或無效回應。

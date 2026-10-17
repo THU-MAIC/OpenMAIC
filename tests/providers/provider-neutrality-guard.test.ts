@@ -177,7 +177,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
-      ['deepseek', 2],
+      ['deepseek', 4],
       ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
@@ -274,6 +274,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/web-search/index.ts',
     'Temporary: web-search execution still uses a central provider switch.',
     [
+      ['deepseek', 4],
       ['kimi', 4],
       ['baidu', 9],
       ['bocha', 4],
@@ -290,6 +291,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/web-search-config.ts',
     'Temporary: web-search URL and option validation are still provider-specific.',
     [
+      ['deepseek', 1],
       ['kimi', 1],
       ['baidu', 8],
       ['tavily', 3],

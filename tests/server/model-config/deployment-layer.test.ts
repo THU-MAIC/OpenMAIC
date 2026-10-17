@@ -47,6 +47,7 @@ beforeEach(() => {
     'MODEL_ROUTES',
     'MODEL_FALLBACK',
     'WEB_SEARCH_KIMI_ENABLED',
+    'WEB_SEARCH_DEEPSEEK_ENABLED',
   ]) {
     vi.stubEnv(name, '');
   }
@@ -234,5 +235,61 @@ describe('file-backed search opt-in warning', () => {
     const deployment = loadDeploymentLayer();
     expect(deployment.layer?.config.slots?.webSearch).toBe('kimi');
     expect(deployment.notices.join('\n')).not.toContain('WEB_SEARCH_KIMI_ENABLED');
+  });
+});
+
+describe('DeepSeek file-backed search opt-in warning', () => {
+  it('logs the ignored opt-in warning once, with an actionable slot assignment and no key', async () => {
+    vi.stubEnv('WEB_SEARCH_DEEPSEEK_ENABLED', 'true');
+    legacy.webSearch = { deepseek: { apiKey: 'operator-search-secret' } };
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'slots:\n  video: null\n');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const runtime = await import('@/lib/server/model-config/runtime');
+    runtime.setDeploymentConfigForTests();
+    const first = runtime.deploymentConfig();
+    expect(first.layer?.config.slots?.webSearch).toBeUndefined();
+    expect(runtime.deploymentConfig()).toBe(first);
+    const messages = warn.mock.calls.map(([message]) => String(message));
+    expect(
+      messages.filter((message) => message.includes('WEB_SEARCH_DEEPSEEK_ENABLED is set')),
+    ).toHaveLength(1);
+    expect(messages.join('\n')).toContain('preset: deepseek');
+    expect(messages.join('\n')).toContain('assign slots.webSearch');
+    expect(messages.join('\n')).not.toContain('operator-search-secret');
+    runtime.setDeploymentConfigForTests();
+  });
+
+  it.each(['null', 'search'])(
+    'does not warn when slots.webSearch is explicitly %s',
+    (assignment) => {
+      vi.stubEnv('WEB_SEARCH_DEEPSEEK_ENABLED', 'true');
+      legacy.webSearch = { deepseek: { apiKey: 'key' } };
+      fs.writeFileSync(
+        path.join(dir, 'openmaic.yml'),
+        `providers:\n  search:\n    preset: deepseek\n    apiKey: key\n    models: [deepseek-chat]\nslots:\n  webSearch: ${assignment}\n`,
+      );
+      expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_DEEPSEEK_ENABLED');
+    },
+  );
+
+  it('does not warn for an absent opt-in, disabled search, or an unloaded provider', () => {
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'slots:\n  video: null\n');
+    legacy.webSearch = { deepseek: { apiKey: 'key' } };
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_DEEPSEEK_ENABLED');
+    vi.stubEnv('WEB_SEARCH_DEEPSEEK_ENABLED', 'false');
+    legacy.disabledWebSearch.add('deepseek');
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_DEEPSEEK_ENABLED');
+    vi.stubEnv('WEB_SEARCH_DEEPSEEK_ENABLED', 'true');
+    legacy.disabledWebSearch.clear();
+    legacy.webSearch = {};
+    expect(loadDeploymentLayer().notices.join('\n')).not.toContain('WEB_SEARCH_DEEPSEEK_ENABLED');
+  });
+
+  it('does not warn when legacy opt-in serves search without openmaic.yml', () => {
+    vi.stubEnv('WEB_SEARCH_DEEPSEEK_ENABLED', 'true');
+    legacy.webSearch = { deepseek: { apiKey: 'key' } };
+    const deployment = loadDeploymentLayer();
+    expect(deployment.layer?.config.slots?.webSearch).toBe('deepseek');
+    expect(deployment.notices.join('\n')).not.toContain('WEB_SEARCH_DEEPSEEK_ENABLED');
   });
 });

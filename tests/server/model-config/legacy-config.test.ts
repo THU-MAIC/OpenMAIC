@@ -460,3 +460,38 @@ describe('shared legacy account collisions', () => {
     expect(config.slots?.webSearch).toBe('kimi');
   });
 });
+
+describe('DeepSeek shared legacy account collisions', () => {
+  it.each([
+    { apiKey: 'search-key', baseUrl: 'https://api.deepseek.com/v1' },
+    { apiKey: 'chat-key', baseUrl: 'https://gateway.example/v1' },
+  ])('warns and skips a conflicting search account without replacing chat: %j', (search) => {
+    const chat = {
+      apiKey: 'chat-key',
+      baseUrl: 'https://api.deepseek.com/v1',
+      models: ['deepseek-chat'],
+    };
+    const { config, notices } = translateLegacyConfig(
+      server({ providers: { deepseek: chat }, webSearch: { deepseek: search } }),
+    );
+    expect(config.providers?.deepseek).toMatchObject(chat);
+    expect(config.slots?.webSearch).toBeUndefined();
+    expect(notices).toEqual([
+      expect.stringContaining('webSearch.deepseek conflicts with the existing provider "deepseek"'),
+    ]);
+    expect(notices.join(' ')).not.toContain('chat-key');
+    expect(notices.join(' ')).not.toContain('search-key');
+  });
+
+  it('keeps chat model pins when an opted-in search entry shares the account', () => {
+    const { config, notices } = translateLegacyConfig(
+      server({
+        providers: { deepseek: { apiKey: 'shared-key', models: ['deepseek-chat'] } },
+        webSearch: { deepseek: { apiKey: 'shared-key' } },
+      }),
+    );
+    expect(notices).toEqual([]);
+    expect(config.providers?.deepseek.models).toEqual(['deepseek-chat']);
+    expect(config.slots?.webSearch).toBe('deepseek');
+  });
+});
