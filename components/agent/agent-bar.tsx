@@ -9,8 +9,14 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSlotTTSProvidersConfig, useTTSSelection } from '@/lib/audio/use-tts-selection';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { resolveAgentVoice, getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import {
+  getSelectableProvidersWithVoices,
+  resolveAgentVoice,
+  voicePillPlaybackRoster,
+} from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
+import { BROWSER_TTS_DEFAULT_LANG, resolveUnmatchedBrowserVoice } from '@/lib/audio/browser-voice';
+import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import { useAllVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { resolveAgentVoiceOptions } from '@/lib/audio/agent-voice';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
@@ -69,19 +75,31 @@ function isNonPreviewableVoice(providerId: TTSProviderId, voiceId: string): bool
 function AgentVoicePill({
   agent,
   agentIndex,
+  roster,
   availableProviders,
   disabled,
 }: {
   agent: AgentConfig;
   agentIndex: number;
+  roster: AgentConfig[];
   availableProviders: ProviderWithVoices[];
   disabled?: boolean;
 }) {
   const { t, locale } = useI18n();
   const ttsProvidersConfig = useSlotTTSProvidersConfig();
+  const selection = useTTSSelection();
   const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
   const setAgentVoiceOverride = useSettingsStore((s) => s.setAgentVoiceOverride);
-  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders, agentVoiceOverrides);
+  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders, agentVoiceOverrides, {
+    roster,
+    // Same lecture voice discussion playback passes, so the pill and the
+    // spoken student voice reserve the unbound teacher binding together.
+    globalVoice: selection
+      ? { providerId: selection.providerId, voiceId: selection.voice }
+      : undefined,
+    // Same utterance lang discussion playback assigns in useBrowserTTS.
+    utteranceLang: BROWSER_TTS_DEFAULT_LANG,
+  });
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
@@ -355,6 +373,21 @@ function TeacherVoicePill({
   const selection = useTTSSelection();
   const ttsProviderId = selection?.providerId;
   const ttsVoice = selection?.voice;
+  // Sentinel or stale browser URI: the pill names the voice playback speaks.
+  const spokenBrowserVoiceId = (() => {
+    if (ttsProviderId !== BROWSER_NATIVE_TTS_PROVIDER_ID) return undefined;
+    const provider = availableProviders.find((entry) => entry.providerId === ttsProviderId);
+    if (!provider || provider.voices.some((voice) => voice.id === ttsVoice)) return undefined;
+    return resolveUnmatchedBrowserVoice(
+      provider.voices.map((voice) => ({
+        voiceURI: voice.id,
+        name: voice.name,
+        lang: voice.lang,
+        default: voice.default,
+      })),
+      BROWSER_TTS_DEFAULT_LANG,
+    )?.voiceURI;
+  })();
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
   const ttsProvidersConfig = useSlotTTSProvidersConfig();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -376,7 +409,8 @@ function TeacherVoicePill({
     if (availableProviders.length === 0) return t('agentBar.noVoice');
     for (const p of availableProviders) {
       if (p.providerId === ttsProviderId) {
-        const v = p.voices.find((voice) => voice.id === ttsVoice);
+        const selectedId = spokenBrowserVoiceId ?? ttsVoice;
+        const v = p.voices.find((voice) => voice.id === selectedId);
         if (v) return v.id === VOXCPM_AUTO_VOICE_ID ? t('settings.voxcpmAutoVoice') : v.name;
       }
     }
@@ -534,7 +568,9 @@ function TeacherVoicePill({
                     : provider.providerName}
                 </div>
                 {group.voices.map((voice) => {
-                  const isActive = ttsProviderId === provider.providerId && ttsVoice === voice.id;
+                  const isActive =
+                    ttsProviderId === provider.providerId &&
+                    (ttsVoice === voice.id || spokenBrowserVoiceId === voice.id);
                   const previewKey = `${provider.providerId}::${voice.id}`;
                   const isPreviewing = previewingId === previewKey;
                   const canPreview = !isNonPreviewableVoice(provider.providerId, voice.id);
@@ -763,8 +799,10 @@ export function AgentBar() {
     </div>
   );
 
-  const renderAgentRow = (agent: AgentConfig, agentIndex: number, isTeacher: boolean) => {
+  const renderAgentRow = (agent: AgentConfig, isTeacher: boolean) => {
     const isSelected = isTeacher || selectedAgentIds.includes(agent.id);
+    // Same roster and index discussion playback passes to resolveAgentVoice.
+    const { roster, index } = voicePillPlaybackRoster(allAgents, selectedAgentIds, agent);
     return (
       <div
         key={agent.id}
@@ -795,7 +833,8 @@ export function AgentBar() {
         </span>
         <AgentVoicePill
           agent={agent}
-          agentIndex={agentIndex}
+          agentIndex={index}
+          roster={roster}
           availableProviders={availableProviders}
           disabled={!ttsEnabled || availableProviders.length === 0}
         />
@@ -896,7 +935,7 @@ export function AgentBar() {
                 <div className="max-h-56 overflow-y-auto -mx-0.5">
                   {agents
                     .filter((a) => a.role !== 'teacher')
-                    .map((agent, idx) => renderAgentRow(agent, idx + 1, false))}
+                    .map((agent) => renderAgentRow(agent, false))}
                 </div>
               ) : (
                 <div className="flex flex-col items-center pt-6 pb-3 gap-4">

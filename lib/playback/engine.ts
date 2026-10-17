@@ -50,6 +50,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { ttsSelection } from '@/lib/audio/tts-selection';
 import { detectSpeechLang } from '@/lib/audio/browser-tts-preview';
+import { resolveUnmatchedBrowserVoice } from '@/lib/audio/browser-voice';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('PlaybackEngine');
@@ -833,17 +834,14 @@ export class PlaybackEngine {
       }
     }
     if (!voiceFound) {
-      // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice. For Vietnamese additionally bind an
-      // installed vi voice when one exists, since browsers otherwise fall back
-      // to an English voice reading Vietnamese text.
-      utterance.lang = detectSpeechLang(chunkText);
-      if (utterance.lang === 'vi-VN') {
-        const viVoice = voices.find((v) => v.lang?.toLowerCase().startsWith('vi'));
-        if (viVoice) {
-          utterance.voice = viVoice;
-          utterance.lang = viVoice.lang;
-        }
+      // No usable voice configured. Bind the same concrete voice discussion
+      // reserves for this utterance lang, including a Vietnamese match.
+      const utteranceLang = detectSpeechLang(chunkText);
+      utterance.lang = utteranceLang;
+      const resolved = resolveUnmatchedBrowserVoice(voices, utteranceLang);
+      if (resolved) {
+        utterance.voice = resolved;
+        if (resolved.lang) utterance.lang = resolved.lang;
       }
     }
 

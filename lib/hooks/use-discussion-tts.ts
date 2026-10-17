@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useTTSSelection } from '@/lib/audio/use-tts-selection';
 import { slotTTSProvidersConfig } from '@/lib/audio/tts-selection';
+import { BROWSER_TTS_DEFAULT_LANG } from '@/lib/audio/browser-voice';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import {
+  playbackVoiceAfterUnavailableFallback,
   resolveAgentVoice,
   resolveNarratorVoiceBinding,
   getSelectableProvidersWithVoices,
@@ -25,7 +27,6 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
 import { toast } from 'sonner';
 import {
-  isVoiceBindingUnavailable,
   markVoiceBindingNoticeShown,
   markVoiceBindingUnavailable,
   trackAssignedVoiceBinding,
@@ -100,6 +101,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   onAudioStateChangeRef.current = onAudioStateChange;
   const processQueueRef = useRef<() => void>(() => {});
   const agentBindingKeysRef = useRef(new Map<string, string>());
+  const reresolveQueuedVoicesRef = useRef<() => void>(() => {});
 
   const {
     speak: browserSpeak,
@@ -108,6 +110,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     cancel: browserCancel,
   } = useBrowserTTS({
     rate: ttsSpeed,
+    lang: BROWSER_TTS_DEFAULT_LANG,
     onEnd: () => {
       if (currentProviderRef.current !== 'browser-native-tts' || !isPlayingRef.current) return;
       currentItemRef.current = null;
@@ -208,7 +211,16 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const index = agentIndexMap.current.get(agentId!) ?? 0;
       return applyUnavailableBindingFallback(
         agent.id,
-        resolveAgentVoice(agent, index, providers, agentVoiceOverrides),
+        resolveAgentVoice(agent, index, providers, agentVoiceOverrides, {
+          roster: agents,
+          // Same lecture voice the teacher branch speaks, so a student fallback
+          // reserves that binding instead of the catalogue default.
+          globalVoice: ttsSelectionValue
+            ? { providerId: globalTtsProviderId, voiceId: globalTtsVoice }
+            : undefined,
+          // Same utterance lang useBrowserTTS assigns above.
+          utteranceLang: BROWSER_TTS_DEFAULT_LANG,
+        }),
         globalVoice,
         firstVoice,
       );
@@ -223,10 +235,12 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         const previousKey = agentBindingKeysRef.current.get(id);
         const key = trackAssignedVoiceBinding(previousKey, preferred);
         agentBindingKeysRef.current.set(id, key);
-        if (!isVoiceBindingUnavailable(preferred)) return preferred;
-        return isTTSProviderEnabled(fallback.providerId, ttsProvidersConfig[fallback.providerId])
-          ? fallback
-          : getFirstVoice();
+        return playbackVoiceAfterUnavailableFallback(
+          preferred,
+          fallback,
+          getFirstVoice,
+          isTTSProviderEnabled(fallback.providerId, ttsProvidersConfig[fallback.providerId]),
+        );
       }
     },
     [
@@ -234,11 +248,78 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       ttsProvidersConfig,
       voiceProfiles,
       browserVoices,
+      ttsSelectionValue,
       globalTtsProviderId,
       globalTtsVoice,
       agentVoiceOverrides,
     ],
   );
+
+  const resolvedDiscussionVoice = useCallback(
+    (
+      agentId: string | null,
+    ): Pick<QueueItem, 'providerId' | 'modelId' | 'voiceId' | 'fallbackVoice'> | null => {
+      const resolved = resolveVoiceForAgent(agentId);
+      if (!resolved) return null;
+      const { providerId, modelId, voiceId } = resolved;
+      const effectiveModelId = resolveTTSModelForVoice(
+        providerId,
+        voiceId,
+        modelId ?? ttsProvidersConfig[providerId]?.modelId,
+      );
+      const lectureVoice = resolveNarratorVoiceBinding(
+        undefined,
+        {
+          providerId: globalTtsProviderId,
+          voiceId: globalTtsVoice,
+          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+        },
+        ttsProvidersConfig,
+      );
+      const fallbackVoice =
+        agentId &&
+        providerId === 'qwen-tts' &&
+        isQwenCloneVoice(voiceId) &&
+        (lectureVoice.providerId !== providerId || lectureVoice.voiceId !== voiceId)
+          ? lectureVoice
+          : undefined;
+      return { providerId, modelId: effectiveModelId, voiceId, fallbackVoice };
+    },
+    [globalTtsProviderId, globalTtsVoice, resolveVoiceForAgent, ttsProvidersConfig],
+  );
+
+  // A segment sealed while a clone request is in flight keeps the voice chosen
+  // before that clone was marked unavailable. Resolve the queue again once the
+  // binding is known to be missing, and drop a prefetch that already used it.
+  reresolveQueuedVoicesRef.current = () => {
+    const prefetched = prefetchedRef.current;
+    let dropPrefetch = false;
+    for (const queued of queueRef.current) {
+      const next = resolvedDiscussionVoice(queued.agentId);
+      if (!next) continue;
+      const sameFallback =
+        queued.fallbackVoice?.providerId === next.fallbackVoice?.providerId &&
+        queued.fallbackVoice?.voiceId === next.fallbackVoice?.voiceId &&
+        queued.fallbackVoice?.modelId === next.fallbackVoice?.modelId;
+      if (
+        queued.providerId === next.providerId &&
+        queued.voiceId === next.voiceId &&
+        queued.modelId === next.modelId &&
+        sameFallback
+      ) {
+        continue;
+      }
+      queued.providerId = next.providerId;
+      queued.modelId = next.modelId;
+      queued.voiceId = next.voiceId;
+      queued.fallbackVoice = next.fallbackVoice;
+      if (prefetched?.item === queued) dropPrefetch = true;
+    }
+    if (dropPrefetch && prefetched) {
+      prefetched.controller.abort();
+      prefetchedRef.current = null;
+    }
+  };
 
   const generateAudio = useCallback(
     async (item: QueueItem, controller: AbortController): Promise<string> => {
@@ -405,6 +486,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         if (markVoiceBindingNoticeShown(unavailableKey)) {
           toast.warning(t('settings.qwenCloneDiscussionUnavailable'));
         }
+        reresolveQueuedVoicesRef.current();
         queueRef.current.unshift({
           ...item,
           providerId: item.fallbackVoice!.providerId,
@@ -436,38 +518,17 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       if (!enabled || ttsMuted || !fullText.trim()) return;
 
       // No enabled provider for this agent ⇒ skip TTS (no silent browser-native).
-      const resolved = resolveVoiceForAgent(agentId);
+      const resolved = resolvedDiscussionVoice(agentId);
       if (!resolved) return;
-      const { providerId, modelId, voiceId } = resolved;
-      const effectiveModelId = resolveTTSModelForVoice(
-        providerId,
-        voiceId,
-        modelId ?? ttsProvidersConfig[providerId]?.modelId,
-      );
-      const fallbackVoice =
-        agentId && providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)
-          ? resolveNarratorVoiceBinding(
-              undefined,
-              {
-                providerId: globalTtsProviderId,
-                voiceId: globalTtsVoice,
-                modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
-              },
-              ttsProvidersConfig,
-            )
-          : undefined;
       queueRef.current.push({
         messageId,
         partId,
         text: fullText,
         agentId,
-        providerId,
-        modelId: effectiveModelId,
-        voiceId,
-        ...(fallbackVoice &&
-        (fallbackVoice.providerId !== providerId || fallbackVoice.voiceId !== voiceId)
-          ? { fallbackVoice }
-          : {}),
+        providerId: resolved.providerId,
+        modelId: resolved.modelId,
+        voiceId: resolved.voiceId,
+        ...(resolved.fallbackVoice ? { fallbackVoice: resolved.fallbackVoice } : {}),
       });
 
       if (!isPlayingRef.current) {
@@ -476,14 +537,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         prefetchNextRef.current();
       }
     },
-    [
-      enabled,
-      globalTtsProviderId,
-      globalTtsVoice,
-      resolveVoiceForAgent,
-      ttsMuted,
-      ttsProvidersConfig,
-    ],
+    [enabled, resolvedDiscussionVoice, ttsMuted],
   );
 
   const cleanup = useCallback(() => {
