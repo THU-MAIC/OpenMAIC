@@ -218,7 +218,9 @@ export function buildDslCourseToolset(
     buildGenerateImageTool(deps),
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
-    ...(deps.sessionId ? [buildMaterialMediaTool({ sessionId: deps.sessionId })] : []),
+    ...(deps.sessionId
+      ? [buildMaterialMediaTool({ sessionId: deps.sessionId, ownerId: deps.ownerId })]
+      : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
   return markDocumentWritersSequential(withOwnerStageAuthorization(tools, deps));

@@ -2209,6 +2209,115 @@
     "webFetchSharedKeyHint": "Cette clé sert aussi au chat avec ce fournisseur. La modifier ou la supprimer affecte le chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de connaissances",
+      "topLevel": "Niveau supérieur",
+      "back": "Retour",
+      "search": "Rechercher par nom ou type de fichier",
+      "loading": "Chargement…",
+      "retry": "Réessayer",
+      "loadMore": "Charger plus",
+      "failure": {
+        "more": "À propos de cet échec : {{reason}}",
+        "storage_full": {
+          "label": "Espace de stockage insuffisant",
+          "description": "L’espace disponible ne permet pas d’enregistrer les résultats. Libérez de l’espace et réessayez."
+        },
+        "source_unavailable": {
+          "label": "Fichier original indisponible",
+          "description": "Le fichier original n’a pas pu être lu. Importez-le à nouveau et réessayez."
+        },
+        "service_unavailable": {
+          "label": "Service d’analyse indisponible",
+          "description": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à votre administrateur d’en configurer un, puis relancez l’analyse."
+        },
+        "media_too_long": {
+          "label": "Audio ou vidéo trop long",
+          "description": "Cette méthode d’analyse traite les médias jusqu’à {{minutes}} minutes. Raccourcissez ou divisez le fichier, puis importez-le à nouveau."
+        },
+        "no_text_extracted": {
+          "label": "Aucun texte extrait",
+          "description": "Aucun texte exploitable n’a été extrait cette fois. Vérifiez le contenu ou essayez un autre fichier."
+        },
+        "processing_interrupted": {
+          "label": "Analyse non terminée",
+          "description": "L’analyse n’a pas pu être terminée. Vous pouvez réessayer plus tard."
+        }
+      },
+      "status": {
+        "uploading": "Importation",
+        "stored": "Enregistré · non analysé",
+        "parsing": "Analyse en cours",
+        "searchable": "Consultable",
+        "failed": "Échec de l’analyse"
+      },
+      "column": {
+        "name": "Nom",
+        "status": "État",
+        "folder": "Dossier",
+        "size": "Taille",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Jusqu’à {{document}} par document ou image, {{media}} par audio ou vidéo"
+      },
+      "usage": {
+        "summary": "{{used}} utilisés sur {{max}} · {{count}} fichiers sur {{maxCount}}"
+      },
+      "empty": {
+        "title": "Votre base de connaissances est vide",
+        "body": "Importez vos supports de cours, laissez l’assistant les organiser et les analyser, puis choisissez-les avec @ en préparant un cours.",
+        "folder": "Aucun document dans ce dossier pour l’instant",
+        "query": "Aucun document ne correspond à « {{query}} »"
+      },
+      "upload": {
+        "button": "Importer des documents",
+        "dismiss": "Masquer"
+      },
+      "error": {
+        "load": "Impossible de charger la base de connaissances",
+        "busy": "Votre compte est en cours de mise à jour. Réessayez dans un instant",
+        "identity": "Votre connexion a changé. Rechargez la page",
+        "stale": "l’affichage n’est peut-être pas à jour",
+        "nameTaken": "Un autre dossier porte déjà ce nom",
+        "invalidName": "Saisissez un nom de 255 caractères maximum",
+        "folderNameEmpty": "Saisissez un nom de dossier",
+        "folderNameTooLong": "Ce nom de dossier est trop long",
+        "folderLimit": "Vous avez atteint le nombre maximal de dossiers",
+        "notMovable": "Ce document ne peut pas être déplacé",
+        "gone": "Il n’existe plus",
+        "save": "L’opération a échoué. Réessayez",
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord"
+      },
+      "actions": {
+        "parse": "Analyser",
+        "reparse": "Analyser à nouveau",
+        "more": "Autres actions pour {{name}}",
+        "rename": "Renommer",
+        "delete": "Supprimer",
+        "open": "Ouvrir",
+        "downloadOriginal": "Télécharger l’original",
+        "chat": "Discuter de ce document"
+      },
+      "folder": {
+        "new": "Nouveau dossier",
+        "items": "{{count}} éléments",
+        "items_one": "{{count}} élément",
+        "items_other": "{{count}} éléments"
+      },
+      "dialog": {
+        "cancel": "Annuler",
+        "close": "Fermer"
+      },
+      "delete": {
+        "materialTitle": "Supprimer « {{name}} » ?",
+        "materialLinks": "Les conversations qui l’utilisent ne pourront plus le lire ; le texte déjà présent dans ces conversations est conservé.",
+        "materialCourses": "Le contenu déjà enregistré dans un cours n’est pas concerné.",
+        "cannotUndo": "Cette action est irréversible.",
+        "folderTitle": "Supprimer le dossier « {{name}} » ?",
+        "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2216,14 +2325,29 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Rechercher des classes et des documents",
+      "searchMaterials": "Rechercher des documents",
+      "searchClassrooms": "Rechercher des classes",
+      "courseOrder": "Classe ouverte en premier, puis mises à jour récentes",
+      "materialOrder": "Envois les plus récents en premier",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Mentionner une classe ou joindre un document de la base de connaissances à ce message",
+      "titleMaterials": "Joindre un document de la base de connaissances à ce message",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "Le serveur est temporairement indisponible. Veuillez réessayer dans un instant.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Classes",
+      "knowledgeBase": "Base de connaissances",
+      "emptyWithMaterials": "Aucune classe ni aucun document ne correspond",
+      "attachMaterial": "Joindre {{name}} à ce message",
+      "materialUnavailable": "Impossible de joindre {{name}} ({{reason}}). Ouvrez la base de connaissances pour voir pourquoi et relancer l’analyse.",
+      "materialAttached": "Déjà dans cette conversation",
+      "materialStaged": "Déjà dans ce message",
+      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2357,7 +2481,8 @@
     "badgeEnter": "Mode Pro",
     "badgeExit": "Revenir au mode classique",
     "launchPlaceholder": "Décrivez l'expérience d'apprentissage que vous souhaitez créer",
-    "launchSend": "Lancer la création"
+    "launchSend": "Lancer la création",
+    "mentionCourseOrMaterial": "Mentionner une classe ou un document de la base de connaissances"
   },
   "workbench": {
     "tool": {

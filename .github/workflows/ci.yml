@@ -87,7 +87,7 @@ jobs:
       # once, so the previous commit is not the range that needs checking, and
       # publishing requires this run to be green.
       - name: Package version bumps (main push)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           base="$BEFORE_SHA"

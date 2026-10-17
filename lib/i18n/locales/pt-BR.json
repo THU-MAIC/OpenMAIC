@@ -2209,6 +2209,115 @@
     "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de conhecimento",
+      "topLevel": "Nível superior",
+      "back": "Voltar",
+      "search": "Pesquisar por nome ou tipo de arquivo",
+      "loading": "Carregando…",
+      "retry": "Tentar novamente",
+      "loadMore": "Carregar mais",
+      "failure": {
+        "more": "Sobre esta falha: {{reason}}",
+        "storage_full": {
+          "label": "Espaço insuficiente",
+          "description": "Não há espaço suficiente para salvar os resultados. Libere espaço e tente novamente."
+        },
+        "source_unavailable": {
+          "label": "Arquivo original indisponível",
+          "description": "Não foi possível ler o arquivo original. Envie-o novamente e tente outra vez."
+        },
+        "service_unavailable": {
+          "label": "Serviço de análise indisponível",
+          "description": "Nenhum serviço de análise está configurado para este tipo de arquivo. Peça ao administrador para configurar um e analise o arquivo novamente."
+        },
+        "media_too_long": {
+          "label": "Áudio ou vídeo muito longo",
+          "description": "Este método de análise processa áudio ou vídeo de até {{minutes}} minutos. Encurte ou divida o arquivo e envie-o novamente."
+        },
+        "no_text_extracted": {
+          "label": "Nenhum texto extraído",
+          "description": "Nenhum texto utilizável foi extraído desta vez. Confira o conteúdo ou tente outro arquivo."
+        },
+        "processing_interrupted": {
+          "label": "Análise não concluída",
+          "description": "Não foi possível concluir a análise. Você pode tentar novamente mais tarde."
+        }
+      },
+      "status": {
+        "uploading": "Enviando",
+        "stored": "Armazenado · não analisado",
+        "parsing": "Analisando",
+        "searchable": "Pesquisável",
+        "failed": "Falha na análise"
+      },
+      "column": {
+        "name": "Nome",
+        "status": "Status",
+        "folder": "Pasta",
+        "size": "Tamanho",
+        "date": "Data"
+      },
+      "limits": {
+        "perFile": "Até {{document}} por documento ou imagem, {{media}} por áudio ou vídeo"
+      },
+      "usage": {
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} arquivos"
+      },
+      "empty": {
+        "title": "Sua base de conhecimento está vazia",
+        "body": "Envie seus materiais didáticos, deixe o assistente organizá-los e analisá-los, e escolha-os com @ ao preparar um curso.",
+        "folder": "Ainda não há materiais nesta pasta",
+        "query": "Nenhum material corresponde a “{{query}}”"
+      },
+      "upload": {
+        "button": "Enviar materiais",
+        "dismiss": "Dispensar"
+      },
+      "error": {
+        "load": "Não foi possível carregar a base de conhecimento",
+        "busy": "Sua conta está sendo atualizada. Tente novamente em instantes",
+        "identity": "Seu login mudou. Recarregue a página",
+        "stale": "o conteúdo exibido pode estar desatualizado",
+        "nameTaken": "Já existe outra pasta com este nome",
+        "invalidName": "Digite um nome com no máximo 255 caracteres",
+        "folderNameEmpty": "Digite um nome de pasta",
+        "folderNameTooLong": "Este nome de pasta é muito longo",
+        "folderLimit": "Você atingiu o limite de pastas",
+        "notMovable": "Este material não pode ser movido",
+        "gone": "Ele não existe mais",
+        "save": "Não deu certo. Tente novamente",
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+      },
+      "actions": {
+        "parse": "Analisar",
+        "reparse": "Analisar novamente",
+        "more": "Mais ações para {{name}}",
+        "rename": "Renomear",
+        "delete": "Excluir",
+        "open": "Abrir",
+        "downloadOriginal": "Baixar o original",
+        "chat": "Conversar sobre este material"
+      },
+      "folder": {
+        "new": "Nova pasta",
+        "items": "{{count}} itens",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} itens"
+      },
+      "dialog": {
+        "cancel": "Cancelar",
+        "close": "Fechar"
+      },
+      "delete": {
+        "materialTitle": "Excluir “{{name}}”?",
+        "materialLinks": "As conversas que o usam não poderão mais lê-lo; o texto que já está nessas conversas permanece.",
+        "materialCourses": "O conteúdo já salvo em um curso não é afetado.",
+        "cannotUndo": "Esta ação não pode ser desfeita.",
+        "folderTitle": "Excluir a pasta “{{name}}”?",
+        "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2216,14 +2325,29 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar salas de aula e materiais",
+      "searchMaterials": "Buscar materiais",
+      "searchClassrooms": "Buscar salas de aula",
+      "courseOrder": "Sala aberta primeiro, depois atualizações recentes",
+      "materialOrder": "Envios mais recentes primeiro",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Mencionar uma sala de aula ou anexar material da base de conhecimento a esta mensagem",
+      "titleMaterials": "Anexar material da base de conhecimento a esta mensagem",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "O servidor está temporariamente indisponível. Tente novamente em instantes.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Salas",
+      "knowledgeBase": "Base de conhecimento",
+      "emptyWithMaterials": "Nenhuma sala ou material corresponde",
+      "attachMaterial": "Anexar {{name}} a esta mensagem",
+      "materialUnavailable": "Não é possível anexar {{name}} ({{reason}}). Abra a base de conhecimento para ver o motivo e analisar de novo.",
+      "materialAttached": "Já está nesta conversa",
+      "materialStaged": "Já está nesta mensagem",
+      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2357,7 +2481,8 @@
     "badgeEnter": "Modo Pro",
     "badgeExit": "Voltar ao modo clássico",
     "launchPlaceholder": "Descreva a experiência de aprendizagem que você quer criar",
-    "launchSend": "Iniciar construção"
+    "launchSend": "Iniciar construção",
+    "mentionCourseOrMaterial": "Mencionar uma sala ou um material da base de conhecimento"
   },
   "workbench": {
     "tool": {

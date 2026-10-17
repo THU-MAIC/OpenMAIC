@@ -2209,6 +2209,115 @@
     "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Knowledge base",
+      "topLevel": "Top level",
+      "back": "Back",
+      "search": "Search names and file types",
+      "loading": "Loading…",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "failure": {
+        "more": "About this failure: {{reason}}",
+        "storage_full": {
+          "label": "Not enough storage",
+          "description": "There is not enough space to save the parsed results. Free up space and try again."
+        },
+        "source_unavailable": {
+          "label": "Original file unavailable",
+          "description": "The original file could not be read. Upload it again and retry."
+        },
+        "service_unavailable": {
+          "label": "Parsing service unavailable",
+          "description": "No parsing service is configured for this file type. Ask your administrator to configure one, then choose Parse again."
+        },
+        "media_too_long": {
+          "label": "Audio or video too long",
+          "description": "This parsing method handles audio or video up to {{minutes}} minutes. Shorten or split the file and upload it again."
+        },
+        "no_text_extracted": {
+          "label": "No text extracted",
+          "description": "No usable text was extracted this time. Check the content or try another file."
+        },
+        "processing_interrupted": {
+          "label": "Parsing did not finish",
+          "description": "Parsing could not be completed. You can try again later."
+        }
+      },
+      "status": {
+        "uploading": "Uploading",
+        "stored": "Stored · not parsed",
+        "parsing": "Parsing",
+        "searchable": "Searchable",
+        "failed": "Parse failed"
+      },
+      "column": {
+        "name": "Name",
+        "status": "Status",
+        "folder": "Folder",
+        "size": "Size",
+        "date": "Date"
+      },
+      "limits": {
+        "perFile": "Up to {{document}} per document or image, {{media}} per audio or video"
+      },
+      "usage": {
+        "summary": "Used {{used}} of {{max}} · {{count}} of {{maxCount}} files"
+      },
+      "empty": {
+        "title": "Your knowledge base is empty",
+        "body": "Upload your teaching materials, let the assistant organize and parse them, then pick them with @ while you prepare a course.",
+        "folder": "No materials in this folder yet",
+        "query": "No materials match “{{query}}”"
+      },
+      "upload": {
+        "button": "Upload materials",
+        "dismiss": "Dismiss"
+      },
+      "error": {
+        "load": "The knowledge base could not be loaded",
+        "busy": "Your account is being updated. Try again in a moment",
+        "identity": "Your sign-in changed. Reload the page",
+        "stale": "what is shown may be out of date",
+        "nameTaken": "Another folder already has this name",
+        "invalidName": "Enter a name of at most 255 characters",
+        "folderNameEmpty": "Enter a folder name",
+        "folderNameTooLong": "This folder name is too long",
+        "folderLimit": "You have reached the folder limit",
+        "notMovable": "This material cannot be moved",
+        "gone": "It no longer exists",
+        "save": "That did not work. Try again",
+        "notEmpty": "This folder still holds materials. Move them out first"
+      },
+      "actions": {
+        "parse": "Parse",
+        "reparse": "Parse again",
+        "more": "More actions for {{name}}",
+        "rename": "Rename",
+        "delete": "Delete",
+        "open": "Open",
+        "downloadOriginal": "Download original",
+        "chat": "Chat with this material"
+      },
+      "folder": {
+        "new": "New folder",
+        "items": "{{count}} items",
+        "items_one": "{{count}} item",
+        "items_other": "{{count}} items"
+      },
+      "dialog": {
+        "cancel": "Cancel",
+        "close": "Close"
+      },
+      "delete": {
+        "materialTitle": "Delete “{{name}}”?",
+        "materialLinks": "Conversations that use it can no longer read it; text already in those conversations stays.",
+        "materialCourses": "Content already saved into a course is not affected.",
+        "cannotUndo": "This cannot be undone.",
+        "folderTitle": "Delete the folder “{{name}}”?",
+        "folderContents": "Files moved to the top level: {{count}}. No files will be deleted."
+      }
+    },
     "untitledCourse": "Untitled course",
     "sceneCount": "{{count}} pages",
     "sceneCount_one": "{{count}} page",
@@ -2216,14 +2325,29 @@
     "courseLinkHint": "Open {{name}} in the right pane",
     "courseLinkMore": "{{count}} more classroom(s)",
     "courseMention": {
+      "search": "Search classrooms and materials",
+      "searchMaterials": "Search materials",
+      "searchClassrooms": "Search classrooms",
+      "courseOrder": "Open classroom first, then recently updated",
+      "materialOrder": "Newest uploads first",
       "title": "Reference a classroom for this message",
+      "titleBoth": "Reference a classroom or attach knowledge base material to this message",
+      "titleMaterials": "Attach knowledge base material to this message",
       "empty": "No classroom matches",
       "alreadyNamed": "Already referenced",
       "remove": "Remove {{name}}",
       "pillHint": "This message references {{name}}",
       "notAccepted": "The server is temporarily unavailable. Please try again shortly.",
       "reference": "Reference {{name}}",
-      "capped": "Showing the first {{count}} — keep typing to narrow it down"
+      "capped": "Showing the first {{count}} — keep typing to narrow it down",
+      "classrooms": "Classrooms",
+      "knowledgeBase": "Knowledge base",
+      "emptyWithMaterials": "No classroom or material matches",
+      "attachMaterial": "Attach {{name}} to this message",
+      "materialUnavailable": "{{name}} can't be attached ({{reason}}). Open the knowledge base to see why and parse it again.",
+      "materialAttached": "Already in this conversation",
+      "materialStaged": "Already on this message",
+      "materialsCapped": "Showing the first {{count}} materials — keep typing to narrow it down"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2352,7 +2476,8 @@
     "badgeEnter": "Pro mode",
     "badgeExit": "Back to classic",
     "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build"
+    "launchSend": "Start build",
+    "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material"
   },
   "accessCode": {
     "title": "Enter Access Code",

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { ESLint } from 'eslint';
 
 /**
@@ -60,6 +60,11 @@ const EXEMPT_PATHS = ['lib/ai/llm', 'eval/probe', 'tests/probe'] as const;
 const EXTENSIONS = ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'] as const;
 
 const eslint = new ESLint({ cwd: process.cwd() });
+
+beforeAll(async () => {
+  // Load the real config/plugins as setup, not inside the first matrix case.
+  await eslint.calculateConfigForFile('lib/server/probe.ts');
+});
 
 async function errorsFor(filePath: string, code: string): Promise<string[]> {
   // A path ESLint would ignore (build output, vendored trees) returns no result;

@@ -19,13 +19,15 @@ const mocks = vi.hoisted(() => {
   // random-per-process value. Capture it from the first appendRunEvent call
   // (the runner passes WORKER_ID as its second argument) and hand it back
   // through getSession so `leaseMatches` sees a live, owned session.
+  const history = { started: false };
   let workerId: string | undefined;
   let deliveredUserMessageSeq = 0;
+  const recordWorker = async (_id: string, worker: string, _event?: { type?: string }) => {
+    workerId = worker;
+    return 1;
+  };
   const store = {
-    appendRunEvent: vi.fn(async (_id: string, worker: string, _event?: { type?: string }) => {
-      workerId = worker;
-      return 1;
-    }),
+    appendRunEvent: vi.fn(recordWorker),
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () =>
@@ -45,13 +47,23 @@ const mocks = vi.hoisted(() => {
     readEventsAfter: vi.fn(async (sessionId: string, afterSeq: number) =>
       afterSeq > 0
         ? []
-        : (await store.listUserMessages(sessionId)).map((message) => ({
-            id: message.seq,
-            ts: message.ts,
-            attempt: 1,
-            type: 'user_message',
-            data: { text: message.text, delivery: message.delivery, materials: message.materials },
-          })),
+        : [
+            ...(history.started
+              ? [{ id: 1, ts: 1, attempt: 1, type: 'run_started', data: {} }]
+              : []),
+            ...(await store.listUserMessages(sessionId)).map((message) => ({
+              id: message.seq,
+              ts: message.ts,
+              attempt: 1,
+              type: 'user_message',
+              data: {
+                text: message.text,
+                delivery: message.delivery,
+                materials: message.materials,
+                locale: message.locale,
+              },
+            })),
+          ],
     ),
     heartbeat: vi.fn(async () => true),
     markUserMessageDelivered: vi.fn(async (_id, _worker, _attempt, messageSeq: number) => {
@@ -64,7 +76,14 @@ const mocks = vi.hoisted(() => {
       async (
         _sessionId?: string,
       ): Promise<
-        Array<{ seq: number; ts: number; text: string; delivery: string; materials: unknown[] }>
+        Array<{
+          seq: number;
+          ts: number;
+          text: string;
+          delivery: string;
+          materials: unknown[];
+          locale?: string;
+        }>
       > => [],
     ),
     releaseLease: vi.fn(async () => undefined),
@@ -79,6 +98,11 @@ const mocks = vi.hoisted(() => {
   return {
     store,
     bus,
+    /** Transcript the next run finds in its entry tree (a run cut off mid-turn). */
+    entrySeed: [] as unknown[],
+    history,
+    /** The default event append; a test that replaces it leaves it replaced. */
+    recordWorker,
     resetWorker: () => {
       workerId = undefined;
       deliveredUserMessageSeq = 0;
@@ -108,16 +132,34 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => 
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: vi.fn(async () => []) };
 });
+// The runner lists what the session reaches through the shared resolver;
+// links need a database these tests do not have.
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
+  return {
+    ...actual,
+    listSessionScopeMaterials: vi.fn(async () => []),
+  };
+});
 
 vi.mock('@/lib/server/agent-runtime/entry-tree-storage', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/entry-tree-storage')>();
-  const { InMemorySessionRepo } = await import('@earendil-works/pi-agent-core');
+  const { InMemorySessionRepo, Session } = await import('@earendil-works/pi-agent-core');
   return {
     ...actual,
     AgentSessionEntryStorage: {
-      open: async ({ sessionId }: { sessionId: string }) =>
-        (await new InMemorySessionRepo().create({ id: sessionId })).getStorage(),
+      open: async ({ sessionId }: { sessionId: string }) => {
+        const storage = (await new InMemorySessionRepo().create({ id: sessionId })).getStorage();
+        if (mocks.entrySeed.length) {
+          const seeded = new Session(storage);
+          for (const message of mocks.entrySeed.splice(0)) {
+            await seeded.appendMessage(message as never);
+          }
+        }
+        return storage;
+      },
     },
   };
 });
@@ -190,6 +232,11 @@ const fake = vi.hoisted(() => {
   class FakeAgent {
     state: { messages: unknown[]; errorMessage?: string } = { messages: [] };
     steerCalls: Array<{ role: string; content: unknown }> = [];
+    /** What the runner built the agent with: its tools, among them the material tools. */
+    options: { initialState?: { tools?: unknown[] } } = {};
+    /** Hold a steered message's message_end until `consumeSteered` (pi consumes later). */
+    deferSteerEnd = false;
+    private heldSteers: Array<{ role: string; content: unknown }> = [];
     promptCalls = 0;
     abortCalls = 0;
     private subscribers = new Set<(event: unknown) => void>();
@@ -198,6 +245,8 @@ const fake = vi.hoisted(() => {
     reset(): void {
       this.state = { messages: [] };
       this.steerCalls = [];
+      this.heldSteers = [];
+      this.deferSteerEnd = false;
       this.promptCalls = 0;
       this.abortCalls = 0;
       this.subscribers = new Set();
@@ -257,8 +306,20 @@ const fake = vi.hoisted(() => {
 
     steer(message: { role: string; content: unknown }): void {
       this.steerCalls.push(message);
+      if (this.deferSteerEnd) {
+        this.heldSteers.push(message);
+        return;
+      }
       this.state.messages.push(message);
       this.emitMessageEnd(message);
+    }
+
+    /** Test hook: pi takes the held steered messages into the conversation. */
+    consumeSteered(): void {
+      for (const message of this.heldSteers.splice(0)) {
+        this.state.messages.push(message);
+        this.emitMessageEnd(message);
+      }
     }
 
     private emitMessageEnd(message: { role: string; content: unknown }): void {
@@ -274,8 +335,9 @@ const fake = vi.hoisted(() => {
 vi.mock('@earendil-works/pi-agent-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@earendil-works/pi-agent-core')>();
   class MockAgent extends fake.FakeAgent {
-    constructor() {
+    constructor(options: { initialState?: { tools?: unknown[] } } = {}) {
       super();
+      this.options = options;
       // The runner constructs exactly one Agent per run; expose it so tests can
       // wait for the run to reach the prompt and observe its steer/abort.
       fake.current.instance = this;
@@ -427,5 +489,214 @@ describe('runSession NOTIFY wakeup wiring', () => {
 
     expect(mocks.bus.route).toEqual({ kind: 'session', sessionId: 'session-wake' });
     expect(mocks.bus.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+});
+
+/**
+ * #1880: the material tools speak the language of the user message the run is
+ * answering. These runs go through the REAL `runSession` and call the
+ * `list_materials` the runner registered, on a conversation source whose
+ * parse failed because no parser is configured; its `reason` shows which
+ * language is in effect.
+ */
+describe('runSession material wording follows the consumed message', () => {
+  const REASON = {
+    'zh-CN': '解析服务不可用',
+    'en-US': 'Parsing service unavailable',
+    'ja-JP': '解析サービスを利用できません',
+  } as const;
+  const message = (seq: number, locale?: string) => ({
+    seq,
+    ts: seq,
+    text: `message ${seq}`,
+    delivery: 'queued',
+    materials: [],
+    ...(locale ? { locale } : {}),
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    fake.current.instance?.reset();
+    fake.current.instance = undefined;
+    mocks.resetWorker();
+    // An earlier test replaces the append; the drain needs the lease it records.
+    mocks.store.appendRunEvent.mockImplementation(mocks.recordWorker);
+    mocks.store.listUserMessages.mockResolvedValue([]);
+    const { listSessionScopeMaterials } =
+      await import('@/lib/server/agent-runtime/material-resolver');
+    vi.mocked(listSessionScopeMaterials).mockResolvedValue([
+      {
+        origin: 'session',
+        record: {
+          id: 'mat_failed',
+          sessionId: 'session-wake',
+          kind: 'source',
+          title: 'deck.pptx',
+          ownerMaterialId: null,
+          sourceUrl: null,
+          textAssetId: null,
+          rawAssetId: 'raw',
+          textChars: 0,
+          derivedFrom: null,
+          extraction: {
+            status: 'failed',
+            attempts: 1,
+            error: 'no parser: set PARSER_BASE_URL and PARSER_API_KEY',
+            reasonCode: 'service_unavailable',
+          },
+          createdAt: new Date(0).toISOString(),
+        },
+      },
+    ] as never);
+  });
+
+  /** What the registered list_materials says about the failed source right now. */
+  async function listedReason(): Promise<string> {
+    const tools = (fake.current.instance?.options.initialState?.tools ?? []) as Array<{
+      name: string;
+      execute: (id: string, params: unknown) => Promise<{ details: unknown }>;
+    }>;
+    const list = tools.find((candidate) => candidate.name === 'list_materials')!;
+    const { details } = await list.execute('list', {});
+    const wire = JSON.stringify(details);
+    expect(wire).not.toContain('PARSER_BASE_URL');
+    return (details as { materials: Array<{ extraction: { reason: string } }> }).materials[0]!
+      .extraction.reason;
+  }
+
+  async function settle(run: Promise<void>): Promise<void> {
+    fake.current.instance?.releasePrompt();
+    await run;
+  }
+
+  it('uses the language the session was created in for a first prompt with no message event', async () => {
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'en-US' },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['en-US']);
+    await settle(run);
+  });
+
+  it('falls back to the project default when neither the session nor a message names one', async () => {
+    const run = runSession({ running: new Map(), shuttingDown: false }, SESSION);
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['zh-CN']);
+    await settle(run);
+  });
+
+  it('answers queued messages in their own language, each from when it is consumed', async () => {
+    // Two queued messages: the run starts from the first; the second's
+    // language must not reach the turn before it.
+    mocks.store.listUserMessages.mockResolvedValue([message(5, 'en-US'), message(6, 'ja-JP')]);
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'zh-CN' },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['en-US']);
+
+    // The second is drained and handed to pi, but not yet consumed.
+    fake.current.instance!.deferSteerEnd = true;
+    mocks.bus.wake?.();
+    await vi.waitFor(() => expect(fake.current.instance?.steerCalls).toHaveLength(1));
+    expect(await listedReason()).toBe(REASON['en-US']);
+
+    // Pi takes it into the conversation: from its turn on, its language.
+    fake.current.instance!.consumeSteered();
+    expect(await listedReason()).toBe(REASON['ja-JP']);
+    await settle(run);
+  });
+
+  it('keeps the language in effect when a steered message names none, or an unsupported one', async () => {
+    mocks.store.listUserMessages.mockResolvedValue([message(5, 'en-US')]);
+    const run = runSession({ running: new Map(), shuttingDown: false }, SESSION);
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['en-US']);
+    mocks.store.listUserMessages.mockResolvedValue([
+      message(5, 'en-US'),
+      message(6),
+      message(7, 'xx-YY'),
+    ]);
+    mocks.bus.wake?.();
+    await vi.waitFor(() => expect(fake.current.instance?.steerCalls).toHaveLength(2));
+    expect(await listedReason()).toBe(REASON['en-US']);
+    await settle(run);
+  });
+
+  it('restores the language of the last consumed message after a restart with nothing pending', async () => {
+    // Both messages were consumed before the worker died; the session itself
+    // was created in English. The resumed run must not fall back to that.
+    mocks.store.listUserMessages.mockResolvedValue([message(5, 'en-US'), message(6, 'ja-JP')]);
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'en-US', claimReason: 'orphaned', deliveredUserMessageSeq: 6 },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['ja-JP']);
+    await settle(run);
+  });
+
+  it('continues a cut-off turn in its own language, not that of a message queued since', async () => {
+    // The worker died mid-turn after consuming message 5; message 6 arrived
+    // meanwhile. The takeover continues turn 5 -- and only consuming 6 moves on.
+    mocks.entrySeed.push({ role: 'user', content: 'message 5', timestamp: 5 });
+    mocks.history.started = true;
+    mocks.store.listUserMessages.mockResolvedValue([message(5, 'en-US'), message(6, 'ja-JP')]);
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'zh-CN', claimReason: 'orphaned', deliveredUserMessageSeq: 5 },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['en-US']);
+    mocks.bus.wake?.();
+    await vi.waitFor(() => expect(fake.current.instance?.steerCalls).toHaveLength(1));
+    expect(await listedReason()).toBe(REASON['ja-JP']);
+    await settle(run);
+    mocks.history.started = false;
+  });
+
+  it('resumes in the language of a frame saved before its delivered cursor landed', async () => {
+    // The worker saved user frame 6 to the transcript, then stopped before the
+    // separate delivered-cursor write: the cursor still says 5. The takeover
+    // continues the turn answering 6, so it must speak 6's language.
+    mocks.entrySeed.push({
+      role: 'user',
+      content: 'message 6',
+      timestamp: 6,
+      openmaicDurableUserMessageSeq: 6,
+    });
+    mocks.history.started = true;
+    mocks.store.listUserMessages.mockResolvedValue([message(5, 'en-US'), message(6, 'ja-JP')]);
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'zh-CN', claimReason: 'orphaned', deliveredUserMessageSeq: 5 },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['ja-JP']);
+    await settle(run);
+    mocks.history.started = false;
+  });
+
+  it('keeps two sessions apart: one run’s language never reaches the next', async () => {
+    const first = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, locale: 'ja-JP' },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['ja-JP']);
+    await settle(first);
+
+    fake.current.instance?.reset();
+    fake.current.instance = undefined;
+    mocks.resetWorker();
+    const second = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, id: 'session-other', locale: 'en-US' },
+    );
+    await waitForReady();
+    expect(await listedReason()).toBe(REASON['en-US']);
+    await settle(second);
   });
 });

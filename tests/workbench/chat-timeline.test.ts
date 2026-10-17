@@ -293,19 +293,34 @@ describe('rowsForRender tool-run aggregation', () => {
     );
     expect(html).toContain('检查材料');
     expect(html).toContain('读取材料');
-    expect(html).toContain('材料解析失败');
     expect(html).toContain('data-status="running"');
-    expect(html).toContain('data-status="failed"');
-    expect(html).toContain('data-status="error"');
+    // #1880: a call that succeeded is not an error, even when a file in its
+    // result failed to parse.
+    expect(html).not.toContain('材料解析失败');
+    expect(html).not.toContain('data-status="failed"');
+    expect(html).not.toContain('data-status="error"');
     expect(html).not.toContain('list_materials');
     expect(html).not.toContain('read_material');
     expect(html).not.toContain('mat_private');
     expect(html).not.toContain('结果原文');
   });
 
-  it('marks a settled material-tool group as failed when extraction failed semantically', () => {
+  it('keeps a settled material-tool group done when a file in a result failed to parse', () => {
+    const read = tool('read_material', 'read-done');
+    read.toolDetails = { materials: [{ status: 'failed' }] };
+    const html = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        chat: [read, tool('search_material', 'search-done')],
+        plan: [],
+      }),
+    );
+    expect(html).not.toContain('有错误');
+    expect(html).toContain('已完成');
+  });
+
+  it('marks a material-tool group as failed when a call itself failed', () => {
     const failed = tool('read_material', 'read-failed');
-    failed.toolDetails = { materials: [{ status: 'failed' }] };
+    failed.toolState = 'failed';
     const html = renderToStaticMarkup(
       createElement(ChatTimeline, {
         chat: [failed, tool('search_material', 'search-done')],

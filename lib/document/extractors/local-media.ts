@@ -8,6 +8,8 @@ import { basename, delimiter, extname, join, resolve as resolvePath } from 'node
 import { transcribeAudio, type ASRTranscriptionResult } from '@/lib/audio/asr-providers';
 import type { ASRModelConfig } from '@/lib/audio/types';
 
+import { MEDIA_MAX_DURATION_SEC } from '@/lib/types/media-limits';
+
 import { LOCAL_FFMPEG_MEDIA_MIMES } from '../mime';
 import type {
   DocumentAsset,
@@ -29,7 +31,6 @@ const MEDIA_COMMAND_TIMEOUT_MS = 20 * 60 * 1000;
 const FFPROBE_TIMEOUT_MS = 30_000;
 const MEDIA_JOB_TIMEOUT_MS = 45 * 60 * 1000;
 const MEDIA_ASR_TIMEOUT_MS = 8 * 60 * 1000;
-const MEDIA_MAX_DURATION_SEC = 90 * 60;
 const COMMAND_MAX_BUFFER = 8 * 1024 * 1024;
 const MAX_KEYFRAME_CANDIDATES = 50_000;
 const KEYFRAME_END_SAFETY_MS = 1500;
@@ -451,7 +452,13 @@ function sourceExtension(mime: string): string {
   return extensions[mime] ?? '.media';
 }
 
-function derivedStem(originalName: string | null, fallback: string): string {
+/** The name of a keyframe taken `timeMs` into the source named `stem`. */
+export function keyframeTitle(stem: string, timeMs: number): string {
+  return `${stem} at ${(timeMs / 1000).toFixed(3)} seconds`;
+}
+
+/** A source's file name without its extension, for naming what is derived from it. */
+export function derivedStem(originalName: string | null, fallback: string): string {
   if (!originalName) return fallback;
   const name = basename(originalName);
   const extension = extname(name);
@@ -606,6 +613,7 @@ export async function extractMediaMaterial(
       throw new MaterialExtractionError(
         `Media duration ${Math.ceil(durationSec)} seconds exceeds the ${MEDIA_MAX_DURATION_SEC}-second limit; trim it before uploading`,
         false,
+        { reasonCode: 'media_too_long' },
       );
     }
 
@@ -799,7 +807,7 @@ export async function extractMediaMaterial(
             data: `data:${prepared.mime};base64,${prepared.buffer.toString('base64')}`,
             width: prepared.width,
             height: prepared.height,
-            description: `${stem} at ${(timeMs / 1000).toFixed(3)} seconds`,
+            description: keyframeTitle(stem, timeMs),
             metadata: { timeMs },
           };
           keyframes.push({ asset, timeMs });

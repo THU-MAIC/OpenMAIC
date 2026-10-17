@@ -2,12 +2,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import { Pool } from 'pg';
 import { contentHashOf, type ContentHash } from '../src/asset/blob.js';
 import type { AssetByteStore } from '../src/asset/byte-store.js';
-import { AssetCollector } from '../src/asset/collector.js';
+import {
+  ASSET_REFERENCE_RULE_VERSION,
+  AssetCollector,
+  AssetReferenceRuleVersionError,
+} from '../src/asset/collector.js';
 import { PgAssetByteStore } from '../src/asset/pg-bytes.js';
 import {
   AssetQuotaExceededError,
+  AssetRootTargetError,
+  AssetRootedError,
   PgAssetStore,
+  changeAssetRoots,
   ensureAssetSchema,
+  type ChangeAssetRootsInput,
   type QueryResult,
   type Queryable,
   type WithTransaction,
@@ -18,7 +26,10 @@ import {
 } from '../src/asset/collector.js';
 import {
   backfillDocumentAssetReferences,
+  recordAssetReferenceTracking,
+  removeDocumentAssetReferences,
   sceneAssetScope,
+  syncDocumentAssetReferences,
   syncStageAssetReferences,
 } from '../src/asset/references.js';
 import {
@@ -182,7 +193,7 @@ describe.skipIf(!contractUrl)('PgAssetStore with PostgreSQL 16', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query('TRUNCATE asset_root_refs, document_asset_refs, asset_entries, asset_blobs');
     bytes = new PgAssetByteStore(pool as Queryable);
     store = new PgAssetStore(pool as Queryable, {
       byteStore: bytes,
@@ -411,7 +422,7 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
 
   beforeEach(async () => {
     await truncateDocumentTables(pool as Queryable);
-    await pool.query('TRUNCATE document_asset_refs, asset_entries, asset_blobs');
+    await pool.query('TRUNCATE asset_root_refs, document_asset_refs, asset_entries, asset_blobs');
     await pool.query('TRUNCATE asset_reference_tracking, document_asset_withdrawals');
     bytes = new PgAssetByteStore(pool as Queryable);
     assets = new PgAssetStore(pool as Queryable, {
@@ -1941,5 +1952,642 @@ describe.skipIf(!contractUrl)('document asset references with PostgreSQL 16', ()
     await assets.remove(principal, id);
 
     expect((await pool.query('SELECT 1 FROM document_asset_refs')).rows).toEqual([]);
+  });
+
+  describe('reference roots', () => {
+    const principals = [principal.key];
+    const HOUR = 60 * 60 * 1000;
+
+    const change = (queryable: Queryable, input: Omit<ChangeAssetRootsInput, 'principals'>) =>
+      changeAssetRoots(queryable, { principals, ...input });
+    const addTo = (rootId: string, id: string) => ({
+      add: [{ rootKind: 'material', rootId, assetIds: [id] }],
+    });
+    const removeFrom = (rootId: string, id: string) => ({
+      remove: [{ rootKind: 'material', rootId, assetIds: [id] }],
+    });
+    const referenceIn = (queryable: Queryable, stageId: string, id: string) =>
+      syncDocumentAssetReferences(queryable, {
+        stageId,
+        scope: { scope: 'scene', sceneId: 'scene-a', candidates: [id] },
+      });
+    const stampOf = async (id: string): Promise<Date | null | undefined> =>
+      (
+        await pool.query<{ unreferenced_at: Date | null }>(
+          'SELECT unreferenced_at FROM asset_entries WHERE id = $1',
+          [id],
+        )
+      ).rows[0]?.unreferenced_at;
+    const rootsOf = async (id: string): Promise<string[]> =>
+      (
+        await pool.query<{ root_id: string }>(
+          'SELECT root_id FROM asset_root_refs WHERE asset_id = $1 ORDER BY root_id',
+          [id],
+        )
+      ).rows.map((row) => row.root_id);
+    const entryExists = async (id: string): Promise<boolean> =>
+      (await pool.query('SELECT 1 FROM asset_entries WHERE id = $1', [id])).rows.length > 0;
+    const passAt = (now: Date, graceMs = 0) =>
+      new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: transactionFor(pool),
+        documentReferences: true,
+        graceMs,
+        now: () => now,
+      }).collectPass();
+
+    const backendPid = async (queryable: Queryable): Promise<number> =>
+      Number(
+        (await queryable.query<{ pid: number | string }>('SELECT pg_backend_pid() AS pid')).rows[0]!
+          .pid,
+      );
+
+    /**
+     * Wait until some backend is blocked by THIS holder's locks. Narrower than
+     * waitForLockWaiter, which any lock wait anywhere in the database would
+     * satisfy -- another suite's, say -- and so could let a test go on before
+     * its own second transaction had actually queued behind its holder.
+     */
+    const waitUntilBlockedBy = async (holderPid: number): Promise<void> => {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        const blocked = await pool.query(
+          `SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY(pg_blocking_pids(pid))`,
+          [holderPid],
+        );
+        if (blocked.rows.length > 0) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      throw new Error('nothing queued behind the holder: the operations never contended');
+    };
+
+    /**
+     * Run `first` in a transaction held open, start `second` in its own, prove
+     * `second` is waiting on a lock `first` holds, then commit `first` and let
+     * `second` finish. A `second` that did not contend fails here rather than
+     * passing by luck of timing.
+     */
+    const serialized = async (
+      first: (queryable: Queryable) => Promise<unknown>,
+      second: (queryable: Queryable) => Promise<unknown>,
+    ): Promise<void> => {
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        const holderPid = await backendPid(holder as Queryable);
+        await first(holder as Queryable);
+        const waiting = transactionFor(pool)((queryable) => second(queryable));
+        await waitUntilBlockedBy(holderPid);
+        await holder.query('COMMIT');
+        await waiting;
+      } catch (error) {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        throw error;
+      } finally {
+        holder.release();
+      }
+    };
+
+    beforeEach(async () => {
+      await pool.query(
+        `INSERT INTO asset_reference_tracking (singleton, enabled_at)
+         VALUES (TRUE, now()) ON CONFLICT DO NOTHING`,
+      );
+    });
+
+    test('provisions the cascading root foreign key', async () => {
+      const foreignKey = await pool.query<{ delete_rule: string }>(
+        `SELECT delete_rule
+           FROM information_schema.referential_constraints
+          WHERE constraint_schema = current_schema()
+            AND constraint_name = 'asset_root_refs_asset_id_fkey'`,
+      );
+      expect(foreignKey.rows).toEqual([{ delete_rule: 'CASCADE' }]);
+    });
+
+    describe('the generic mutation paths against a concurrent root writer', () => {
+      /**
+       * Wait until `waiter` itself queues behind `holder`, not merely until
+       * someone does. Gives up well inside the test timeout, so a failure
+       * reaches the cleanup below instead of leaving a paused transaction
+       * holding its locks.
+       */
+      const waitUntilWaiting = async (waiter: number, holder: number): Promise<void> => {
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const blocked = await pool.query<{ blocked: boolean }>(
+            'SELECT $2::int = ANY(pg_blocking_pids($1::int)) AS blocked',
+            [waiter, holder],
+          );
+          if (blocked.rows[0]?.blocked) return;
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        throw new Error('the operation under test never queued behind the holder');
+      };
+
+      /**
+       * A store whose transaction reports its own backend pid once it has begun
+       * and, when `pauseAfter` matches a statement, stops right after it --
+       * holding every lock taken so far -- until `release` is called.
+       */
+      const instrumentedStore = (pauseAfter?: RegExp) => {
+        let reportPid!: (pid: number) => void;
+        const pid = new Promise<number>((resolve) => {
+          reportPid = resolve;
+        });
+        let reachedPause!: () => void;
+        const paused = new Promise<void>((resolve) => {
+          reachedPause = resolve;
+        });
+        let release!: () => void;
+        const mayProceed = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const withTransaction: WithTransaction = async (body) => {
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            reportPid(await backendPid(client as Queryable));
+            const result = await body({
+              async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+                text: string,
+                params?: unknown[],
+              ): Promise<QueryResult<TRow>> {
+                const answer = await (client as Queryable).query<TRow>(text, params);
+                if (pauseAfter?.test(text)) {
+                  reachedPause();
+                  await mayProceed;
+                }
+                return answer;
+              },
+            });
+            await client.query('COMMIT');
+            return result;
+          } catch (error) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw error;
+          } finally {
+            client.release();
+          }
+        };
+        const store = new PgAssetStore(pool as Queryable, { byteStore: bytes, withTransaction });
+        return { store, pid, paused, release };
+      };
+
+      /** A root writer in a transaction of its own, reporting its backend pid. */
+      const startRootWriter = (id: string) => {
+        let reportPid!: (pid: number) => void;
+        const pid = new Promise<number>((resolve) => {
+          reportPid = resolve;
+        });
+        const done = transactionFor(pool)(async (queryable) => {
+          reportPid(await backendPid(queryable));
+          await change(queryable, addTo('material-1', id));
+        });
+        return { pid, done };
+      };
+
+      /**
+       * Hold a committed-later root on `id` in an open transaction, start
+       * `mutate` on an instrumented store, prove that store's own backend is
+       * waiting on the holder, then commit the root. Whatever fails on the way,
+       * the holder rolls back and `mutate` is settled before this returns.
+       */
+      const mutateBehindRoot = async (
+        id: string,
+        mutate: (store: PgAssetStore) => Promise<unknown>,
+      ): Promise<{ mutation: Promise<unknown> }> => {
+        const holder = await pool.connect();
+        const mutator = instrumentedStore();
+        let mutation: Promise<unknown> | undefined;
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await change(holder as Queryable, addTo('material-1', id));
+          mutation = mutate(mutator.store);
+          mutation.catch(() => undefined);
+          await waitUntilWaiting(await mutator.pid, holderPid);
+          await holder.query('COMMIT');
+          return { mutation };
+        } finally {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          holder.release();
+          await mutation?.catch(() => undefined);
+        }
+      };
+
+      /**
+       * Pause `mutate` right after `pauseAfter` with its entry lock held, start
+       * a root writer, prove the root writer's own backend waits on it, then let
+       * the mutation finish. The pause is lifted and both sides are settled
+       * whatever fails on the way.
+       */
+      const rootBehindMutation = async (
+        id: string,
+        pauseAfter: RegExp,
+        mutate: (store: PgAssetStore) => Promise<unknown>,
+      ): Promise<{ mutation: Promise<unknown>; rooting: Promise<void> }> => {
+        const mutator = instrumentedStore(pauseAfter);
+        const mutation = mutate(mutator.store);
+        mutation.catch(() => undefined);
+        let rooting: Promise<void> | undefined;
+        try {
+          await Promise.race([
+            mutator.paused,
+            mutation.then(() => {
+              throw new Error('the mutation finished without reaching its pause point');
+            }),
+          ]);
+          const writer = startRootWriter(id);
+          rooting = writer.done;
+          rooting.catch(() => undefined);
+          await waitUntilWaiting(await writer.pid, await mutator.pid);
+        } finally {
+          mutator.release();
+          await Promise.allSettled([mutation, rooting ?? Promise.resolve()]);
+        }
+        return { mutation, rooting };
+      };
+
+      const textOf = async (id: string): Promise<string | undefined> => {
+        const read = await assets.resolve(principal, id);
+        return read ? Buffer.from(read.bytes).toString() : undefined;
+      };
+
+      test('a remove that queues behind a root writer sees the committed root and refuses', async () => {
+        const id = await assets.put(principal, new Blob(['rooted while waiting']));
+
+        // The remove's FOR UPDATE waits on the root writer's entry lock; the
+        // root commits first, and the check after the wait must see it. A
+        // check folded into the DELETE would keep its older snapshot, delete
+        // the entry and cascade the fresh root away.
+        const { mutation } = await mutateBehindRoot(id, (store) => store.remove(principal, id));
+
+        await expect(mutation).rejects.toBeInstanceOf(AssetRootedError);
+        expect(await entryExists(id)).toBe(true);
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+
+      test('a root writer that queues behind a remove finds the entry gone', async () => {
+        const id = await assets.put(principal, new Blob(['removed first']));
+
+        const { mutation, rooting } = await rootBehindMutation(
+          id,
+          /^\s*DELETE FROM asset_entries/,
+          (store) => store.remove(principal, id),
+        );
+
+        await mutation;
+        await expect(rooting).rejects.toBeInstanceOf(AssetRootTargetError);
+        expect(await entryExists(id)).toBe(false);
+        expect(await rootsOf(id)).toEqual([]);
+      });
+
+      test('a replace that queues behind a root writer refuses and keeps the bytes', async () => {
+        const id = await assets.put(principal, new Blob(['original bytes']));
+
+        const { mutation } = await mutateBehindRoot(id, (store) =>
+          store.replace(principal, id, new Blob(['replacement'])),
+        );
+
+        await expect(mutation).rejects.toBeInstanceOf(AssetRootedError);
+        expect(await textOf(id)).toBe('original bytes');
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+
+      test('a root writer that queues behind a replace roots the replaced entry', async () => {
+        const id = await assets.put(principal, new Blob(['before replace']));
+
+        const { mutation, rooting } = await rootBehindMutation(
+          id,
+          /^\s*UPDATE asset_entries/,
+          (store) => store.replace(principal, id, new Blob(['after replace'])),
+        );
+
+        await mutation;
+        await rooting;
+        expect(await textOf(id)).toBe('after replace');
+        expect(await rootsOf(id)).toEqual(['material-1']);
+      });
+    });
+
+    describe('the reference-rule version', () => {
+      const ruleVersion = async (): Promise<number> =>
+        Number(
+          (
+            await pool.query<{ v: number }>(
+              'SELECT rule_version AS v FROM asset_reference_tracking',
+            )
+          ).rows[0]!.v,
+        );
+      const setRuleVersion = (version: number) =>
+        pool.query('UPDATE asset_reference_tracking SET rule_version = $1', [version]);
+
+      test('a root change raises a marker an older writer left', async () => {
+        const id = await assets.put(principal, new Blob(['raises the version']));
+        await setRuleVersion(1);
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-v', id)));
+        expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+        await setRuleVersion(1);
+        await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-v', id)));
+        expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+      });
+
+      test('once raised, a writer does not queue on the marker row', async () => {
+        await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        const holder = await pool.connect();
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await holder.query('SELECT 1 FROM asset_reference_tracking FOR UPDATE');
+          // Raised already: the write finishes while the marker row is held.
+          await transactionFor(pool)((queryable) => recordAssetReferenceTracking(queryable));
+
+          // Not raised yet: the write does wait for the row, which is what
+          // shows this test can tell the two apart.
+          await holder.query('COMMIT');
+          await pool.query('UPDATE asset_reference_tracking SET rule_version = 1');
+          await holder.query('BEGIN');
+          await holder.query('SELECT 1 FROM asset_reference_tracking FOR UPDATE');
+          const raising = transactionFor(pool)((queryable) =>
+            recordAssetReferenceTracking(queryable),
+          );
+          await waitUntilBlockedBy(holderPid);
+          await holder.query('COMMIT');
+          await raising;
+          expect(await ruleVersion()).toBe(ASSET_REFERENCE_RULE_VERSION);
+        } catch (error) {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          holder.release();
+        }
+      });
+
+      test('a version raised while a pass waits on an entry stops the deletion', async () => {
+        await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        const id = await assets.put(principal, new Blob(['kept by a newer kind']));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-x', id)));
+        await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-x', id)));
+        expect(await stampOf(id)).not.toBeNull();
+
+        // A writer of a newer kind holds the entry, as its reference row's
+        // foreign key would, and raises the version before it lets go.
+        const holder = await pool.connect();
+        try {
+          await holder.query('BEGIN');
+          const holderPid = await backendPid(holder as Queryable);
+          await holder.query('SELECT 1 FROM asset_entries WHERE id = $1 FOR KEY SHARE', [id]);
+          const pass = passAt(new Date(Date.now() + HOUR)).catch((error: unknown) => error);
+          await waitUntilBlockedBy(holderPid);
+          await holder.query('UPDATE asset_reference_tracking SET rule_version = $1', [
+            ASSET_REFERENCE_RULE_VERSION + 1,
+          ]);
+          await holder.query('COMMIT');
+
+          const failure = await pass;
+          expect(failure).toBeInstanceOf(AssetReferenceRuleVersionError);
+          expect(failure).toMatchObject({ databaseVersion: ASSET_REFERENCE_RULE_VERSION + 1 });
+          expect(await entryExists(id)).toBe(true);
+        } catch (error) {
+          await holder.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          holder.release();
+          await setRuleVersion(ASSET_REFERENCE_RULE_VERSION);
+        }
+      });
+    });
+
+    test('an entry held only by a root outlives its pending deadline', async () => {
+      const id = await assets.put(principal, new Blob(['rooted only']));
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      const lifecycle = await pool.query<{ committed_at: Date | null; expires_at: Date | null }>(
+        'SELECT committed_at, expires_at FROM asset_entries WHERE id = $1',
+        [id],
+      );
+      expect(lifecycle.rows[0]?.committed_at).not.toBeNull();
+      expect(lifecycle.rows[0]?.expires_at).toBeNull();
+      const pass = await passAt(new Date(Date.now() + 3 * 24 * HOUR));
+      expect(pass.entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+    });
+
+    test('a course withdrawal leaves a rooted entry alone; letting go of both drains it', async () => {
+      const id = await assets.put(principal, new Blob(['held twice']));
+      await referenceIn(pool as Queryable, 'course-1', id);
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      await transactionFor(pool)((queryable) =>
+        removeDocumentAssetReferences(queryable, { stageId: 'course-1' }),
+      );
+      expect(await stampOf(id)).toBeNull();
+      expect((await passAt(new Date(Date.now() + 2 * HOUR))).entriesCollected).toBe(0);
+
+      await transactionFor(pool)((queryable) => change(queryable, removeFrom('material-1', id)));
+      expect(await stampOf(id)).not.toBeNull();
+      expect((await passAt(new Date(), HOUR)).entriesCollected).toBe(0);
+      expect((await passAt(new Date(Date.now() + 2 * HOUR), HOUR)).entriesCollected).toBe(1);
+      expect(await entryExists(id)).toBe(false);
+    });
+
+    test('adding a root clears a stamp the entry already carries', async () => {
+      const id = await assets.put(principal, new Blob(['brought back']));
+      await referenceIn(pool as Queryable, 'course-1', id);
+      await removeDocumentAssetReferences(pool as Queryable, { stageId: 'course-1' });
+      expect(await stampOf(id)).not.toBeNull();
+
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+
+      expect(await stampOf(id)).toBeNull();
+    });
+
+    test('a root added while the collector waits keeps the entry', async () => {
+      const id = await assets.put(principal, new Blob(['rescued']));
+      await pool.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        const holderPid = await backendPid(holder as Queryable);
+        await change(holder as Queryable, addTo('material-1', id));
+        const releasing = passAt(new Date());
+        await waitUntilBlockedBy(holderPid);
+        await holder.query('COMMIT');
+        expect((await releasing).entriesCollected).toBe(0);
+      } finally {
+        holder.release();
+      }
+
+      expect(await entryExists(id)).toBe(true);
+      expect(await rootsOf(id)).toEqual(['material-1']);
+    });
+
+    test('a root added after the collector took the entry is refused, not left dangling', async () => {
+      const id = await assets.put(principal, new Blob(['already gone']));
+      await pool.query(
+        `UPDATE asset_entries SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = $1`,
+        [id],
+      );
+      // The collector's release transaction, held open after its DELETE.
+      let signalDeleted!: () => void;
+      const deleted = new Promise<void>((resolve) => {
+        signalDeleted = resolve;
+      });
+      let allowCommit!: () => void;
+      const mayCommit = new Promise<void>((resolve) => {
+        allowCommit = resolve;
+      });
+      let releasePid = 0;
+      const holdAfterRelease: WithTransaction = async (body) => {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          const pid = await backendPid(client as Queryable);
+          let released = false;
+          const result = await body({
+            async query<TRow extends Record<string, unknown> = Record<string, unknown>>(
+              text: string,
+              params?: unknown[],
+            ): Promise<QueryResult<TRow>> {
+              if (text.startsWith('DELETE FROM asset_entries')) released = true;
+              return (client as Queryable).query<TRow>(text, params);
+            },
+          });
+          if (released) {
+            releasePid = pid;
+            signalDeleted();
+            await mayCommit;
+          }
+          await client.query('COMMIT');
+          return result;
+        } catch (error) {
+          await client.query('ROLLBACK').catch(() => undefined);
+          throw error;
+        } finally {
+          client.release();
+        }
+      };
+      const releasing = new AssetCollector(pool as Queryable, bytes, {
+        withTransaction: holdAfterRelease,
+        documentReferences: true,
+        graceMs: 0,
+      }).collectPass();
+      await deleted;
+
+      // Settled into a value at once: it rejects while `releasing` is still
+      // being awaited, and an unobserved rejection would fail the run.
+      const rooting = transactionFor(pool)((queryable) =>
+        change(queryable, addTo('material-1', id)),
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await waitUntilBlockedBy(releasePid);
+      allowCommit();
+
+      expect((await releasing).entriesCollected).toBe(1);
+      expect(await rooting).toBeInstanceOf(AssetRootTargetError);
+      expect(await entryExists(id)).toBe(false);
+      expect(await rootsOf(id)).toEqual([]);
+    });
+
+    test('the legacy mark and the standing sweep do not stamp a rooted entry', async () => {
+      // Roots written directly, bypassing changeAssetRoots, so each entry keeps
+      // the exact state the collector predicate under test selects on.
+      const legacy = await assets.put(principal, new Blob(['legacy rooted']));
+      await pool.query(
+        'UPDATE asset_entries SET committed_at = NULL, expires_at = NULL WHERE id = $1',
+        [legacy],
+      );
+      const swept = await assets.put(principal, new Blob(['swept rooted']));
+      await pool.query(
+        'UPDATE asset_entries SET committed_at = now(), expires_at = NULL WHERE id = $1',
+        [swept],
+      );
+      await pool.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'legacy-owner', $1), ('material', 'swept-owner', $2)`,
+        [legacy, swept],
+      );
+
+      // First pass: the (empty) walk completes and the legacy entry is marked.
+      // Second pass: the standing sweep reaches the committed ones.
+      expect((await passAt(new Date())).legacyEntriesCommitted).toBe(1);
+      await passAt(new Date());
+
+      for (const id of [legacy, swept]) {
+        const row = await pool.query<{ committed_at: Date | null; unreferenced_at: Date | null }>(
+          'SELECT committed_at, unreferenced_at FROM asset_entries WHERE id = $1',
+          [id],
+        );
+        expect(row.rows[0]?.committed_at).not.toBeNull();
+        expect(row.rows[0]?.unreferenced_at).toBeNull();
+      }
+      expect((await passAt(new Date(Date.now() + 3 * 24 * HOUR))).entriesCollected).toBe(0);
+      expect(await entryExists(legacy)).toBe(true);
+      expect(await entryExists(swept)).toBe(true);
+    });
+
+    test('a rooted entry carrying a stale stamp reaches the final check and is kept', async () => {
+      const id = await assets.put(principal, new Blob(['kept by its root']));
+      await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+      // Past grace on the column alone: only the release's post-lock
+      // reference check can keep it.
+      await pool.query(
+        `UPDATE asset_entries SET unreferenced_at = now() - interval '2 days' WHERE id = $1`,
+        [id],
+      );
+
+      expect((await passAt(new Date(), HOUR)).entriesCollected).toBe(0);
+      expect(await entryExists(id)).toBe(true);
+      expect(await rootsOf(id)).toEqual(['material-1']);
+    });
+
+    test('a course withdrawal and a root being added serialize, in either order', async () => {
+      for (const withdrawFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`withdraw-${withdrawFirst}`]));
+        const stageId = `course-${withdrawFirst}`;
+        await referenceIn(pool as Queryable, stageId, id);
+        const withdraw = (queryable: Queryable) =>
+          removeDocumentAssetReferences(queryable, { stageId });
+        const root = (queryable: Queryable) => change(queryable, addTo(`material-${id}`, id));
+
+        await (withdrawFirst ? serialized(withdraw, root) : serialized(root, withdraw));
+
+        expect(await rootsOf(id)).toEqual([`material-${id}`]);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
+
+    test('a root being removed and a course reference being added serialize, in either order', async () => {
+      for (const unrootFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`unroot-${unrootFirst}`]));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-1', id)));
+        const unroot = (queryable: Queryable) => change(queryable, removeFrom('material-1', id));
+        const reference = (queryable: Queryable) =>
+          referenceIn(queryable, `course-${unrootFirst}`, id);
+
+        await (unrootFirst ? serialized(unroot, reference) : serialized(reference, unroot));
+
+        expect(await rootsOf(id)).toEqual([]);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
+
+    test('adding and removing roots of one entry serialize on its row lock, in either order', async () => {
+      for (const removeFirst of [true, false]) {
+        const id = await assets.put(principal, new Blob([`move-${removeFirst}`]));
+        await transactionFor(pool)((queryable) => change(queryable, addTo('material-a', id)));
+        const remove = (queryable: Queryable) => change(queryable, removeFrom('material-a', id));
+        const add = (queryable: Queryable) => change(queryable, addTo('material-b', id));
+
+        await (removeFirst ? serialized(remove, add) : serialized(add, remove));
+
+        expect(await rootsOf(id)).toEqual(['material-b']);
+        expect(await stampOf(id)).toBeNull();
+      }
+    });
   });
 });

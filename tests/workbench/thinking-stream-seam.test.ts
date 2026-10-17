@@ -44,6 +44,7 @@ const blankFold: WorkbenchFold = {
   pages: {},
   chat: [],
   libraryRevision: 0,
+  materialLibraryRevision: 0,
   stageLinkStageIds: [],
   touchedStageIds: [],
   runCourseStageIds: [],

@@ -22,6 +22,7 @@ vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { startSchemaBootCheck } from '@/lib/persistence/schema-boot-check';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { ensureSessionMaterialLinkSchema } from '@/lib/persistence/session-material-links';
 import { APP_SCHEMA_STORES } from '@/lib/persistence/schema-stores';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
@@ -76,6 +77,7 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
       const locked = pool as unknown as ConnectableQueryable;
       await withSchemaBootstrapLock(locked, ensureAgentSessionSchema);
       await withSchemaBootstrapLock(locked, ensureAgentSessionMaterialSchema);
+      await withSchemaBootstrapLock(locked, ensureSessionMaterialLinkSchema);
       await withSchemaBootstrapLock(locked, ensureUserSkillSchema);
       await withSchemaBootstrapLock(locked, ensureGenerationRunSchema);
     } finally {
@@ -182,7 +184,7 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     60_000,
   );
 
-  it('drops the pre-byte-store asset_id once, and never on a later start', async () => {
+  it('clears the pre-byte-store pointer once and preserves the new pool pointer on restart', async () => {
     await withPool(async (pool) => {
       // `main`'s tables, with an owner_material from before the byte store.
       await provisionSnapshot(
@@ -200,19 +202,25 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
 
     expect(await recordedVersions()).toEqual(EVERY_VERSION);
     await withPool(async (pool) => {
-      expect(await hasColumn(pool, 'owner_material', 'asset_id')).toBe(false);
-      const rows = await pool.query('SELECT id, oss_key, extraction FROM owner_material');
+      expect(await hasColumn(pool, 'owner_material', 'asset_id')).toBe(true);
+      const rows = await pool.query('SELECT id, oss_key, asset_id, extraction FROM owner_material');
       // An extraction never started is `idle` (version 3): a run starts it.
-      expect(rows.rows).toEqual([{ id: 'mat-1', oss_key: '', extraction: { status: 'idle' } }]);
-      // A later schema brings the column back for a purpose of its own...
-      await pool.query('ALTER TABLE owner_material ADD COLUMN asset_id TEXT');
+      expect(rows.rows).toEqual([
+        { id: 'mat-1', oss_key: '', asset_id: null, extraction: { status: 'idle' } },
+      ]);
+      // Version 2 cleared the old pointer; version 5 recreated the column for the pool.
+      await pool.query(
+        "UPDATE owner_material SET asset_id = 'pool-after-upgrade' WHERE id = 'mat-1'",
+      );
     });
 
     await boot();
 
-    // ...and a restart no longer drops it: the drop ran once, with its version.
+    // A restart must not rerun the old drop or erase the new pool pointer.
     await withPool(async (pool) => {
       expect(await hasColumn(pool, 'owner_material', 'asset_id')).toBe(true);
+      const rows = await pool.query("SELECT asset_id FROM owner_material WHERE id = 'mat-1'");
+      expect(rows.rows).toEqual([{ asset_id: 'pool-after-upgrade' }]);
     });
   }, 60_000);
 
@@ -221,15 +229,15 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
     await withPool((pool) =>
       pool.query(
         `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
-         VALUES ('owner-material', 5, 'from_a_newer_release', 'x')`,
+         VALUES ('owner-material', 6, 'from_a_newer_release', 'x')`,
       ),
     );
 
     await expect(boot()).rejects.toMatchObject({
       name: 'SchemaVersionAheadError',
       store: 'owner-material',
-      recordedVersion: 5,
-      knownVersion: 4,
+      recordedVersion: 6,
+      knownVersion: 5,
     });
   }, 60_000);
 

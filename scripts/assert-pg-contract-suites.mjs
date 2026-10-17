@@ -79,7 +79,9 @@ const REQUIRED_SUITES = [
  * rather than only against PGlite. `asset_reference_tracking` is the marker
  * the collector refuses to run its entry pass without, so requiring an insert
  * keeps the suite that exercises that refusal honest: a run where the tracking
- * document store never wrote would satisfy nothing here.
+ * document store never wrote would satisfy nothing here. `asset_root_refs` is
+ * the second reference table the entry lifecycle consults, so its rows must
+ * have been written against a real server too, not only against PGlite.
  */
 const REQUIRED_TABLES = [
   'document_stages',
@@ -94,6 +96,7 @@ const REQUIRED_TABLES = [
   'document_asset_refs',
   'asset_reference_tracking',
   'document_asset_withdrawals',
+  'asset_root_refs',
 ];
 
 const usage = [
