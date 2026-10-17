@@ -132,6 +132,11 @@ export function commitSlideEdit(history: SlideEditHistory, next: SlideContent): 
   if (ops.length === 0) return history;
   if (ops.length === 1) return applySlideEditOperation(history, ops[0]);
 
+  // Validate the whole transaction through the kernel before recording any
+  // history. A multi-element gesture must not bypass checks on individual ops.
+  let validated = history.present;
+  for (const operation of ops) validated = applySlideEditOperation(validated, operation);
+
   // Multi-element gesture = one undo step. Use the renderer's authoritative
   // snapshot as `present` rather than replaying derived ops onto it: the
   // diff intentionally doesn't model animations, so a replay could silently

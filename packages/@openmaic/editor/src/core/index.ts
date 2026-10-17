@@ -1,4 +1,5 @@
 import { isPPTElementType, type PPTElement, type Slide, type SlideContent } from '@openmaic/dsl';
+import { validateShapeGeometry, shapeGeometryChanged } from '@openmaic/geometry';
 import { getElementRange } from '@openmaic/renderer/geometry';
 
 export const MAX_EDITOR_HISTORY = 50;
@@ -482,14 +483,17 @@ function applyOperation(content: SlideContent, operation: EditorOperation): void
         existingIds.add(duplicateId);
       }
       const offset = operation.offset ?? { x: 20, y: 20 };
-      elements.push(
-        ...sourceElements.map((source) => ({
+      const duplicates = sourceElements.map((source) => {
+        const duplicate = {
           ...clone(source),
           id: operation.idMap[source.id],
           left: source.left + offset.x,
           top: source.top + offset.y,
-        })),
-      );
+        };
+        if (duplicate.type === 'shape') assertShapeGeometry(operation.type, duplicate);
+        return duplicate;
+      });
+      elements.push(...duplicates);
       return;
     }
     case 'element.align': {
@@ -557,6 +561,10 @@ function assertMutableElementPatch(operation: string, element: PPTElement, patch
     }
   }
   assertRequiredPatchValues(operation, REQUIRED_ELEMENT_FIELD_KINDS[element.type], values);
+  if (element.type === 'shape') {
+    const next = { ...element, ...values } as typeof element;
+    if (shapeGeometryChanged(element, next)) assertShapeGeometry(operation, next);
+  }
 }
 
 function assertMutableSlidePatch(patch: object): void {
@@ -578,6 +586,8 @@ function requireValidElement(operation: string, value: unknown): PPTElement {
     throw new Error(`${operation} requires a supported element type`);
   }
   assertRequiredElementFields(operation, element.type, element);
+  if (element.type === 'shape')
+    assertShapeGeometry(operation, element as unknown as Extract<PPTElement, { type: 'shape' }>);
   return element as unknown as PPTElement;
 }
 
@@ -734,4 +744,17 @@ function capHistory(past: readonly SlideContent[]): SlideContent[] {
 
 function clone<T>(value: T): T {
   return structuredClone(value);
+}
+
+function assertShapeGeometry(
+  operation: string,
+  shape: Extract<PPTElement, { type: 'shape' }>,
+): void {
+  const result = validateShapeGeometry(shape);
+  if (!result.ok) {
+    const { field, position, message } = result.error;
+    throw new Error(
+      `${operation}: ${field}${position === undefined ? '' : ` at ${position}`}: ${message}`,
+    );
+  }
 }

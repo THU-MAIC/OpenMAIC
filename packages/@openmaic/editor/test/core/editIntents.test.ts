@@ -66,6 +66,77 @@ function shapeElement(id: string, overrides: Partial<PPTShapeElement> = {}): PPT
   };
 }
 
+describe('shape geometry write validation', () => {
+  it('rejects malformed additions and batches without changing the input snapshot', () => {
+    const content = slideContent([shapeElement('shape')]);
+    const original = structuredClone(content);
+    expect(() =>
+      applyEditIntents(content, [
+        { type: 'element.add', element: shapeElement('bad', { path: 'M0 0 Z1 1' }) },
+      ]),
+    ).toThrow(/path/);
+    expect(() =>
+      applyEditIntents(content, [
+        { type: 'element.update', id: 'shape', props: { fill: '#123456' } },
+        { type: 'element.update', id: 'shape', props: { viewBox: [0, 0] } },
+      ]),
+    ).toThrow(/viewBox/);
+    expect(content).toEqual(original);
+  });
+
+  it('permits unrelated edits of historical paths beyond new input limits', () => {
+    const path = 'M0 0' + ' L1 1'.repeat(10_001);
+    const content = slideContent([shapeElement('shape', { path })]);
+    expect(
+      applyEditIntents(content, [
+        { type: 'element.update', id: 'shape', props: { fill: '#123456' } },
+      ]).canvas.elements[0],
+    ).toMatchObject({ path, fill: '#123456' });
+    expect(() =>
+      applyEditIntents(content, [{ type: 'element.update', id: 'shape', props: { width: 500 } }]),
+    ).toThrow(/commands/);
+  });
+
+  it('rejects changing an extra viewBox entry on a historical shape', () => {
+    const shape = shapeElement('shape', {
+      viewBox: [200, 100, 1] as unknown as [number, number],
+    });
+    const content = slideContent([shape]);
+    expect(() =>
+      applyEditIntents(content, [
+        {
+          type: 'element.update',
+          id: shape.id,
+          props: { viewBox: [200, 100, 2] as unknown as [number, number] },
+        },
+      ]),
+    ).toThrow(/viewBox/);
+    expect(content.canvas.elements[0]).toEqual(shape);
+  });
+
+  it('rejects duplicating historical bad shapes without changing the source', () => {
+    const content = slideContent([
+      shapeElement('valid'),
+      shapeElement('bad', { path: 'M0 0 Z1 1' }),
+    ]);
+    const before = structuredClone(content);
+    expect(() =>
+      applyEditorTransaction(content, {
+        origin: 'system',
+        history: 'neutral',
+        operations: [
+          {
+            type: 'element.duplicate',
+            elementIds: ['valid', 'bad'],
+            idMap: { valid: 'valid-copy', bad: 'bad-copy' },
+          },
+        ],
+      }),
+    ).toThrow(/path/);
+    expect(content).toEqual(before);
+  });
+});
+
 function tableElement(id: string, overrides: Partial<PPTTableElement> = {}): PPTTableElement {
   return {
     id,

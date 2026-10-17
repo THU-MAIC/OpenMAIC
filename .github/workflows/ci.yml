@@ -167,6 +167,9 @@ jobs:
       - name: Unit Tests (importer)
         run: pnpm --filter @openmaic/importer test
 
+      - name: Unit Tests (geometry)
+        run: pnpm --filter @openmaic/geometry test
+
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test
 

@@ -1,8 +1,8 @@
 name: Publish @openmaic packages
 
-# Publishes the @openmaic/* package family (dsl, generation, storage, renderer, editor, importer) to npm.
+# Publishes the @openmaic/* package family (dsl, geometry, generation, storage, renderer, editor, importer) to npm.
 #
-# Scope is pinned to those five packages by name on purpose: the workspace also
+# Scope is pinned to the owned packages by name on purpose: the workspace also
 # contains vendored forks (mathml2omml, pptxgenjs) whose names we do NOT own, so
 # a publish must never touch them.
 #
@@ -40,6 +40,7 @@ on:
     branches: [main]
     paths:
       - "packages/@openmaic/dsl/package.json"
+      - "packages/@openmaic/geometry/package.json"
       - "packages/@openmaic/generation/package.json"
       - "packages/@openmaic/storage/package.json"
       - "packages/@openmaic/renderer/package.json"
@@ -116,12 +117,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build in dependency order (dsl first); generation/storage/renderer/editor/importer
+      # Build in dependency order (dsl and geometry first); generation/storage/renderer/editor/importer
       # resolve @openmaic/dsl through the workspace link.
       - name: Build @openmaic packages
         run: >-
           pnpm -r
-          --filter "@openmaic/dsl"
+          --filter "@openmaic/geometry" --filter "@openmaic/dsl"
           --filter "@openmaic/generation"
           --filter "@openmaic/storage"
           --filter "@openmaic/renderer"
@@ -170,7 +171,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir "$RELEASE_ARTIFACTS"
-          for pkg in dsl generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage renderer editor importer; do
             echo "::group::@openmaic/$pkg"
             ( cd "packages/@openmaic/$pkg" \
               && pnpm pack --config.ignore-scripts=true --pack-destination "$RELEASE_ARTIFACTS" )
@@ -210,7 +211,7 @@ jobs:
           STORAGE_PG_BASELINE: ${{ runner.temp }}/storage-pg-baseline.json
         run: |
           set -euo pipefail
-          pnpm --filter "@openmaic/dsl" \
+          pnpm --filter "@openmaic/geometry" --filter "@openmaic/dsl" \
             --filter "@openmaic/generation" --filter "@openmaic/renderer" \
             --filter "@openmaic/editor" \
             --filter "@openmaic/importer" run test
@@ -220,7 +221,7 @@ jobs:
             --outputFile.json="$STORAGE_VITEST_RESULTS"
           node scripts/assert-pg-contract-suites.mjs "$STORAGE_VITEST_RESULTS" \
             --baseline "$STORAGE_PG_BASELINE"
-          pnpm --filter "@openmaic/dsl" --filter "@openmaic/generation" \
+          pnpm --filter "@openmaic/geometry" --filter "@openmaic/dsl" --filter "@openmaic/generation" \
             --filter "@openmaic/storage" --filter "@openmaic/renderer" \
             --filter "@openmaic/editor" run typecheck
 
@@ -377,7 +378,7 @@ jobs:
           node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
 
           node scripts/check-package-version-bumps.mjs --release
-          for pkg in dsl generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage renderer editor importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             planned="$(node -e 'const plan = require(process.env.RELEASE_PLAN_PATH);
@@ -450,7 +451,7 @@ jobs:
           PUBLISHED_VERSIONS: ${{ needs.publish.outputs.published_versions }}
         run: |
           set -euo pipefail
-          for pkg in dsl generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage renderer editor importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             tag="$name@$version"

@@ -14,6 +14,8 @@
  *
  * Field sets mirror `@openmaic/dsl` `slides.ts` exactly (the 10-element union).
  */
+import { validateShapeGeometry, shapeGeometryChanged } from '@openmaic/geometry';
+import type { Slide, PPTShapeElement } from '@openmaic/dsl';
 import { Type, type TSchema } from 'typebox';
 import { Check, Errors } from 'typebox/value';
 import { ElementTypes } from '@openmaic/dsl';
@@ -743,16 +745,66 @@ export function validateElementPatch(type: string, patch: Record<string, unknown
 
 /** Validate a complete, id-less element before the server assigns identity. */
 export function validateElementInput(element: unknown): string[] {
-  if (Check(SlideElementInputSchema, element)) return [];
+  if (Check(SlideElementInputSchema, element)) {
+    const input = element as PPTShapeElement;
+    return input.type === 'shape' ? shapeGeometryIssues(input, 'element') : [];
+  }
   return Errors(SlideElementInputSchema, element).map(
     (error) => `element${error.instancePath || ''}: ${error.message}`,
   );
 }
 
 /** Validate the entire patched canvas, rejecting unknown fields at every level. */
-export function validateSlideCanvas(canvas: unknown): string[] {
-  if (Check(SlideCanvasSchema, canvas)) return [];
-  return Errors(SlideCanvasSchema, canvas).map(
+export function validateSlideCanvas(canvas: unknown, previous?: Slide): string[] {
+  // TypeBox rejects NaN/Infinity even when they are unchanged historical
+  // geometry. Check a numeric projection so style edits can pass without
+  // weakening validation of newly written shape geometry.
+  const schemaCanvas = projectUnchangedHistoricalGeometry(canvas, previous);
+  if (Check(SlideCanvasSchema, schemaCanvas)) {
+    const old = new Map(previous?.elements.map((element) => [element.id, element]));
+    return (canvas as Slide).elements.flatMap((element, index) => {
+      if (element.type !== 'shape') return [];
+      const before = old.get(element.id);
+      if (before?.type === 'shape' && !shapeGeometryChanged(before, element)) return [];
+      return shapeGeometryIssues(element, `canvas/elements/${index}`);
+    });
+  }
+  return Errors(SlideCanvasSchema, schemaCanvas).map(
     (error) => `canvas${error.instancePath || ''}: ${error.message}`,
   );
+}
+
+function projectUnchangedHistoricalGeometry(canvas: unknown, previous?: Slide): unknown {
+  if (!previous || !canvas || typeof canvas !== 'object' || !('elements' in canvas)) return canvas;
+  const elements = canvas.elements;
+  if (!Array.isArray(elements)) return canvas;
+  const old = new Map(previous.elements.map((element) => [element.id, element]));
+  let changed = false;
+  const projected = elements.map((element) => {
+    if (!element || typeof element !== 'object' || element.type !== 'shape') return element;
+    const before = old.get(element.id);
+    if (before?.type !== 'shape' || shapeGeometryChanged(before, element)) return element;
+    const finite = (value: unknown) =>
+      typeof value === 'number' && !Number.isFinite(value) ? 1 : value;
+    const width = finite(element.width);
+    const height = finite(element.height);
+    const viewBox = Array.isArray(element.viewBox) ? element.viewBox.map(finite) : element.viewBox;
+    if (
+      Object.is(width, element.width) &&
+      Object.is(height, element.height) &&
+      (!Array.isArray(viewBox) ||
+        viewBox.every((value: unknown, index: number) => Object.is(value, element.viewBox[index])))
+    )
+      return element;
+    changed = true;
+    return { ...element, width, height, viewBox };
+  });
+  return changed ? { ...canvas, elements: projected } : canvas;
+}
+
+function shapeGeometryIssues(shape: PPTShapeElement, prefix: string): string[] {
+  const result = validateShapeGeometry(shape);
+  if (result.ok) return [];
+  const { field, position, message } = result.error;
+  return [`${prefix}/${field}${position === undefined ? '' : ` at ${position}`}: ${message}`];
 }

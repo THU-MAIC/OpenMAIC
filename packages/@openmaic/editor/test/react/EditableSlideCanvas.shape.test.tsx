@@ -159,6 +159,27 @@ describe('EditableSlideCanvas — Shape label editing', () => {
     ) as HTMLElement;
     expect(editor).toHaveClass('slide-renderer-prose');
     expect(editor.style.getPropertyValue('--paragraphSpace')).toBe('5px');
+    expect(editor.style.padding).toBe('10px');
+    expect(editor.style.lineHeight).toBe('1.625');
+    expect(editor.style.boxSizing).toBe('border-box');
+  });
+
+  it('keeps the recovered shape label editor inside a full-height text box', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={{ ...slide, elements: [{ ...shape, path: 'M0 0 Z1 1' }] }}
+        scale={1}
+        selection={{ elementIds: ['shape-1'], primaryId: 'shape-1', editingId: 'shape-1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        onTextContentChange={vi.fn()}
+      />,
+    );
+    const editor = container.querySelector('[data-renderer-shape-label-editor]') as HTMLElement;
+    const content = editor.closest('.element-content') as HTMLElement;
+    expect(content).not.toBeNull();
+    expect(content.style.height).toBe('100%');
+    expect(editor.style.inset).toBe('0px');
   });
 
   it('removes an empty Shape label when its editor blurs', () => {
