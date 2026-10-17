@@ -76,6 +76,14 @@ export class PlaybackController {
 
   getState = (): PlaybackState => this.state;
 
+  /** Play will unload this scene rather than start or resume its media. */
+  willNavigateOnPlay(): boolean {
+    return (
+      (this.state.mode === 'idle' && this.finished && this.index > 0) ||
+      (this.state.mode === 'holding' && this.index < this.options.scenes.length - 1)
+    );
+  }
+
   /** The host rendered scene `index` (after any navigation, including the first render). */
   sceneShown(index: number): void {
     if (index === this.index) return;
@@ -92,7 +100,7 @@ export class PlaybackController {
   play(): void {
     switch (this.state.mode) {
       case 'idle':
-        if (this.finished && this.index > 0) {
+        if (this.willNavigateOnPlay()) {
           this.finished = false;
           this.startOnShow = true;
           this.options.navigate(0);
@@ -107,7 +115,7 @@ export class PlaybackController {
         this.update({ mode: 'playing' });
         return;
       case 'holding':
-        if (this.index < this.options.scenes.length - 1) this.options.navigate(this.index + 1);
+        if (this.willNavigateOnPlay()) this.options.navigate(this.index + 1);
         else this.startScene();
         return;
       case 'playing':

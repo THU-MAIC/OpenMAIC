@@ -41,11 +41,22 @@ export function usePlayback(
       scenes,
       navigate: (next) => navigateRef.current(next),
       ports: {
-        playAudio: (ref, control) => narration.play(ref, control),
+        playAudio: async (ref, control) => {
+          while (!control.signal.aborted) {
+            const silence = widgets.pauseMedia();
+            const silent = silence === true || (await silence);
+            if (control.signal.aborted) return false;
+            if (silent) return narration.play(ref, control);
+            controller.pause();
+            await control.gate.whenOpen(control.signal);
+          }
+          return false;
+        },
         playVideo: (elementId, control) => videos.play(elementId, control),
         sendWidgetMessage: (type, payload) => widgets.send(type, payload),
       },
     });
+    widgets.onMediaPlay = () => controller.pause();
     videos.setUserHooks({
       onUserPause: () => controller.pause(),
       onUserPlay: () => controller.play(),
@@ -55,11 +66,12 @@ export function usePlayback(
 
   useEffect(
     () => () => {
+      widgets.attach(null);
       controller.dispose();
       narration.stop();
       media.dispose();
     },
-    [controller, media, narration],
+    [controller, media, narration, widgets],
   );
 
   // Effects run after the commit, so the new scene's video elements and
@@ -72,16 +84,21 @@ export function usePlayback(
   const linkedMediaMissing = useSyncExternalStore(media.subscribe, media.linkedMediaMissing);
   useEffect(() => media.probeLinkedMedia(), [media]);
 
-  const play = useCallback(() => {
+  const play = useCallback(async () => {
+    // Prime inside the gesture; the real clip waits for the frame to be silent.
     narration.prime();
+    // Navigation unmounts the old frame; the destination guards its own narration.
+    if (!controller.willNavigateOnPlay()) {
+      const silence = widgets.pauseMedia();
+      if (silence !== true && !(await silence)) return;
+    }
     videos.pauseManual();
     controller.play();
-  }, [controller, narration, videos]);
+  }, [controller, narration, videos, widgets]);
   const toggle = useCallback(() => {
-    narration.prime();
-    if (controller.getState().mode !== 'playing') videos.pauseManual();
-    controller.toggle();
-  }, [controller, narration, videos]);
+    if (controller.getState().mode === 'playing') controller.pause();
+    else void play();
+  }, [controller, play]);
   const pause = useCallback(() => controller.pause(), [controller]);
   const dismissDiscussion = useCallback(() => controller.dismissDiscussion(), [controller]);
 

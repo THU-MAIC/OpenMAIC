@@ -41,6 +41,7 @@ import { loadCursor, saveCursor, type PlaybackCursor } from '@/lib/playback/curs
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
+import { MEDIA_CONTROL } from '@/lib/interactive/media-bridge';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
@@ -94,6 +95,7 @@ type ElementReferenceSendSnapshot = Pick<DraftElementReference, 'reference' | 's
  * chat to be quiescent — fire-and-forget on unmount loses that guarantee.
  */
 export interface PlaybackChromeRootHandle {
+  pauseForInteractiveMedia: () => void;
   /** Ends any active SSE session, stops the engine, cleans up TTS audio. */
   teardown: () => Promise<void>;
   /** Receives one identity-only pick from the sibling Interactive iframe host. */
@@ -274,7 +276,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [audioIndicatorState, setAudioIndicatorState] = useState<AudioIndicatorState>('idle');
     const [audioAgentId, setAudioAgentId] = useState<string | null>(null);
 
+    const pauseInteractiveMedia = useCallback(async () => {
+      const result = await useWidgetIframeStore
+        .getState()
+        .sendMessageByScene[currentSceneId ?? '']?.(MEDIA_CONTROL, {});
+      return result !== false;
+    }, [currentSceneId]);
     const discussionTTS = useDiscussionTTS({
+      beforePlayback: pauseInteractiveMedia,
+      onPlaybackBlocked: () => {
+        if (chatAreaRef.current?.pauseActiveLiveBuffer() || engineRef.current?.getMode() === 'live')
+          setIsDiscussionPaused(true);
+      },
       enabled: ttsEnabled && !ttsMuted,
       agents: selectedAgents,
       onAudioStateChange: (agentId, state) => {
@@ -585,6 +598,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           discussionTTS.cleanup();
           resetSceneState();
         },
+        pauseForInteractiveMedia: () => {
+          const engine = engineRef.current;
+          if (engine?.getMode() === 'playing') engine.pause();
+          if (lectureSessionIdRef.current)
+            chatAreaRef.current?.pauseBuffer(lectureSessionIdRef.current);
+          if (chatAreaRef.current?.pauseActiveLiveBuffer() || engine?.getMode() === 'live') {
+            discussionTTS.pause();
+            setIsDiscussionPaused(true);
+          }
+        },
         acceptInteractivePick: (pick) => interactivePickHandlerRef.current(pick),
         cancelElementPick: () => setElementPickActive(false),
       }),
@@ -791,6 +814,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
         // Create new PlaybackEngine
         const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
+          beforeSpeech: pauseInteractiveMedia,
           onModeChange: (mode) => {
             setEngineMode(mode);
           },
@@ -1177,7 +1201,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           chatAreaRef.current?.pauseBuffer(lectureSessionIdRef.current);
         }
       } else if (mode === 'paused') {
-        engine.resume();
+        await engine.resume();
+        if (engineRef.current !== engine || engine.getMode() === 'paused') return;
         // Resume lecture buffer
         if (lectureSessionIdRef.current) {
           chatAreaRef.current?.resumeBuffer(lectureSessionIdRef.current);
@@ -1932,9 +1957,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     setIsDiscussionPaused(true);
                   }
                 }}
-                onDiscussionResume={() => {
+                onDiscussionResume={async () => {
+                  if ((await discussionTTS.resume()) === false) return;
                   chatAreaRef.current?.resumeActiveLiveBuffer();
-                  discussionTTS.resume();
                   setIsDiscussionPaused(false);
                 }}
                 totalActions={totalActions}

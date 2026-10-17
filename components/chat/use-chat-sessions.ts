@@ -1133,6 +1133,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       let currentMessageId: string | null = null;
 
       const onEvent = (event: StatelessEvent) => {
+        if (controller.signal.aborted) return;
         if (event.type === 'whiteboard') {
           consumePiWhiteboardEvent(event.data, controller.signal);
           return;
@@ -2131,10 +2132,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const pauseActiveLiveBuffer = useCallback((): boolean => {
     const active = sessionsRef.current.find(isOpenLiveSession);
     if (!active) return false;
-    const buf = buffersRef.current.get(active.id);
-    if (!buf || buf.disposed) return false;
     livePausedRef.current = true;
-    buf.pause();
+    const buf = buffersRef.current.get(active.id);
+    if (buf && !buf.disposed) buf.pause();
     log.info('[ChatArea] Buffer-paused discussion:', active.id);
     return true;
   }, []);

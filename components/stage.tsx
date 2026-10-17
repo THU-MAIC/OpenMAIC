@@ -218,6 +218,9 @@ export function Stage({
   const handlePlaybackInteractivePick = useCallback((pick: PlaybackInteractiveComponentPick) => {
     playbackRef.current?.acceptInteractivePick(pick);
   }, []);
+  const handleInteractiveMediaPlay = useCallback(() => {
+    playbackRef.current?.pauseForInteractiveMedia();
+  }, []);
   const handlePlaybackInteractiveCancel = useCallback(() => {
     playbackRef.current?.cancelElementPick();
   }, []);
@@ -403,6 +406,7 @@ export function Stage({
           the mode-swap subtree, so its iframes survive Pro mode toggles and
           scene switches instead of reloading on every remount. */}
       <InteractiveIframeHost
+        onMediaPlay={handleInteractiveMediaPlay}
         playbackPicker={playbackInteractivePicker}
         onPlaybackPick={handlePlaybackInteractivePick}
         onPlaybackCancel={handlePlaybackInteractiveCancel}

@@ -76,6 +76,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 class FakeAudio extends EventTarget {
   static instances: FakeAudio[] = [];
+  static pendingPlay: (() => Promise<void>) | undefined;
   playbackRate = 1;
   defaultPlaybackRate = 1;
   volume = 1;
@@ -85,6 +86,7 @@ class FakeAudio extends EventTarget {
   onerror: ((event?: Event) => void) | null = null;
   play = vi.fn(async () => {
     this.paused = false;
+    await FakeAudio.pendingPlay?.();
   });
   pause = vi.fn(() => {
     this.paused = true;
@@ -152,8 +154,10 @@ const teacher = {
 let root: Root;
 let hook: ReturnType<typeof useDiscussionTTS>;
 let enabled: boolean;
+let beforePlayback: (() => Promise<boolean>) | undefined;
 let agents: AgentConfig[];
 const stateChange = vi.fn();
+const playbackBlocked = vi.fn();
 const requests: Array<{
   body: Record<string, unknown>;
   signal: AbortSignal;
@@ -161,7 +165,13 @@ const requests: Array<{
 }> = [];
 
 function Probe() {
-  const result = useDiscussionTTS({ enabled, agents, onAudioStateChange: stateChange });
+  const result = useDiscussionTTS({
+    enabled,
+    agents,
+    beforePlayback,
+    onPlaybackBlocked: playbackBlocked,
+    onAudioStateChange: stateChange,
+  });
   useEffect(() => {
     hook = result;
   });
@@ -188,7 +198,9 @@ beforeEach(() => {
   mocks.settings.playbackSpeed = 1;
   requests.length = 0;
   FakeAudio.instances = [];
+  FakeAudio.pendingPlay = undefined;
   enabled = true;
+  beforePlayback = undefined;
   agents = [teacher];
   vi.stubGlobal('Audio', FakeAudio);
   vi.stubGlobal(
@@ -214,6 +226,95 @@ afterEach(() => {
 });
 
 describe('discussion TTS synthesis lookahead', () => {
+  it.each([false, true])(
+    'keeps an interrupted pending play on the same clip (resume before rejection: %s)',
+    async (resumeFirst) => {
+      const pending = deferred<void>();
+      FakeAudio.pendingPlay = () => pending.promise;
+      await seal('A');
+      await seal('B');
+      await respond(0);
+      const audio = FakeAudio.instances[0];
+      const src = audio.src;
+      act(() => hook.pause());
+      FakeAudio.pendingPlay = undefined;
+      if (resumeFirst) await act(async () => hook.resume());
+      await act(async () =>
+        pending.reject(new DOMException('play interrupted by pause', 'AbortError')),
+      );
+      expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
+      expect(audio.src).toBe(src);
+      if (!resumeFirst) await act(async () => hook.resume());
+      expect(audio.paused).toBe(false);
+      expect(audio.play).toHaveBeenCalledTimes(2);
+      await act(async () => audio.end());
+      expect(hook.shouldHold().segmentDone).toBe(1);
+    },
+  );
+  it('reports a blocked first segment and retries it with one silence check on resume', async () => {
+    const guard = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    beforePlayback = guard;
+    await act(async () => root.render(createElement(Probe)));
+    await seal('A');
+    expect(playbackBlocked).toHaveBeenCalledOnce();
+    expect(requests).toHaveLength(0);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
+    await act(async () => expect(await hook.resume()).toBe(true));
+    expect(guard).toHaveBeenCalledTimes(2);
+    expect(requests.map((r) => r.body.audioId)).toEqual(['A']);
+    await respond(0);
+    expect(FakeAudio.instances[0].paused).toBe(false);
+  });
+
+  it('reports a failed resume without losing the current discussion audio', async () => {
+    beforePlayback = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    await act(async () => root.render(createElement(Probe)));
+    await seal('A');
+    await respond(0);
+    act(() => hook.pause());
+    await act(async () => expect(await hook.resume()).toBe(false));
+    expect(playbackBlocked).toHaveBeenCalledOnce();
+    expect(FakeAudio.instances[0].paused).toBe(true);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
+  });
+
+  it('does not report a stale failed guard after cleanup', async () => {
+    const guard = deferred<boolean>();
+    beforePlayback = () => guard.promise;
+    await act(async () => root.render(createElement(Probe)));
+    await seal('A');
+    act(() => hook.cleanup());
+    await act(async () => guard.resolve(false));
+    expect(playbackBlocked).not.toHaveBeenCalled();
+    expect(hook.shouldHold().holding).toBe(false);
+  });
+
+  it('waits for iframe silence before starting and resuming discussion audio', async () => {
+    const first = deferred<boolean>();
+    beforePlayback = () => first.promise;
+    await act(async () => root.render(createElement(Probe)));
+    await seal('A');
+    expect(requests).toHaveLength(0);
+    await act(async () => first.resolve(true));
+    await respond(0);
+    const audio = FakeAudio.instances[0];
+    expect(audio.paused).toBe(false);
+    act(() => hook.pause());
+    const next = deferred<boolean>();
+    beforePlayback = () => next.promise;
+    await act(async () => root.render(createElement(Probe)));
+    let resumed!: Promise<boolean>;
+    act(() => {
+      resumed = Promise.resolve(hook.resume());
+    });
+    expect(audio.paused).toBe(true);
+    await act(async () => {
+      next.resolve(true);
+      await resumed;
+    });
+    expect(audio.paused).toBe(false);
+  });
+
   it('requests B during A playback and consumes the prepared result exactly once', async () => {
     await seal('A');
     await seal('B');
@@ -423,6 +524,7 @@ describe('discussion TTS synthesis lookahead', () => {
     await respond(1); // A cancelled prefetch must never be consumed.
     mocks.settings.ttsMuted = false;
     enabled = true;
+    beforePlayback = undefined;
     await act(async () => root.render(createElement(Probe)));
     expect(audio.volume).toBe(0.7);
     expect(audio.play).toHaveBeenCalledOnce();
@@ -453,6 +555,7 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(FakeAudio.instances[0].volume).toBe(0);
     mocks.settings.ttsMuted = false;
     enabled = true;
+    beforePlayback = undefined;
     act(() => root.render(createElement(Probe)));
     expect(FakeAudio.instances[0].volume).toBe(0.7);
     expect(FakeAudio.instances[0].play).toHaveBeenCalledOnce();

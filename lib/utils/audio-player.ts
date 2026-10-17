@@ -275,7 +275,7 @@ export class AudioPlayer {
    * Used to decide whether to resume playback or skip to the next line
    */
   public hasActiveAudio(): boolean {
-    return this.audio !== null;
+    return this.audio !== null && !this.audio.ended;
   }
 
   /**

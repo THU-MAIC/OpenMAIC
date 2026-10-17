@@ -1,3 +1,4 @@
+import { mediaBridgeScript } from '@/lib/interactive/media-bridge';
 import { injectIntoDocumentHead } from './html-document';
 import {
   withObservationResponder,
@@ -387,7 +388,11 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
  * Omitted by consumers that produce standalone documents (video export), where
  * no parent ever asks and the bytes count against an export size cap.
  */
-export function patchHtmlForIframe(html: string, observation?: ObservationIdentity): string {
+export function patchHtmlForIframe(
+  html: string,
+  observation?: ObservationIdentity,
+  mediaId?: string,
+): string {
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;
@@ -403,7 +408,16 @@ export function patchHtmlForIframe(html: string, observation?: ObservationIdenti
 </style>`;
 
   const injection =
-    '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
+    '\n' +
+    ERROR_CAPTURE_SHIM +
+    '\n' +
+    ELEMENT_PICKER_SHIM +
+    '\n' +
+    STORAGE_SHIM +
+    '\n' +
+    (mediaId ? mediaBridgeScript(mediaId) : '') +
+    '\n' +
+    iframeCss;
 
   const patched = injectIntoDocumentHead(html, injection);
   // Body end, not head: the reader captures the scope element as it installs.

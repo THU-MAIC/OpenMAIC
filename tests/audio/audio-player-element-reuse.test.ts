@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ActionEngine } from '@/lib/action/engine';
+import type { Scene } from '@/lib/types/stage';
 
 // Mock the IndexedDB layer so importing AudioPlayer doesn't pull in Dexie.
 const getMock = vi.fn();
@@ -40,6 +42,7 @@ class AudioStub {
   duration = 0;
   src = '';
   paused = true;
+  ended = false;
   readyState = 0;
   onended: (() => void) | null = null;
 }
@@ -101,6 +104,56 @@ describe('AudioPlayer narration element', () => {
 
     expect(instances).toHaveLength(1);
     expect(instances[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it('resumes a paused clip but does not treat an ended clip as active', async () => {
+    stubObjectUrl();
+    const { instances } = stubAudio();
+    const { AudioPlayer } = await import('@/lib/utils/audio-player');
+    const player = new AudioPlayer();
+    await player.play('audio-1');
+    player.pause();
+    expect(player.hasActiveAudio()).toBe(true);
+    instances[0].ended = true;
+    instances[0].onended?.();
+    expect(player.hasActiveAudio()).toBe(false);
+    player.stop();
+  });
+
+  it('starts the pending second speech after silence times out between clips', async () => {
+    stubObjectUrl();
+    const { instances } = stubAudio();
+    const { AudioPlayer } = await import('@/lib/utils/audio-player');
+    const { PlaybackEngine } = await import('@/lib/playback/engine');
+    const beforeSpeech = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const player = new AudioPlayer();
+    const engine = new PlaybackEngine(
+      [
+        {
+          id: 'scene',
+          actions: [
+            { id: 'a', type: 'speech', text: 'First', audioId: 'audio-1' },
+            { id: 'b', type: 'speech', text: 'Second', audioId: 'audio-2' },
+          ],
+        },
+      ] as Scene[],
+      { clearEffects: vi.fn() } as unknown as ActionEngine,
+      player,
+      { beforeSpeech },
+    );
+    engine.start();
+    await vi.waitFor(() => expect(instances[0]?.play).toHaveBeenCalledOnce());
+    const firstSource = instances[0].src;
+    instances[0].ended = true;
+    instances[0].onended?.();
+    await vi.waitFor(() => expect(engine.getMode()).toBe('paused'));
+    expect(engine.getSnapshot().actionIndex).toBe(1);
+    beforeSpeech.mockResolvedValue(true);
+    await engine.resume();
+    await vi.waitFor(() => expect(instances[0].src).not.toBe(firstSource));
+    expect(getMock).toHaveBeenLastCalledWith('audio-2');
+    expect(instances[0].play).toHaveBeenCalledTimes(2);
+    engine.stop();
   });
 
   it('reports the end of each line through a single assigned handler', async () => {

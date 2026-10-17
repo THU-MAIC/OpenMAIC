@@ -66,6 +66,103 @@ describe('discussion consumption emits a progress snapshot', () => {
       .filter((snapshot) => snapshot.consumedDiscussions.includes(id));
   }
 
+  it.each([1, 2])('retains a delayed discussion across %s pauses', async (pauses) => {
+    vi.useFakeTimers();
+    const audio = createAudioPlayer();
+    const onProactiveShow = vi.fn();
+    const engine = new PlaybackEngine(
+      [
+        scene([
+          discussion('delayed'),
+          { id: 'next', type: 'speech', text: 'Next line', audioId: 'next' },
+        ]),
+      ],
+      createActionEngine(),
+      audio,
+      { onProactiveShow },
+    );
+    engine.start();
+    for (let i = 0; i < pauses; i++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      engine.pause();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(onProactiveShow).not.toHaveBeenCalled();
+      await engine.resume();
+      expect(audio.play).not.toHaveBeenCalled();
+    }
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(onProactiveShow).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 'delayed' }),
+    );
+    expect(audio.play).not.toHaveBeenCalled();
+    engine.skipDiscussion();
+    await Promise.resolve();
+    expect(audio.play).toHaveBeenCalledExactlyOnceWith('next', undefined);
+    engine.stop();
+  });
+
+  it('keeps an already displayed discussion across pause without duplicating it', async () => {
+    vi.useFakeTimers();
+    const audio = createAudioPlayer();
+    const onProactiveShow = vi.fn();
+    const engine = new PlaybackEngine(
+      [scene([discussion('displayed')])],
+      createActionEngine(),
+      audio,
+      { onProactiveShow },
+    );
+    engine.start();
+    await vi.advanceTimersByTimeAsync(3000);
+    engine.pause();
+    await engine.resume();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(onProactiveShow).toHaveBeenCalledOnce();
+    expect(audio.play).not.toHaveBeenCalled();
+    engine.stop();
+  });
+
+  it.each([false, true])(
+    'keeps the requeued discussion after a live interruption (blocked resume: %s)',
+    async (blockedResume) => {
+      vi.useFakeTimers();
+      const audio = createAudioPlayer();
+      const onProactiveShow = vi.fn();
+      const beforeSpeech = vi.fn(async () => true);
+      const engine = new PlaybackEngine(
+        [
+          scene([
+            { id: 'previous', type: 'speech', text: 'Previous', audioId: 'previous' },
+            discussion('delayed'),
+          ]),
+        ],
+        createActionEngine(),
+        audio,
+        { onProactiveShow, beforeSpeech },
+      );
+      engine.start();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(audio.play).toHaveBeenCalledOnce();
+      engine.pause();
+      if (blockedResume) {
+        beforeSpeech.mockResolvedValue(false);
+        await engine.resume();
+        expect(engine.getMode()).toBe('paused');
+      }
+      engine.handleUserInterrupt('A question');
+      engine.handleEndDiscussion();
+      expect(engine.getSnapshot().actionIndex).toBe(1);
+      beforeSpeech.mockResolvedValue(true);
+      vi.mocked(audio.play).mockClear();
+      engine.continuePlayback();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(onProactiveShow).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: 'delayed' }),
+      );
+      expect(audio.play).not.toHaveBeenCalled();
+      engine.stop();
+    },
+  );
+
   it('publishes the fact when an unselected agent auto-skips the discussion', async () => {
     const onProgress = vi.fn();
     const engine = new PlaybackEngine(

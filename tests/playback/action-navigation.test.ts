@@ -743,3 +743,70 @@ describe('PlaybackEngine action navigation', () => {
     expect(engine.getMode()).toBe('idle');
   });
 });
+
+describe('sandbox media silence before narration', () => {
+  it('waits before both a new speech and audio resume', async () => {
+    const gate = deferred<boolean>();
+    const beforeSpeech = vi.fn(() => gate.promise);
+    const audio = createAudioPlayer(async () => true).player;
+    const engine = new PlaybackEngine(
+      [scene([speech('one')])],
+      createActionEngine().engine,
+      audio,
+      { beforeSpeech },
+    );
+    engine.start();
+    expect(audio.play).not.toHaveBeenCalled();
+    gate.resolve(true);
+    await flushPromises();
+    expect(audio.play).toHaveBeenCalledOnce();
+    engine.pause();
+    vi.mocked(audio.hasActiveAudio).mockReturnValue(true);
+    const resumedGate = deferred<boolean>();
+    beforeSpeech.mockReturnValue(resumedGate.promise);
+    const resumed = engine.resume();
+    expect(audio.resume).not.toHaveBeenCalled();
+    resumedGate.resolve(true);
+    await resumed;
+    expect(audio.resume).toHaveBeenCalledOnce();
+    engine.stop();
+  });
+
+  it('does not start stale speech after navigation cancels the silence wait', async () => {
+    const gate = deferred<boolean>();
+    const audio = createAudioPlayer(async () => true).player;
+    const engine = new PlaybackEngine(
+      [scene([speech('one')])],
+      createActionEngine().engine,
+      audio,
+      { beforeSpeech: () => gate.promise },
+    );
+    engine.start();
+    engine.stop();
+    gate.resolve(true);
+    await flushPromises();
+    expect(audio.play).not.toHaveBeenCalled();
+    expect(engine.getMode()).toBe('idle');
+  });
+
+  it('keeps the speech cursor when silence cannot be confirmed', async () => {
+    const beforeSpeech = vi.fn().mockResolvedValue(false);
+    const audio = createAudioPlayer(async () => true).player;
+    const engine = new PlaybackEngine(
+      [scene([speech('one')])],
+      createActionEngine().engine,
+      audio,
+      { beforeSpeech },
+    );
+    engine.start();
+    await flushPromises();
+    expect(engine.getMode()).toBe('paused');
+    expect(engine.getSnapshot().actionIndex).toBe(0);
+    expect(audio.play).not.toHaveBeenCalled();
+    beforeSpeech.mockResolvedValue(true);
+    await engine.resume();
+    await flushPromises();
+    expect(audio.play).toHaveBeenCalledOnce();
+    engine.stop();
+  });
+});

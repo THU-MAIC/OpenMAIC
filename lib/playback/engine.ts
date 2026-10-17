@@ -89,6 +89,8 @@ export class PlaybackEngine {
   private browserTTSPausedChunks: string[] = []; // remaining chunks saved on pause (for cancel+re-speak)
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
   private playbackGeneration: number = 0;
+  private pendingSpeech: { generation: number; actionIndex: number } | null = null;
+  private actionRewound = false;
   // Keep the cursor on speech for progress/persistence; defer its cues until playback starts.
   private pendingNavigationSpeechIndex: number | null = null;
 
@@ -139,6 +141,7 @@ export class PlaybackEngine {
   /** Restore playback position from a snapshot */
   restoreFromSnapshot(snapshot: PlaybackSnapshot): void {
     this.pendingNavigationSpeechIndex = null;
+    this.actionRewound = false;
     this.sceneIndex = snapshot.sceneIndex;
     this.actionIndex = snapshot.actionIndex;
     this.consumedDiscussions = new Set(snapshot.consumedDiscussions);
@@ -222,11 +225,19 @@ export class PlaybackEngine {
   /** playing → paused | live → paused (abort SSE, truncate, topic pending) */
   pause(): void {
     if (this.mode === 'playing') {
+      const pending =
+        this.pendingSpeech?.generation === this.playbackGeneration ? this.pendingSpeech : null;
+      // A rejected resume preflight can pause an already requeued action again.
+      const actionRewound = this.actionRewound;
       this.invalidatePlaybackGeneration();
+      this.actionRewound = actionRewound;
       // Cancel pending timers
       if (this.triggerDelayTimer) {
         clearTimeout(this.triggerDelayTimer);
         this.triggerDelayTimer = null;
+        // Requeue the discussion whose card has not appeared yet.
+        this.actionIndex--;
+        this.actionRewound = true;
       }
       if (this.speechTimer) {
         // Save remaining time so resume() can reschedule
@@ -237,7 +248,13 @@ export class PlaybackEngine {
         clearTimeout(this.speechTimer);
         this.speechTimer = null;
       }
+      if (pending) {
+        this.actionIndex = pending.actionIndex;
+        this.actionRewound = true;
+        this.pendingSpeech = null;
+      }
       this.setMode('paused');
+      if (pending) this.audioPlayer.stop();
       // Freeze TTS — but skip if waiting on ProactiveCard (no active speech)
       if (!this.currentTrigger) {
         if (this.browserTTSActive) {
@@ -262,7 +279,7 @@ export class PlaybackEngine {
   }
 
   /** paused → playing (TTS resume) | paused (in discussion) → live */
-  resume(): void {
+  async resume(): Promise<void> {
     if (this.mode !== 'paused') {
       log.warn('Cannot resume: not paused, mode is', this.mode);
       return;
@@ -278,6 +295,15 @@ export class PlaybackEngine {
     } else {
       // Resume lecture
       this.setMode('playing');
+      const generation = this.playbackGeneration;
+      if (this.callbacks.beforeSpeech) {
+        const silent = await this.callbacks.beforeSpeech();
+        if (this.getMode() !== 'playing' || !this.isCurrentGeneration(generation)) return;
+        if (!silent) {
+          this.pause();
+          return;
+        }
+      }
       if (this.browserTTSPausedChunks.length > 0) {
         // Browser TTS was paused via cancel — re-speak remaining chunks
         this.browserTTSActive = true;
@@ -440,15 +466,14 @@ export class PlaybackEngine {
 
   /** User sends a message during playback → interrupt → live mode */
   handleUserInterrupt(text: string): void {
+    const interruptedIndex = Math.max(0, this.actionIndex - (this.actionRewound ? 0 : 1));
     this.invalidatePlaybackGeneration();
     if (this.mode === 'playing' || this.mode === 'paused') {
-      // Save lecture state BEFORE stopping audio — actionIndex was already
-      // incremented by processNext, so subtract 1 to replay the interrupted
-      // sentence when resuming.  Guard against overwriting a previously saved
-      // position (e.g. live → paused → new message).
+      // Pending work already owns the cursor; otherwise replay the interrupted
+      // sentence. Keep the first saved position (e.g. live → paused → message).
       if (this.savedSceneIndex === null) {
         this.savedSceneIndex = this.sceneIndex;
-        this.savedActionIndex = Math.max(0, this.actionIndex - 1);
+        this.savedActionIndex = interruptedIndex;
       }
 
       // Cancel pending trigger delay
@@ -494,6 +519,8 @@ export class PlaybackEngine {
 
   private invalidatePlaybackGeneration(): number {
     this.playbackGeneration += 1;
+    this.pendingSpeech = null;
+    this.actionRewound = false;
     return this.playbackGeneration;
   }
 
@@ -600,11 +627,21 @@ export class PlaybackEngine {
       if (this.mode !== 'playing' || !this.isCurrentGeneration(generation)) return;
     }
 
+    if (action.type === 'speech' && this.callbacks.beforeSpeech) {
+      const silent = await this.callbacks.beforeSpeech();
+      if (this.mode !== 'playing' || !this.isCurrentGeneration(generation)) return;
+      if (!silent) {
+        this.pause();
+        return;
+      }
+    }
+
     // Notify progress BEFORE advancing the cursor so the snapshot points at
     // the current action.  On restore the same action will be replayed — this
     // is the desired behaviour for speech (user may have only heard half).
     this.callbacks.onProgress?.(this.getSnapshot());
 
+    this.actionRewound = false;
     this.actionIndex++;
 
     switch (action.type) {
@@ -615,6 +652,7 @@ export class PlaybackEngine {
         // onEnded → processNext; if paused, resume() will call processNext
         this.audioPlayer.onEnded(() => {
           if (!this.isCurrentGeneration(generation)) return;
+          this.pendingSpeech = null;
           this.callbacks.onSpeechEnd?.();
           if (this.mode === 'playing') {
             this.processNext(generation);
@@ -647,11 +685,14 @@ export class PlaybackEngine {
         // which would hang playback on that slide.
         const hasText = !!speechAction.text.trim();
 
+        const pending = { generation, actionIndex: this.actionIndex - 1 };
+        this.pendingSpeech = pending;
         this.audioPlayer
           // The legacy URL of an unconverted pair rides along as the
           // fallback of last resort; converted documents carry no audioUrl.
           .play(speechAction.audioId || '', (speechAction as LegacySpeechAction).audioUrl)
           .then((audioStarted) => {
+            if (this.pendingSpeech === pending) this.pendingSpeech = null;
             if (!this.isCurrentGeneration(generation)) return;
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS only when it is
@@ -669,6 +710,7 @@ export class PlaybackEngine {
             }
           })
           .catch((err) => {
+            if (this.pendingSpeech === pending) this.pendingSpeech = null;
             if (!this.isCurrentGeneration(generation)) return;
             log.error('TTS error:', err);
             scheduleReadingTimer();

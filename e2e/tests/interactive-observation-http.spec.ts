@@ -33,6 +33,7 @@ function bundle(declared: boolean) {
 import React, {useLayoutEffect,useEffect,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createObservationSession} from './lib/interactive/observation-bridge';
+import {createInteractiveMediaSession,mediaDocumentId,MEDIA_CONTROL} from './lib/interactive/media-bridge';
 import {patchHtmlForIframe} from './lib/utils/iframe';
 import {supportsInteractiveObservation, OBSERVATION_SCOPE_ID} from './lib/interactive/observation';
 import {sampleInteractiveState} from './lib/interactive/chat-observation';

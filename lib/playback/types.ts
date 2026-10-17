@@ -30,6 +30,8 @@ export interface TriggerEvent {
 
 /** Playback engine callbacks */
 export interface PlaybackEngineCallbacks {
+  /** Await sandbox media silence before starting or resuming narration. */
+  beforeSpeech?: () => Promise<boolean>;
   onModeChange?: (mode: EngineMode) => void;
   onSceneChange?: (sceneId: string) => void;
   onSpeechStart?: (text: string) => void;
