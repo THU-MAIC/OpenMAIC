@@ -29,7 +29,7 @@ export function RendererEditorCanvas() {
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
-  const sceneId = useSlideEditSession.getState().sceneId;
+  const { sceneId, epoch } = useSlideEditSession.getState();
 
   const selection = useMemo<Selection>(() => {
     const editingId =
@@ -47,19 +47,20 @@ export function RendererEditorCanvas() {
 
   const handleSelectionChange = useCallback(
     (next: Selection) => {
-      if (!sceneId || useSlideEditSession.getState().sceneId !== sceneId) return;
+      const session = useSlideEditSession.getState();
+      if (!sceneId || session.sceneId !== sceneId || session.epoch !== epoch) return;
       setActiveElementIdList([...next.elementIds]);
       setEditingElementId(next.editingId ?? '');
     },
-    [sceneId, setActiveElementIdList, setEditingElementId],
+    [sceneId, epoch, setActiveElementIdList, setEditingElementId],
   );
 
   const applyTransaction = useCallback(
     (transaction: EditorTransaction) => {
       if (!sceneId) return;
-      useSlideEditSession.getState().applyTransactionForScene(sceneId, transaction);
+      useSlideEditSession.getState().applyTransactionForScene(sceneId, transaction, epoch);
     },
-    [sceneId],
+    [sceneId, epoch],
   );
 
   const translateEditor = useCallback<EditorTranslate>(

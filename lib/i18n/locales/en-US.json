@@ -336,6 +336,7 @@
     "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode."
   },
   "edit": {
+    "contentUpdated": "Content was updated. This action was not applied. Please try again.",
     "proMode": "Pro",
     "undo": "Undo",
     "redo": "Redo",

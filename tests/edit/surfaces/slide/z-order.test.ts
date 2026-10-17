@@ -1,22 +1,12 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { reorderSlideElement } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
+import { createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
+import { seedSlideSession } from './session-fixture';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function seed(ids: string[]) {
-  useSlideEditSession.setState({
-    sceneId: null,
-    history: {
-      past: [],
-      present: {
-        type: 'slide',
-        canvas: { id: 's', elements: ids.map((id) => ({ id })) },
-      } as any,
-      future: [],
-    },
-  } as any);
+  seedSlideSession(ids.map((id) => createDefaultTextElement(id)));
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 function order(): string[] {
   return useSlideEditSession.getState().history!.present.canvas.elements.map((e) => e.id);

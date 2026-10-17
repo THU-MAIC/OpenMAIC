@@ -336,6 +336,7 @@
     "proModeDisabledHint": "Diese Seite kann nicht bearbeitet werden — öffne eine Kursfolie, um sie im Pro-Modus zu bearbeiten."
   },
   "edit": {
+    "contentUpdated": "Der Inhalt wurde aktualisiert. Diese Aktion wurde nicht angewendet. Bitte erneut versuchen.",
     "proMode": "Pro",
     "undo": "Rückgängig",
     "redo": "Wiederholen",

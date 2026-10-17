@@ -336,6 +336,7 @@
     "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro."
   },
   "edit": {
+    "contentUpdated": "Nội dung đã được cập nhật. Thao tác này chưa được áp dụng. Vui lòng thử lại.",
     "proMode": "Pro",
     "undo": "Hoàn tác",
     "redo": "Làm lại",

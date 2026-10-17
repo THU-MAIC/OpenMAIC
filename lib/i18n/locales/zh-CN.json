@@ -336,6 +336,7 @@
     "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
   },
   "edit": {
+    "contentUpdated": "内容已更新，本次操作未应用，请重试。",
     "proMode": "专业模式",
     "undo": "撤销",
     "redo": "重做",

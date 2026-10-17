@@ -5,6 +5,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { ColorPicker } from './ColorPicker';
 import { ImagePicker } from './ImagePicker';
 import { updateSlideBackground, useResolvedSlideContent } from './use-slide-surface';
+import { useSlideEditSession } from './slide-edit-session';
 
 /**
  * Slide-background picker — solid color / image tabs. Slide-level, so it
@@ -13,10 +14,11 @@ import { updateSlideBackground, useResolvedSlideContent } from './use-slide-surf
  */
 export function BackgroundControl() {
   const { t } = useI18n();
+  const epoch = useSlideEditSession((s) => s.epoch);
   const bg = useResolvedSlideContent().canvas.background;
   const color = bg?.type === 'solid' && bg.color ? bg.color : '#ffffff';
   return (
-    <Tabs defaultValue={bg?.type === 'image' ? 'image' : 'solid'} className="w-full">
+    <Tabs key={epoch} defaultValue={bg?.type === 'image' ? 'image' : 'solid'} className="w-full">
       <TabsList className="w-full">
         <TabsTrigger value="solid" className="flex-1">
           {t('edit.background.solid')}
@@ -29,13 +31,15 @@ export function BackgroundControl() {
         <ColorPicker
           className="w-full"
           value={color}
-          onChange={(c) => updateSlideBackground({ type: 'solid', color: c })}
-          onCommit={(c) => updateSlideBackground({ type: 'solid', color: c })}
+          onChange={(c) => updateSlideBackground({ type: 'solid', color: c }, epoch)}
+          onCommit={(c) => updateSlideBackground({ type: 'solid', color: c }, epoch)}
         />
       </TabsContent>
       <TabsContent value="image" className="pt-3">
         <ImagePicker
-          onPick={(src) => updateSlideBackground({ type: 'image', image: { src, size: 'cover' } })}
+          onPick={(src) =>
+            updateSlideBackground({ type: 'image', image: { src, size: 'cover' } }, epoch)
+          }
         />
       </TabsContent>
     </Tabs>

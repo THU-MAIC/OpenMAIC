@@ -4,19 +4,11 @@ import {
   updateSlideBackground,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
+import { seedSlideSession } from './session-fixture';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function seedEmpty() {
-  useSlideEditSession.setState({
-    sceneId: null,
-    history: {
-      past: [],
-      present: { type: 'slide', canvas: { id: 's', elements: [] } } as any,
-      future: [],
-    },
-  } as any);
+  seedSlideSession();
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 describe('slide background', () => {
   beforeEach(seedEmpty);
@@ -32,18 +24,24 @@ describe('slide background', () => {
   it('updateSlideBackground dispatches a slide.update with a solid background', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     updateSlideBackground({ type: 'solid', color: '#ff0000' });
-    expect(spy).toHaveBeenCalledWith({
-      type: 'slide.update',
-      patch: { background: { type: 'solid', color: '#ff0000' } },
-    });
+    expect(spy).toHaveBeenCalledWith(
+      {
+        type: 'slide.update',
+        patch: { background: { type: 'solid', color: '#ff0000' } },
+      },
+      undefined,
+    );
   });
 
   it('updateSlideBackground dispatches a slide.update with an image background', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     updateSlideBackground({ type: 'image', image: { src: 'x.png', size: 'cover' } });
-    expect(spy).toHaveBeenCalledWith({
-      type: 'slide.update',
-      patch: { background: { type: 'image', image: { src: 'x.png', size: 'cover' } } },
-    });
+    expect(spy).toHaveBeenCalledWith(
+      {
+        type: 'slide.update',
+        patch: { background: { type: 'image', image: { src: 'x.png', size: 'cover' } } },
+      },
+      undefined,
+    );
   });
 });

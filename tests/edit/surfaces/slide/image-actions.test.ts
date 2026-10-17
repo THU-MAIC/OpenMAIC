@@ -5,24 +5,16 @@ import {
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 import type { PPTImageElement } from '@openmaic/dsl';
+import { createDefaultImageElement } from '@/lib/edit/slide-edit-elements';
+import { seedSlideSession } from './session-fixture';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 function seedImage() {
-  useSlideEditSession.setState({
-    sceneId: null,
-    history: {
-      past: [],
-      present: {
-        type: 'slide',
-        canvas: { id: 's', elements: [{ id: 'img', type: 'image', src: 'a.png' }] },
-      } as any,
-      future: [],
-    },
-  } as any);
+  seedSlideSession([createDefaultImageElement('img', 'a.png')]);
 }
-const img = (over: Partial<PPTImageElement>) =>
-  ({ id: 'img', type: 'image', src: 'a.png', ...over }) as any;
-/* eslint-enable @typescript-eslint/no-explicit-any */
+const img = (over: Partial<PPTImageElement>) => ({
+  ...createDefaultImageElement('img', 'a.png'),
+  ...over,
+});
 
 describe('image surface helpers', () => {
   beforeEach(seedImage);
@@ -31,30 +23,39 @@ describe('image surface helpers', () => {
   it('replaceImageSrc updates src and clears the stale crop', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     replaceImageSrc('img', 'b.png');
-    expect(spy).toHaveBeenCalledWith({
-      type: 'element.update',
-      elementId: 'img',
-      patch: { src: 'b.png', clip: undefined },
-    });
+    expect(spy).toHaveBeenCalledWith(
+      {
+        type: 'element.update',
+        elementId: 'img',
+        patch: { src: 'b.png', clip: undefined },
+      },
+      undefined,
+    );
   });
 
   it('toggleImageFlip H toggles flipH from its current value', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     toggleImageFlip(img({ flipH: false }), 'H');
-    expect(spy).toHaveBeenCalledWith({
-      type: 'element.update',
-      elementId: 'img',
-      patch: { flipH: true },
-    });
+    expect(spy).toHaveBeenCalledWith(
+      {
+        type: 'element.update',
+        elementId: 'img',
+        patch: { flipH: true },
+      },
+      undefined,
+    );
   });
 
   it('toggleImageFlip V toggles flipV from its current value', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     toggleImageFlip(img({ flipV: true }), 'V');
-    expect(spy).toHaveBeenCalledWith({
-      type: 'element.update',
-      elementId: 'img',
-      patch: { flipV: false },
-    });
+    expect(spy).toHaveBeenCalledWith(
+      {
+        type: 'element.update',
+        elementId: 'img',
+        patch: { flipV: false },
+      },
+      undefined,
+    );
   });
 });

@@ -22,7 +22,7 @@ import { RendererEditorCanvas } from './RendererEditorCanvas';
 
 /** Switches between the preserved legacy editor and the renderer editor. */
 export function SlideCanvas() {
-  const { controller, gestureProps } = useSlideCanvasController();
+  const { controller, gestureProps, canvasKey } = useSlideCanvasController();
   const useRendererEditor = isEditorRendererEnabled();
   const requestedEditingElementId = useCanvasStore.use.editingElementId();
   const editingElementId = useEditingTextElementId(
@@ -43,7 +43,8 @@ export function SlideCanvas() {
 
   return (
     <div className="relative h-full w-full" {...gestureProps}>
-      <SceneProvider controller={controller}>
+      {/* 刷新会话时卸载旧画布，清理两种渲染器中仍在运行的手势和编辑状态。 */}
+      <SceneProvider key={canvasKey} controller={controller}>
         {useRendererEditor ? <RendererEditorCanvas /> : <Canvas />}
         <SpotlightOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />

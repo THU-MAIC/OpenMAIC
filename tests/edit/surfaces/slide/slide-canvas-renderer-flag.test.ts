@@ -111,8 +111,13 @@ vi.mock('@/components/edit/surfaces/slide/slide-edit-session', () => ({
   useSlideEditSession: {
     getState: () => ({
       sceneId: 'scene-1',
-      applyTransactionForScene: (sceneId: string, transaction: EditorTransaction) => {
-        state.applyTransaction(sceneId, transaction);
+      epoch: 1,
+      applyTransactionForScene: (
+        sceneId: string,
+        transaction: EditorTransaction,
+        epoch: number,
+      ) => {
+        state.applyTransaction(sceneId, transaction, epoch);
       },
     }),
   },
@@ -190,7 +195,7 @@ describe('slide editor renderer feature flag', () => {
     state.lastRendererProps?.onTransaction?.(transaction);
     state.lastRendererProps?.onSelectionChange?.({ elementIds: ['next'], editingId: 'next' });
 
-    expect(state.applyTransaction).toHaveBeenCalledWith('scene-1', transaction);
+    expect(state.applyTransaction).toHaveBeenCalledWith('scene-1', transaction, 1);
     expect(state.setActiveElementIdList).toHaveBeenCalledWith(['next']);
     expect(state.setEditingElementId).toHaveBeenCalledWith('next');
   });
