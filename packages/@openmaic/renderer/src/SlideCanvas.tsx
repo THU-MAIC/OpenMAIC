@@ -26,8 +26,6 @@ import { SLIDE_RENDERER_STYLES } from './styles';
 import { InlineMathPriorityContext } from './utils/inlineMath';
 
 export interface SlideCanvasProps {
-  /** Defer thumbnail formulas until foreground canvases finish. Defaults to normal. */
-  mathPriority?: 'normal' | 'background';
   /**
    * Single slide data (PPTist-style). May be omitted when this component is
    * rendered inside a `<SlideRendererProvider>` that supplies it.
@@ -63,6 +61,11 @@ export interface SlideCanvasProps {
   renderTable?: (element: PPTTableElement, defaultContent: ReactNode) => ReactNode;
   /** Enable pointer interaction for video controls or custom video UI. */
   videoInteractive?: boolean;
+  /**
+   * Background canvases use the frame allowance left by foreground layout
+   * effects, then finish in idle time at lower priority. Defaults to normal.
+   */
+  mathPriority?: 'normal' | 'background';
   /** Click handler invoked on any element. */
   onElementClick?: (element: PPTElement, event: React.MouseEvent) => void;
   /**

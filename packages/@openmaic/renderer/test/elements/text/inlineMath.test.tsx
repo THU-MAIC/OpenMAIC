@@ -14,6 +14,7 @@ import {
   completeInlineMath,
   renderInlineMath,
 } from '../../../src/utils/inlineMath';
+import { matrix, stored, stubIdleCallbacks } from '../../support/inlineMath';
 
 const LATEX = '\\sqrt{x}+\\frac{a}{b}';
 
@@ -26,14 +27,6 @@ afterEach(async () => {
   // Unmounting is not a frame boundary; separate each test's live budget.
   await new Promise(requestAnimationFrame);
 });
-
-/** Stored prose: the formula as source only. */
-function stored(latex: string): string {
-  const span = document.createElement('span');
-  span.setAttribute('data-inline-math', latex);
-  span.textContent = latex;
-  return span.outerHTML;
-}
 
 function host(html: string): HTMLElement {
   const element = document.createElement('div');
@@ -341,43 +334,6 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     Array.from({ length: 40 }, (_, k) => `\\sqrt{${index}_{${k}}}`)
       .join('')
       .padEnd(1_900);
-  // Short source, but thousands of rendered nodes across a few formulas.
-  const matrix = (index: number) =>
-    `\\begin{pmatrix}${Array.from({ length: 40 }, (_, k) => `a_{${index + k}}`).join('&')}\\end{pmatrix}`;
-
-  /**
-   * Idle callbacks that run only when the test flushes them, so idle-time work
-   * is deterministic instead of raced against wall-clock polling.
-   */
-  function idleQueue() {
-    const callbacks = new Map<number, () => void>();
-    let next = 0;
-    const request = vi.fn((callback: () => void) => {
-      next += 1;
-      callbacks.set(next, callback);
-      return next;
-    });
-    const cancel = vi.fn((handle: number) => {
-      callbacks.delete(handle);
-    });
-    vi.stubGlobal('requestIdleCallback', request);
-    vi.stubGlobal('cancelIdleCallback', cancel);
-    return {
-      request,
-      cancel,
-      callbacks,
-      /** Run queued callbacks, and those they queue, until none is left. */
-      flush() {
-        for (let run = 0; run < 100 && callbacks.size > 0; run += 1) {
-          const [handle, callback] = callbacks.entries().next().value!;
-          callbacks.delete(handle);
-          callback();
-        }
-        expect(callbacks.size).toBe(0);
-      },
-    };
-  }
-
   const longText = (id: string, sources: readonly string[]) =>
     ({
       left: 0,
@@ -450,7 +406,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   );
 
   it('shares a batch across prose roots and finishes them through one idle queue', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const sources = Array.from({ length: 8 }, (_, index) => matrix(index + 400));
     // A revisit must be bounded even when every formula is already cached.
     renderInlineMath(host(sources.map(stored).join('')), { complete: true });
@@ -475,7 +431,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   });
 
   it('ignores a cancelled callback after another root mounts', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const first = render(
       <BaseTextElement
         elementInfo={longText(
@@ -503,7 +459,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   });
 
   it('removes unmounted roots without cancelling the remaining roots', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const elements = Array.from({ length: 8 }, (_, index) =>
       longText(`removed-${index}`, [matrix(index + 500)]),
     );
@@ -537,7 +493,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   });
 
   it('finishes the rest in idle time after mount', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const sources = Array.from({ length: 6 }, (_, index) => long(index + 40));
     const view = render(<BaseTextElement elementInfo={longText('heavy', sources)} />);
     const typeset = () => view.container.querySelectorAll('.katex[data-inline-math]').length;
@@ -559,7 +515,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   });
 
   it('cancels idle work on unmount, and a late idle callback does nothing', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const sources = Array.from({ length: 6 }, (_, index) => long(index + 60));
     const view = render(<BaseTextElement elementInfo={longText('heavy-3', sources)} />);
     expect(idle.request).toHaveBeenCalled();
@@ -578,7 +534,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   ] as const)(
     'cancels idle work with the function it scheduled with when cancelIdleCallback is %s later',
     (_, later) => {
-      const idle = idleQueue();
+      const idle = stubIdleCallbacks();
       const sources = Array.from({ length: 6 }, (_, index) => long(index + 70));
       const view = render(<BaseTextElement elementInfo={longText('heavy-4', sources)} />);
       const [handle] = [...idle.callbacks.keys()].slice(-1);
@@ -614,7 +570,7 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
   });
 
   it('preserves progress and the batch budget through repeated commits with uncacheable formulas', () => {
-    const idle = idleQueue();
+    const idle = stubIdleCallbacks();
     const sources = Array.from({ length: 6 }, (_, index) => huge(index + 80));
     expect(sources.every((source) => source.length <= MAX_INLINE_MATH_SOURCE)).toBe(true);
     const content = sources.map((source) => `<p>${stored(source)}</p>`).join('');

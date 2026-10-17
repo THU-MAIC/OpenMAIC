@@ -6,18 +6,17 @@ import katex from 'katex';
 import type { Slide, PPTTextElement } from '@openmaic/dsl';
 import { SlideCanvas } from '../src/SlideCanvas';
 import { renderInlineMath, useInlineMath, useInnerHtml } from '../src/utils/inlineMath';
+import {
+  matrix,
+  stored,
+  stubAnimationFrames,
+  stubIdleCallbacks,
+  typesetCount,
+  type CallbackQueue,
+} from './support/inlineMath';
 
-const stored = (latex: string) => {
-  const span = document.createElement('span');
-  span.setAttribute('data-inline-math', latex);
-  span.textContent = latex;
-  return span.outerHTML;
-};
-const matrix = (i: number) =>
-  `\\begin{pmatrix}${Array.from({ length: 40 }, (_, k) => `a_{${i + k}}`).join('&')}\\end{pmatrix}`;
 const heavy = Array.from({ length: 30 }, (_, i) => matrix(i * 50));
 const ordinary = ['x^2', 'y+1', '\\frac{a}{b}'];
-const count = (root: ParentNode) => root.querySelectorAll('.katex[data-inline-math]').length;
 
 function slide(id: string, roots: string[][]): Slide {
   return {
@@ -71,42 +70,13 @@ function Thumbnails({ slides }: { slides: Slide[] }) {
   ));
 }
 
-// Native work is deliberately advanced at the frame/idle boundaries under test.
-function callbackQueue() {
-  const callbacks = new Map<number, () => void>();
-  let id = 0;
-  return {
-    callbacks,
-    request: (callback: () => void) => {
-      callbacks.set(++id, callback);
-      return id;
-    },
-    cancel: (handle: number) => {
-      callbacks.delete(handle);
-    },
-    step() {
-      const next = callbacks.entries().next().value;
-      if (!next) return;
-      callbacks.delete(next[0]);
-      next[1]();
-    },
-    flush() {
-      for (let i = 0; callbacks.size && i < 300; i++) this.step();
-      expect(callbacks.size).toBe(0);
-    },
-  };
-}
-
 describe('inline math in playback layouts', { timeout: 30_000 }, () => {
-  let idle: ReturnType<typeof callbackQueue>;
-  let frames: ReturnType<typeof callbackQueue>;
+  // Native work is deliberately advanced at the frame/idle boundaries under test.
+  let idle: CallbackQueue;
+  let frames: CallbackQueue;
   beforeEach(() => {
-    idle = callbackQueue();
-    frames = callbackQueue();
-    vi.stubGlobal('requestIdleCallback', idle.request);
-    vi.stubGlobal('cancelIdleCallback', idle.cancel);
-    vi.stubGlobal('requestAnimationFrame', frames.request);
-    vi.stubGlobal('cancelAnimationFrame', frames.cancel);
+    idle = stubIdleCallbacks();
+    frames = stubAnimationFrames();
   });
   afterEach(() => {
     cleanup();
@@ -122,10 +92,10 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
         thumbnails={[0, 1, 2].map((i) => slide(`thumb-${i}`, [heavy]))}
       />,
     );
-    expect(count(view.container.querySelector('main')!)).toBe(3);
+    expect(typesetCount(view.container.querySelector('main')!)).toBe(ordinary.length);
     await Promise.resolve();
     idle.flush();
-    expect(count(view.container.querySelector('aside')!)).toBe(90);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(heavy.length * 3);
   });
 
   it.each(['ordinary', 'heavy'] as const)(
@@ -143,18 +113,18 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       const target = kind === 'ordinary' ? ordinary : heavy;
       view.rerender(<Layout main={slide('target', [target])} thumbnails={thumbnails} />);
       const main = view.container.querySelector('main')!;
-      const before = count(main);
-      if (kind === 'ordinary') expect(before).toBe(3);
+      const before = typesetCount(main);
+      if (kind === 'ordinary') expect(before).toBe(ordinary.length);
       else {
         expect(before).toBeGreaterThan(0);
-        expect(before).toBeLessThan(30);
-        const sidebarBefore = count(view.container.querySelector('aside')!);
+        expect(before).toBeLessThan(heavy.length);
+        const sidebarBefore = typesetCount(view.container.querySelector('aside')!);
         idle.step();
-        expect(count(main)).toBeGreaterThan(before);
-        expect(count(view.container.querySelector('aside')!)).toBe(sidebarBefore);
+        expect(typesetCount(main)).toBeGreaterThan(before);
+        expect(typesetCount(view.container.querySelector('aside')!)).toBe(sidebarBefore);
       }
       idle.flush();
-      expect(count(main)).toBe(target.length);
+      expect(typesetCount(main)).toBe(target.length);
     },
   );
 
@@ -167,8 +137,8 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     );
     for (let i = 0; i < 2; i++) idle.step();
     const roots = view.container.querySelectorAll('[data-inline-math-root]');
-    expect(count(roots[1])).toBe(3);
-    expect(count(roots[0])).toBeLessThan(30);
+    expect(typesetCount(roots[1])).toBe(3);
+    expect(typesetCount(roots[0])).toBeLessThan(heavy.length);
   });
 
   it('renews the synchronous allowance at a frame without waiting for idle work', () => {
@@ -186,8 +156,10 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     const view = render(content(false));
     frames.flush();
     view.rerender(content(true));
-    expect(count(view.container.querySelector('main')!)).toBe(3);
-    expect(count(view.container.querySelector('[data-inline-math-root]')!)).toBeLessThan(30);
+    expect(typesetCount(view.container.querySelector('main')!)).toBe(ordinary.length);
+    expect(typesetCount(view.container.querySelector('[data-inline-math-root]')!)).toBeLessThan(
+      heavy.length,
+    );
   });
 
   it('schedules no idle callback for a completed ordinary slide', () => {
@@ -196,20 +168,23 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
   });
 
   it('uses the remaining allowance for ordinary thumbnails before paint, including edits', async () => {
+    const thumbnailCount = 6;
     const thumbnails = (sources: string[]) =>
-      [0, 1, 2, 3, 4, 5].map((i) => slide(`thumb-${i}`, [sources]));
+      Array.from({ length: thumbnailCount }, (_, i) => slide(`thumb-${i}`, [sources]));
     const main = slide('main', [ordinary]);
     const view = render(<Layout main={main} thumbnails={thumbnails(ordinary)} />);
-    expect(count(view.container.querySelector('main')!)).toBe(3);
+    expect(typesetCount(view.container.querySelector('main')!)).toBe(ordinary.length);
     // A commit's microtasks run before its first paint; no idle callback runs here.
     await Promise.resolve();
-    expect(count(view.container.querySelector('aside')!)).toBe(18);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(
+      thumbnailCount * ordinary.length,
+    );
     expect(idle.callbacks.size).toBe(0);
 
     frames.flush();
     view.rerender(<Layout main={main} thumbnails={thumbnails(['edited_x^3'])} />);
     await Promise.resolve();
-    expect(count(view.container.querySelector('aside')!)).toBe(6);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(thumbnailCount);
     expect(idle.callbacks.size).toBe(0);
   });
 
@@ -217,19 +192,19 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     const view = render(
       <Layout main={slide('main', [ordinary])} thumbnails={[slide('thumb', [heavy])]} />,
     );
-    expect(count(view.container.querySelector('main')!)).toBe(3);
+    expect(typesetCount(view.container.querySelector('main')!)).toBe(ordinary.length);
     await Promise.resolve();
-    const before = count(view.container.querySelector('aside')!);
+    const before = typesetCount(view.container.querySelector('aside')!);
     expect(before).toBeGreaterThan(0);
-    expect(before).toBeLessThan(30);
+    expect(before).toBeLessThan(heavy.length);
     // A second commit in the same frame must not grant thumbnails a new batch.
     view.rerender(
       <Layout main={slide('main', [ordinary])} thumbnails={[slide('thumb', [heavy])]} />,
     );
     await Promise.resolve();
-    expect(count(view.container.querySelector('aside')!)).toBe(before);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(before);
     idle.flush();
-    expect(count(view.container.querySelector('aside')!)).toBe(30);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(heavy.length);
   });
 
   it('does not schedule idle work when completed thumbnails rerender', async () => {
@@ -244,22 +219,24 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       frames.flush();
       view.rerender(thumbnail());
       await Promise.resolve();
-      expect(count(view.container)).toBe(3);
+      expect(typesetCount(view.container)).toBe(ordinary.length);
       expect(idle.callbacks.size).toBe(0);
     }
   });
 
   it('keeps pending heavy thumbnails in idle time during mixed streaming rerenders', async () => {
+    // Ordinary and heavy thumbnails interleaved: four ordinary, three heavy.
     const slides = Array.from({ length: 7 }, (_, i) =>
       slide(`thumb-${i}`, [i % 2 ? heavy : ordinary]),
     );
+    const heavyTotal = heavy.length * 3;
     const view = render(<Thumbnails slides={slides} />);
     await Promise.resolve();
-    expect(count(view.getByTestId('thumb-0'))).toBe(3);
+    expect(typesetCount(view.getByTestId('thumb-0'))).toBe(ordinary.length);
     const heavyCount = () =>
-      [1, 3, 5].reduce((total, i) => total + count(view.getByTestId(`thumb-${i}`)), 0);
+      [1, 3, 5].reduce((total, i) => total + typesetCount(view.getByTestId(`thumb-${i}`)), 0);
     const before = heavyCount();
-    expect(before).toBeLessThan(90);
+    expect(before).toBeLessThan(heavyTotal);
 
     for (let tick = 0; tick < 30; tick++) {
       frames.flush();
@@ -269,24 +246,25 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       expect(heavyCount()).toBe(before);
     }
     idle.flush();
-    expect(heavyCount()).toBe(90);
-    expect(count(view.container)).toBe(102);
+    expect(heavyCount()).toBe(heavyTotal);
+    expect(typesetCount(view.container)).toBe(heavyTotal + ordinary.length * 4);
   });
 
   it('renders an edited ordinary thumbnail before paint behind pending heavy thumbnails', async () => {
     const small = slide('small', [ordinary]);
     const dense = [0, 1, 2].map((i) => slide(`dense-${i}`, [heavy]));
+    const heavyTotal = heavy.length * dense.length;
     const view = render(<Thumbnails slides={[small]} />);
     await Promise.resolve();
-    expect(count(view.getByTestId('small'))).toBe(3);
+    expect(typesetCount(view.getByTestId('small'))).toBe(ordinary.length);
 
     frames.flush();
     view.rerender(<Thumbnails slides={[...dense, small]} />);
     await Promise.resolve();
     const heavyCount = () =>
-      dense.reduce((total, item) => total + count(view.getByTestId(item.id)), 0);
+      dense.reduce((total, item) => total + typesetCount(view.getByTestId(item.id)), 0);
     const before = heavyCount();
-    expect(before).toBeLessThan(90);
+    expect(before).toBeLessThan(heavyTotal);
 
     frames.flush();
     view.rerender(
@@ -295,10 +273,10 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       />,
     );
     await Promise.resolve();
-    expect(count(view.getByTestId('small'))).toBe(3);
+    expect(typesetCount(view.getByTestId('small'))).toBe(3);
     expect(heavyCount()).toBe(before);
     idle.flush();
-    expect(count(view.container)).toBe(93);
+    expect(typesetCount(view.container)).toBe(heavyTotal + 3);
   });
 
   it('preserves foreground priority when a thumbnail is promoted before its microtask', async () => {
@@ -317,16 +295,16 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     const view = render(content('background'));
     view.rerender(content('normal'));
     const main = view.container.querySelector('main')!;
-    const before = count(main);
+    const before = typesetCount(main);
     expect(before).toBeGreaterThan(0);
-    expect(before).toBeLessThan(30);
+    expect(before).toBeLessThan(heavy.length);
     await Promise.resolve();
-    const sidebarBefore = count(view.container.querySelector('aside')!);
+    const sidebarBefore = typesetCount(view.container.querySelector('aside')!);
     idle.step();
-    expect(count(main)).toBeGreaterThan(before);
-    expect(count(view.container.querySelector('aside')!)).toBe(sidebarBefore);
+    expect(typesetCount(main)).toBeGreaterThan(before);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(sidebarBefore);
     idle.flush();
-    expect(count(view.container)).toBe(60);
+    expect(typesetCount(view.container)).toBe(heavy.length * 2);
   });
 
   it('retypesets stored KaTeX markup in thumbnails before paint', async () => {
@@ -336,7 +314,7 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     const view = render(<SlideCanvas slide={data} scale={0.2} mathPriority="background" />);
     await Promise.resolve();
     expect(view.container.textContent).not.toContain('stale-render');
-    expect(count(view.container)).toBe(1);
+    expect(typesetCount(view.container)).toBe(1);
     expect(idle.callbacks.size).toBe(0);
   });
 
@@ -347,39 +325,41 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       useInlineMath(ref, html);
       return <div key={version} ref={ref} dangerouslySetInnerHTML={useInnerHtml(html)} />;
     }
+    const sources = heavy.slice(0, 8);
     const content = (version: number) =>
-      heavy.slice(0, 8).map((source) => <Prose key={source} source={source} version={version} />);
+      sources.map((source) => <Prose key={source} source={source} version={version} />);
     const view = render(content(0));
-    expect(count(view.container)).toBeLessThan(8);
+    expect(typesetCount(view.container)).toBeLessThan(sources.length);
     idle.flush();
     frames.flush();
-    expect(count(view.container)).toBe(8);
+    expect(typesetCount(view.container)).toBe(sources.length);
 
     view.rerender(content(1));
-    expect(count(view.container)).toBeGreaterThan(0);
-    expect(count(view.container)).toBeLessThan(8);
+    expect(typesetCount(view.container)).toBeGreaterThan(0);
+    expect(typesetCount(view.container)).toBeLessThan(sources.length);
     idle.flush();
-    expect(count(view.container)).toBe(8);
+    expect(typesetCount(view.container)).toBe(sources.length);
   });
 
   it('finishes queued math when only the request half of the frame API is available', () => {
     vi.stubGlobal('cancelAnimationFrame', undefined);
     const view = render(<SlideCanvas slide={slide('partial-frame-api', [heavy])} scale={1} />);
-    expect(count(view.container)).toBeLessThan(30);
+    expect(typesetCount(view.container)).toBeLessThan(heavy.length);
     idle.flush();
-    expect(count(view.container)).toBe(30);
+    expect(typesetCount(view.container)).toBe(heavy.length);
   });
 
   it('does not replenish the shared allowance when plain prose roots mount between formulas', () => {
+    const sources = heavy.slice(0, 8);
     const data = slide(
       'interleaved',
-      heavy.slice(0, 8).flatMap((source) => [[source], []]),
+      sources.flatMap((source) => [[source], []]),
     );
     const view = render(<SlideCanvas slide={data} scale={1} />);
-    expect(count(view.container)).toBeGreaterThan(0);
-    expect(count(view.container)).toBeLessThan(8);
+    expect(typesetCount(view.container)).toBeGreaterThan(0);
+    expect(typesetCount(view.container)).toBeLessThan(sources.length);
     idle.flush();
-    expect(count(view.container)).toBe(8);
+    expect(typesetCount(view.container)).toBe(sources.length);
   });
 
   it('reads current DOM when an external caller rewrites unchanged pending prose', () => {
@@ -393,7 +373,7 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     idle.step();
     view.rerender(<Prose tick={1} />);
     idle.flush();
-    expect(count(view.container)).toBe(30);
+    expect(typesetCount(view.container)).toBe(heavy.length);
   });
 
   it('admits cached ordinary formulas that still fit after a large formula was deferred', () => {
@@ -401,7 +381,9 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     warm.innerHTML = ordinary.map(stored).join('');
     renderInlineMath(warm, { complete: true });
     const view = render(<SlideCanvas slide={slide('mixed-cached', [heavy, ordinary])} scale={1} />);
-    expect(count(view.container.querySelectorAll('[data-inline-math-root]')[1])).toBe(3);
+    expect(typesetCount(view.container.querySelectorAll('[data-inline-math-root]')[1])).toBe(
+      ordinary.length,
+    );
   });
 
   it('typesets each uncacheable formula once across rotating roots', () => {
@@ -419,7 +401,7 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
       />,
     );
     idle.flush();
-    expect(count(view.container)).toBe(9);
+    expect(typesetCount(view.container)).toBe(9);
     expect(typeset).toHaveBeenCalledTimes(9);
   });
 
@@ -436,6 +418,6 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     expect(idle.callbacks.size).toBe(0);
     frames.flush();
     const next = render(<SlideCanvas slide={slide('next', [ordinary])} scale={1} />);
-    expect(count(next.container)).toBe(3);
+    expect(typesetCount(next.container)).toBe(ordinary.length);
   });
 });
