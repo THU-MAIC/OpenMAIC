@@ -12,7 +12,7 @@ export type CourseRunStatus =
   | { kind: 'paused' };
 
 export function courseRunStatus(
-  run: Pick<RunSnapshot, 'state' | 'progress'>,
+  run: Pick<RunSnapshot, 'state' | 'progress'> & Partial<Pick<RunSnapshot, 'step'>>,
 ): CourseRunStatus | null {
   switch (run.state) {
     case 'preparing':
@@ -20,12 +20,21 @@ export function courseRunStatus(
       return { kind: 'outlining' };
     case 'awaiting_outline_confirmation':
       return { kind: 'awaiting-confirmation' };
-    case 'generating':
+    case 'generating': {
+      const total = run.progress.scenesTotal;
+      if (total <= 0) {
+        return { kind: 'generating', completed: 0, total: 0 };
+      }
+      const stepMatch = typeof run.step === 'string' ? /^scene:(\d+):/.exec(run.step) : null;
+      const current = stepMatch
+        ? Math.min(Math.max(1, Number(stepMatch[1]) + 1), total)
+        : Math.min(run.progress.scenesCompleted + 1, total);
       return {
         kind: 'generating',
-        completed: run.progress.scenesCompleted,
-        total: run.progress.scenesTotal,
+        completed: current,
+        total,
       };
+    }
     case 'paused':
       return { kind: 'paused' };
     default:

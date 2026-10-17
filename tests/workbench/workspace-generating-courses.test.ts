@@ -165,7 +165,7 @@ describe('a course being generated, in the course rail', () => {
     expect(row.dataset.generating).toBe('true');
     expect(row.getAttribute('aria-disabled')).toBe('true');
     expect(byTestId(`pro-nav-course-meta-${GENERATING}`)!.textContent).toBe(
-      'classroom.runGenerating:{"completed":2,"total":8}',
+      'classroom.runGenerating:{"completed":3,"total":8}',
     );
     expect(row.querySelector('.animate-spin')).not.toBeNull();
     expect(row.title).toContain('workspace.courseGeneratingRowHint');
