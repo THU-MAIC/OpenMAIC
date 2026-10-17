@@ -81,8 +81,9 @@ export interface RedirectValidationOptions {
  * spellings the provider layer attaches to outbound calls: `authorization`
  * (Bearer tokens from the OpenAI/Anthropic/Azure SDKs and the verify routes),
  * `api-key` (Azure), `x-api-key` (Anthropic), `x-goog-api-key` (Google),
- * `ocp-apim-subscription-key` (Azure Speech), `xi-api-key` (ElevenLabs) and
- * the Volcengine Doubao key pair (`x-api-access-key` / `x-api-app-id`).
+ * `ocp-apim-subscription-key` (Azure Speech), `xi-api-key` (ElevenLabs),
+ * the Volcengine Doubao key pair (`x-api-access-key` / `x-api-app-id`) and
+ * `x-opencode-session` (OpenCode Go gateway session credential).
  * Matching is case-insensitive because HTTP header names are.
  */
 const CREDENTIAL_HEADERS = new Set([
@@ -94,6 +95,7 @@ const CREDENTIAL_HEADERS = new Set([
   'xi-api-key',
   'x-api-access-key',
   'x-api-app-id',
+  'x-opencode-session',
 ]);
 
 function isCredentialHeader(name: string): boolean {

@@ -203,6 +203,7 @@ describe('fetchWithRedirectValidation — every redirect hop is re-validated', (
     const headers = new Headers({
       authorization: 'Bearer sk-test',
       'x-api-key': 'anthropic-key',
+      'x-opencode-session': 'go-session',
       'content-type': 'application/json',
     });
 
@@ -218,6 +219,7 @@ describe('fetchWithRedirectValidation — every redirect hop is re-validated', (
     expect(secondHeaders).toBeInstanceOf(Headers);
     expect(secondHeaders.get('authorization')).toBeNull();
     expect(secondHeaders.get('x-api-key')).toBeNull();
+    expect(secondHeaders.get('x-opencode-session')).toBeNull();
     expect(secondHeaders.get('content-type')).toBe('application/json');
     // The caller's Headers instance is never mutated.
     expect(headers.get('authorization')).toBe('Bearer sk-test');

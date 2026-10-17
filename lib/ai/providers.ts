@@ -2351,6 +2351,25 @@ export function isProviderKeyRequired(providerId: string): boolean {
 }
 
 /**
+ * Whether a resolved base URL points at the OpenCode Go gateway. The gateway
+ * mandates the session header below; any other endpoint (including a
+ * client-supplied base URL for the same provider) must never receive it.
+ * Unparseable input fails closed.
+ */
+function isOpenCodeGoEndpoint(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  return (
+    url.hostname.toLowerCase() === 'opencode.ai' && url.pathname.toLowerCase().startsWith('/zen/go')
+  );
+}
+
+/**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
  */
@@ -2456,6 +2475,16 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
         name: config.providerId,
+        // The OpenCode Go gateway (https://opencode.ai/zen/go) requires the
+        // x-opencode-session header for routing; without it the gateway
+        // answers 400. Opt-in via env, and only for requests actually bound
+        // for that gateway (a deployment-level value, not per conversation),
+        // so the credential never reaches other endpoints.
+        ...(config.providerId === 'deepseek' &&
+        isOpenCodeGoEndpoint(effectiveBaseUrl) &&
+        process.env.OPENCODE_GO_SESSION?.trim()
+          ? { headers: { 'x-opencode-session': process.env.OPENCODE_GO_SESSION.trim() } }
+          : {}),
       };
 
       // A custom base URL makes the `openai` slot an OpenAI-compatible gateway,
