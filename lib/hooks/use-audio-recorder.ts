@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { createLogger } from '@/lib/logger';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 const log = createLogger('AudioRecorder');
 
@@ -13,8 +14,10 @@ export const ASR_NOT_CONFIGURED_MESSAGE = 'Speech recognition is not set up';
  * The provider the workspace's asr slot resolves to (its registry id), and the
  * user's language for it. The provider, model and key are the server's.
  */
-async function asrSetup(): Promise<{ providerId: ASRProviderId; language: string } | null> {
-  const [{ asr }, { useSettingsStore, getValidASRLanguage }] = await Promise.all([
+async function asrSetup(
+  locale: string,
+): Promise<{ providerId: ASRProviderId; language: string } | null> {
+  const [{ asr }, { useSettingsStore, resolveASRLanguage }] = await Promise.all([
     loadModelCapabilities(),
     import('@/lib/store/settings'),
   ]);
@@ -22,7 +25,7 @@ async function asrSetup(): Promise<{ providerId: ASRProviderId; language: string
   const providerId = asr.registryId as ASRProviderId;
   return {
     providerId,
-    language: getValidASRLanguage(providerId, useSettingsStore.getState().asrLanguage),
+    language: resolveASRLanguage(providerId, useSettingsStore.getState().asrLanguage, locale),
   };
 }
 
@@ -38,6 +41,11 @@ export interface UseAudioRecorderOptions {
 
 export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
   const { onTranscription, onError, continuous = false } = options;
+  const { locale } = useI18n();
+  const localeRef = useRef(locale);
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -61,7 +69,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
         // The asr slot names the provider and model on the server; the
         // upload format and the language follow the provider it resolves to.
-        const setup = typeof window !== 'undefined' ? await asrSetup() : null;
+        // onstop 持有开始录音时的回调；转录时读取最新语言，避免录音期间切换界面后仍用旧值。
+        const setup = typeof window !== 'undefined' ? await asrSetup(localeRef.current) : null;
         if (setup) {
           const uploadAudio = await normalizeASRUploadAudio(setup.providerId, audioBlob);
           formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
@@ -102,7 +111,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       // Get current ASR configuration
       if (typeof window !== 'undefined') {
         // Nothing to record with when the asr slot is off or unassigned.
-        const setup = await asrSetup();
+        const setup = await asrSetup(locale);
         if (!setup) {
           // Release the lock: a later click (once speech input is set up) must work.
           busyRef.current = false;
@@ -125,7 +134,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
           const recognition: any = new SpeechRecognitionCtor();
 
-          recognition.lang = asrLanguage || 'zh-CN';
+          recognition.lang = asrLanguage;
           recognition.continuous = continuous;
           recognition.interimResults = false;
 
@@ -264,7 +273,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       log.error('Failed to start recording:', error);
       onError?.('无法访问麦克风，请检查权限设置');
     }
-  }, [onTranscription, onError, transcribeAudio, continuous]);
+  }, [onTranscription, onError, transcribeAudio, continuous, locale]);
 
   // Stop recording
   const stopRecording = useCallback(() => {

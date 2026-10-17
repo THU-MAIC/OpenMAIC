@@ -51,6 +51,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { ttsSelection } from '@/lib/audio/tts-selection';
 import { detectSpeechLang } from '@/lib/audio/browser-tts-preview';
 import { createLogger } from '@/lib/logger';
+import i18n from '@/lib/i18n/config';
 
 const log = createLogger('PlaybackEngine');
 
@@ -837,7 +838,7 @@ export class PlaybackEngine {
       // auto-selects an appropriate voice. For Vietnamese additionally bind an
       // installed vi voice when one exists, since browsers otherwise fall back
       // to an English voice reading Vietnamese text.
-      utterance.lang = detectSpeechLang(chunkText);
+      utterance.lang = detectSpeechLang(chunkText, i18n.language);
       if (utterance.lang === 'vi-VN') {
         const viVoice = voices.find((v) => v.lang?.toLowerCase().startsWith('vi'));
         if (viVoice) {
