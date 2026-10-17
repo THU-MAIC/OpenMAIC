@@ -5,7 +5,7 @@ import { GET as getCapabilities } from '@/app/api/generate-classroom/capabilitie
 import { GET as getHealth } from '@/app/api/health/route';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { WORKBENCH_MATERIAL_MIME_TYPES } from '@/lib/workbench/material-upload-policy';
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 
 const config = vi.hoisted(() => ({
   pdf: {} as Record<string, object>,
@@ -156,7 +156,7 @@ describe('GET /api/generate-classroom/capabilities', () => {
 
   it('sits behind the access-code gate', async () => {
     vi.stubEnv('ACCESS_CODE', 'capabilities-test-secret');
-    const gated = await middleware(
+    const gated = await proxy(
       new NextRequest('http://localhost/api/generate-classroom/capabilities'),
     );
     expect(gated.status).toBe(401);

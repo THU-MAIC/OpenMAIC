@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 import { OWNER_ROLES } from '@/lib/server/identity';
 import {
   resetOwnerAuthenticationForTests,
@@ -122,7 +122,7 @@ describe('the access-code gate in front of the shared owner', () => {
   it('refuses an unauthenticated request before owner resolution is reached', async () => {
     configure('team-alpha');
 
-    const response = await middleware(stageRequest());
+    const response = await proxy(stageRequest());
 
     expect(response.status).toBe(401);
   });
@@ -131,7 +131,7 @@ describe('the access-code gate in front of the shared owner', () => {
     configure('team-alpha');
     const request = stageRequest(tokenFor(Date.now()));
 
-    expect((await middleware(request)).status).toBe(200);
+    expect((await proxy(request)).status).toBe(200);
 
     const outcome = await resolveRequestOwner(request);
     expect(outcome).toMatchObject({ ok: true, principal: { ownerId: 'team-alpha' } });

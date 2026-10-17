@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { GET } from '@/app/api/health/route';
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 
 /** The deployment's slots behind the capabilities these tests expect. */
 async function configureSlots(slots: Record<string, unknown>) {
@@ -32,7 +32,7 @@ describe('health access-code configuration', () => {
       await configureSlots({ tts: 'mm', image: null });
 
       // Health remains available to deployment probes without an access cookie.
-      const gate = await middleware(new NextRequest('http://localhost/api/health'));
+      const gate = await proxy(new NextRequest('http://localhost/api/health'));
       expect(gate.status).toBe(200);
 
       const response = await GET();
@@ -55,7 +55,7 @@ describe('health access-code configuration', () => {
       expect(JSON.stringify(body)).not.toContain('health-route-test-secret');
 
       // The new diagnostic must not change the local-first default or gate.
-      const api = await middleware(new NextRequest('http://localhost/api/foo'));
+      const api = await proxy(new NextRequest('http://localhost/api/foo'));
       expect(api.status).toBe(code ? 401 : 200);
     },
   );

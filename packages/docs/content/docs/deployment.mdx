@@ -170,6 +170,11 @@ See [Configuration](./configuration.mdx) for model configuration (`openmaic.yml`
 
 Shared demos can use `ACCESS_CODE` to put a password gate in front of the entire site. See [Configuration → ACCESS_CODE](./configuration.mdx#access_code--site-wide-password).
 
+## Request gateway and runtime
+
+The request gateway (`proxy.ts`) runs on the Node.js runtime. A deployment with the Pro workbench enabled (`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=true`) but no agent runtime configured gets a 404 for workbench routes (`/workbench/*`) at the gateway.
+
 ## Optional self-hosted services
 
 - [VoxCPM2: self-hosted TTS and voice cloning →](./voxcpm.mdx)
+

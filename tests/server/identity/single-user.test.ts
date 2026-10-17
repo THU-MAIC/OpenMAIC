@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 import {
   configureOwnerAuthentication,
   OWNER_ROLES,
@@ -167,7 +167,7 @@ describe('exposure: lenient, warned', () => {
 
   it('keeps an unauthenticated request away when ACCESS_CODE is set', async () => {
     configure({ enabled: 'true', accessCode: CODE, publishAddress: '0.0.0.0' });
-    const refused = await middleware(new NextRequest('http://localhost/api/stages'));
+    const refused = await proxy(new NextRequest('http://localhost/api/stages'));
     expect(refused.status).toBe(401);
 
     const raw = String(Date.now());
@@ -175,7 +175,7 @@ describe('exposure: lenient, warned', () => {
     const admitted = new NextRequest('http://localhost/api/stages', {
       headers: { cookie: `openmaic_access=${token}` },
     });
-    expect((await middleware(admitted)).status).toBe(200);
+    expect((await proxy(admitted)).status).toBe(200);
     await expect(resolveRequestOwner(admitted)).resolves.toMatchObject({
       ok: true,
       principal: { ownerId: 'local' },
