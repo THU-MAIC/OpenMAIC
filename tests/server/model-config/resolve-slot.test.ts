@@ -97,7 +97,7 @@ describe('resolveSlot', () => {
   it('lets the workspace replace a server default at a node and follow the rest', () => {
     const workspace = layer(
       'workspace',
-      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  course.outline: own:deepseek-v4-flash\n',
+      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  course.outline: own:deepseek-flash\n',
     );
     const layers = [deployment, workspace];
     expect(resolveSlot('llm', layers)).toMatchObject({ source: 'default', providerId: 'mm' });
@@ -105,7 +105,7 @@ describe('resolveSlot', () => {
       source: 'workspace',
       locked: false,
       providerId: 'own',
-      modelId: 'deepseek-v4-flash',
+      modelId: 'deepseek-flash',
     });
     expect(resolveSlot('course.agents', layers)).toMatchObject({
       resolvedAt: 'llm',
@@ -380,7 +380,7 @@ describe('resolveSlot with server defaults and locks', () => {
     apiKey: k
 slots:
   llm: ds:deepseek-v4-pro
-  course.content.slide: ds:deepseek-v4-flash
+  course.content.slide: ds:deepseek-flash
   video: mv:MiniMax-Hailuo-2.3
 `,
   );

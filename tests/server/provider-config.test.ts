@@ -339,16 +339,13 @@ providers:
 
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
       vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
-      vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3-preview,hunyuan-2.0-instruct-20251111');
+      vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3,hy3-202608');
       vi.stubEnv('MIMO_API_KEY', 'sk-mimo');
       vi.stubEnv('MIMO_MODELS', 'mimo-v2.5-pro');
       const { getServerProviders } = await import('@/lib/server/provider-config');
       const providers = getServerProviders();
 
-      expect(providers['tencent-hunyuan'].models).toEqual([
-        'hy3-preview',
-        'hunyuan-2.0-instruct-20251111',
-      ]);
+      expect(providers['tencent-hunyuan'].models).toEqual(['hy3', 'hy3-202608']);
       expect(providers.xiaomi.models).toEqual(['mimo-v2.5-pro']);
     });
 
@@ -365,7 +362,7 @@ providers:
 
     it('does not treat HY3 as an env prefix', async () => {
       vi.stubEnv('HY3_API_KEY', 'sk-hy3');
-      vi.stubEnv('HY3_MODELS', 'hy3-preview');
+      vi.stubEnv('HY3_MODELS', 'hy3');
       const { getServerProviders } = await import('@/lib/server/provider-config');
       const providers = getServerProviders();
 

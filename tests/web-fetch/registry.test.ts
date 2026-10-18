@@ -234,8 +234,8 @@ it('lets an existing workspace kimi provider rotate or clear its key, edit model
   setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   try {
     const current = {
-      providers: { kimi: { preset: 'kimi', apiKey: 'old-key', models: ['kimi-k2.5'] } },
-      slots: { llm: 'kimi:kimi-k2.5', webFetch: 'kimi' },
+      providers: { kimi: { preset: 'kimi', apiKey: 'old-key', models: ['kimi-k2.6'] } },
+      slots: { llm: 'kimi:kimi-k2.6', webFetch: 'kimi' },
     };
     const rotated = await applyModelSettingsChange(current, {
       kind: 'provider',
@@ -249,9 +249,9 @@ it('lets an existing workspace kimi provider rotate or clear its key, edit model
       kind: 'provider',
       id: 'kimi',
       preset: 'kimi',
-      models: ['kimi-k2.5', 'custom-model'],
+      models: ['kimi-k2.6', 'custom-model'],
     });
-    expect(edited.providers?.kimi.models).toEqual(['kimi-k2.5', 'custom-model']);
+    expect(edited.providers?.kimi.models).toEqual(['kimi-k2.6', 'custom-model']);
     expect(edited.providers?.kimi.apiKey).toBe('new-key');
     const cleared = await applyModelSettingsChange(edited, {
       kind: 'provider',
@@ -276,13 +276,13 @@ it('keeps a legacy browser kimi provider and its assignments on import', async (
   try {
     const proposal = buildModelSettingsProposal({
       providerId: 'kimi',
-      modelId: 'kimi-k2.5',
+      modelId: 'kimi-k2.6',
       providersConfig: { kimi: { apiKey: 'legacy-key', baseUrl: '' } },
     })!;
     const result = await importModelSettings(null, proposal);
     expect(result.skipped).toEqual([]);
     expect(result.config.providers?.kimi).toEqual({ preset: 'kimi', apiKey: 'legacy-key' });
-    expect(result.config.slots?.llm).toBe('kimi:kimi-k2.5');
+    expect(result.config.slots?.llm).toBe('kimi:kimi-k2.6');
     expect(result.imported).toEqual([
       { kind: 'provider', id: 'kimi' },
       { kind: 'slot', id: 'llm' },

@@ -28,38 +28,42 @@ describe('polled video adapter compatibility', () => {
     vi.useRealTimers();
   });
 
-  it('keeps Seedance task routing and success extraction unchanged', async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-task' })).mockResolvedValueOnce(
-      jsonResponse({
-        id: 'seed-task',
-        model: 'doubao-seedance-2-0-260128',
-        status: 'succeeded',
-        content: { video_url: 'https://cdn.example.com/seed.mp4' },
-        resolution: '720p',
-        ratio: '16:9',
+  it.each(['doubao-seedance-2-0-260128', 'doubao-seedance-1-0-lite-t2v-250428'])(
+    'keeps Seedance task routing and success extraction unchanged for %s',
+    async (model) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-task' })).mockResolvedValueOnce(
+        jsonResponse({
+          id: 'seed-task',
+          model,
+          status: 'succeeded',
+          content: { video_url: 'https://cdn.example.com/seed.mp4' },
+          resolution: '720p',
+          ratio: '16:9',
+          duration: 5,
+        }),
+      );
+
+      const promise = generateWithSeedance(
+        { providerId: 'seedance', apiKey: 'seed-key', model },
+        { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
+      );
+
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).model).toBe(model);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await expect(promise).resolves.toEqual({
+        url: 'https://cdn.example.com/seed.mp4',
         duration: 5,
-      }),
-    );
-
-    const promise = generateWithSeedance(
-      { providerId: 'seedance', apiKey: 'seed-key', model: 'doubao-seedance-2-0-260128' },
-      { prompt: 'a paper city', aspectRatio: '16:9', resolution: '720p', duration: 5 },
-    );
-
-    await vi.advanceTimersByTimeAsync(4_999);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1);
-
-    await expect(promise).resolves.toEqual({
-      url: 'https://cdn.example.com/seed.mp4',
-      duration: 5,
-      width: 1280,
-      height: 720,
-    });
-    expect(fetchMock.mock.calls[1][0]).toBe(
-      'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seed-task',
-    );
-  });
+        width: 1280,
+        height: 720,
+      });
+      expect(fetchMock.mock.calls[1][0]).toBe(
+        'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seed-task',
+      );
+    },
+  );
 
   it('preserves the Seedance timeout message and exact poll count', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-timeout' })).mockImplementation(() =>
@@ -376,7 +380,7 @@ describe('polled video adapter compatibility', () => {
         providerId: 'veo',
         apiKey: 'veo-key',
         baseUrl: 'https://veo.example',
-        model: 'veo-3.0-generate-001',
+        model: 'veo-3.1-generate-preview',
       },
       { prompt: 'a paper city', aspectRatio: '16:9', duration: 8 },
     );
@@ -406,7 +410,7 @@ describe('polled video adapter compatibility', () => {
           providerId: 'veo',
           apiKey: 'veo-key',
           baseUrl: 'https://veo.example',
-          model: 'veo-3.0-generate-001',
+          model: 'veo-3.1-generate-preview',
         },
         { prompt: 'a paper city' },
       ),
@@ -556,7 +560,7 @@ describe('polled video adapter compatibility', () => {
         providerId: 'veo',
         apiKey: 'veo-key',
         baseUrl: 'https://veo.example',
-        model: 'veo-3.0-generate-001',
+        model: 'veo-3.1-generate-preview',
       },
       { prompt: 'a paper city' },
     );

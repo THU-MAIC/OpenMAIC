@@ -166,16 +166,6 @@ Be deliberate with `@openmaic/dsl`. It is the contract the other packages and do
 
 You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.
 
-## App Releases
-
-App versions (the `vX.Y.Z` tags and GitHub Releases) say what a release is about. They are separate from the npm package rules above.
-
-- **Minor (`x.Y.0`)** — a themed release, titled by its theme (1.0.0 *Build courses with an agent*, 1.1.0 *Classroom chat on an agent loop*, 1.2.0 *Server-first*). Large migrations go through `-rc.N` pre-releases first.
-- **Patch (`x.y.Z`)** — cut from `main` with whatever has merged since the last release: fixes, security, and features alike, typically every one to three weeks. A patch may carry a breaking change when one is needed (tightening a default, retiring a superseded path); it is listed first under **Breaking Changes** with upgrade steps.
-- While `main` is in a minor's release-candidate cycle, security fixes for the current line ship as patches from a `release/x.y.x` branch.
-
-Every release has a `CHANGELOG.md` section, and the GitHub Release title names its headline.
-
 ## AI-Assisted PRs 🤖
 
 PRs built with AI tools (Codex, Claude, Cursor, etc.) are welcome! We just ask for transparency and self-review:

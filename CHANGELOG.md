@@ -15,6 +15,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Other Changes
 
+- Models: remove retired entries from the built-in catalogs and presets (existing saved IDs remain user-managed):
+  - deepseek: `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`. Use `deepseek-flash`.
+  - qwen: `qwen3.6-max-preview`, `qwen3-max`. Use `qwen3.7-max`.
+  - kimi: `kimi-k2.5`, `kimi-k2-thinking`. Use `kimi-k3`.
+  - siliconflow: `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`, `Pro/moonshotai/Kimi-K2.5`, `THUDM/GLM-4.1V-9B-Thinking`, `THUDM/GLM-Z1-Rumination-32B-0414`. Use an available model from the provider catalog.
+  - grok: `grok-4-1-fast-reasoning`, `grok-4-1-fast-non-reasoning`, `grok-code-fast-1`. Use `grok-4.3` or `grok-build-0.1`.
+  - grok-image: `grok-imagine-image-pro`. Use `grok-imagine-image`.
+  - tencent-hunyuan: `hy3-preview`; also remove `hunyuan-2.0-thinking-20251109` and `hunyuan-2.0-instruct-20251111` from environment examples. Use `hy3`.
+  - xiaomi: `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2-flash`. Use `mimo-v2.6-pro` or `mimo-v2.6-flash`.
+  - doubao: `doubao-seed-1-8-251228`. Use `doubao-seed-evolving`.
+  - seedream: `doubao-seedream-3-0-t2i-250415`. Use `doubao-seedream-5-0-260128`.
+  - seedance: `doubao-seedance-1-5-pro-251215`. Use `doubao-seedance-2-0-mini-260615`. Keep `doubao-seedance-1-0-lite-t2v-250428` while its status is Retiring, not Shutdown.
+  - qwen-image: `qwen-image-max`, `qwen-image-max-2025-12-30`, `qwen-image-plus`, `qwen-image-plus-2026-01-09`, `qwen-image`. Use `qwen-image-3.0`.
+  - nano-banana: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. Use `gemini-nano-banana-2.1` or `gemini-3-pro-image`.
+  - veo: `veo-3.0-fast-generate-001`, `veo-3.0-generate-001`, `veo-2.0-generate-001`. Use `veo-3.1-generate-preview` (scheduled to retire October 22, 2026).
+  - qwen-tts: `qwen3-tts-instruct-flash`, `qwen-tts`. Use `qwen3-tts-flash`.
+  - Ark Agent Plan doubao: `doubao-seed-2.1-turbo`, `doubao-seed-2.0-pro`, `doubao-seed-2.0-code`, `doubao-seed-2.0-lite`, `deepseek-v3.2`, `minimax-m2.7`, `glm-5.2`, `glm-5.1`, `kimi-k2.6`. Use `doubao-seed-2.1-pro`, `deepseek-v4-pro` or `minimax-m3`.
+  - Ark Agent Plan seedream: `doubao-seedream-5.0-lite`. Use `doubao-seedream-5.0-pro`.
+  - Ark Agent Plan seedance: `doubao-seedance-1.5-pro`. Use `doubao-seedance-2.0-mini`.
+  - Removed IDs still routed by their vendors (`deepseek-v4-flash*`, `grok-4-1-fast*`, `grok-code-fast-1`, SiliconFlow `Pro/moonshotai/Kimi-K2.5`, Ark Agent Plan `glm-5.2`) remain valid in saved configurations. They lose catalog capability metadata, including image input and thinking controls; reselect a replacement model to restore that metadata.
+  - Retain `qwen3-tts-vc-2026-01-22` as the non-selectable grouping ID for saved cloned voices. The model has retired: clone registration and synthesis fail until migration to CosyVoice. `TTS_QWEN_VOICE_CLONE_MODEL` can point to another model.
+  - Keep upcoming retirements in the catalog: MiMo V2.5 / V2.5 Pro on October 21, 2026; Veo 3.1 Fast / Standard / Lite previews and Doubao Seed 2.0 Lite / Mini on October 22, 2026; `gpt-image-1` on October 23, 2026. Google's recommended Veo replacement, `gemini-omni-1.1-flash`, is not yet supported by the Veo adapter.
+  - Ark Agent Plan: add the officially listed migration targets `doubao-seed-2.1-lite`, `glm-5.3`, `kimi-k3` and `kimi-k2.8-preview` (the Small-tier replacement for `kimi-k2.7-code`).
+  - Keep models with future retirement dates and unverified entries; update image/video probe defaults and refresh the documented model tables.
+
 - Dependencies: `@langchain/langgraph` is no longer installed. [#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)
 
 ## [1.2.0] - 2026-10-16

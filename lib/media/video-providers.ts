@@ -48,7 +48,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
         id: 'doubao-seedance-2-0-mini-260615',
         name: 'Seedance 2.0 Mini',
       },
-      { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro' },
       { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
       {
         id: 'doubao-seedance-1-0-pro-fast-251015',
@@ -87,9 +86,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
       { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast' },
       { id: 'veo-3.1-generate-preview', name: 'Veo 3.1' },
       { id: 'veo-3.1-lite-generate-preview', name: 'Veo 3.1 Lite' },
-      { id: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast' },
-      { id: 'veo-3.0-generate-001', name: 'Veo 3.0' },
-      { id: 'veo-2.0-generate-001', name: 'Veo 2.0' },
     ],
     supportedAspectRatios: ['16:9', '9:16'],
     supportedDurations: [8],
