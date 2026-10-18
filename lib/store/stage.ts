@@ -1129,7 +1129,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           outlines,
           generationComplete,
           generatingOutlines,
-          // 导出就绪判断也读取失败记录，必须同时落地，避免上一课程的失败残留。
+          // Export readiness reads the failed outlines too; set them together so a
+          // previous classroom's failures don't carry over.
           failedOutlines,
           // A course the browser was generating before generation moved to
           // the server: no run will produce the rest (a server job's course
