@@ -7,6 +7,7 @@ import {
   FetchUrlError,
 } from '@/lib/server/agent-runtime/fetch-url';
 import { kimi as provider } from '@/lib/web-fetch/providers/kimi';
+import { firecrawl } from '@/lib/web-fetch/providers/firecrawl';
 import {
   setDeploymentConfigForTests,
   setWorkspaceLayerLoaderForTests,
@@ -253,4 +254,54 @@ it('forwards the resolved provider proxy and options through the shared media pa
       },
     }),
   );
+});
+
+describe('Firecrawl behind the same trust boundary', () => {
+  const firecrawlOptions = { ...options, providerId: 'firecrawl' };
+  beforeEach(() => {
+    vi.spyOn(firecrawl, 'extract').mockResolvedValue({ title: 'Article', markdown: text });
+  });
+  it('dispatches a safe URL to Firecrawl after the local checks', async () => {
+    expect(await fetchAndExtractUrl(url, firecrawlOptions)).toMatchObject({
+      sourceUrl: url,
+      title: 'Article',
+      markdown: text,
+    });
+    expect(vi.mocked(dns.lookup).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(firecrawl.extract).mock.invocationCallOrder[0],
+    );
+  });
+  it.each(['http://127.0.0.1', 'http://metadata.google.internal', 'file:///tmp/example'])(
+    'never forwards an unsafe URL to Firecrawl: %s',
+    async (input) => {
+      await expect(fetchAndExtractUrl(input, firecrawlOptions)).rejects.toBeInstanceOf(
+        FetchUrlError,
+      );
+      expect(firecrawl.extract).not.toHaveBeenCalled();
+    },
+  );
+  it('never forwards a session-refused URL to Firecrawl', async () => {
+    options.isUrlAllowed.mockResolvedValue(false);
+    await expect(fetchAndExtractUrl(url, firecrawlOptions)).rejects.toMatchObject({
+      reason: 'blocked',
+    });
+    expect(firecrawl.extract).not.toHaveBeenCalled();
+  });
+  it('checks a redirect target against the session gate before accepting it', async () => {
+    vi.mocked(firecrawl.extract).mockResolvedValue({
+      markdown: text,
+      finalUrl: 'https://unapproved.example/landed',
+    });
+    options.isUrlAllowed.mockImplementation(async (input) => !input.includes('unapproved'));
+    await expect(fetchAndExtractUrl(url, firecrawlOptions)).rejects.toMatchObject({
+      reason: 'blocked',
+    });
+  });
+  it('rejects a private final URL reported by Firecrawl', async () => {
+    vi.mocked(firecrawl.extract).mockResolvedValue({
+      markdown: text,
+      finalUrl: 'http://10.0.0.1/internal',
+    });
+    await expect(fetchAndExtractUrl(url, firecrawlOptions)).rejects.toBeInstanceOf(FetchUrlError);
+  });
 });

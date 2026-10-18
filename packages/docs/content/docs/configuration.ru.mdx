@@ -688,7 +688,7 @@ AliDocMind поддерживает PDF, DOCX, PPTX, XLSX, а также PNG, JP
 
 ### Поисковые провайдеры
 
-Настройте Tavily, Exa, Bocha, Brave, Baidu, SearXNG или MiniMax:
+Настройте Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG или MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +696,9 @@ TAVILY_BASE_URL=           # опциональное переопределен
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # опциональное переопределение
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # опциональное переопределение
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # опциональное переопределение
@@ -756,6 +759,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +786,25 @@ slots:
 ```
 
 Эквивалент в устаревшей конфигурации: `OPENAI_API_KEY=...` и `OPENAI_MODELS=gpt-5.4-mini`. Для медиа используйте префикс возможности, например `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` и `WEB_SEARCH_CLAUDE_MODELS`.
+
+### Веб-поиск и загрузка DeepSeek
+
+Пресет `deepseek` использует общие `DEEPSEEK_API_KEY` и базовый URL API для чата, веб-поиска и размещённого извлечения Markdown. Поиск вызывает `POST /v1/tools/search`, возвращает до 50 результатов и обрезает запрос до 128 кодовых точек Unicode. Текст берётся из `summary`, а при его отсутствии — из `snippet`. Загрузка вызывает `POST /v1/tools/fetch` и читает `content` и необязательный непустой `title`.
+
+В старой конфигурации включите `WEB_SEARCH_DEEPSEEK_ENABLED=true` или явно добавьте `web-search.deepseek` в `server-providers.yml`. Одни учётные данные чата не включают поиск и не заменяют текущий поисковый сервис по умолчанию. `WEB_SEARCH_DEEPSEEK_ENABLED=false` принудительно отключает поиск. При наличии `openmaic.yml` старая переменная не назначает слот: явно объявите провайдера и назначьте `webSearch` и/или `webFetch`.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Чат и веб-поиск Kimi
 
@@ -813,6 +837,8 @@ slots:
 | --- | --- | --- |
 | `builtin` | Не нужны | Локальный Readability/Turndown; PDF используют слот `document` |
 | `kimi` | Ключ и базовый URL существующего провайдера Kimi | Размещённый сервис извлечения Markdown, включая URL файлов PDF |
+| `deepseek` | Ключ чата DeepSeek и базовый URL API | Размещённое извлечение Markdown |
+| `firecrawl` | Ключ API Firecrawl (`preset: firecrawl`) | Размещённый сервис извлечения основного содержимого страницы в Markdown, включая URL файлов PDF |
 
 ```yaml
 providers:
@@ -826,6 +852,12 @@ slots:
 
 Оба пресета, `kimi` и `kimi-coding-plan`, предоставляют `webFetch`. Для учётных данных Coding Plan используйте `preset: kimi-coding-plan`; его базовый URL по умолчанию — `https://api.kimi.com/coding/v1`. Явно заданный базовый URL сохраняется. Базовые URL Moonshot Open Platform (`https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1`) используют `/tools/fetch`, Coding Plan — `/fetch`. Оба отправляют `POST` с `{ "url": ... }` и Bearer-аутентификацией. Адаптер принимает `markdown` или `content`. Мейнтейнер проверил `POST https://api.kimi.com/coding/v1/fetch` с действующим ключом и подтвердил ответ `{ markdown, title, url }`; доступность международных адресов пока не проверена. Запросы учитывают настройку `proxy` провайдера и стандартные переменные окружения прокси.
 
+DeepSeek также предоставляет размещённое извлечение Markdown через пресет `deepseek` с ключом и базовым URL чата. Явно назначьте `webFetch`, как в примере выше. Используется `/v1/tools/fetch`, адрес шлюза из развёртывания сохраняется. Тайм-ауты и одна повторная попытка только при транспортной ошибке совпадают с Kimi; HTTP-ошибки и неверные ответы не повторяются.
+
 Используйте существующие учётные данные в **Настройки → Сервисы моделей → Загрузка веб-страниц** и выберите сервис в **Настройка моделей курса → Загрузка веб-страниц**. Ключ также используется чатом с этим провайдером: его изменение или удаление влияет на чат. Закреплённые администратором карточки доступны только для чтения. Первичная настройка сохраняет встроенный сервис, пока другой не выбран явно. Учётные данные рабочего пространства могут использовать официальные базовые URL API; собственные адреса загрузки и прокси администратор должен объявить в `openmaic.yml`.
+
+В отличие от `kimi`, у `firecrawl` собственный ключ: объявите провайдера с `preset: firecrawl` и `apiKey` (например, `${FIRECRAWL_API_KEY}`) или введите ключ в **Настройки → Сервисы моделей → Загрузка веб-страниц**. Он отправляет `POST /v2/scrape` с аутентификацией Bearer и получает основное содержимое страницы в Markdown. Базовый URL по умолчанию — `https://api.firecrawl.dev`; базовый URL самостоятельно размещённого Firecrawl должен объявить администратор в `openmaic.yml`.
+
+Тот же провайдер `firecrawl` обслуживает и веб-поиск (`POST /v2/search`): один ключ и один базовый URL подходят для обоих, поэтому одного провайдера можно назначить и в `slots.webSearch`, и в `slots.webFetch`. Устаревшие переменные `FIRECRAWL_API_KEY` и `FIRECRAWL_BASE_URL` настраивают именно этого провайдера; загрузка веб-страниц остаётся на `builtin`, пока `webFetch` не назначен ему.
 
 До передачи URL размещённому сервису выполняются проверка разрешённых URL сеанса, строгая нормализация URL и проверка всех адресов локального DNS. Те же проверки применяются к возвращённому конечному URL до принятия содержимого. Размещённый сервис управляет собственным DNS и промежуточными перенаправлениями, поэтому локальные проверки не могут закрепить его сетевые подключения. Текст остаётся недоверенными данными: применяются обнаружение страниц проверки доступа, ограничения размера в байтах, отметка об усечении, прежнее сохранение веб-материалов и формат результата `{trusted, untrusted}`.

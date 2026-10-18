@@ -97,7 +97,7 @@ describe('resolveSlot', () => {
   it('lets the workspace replace a server default at a node and follow the rest', () => {
     const workspace = layer(
       'workspace',
-      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  course.outline: own:deepseek-v4-flash\n',
+      'providers:\n  own:\n    preset: deepseek\n    apiKey: k\nslots:\n  course.outline: own:deepseek-flash\n',
     );
     const layers = [deployment, workspace];
     expect(resolveSlot('llm', layers)).toMatchObject({ source: 'default', providerId: 'mm' });
@@ -105,7 +105,7 @@ describe('resolveSlot', () => {
       source: 'workspace',
       locked: false,
       providerId: 'own',
-      modelId: 'deepseek-v4-flash',
+      modelId: 'deepseek-flash',
     });
     expect(resolveSlot('course.agents', layers)).toMatchObject({
       resolvedAt: 'llm',
@@ -307,6 +307,32 @@ describe('resolveSlot', () => {
     expect(resolved).not.toHaveProperty('modelId');
   });
 
+  it('resolves a Firecrawl web search provider from openmaic.yml', () => {
+    const config = parseModelConfig(
+      'providers:\n  fc:\n    preset: firecrawl\n    apiKey: k\nslots:\n  webSearch: fc\n',
+      { env: {} },
+    );
+    const resolved = resolveSlot('webSearch', [{ source: 'deployment', config }]);
+    expect(resolved).toMatchObject({ status: 'assigned', registryId: 'firecrawl', apiKey: 'k' });
+  });
+
+  it('serves web search and web fetch from one Firecrawl provider', () => {
+    const config = parseModelConfig(
+      'providers:\n  fc:\n    preset: firecrawl\n    apiKey: k\n    baseUrl: https://fc.example.com\nslots:\n  webSearch: fc\n  webFetch: fc\n',
+      { env: {} },
+    );
+    const layers = [{ source: 'deployment' as const, config }];
+    for (const slot of ['webSearch', 'webFetch'] as const) {
+      expect(resolveSlot(slot, layers)).toMatchObject({
+        status: 'assigned',
+        providerId: 'fc',
+        registryId: 'firecrawl',
+        apiKey: 'k',
+        baseUrl: 'https://fc.example.com',
+      });
+    }
+  });
+
   it("resolves a provider-only reference to a token plan's own default model", () => {
     const plan = PROVIDER_PRESETS.find(
       (preset) => preset.kind === 'token-plan' && preset.capabilities.video?.defaultModel,
@@ -380,7 +406,7 @@ describe('resolveSlot with server defaults and locks', () => {
     apiKey: k
 slots:
   llm: ds:deepseek-v4-pro
-  course.content.slide: ds:deepseek-v4-flash
+  course.content.slide: ds:deepseek-flash
   video: mv:MiniMax-Hailuo-2.3
 `,
   );

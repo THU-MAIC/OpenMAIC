@@ -119,7 +119,7 @@ These features need their own slot assigned, usually with a provider of their ow
 
 | Feature | Slot | Example presets |
 |---------|------|-----------------|
-| Web Search | `webSearch` | `tavily`, `exa`, `bocha`, `brave`, `baidu` |
+| Web Search | `webSearch` | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu` |
 | Image Generation | `image` | `seedream`, `qwen-image`, `nano-banana`, `openai-image` |
 | Video Generation | `video` | `seedance`, `kling`, `veo`, `minimax-video` |
 | TTS | `tts` | `openai-tts`, `azure-tts`, `glm-tts`, `qwen-tts`, `minimax-tts` |

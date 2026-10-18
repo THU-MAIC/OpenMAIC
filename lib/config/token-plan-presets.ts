@@ -239,45 +239,33 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         apiFormat: 'openai',
         defaultModels: [
-          'doubao-seed-2.1-turbo',
+          'doubao-seed-2.1-pro',
+          'doubao-seed-2.1-lite',
           'ark-code-latest',
-          'doubao-seed-2.0-pro',
-          'doubao-seed-2.0-code',
-          'doubao-seed-2.0-lite',
           'doubao-seed-2.0-mini',
           'deepseek-v4-pro',
           'deepseek-v4-flash',
-          'deepseek-v3.2',
           'minimax-m3',
-          'minimax-m2.7',
-          'glm-5.2',
-          'glm-5.1',
+          'glm-5.3',
+          'kimi-k3',
+          'kimi-k2.8-preview',
           'kimi-k2.7-code',
-          'kimi-k2.6',
         ],
-        defaultModelId: 'doubao-seed-2.1-turbo',
+        defaultModelId: 'doubao-seed-2.1-pro',
       },
-      // Image: Agent Plan documentation and user-facing guides consistently
-      // expose Seedream 5.0 Lite via the dotted plan alias, not the pay-as-you-go
-      // dated catalog id. The adapter routes by baseUrl path (/api/plan/v3 →
-      // /images/generations).
+      // Image: the plan uses dotted aliases rather than dated catalog ids.
+      // The adapter routes /api/plan/v3 to /images/generations.
       image: {
         providerId: 'seedream',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-        defaultModels: ['doubao-seedream-5.0-lite'],
+        defaultModels: ['doubao-seedream-5.0-pro'],
       },
-      // Video: list the highest Agent Plan offering first. Lower tiers can
-      // reject 2.0 with UnsupportedModel while still allowing 1.5-pro; we keep
-      // both in the catalogue and let generation-time errors reflect the user's
-      // actual plan tier.
+      // Video: lower tiers can reject a model with UnsupportedModel;
+      // generation-time errors reflect the user's actual plan tier.
       video: {
         providerId: 'seedance',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-        defaultModels: [
-          'doubao-seedance-2.0-mini',
-          'doubao-seedance-2.0',
-          'doubao-seedance-1.5-pro',
-        ],
+        defaultModels: ['doubao-seedance-2.0-mini', 'doubao-seedance-2.0'],
       },
       // Web search: 豆包搜索 (Custom 版). Unlike the LLM/image/video modalities,
       // this lives on its OWN host (open.feedcoopapi.com, not the ark plan

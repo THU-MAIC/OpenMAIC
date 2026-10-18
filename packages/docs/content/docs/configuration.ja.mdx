@@ -688,7 +688,7 @@ AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/J
 
 ### Web 検索
 
-Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +696,9 @@ TAVILY_BASE_URL=           # 任意の上書き
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # 任意の上書き
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 任意の上書き
@@ -756,6 +759,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +786,25 @@ slots:
 ```
 
 旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
+
+### DeepSeek の Web 検索と取得
+
+`deepseek` プリセットはチャット、Web 検索、ホスト型 Markdown 抽出で `DEEPSEEK_API_KEY` と API ベース URL を共有します。検索は `POST /v1/tools/search` を使い、最大 50 件を返します。クエリは Unicode コードポイント単位で 128 文字に切り詰め、結果には `summary`、空の場合は `snippet` を使います。取得は `POST /v1/tools/fetch` を使い、`content` と空でない任意の `title` を読み取ります。
+
+旧設定では `WEB_SEARCH_DEEPSEEK_ENABLED=true`、または `server-providers.yml` の明示的な `web-search.deepseek` エントリーで有効にします。チャットの認証情報だけでは検索を有効にせず、既存の検索の既定値も変更しません。`WEB_SEARCH_DEEPSEEK_ENABLED=false` は検索を強制無効化します。`openmaic.yml` がある場合、旧変数はスロットを割り当てられません。プロバイダーを宣言し、`webSearch` と／または `webFetch` を明示的に割り当ててください。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi のチャットと Web 検索
 
@@ -813,6 +837,8 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 | --- | --- | --- |
 | `builtin` | 不要 | ローカルの Readability/Turndown。PDF は `document` スロットを使用 |
 | `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
+| `deepseek` | 既存の DeepSeek チャットキーと API ベース | ホスト型 Markdown 抽出 |
+| `firecrawl` | Firecrawl の API キー（`preset: firecrawl`） | ホスト型の Markdown 抽出（ページの本文）。PDF の URL にも対応 |
 
 ```yaml
 providers:
@@ -826,6 +852,12 @@ slots:
 
 `kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。メンテナーが実際のキーで `POST https://api.kimi.com/coding/v1/fetch` をテストし、応答に `{ markdown, title, url }` が含まれることを確認しました。国際エンドポイントの利用可否は引き続き未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
 
+DeepSeek は `deepseek` プリセットでホスト型 Markdown 抽出も提供し、チャットのキーと API ベースを共有します。上の例のように `webFetch` を明示的に割り当てます。`/v1/tools/fetch` を使い、デプロイで指定したゲートウェイのベースを保持します。タイムアウトと転送エラーのみ 1 回再試行する動作は Kimi と同じで、HTTP エラーや不正な応答は再試行しません。
+
 **設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
+
+`kimi` と異なり、`firecrawl` は専用のキーを使います。`openmaic.yml` で `preset: firecrawl` のプロバイダーと `apiKey`（例: `${FIRECRAWL_API_KEY}`）を宣言するか、**設定 → モデルサービス → Webページ取得** でキーを入力します。Bearer 認証で `POST /v2/scrape` を送り、ページの本文を Markdown で取得します。既定のベース URL は `https://api.firecrawl.dev` です。セルフホストの Firecrawl のベース URL は、管理者が `openmaic.yml` で宣言する必要があります。
+
+同じ `firecrawl` プロバイダーは Web 検索（`POST /v2/search`）にも使えます。1 つのキーとベース URL で両方をまかなうため、1 つのプロバイダーを `slots.webSearch` と `slots.webFetch` の両方に割り当てられます。従来の `FIRECRAWL_API_KEY` と `FIRECRAWL_BASE_URL` 変数はこのプロバイダーを設定します。`webFetch` をこのプロバイダーに割り当てるまで、Webページ取得は `builtin` のままです。
 
 ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。

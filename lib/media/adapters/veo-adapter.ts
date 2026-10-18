@@ -17,8 +17,6 @@
  * - veo-3.1-generate-preview
  * - veo-3.1-fast-generate-preview
  * - veo-3.1-lite-generate-preview
- * - veo-3.0-generate-001, veo-3.0-fast-generate-001  (deprecated)
- * - veo-2.0-generate-001                             (legacy)
  *
  * Authentication: x-goog-api-key header
  *
@@ -38,7 +36,7 @@ import { runPolledTask, type TerminalResult, type PolledTaskControl } from '../p
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'veo-3.0-generate-001';
+const DEFAULT_MODEL = 'veo-3.1-generate-preview';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const MAX_POLL_ATTEMPTS = 60; // 10 minutes max

@@ -85,7 +85,7 @@ describe('lookupFromLayers', () => {
       config: {
         allowUserKeys: false,
         providers: {
-          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-flash'] },
         },
         slots: { llm: 'op:deepseek-v4-pro' },
       },
@@ -96,8 +96,8 @@ describe('lookupFromLayers', () => {
         providers: { mine: { preset: 'openai', apiKey: 'k' } },
         slots: {
           'course.outline': 'mine:gpt-5.6',
-          'course.actions': { model: 'op:deepseek-v4-flash', fallback: 'mine:gpt-5.6' },
-          classroom: 'op:deepseek-v4-flash',
+          'course.actions': { model: 'op:deepseek-flash', fallback: 'mine:gpt-5.6' },
+          classroom: 'op:deepseek-flash',
         },
       },
     };
@@ -109,10 +109,10 @@ describe('lookupFromLayers', () => {
     });
     // Its own model on a deployment provider stays, without its fallback.
     const actions = lookupFromLayers('course.actions', layers);
-    expect(actions).toMatchObject({ providerId: 'op', modelId: 'deepseek-v4-flash' });
+    expect(actions).toMatchObject({ providerId: 'op', modelId: 'deepseek-flash' });
     expect(actions).not.toHaveProperty('fallback');
     expect(lookupFromLayers('classroom', layers)).toMatchObject({
-      modelId: 'deepseek-v4-flash',
+      modelId: 'deepseek-flash',
     });
 
     // Allowed again (the default), the workspace's providers count.
@@ -129,7 +129,7 @@ describe('lookupFromLayers', () => {
       config: {
         allowUserKeys: false,
         providers: {
-          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-v4-flash'] },
+          op: { preset: 'deepseek', apiKey: 'k', models: ['deepseek-v4-pro', 'deepseek-flash'] },
         },
       },
     };
@@ -137,13 +137,13 @@ describe('lookupFromLayers', () => {
       source: 'workspace',
       config: {
         providers: { op: { preset: 'openai', apiKey: 'k' } },
-        slots: { llm: { model: 'op:deepseek-v4-pro', fallback: 'op:deepseek-v4-flash' } },
+        slots: { llm: { model: 'op:deepseek-v4-pro', fallback: 'op:deepseek-flash' } },
       },
     };
     expect(lookupFromLayers('llm', { deployment, workspace })).toMatchObject({
       providerId: 'op',
       modelId: 'deepseek-v4-pro',
-      fallback: { modelId: 'deepseek-v4-flash' },
+      fallback: { modelId: 'deepseek-flash' },
     });
   });
 });

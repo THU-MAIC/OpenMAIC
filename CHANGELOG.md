@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-10-18
+
+1.2.1 is a regular patch release. Its main theme is web research: Kimi, DeepSeek and Firecrawl join as web-search providers, and a new `webFetch` slot lets the agent's `fetch_url` tool use a hosted reader instead of the built-in one. It also contains one breaking change, the removal of the legacy director-graph classroom chat ([#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)), and removes retired models from the built-in catalogs ([#1939](https://github.com/THU-MAIC/OpenMAIC/pull/1939)). Read **Breaking Changes** before upgrading from 1.2.0.
+
 ### Breaking Changes
 
 - **The legacy director-graph classroom chat is removed; classroom chat always runs on Pi.** [#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)
@@ -13,9 +17,66 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Remove `NEXT_PUBLIC_PI_CHAT_ENABLED`. A production build accepts only unset, an empty string, `true` or `1` (exact match) and fails with migration guidance on any other value. The Docker build arg and its Compose forwarding remain only to carry the value to that check.
   - `POST /api/chat` is removed and answers `404`. With `ACCESS_CODE` set, an unauthenticated request still gets `401` first.
 
+### Highlights
+
+- **Web research.** Every new provider is opt-in or must be assigned; existing search defaults and the keyless `builtin` reader stay as they are.
+  - **`webFetch` slot.** The reader behind the agent's `fetch_url` tool is now a capability slot with its own provider registry. It defaults to `builtin` (the existing local reader); `webFetch: null` in `openmaic.yml` removes the tool. Kimi is the first hosted reader, reusing the `kimi` or `kimi-coding-plan` credentials. Choose the reader in **Course Model Config → Web Fetch** and enter keys in **Settings → Model Services → Web Fetch**. URL and private-address checks run before a URL reaches a hosted reader and again on the final URL it reports; each request uses one reader, with no fallback. [#1912](https://github.com/THU-MAIC/OpenMAIC/pull/1912)
+  - **Kimi web search.** Shares the Kimi chat key and base URL; Open Platform keys use Search Pro and Coding Plan keys use the Coding Plan search endpoint. A Kimi chat key alone does not enable search: set `WEB_SEARCH_KIMI_ENABLED=true`, add `web-search.kimi` to `server-providers.yml`, or, with `openmaic.yml`, assign `slots.webSearch` to a `kimi` provider. `WEB_SEARCH_KIMI_ENABLED=false` turns it off. [#1911](https://github.com/THU-MAIC/OpenMAIC/pull/1911)
+  - **Token plans can declare web fetch.** Connecting Kimi Coding Plan in **Settings → Token Plan** now assigns web fetch to the plan alongside chat and web search, taking over the implicit `builtin` default without a conflict prompt; disconnecting returns to the server default. Lock the `webFetch` slot to keep `builtin`. [#1927](https://github.com/THU-MAIC/OpenMAIC/pull/1927)
+  - **DeepSeek web search and fetch.** The `deepseek` preset reuses `DEEPSEEK_API_KEY` and its API base for both tools. Opt in to search with `WEB_SEARCH_DEEPSEEK_ENABLED=true`, a `web-search.deepseek` entry, or an explicit `webSearch` slot; assign `webFetch: deepseek` in `openmaic.yml` for fetch. [#1937](https://github.com/THU-MAIC/OpenMAIC/pull/1937)
+  - **Firecrawl web search and fetch.** One `firecrawl` provider (`preset: firecrawl`) serves both `webSearch` and `webFetch` with one key. `FIRECRAWL_API_KEY` / `FIRECRAWL_BASE_URL` configure it in legacy setups, where it comes last in the search preference order; web fetch stays on `builtin` until `webFetch` is assigned to it. A self-hosted Firecrawl base must be declared in `openmaic.yml`. [#1931](https://github.com/THU-MAIC/OpenMAIC/pull/1931) [#1834](https://github.com/THU-MAIC/OpenMAIC/pull/1834) (by @JuampiHernandez)
+
+### Features
+
+- Classroom chat: `cue_user` can offer 2 to 4 suggested replies, shown as one row of buttons in the roundtable. Choosing one sends it as an ordinary learner message; learners can still type their own reply. [#1379](https://github.com/THU-MAIC/OpenMAIC/pull/1379) (by @yanpgwang)
+
+### Bug Fixes
+
+- Chat: on plain HTTP at a non-localhost address (a LAN or Tailscale IP, for example), where the browser has no Web Locks, classroom chats failed to load and every save retried in a loop. Chats now save and load there; two tabs on the same chat resolve last-write-wins. The deployment guide recommends HTTPS for phones and tablets. [#1929](https://github.com/THU-MAIC/OpenMAIC/pull/1929)
+- i18n: the server picks the initial language from the locale cookie, then `Accept-Language`, and sets `<html lang>` to match, so server and client render the same language: a browser in another language no longer gets Chinese server HTML that switches after load. `/` and `/_not-found` now render dynamically. [#1874](https://github.com/THU-MAIC/OpenMAIC/pull/1874) (by @costajohnt)
+- Generation: a non-numeric or non-finite shape `rotate` is reported as a model-output error with its element path instead of silently becoming `0`; a missing or `null` angle still means `0` (`@openmaic/generation` 0.3.21). [#1891](https://github.com/THU-MAIC/OpenMAIC/pull/1891) (by @Hahaa909)
+- Roundtable: the suggested-reply bubble no longer appears stacked with the outgoing chat bubble and then jumps down; it appears once, in place, after the previous bubble has left. [#1943](https://github.com/THU-MAIC/OpenMAIC/pull/1943)
+
+### Packages
+
+- `@openmaic/generation` 0.3.21 (was 0.3.20). Other packages are unchanged from 1.2.0.
+
+### Known issues
+
+- Google shuts down the Veo 3.1 previews on October 22, 2026; after that the built-in Veo provider has no working model. [#1940](https://github.com/THU-MAIC/OpenMAIC/issues/1940)
+- Qwen voice cloning still uses a retired model, so registering or synthesizing a cloned voice fails until it moves to CosyVoice; `TTS_QWEN_VOICE_CLONE_MODEL` can point to another model. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
+- Volcengine Ark Agent Plan models report no image input, so reference images are dropped for them. [#1942](https://github.com/THU-MAIC/OpenMAIC/issues/1942)
+
 ### Other Changes
 
+- Models: remove retired entries from the built-in catalogs and presets (existing saved IDs remain user-managed): [#1939](https://github.com/THU-MAIC/OpenMAIC/pull/1939)
+  - deepseek: `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`. Use `deepseek-flash`.
+  - qwen: `qwen3.6-max-preview`, `qwen3-max`. Use `qwen3.7-max`.
+  - kimi: `kimi-k2.5`, `kimi-k2-thinking`. Use `kimi-k3`.
+  - siliconflow: `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`, `Pro/moonshotai/Kimi-K2.5`, `THUDM/GLM-4.1V-9B-Thinking`, `THUDM/GLM-Z1-Rumination-32B-0414`. Use an available model from the provider catalog.
+  - grok: `grok-4-1-fast-reasoning`, `grok-4-1-fast-non-reasoning`, `grok-code-fast-1`. Use `grok-4.3` or `grok-build-0.1`.
+  - grok-image: `grok-imagine-image-pro`. Use `grok-imagine-image`.
+  - tencent-hunyuan: `hy3-preview`; also remove `hunyuan-2.0-thinking-20251109` and `hunyuan-2.0-instruct-20251111` from environment examples. Use `hy3`.
+  - xiaomi: `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2-flash`. Use `mimo-v2.6-pro` or `mimo-v2.6-flash`.
+  - doubao: `doubao-seed-1-8-251228`. Use `doubao-seed-evolving`.
+  - seedream: `doubao-seedream-3-0-t2i-250415`. Use `doubao-seedream-5-0-260128`.
+  - seedance: `doubao-seedance-1-5-pro-251215`. Use `doubao-seedance-2-0-mini-260615`. Keep `doubao-seedance-1-0-lite-t2v-250428` while its status is Retiring, not Shutdown.
+  - qwen-image: `qwen-image-max`, `qwen-image-max-2025-12-30`, `qwen-image-plus`, `qwen-image-plus-2026-01-09`, `qwen-image`. Use `qwen-image-3.0`.
+  - nano-banana: `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`. Use `gemini-nano-banana-2.1` or `gemini-3-pro-image`.
+  - veo: `veo-3.0-fast-generate-001`, `veo-3.0-generate-001`, `veo-2.0-generate-001`. Use `veo-3.1-generate-preview` (scheduled to retire October 22, 2026).
+  - qwen-tts: `qwen3-tts-instruct-flash`, `qwen-tts`. Use `qwen3-tts-flash`.
+  - Ark Agent Plan doubao: `doubao-seed-2.1-turbo`, `doubao-seed-2.0-pro`, `doubao-seed-2.0-code`, `doubao-seed-2.0-lite`, `deepseek-v3.2`, `minimax-m2.7`, `glm-5.2`, `glm-5.1`, `kimi-k2.6`. Use `doubao-seed-2.1-pro`, `deepseek-v4-pro` or `minimax-m3`.
+  - Ark Agent Plan seedream: `doubao-seedream-5.0-lite`. Use `doubao-seedream-5.0-pro`.
+  - Ark Agent Plan seedance: `doubao-seedance-1.5-pro`. Use `doubao-seedance-2.0-mini`.
+  - Removed IDs that vendors route to a catalog successor resolve to it for capability lookups, so saved configurations keep image input, thinking controls and reasoning replay: `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` → `deepseek-flash`, `hy3-preview` → `hy3`, `grok-code-fast-1` → `grok-build-0.1`, Ark Agent Plan `glm-5.2` → `glm-5.3`.
+  - `grok-4-1-fast*` (served as `grok-4.3` at a fixed reasoning effort) and SiliconFlow `Pro/moonshotai/Kimi-K2.5` remain valid in saved configurations. They lose catalog capability metadata, including image input and thinking controls; reselect a replacement model to restore that metadata.
+  - Retain `qwen3-tts-vc-2026-01-22` as the non-selectable grouping ID for saved cloned voices. The model has retired: clone registration and synthesis fail until migration to CosyVoice. `TTS_QWEN_VOICE_CLONE_MODEL` can point to another model.
+  - Keep upcoming retirements in the catalog: MiMo V2.5 / V2.5 Pro on October 21, 2026; Veo 3.1 Fast / Standard / Lite previews and Doubao Seed 2.0 Lite / Mini on October 22, 2026; `gpt-image-1` on October 23, 2026. Google's recommended Veo replacement, `gemini-omni-1.1-flash`, is not yet supported by the Veo adapter.
+  - Ark Agent Plan: add the officially listed migration targets `doubao-seed-2.1-lite`, `glm-5.3`, `kimi-k3` and `kimi-k2.8-preview` (the Small-tier replacement for `kimi-k2.7-code`).
+  - Keep models with future retirement dates and unverified entries; update image/video probe defaults and refresh the documented model tables.
+
 - Dependencies: `@langchain/langgraph` is no longer installed. [#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)
+- Docs: `CONTRIBUTING.md` documents how app release versions are chosen. [#1938](https://github.com/THU-MAIC/OpenMAIC/pull/1938)
 
 ## [1.2.0] - 2026-10-16
 
