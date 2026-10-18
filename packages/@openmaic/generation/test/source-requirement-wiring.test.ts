@@ -57,6 +57,10 @@ function capturedSource(system: string, user: string) {
   expect(data.requirement.endsWith('TAIL source marker  \r\n')).toBe(true);
 }
 
+const escapedCode = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const sourceDisplays = `<pre><code data-codemate-source="original">${escapedCode(source.codemateSource!.code)}</code></pre><pre><code data-codemate-source="reference">${escapedCode(source.codemateSource!.correctedCode)}</code></pre>`;
+
 function contentOutput(outline: SceneOutline): string {
   if (outline.type === 'slide') return JSON.stringify({ elements: [], remark: 'source' });
   if (outline.type === 'quiz')
@@ -70,7 +74,11 @@ function contentOutput(outline: SceneOutline): string {
       },
     ]);
   if (outline.type === 'pbl') return validPBLResponse();
-  return '<!DOCTYPE html><html><body><button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
+  return (
+    '<!DOCTYPE html><html><body>' +
+    sourceDisplays +
+    '<button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>'
+  );
 }
 
 describe('complete source data reaches actual scene model calls', () => {

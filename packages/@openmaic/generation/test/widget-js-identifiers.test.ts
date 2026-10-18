@@ -6,7 +6,11 @@ import type { SceneOutline, UserRequirements } from '../src/outline-types.js';
 
 const document = (script: string, extra = '') =>
   `<!DOCTYPE html><html><body>${extra}<script>${script}</script></body></html>`;
-const good = document('const value = 1; document.body.textContent = String(value);');
+const good = document(
+  'const value = 1; document.body.dataset.value = String(value);',
+  '<pre><code data-codemate-source="original">value = int(input())\nprint(value)\n</code></pre>' +
+    '<pre><code data-codemate-source="reference">value = int(input())\nprint(value)\n</code></pre>',
+);
 const bad = document('document.body.textContent = absentResult;');
 const outline: SceneOutline = {
   id: 'identifier-check',

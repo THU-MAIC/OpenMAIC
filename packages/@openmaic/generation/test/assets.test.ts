@@ -17,6 +17,7 @@ const PROMPT_IDS = [
   'slide-content',
   'quiz-content',
   'simulation-content',
+  'correction-interactive-content',
   'diagram-content',
   'code-content',
   'game-content',

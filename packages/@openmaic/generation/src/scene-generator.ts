@@ -33,6 +33,7 @@ import type {
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { checkWidgetIdentifiers } from './widget-js-identifiers.js';
+import { checkWidgetCodeDisplay } from './widget-code-display.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
 import { parseJsonResponse } from './json-repair.js';
 import {
@@ -1407,6 +1408,12 @@ export async function generateWidgetContent(
   }
 
   if (codeBoundCorrection && widgetType === 'simulation') {
+    const display = checkWidgetCodeDisplay(html, options.userRequirements?.codemateSource);
+    if (!display.ok) {
+      log.warn(`Rejected correction widget code display (${display.kind})`);
+      options.onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
     const checked = checkWidgetIdentifiers(html);
     if (!checked.ok) {
       log.warn(`Rejected correction widget identifier check (${checked.kind})`);
@@ -1418,8 +1425,17 @@ export async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html, widgetType);
 
+  const processedHtml = postProcessInteractiveHtml(html);
+  if (codeBoundCorrection && widgetType === 'simulation') {
+    const display = checkWidgetCodeDisplay(processedHtml, options.userRequirements?.codemateSource);
+    if (!display.ok) {
+      log.warn(`Rejected processed correction widget code display (${display.kind})`);
+      options.onFailure?.({ code: 'invalid-model-output' });
+      return null;
+    }
+  }
   return {
-    html: postProcessInteractiveHtml(html),
+    html: processedHtml,
     widgetType,
     widgetConfig,
   };

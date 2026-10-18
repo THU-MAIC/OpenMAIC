@@ -6,15 +6,17 @@
  * Handles:
  * - LaTeX delimiter conversion ($$...$$ -> \[...\], $...$ -> \(...\))
  * - KaTeX CSS/JS injection with auto-render and MutationObserver
- * - Script tag protection during LaTeX conversion
+ * - Script and code/pre protection during LaTeX conversion
  */
+
+import { parse, type DefaultTreeAdapterTypes } from 'parse5';
 
 /**
  * Main entry point: post-process generated interactive HTML
  * Converts LaTeX delimiters and injects KaTeX rendering resources.
  */
 export function postProcessInteractiveHtml(html: string): string {
-  // Convert LaTeX delimiters while protecting script tags
+  // Convert LaTeX delimiters while protecting literal source blocks
   let processed = convertLatexDelimiters(html);
 
   // Inject KaTeX resources if not already present
@@ -26,21 +28,38 @@ export function postProcessInteractiveHtml(html: string): string {
 }
 
 /**
- * Convert LaTeX delimiters while protecting <script> tags.
+ * Convert LaTeX delimiters while preserving literal <script>, <pre> and <code> markup.
  *
- * - Protects script blocks from modification
+ * - Protects script, pre and code blocks from modification
  * - Converts $$...$$ to \[...\] (display math)
  * - Converts $...$ to \(...\) (inline math)
  * - Restores script blocks after conversion
  */
 function convertLatexDelimiters(html: string): string {
-  const scriptBlocks: string[] = [];
-
-  // Protect script tags by replacing them with placeholders
-  let processed = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, (match) => {
-    scriptBlocks.push(match);
-    return `__SCRIPT_BLOCK_${scriptBlocks.length - 1}__`;
-  });
+  const protectedBlocks: string[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
+  const document = parse(html, { sourceCodeLocationInfo: true, scriptingEnabled: true });
+  function visit(node: DefaultTreeAdapterTypes.Node): void {
+    if ('tagName' in node && ['script', 'pre', 'code'].includes(node.tagName)) {
+      const location = node.sourceCodeLocation;
+      if (location) ranges.push({ start: location.startOffset, end: location.endOffset });
+      return;
+    }
+    if ('childNodes' in node) node.childNodes.forEach(visit);
+    if ('tagName' in node && node.tagName === 'template')
+      visit((node as DefaultTreeAdapterTypes.Template).content);
+  }
+  visit(document);
+  let prefix = '__OPENMAIC_LITERAL_BLOCK_';
+  while (html.includes(prefix)) prefix += '_';
+  let processed = '';
+  let cursor = 0;
+  for (const range of ranges.sort((a, b) => a.start - b.start)) {
+    processed += html.slice(cursor, range.start) + `${prefix}${protectedBlocks.length}__`;
+    protectedBlocks.push(html.slice(range.start, range.end));
+    cursor = range.end;
+  }
+  processed += html.slice(cursor);
 
   // Convert display math: $$...$$ -> \[...\]
   processed = processed.replace(/\$\$([^$]+)\$\$/g, '\\[$1\\]');
@@ -49,15 +68,11 @@ function convertLatexDelimiters(html: string): string {
   // Use non-greedy match and exclude newlines to avoid false positives
   processed = processed.replace(/\$([^$\n]+?)\$/g, '\\($1\\)');
 
-  // Restore script blocks in a single pass. A replacer FUNCTION (not a string)
-  // is safe even when script content contains `$` — a function's return value
-  // is inserted literally, with no `$&`/`$1` substitution. The previous
-  // indexOf+substring loop rebuilt the entire string once per block, i.e.
-  // O(blocks × length), which balloons memory and blocks the event loop when
-  // the generated widget HTML contains many <script> tags.
+  // Restore the exact original markup, including entities and highlighting spans.
+  // The collision-free token contains no replacement-string or regular-expression syntax.
   processed = processed.replace(
-    /__SCRIPT_BLOCK_(\d+)__/g,
-    (whole, index) => scriptBlocks[Number(index)] ?? whole,
+    new RegExp(`${prefix}(\\d+)__`, 'g'),
+    (whole, index) => protectedBlocks[Number(index)] ?? whole,
   );
 
   return processed;
