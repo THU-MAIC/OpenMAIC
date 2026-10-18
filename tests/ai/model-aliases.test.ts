@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { findModelById, getCanonicalModelId, modelIdsMatch } from '@/lib/ai/model-aliases';
+import { preservesReasoning } from '@/lib/ai/providers';
 
 describe('model aliases', () => {
   it('canonicalizes GPT-5.6 Sol only for OpenAI', () => {
@@ -22,5 +23,16 @@ describe('model aliases', () => {
     expect(modelIdsMatch('openai', 'gpt-5.6', 'gpt-5.6-sol')).toBe(true);
     expect(findModelById('openai', models, 'gpt-5.6-sol')).toBe(models[1]);
     expect(findModelById('openrouter', [models[1]], 'gpt-5.6-sol')).toBeUndefined();
+  });
+
+  it('resolves retired DeepSeek Flash IDs to the current Flash model', () => {
+    expect(getCanonicalModelId('deepseek', 'deepseek-v4-flash')).toBe('deepseek-flash');
+    expect(getCanonicalModelId('deepseek', 'deepseek-v4-flash-vision-exp')).toBe('deepseek-flash');
+    expect(getCanonicalModelId('openrouter', 'deepseek/deepseek-v4-flash')).toBe(
+      'deepseek/deepseek-v4-flash',
+    );
+    // Tool-calling follow-ups to DeepSeek fail without replayed reasoning.
+    expect(preservesReasoning('deepseek', 'deepseek-v4-flash')).toBe(true);
+    expect(preservesReasoning('deepseek', 'deepseek-v4-flash-vision-exp')).toBe(true);
   });
 });
