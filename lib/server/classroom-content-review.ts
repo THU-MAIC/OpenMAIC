@@ -831,6 +831,22 @@ function hasCriticalFinding(review: ClassroomContentReview, material: Json): boo
   );
 }
 
+// This private error is produced only after this helper's own request deadline
+// cancelled the transport and its callback actually settled. Model/SDK parsing
+// failures never create it, and parent/round/cleanup cancellation cannot retry.
+class ClassroomContentTransportTimeoutError extends ClassroomContentReviewError {
+  constructor() {
+    super('review_timeout');
+  }
+}
+function isRequestCancellation(error: unknown, reason: unknown): boolean {
+  for (let depth = 0; depth < 4 && error instanceof Error; depth++) {
+    if (error === reason || error.name === 'AbortError' || error.name === 'TimeoutError')
+      return true;
+    error = error.cause;
+  }
+  return false;
+}
 async function boundedScoped<T>(
   operation: (context: ClassroomReviewCallContext) => Promise<T>,
   signal: AbortSignal,
@@ -838,26 +854,59 @@ async function boundedScoped<T>(
 ): Promise<T> {
   const remaining = deadlineAt - Date.now();
   if (signal.aborted || !Number.isFinite(remaining) || remaining <= 0) fail('review_timeout');
-  const controller = new AbortController();
-  const combined = AbortSignal.any([signal, controller.signal]);
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  const request = new AbortController();
+  const combined = AbortSignal.any([signal, request.signal]);
+  let requestTimer: ReturnType<typeof setTimeout> | undefined;
+  let guardTimer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  let operationSettled = false;
+  let guardExpired = false;
   try {
     const cancelled = new Promise<never>((_, reject) => {
       onAbort = () => reject(new ClassroomContentReviewError('review_timeout'));
-      combined.addEventListener('abort', onAbort, { once: true });
-      timer = setTimeout(() => controller.abort(), Math.min(MAX_STAGE_MS, remaining));
+      signal.addEventListener('abort', onAbort, { once: true });
+      requestTimer = setTimeout(
+        () => request.abort(new DOMException('Classroom review request timed out', 'TimeoutError')),
+        Math.min(CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS, remaining),
+      );
+      // Allow the real callback to unwind after cancellation. An unresponsive
+      // callback reaches this hard guard instead and is never retried.
+      guardTimer = setTimeout(
+        () => {
+          guardExpired = true;
+          request.abort();
+          reject(new ClassroomContentReviewError('review_timeout'));
+        },
+        Math.min(MAX_STAGE_MS, remaining),
+      );
     });
     combined.throwIfAborted();
-    const result = await Promise.race([operation({ signal: combined }), cancelled]);
-    if (combined.aborted || Date.now() >= deadlineAt) fail('review_timeout');
+    const invoked = (async () => {
+      try {
+        return await operation({ signal: combined });
+      } finally {
+        operationSettled = true;
+      }
+    })();
+    const result = await Promise.race([invoked, cancelled]);
+    if (signal.aborted || Date.now() >= deadlineAt) fail('review_timeout');
+    if (request.signal.aborted) throw new ClassroomContentTransportTimeoutError();
     return result;
   } catch (error) {
+    if (signal.aborted || Date.now() >= deadlineAt) fail('review_timeout');
     if (error instanceof ClassroomContentReviewError) throw error;
-    return fail(combined.aborted ? 'review_timeout' : 'review_unavailable');
+    if (
+      operationSettled &&
+      request.signal.aborted &&
+      !guardExpired &&
+      isRequestCancellation(error, request.signal.reason)
+    )
+      throw new ClassroomContentTransportTimeoutError();
+    return fail('review_unavailable');
   } finally {
-    if (timer) clearTimeout(timer);
-    if (onAbort) combined.removeEventListener('abort', onAbort);
+    if (requestTimer) clearTimeout(requestTimer);
+    if (guardTimer) clearTimeout(guardTimer);
+    if (onAbort) signal.removeEventListener('abort', onAbort);
   }
 }
 
@@ -885,6 +934,12 @@ export async function reviewClassroomContentScoped<M extends ReviewableClassroom
     }
   }
   const originalSourceDigest = classroomReviewDigest(requirements);
+  const maxCallbacks = 9;
+  let callbackCount = 0;
+  const consumeCallback = () => {
+    if (callbackCount >= maxCallbacks) fail('review_unavailable');
+    callbackCount++;
+  };
   const ensureActive = () => {
     if (options.signal.aborted || Date.now() >= options.deadlineAt) fail('review_timeout');
     if (classroomReviewDigest(options.requirements) !== originalSourceDigest)
@@ -896,16 +951,39 @@ export async function reviewClassroomContentScoped<M extends ReviewableClassroom
     const entries: ClassroomScopeEntry[] = [];
     const round = new AbortController();
     const roundSignal = AbortSignal.any([options.signal, round.signal]);
+    const startedScopes = new Set<string>();
     const reviewOne = async (input: ClassroomReviewPacket) => {
       ensureActive();
-      const review = parseReview(
-        await boundedScoped(
-          (context) => options.callbacks.review(input, context),
-          roundSignal,
-          options.deadlineAt,
-        ),
-        input,
-      );
+      startedScopes.add(input.reviewScope!.id);
+      let raw: string;
+      for (let attempt = 0; ; attempt++) {
+        ensureActive();
+        try {
+          raw = await boundedScoped(
+            (context) => {
+              consumeCallback();
+              return options.callbacks.review(input, context);
+            },
+            roundSignal,
+            options.deadlineAt,
+          );
+          break;
+        } catch (error) {
+          // Only one retry of the identical immutable packet, after a confirmed
+          // request cancellation. Keep a call for every unstarted local/cross
+          // scope, and never retry parsing, findings, or binding validation.
+          const unstartedScopes = full.binding.sceneIds.length + 1 - startedScopes.size;
+          if (
+            !(error instanceof ClassroomContentTransportTimeoutError) ||
+            attempt !== 0 ||
+            roundSignal.aborted ||
+            options.deadlineAt - Date.now() < MAX_STAGE_MS ||
+            maxCallbacks - callbackCount < unstartedScopes + 1
+          )
+            throw error;
+        }
+      }
+      const review = parseReview(raw, input);
       ensureActive();
       const entry = freeze({ scope: input.reviewScope!, ...review });
       entries.push(entry);
@@ -960,6 +1038,9 @@ export async function reviewClassroomContentScoped<M extends ReviewableClassroom
     if (findings.length > 64) fail('context_too_large');
     if (version === 2) fail('content_unresolved');
     if (!options.callbacks.repair) fail('content_rejected');
+    // A repair invalidates every scope. Reserve the repair plus all local and
+    // complete cross reviews before spending another callback.
+    if (maxCallbacks - callbackCount < full.binding.sceneIds.length + 2) fail('content_unresolved');
     const repairInput = freeze({ ...full, findings: clone(findings) });
     if (Buffer.byteLength(JSON.stringify(repairInput)) > MAX_REQUEST_BYTES)
       fail('context_too_large');
@@ -968,7 +1049,10 @@ export async function reviewClassroomContentScoped<M extends ReviewableClassroom
       full,
       findings,
       await boundedScoped(
-        (context) => options.callbacks.repair!(repairInput, context),
+        (context) => {
+          consumeCallback();
+          return options.callbacks.repair!(repairInput, context);
+        },
         options.signal,
         options.deadlineAt,
       ),

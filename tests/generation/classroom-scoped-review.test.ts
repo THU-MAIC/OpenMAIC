@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { UserRequirements } from '@openmaic/generation';
 import {
   CLASSROOM_SCOPE_LEDGER_VERSION,
@@ -8,7 +8,10 @@ import {
   reviewClassroomContentScoped,
   type ClassroomReviewPacket,
   type ClassroomContentCallbacks,
+  type ClassroomReviewCallContext,
 } from '@/lib/server/classroom-content-review';
+
+afterEach(() => vi.useRealTimers());
 
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const requirements: UserRequirements = {
@@ -388,6 +391,7 @@ describe('versioned local coverage and complete cross-scene review', () => {
     });
     expect(packets).toHaveLength(8);
     expect(repairs).toBe(1);
+    expect(packets.length + repairs).toBe(9);
     expect(result.ledger.binding.reportVersion).toBe(2);
     expect(packets[0].reviewScope!.digest).not.toBe(packets[4].reviewScope!.digest);
     expect(matchesClassroomScopeLedger(requirements, result.material, result.ledger)).toBe(true);
@@ -446,5 +450,392 @@ describe('versioned local coverage and complete cross-scene review', () => {
     expect(
       calls.every((c) => c.system.includes('scope_version') && c.system.includes('cross_scene')),
     ).toBe(true);
+  });
+});
+
+function cancelledCallback(context: ClassroomReviewCallContext): Promise<string> {
+  return new Promise((_resolve, reject) => {
+    context.signal.addEventListener('abort', () => reject(context.signal.reason), { once: true });
+  });
+}
+const longDeadline = () => ({ deadlineAt: Date.now() + 720_000 });
+
+describe('bounded retries only after an actual request timeout', () => {
+  it('retries one settled cancellation with identical packet/schema and retains a complete ledger', async () => {
+    vi.useFakeTimers();
+    const calls: Array<{
+      id: string;
+      system: string;
+      user: string;
+      schema: string;
+      signal: AbortSignal;
+    }> = [];
+    let firstSettled = false;
+    let active = 0,
+      peak = 0;
+    const callbacks = createClassroomContentCallbacks(
+      async () => {
+        throw new Error('legacy');
+      },
+      {
+        structuredCall: async (system, user, schema, context) => {
+          const packet = JSON.parse(user) as ClassroomReviewPacket;
+          const id = packet.reviewScope!.id;
+          calls.push({
+            id,
+            system,
+            user,
+            schema: JSON.stringify(schema.jsonSchema),
+            signal: context!.signal,
+          });
+          peak = Math.max(peak, ++active);
+          try {
+            if (id === 'scene:1' && calls.filter((c) => c.id === id).length === 1) {
+              try {
+                return await cancelledCallback(context!);
+              } finally {
+                firstSettled = true;
+              }
+            }
+            if (id === 'scene:1') expect(firstSettled).toBe(true);
+            return answer(packet);
+          } finally {
+            active--;
+          }
+        },
+      },
+    );
+    const pending = run(callbacks, longDeadline());
+    const completion = expect(pending).resolves.toMatchObject({
+      ledger: { entries: expect.any(Array) },
+    });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    const result = await pending;
+    const attempts = calls.filter((c) => c.id === 'scene:1');
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1].system).toBe(attempts[0].system);
+    expect(attempts[1].user).toBe(attempts[0].user);
+    expect(attempts[1].schema).toBe(attempts[0].schema);
+    expect(attempts[0].signal.aborted).toBe(true);
+    expect(attempts[1].signal).not.toBe(attempts[0].signal);
+    expect(calls).toHaveLength(5);
+    expect(peak).toBe(2);
+    expect(result.ledger.entries).toHaveLength(4);
+    expect(matchesClassroomScopeLedger(requirements, result.material, result.ledger)).toBe(true);
+  });
+
+  it('stops after a second request timeout of the same bound scope', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          ids.push(p.reviewScope!.id);
+          return p.reviewScope!.id === 'scene:1' ? cancelledCallback(context!) : answer(p);
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
+    await vi.advanceTimersByTimeAsync(240_000);
+    await completion;
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(2);
+    expect(ids).toHaveLength(4);
+    expect(ids).not.toContain('cross:complete');
+  });
+
+  it('does not retry when the remaining job cannot contain another request and cancellation cleanup', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          ids.push(p.reviewScope!.id);
+          return p.reviewScope!.id === 'scene:1' ? cancelledCallback(context!) : answer(p);
+        },
+      },
+      { deadlineAt: Date.now() + 200_000 },
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+    expect(ids).toHaveLength(3);
+  });
+
+  it('does not retry parent cancellation even though the callback settles with AbortError', async () => {
+    vi.useFakeTimers();
+    const parent = new AbortController();
+    const review = vi.fn(async (_p: ClassroomReviewPacket, context?: ClassroomReviewCallContext) =>
+      cancelledCallback(context!),
+    );
+    const pending = run({ review }, { ...longDeadline(), signal: parent.signal });
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
+    parent.abort(new DOMException('parent stopped', 'AbortError'));
+    await completion;
+    await vi.advanceTimersByTimeAsync(250_000);
+    expect(review).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a sibling cancelled by a critical finding', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    await expect(
+      run(
+        {
+          review: async (p, context) => {
+            ids.push(p.reviewScope!.id);
+            if (p.reviewScope!.id === 'scene:1') return cancelledCallback(context!);
+            return answer(p, [finding(p, 'widget', '/title', true)]);
+          },
+        },
+        longDeadline(),
+      ),
+    ).rejects.toMatchObject({ code: 'requires_regeneration' });
+    await vi.advanceTimersByTimeAsync(250_000);
+    expect(ids).toEqual(['scene:1', 'scene:2']);
+  });
+
+  it('does not retry a callback that ignores cancellation and reaches the 130 second guard', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p) => {
+          ids.push(p.reviewScope!.id);
+          return p.reviewScope!.id === 'scene:1' ? new Promise<string>(() => {}) : answer(p);
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
+    await vi.advanceTimersByTimeAsync(130_000);
+    await completion;
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+    expect(ids).toHaveLength(3);
+  });
+
+  it('does not trust an arbitrary TimeoutError before its own request deadline', async () => {
+    const ids: string[] = [];
+    await expect(
+      run(
+        {
+          review: async (p) => {
+            ids.push(p.reviewScope!.id);
+            if (p.reviewScope!.id === 'scene:1')
+              throw new DOMException('untrusted', 'TimeoutError');
+            return answer(p);
+          },
+        },
+        longDeadline(),
+      ),
+    ).rejects.toMatchObject({ code: 'review_unavailable' });
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+  });
+
+  it.each(['schema', 'binding', 'critical'] as const)(
+    'never retries a %s response',
+    async (kind) => {
+      const ids: string[] = [];
+      const repair = vi.fn();
+      await expect(
+        run(
+          {
+            review: async (p) => {
+              ids.push(p.reviewScope!.id);
+              if (p.reviewScope!.id !== 'scene:1') return answer(p);
+              if (kind === 'schema') return '{}';
+              if (kind === 'binding') return answer(p, [], { material_digest: '0'.repeat(64) });
+              return answer(p, [finding(p, 'slide', '/title', true)]);
+            },
+            repair,
+          },
+          longDeadline(),
+        ),
+      ).rejects.toBeDefined();
+      expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+      expect(repair).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not spend a repair when a prior retry leaves fewer than five complete-round callbacks', async () => {
+    vi.useFakeTimers();
+    let slideCalls = 0;
+    const ids: string[] = [];
+    const repair = vi.fn();
+    const pending = run(
+      {
+        review: async (p, context) => {
+          ids.push(p.reviewScope!.id);
+          if (p.reviewScope!.id === 'scene:1' && ++slideCalls === 1)
+            return cancelledCallback(context!);
+          return answer(
+            p,
+            p.reviewScope!.id === 'scene:1' ? [finding(p, 'slide', '/actions/0/text')] : [],
+          );
+        },
+        repair,
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'content_unresolved' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    expect(ids).toHaveLength(5);
+    expect(repair).not.toHaveBeenCalled();
+  });
+
+  it('counts repair and both rounds together and does not spend the reserved cross call on a retry', async () => {
+    vi.useFakeTimers();
+    const packets: ClassroomReviewPacket[] = [];
+    let repairs = 0;
+    const pending = run(
+      {
+        review: async (p, context) => {
+          packets.push(p);
+          if (p.binding.reportVersion === 2 && p.reviewScope!.id === 'scene:1')
+            return cancelledCallback(context!);
+          return answer(
+            p,
+            p.binding.reportVersion === 1 && p.reviewScope!.id === 'scene:1'
+              ? [finding(p, 'slide', '/actions/0/text')]
+              : [],
+          );
+        },
+        repair: async (p) => {
+          repairs++;
+          return JSON.stringify({
+            review_version: p.binding.reviewVersion,
+            source_digest: p.binding.sourceDigest,
+            material_digest: p.binding.materialDigest,
+            review_snapshot_digest: p.binding.reviewSnapshotDigest,
+            patches: [{ field_ref: p.findings[0].fieldRef, new_text: 'New accurate wording.' }],
+          });
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    expect(repairs).toBe(1);
+    expect(
+      packets.filter((p) => p.binding.reportVersion === 2 && p.reviewScope!.id === 'scene:1'),
+    ).toHaveLength(1);
+    expect(packets.length + repairs).toBe(8);
+    expect(packets.length + repairs).toBeLessThanOrEqual(9);
+    expect(
+      packets.filter((p) => p.binding.reportVersion === 2 && p.reviewScope!.kind === 'cross_scene'),
+    ).toHaveLength(0);
+  });
+
+  it('rejects source drift before spending a retry after the original request settles', async () => {
+    vi.useFakeTimers();
+    const external = copy(requirements);
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          ids.push(p.reviewScope!.id);
+          if (p.reviewScope!.id !== 'scene:1') return answer(p);
+          return new Promise<string>((_resolve, reject) => {
+            context!.signal.addEventListener(
+              'abort',
+              () => {
+                external.requirement = 'changed while the request was pending';
+                reject(context!.signal.reason);
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+      { ...longDeadline(), requirements: external },
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'binding_mismatch' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+    expect(ids).toHaveLength(3);
+  });
+
+  it('does not reinterpret a schema error near its own cancellation as a transient timeout', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          ids.push(p.reviewScope!.id);
+          if (p.reviewScope!.id !== 'scene:1') return answer(p);
+          return new Promise<string>((_resolve, reject) => {
+            context!.signal.addEventListener(
+              'abort',
+              () => {
+                const error = new Error('invalid output schema');
+                error.name = 'AI_NoObjectGeneratedError';
+                reject(error);
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).rejects.toMatchObject({ code: 'review_unavailable' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    expect(ids.filter((id) => id === 'scene:1')).toHaveLength(1);
+  });
+
+  it('can retry the original complete cross packet without accepting only local passes', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          const id = p.reviewScope!.id;
+          ids.push(id);
+          if (id === 'cross:complete' && ids.filter((value) => value === id).length === 1)
+            return cancelledCallback(context!);
+          return answer(p);
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).resolves.toBeDefined();
+    await vi.advanceTimersByTimeAsync(120_000);
+    await completion;
+    const result = await pending;
+    expect(ids.filter((id) => id === 'cross:complete')).toHaveLength(2);
+    expect(ids).toHaveLength(5);
+    expect(result.ledger.entries).toHaveLength(4);
+    expect(matchesClassroomScopeLedger(requirements, result.material, result.ledger)).toBe(true);
+  });
+
+  it('keeps all four per-scope retries inside the shared callback ceiling and full ledger', async () => {
+    vi.useFakeTimers();
+    const ids: string[] = [];
+    const pending = run(
+      {
+        review: async (p, context) => {
+          const id = p.reviewScope!.id;
+          ids.push(id);
+          if (ids.filter((value) => value === id).length === 1) return cancelledCallback(context!);
+          return answer(p);
+        },
+      },
+      longDeadline(),
+    );
+    const completion = expect(pending).resolves.toBeDefined();
+    await vi.advanceTimersByTimeAsync(360_000);
+    await completion;
+    const result = await pending;
+    expect(ids).toHaveLength(8);
+    for (const id of ['scene:1', 'scene:2', 'scene:3', 'cross:complete'])
+      expect(ids.filter((value) => value === id)).toHaveLength(2);
+    expect(result.ledger.entries).toHaveLength(4);
+    expect(matchesClassroomScopeLedger(requirements, result.material, result.ledger)).toBe(true);
   });
 });
