@@ -1728,9 +1728,14 @@ export function Roundtable({
               )}
             </AnimatePresence>
 
-            {/* Suggested replies — draft user bubble in the user-bubble slot */}
-            <AnimatePresence>
-              {showSuggestedReplies && (
+            {/* Suggested replies (draft user bubble) and the chat bubble share one
+                slot and one presence group: they are mutually exclusive, and
+                mode="wait" lets the outgoing bubble finish its exit before the
+                next one mounts. Two separate groups would briefly stack both in
+                this vertically centered column, shifting the new bubble when the
+                old one unmounts. */}
+            <AnimatePresence mode="wait">
+              {showSuggestedReplies ? (
                 <motion.div
                   key="suggested-replies"
                   data-testid="cue-user-suggested-bubble"
@@ -1751,12 +1756,7 @@ export function Roundtable({
                     {quickReplies}
                   </div>
                 </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Chat bubble */}
-            <AnimatePresence mode="wait">
-              {bubbleRole && (
+              ) : bubbleRole ? (
                 <motion.div
                   key={bubbleKey}
                   initial={{ opacity: 0, y: 8 }}
@@ -1993,7 +1993,7 @@ export function Roundtable({
                     </div>
                   </div>
                 </motion.div>
-              )}
+              ) : null}
             </AnimatePresence>
           </div>
         </div>
