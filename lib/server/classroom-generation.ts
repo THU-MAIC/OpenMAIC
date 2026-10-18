@@ -43,7 +43,7 @@ import {
 import {
   CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS,
   createClassroomContentCallbacks,
-  reviewClassroomContent,
+  reviewClassroomContentScoped,
   matchesClassroomContentProof,
   ClassroomContentReviewError,
   type ClassroomContentProof,
@@ -266,6 +266,7 @@ export async function generateClassroom(
   const { requirement, pdfContent } = input;
   // These bounds cancel the real transport; a late result cannot start paid
   // follow-up stages or reach persistence after this job has expired.
+  const generationDeadline = Date.now() + 720_000;
   const generationSignal = options.signal
     ? AbortSignal.any([options.signal, AbortSignal.timeout(720_000)])
     : AbortSignal.timeout(720_000);
@@ -347,6 +348,7 @@ export async function generateClassroom(
       llm: typeof callLLM,
       outputOptions?: ReturnType<typeof getClassroomContentOutputOptions>,
       thinking: ThinkingConfig | undefined = classroomThinking,
+      reviewSignal?: AbortSignal,
     ): AICallFn =>
     async (systemPrompt, userPrompt, _images) => {
       const result = await llm(
@@ -358,6 +360,7 @@ export async function generateClassroom(
           ],
           maxOutputTokens: modelInfo?.outputWindow,
           ...outputOptions,
+          ...(reviewSignal ? { abortSignal: reviewSignal } : {}),
         },
         'generate-classroom',
         undefined,
@@ -376,11 +379,17 @@ export async function generateClassroom(
   );
   // The response schema is generated only from the helper's immutable server packet.
   // Keep this separate from AICallFn's optional images argument and ordinary calls.
-  const contentReviewStructuredCall: ClassroomContentStructuredCall = (system, user, schema) =>
+  const contentReviewStructuredCall: ClassroomContentStructuredCall = (
+    system,
+    user,
+    schema,
+    context,
+  ) =>
     createAiCall(
       contentReviewLLM,
       getClassroomContentOutputOptions(languageModel, schema),
       getClassroomContentThinkingConfig(languageModel, classroomThinking),
+      context?.signal,
     )(system, user);
 
   // Per-stage model resolution for the scene pipeline. The classroom used to
@@ -871,13 +880,15 @@ export async function generateClassroom(
       scenesGenerated: scenes.length,
       totalScenes: outlines.length,
     });
-    const checked = await reviewClassroomContent({
+    const checked = await reviewClassroomContentScoped({
       requirements,
       material: finalMaterial,
       callbacks: createClassroomContentCallbacks(contentReviewAiCall, {
         structuredCall: contentReviewStructuredCall,
       }),
       expectedSceneCount: outlines.length,
+      signal: generationSignal,
+      deadlineAt: generationDeadline,
     });
     generationSignal.throwIfAborted();
     finalMaterial = checked.material;

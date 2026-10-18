@@ -236,24 +236,53 @@ export interface ClassroomFieldPathCatalogEntry {
   /** Packet-bound opaque references and relative JSON Pointers, never previews. */
   fields: Array<{ fieldRef: string; path: string }>;
 }
+export const CLASSROOM_SCOPE_LEDGER_VERSION = 'native-scene-and-cross-review-v1';
+export const CLASSROOM_SCOPE_MAX_SCENES = 3;
+export const CLASSROOM_SCOPE_CONCURRENCY = 2;
+
+export interface ClassroomReviewScope {
+  version: typeof CLASSROOM_SCOPE_LEDGER_VERSION;
+  id: string;
+  kind: 'scene' | 'cross_scene';
+  sceneIds: string[];
+  bindingDigest: string;
+  viewDigest: string;
+  catalogDigest: string;
+  digest: string;
+}
+export interface ClassroomReviewCallContext {
+  signal: AbortSignal;
+}
+export interface ClassroomScopeEntry extends ClassroomContentReview {
+  scope: ClassroomReviewScope;
+}
+/** Internal evidence only; never attached to the public classroom/proof JSON. */
+export interface ClassroomScopeLedger {
+  version: typeof CLASSROOM_SCOPE_LEDGER_VERSION;
+  binding: ClassroomContentBinding;
+  entries: ClassroomScopeEntry[];
+}
+
 export interface ClassroomReviewPacket {
   requirements: UserRequirements;
   material: Json;
   binding: ClassroomContentBinding;
   fieldPathCatalog: ClassroomFieldPathCatalogEntry[];
+  reviewScope?: ClassroomReviewScope;
 }
 export interface ClassroomRepairPacket extends ClassroomReviewPacket {
   findings: ClassroomContentFinding[];
 }
 export interface ClassroomContentCallbacks {
-  review: (packet: ClassroomReviewPacket) => Promise<string>;
-  repair?: (packet: ClassroomRepairPacket) => Promise<string>;
+  review: (packet: ClassroomReviewPacket, context?: ClassroomReviewCallContext) => Promise<string>;
+  repair?: (packet: ClassroomRepairPacket, context?: ClassroomReviewCallContext) => Promise<string>;
 }
 /** Internal server transport hook; the general generation images argument is untouched. */
 export type ClassroomContentStructuredCall = (
   systemPrompt: string,
   userPrompt: string,
   responseSchema: Schema<unknown>,
+  context?: ClassroomReviewCallContext,
 ) => Promise<string>;
 function bind(
   requirements: UserRequirements,
@@ -420,15 +449,24 @@ function parseReview(raw: string, packet: ClassroomReviewPacket): ClassroomConte
     'review_snapshot_digest',
     'reviewed_scene_ids',
     'findings',
+    ...(packet.reviewScope ? ['scope_version', 'scope_id', 'scope_kind', 'scope_digest'] : []),
   ]);
   checkWireBinding(value, packet);
+  const scope = packet.reviewScope;
+  if (
+    scope &&
+    (value.scope_version !== scope.version ||
+      value.scope_id !== scope.id ||
+      value.scope_kind !== scope.kind ||
+      value.scope_digest !== scope.digest)
+  )
+    fail('binding_mismatch');
+  const expectedSceneIds = scope?.sceneIds ?? packet.binding.sceneIds;
   if (
     !Array.isArray(value.reviewed_scene_ids) ||
-    value.reviewed_scene_ids.length !== packet.binding.sceneIds.length ||
-    new Set(value.reviewed_scene_ids).size !== packet.binding.sceneIds.length ||
-    value.reviewed_scene_ids.some(
-      (id) => typeof id !== 'string' || !packet.binding.sceneIds.includes(id),
-    )
+    value.reviewed_scene_ids.length !== expectedSceneIds.length ||
+    new Set(value.reviewed_scene_ids).size !== expectedSceneIds.length ||
+    value.reviewed_scene_ids.some((id) => typeof id !== 'string' || !expectedSceneIds.includes(id))
   )
     fail('material_incomplete');
   if (
@@ -686,6 +724,276 @@ export async function reviewClassroomContent<M extends ReviewableClassroom>(opti
   }
   fail('content_unresolved');
 }
+function scopeFor(
+  input: ClassroomReviewPacket,
+  kind: ClassroomReviewScope['kind'],
+): ClassroomReviewScope {
+  const sceneIds = validateMaterial(input.material).map((scene) => String(scene.id));
+  const index = input.binding.sceneIds.indexOf(sceneIds[0]);
+  const fields: Omit<ClassroomReviewScope, 'digest'> = {
+    version: CLASSROOM_SCOPE_LEDGER_VERSION,
+    id: kind === 'scene' ? `scene:${index + 1}` : 'cross:complete',
+    kind,
+    sceneIds,
+    bindingDigest: classroomReviewDigest(input.binding),
+    viewDigest: classroomReviewDigest(input.material),
+    catalogDigest: classroomReviewDigest(input.fieldPathCatalog),
+  };
+  return { ...fields, digest: classroomReviewDigest(fields) };
+}
+
+function assertScopedPacket(input: ClassroomReviewPacket): void {
+  const scope = input.reviewScope;
+  if (!scope || !['scene', 'cross_scene'].includes(scope.kind)) fail('binding_mismatch');
+  const allIds = input.binding.sceneIds;
+  const viewIds = validateMaterial(input.material).map((scene) => String(scene.id));
+  if (
+    input.binding.reviewVersion !== CLASSROOM_CONTENT_REVIEW_VERSION ||
+    input.binding.sourceDigest !== classroomReviewDigest(input.requirements) ||
+    !allIds.length ||
+    allIds.length > CLASSROOM_SCOPE_MAX_SCENES ||
+    new Set(allIds).size !== allIds.length ||
+    viewIds.some((id) => !allIds.includes(id)) ||
+    (scope.kind === 'scene' && viewIds.length !== 1) ||
+    (scope.kind === 'cross_scene' &&
+      classroomReviewDigest(viewIds) !== classroomReviewDigest(allIds)) ||
+    classroomReviewDigest(fieldPathCatalog(input.material, input.binding)) !==
+      classroomReviewDigest(input.fieldPathCatalog) ||
+    classroomReviewDigest(scopeFor(input, scope.kind)) !== classroomReviewDigest(scope)
+  )
+    fail('binding_mismatch');
+  if (
+    scope.kind === 'cross_scene' &&
+    classroomReviewDigest(bind(input.requirements, input.material, input.binding.reportVersion)) !==
+      classroomReviewDigest(input.binding)
+  )
+    fail('binding_mismatch');
+}
+
+function scopedPacket(full: ClassroomReviewPacket, sceneId?: string): ClassroomReviewPacket {
+  const material = clone(full.material);
+  if (sceneId !== undefined) {
+    record(material).scenes = validateMaterial(material).filter((scene) => scene.id === sceneId);
+  }
+  const input: ClassroomReviewPacket = {
+    requirements: clone(full.requirements),
+    material,
+    binding: clone(full.binding),
+    // Preserve full-classroom ordinal/ref bindings; never re-number local scenes.
+    fieldPathCatalog: fieldPathCatalog(material, full.binding),
+  };
+  input.reviewScope = scopeFor(input, sceneId === undefined ? 'cross_scene' : 'scene');
+  assertScopedPacket(input);
+  if (Buffer.byteLength(JSON.stringify(input)) > MAX_REQUEST_BYTES) fail('context_too_large');
+  return freeze(input);
+}
+
+/** Every required scope must occur exactly once for this same immutable revision. */
+export function matchesClassroomScopeLedger(
+  requirements: UserRequirements,
+  material: unknown,
+  ledger: ClassroomScopeLedger,
+): boolean {
+  try {
+    const full = packet(requirements, snapshot(material), ledger.binding.reportVersion);
+    if (
+      ledger.version !== CLASSROOM_SCOPE_LEDGER_VERSION ||
+      classroomReviewDigest(ledger.binding) !== classroomReviewDigest(full.binding)
+    )
+      return false;
+    const expected = [
+      ...full.binding.sceneIds.map((id) => scopedPacket(full, id).reviewScope!),
+      scopedPacket(full).reviewScope!,
+    ];
+    if (ledger.entries.length !== expected.length) return false;
+    const actual = new Map(ledger.entries.map((entry) => [entry.scope.id, entry]));
+    if (actual.size !== expected.length) return false;
+    return expected.every((scope) => {
+      const entry = actual.get(scope.id);
+      return (
+        entry?.contentPass === true &&
+        Array.isArray(entry.findings) &&
+        !entry.findings.length &&
+        classroomReviewDigest(entry.scope) === classroomReviewDigest(scope)
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
+function hasCriticalFinding(review: ClassroomContentReview, material: Json): boolean {
+  return review.findings.some(
+    (finding) =>
+      finding.affectsCode ||
+      finding.affectsRoot ||
+      !repairable(locate(material, finding.sceneId), finding.path),
+  );
+}
+
+async function boundedScoped<T>(
+  operation: (context: ClassroomReviewCallContext) => Promise<T>,
+  signal: AbortSignal,
+  deadlineAt: number,
+): Promise<T> {
+  const remaining = deadlineAt - Date.now();
+  if (signal.aborted || !Number.isFinite(remaining) || remaining <= 0) fail('review_timeout');
+  const controller = new AbortController();
+  const combined = AbortSignal.any([signal, controller.signal]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new ClassroomContentReviewError('review_timeout'));
+      combined.addEventListener('abort', onAbort, { once: true });
+      timer = setTimeout(() => controller.abort(), Math.min(MAX_STAGE_MS, remaining));
+    });
+    combined.throwIfAborted();
+    const result = await Promise.race([operation({ signal: combined }), cancelled]);
+    if (combined.aborted || Date.now() >= deadlineAt) fail('review_timeout');
+    return result;
+  } catch (error) {
+    if (error instanceof ClassroomContentReviewError) throw error;
+    return fail(combined.aborted ? 'review_timeout' : 'review_unavailable');
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (onAbort) combined.removeEventListener('abort', onAbort);
+  }
+}
+
+/** Local decisions are internal evidence, never full-classroom proofs. */
+export async function reviewClassroomContentScoped<M extends ReviewableClassroom>(options: {
+  requirements: UserRequirements;
+  material: M;
+  callbacks: ClassroomContentCallbacks;
+  expectedSceneCount: number;
+  signal: AbortSignal;
+  deadlineAt: number;
+  recordScope?: (entry: ClassroomScopeEntry) => void;
+}): Promise<{ material: M; proof: ClassroomContentProof; ledger: ClassroomScopeLedger }> {
+  const requirements = clone(options.requirements);
+  validateRequirements(requirements);
+  let material = snapshot(options.material);
+  const scenes = validateMaterial(material, options.expectedSceneCount);
+  // Current source-bound generation has exactly three server-owned task shells.
+  if (requirements.codeContextRequired !== true || scenes.length > CLASSROOM_SCOPE_MAX_SCENES)
+    fail('material_incomplete');
+  for (const scene of scenes) {
+    if (scene.type === 'interactive') {
+      const html = record(scene.content).html;
+      if (typeof html !== 'string' || !html.trim()) fail('material_incomplete');
+    }
+  }
+  const originalSourceDigest = classroomReviewDigest(requirements);
+  const ensureActive = () => {
+    if (options.signal.aborted || Date.now() >= options.deadlineAt) fail('review_timeout');
+    if (classroomReviewDigest(options.requirements) !== originalSourceDigest)
+      fail('binding_mismatch');
+  };
+  for (const version of [1, 2] as const) {
+    ensureActive();
+    const full = packet(requirements, material, version);
+    const entries: ClassroomScopeEntry[] = [];
+    const round = new AbortController();
+    const roundSignal = AbortSignal.any([options.signal, round.signal]);
+    const reviewOne = async (input: ClassroomReviewPacket) => {
+      ensureActive();
+      const review = parseReview(
+        await boundedScoped(
+          (context) => options.callbacks.review(input, context),
+          roundSignal,
+          options.deadlineAt,
+        ),
+        input,
+      );
+      ensureActive();
+      const entry = freeze({ scope: input.reviewScope!, ...review });
+      entries.push(entry);
+      options.recordScope?.(entry);
+      if (hasCriticalFinding(review, material)) fail('requires_regeneration');
+      return review;
+    };
+    let next = 0;
+    try {
+      await Promise.all(
+        Array.from({ length: Math.min(CLASSROOM_SCOPE_CONCURRENCY, scenes.length) }, async () => {
+          while (next < full.binding.sceneIds.length) {
+            ensureActive();
+            if (roundSignal.aborted) fail('review_timeout');
+            const id = full.binding.sceneIds[next++];
+            await reviewOne(scopedPacket(full, id));
+          }
+        }).map((work) =>
+          work.catch((error) => {
+            round.abort();
+            throw error;
+          }),
+        ),
+      );
+      // No local conclusions replace the complete original material/context here.
+      await reviewOne(scopedPacket(full));
+    } catch (error) {
+      round.abort();
+      throw error;
+    }
+    const ledger = freeze<ClassroomScopeLedger>({
+      version: CLASSROOM_SCOPE_LEDGER_VERSION,
+      binding: full.binding,
+      entries: entries.sort((a, b) => a.scope.id.localeCompare(b.scope.id)),
+    });
+    if (entries.every((entry) => entry.contentPass)) {
+      ensureActive();
+      if (!matchesClassroomScopeLedger(requirements, material, ledger)) fail('binding_mismatch');
+      const proof = freeze<ClassroomContentProof>({
+        schemaVersion: 1,
+        binding: full.binding,
+        contentPass: true,
+        findings: [],
+        scope: 'complete_material_json_static_content_not_widget_execution_judge_audio_or_pixels',
+      });
+      if (!matchesClassroomContentProof(requirements, material, proof)) fail('binding_mismatch');
+      return { material: clone(material) as unknown as M, proof, ledger };
+    }
+    // Preserve all reports. Only identical target refs share one required patch;
+    // conflicting instructions remain visible to the existing bounded repair.
+    const findings = entries.flatMap((entry) => entry.findings);
+    if (findings.length > 64) fail('context_too_large');
+    if (version === 2) fail('content_unresolved');
+    if (!options.callbacks.repair) fail('content_rejected');
+    const repairInput = freeze({ ...full, findings: clone(findings) });
+    if (Buffer.byteLength(JSON.stringify(repairInput)) > MAX_REQUEST_BYTES)
+      fail('context_too_large');
+    ensureActive();
+    material = applyRepair(
+      full,
+      findings,
+      await boundedScoped(
+        (context) => options.callbacks.repair!(repairInput, context),
+        options.signal,
+        options.deadlineAt,
+      ),
+    );
+    validateMaterial(material, options.expectedSceneCount);
+    // Any repair invalidates the whole prior ledger, including cross-scene facts.
+  }
+  fail('content_unresolved');
+}
+
+function scopedReviewSystem(): string {
+  return (
+    `本次审核采用显式 reviewScope：kind=scene 只核对本次唯一场景的完整字段，不宣称见过其他场景；kind=cross_scene 必须重新检查所附完整原始课堂和跨场景一致性，不能用局部审核结论替代原材料。两种调用都保留完整 requirements/source。下文“完整/全部场景”均以 reviewScope.sceneIds 所列、实际附带的 material 为界；绑定仍指整份材料同一版本，局部 fieldRef 保留整课序号。\n` +
+    REVIEW_SYSTEM
+  )
+    .replace(
+      'reviewed_scene_ids完整唯一列出所有scene id',
+      'reviewed_scene_ids完整唯一列出reviewScope.sceneIds',
+    )
+    .replace(
+      '回复严格JSON，不包围栏或额外文字：',
+      '回复严格JSON，不包围栏或额外文字：scope_version、scope_id、scope_kind、scope_digest分别原样回填reviewScope.version/id/kind/digest；',
+    );
+}
+
 /** Structural binding check for server-created proofs; never accepts a client proof as authorization. */
 export function matchesClassroomContentProof(
   requirements: UserRequirements,
@@ -737,19 +1045,32 @@ function structuredResponseSchema(
 ): Schema<unknown> {
   validateRequirements(input.requirements);
   if (![1, 2].includes(input.binding.reportVersion)) fail('binding_mismatch');
-  const expected = bind(input.requirements, input.material, input.binding.reportVersion);
-  if (
-    classroomReviewDigest(expected) !== classroomReviewDigest(input.binding) ||
-    classroomReviewDigest(fieldPathCatalog(input.material, expected)) !==
-      classroomReviewDigest(input.fieldPathCatalog)
-  )
-    fail('binding_mismatch');
+  if (input.reviewScope) assertScopedPacket(input);
+  else {
+    const expected = bind(input.requirements, input.material, input.binding.reportVersion);
+    if (
+      classroomReviewDigest(expected) !== classroomReviewDigest(input.binding) ||
+      classroomReviewDigest(fieldPathCatalog(input.material, expected)) !==
+        classroomReviewDigest(input.fieldPathCatalog)
+    )
+      fail('binding_mismatch');
+  }
   const bindingProperties: Record<string, JSONSchema7> = {
     review_version: { type: 'string', enum: [input.binding.reviewVersion] },
     source_digest: { type: 'string', enum: [input.binding.sourceDigest] },
     material_digest: { type: 'string', enum: [input.binding.materialDigest] },
     review_snapshot_digest: { type: 'string', enum: [input.binding.reviewSnapshotDigest] },
   };
+  if (input.reviewScope) {
+    const scope = input.reviewScope;
+    Object.assign(bindingProperties, {
+      scope_version: { type: 'string', enum: [scope.version] },
+      scope_id: { type: 'string', enum: [scope.id] },
+      scope_kind: { type: 'string', enum: [scope.kind] },
+      scope_digest: { type: 'string', enum: [scope.digest] },
+    });
+  }
+  const reviewedSceneIds = input.reviewScope?.sceneIds ?? input.binding.sceneIds;
   const bindingKeys = Object.keys(bindingProperties);
   let definition: JSONSchema7;
   if (mode === 'review') {
@@ -765,9 +1086,9 @@ function structuredResponseSchema(
         content_pass: { type: 'boolean' },
         reviewed_scene_ids: {
           type: 'array',
-          items: { type: 'string', enum: input.binding.sceneIds },
-          minItems: input.binding.sceneIds.length,
-          maxItems: input.binding.sceneIds.length,
+          items: { type: 'string', enum: reviewedSceneIds },
+          minItems: reviewedSceneIds.length,
+          maxItems: reviewedSceneIds.length,
         },
         findings: {
           type: 'array',
@@ -886,14 +1207,20 @@ export function createClassroomContentCallbacks(
     system: string,
     input: ClassroomReviewPacket | ClassroomRepairPacket,
     mode: 'review' | 'repair',
+    context?: ClassroomReviewCallContext,
   ) => {
-    if (!options) return aiCall(system, JSON.stringify(input));
+    context?.signal.throwIfAborted();
+    if (!options) {
+      if (input.reviewScope) fail('review_unavailable');
+      return aiCall(system, JSON.stringify(input));
+    }
     const immutableInput = freeze(clone(input));
     const schema = structuredResponseSchema(immutableInput, mode);
-    return options.structuredCall(system, JSON.stringify(immutableInput), schema);
+    return options.structuredCall(system, JSON.stringify(immutableInput), schema, context);
   };
   return {
-    review: (input) => invoke(REVIEW_SYSTEM, input, 'review'),
-    repair: (input) => invoke(REPAIR_SYSTEM, input, 'repair'),
+    review: (input, context) =>
+      invoke(input.reviewScope ? scopedReviewSystem() : REVIEW_SYSTEM, input, 'review', context),
+    repair: (input, context) => invoke(REPAIR_SYSTEM, input, 'repair', context),
   };
 }

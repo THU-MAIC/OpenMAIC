@@ -84,7 +84,7 @@ vi.mock('@/lib/server/classroom-media-generation', () => ({
 vi.mock('@/lib/server/classroom-content-review', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/server/classroom-content-review')>()),
   createClassroomContentCallbacks: mocks.createClassroomContentCallbacks,
-  reviewClassroomContent: mocks.reviewClassroomContent,
+  reviewClassroomContentScoped: mocks.reviewClassroomContent,
   matchesClassroomContentProof: mocks.matchesClassroomContentProof,
 }));
 
@@ -553,7 +553,7 @@ describe('classroom scene generation retries', () => {
       const actual =
         await vi.importActual<typeof import('@openmaic/generation')>('@openmaic/generation');
       const calls: PromptCall[] = [];
-      const output = (plan: SceneOutline) => {
+      const output = (plan: SceneOutline, source?: { code?: string; correctedCode?: string }) => {
         if (plan.type === 'quiz') {
           return JSON.stringify([
             {
@@ -566,7 +566,16 @@ describe('classroom scene generation retries', () => {
           ]);
         }
         if (plan.type === 'interactive') {
-          return '<!DOCTYPE html><html><body><button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script></body></html>';
+          const escape = (value: string) =>
+            value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          const panels = source
+            ? `<pre><code data-codemate-source="original">${escape(source.code || '')}</code></pre><pre><code data-codemate-source="reference">${escape(source.correctedCode || '')}</code></pre>`
+            : '';
+          return (
+            '<!DOCTYPE html><html><body><button type="button" id="step-next" data-role="next">Next</button><button type="button" id="step-back" data-role="back">Back</button><button type="button" id="step-reset" data-role="reset">Reset</button><span id="step-status" data-role="status"></span><span id="step-progress" data-role="progress"></span><script type="application/json" id="widget-config">{"exposedVariables":[]}</script>' +
+            panels +
+            '</body></html>'
+          );
         }
         return JSON.stringify(slideContent);
       };
@@ -575,7 +584,9 @@ describe('classroom scene generation retries', () => {
           plan,
           async (system, user, images) => {
             calls.push({ phase: 'content', type: plan.type, system, user });
-            mocks.callLLM.mockResolvedValueOnce({ text: output(plan) });
+            mocks.callLLM.mockResolvedValueOnce({
+              text: output(plan, context?.userRequirements?.codemateSource),
+            });
             return aiCall(system, user, images);
           },
           context,
