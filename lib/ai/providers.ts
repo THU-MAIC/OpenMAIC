@@ -7,7 +7,7 @@
  * - Amazon Bedrock (native)
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
- * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, etc.)
+ * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, iFlytek, Lemonade, etc.)
  *
  * Sources:
  * - https://platform.openai.com/docs/models
@@ -26,6 +26,7 @@
  * - https://platform.xiaomimimo.com/static/docs/tokenplan/quick-access.md
  * - https://mimo.mi.com/static/docs/quick-start/summary/model.md
  * - https://mimo.mi.com/static/docs/api/chat/openai-api.md
+ * - https://www.xfyun.cn/doc/spark/TokenPlan.html
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
@@ -1621,6 +1622,45 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  iflytek: {
+    id: 'iflytek',
+    name: 'iFlytek Spark',
+    type: 'openai',
+    defaultBaseUrl: 'https://maas-api.cn-huabei-1.xf-yun.com/v2',
+    // Astron MaaS pay-as-you-go and Token Plan keys are not interchangeable:
+    // each only authenticates against its own host.
+    alternateBaseUrls: [
+      {
+        label: 'settings.baseUrlRegion.iflytekPayg',
+        url: 'https://maas-api.cn-huabei-1.xf-yun.com/v2',
+      },
+      {
+        label: 'settings.baseUrlRegion.iflytekTokenPlan',
+        url: 'https://maas-token-api.cn-huabei-1.xf-yun.com/v2',
+      },
+    ],
+    requiresApiKey: true,
+    icon: '/logos/iflytek.svg',
+    models: [
+      {
+        id: 'spark-x2.5',
+        name: 'Spark X2.5',
+        contextWindow: 262144,
+        outputWindow: 32768,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
+
   tokendance: {
     id: 'tokendance',
     name: 'TokenDance',
@@ -1827,6 +1867,7 @@ function getCompatThinkingBodyParams(
 
     case 'kimi':
     case 'xiaomi':
+    case 'iflytek':
       if (mode === 'disabled')
         return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
       if (mode === 'enabled')

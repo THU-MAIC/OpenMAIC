@@ -46,6 +46,7 @@ const LLM_ENV_PREFIXES = [
   'TENCENT_HUNYUAN',
   'XIAOMI',
   'MIMO',
+  'IFLYTEK',
   'OLLAMA',
   'LEMONADE',
   'BEDROCK',

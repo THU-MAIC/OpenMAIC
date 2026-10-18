@@ -132,7 +132,7 @@ slots:
 | 升级：没有 `openmaic.yml` 时，服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效；`MODEL_ROUTES` 需改写为槽位 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
 | 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表（`*_MODELS`）中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
 
-**支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
+**支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、讯飞星火、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
 > [!TIP]
 > **推荐配置：** 打开全部模态时 OpenMAIC 效果最好——配图、语音讲解、视频片段、联网检索与网页抓取都会参与生成。Token Plan 可以用一个 Key 配置该套餐支持的能力（见下方示例），默认模型选 `deepseek-v4.1-flash` 这类速度快、长上下文的模型即可。
