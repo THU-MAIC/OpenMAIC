@@ -35,4 +35,11 @@ describe('model aliases', () => {
     expect(preservesReasoning('deepseek', 'deepseek-v4-flash')).toBe(true);
     expect(preservesReasoning('deepseek', 'deepseek-v4-flash-vision-exp')).toBe(true);
   });
+
+  it('resolves other vendor-routed retired IDs to their catalog successors', () => {
+    expect(getCanonicalModelId('tencent-hunyuan', 'hy3-preview')).toBe('hy3');
+    expect(getCanonicalModelId('grok', 'grok-code-fast-1')).toBe('grok-build-0.1');
+    expect(getCanonicalModelId('doubao', 'glm-5.2')).toBe('glm-5.3');
+    expect(getCanonicalModelId('glm', 'glm-5.2')).toBe('glm-5.2');
+  });
 });
