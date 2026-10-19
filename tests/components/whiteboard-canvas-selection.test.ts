@@ -47,6 +47,8 @@ vi.mock('shiki', () => ({
 }));
 
 import { WhiteboardCanvas } from '@/components/whiteboard/whiteboard-canvas';
+import { BaseCodeElement } from '@/components/slide-renderer/components/element/CodeElement/BaseCodeElement';
+import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -258,6 +260,179 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
       shapeDom!.dispatchEvent(shapeDblClick);
     });
     expect(shapeDblClick.defaultPrevented).toBe(true);
+
+    await act(async () => root.unmount());
+  });
+
+  it('preserves non-whiteboard drag-to-scroll and userSelect none for slide callers', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const setPointerCaptureSpy = vi.fn();
+    const releasePointerCaptureSpy = vi.fn();
+    HTMLElement.prototype.setPointerCapture = setPointerCaptureSpy;
+    HTMLElement.prototype.releasePointerCapture = releasePointerCaptureSpy;
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => true);
+
+    await act(async () => {
+      // Default / slide playback caller (without selectable prop)
+      root.render(
+        createElement(BaseCodeElement, {
+          elementInfo: codeElement,
+        }),
+      );
+    });
+
+    const codeWrapper = container.querySelector('.base-element-code');
+    expect(codeWrapper).not.toBeNull();
+
+    // Code body must NOT have select-text or cursor-text
+    const codeBody = codeWrapper?.querySelector('.overflow-auto') as HTMLElement;
+    expect(codeBody).not.toBeNull();
+    expect(codeBody.classList.contains('select-text')).toBe(false);
+    expect(codeBody.classList.contains('cursor-text')).toBe(false);
+
+    // Code body must have userSelect: none and touchAction: none
+    expect(codeBody.style.userSelect).toBe('none');
+    expect(codeBody.style.touchAction).toBe('none');
+    expect(codeBody.style.cursor).toBe('grab');
+
+    // Trigger drag-to-scroll interaction
+    codeBody.scrollLeft = 0;
+    codeBody.scrollTop = 0;
+
+    const pointerDownEvent = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      pointerId: 42,
+    });
+    await act(async () => {
+      codeBody.dispatchEvent(pointerDownEvent);
+    });
+
+    expect(setPointerCaptureSpy).toHaveBeenCalledWith(42);
+    expect(codeBody.style.cursor).toBe('grabbing');
+
+    // Pointer move updates scroll position
+    const pointerMoveEvent = new PointerEvent('pointermove', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 80,
+      clientY: 70,
+      pointerId: 42,
+    });
+    await act(async () => {
+      codeBody.dispatchEvent(pointerMoveEvent);
+    });
+
+    // scrollLeft was 0 - (80 - 100) = 20
+    expect(codeBody.scrollLeft).toBe(20);
+    // scrollTop was 0 - (70 - 100) = 30
+    expect(codeBody.scrollTop).toBe(30);
+
+    // Pointer up ends drag
+    const pointerUpEvent = new PointerEvent('pointerup', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 80,
+      clientY: 70,
+      pointerId: 42,
+    });
+    await act(async () => {
+      codeBody.dispatchEvent(pointerUpEvent);
+    });
+
+    expect(releasePointerCaptureSpy).toHaveBeenCalledWith(42);
+    expect(codeBody.style.cursor).toBe('grab');
+
+    await act(async () => root.unmount());
+  });
+
+  it('disables drag-to-scroll and enables text selection when selectable is passed', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    const setPointerCaptureSpy = vi.fn();
+    HTMLElement.prototype.setPointerCapture = setPointerCaptureSpy;
+
+    await act(async () => {
+      // Whiteboard caller (with selectable = true)
+      root.render(
+        createElement(BaseCodeElement, {
+          elementInfo: codeElement,
+          selectable: true,
+        }),
+      );
+    });
+
+    const codeWrapper = container.querySelector('.base-element-code');
+    const codeBody = codeWrapper?.querySelector('.overflow-auto') as HTMLElement;
+    expect(codeBody).not.toBeNull();
+
+    // Has selectable classes
+    expect(codeBody.classList.contains('select-text')).toBe(true);
+    expect(codeBody.classList.contains('cursor-text')).toBe(true);
+
+    // Does not have userSelect: none or touchAction: none
+    expect(codeBody.style.userSelect).not.toBe('none');
+    expect(codeBody.style.touchAction).not.toBe('none');
+    expect(codeBody.style.cursor).not.toBe('grab');
+
+    // Pointer down should NOT start drag or capture pointer
+    const pointerDownEvent = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 100,
+      clientY: 100,
+      pointerId: 42,
+    });
+    await act(async () => {
+      codeBody.dispatchEvent(pointerDownEvent);
+    });
+
+    expect(setPointerCaptureSpy).not.toHaveBeenCalled();
+    expect(codeBody.style.cursor).not.toBe('grabbing');
+
+    await act(async () => root.unmount());
+  });
+
+  it('ScreenElement passes selectable prop to element components when requested', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // 1. Without selectable
+    await act(async () => {
+      root.render(
+        createElement(ScreenElement, {
+          elementInfo: codeElement,
+          elementIndex: 1,
+        }),
+      );
+    });
+    let codeBody = container.querySelector('.base-element-code .overflow-auto') as HTMLElement;
+    expect(codeBody.classList.contains('select-text')).toBe(false);
+    expect(codeBody.style.userSelect).toBe('none');
+
+    // 2. With selectable
+    await act(async () => {
+      root.render(
+        createElement(ScreenElement, {
+          elementInfo: codeElement,
+          elementIndex: 1,
+          selectable: true,
+        }),
+      );
+    });
+    codeBody = container.querySelector('.base-element-code .overflow-auto') as HTMLElement;
+    expect(codeBody.classList.contains('select-text')).toBe(true);
+    expect(codeBody.style.userSelect).not.toBe('none');
 
     await act(async () => root.unmount());
   });

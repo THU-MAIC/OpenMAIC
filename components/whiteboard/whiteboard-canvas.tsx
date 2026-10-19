@@ -94,7 +94,12 @@ function AnimatedElementBase({
         onPointerDown={isSelectable ? (e) => e.stopPropagation() : undefined}
         onDoubleClick={isSelectable ? (e) => e.stopPropagation() : undefined}
       >
-        <ScreenElement elementInfo={element} elementIndex={index} animate />
+        <ScreenElement
+          elementInfo={element}
+          elementIndex={index}
+          animate
+          selectable={isSelectable}
+        />
       </div>
     </motion.div>
   );

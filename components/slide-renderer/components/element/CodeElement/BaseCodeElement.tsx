@@ -67,6 +67,7 @@ function parseShikiLines(html: string): string[] {
 export interface BaseCodeElementProps {
   elementInfo: PPTCodeElement;
   animate?: boolean;
+  selectable?: boolean;
 }
 
 interface LineAnimationState {
@@ -367,17 +368,16 @@ function CodeLineRow({
 
 // ==================== BaseCodeElement ====================
 
-export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) {
+export function BaseCodeElement({ elementInfo, animate, selectable }: BaseCodeElementProps) {
   const { language, lines, fileName, showLineNumbers = true, fontSize = 14 } = elementInfo;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const codeBodyRef = useRef<HTMLDivElement>(null);
 
-  // Wheel containment: Whiteboard zoom is bypassed via two mechanisms:
-  //   1. The native wheel listener stops propagation so the whiteboard's
-  //      native `addEventListener('wheel', ...)` never fires while the cursor
-  //      is over the code body.
-  //   2. Outside the body (header / border) is handled by the wrapper-level
-  //      wheel listener below.
+  // Drag-to-scroll inside the code body (for non-whiteboard callers like slides),
+  // plus wheel containment.
+  // When `selectable` is true (whiteboard), drag-to-scroll is disabled so users
+  // can select and copy code text with the pointer, while wheel containment
+  // remains active to prevent whiteboard zoom during mouse-wheel scroll.
   useEffect(() => {
     const el = codeBodyRef.current;
     if (!el) return;
@@ -385,12 +385,75 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
     const onWheel = (e: WheelEvent) => {
       e.stopPropagation();
     };
-
     el.addEventListener('wheel', onWheel, { passive: true });
+
+    if (selectable) {
+      el.style.cursor = '';
+      return () => {
+        el.removeEventListener('wheel', onWheel);
+      };
+    }
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+    let activePointer: number | null = null;
+
+    const endDrag = () => {
+      if (activePointer !== null && el.hasPointerCapture(activePointer)) {
+        el.releasePointerCapture(activePointer);
+      }
+      dragging = false;
+      activePointer = null;
+      el.style.cursor = 'grab';
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      activePointer = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = el.scrollLeft;
+      startScrollTop = el.scrollTop;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging || e.pointerId !== activePointer) return;
+      el.scrollLeft = startScrollLeft - (e.clientX - startX);
+      el.scrollTop = startScrollTop - (e.clientY - startY);
+    };
+
+    const onPointerEnd = (e: PointerEvent) => {
+      if (e.pointerId !== activePointer) return;
+      endDrag();
+    };
+
+    const onLostCapture = () => {
+      endDrag();
+    };
+
+    el.style.cursor = 'grab';
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerEnd);
+    el.addEventListener('pointercancel', onPointerEnd);
+    el.addEventListener('lostpointercapture', onLostCapture);
+
     return () => {
+      endDrag();
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerEnd);
+      el.removeEventListener('pointercancel', onPointerEnd);
+      el.removeEventListener('lostpointercapture', onLostCapture);
       el.removeEventListener('wheel', onWheel);
     };
-  }, []);
+  }, [selectable]);
 
   // Wheel events that land on the code element's header / border still need
   // native propagation stopped — synthetic React `onWheel` would not, because
@@ -604,10 +667,21 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
           {/* Code body */}
           <div
             ref={codeBodyRef}
-            className="flex-1 overflow-auto py-2 select-text cursor-text"
+            className={
+              selectable
+                ? 'flex-1 overflow-auto py-2 select-text cursor-text'
+                : 'flex-1 overflow-auto py-2'
+            }
             style={{
               background: '#fafbfc',
               color: '#24292e',
+              ...(selectable
+                ? {}
+                : {
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    touchAction: 'none',
+                  }),
             }}
           >
             <div style={{ minWidth: 'max-content' }}>
