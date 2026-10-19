@@ -85,12 +85,12 @@ function AnimatedElementBase({
         scale: 0.85,
         transition: { duration: 0.2 },
       }}
-      className="absolute inset-0"
-      style={{ pointerEvents: isClearing ? 'none' : undefined }}
+      className="absolute inset-0 pointer-events-none"
+      style={{ pointerEvents: 'none' }}
     >
       <div
         className={isSelectable ? 'select-text cursor-text' : undefined}
-        style={{ pointerEvents: 'auto' }}
+        style={{ pointerEvents: isClearing ? 'none' : 'auto' }}
         onPointerDown={isSelectable ? (e) => e.stopPropagation() : undefined}
         onDoubleClick={isSelectable ? (e) => e.stopPropagation() : undefined}
       >

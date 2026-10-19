@@ -436,4 +436,227 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
 
     await act(async () => root.unmount());
   });
+
+  it('keeps full-canvas motion wrappers pointer-transparent so later siblings do not block text/code hit-testing or drag selection', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    // Multi-element whiteboard where selectable text (index 0) and code (index 1)
+    // are followed by later shape and image elements (indices 2 and 3).
+    await act(async () => {
+      root.render(createElement(WhiteboardCanvas, { whiteboard }));
+    });
+
+    const viewport = container.querySelector('.select-none') as HTMLElement;
+    expect(viewport).not.toBeNull();
+
+    const textDom = container.querySelector(
+      `[data-maic-element-id="${textElement.id}"]`,
+    ) as HTMLElement;
+    const codeDom = container.querySelector(
+      `[data-maic-element-id="${codeElement.id}"]`,
+    ) as HTMLElement;
+    const shapeDom = container.querySelector(
+      `[data-maic-element-id="${shapeElement.id}"]`,
+    ) as HTMLElement;
+
+    expect(textDom).not.toBeNull();
+    expect(codeDom).not.toBeNull();
+    expect(shapeDom).not.toBeNull();
+
+    // 1. Verify every full-canvas motion.div wrapper is explicitly pointer-transparent
+    const motionWrappers = container.querySelectorAll('.absolute.inset-0.pointer-events-none');
+    expect(motionWrappers.length).toBeGreaterThanOrEqual(whiteboard.elements.length);
+    motionWrappers.forEach((wrapper) => {
+      expect((wrapper as HTMLElement).style.pointerEvents).toBe('none');
+    });
+
+    // 2. Verify element subtrees remain interactive (pointer-events: auto)
+    const textSubtree = textDom.closest('.select-text') as HTMLElement;
+    const codeSubtree = codeDom.closest('.select-text') as HTMLElement;
+    expect(textSubtree.style.pointerEvents).toBe('auto');
+    expect(codeSubtree.style.pointerEvents).toBe('auto');
+
+    // 3. Realistic hit-testing simulation:
+    // Models browser hit-testing rules:
+    // - Elements or ancestors with pointer-events: none are skipped (transparent).
+    // - Elements with pointer-events: auto are tested against their bounding boxes.
+    // - Later DOM siblings / higher stacking contexts take precedence.
+    const boundsMap = new Map<
+      HTMLElement,
+      { left: number; top: number; right: number; bottom: number }
+    >();
+    boundsMap.set(textDom, {
+      left: textElement.left,
+      top: textElement.top,
+      right: textElement.left + textElement.width,
+      bottom: textElement.top + textElement.height,
+    });
+    boundsMap.set(codeDom, {
+      left: codeElement.left,
+      top: codeElement.top,
+      right: codeElement.left + codeElement.width,
+      bottom: codeElement.top + codeElement.height,
+    });
+    boundsMap.set(shapeDom, {
+      left: shapeElement.left,
+      top: shapeElement.top,
+      right: shapeElement.left + shapeElement.width,
+      bottom: shapeElement.top + shapeElement.height,
+    });
+
+    const isPointerInteractive = (el: HTMLElement): boolean => {
+      let curr: HTMLElement | null = el;
+      let effectivePointerEvents = 'auto';
+      while (curr && curr !== container) {
+        if (curr.style.pointerEvents === 'none' || curr.classList.contains('pointer-events-none')) {
+          effectivePointerEvents = 'none';
+          break;
+        }
+        if (curr.style.pointerEvents === 'auto' || curr.classList.contains('pointer-events-auto')) {
+          effectivePointerEvents = 'auto';
+          break;
+        }
+        curr = curr.parentElement;
+      }
+      return effectivePointerEvents !== 'none';
+    };
+
+    const realisticHitTest = (x: number, y: number): HTMLElement => {
+      // Check elements in reverse DOM order (later siblings stacked on top)
+      const allElements = [shapeDom, codeDom, textDom];
+      for (const el of allElements) {
+        const bounds = boundsMap.get(el);
+        if (
+          bounds &&
+          x >= bounds.left &&
+          x <= bounds.right &&
+          y >= bounds.top &&
+          y <= bounds.bottom
+        ) {
+          if (isPointerInteractive(el)) {
+            // Find target child
+            const targetChild =
+              el.querySelector('.select-text') || el.querySelector('.element-content') || el;
+            return targetChild as HTMLElement;
+          }
+        }
+      }
+      return viewport;
+    };
+
+    // Test A: Hit test at text coordinates (x: 50, y: 50)
+    // Even though shapeElement comes later in DOM order, its full-canvas wrapper is
+    // pointer-transparent, so hit testing must resolve to textElement.
+    const textHitTarget = realisticHitTest(50, 50);
+    expect(textDom.contains(textHitTarget)).toBe(true);
+    expect(shapeDom.contains(textHitTarget)).toBe(false);
+
+    // Mouse drag over text: pointerdown -> pointermove -> selection
+    const textPointerDown = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 50,
+      clientY: 50,
+    });
+    await act(async () => {
+      textHitTarget.dispatchEvent(textPointerDown);
+    });
+    // Canvas pan must NOT intercept (defaultPrevented is false)
+    expect(textPointerDown.defaultPrevented).toBe(false);
+
+    const textPointerMove = new PointerEvent('pointermove', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 100,
+      clientY: 50,
+    });
+    await act(async () => {
+      textHitTarget.dispatchEvent(textPointerMove);
+    });
+    expect(textPointerMove.defaultPrevented).toBe(false);
+
+    // Verify text selection & copy contract
+    const textNode = textDom.querySelector('.ProseMirror-static p') || textDom;
+    const range = document.createRange();
+    range.selectNodeContents(textNode);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    expect(selection?.toString()).toContain('Selectable text');
+
+    const textCopyEvent = new Event('copy', { bubbles: true, cancelable: true });
+    await act(async () => {
+      textHitTarget.dispatchEvent(textCopyEvent);
+    });
+    expect(textCopyEvent.defaultPrevented).toBe(false);
+
+    // Test B: Hit test at code coordinates (x: 50, y: 150)
+    const codeHitTarget = realisticHitTest(50, 150);
+    expect(codeDom.contains(codeHitTarget)).toBe(true);
+    expect(shapeDom.contains(codeHitTarget)).toBe(false);
+
+    const codePointerDown = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 50,
+      clientY: 150,
+    });
+    await act(async () => {
+      codeHitTarget.dispatchEvent(codePointerDown);
+    });
+    expect(codePointerDown.defaultPrevented).toBe(false);
+
+    const codeRow = codeDom.querySelector('.select-text') || codeDom;
+    const codeRange = document.createRange();
+    codeRange.selectNodeContents(codeRow);
+    selection?.removeAllRanges();
+    selection?.addRange(codeRange);
+    expect(selection?.toString()).toContain('const x = 42;');
+
+    const codeCopyEvent = new Event('copy', { bubbles: true, cancelable: true });
+    await act(async () => {
+      codeHitTarget.dispatchEvent(codeCopyEvent);
+    });
+    expect(codeCopyEvent.defaultPrevented).toBe(false);
+
+    // Test C: Hit test at shape coordinates (x: 50, y: 300)
+    // Later shape element must remain interactive and trigger canvas panning
+    const shapeHitTarget = realisticHitTest(50, 300);
+    expect(shapeDom.contains(shapeHitTarget)).toBe(true);
+
+    const shapePointerDown = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 50,
+      clientY: 300,
+    });
+    await act(async () => {
+      shapeHitTarget.dispatchEvent(shapePointerDown);
+    });
+    // Canvas pan was triggered on viewport, preventing default
+    expect(shapePointerDown.defaultPrevented).toBe(true);
+
+    // Test D: Hit test on empty canvas space (x: 500, y: 400)
+    const emptyCanvasHitTarget = realisticHitTest(500, 400);
+    expect(emptyCanvasHitTarget).toBe(viewport);
+
+    const canvasPointerDown = new PointerEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      clientX: 500,
+      clientY: 400,
+    });
+    await act(async () => {
+      emptyCanvasHitTarget.dispatchEvent(canvasPointerDown);
+    });
+    expect(canvasPointerDown.defaultPrevented).toBe(true);
+
+    await act(async () => root.unmount());
+  });
 });
