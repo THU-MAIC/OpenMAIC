@@ -10,6 +10,7 @@ import {
 import { readPriorRunRecord } from '@/lib/server/agent-runtime/entry-tree-storage';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
+const TEST_SCHEMA = `openmaic_prior_runs_${process.pid}`;
 
 function transactionFor(pool: Pool): WithTransaction {
   return async (body) => {
@@ -35,11 +36,16 @@ function transactionFor(pool: Pool): WithTransaction {
  */
 describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', () => {
   const claimOptions = { leaseTtlMs: 10_000, maxAttempts: 5 };
+  let admin: Pool;
   let pool: Pool;
   let store: PgAgentSessionStore;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: contractUrl });
+    // Parallel contract suites must not truncate or claim each other's sessions.
+    admin = new Pool({ connectionString: contractUrl });
+    await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    await admin.query(`CREATE SCHEMA ${TEST_SCHEMA}`);
+    pool = new Pool({ connectionString: contractUrl, options: `-c search_path=${TEST_SCHEMA}` });
     await ensureAgentSessionSchema(pool as Queryable);
   });
 
@@ -54,6 +60,8 @@ describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', (
 
   afterAll(async () => {
     await pool.end();
+    await admin.query(`DROP SCHEMA ${TEST_SCHEMA} CASCADE`);
+    await admin.end();
   });
 
   it('tells a failed start from a run that completed messages', async () => {
