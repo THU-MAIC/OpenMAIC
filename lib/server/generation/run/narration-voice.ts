@@ -84,6 +84,17 @@ export function slotVoice(
   };
 }
 
+/** Catalog gender for a preset voice. Registered clones are not in the catalog. */
+function catalogVoiceGender(
+  providerId: string,
+  voiceId: string,
+): 'male' | 'female' | 'neutral' | undefined {
+  if (!Object.hasOwn(TTS_PROVIDERS, providerId)) return undefined;
+  return TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS].voices.find(
+    (voice) => voice.id === voiceId,
+  )?.gender;
+}
+
 /** The voices the agent-profiles step may bind agents to, as the browser advertises them. */
 export function advertisedVoices(target: RunNarrationTarget) {
   return getEnabledProvidersWithVoices(providersConfig(target)).flatMap((provider) =>
@@ -97,12 +108,14 @@ export function advertisedVoices(target: RunNarrationTarget) {
       const modelId = cloneModelGroup
         ? resolveTTSModelForVoice(provider.providerId, voice.id, cloneModelGroup.modelId)
         : undefined;
+      const gender = catalogVoiceGender(provider.providerId, voice.id);
       return {
         providerId: provider.providerId,
         ...(modelId ? { modelId } : {}),
         voiceId: voice.id,
         voiceName: voice.name,
         voiceLanguage: voice.language,
+        ...(gender ? { gender } : {}),
       };
     }),
   );

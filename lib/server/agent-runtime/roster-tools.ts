@@ -187,7 +187,12 @@ const SET_ROSTER_AGENT_PARAMS = Type.Object({
   voiceDesign: Type.Optional(
     Type.Object({
       identity: Type.String({
-        description: 'gender + age + role, e.g. "middle-aged male teacher"',
+        description:
+          'gender + age + role in the stage language, e.g. "middle-aged male teacher" or "年轻女性学生"',
+      }),
+      gender: Type.Union([Type.Literal('male'), Type.Literal('female')], {
+        description:
+          '"male" or "female" only — these two English words, never a translation. Language-independent; must name the same gender as identity. Always set this when writing voiceDesign so non-English identities keep gender-aware voice binding.',
       }),
       texture: Type.String({
         description: 'pitch + vocal quality, e.g. "warm low-pitched slightly husky"',
@@ -201,7 +206,7 @@ const SET_ROSTER_PARAMS = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
   agents: Type.Array(SET_ROSTER_AGENT_PARAMS, {
     description:
-      'The explicit roster: exactly 1 teacher and at least 2 agents total. Written to stage.generatedAgentConfigs verbatim (voiceDesign kept; `voice` is bound when supplied).',
+      'The explicit roster: exactly 1 teacher and at least 2 agents total. Written to stage.generatedAgentConfigs verbatim (voiceDesign including language-independent gender kept; `voice` is bound when supplied).',
   }),
 });
 
@@ -244,6 +249,7 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
     description:
       'Write the classroom roster as you and the user settled it in chat: pass every agent (exactly ONE teacher, at least 2 agents total) with name/role/persona and optional avatar/color/priority/voiceDesign. ' +
       'Personas are 2-3 concrete sentences naming personality and teaching/learning style, in the stage language. ' +
+      'When supplying voiceDesign, always include gender as "male" or "female" (English only, matching identity) so non-English identities keep gender-aware voice binding after the roster is rewritten. ' +
       'Bind `voice` as a `providerId::voiceId` pair from the list_voices result (or the exact pair register_voice returned for a cloned voice); never invent an id, and omit voice when no usable voice exists (narration then falls back to the provider default). ' +
       'Persists `stage.generatedAgentConfigs` and drives scene/discussion generation from then on; re-calling replaces the roster.',
     parameters: SET_ROSTER_PARAMS,
@@ -391,6 +397,7 @@ export const ROSTER_TOOL_NAMES = ['list_voices', 'set_roster'] as const;
 /** Roster guidance layered into every runner prompt (the tools are always registered). */
 export const ROSTER_TOOLS_PROMPT = [
   'The classroom roster is written with set_roster: pass every agent (exactly ONE teacher, at least 2 agents total) with name/role/persona and optional avatar/color/priority/voiceDesign. It persists stage.generatedAgentConfigs and drives scene/discussion generation; re-calling replaces the roster.',
+  'When writing voiceDesign, always set gender to "male" or "female" (those English words only, matching identity). voiceDesign.gender is language-independent; without it a non-English identity cannot keep gender-aware voice binding after set_roster rewrites the roster.',
   'To bind a roster voice, call list_voices first and use exactly one returned `providerId::voiceId` pair; never invent a voice id.',
   'A cloned voice registered this session with register_voice appears in list_voices and can be bound with the exact pair register_voice returned; a voice from an earlier session is not enumerable — re-register it, bind a catalog voice, or omit voice.',
   'Omit `voice` when no usable voice exists: narration falls back to the provider default.',

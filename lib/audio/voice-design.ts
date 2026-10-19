@@ -46,10 +46,13 @@ export function normalizeVoiceDesign(raw: unknown): VoiceDesign | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const record = raw as Record<string, unknown>;
   const pick = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const gender: 'male' | 'female' | undefined =
+    record.gender === 'male' || record.gender === 'female' ? record.gender : undefined;
   const design = {
     identity: pick(record.identity),
     texture: pick(record.texture),
     delivery: pick(record.delivery),
+    ...(gender ? { gender } : {}),
   };
   if (!design.identity && !design.texture && !design.delivery) return undefined;
   return design;

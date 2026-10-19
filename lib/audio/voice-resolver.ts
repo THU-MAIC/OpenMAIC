@@ -82,8 +82,12 @@ export function resolveNarratorVoiceBinding(
  * 1. If the user picked a voice for this agent (persisted `overrides`, keyed by
  *    agent id) whose provider is in `enabledProviders` (and the voiceId is
  *    known), use it; the agent's own voiceConfig is validated the same way next.
- * 2. Otherwise, deterministically pick the first provider in the given list by
- *    index. Whether browser-native can be picked depends on the caller's list:
+ * 2. Otherwise, deterministically pick the first provider in the given list.
+ *    When the agent's gender is male or female and the catalogue lists that
+ *    gender, the index is taken inside that subset. A catalogue with no
+ *    male/female data, or an agent whose gender is unknown, keeps the index
+ *    on the full list. Whether browser-native can be picked depends on the
+ *    caller's list:
  *    getEnabledProvidersWithVoices excludes it, getSelectableProvidersWithVoices
  *    appends it LAST, so it is only the index target when it is the sole enabled
  *    provider (i.e. the user opted into browser-native only).
@@ -154,20 +158,38 @@ export function resolveAgentVoice(
     }
   }
 
-  // Fallback: deterministic pick among enabled providers (canonical order).
-  return resolveDeterministicFallbackVoice(enabledProviders, agentIndex);
+  // Fallback: index inside the agent's gender when the catalogue lists it.
+  // No male/female data, or an unknown agent gender, keeps the full-list index.
+  return resolveDeterministicFallbackVoice(enabledProviders, agentIndex, agentBinaryGender(agent));
+}
+
+/** Explicit voiceDesign.gender wins. A missing field keeps the English identity words. */
+function agentBinaryGender(agent: AgentConfig): 'male' | 'female' | undefined {
+  const explicit = agent.voiceDesign?.gender;
+  if (explicit === 'male' || explicit === 'female') return explicit;
+  const identity = agent.voiceDesign?.identity;
+  if (!identity) return undefined;
+  const female = /\bfemale\b/i.test(identity);
+  const male = /\bmale\b/i.test(identity);
+  if (female === male) return undefined;
+  return female ? 'female' : 'male';
 }
 
 /**
  * The deterministic last-resort voice pick shared by `resolveAgentVoice` and
  * the narrator fallback: the first ENABLED provider in canonical order and one
  * of its catalog voices (Qwen clones are excluded — only catalog voices are
- * guaranteed usable without account state). Returns null when no enabled
- * provider can serve a voice.
+ * guaranteed usable without account state). When `agentGender` is male or
+ * female and this provider lists voices of that gender, the index is taken
+ * inside that subset. Otherwise the index is taken on the full fallback list:
+ * a catalogue with no male/female data, an unknown agent gender, or a gender
+ * the catalogue does not list. Returns null when no enabled provider can serve
+ * a voice.
  */
 export function resolveDeterministicFallbackVoice(
   enabledProviders: ProviderWithVoices[],
   index: number,
+  agentGender?: 'male' | 'female',
 ): ResolvedVoice | null {
   if (enabledProviders.length === 0) return null;
   const first = enabledProviders[0];
@@ -176,9 +198,13 @@ export function resolveDeterministicFallbackVoice(
       ? first.voices.filter((voice) => isQwenCatalogVoice(voice.id))
       : first.voices;
   if (fallbackVoices.length === 0) return null;
+  const sameGender = agentGender
+    ? fallbackVoices.filter((voice) => voice.gender === agentGender)
+    : [];
+  const pool = sameGender.length > 0 ? sameGender : fallbackVoices;
   return {
     providerId: first.providerId,
-    voiceId: fallbackVoices[index % fallbackVoices.length].id,
+    voiceId: pool[index % pool.length].id,
   };
 }
 
@@ -287,7 +313,13 @@ export interface ModelVoiceGroup {
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string; language?: string }>;
+  voices: Array<{
+    id: string;
+    name: string;
+    language?: string;
+    /** Catalogue gender, when the provider lists one. `neutral` is explicit. */
+    gender?: 'male' | 'female' | 'neutral';
+  }>;
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
@@ -362,6 +394,7 @@ export function getEnabledProvidersWithVoices(
           id: v.id,
           name: v.name,
           language: v.language,
+          ...(v.gender ? { gender: v.gender } : {}),
         })),
         ...userVoices,
       ];
