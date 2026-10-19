@@ -3,6 +3,7 @@ import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useCanvasStore } from '@/lib/store';
 import type { PPTElement } from '@openmaic/dsl';
 import { getElementRange } from '@/lib/utils/element';
+import { projectInteractionElements } from '../interaction-elements';
 
 export function useMouseSelection(
   elementListRef: React.RefObject<PPTElement[]>,
@@ -87,7 +88,7 @@ export function useMouseSelection(
 
         // Check which canvas elements are within the mouse selection range and set them as selected
         let inRangeElementList: PPTElement[] = [];
-        for (const element of elementListRef.current) {
+        for (const element of projectInteractionElements(elementListRef.current)) {
           const mouseSelectionLeft = mouseSelection.left;
           const mouseSelectionTop = mouseSelection.top;
           const mouseSelectionWidth = mouseSelection.width;
