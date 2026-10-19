@@ -34,8 +34,9 @@ export const INLINE_MATH_SYNC_FORMULA_BUDGET = 100;
  * Also bound inserted markup, including cache hits: short matrix sources can
  * expand to thousands of nodes whose style/layout cost comes after typesetting.
  * Uses the serialized size already recorded by the cache, not a DOM traversal.
+ * Leave room for dense ordinary slides (e.g. 32 integrals/sums across text boxes).
  */
-const INLINE_MATH_SYNC_MARKUP_BUDGET = 128_000;
+const INLINE_MATH_SYNC_MARKUP_BUDGET = 256_000;
 
 /**
  * Hard cap per prose root, counting every formula in document order: past it,
@@ -293,9 +294,9 @@ type MathPriority = 'normal' | 'background';
 export const InlineMathPriorityContext = createContext<MathPriority>('normal');
 
 /**
- * Own the live queues and shared frame allowance. Foreground layout effects
- * spend first; a microtask then admits the current commits' background roots.
- * Removing a root cancels its work without replenishing the allowance.
+ * Own the live queues and frame allowances. Background roots share a copy of
+ * the remaining foreground allowance, so an earlier thumbnail commit cannot
+ * spend the next foreground commit's budget. Neither is renewed on removal.
  */
 function createLiveMath() {
   // Idle work rotates roots within each priority, with foreground canvases first.
@@ -303,6 +304,7 @@ function createLiveMath() {
   // Only newly admitted background roots may spend the remaining frame allowance.
   const prePaintCandidates = new Set<Element>();
   let frameBudget: TypesetBudget | null = null;
+  let backgroundBudget: TypesetBudget | null = null;
   let cancelFrameReset: (() => void) | null = null;
   let idleJob: { cancel?: () => void } | null = null;
   let prePaintScheduled = false;
@@ -311,6 +313,7 @@ function createLiveMath() {
     cancelFrameReset?.();
     cancelFrameReset = null;
     frameBudget = null;
+    backgroundBudget = null;
   }
 
   function frameAllowance(): TypesetBudget {
@@ -319,6 +322,7 @@ function createLiveMath() {
       const reset = () => {
         if (frameBudget === budget) {
           frameBudget = null;
+          backgroundBudget = null;
           cancelFrameReset = null;
         }
       };
@@ -373,7 +377,7 @@ function createLiveMath() {
   function flushPrePaint(): void {
     prePaintScheduled = false;
     if (!prePaintCandidates.size) return;
-    const budget = frameAllowance();
+    const budget = (backgroundBudget ??= { ...frameAllowance() });
     // Visit every newly admitted root: cached formulas may fit after an earlier
     // root fills the allowance. Older queued roots remain in idle time.
     for (const root of prePaintCandidates) {

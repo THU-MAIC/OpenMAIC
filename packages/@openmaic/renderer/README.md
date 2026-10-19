@@ -105,12 +105,14 @@ interface SlideCanvasProps {
 }
 ```
 
-Inline formulas share a bounded rendering budget so dense slides can yield
-between batches. Ordinary foreground slides render synchronously; a short
-formula following heavy content in the same frame may also be deferred.
+Inline formulas share a 256,000-character markup budget so oversized slides can
+yield between batches while dense ordinary slides still fit before paint.
+A short formula following heavy content in the same frame may also be deferred.
 Use `mathPriority="background"` for thumbnails: newly mounted or changed content
-uses the frame's remaining allowance after foreground layout effects, before paint.
-Any remaining formulas render in idle time after foreground canvases; unrelated
+shares a copy of the frame's remaining allowance after foreground layout effects,
+before paint. This leaves foreground capacity available if the user switches slides
+after thumbnails mount in the same frame; that frame may use both allowances.
+Remaining formulas render in idle time after foreground canvases; unrelated
 parent rerenders do not advance that queued work. Snapshot APIs still finish all
 formulas synchronously within the existing per-prose-root hard caps.
 

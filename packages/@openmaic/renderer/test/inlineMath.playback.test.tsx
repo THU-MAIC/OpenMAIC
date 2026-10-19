@@ -17,6 +17,12 @@ import {
 
 const heavy = Array.from({ length: 30 }, (_, i) => matrix(i * 50));
 const ordinary = ['x^2', 'y+1', '\\frac{a}{b}'];
+// Integrals expanded by the binomial theorem: short sources with medium-sized output.
+const denseOrdinary = Array.from(
+  { length: 32 },
+  (_, i) => `\\int_0^1 x^{${i}}(1-x)^3\\,dx = \\sum_{k=0}^3 (-1)^k\\binom{3}{k}\\frac{1}{${i}+k+1}`,
+);
+const denseRoots = Array.from({ length: 4 }, (_, i) => denseOrdinary.slice(i * 8, (i + 1) * 8));
 
 function slide(id: string, roots: string[][]): Slide {
   return {
@@ -167,6 +173,39 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     expect(idle.callbacks.size).toBe(0);
   });
 
+  it.each(['cold', 'warm'] as const)(
+    'typesets a dense ordinary slide before paint with a %s cache',
+    (cache) => {
+      if (cache === 'warm') {
+        const warm = document.createElement('div');
+        warm.innerHTML = denseOrdinary.map(stored).join('');
+        renderInlineMath(warm, { complete: true });
+      }
+      const view = render(<SlideCanvas slide={slide('dense-ordinary', denseRoots)} scale={1} />);
+      expect(typesetCount(view.container)).toBe(32);
+      expect(idle.callbacks.size).toBe(0);
+    },
+  );
+
+  it('keeps a foreground allowance after thumbnails mount earlier in the same frame', async () => {
+    const first = slide('first', [ordinary]);
+    const thumbnails = [slide('thumbnail', [heavy])];
+    const view = render(<Layout main={first} thumbnails={[]} />);
+    frames.flush();
+    // The observer admits thumbnails, then the user clicks before the next frame.
+    view.rerender(<Layout main={first} thumbnails={thumbnails} />);
+    await Promise.resolve();
+    const before = typesetCount(view.container.querySelector('aside')!);
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(heavy.length);
+
+    view.rerender(<Layout main={slide('dense-ordinary', denseRoots)} thumbnails={thumbnails} />);
+    expect(typesetCount(view.container.querySelector('main')!)).toBe(32);
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(before);
+    idle.flush();
+    expect(typesetCount(view.container.querySelector('aside')!)).toBe(heavy.length);
+  });
+
   it('uses the remaining allowance for ordinary thumbnails before paint, including edits', async () => {
     const thumbnailCount = 6;
     const thumbnails = (sources: string[]) =>
@@ -205,6 +244,21 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     expect(typesetCount(view.container.querySelector('aside')!)).toBe(before);
     idle.flush();
     expect(typesetCount(view.container.querySelector('aside')!)).toBe(heavy.length);
+  });
+
+  it('shares the background allowance across thumbnail mounts in the same frame', async () => {
+    const first = slide('first', [heavy]);
+    const view = render(<Thumbnails slides={[first]} />);
+    await Promise.resolve();
+    const before = typesetCount(view.container);
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(heavy.length);
+
+    view.rerender(<Thumbnails slides={[first, slide('second', [heavy])]} />);
+    await Promise.resolve();
+    expect(typesetCount(view.container)).toBe(before);
+    idle.flush();
+    expect(typesetCount(view.container)).toBe(heavy.length * 2);
   });
 
   it('does not schedule idle work when completed thumbnails rerender', async () => {
