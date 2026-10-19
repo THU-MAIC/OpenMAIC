@@ -202,7 +202,6 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     }
   },
 }));
-vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
 // The owner's generation runs (the rail's generating courses) are a separate
 // stream with nothing to say about the session and pane wiring under test.
 vi.mock('@/lib/generation-run-client/use-owner-runs', () => ({

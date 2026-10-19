@@ -28,6 +28,7 @@
     "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
     "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
+    "openWorkspace": "Khu làm việc",
     "greetingWithName": "Chào {{name}}"
   },
   "toolbar": {
@@ -350,10 +351,11 @@
     "exitFullscreen": "Thoát toàn màn hình",
     "editCourse": "Sửa bài học",
     "doneEditing": "Sửa xong",
-    "proModeDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để dùng chế độ Pro."
+    "editDisabledHint": "Trang này không sửa được — hãy mở một slide bài học để sửa.",
+    "editToggle": "Sửa",
+    "editInWorkspace": "Sửa trong khu làm việc"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Hoàn tác",
     "redo": "Làm lại",
     "delete": "Xóa",
@@ -2404,7 +2406,7 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
+    "newCourse": "Bài học mới",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2479,7 +2481,23 @@
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Thư mục không khả dụng trong bản này"
+    "foldersUnavailable": "Thư mục không khả dụng trong bản này",
+    "composer": {
+      "attach": "Đính kèm tài liệu",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Nhắc đến một lớp học hoặc tài liệu trong kho kiến thức",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
+      "launchSend": "Bắt đầu tạo"
+    }
   },
   "profile": {
     "title": "Trang cá nhân",
@@ -2510,25 +2528,6 @@
     "title": "Nhập mã truy cập",
     "placeholder": "Mã truy cập",
     "error": "Mã truy cập không đúng. Vui lòng thử lại."
-  },
-  "proMode": {
-    "attach": "Đính kèm tài liệu",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Chế độ Pro",
-    "badgeEnter": "Chế độ Pro",
-    "badgeExit": "Quay lại chế độ cổ điển",
-    "launchPlaceholder": "Mô tả trải nghiệm học tập bạn muốn tạo",
-    "launchSend": "Bắt đầu tạo",
-    "mentionCourseOrMaterial": "Nhắc đến một lớp học hoặc tài liệu trong kho kiến thức"
   },
   "workbench": {
     "tool": {

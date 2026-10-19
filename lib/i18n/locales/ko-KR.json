@@ -28,6 +28,7 @@
     "exampleFourier": "직관적인 예제로 푸리에 변환 배우기",
     "desktopOnly": "편집기와 Pro 모드는 컴퓨터에서 이용하세요.",
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
+    "openWorkspace": "워크스페이스",
     "greetingWithName": "안녕하세요, {{name}}!"
   },
   "toolbar": {
@@ -350,10 +351,11 @@
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
     "doneEditing": "편집 완료",
-    "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다."
+    "editDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 편집할 수 있습니다.",
+    "editToggle": "편집",
+    "editInWorkspace": "워크스페이스에서 편집"
   },
   "edit": {
-    "proMode": "프로 모드",
     "undo": "실행 취소",
     "redo": "다시 실행",
     "delete": "삭제",
@@ -2404,7 +2406,7 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
+    "newCourse": "새 코스",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2479,7 +2481,23 @@
     "courseTabsAria": "열린 코스",
     "courseTabClose": "탭 닫기: {{name}}",
     "courseTabRunning": "생성 중",
-    "foldersUnavailable": "이 빌드에서는 폴더를 사용할 수 없습니다"
+    "foldersUnavailable": "이 빌드에서는 폴더를 사용할 수 없습니다",
+    "composer": {
+      "attach": "자료 첨부",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "수업 또는 지식 베이스 자료 참조",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "만들고 싶은 학습 경험을 설명해 보세요",
+      "launchSend": "구축 시작"
+    }
   },
   "profile": {
     "title": "프로필",
@@ -2510,25 +2528,6 @@
     "title": "접근 코드 입력",
     "placeholder": "접근 코드",
     "error": "유효하지 않은 접근 코드입니다. 다시 시도해 주세요."
-  },
-  "proMode": {
-    "attach": "자료 첨부",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Pro 모드",
-    "badgeEnter": "Pro 모드",
-    "badgeExit": "일반 모드로 돌아가기",
-    "launchPlaceholder": "만들고 싶은 학습 경험을 설명해 보세요",
-    "launchSend": "구축 시작",
-    "mentionCourseOrMaterial": "수업 또는 지식 베이스 자료 참조"
   },
   "workbench": {
     "tool": {

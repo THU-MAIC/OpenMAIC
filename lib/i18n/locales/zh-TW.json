@@ -28,6 +28,7 @@
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
     "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
+    "openWorkspace": "工作區",
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
@@ -350,10 +351,11 @@
     "exitFullscreen": "離開全螢幕",
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯",
-    "proModeDisabledHint": "此頁面無法編輯——開啟課程投影片以使用 Pro 模式編輯。"
+    "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
+    "editToggle": "編輯",
+    "editInWorkspace": "在工作區中編輯"
   },
   "edit": {
-    "proMode": "專業模式",
     "undo": "復原",
     "redo": "重做",
     "delete": "刪除",
@@ -2389,7 +2391,7 @@
     "retry": "重試",
     "untitledSession": "未命名對話",
     "pagePosition": "第 {{index}} / {{total}} 頁",
-    "exitPro": "退出 Pro",
+    "newCourse": "新增課程",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",
@@ -2464,7 +2466,23 @@
     "courseTabsAria": "右欄標籤頁",
     "courseTabClose": "關閉標籤頁《{{name}}》",
     "courseTabRunning": "產生中",
-    "foldersUnavailable": "此版本不支援資料夾"
+    "foldersUnavailable": "此版本不支援資料夾",
+    "composer": {
+      "attach": "添加材料",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "引用課堂或知識庫材料",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "描述你想創造的學習體驗",
+      "launchSend": "開始構建"
+    }
   },
   "profile": {
     "title": "個人資料",
@@ -2510,25 +2528,6 @@
       "mid": "做得好，繼續保持！",
       "low": "不錯的開始，回顧一下再試一次。"
     }
-  },
-  "proMode": {
-    "attach": "添加材料",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "專業模式",
-    "badgeEnter": "專業模式",
-    "badgeExit": "返回普通模式",
-    "launchPlaceholder": "描述你想創造的學習體驗",
-    "launchSend": "開始構建",
-    "mentionCourseOrMaterial": "引用課堂或知識庫材料"
   },
   "workbench": {
     "tool": {

@@ -28,6 +28,7 @@
     "exampleFourier": "Explain the Fourier transform with intuitive examples",
     "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
+    "openWorkspace": "Workspace",
     "greetingWithName": "Hi, {{name}}"
   },
   "toolbar": {
@@ -350,10 +351,11 @@
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",
     "doneEditing": "Done editing",
-    "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode."
+    "editDisabledHint": "Editing isn't available on this page — open a course slide to edit it.",
+    "editToggle": "Edit",
+    "editInWorkspace": "Edit in workspace"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Undo",
     "redo": "Redo",
     "delete": "Delete",
@@ -2404,7 +2406,7 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
+    "newCourse": "New course",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2479,7 +2481,23 @@
     "courseTabsAria": "Open courses",
     "courseTabClose": "Close tab: {{name}}",
     "courseTabRunning": "Generating",
-    "foldersUnavailable": "Folders are not available in this build"
+    "foldersUnavailable": "Folders are not available in this build",
+    "composer": {
+      "attach": "Attach material",
+      "mentionCourse": "Reference a classroom",
+      "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material",
+      "loadSkill": "Load a skill",
+      "skillMenuTitle": "Choose a course-design skill",
+      "skillsLoading": "Loading skills…",
+      "noSkillsAvailable": "No skills available",
+      "userSkillsGroup": "My Skills",
+      "builtinSkillsGroup": "Built-in Skills",
+      "skillsLoadFailed": "Skills failed to load. Click to retry",
+      "retrySkills": "Retry",
+      "noSkillMatch": "No Skills match “{{query}}”",
+      "launchPlaceholder": "Describe the learning experience you want to create",
+      "launchSend": "Start build"
+    }
   },
   "profile": {
     "title": "Profile",
@@ -2505,25 +2523,6 @@
     "voice": "Voice",
     "speed": "Speed",
     "language": "Language"
-  },
-  "proMode": {
-    "attach": "Attach material",
-    "mentionCourse": "Reference a classroom",
-    "loadSkill": "Load a skill",
-    "skillMenuTitle": "Choose a course-design skill",
-    "skillsLoading": "Loading skills…",
-    "noSkillsAvailable": "No skills available",
-    "userSkillsGroup": "My Skills",
-    "builtinSkillsGroup": "Built-in Skills",
-    "skillsLoadFailed": "Skills failed to load. Click to retry",
-    "retrySkills": "Retry",
-    "noSkillMatch": "No Skills match “{{query}}”",
-    "badgeAria": "Pro mode",
-    "badgeEnter": "Pro mode",
-    "badgeExit": "Back to classic",
-    "launchPlaceholder": "Describe the learning experience you want to create",
-    "launchSend": "Start build",
-    "mentionCourseOrMaterial": "Reference a classroom or a knowledge base material"
   },
   "accessCode": {
     "title": "Enter Access Code",

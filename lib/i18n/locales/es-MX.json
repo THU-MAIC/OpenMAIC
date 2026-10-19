@@ -28,6 +28,7 @@
     "exampleFourier": "Transformada de Fourier con ejemplos intuitivos",
     "desktopOnly": "Usa una computadora para el editor y el modo Pro.",
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
+    "openWorkspace": "Espacio de trabajo",
     "greetingWithName": "Hola, {{name}}"
   },
   "toolbar": {
@@ -350,10 +351,11 @@
     "exitFullscreen": "Salir de pantalla completa",
     "editCourse": "Editar curso",
     "doneEditing": "Terminar edición",
-    "proModeDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editar con el modo Pro."
+    "editDisabledHint": "La edición no está disponible en esta página — abre una diapositiva del curso para editarla.",
+    "editToggle": "Editar",
+    "editInWorkspace": "Editar en el espacio de trabajo"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Deshacer",
     "redo": "Rehacer",
     "delete": "Eliminar",
@@ -2404,7 +2406,7 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
+    "newCourse": "Nuevo curso",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2479,7 +2481,23 @@
     "courseTabsAria": "Cursos abiertos",
     "courseTabClose": "Cerrar pestaña: {{name}}",
     "courseTabRunning": "Generando",
-    "foldersUnavailable": "Las carpetas no están disponibles en esta versión"
+    "foldersUnavailable": "Las carpetas no están disponibles en esta versión",
+    "composer": {
+      "attach": "Adjuntar material",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Mencionar un aula o un material de la base de conocimientos",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
+      "launchSend": "Iniciar construcción"
+    }
   },
   "profile": {
     "title": "Perfil",
@@ -2510,25 +2528,6 @@
     "title": "Ingresa el código de acceso",
     "placeholder": "Código de acceso",
     "error": "Código de acceso no válido. Inténtalo de nuevo."
-  },
-  "proMode": {
-    "attach": "Adjuntar material",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Modo Pro",
-    "badgeEnter": "Modo Pro",
-    "badgeExit": "Volver al modo clásico",
-    "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
-    "launchSend": "Iniciar construcción",
-    "mentionCourseOrMaterial": "Mencionar un aula o un material de la base de conocimientos"
   },
   "workbench": {
     "tool": {

@@ -387,13 +387,6 @@ export function ProLaunchPanel({
           Chrome mirrors the classic face's card so the two sides read as one
           object; the violet seam is the only Pro tell. */}
       <div
-        // The face the Pro swap turns over (see `lib/workbench/pro-swap.ts` and
-        // `components/workbench/pro-swap.css`). Named here rather than on
-        // `WorkspaceHome`'s wrapper so the entrance animation on that wrapper is
-        // never part of the captured snapshot, and only for the workspace
-        // variant: `/`'s composer names itself, because there the card belongs
-        // to the classic page rather than to this component.
-        data-pro-morph={variant === 'workspace' ? 'composer' : undefined}
         className={cn(
           'relative',
           variant === 'workspace'
@@ -427,7 +420,7 @@ export function ProLaunchPanel({
           <SkillSlashMenu
             key={slash}
             filter={slash}
-            title={t('proMode.skillMenuTitle')}
+            title={t('workspace.composer.skillMenuTitle')}
             onPick={loadSkill}
             onDismiss={closeSkillMenu}
           />
@@ -502,7 +495,7 @@ export function ProLaunchPanel({
           }}
           rows={2}
           aria-keyshortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
-          placeholder={t('proMode.launchPlaceholder')}
+          placeholder={t('workspace.composer.launchPlaceholder')}
           className={cn(
             'w-full resize-none bg-transparent text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/40',
             // The workspace composer is the page's centrepiece, so it gets the
@@ -524,7 +517,7 @@ export function ProLaunchPanel({
           <AttachButton
             testId="pro-launch-attach"
             disabled={submitting}
-            label={t('proMode.attach')}
+            label={t('workspace.composer.attach')}
             onFiles={materials.addFiles}
           />
           {/* Shown exactly when the menu can open: classrooms to name, or the
@@ -534,7 +527,9 @@ export function ProLaunchPanel({
               testId="pro-launch-mention-button"
               disabled={submitting}
               label={t(
-                materials.enabled ? 'proMode.mentionCourseOrMaterial' : 'proMode.mentionCourse',
+                materials.enabled
+                  ? 'workspace.composer.mentionCourseOrMaterial'
+                  : 'workspace.composer.mentionCourse',
               )}
               onClick={openMention}
             />
@@ -542,7 +537,7 @@ export function ProLaunchPanel({
           <SkillButton
             testId="pro-launch-skill"
             disabled={submitting}
-            label={t('proMode.loadSkill')}
+            label={t('workspace.composer.loadSkill')}
             onClick={openSkillMenu}
           />
           <div className="flex-1" />
@@ -560,7 +555,7 @@ function ProLaunchSend({ canSend, onSubmit }: { canSend: boolean; onSubmit: () =
     <button
       type="button"
       data-testid="pro-launch-start"
-      aria-label={t('proMode.launchSend')}
+      aria-label={t('workspace.composer.launchSend')}
       onClick={onSubmit}
       // No outside-press exemption here, unlike the chat composer's send:
       // `canSend` includes `openMenu === null`, so this button is DISABLED

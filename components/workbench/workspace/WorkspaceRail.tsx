@@ -96,7 +96,7 @@ import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand } from '@/lib/brand/brand-context';
 import type { HomeDiscoveryState, useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
-import { ProBadge } from '@/components/workbench/ProBadge';
+import Link from 'next/link';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { ThemeToggle } from '@/components/site-header/theme-toggle';
 import { SettingsDialog } from '@/components/settings';
@@ -208,7 +208,6 @@ export function WorkspaceRail({
   onOpenSession,
   onNewSession,
   onGoHome,
-  onExitPro,
   onSessionDeleted,
   onRenameSession,
   onDeleteCourse,
@@ -251,7 +250,6 @@ export function WorkspaceRail({
   readonly onNewSession: () => void;
   /** Back to the bare `/workspace` — the logo, and the shell's own handler. */
   readonly onGoHome: () => void;
-  readonly onExitPro: () => void;
   /** The shell drops the deleted chat's pane and URL param, once the server
    *  confirmed the delete. Rows are already gone optimistically down here. */
   readonly onSessionDeleted: (sessionId: string) => void;
@@ -958,9 +956,9 @@ export function WorkspaceRail({
       style={{ width: 'var(--ws-rail-w)' }}
     >
       <div className="flex h-16 shrink-0 items-center gap-2 px-4">
-        {/* The wordmark is the way home; the PRO pill beside it is the switch
-            that leaves Pro. Two different destinations, so two hit targets —
-            never one control wearing both meanings. */}
+        {/* The wordmark is the way home; the link beside it goes to `/` to
+            start a course there. Two different destinations, so two hit
+            targets — never one control wearing both meanings. */}
         <HomeLink testId="pro-nav-home" onGoHome={onGoHome} className="-ml-1.5 px-1.5 py-1">
           <img
             src={brand.logoSrc}
@@ -969,7 +967,13 @@ export function WorkspaceRail({
             className="h-[21px] w-auto max-w-[110px] shrink-0"
           />
         </HomeLink>
-        <ProBadge active onToggle={onExitPro} />
+        <Link
+          href="/"
+          data-testid="pro-nav-new-course"
+          className="ws-quiet shrink-0 rounded-md px-1.5 py-1 text-[12px]"
+        >
+          {t('workspace.newCourse')}
+        </Link>
         {/* THE rail's header, and therefore where the rail folds — the same
             button, in the same place, that the conversation and the classroom
             fold from. It used to be a pill floating in the middle of the rail's

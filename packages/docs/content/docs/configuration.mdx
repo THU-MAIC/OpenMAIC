@@ -123,7 +123,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `course.content.pbl` | chat | `course.content` | Project-based learning scenes |
 | `course.actions` | chat | `llm` | Scene actions (what the agents say and do on each scene) |
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
-| `agent` | chat | `llm` | The Pro workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
+| `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
 | `agent.title` | chat | `agent` | Pro session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
@@ -437,7 +437,7 @@ Use a long random value (at least 16 characters) — this code is the only secre
 Feature flags accept `true` or `1`; unless noted otherwise, all other values are treated as disabled. `NEXT_PUBLIC_*` flags are injected into the client at build time, so changing them requires a rebuild:
 
 ```bash
-# MAIC Editor (Pro mode)
+# MAIC Editor (classroom editor)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)

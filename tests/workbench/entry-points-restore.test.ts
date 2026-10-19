@@ -192,9 +192,9 @@ describe('entry point 2 — the composer attach control', () => {
     };
     for (const [locale, copy] of Object.entries(expected)) {
       const parsed = JSON.parse(read(`lib/i18n/locales/${locale}.json`)) as {
-        proMode?: { attach?: string };
+        workspace?: { composer?: { attach?: string } };
       };
-      expect(parsed.proMode?.attach, locale).toBe(copy);
+      expect(parsed.workspace?.composer?.attach, locale).toBe(copy);
     }
   });
 });

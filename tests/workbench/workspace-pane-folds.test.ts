@@ -260,15 +260,17 @@ describe('fold placement', () => {
   it('anchors the rail’s fold to the trailing edge of its header, not beside the logo', () => {
     const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
     // The header row owns all three controls, but auto margin pushes the fold
-    // to the rail boundary instead of pinning it beside the PRO badge.
+    // to the rail boundary instead of pinning it beside the new-course link.
     const row =
       /<div className="flex h-16 shrink-0 items-center gap-2 px-4">([\s\S]*?)<\/div>/.exec(rail);
     expect(row, 'the rail’s header row').not.toBeNull();
     expect(row![1]).toContain('testId="pro-nav-home"');
-    expect(row![1]).toContain('<ProBadge');
+    expect(row![1]).toContain('data-testid="pro-nav-new-course"');
     expect(row![1]).toContain('testId="pro-nav-collapse"');
     expect(row![1]).toContain('className="ml-auto"');
-    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(row![1].indexOf('<ProBadge'));
+    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(
+      row![1].indexOf('pro-nav-new-course'),
+    );
 
     // And it is the same button the other two panes fold with — one fold
     // language, not a rail-specific grip.
