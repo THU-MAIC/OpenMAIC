@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   } | null,
   roundtableProps: undefined as Record<string, unknown> | undefined,
   canvasProps: undefined as Record<string, unknown> | undefined,
-  piEnabled: true,
   coursewareReferenceEnabled: true,
   topicActive: false,
   engineMode: 'idle' as 'idle' | 'playing' | 'paused',
@@ -369,7 +368,6 @@ vi.mock('@/lib/orchestration/registry/store', () => ({
   ),
 }));
 vi.mock('@/lib/config/feature-flags', () => ({
-  isPiChatEnabled: () => mocks.piEnabled,
   isCoursewareReferenceEnabled: () => mocks.coursewareReferenceEnabled,
 }));
 
@@ -391,7 +389,6 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.sendMessage.mockResolvedValue(undefined);
     mocks.roundtableProps = undefined;
     mocks.canvasProps = undefined;
-    mocks.piEnabled = true;
     mocks.coursewareReferenceEnabled = true;
     mocks.topicActive = false;
     mocks.engineMode = 'idle';
@@ -702,24 +699,6 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
       );
     },
   );
-
-  it('hides the entry and sends an ordinary unreferenced message when Pi is off', async () => {
-    mocks.piEnabled = false;
-    await renderOwner();
-
-    expect(mocks.roundtableProps).toMatchObject({
-      showElementReference: false,
-      canPickSlideElement: false,
-      elementPickActive: false,
-    });
-    expect(container.querySelector('[data-testid="toggle-pick"]')).toBeNull();
-
-    click('send');
-
-    expect(mocks.handleUserInterrupt).not.toHaveBeenCalled();
-    expect(mocks.sendMessage).toHaveBeenCalledOnce();
-    expect(mocks.sendMessage).toHaveBeenCalledWith('Explain this', undefined);
-  });
 
   it('keeps Pi messaging available while the independent reference gate clears its UI state', async () => {
     await renderOwner();

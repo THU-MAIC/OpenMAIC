@@ -9,7 +9,6 @@ import {
 const mocks = vi.hoisted(() => ({
   getModel: vi.fn(() => ({ model: { id: 'stub' } })),
   callLLM: vi.fn(async () => ({ text: 'OK' })),
-  generate: vi.fn(async function* () {}),
   pi: vi.fn(async () => {}),
   invalidOwner: false,
   managedBaseUrl: undefined as string | undefined,
@@ -31,7 +30,6 @@ vi.mock('@/lib/server/provider-config', async (original) => ({
   resolveProxy: () => undefined,
 }));
 vi.mock('@/lib/ai/llm', () => ({ callLLM: mocks.callLLM }));
-vi.mock('@/lib/orchestration/stateless-generate', () => ({ statelessGenerate: mocks.generate }));
 vi.mock('@/lib/chat/pi/director-loop', () => ({ runPiDirectorLoop: mocks.pi }));
 vi.mock('@/lib/server/identity/resolve', async (original) => ({
   ...(await original<typeof import('@/lib/server/identity/resolve')>()),
@@ -55,7 +53,6 @@ const runtime = await import('@/lib/server/model-config/runtime');
 const { resolveModel } = await import('@/lib/server/resolve-model');
 const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
 const { POST: verify } = await import('@/app/api/verify-model/route');
-const { POST: chat } = await import('@/app/api/chat/route');
 const { POST: pi } = await import('@/app/api/chat/pi/route');
 
 function deployment(config: ModelConfigFile, legacy = false) {
@@ -99,7 +96,6 @@ beforeEach(() => {
   mocks.ssrfError = null;
   vi.stubEnv('OPENAI_API_KEY', 'server-secret');
   vi.stubEnv('DATABASE_URL', '');
-  vi.stubEnv('NEXT_PUBLIC_PI_CHAT_ENABLED', 'true');
 
   deployment(config, true);
 });
@@ -171,7 +167,7 @@ describe('operator model authorization', () => {
   );
   it('retains the locked classroom model despite body and header overrides', async () => {
     deployment({ ...config, slots: { classroom: 'openai:primary' }, lock: ['classroom'] });
-    const response = await chat(
+    const response = await pi(
       request(chatBody('openai:unlisted'), { 'chat-adapter': 'openai:unlisted' }),
     );
     await response.text();
@@ -202,23 +198,19 @@ describe('operator model authorization', () => {
     );
     expect(mocks.getModel).not.toHaveBeenCalled();
   });
-  it.each([chat, pi])(
-    'rejects chat model and header substitution before generation',
-    async (handler) => {
-      for (const routed of [false, true]) {
-        const response = await handler(
-          request(
-            chatBody(routed ? 'openai:allowed' : 'openai:unlisted'),
-            routed ? { 'chat-adapter': 'openai:unlisted' } : undefined,
-          ),
-        );
-        expect(response.status).toBe(403);
-      }
-      expect(mocks.getModel).not.toHaveBeenCalled();
-      expect(mocks.generate).not.toHaveBeenCalled();
-      expect(mocks.pi).not.toHaveBeenCalled();
-    },
-  );
+  it('rejects chat model and header substitution before generation', async () => {
+    for (const routed of [false, true]) {
+      const response = await pi(
+        request(
+          chatBody(routed ? 'openai:allowed' : 'openai:unlisted'),
+          routed ? { 'chat-adapter': 'openai:unlisted' } : undefined,
+        ),
+      );
+      expect(response.status).toBe(403);
+    }
+    expect(mocks.getModel).not.toHaveBeenCalled();
+    expect(mocks.pi).not.toHaveBeenCalled();
+  });
   it.each([false, true])(
     'rejects arbitrary verification models (saved=%s) before upstream work',
     async (saved) => {
@@ -401,12 +393,8 @@ describe('Pi classroom tool requirement through real model resolution', () => {
     expect(mocks.pi).not.toHaveBeenCalled();
   });
 
-  it('keeps the legacy chat route and quiz/PBL stage resolution available without tools', async () => {
+  it('keeps quiz/PBL stage resolution available without tools', async () => {
     deployment({ providers: { ac: atlas }, slots: { classroom: `ac:${noTools}` } });
-    const response = await chat(request(chatBody('openai:allowed')));
-    expect(response.status).toBe(200);
-    await response.text();
-    expect(mocks.generate).toHaveBeenCalledOnce();
     for (const stage of [
       'quiz-grade',
       'pbl-v2-runtime',
@@ -607,11 +595,8 @@ describe('Pi Google native migration through real model resolution', () => {
     ).rejects.toThrow(/Provider type mismatch/);
     expect(mocks.getModel).not.toHaveBeenCalled();
   });
-  it('leaves legacy, quiz, PBL, agent and plain classroom consumers available', async () => {
+  it('leaves quiz, PBL, agent and plain classroom consumers available', async () => {
     deployment({ providers: { bad }, slots: { llm: 'bad:gemini-alias' } });
-    const response = await chat(request(chatBody('ignored:m')));
-    expect(response.status).toBe(200);
-    await response.text();
     for (const stage of [
       'chat-adapter',
       'quiz-grade',

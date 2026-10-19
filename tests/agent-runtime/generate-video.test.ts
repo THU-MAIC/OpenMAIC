@@ -50,7 +50,7 @@ const providerConfig = {
   providerId: 'seedance' as const,
   apiKey: 'test-key',
   baseUrl: 'https://ark.cn-beijing.volces.com',
-  model: 'doubao-seedance-1-5-pro-251215',
+  model: 'doubao-seedance-2-0-260128',
 };
 
 const configured = () => ({ seedance: { models: [providerConfig.model] } });
@@ -825,7 +825,7 @@ describe('generate_video tool', () => {
       // seedance is force-disabled; kling is the only enabled entry, so the
       // selector must pick kling (#665).
       getConfiguredVideoProviders: () => ({
-        seedance: { disabled: true, models: ['doubao-seedance-1-5-pro-251215'] },
+        seedance: { disabled: true, models: ['doubao-seedance-2-0-260128'] },
         kling: { models: ['kling-v1-6'] },
       }),
       resolveVideoProviderConfig: () => ({

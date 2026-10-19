@@ -438,9 +438,6 @@ ACCESS_CODE=your-secret-code
 # محرر MAIC (وضع Pro)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# محادثة Pi مفعلة افتراضيًا؛ أزل التعليق عن السطر التالي للعودة إلى المسار القديم
-# NEXT_PUBLIC_PI_CHAT_ENABLED=false
-
 # مراجع مواد PPT والمشاهد التفاعلية أثناء تشغيل Pi (علامة وقت البناء؛ لا تؤثر في مراجع وضع التحرير)
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
 
@@ -457,13 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-تعتمد محادثة Pi على دعم النموذج لاستدعاء الأدوات/الدوال. يُرفض النموذج الذي يذكر الكتالوج المدمج أنه لا يدعم استدعاء الأدوات قبل الاستدلال، مع `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`)، ويشير **إعداد نماذج المقرر** إلى هذا الشرط عند خانة الصف. إذا كان النموذج أو الموفر المحدد لا يدعم استدعاء الأدوات، فاضبط `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (أو `0`) وأعد البناء لاستخدام مسار المحادثة القديم.
+تعمل محادثة الصف دائمًا على Pi، وتتطلب نموذجًا يدعم استدعاء الأدوات/الدوال: اختر نموذجًا كهذا لـ **الصف** في **إعداد نماذج المقرر**، أو اضبط الخانة `classroom` (أو الخانة `llm` التي ترث منها) في `openmaic.yml`. مع Gemini استخدم الإعداد المسبق الأصلي `google` بدلًا من عنوان Google المتوافق مع OpenAI. يُرفض النموذج الذي يذكر الكتالوج المدمج أنه لا يدعم استدعاء الأدوات قبل الاستدلال، مع `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`)، ويشير **إعداد نماذج المقرر** إلى هذا الشرط عند خانة الصف.
 
-في Docker Compose، يُحمَّل ملف `.env.local` عبر `env_file` وقت التشغيل، ولا يُستخدم لاستبدال متغيرات وسائط البناء. أعد البناء مع تحديد القيمة صراحةً كما في الأمر التالي؛ فتغيير بيئة التشغيل وحدها لا يغيّر مسار المحادثة الذي اختير عند بناء العميل والخادم.
-
-```bash
-NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
-```
+أُزيلت محادثة الصف القديمة المبنية على director-graph، ولم يعد `NEXT_PUBLIC_PI_CHAT_ENABLED` يختار مسار المحادثة. احذف هذا المتغير من إعداداتك: لا يقبل بناء production إلا ترك المتغير غير مضبوط، أو سلسلة فارغة، أو `true`، أو `1` (مطابقة تامة)، ويفشل مع إرشادات الانتقال عند أي قيمة أخرى. في Docker Compose، يوفّر `env_file` الخاص بالخدمة (`.env.local`) قيم وقت التشغيل، لا وسائط البناء.
 
 استيراد PPTX لا يزال تجريبيًا، والنتائج لم تُدمج بالكامل في تدفق بيانات الصف. جميع متغيرات `NEXT_PUBLIC_*` هي مفاتيح بناء؛ عند نشر Docker، يجب تمريرها كـ build args، لا يمكن فقط تعيينها في بيئة الحاوية.
 
@@ -666,7 +659,7 @@ slots:
 
 يستخدم موفرو الفيديو متغيرات `VIDEO_<PROVIDER>_API_KEY`، مع خيار `VIDEO_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
 
-`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_VEO_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
+`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
 
 ### تحليل المستندات والوسائط
 
@@ -695,7 +688,7 @@ ALIDOCMIND_BASE_URL=       # تجاوز اختياري
 
 ### البحث عبر الإنترنت
 
-اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+اضبط موفري البحث Tavily، Exa، Firecrawl، Bocha، Brave، Baidu، SearXNG أو MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -703,6 +696,9 @@ TAVILY_BASE_URL=           # تجاوز اختياري
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # تجاوز اختياري
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # تجاوز اختياري
@@ -763,6 +759,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -788,6 +786,25 @@ slots:
 ```
 
 المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
+
+### البحث وجلب الصفحات باستخدام DeepSeek
+
+يشترك الإعداد `deepseek` في `DEEPSEEK_API_KEY` وعنوان API الأساسي بين المحادثة والبحث واستخراج Markdown المستضاف. يستخدم البحث `POST /v1/tools/search` ويعيد حتى 50 نتيجة، ويقتطع الاستعلام إلى 128 نقطة ترميز Unicode. يستخدم `summary` ثم `snippet` عند فراغه. يستخدم الجلب `POST /v1/tools/fetch` ويقرأ `content` و`title` الاختياري غير الفارغ.
+
+في الإعدادات القديمة، فعّل `WEB_SEARCH_DEEPSEEK_ENABLED=true` أو أضف `web-search.deepseek` صراحةً إلى `server-providers.yml`. بيانات اعتماد المحادثة وحدها لا تفعّل البحث ولا تستبدل مزود البحث الافتراضي الحالي. يعطّل `WEB_SEARCH_DEEPSEEK_ENABLED=false` البحث قسرًا. عند وجود `openmaic.yml` لا يستطيع المتغير القديم تعيين خانة؛ أعلن المزود وعيّن `webSearch` و/أو `webFetch` صراحةً.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### محادثة Kimi والبحث على الويب
 
@@ -820,6 +837,8 @@ slots:
 | --- | --- | --- |
 | `builtin` | غير مطلوبة | قارئ Readability/Turndown محلي؛ تستخدم ملفات PDF خانة `document` |
 | `kimi` | مفتاح المزوّد Kimi الحالي وعنوانه الأساسي | خدمة مستضافة لاستخراج Markdown، تشمل روابط PDF |
+| `deepseek` | مفتاح محادثة DeepSeek وعنوان API الأساسي | استخراج Markdown المستضاف |
+| `firecrawl` | مفتاح Firecrawl API (`preset: firecrawl`) | خدمة مستضافة لاستخراج المحتوى الرئيسي للصفحة بصيغة Markdown، تشمل روابط PDF |
 
 ```yaml
 providers:
@@ -833,6 +852,12 @@ slots:
 
 يوفر كلا الإعدادين المسبقين `kimi` و`kimi-coding-plan` قدرة `webFetch`. لبيانات اعتماد Coding Plan، استخدم `preset: kimi-coding-plan`؛ وعنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يُحافظ على أي عنوان أساسي مضبوط صراحةً. تستخدم عناوين Moonshot Open Platform (`https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1`) المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يرسل كلاهما طلب `POST` يحتوي على `{ "url": ... }` مع مصادقة Bearer. يقبل المهايئ `markdown` أو `content`. اختبر أحد المشرفين `POST https://api.kimi.com/coding/v1/fetch` باستخدام مفتاح فعلي وأكد الاستجابة `{ markdown, title, url }`؛ لا يزال توافر العناوين الدولية غير متحقق منه. تراعي الطلبات إعداد `proxy` الخاص بالمزوّد ومتغيرات بيئة الوكيل القياسية.
 
+يوفر DeepSeek أيضًا استخراج Markdown المستضاف عبر الإعداد `deepseek` مع إعادة استخدام مفتاح المحادثة وعنوان API الأساسي. عيّن `webFetch` صراحةً كما في المثال أعلاه. يستخدم `/v1/tools/fetch` ويحفظ عنوان البوابة المضبوط في النشر. المهل الزمنية وإعادة المحاولة مرة واحدة لأخطاء النقل فقط مماثلة لـ Kimi، دون إعادة أخطاء HTTP أو الاستجابات غير الصالحة.
+
 استخدم بيانات الاعتماد الحالية في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**، واختر القارئ في **إعداد نماذج المقرر ← جلب صفحات الويب**. يُستخدم المفتاح نفسه للدردشة مع هذا المزوّد؛ تغييره أو حذفه يؤثر في الدردشة أيضًا. تكون البطاقة للقراءة فقط عندما يثبّتها المسؤول. يحتفظ الإعداد الأولي بالقارئ المدمج حتى اختيار قارئ آخر صراحةً. يمكن لبيانات اعتماد مساحة العمل استخدام عناوين API الأساسية الرسمية؛ أما عناوين الجلب المخصصة والوكلاء فيجب أن يعلنها المسؤول في `openmaic.yml`.
+
+بخلاف `kimi`، يستخدم `firecrawl` مفتاحًا خاصًا به: عرّف مزوّدًا بالإعداد `preset: firecrawl` والمفتاح `apiKey` (مثل `${FIRECRAWL_API_KEY}`)، أو أدخل المفتاح في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**. يرسل الطلب `POST /v2/scrape` بمصادقة Bearer ويطلب المحتوى الرئيسي للصفحة بصيغة Markdown. العنوان الأساسي الافتراضي هو `https://api.firecrawl.dev`؛ ويجب أن يعرّف المسؤول العنوان الأساسي لخادم Firecrawl المستضاف ذاتيًا في `openmaic.yml`.
+
+يخدم مزوّد `firecrawl` نفسه البحث على الويب أيضًا (`POST /v2/search`): مفتاح واحد وعنوان أساسي واحد يكفيان للأمرين، لذا يمكن تعيين مزوّد واحد في `slots.webSearch` و`slots.webFetch` معًا. تضبط المتغيرات القديمة `FIRECRAWL_API_KEY` و`FIRECRAWL_BASE_URL` هذا المزوّد نفسه، ويبقى جلب صفحات الويب على `builtin` إلى أن يُعيَّن `webFetch` له.
 
 قبل إرسال رابط إلى خدمة مستضافة، تُطبق بوابة روابط الجلسة والتطبيع الصارم للرابط وفحص جميع عناوين DNS المحلية. تُطبق الفحوص نفسها على الرابط النهائي الذي تعيده الخدمة قبل قبول المحتوى. تتحكم الخدمات المستضافة في DNS والتحويلات الوسيطة الخاصة بها، لذلك لا تستطيع الفحوص المحلية تثبيت اتصالاتها الشبكية. يظل النص بيانات غير موثوقة، ويخضع لاكتشاف صفحات التحقق وحدود الحجم بالبايت وعلامة الاقتطاع، مع حفظ مواد الويب وصيغة النتيجة `{trusted, untrusted}` كما في السابق.

@@ -11,29 +11,48 @@
  *   - first-turn drift, no frustration yet (the root case)
  *   - escalated frustration after multiple complaints (the recovery case)
  *
- * Per-decision classification (deterministic, no LLM judge):
- *   - TEACHER    → ✓ correct (teacher answers, or asks a clarifying question
- *                  when the user's message is too vague)
- *   - USER       → ✗ wrong (cue_user makes no agent speak — the user faces
- *                  dead air; the teacher should ask the clarifying question)
- *   - OTHER_AGENT → ✗ wrong (peer-agent "variety" routing)
- *   - END        → ✗ wrong
+ * Each sample is one in-process Pi classroom request (see pi-harness.ts); the
+ * director runs its full tool loop. The sample is classified by the FIRST
+ * RECORDED call_agent tool attempt in the director tool trace (earlier
+ * read_scene / web_search calls are fine; a later recorded attempt never
+ * rescues the first):
+ *   - TEACHER     → ✓ correct: the attempt names the scenario's teacher,
+ *                   whether or not the teacher's own reply then succeeded
+ *   - OTHER_AGENT → ✗ wrong: the attempt names another agent, or one that
+ *                   does not exist (invalid_agent_id is recorded)
+ *   - NO_DISPATCH → ✗ wrong: the run finished with no recorded call_agent.
+ *                   The director cannot cue the user or close the session
+ *                   before an agent has spoken in the request, so this is not
+ *                   an END.
+ *   - ERROR       : the run itself failed (threw, was aborted, or ended
+ *                   without done), even when the director had already
+ *                   dispatched an agent before the failure. Excluded from the
+ *                   correct-rate denominator, as before; if every sample
+ *                   errors the correct rate is 0.
  *
- * A/B:
- *   - baseline  : current director template with rule 13 stripped
- *   - with_rule : current director template as-shipped (rule 13 in place)
+ * Limits: the correct rate is over non-ERROR samples only. It is not an
+ * unconditional routing accuracy over every request, nor an end-to-end
+ * completion rate. Excluding failed runs that had already dispatched can raise
+ * the score, so read it together with the ERROR share and the number of valid
+ * samples.
  *
- * Pass criterion: with_rule.correctRate ≥ EVAL_PASS_THRESHOLD (default 0.7).
- * The pre-vs-post Δ is reported as informational only — scenarios where the
- * baseline already routes correctly shouldn't fail just because there is no
- * room to lift.
+ * Only recorded attempts count. A call_agent whose arguments fail the tool
+ * schema is rejected by the agent runtime before the tool runs and is not in
+ * the trace: a later recorded attempt is classified instead (and can score),
+ * or the sample is NO_DISPATCH when none follows.
+ *
+ * Results are a Pi baseline; they are not comparable with the retired
+ * single-step director prompt A/B.
+ *
+ * Pass criterion: correctRate ≥ EVAL_PASS_THRESHOLD (default 0.7) per scenario.
  *
  * Required env:
- *   EVAL_DIRECTOR_MODEL
+ *   EVAL_DIRECTOR_MODEL  Model for the whole Pi chain (director and children);
+ *                        falls back to DEFAULT_MODEL
  *
  * Optional env:
- *   EVAL_SAMPLES        Samples per (scenario, variant). Default 5.
- *   EVAL_PASS_THRESHOLD Min with_rule correct rate per scenario. Default 0.7.
+ *   EVAL_SAMPLES        Samples per scenario. Default 5.
+ *   EVAL_PASS_THRESHOLD Min correct rate per scenario. Default 0.7.
  *   EVAL_SCENARIO       Filter to a single scenario by case_id.
  *
  * Output: eval/orchestration/results-answering/<model>/<timestamp>/report.md
@@ -42,159 +61,148 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { callLLM } from '@/lib/ai/llm';
-import { parseDirectorDecision } from '@/lib/orchestration/director-prompt';
-import {
-  summarizeConversation,
-  type OpenAIMessage,
-} from '@/lib/orchestration/summarizers/conversation-summary';
-import {
-  processSnippets,
-  processConditionalBlocks,
-  interpolateVariables,
-} from '@/lib/prompts/loader';
+import type { AgentTurnSummary } from '@/lib/orchestration/types';
+import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveEvalModel } from '../shared/resolve-model';
 import { createRunDir } from '../shared/run-dir';
-import type { AgentTurnSummary } from '@/lib/orchestration/types';
+import {
+  callAgentTrace,
+  runPiClassroomRequest,
+  scenarioAgentConfig,
+  type EvalModel,
+  type PiDone,
+} from './pi-harness';
 import type { ScenarioAgent } from './types';
 
 const OUTPUT_DIR = 'eval/orchestration/results-answering';
 
 // ==================== Types ====================
 
-interface AnsweringScenario {
+/** Fixture history: user turns carry a `[speaker]: ` label, agent turns the
+ * old structured-output JSON array. */
+interface ScenarioMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AnsweringScenario {
   case_id: string;
   description: string;
   agents: ScenarioAgent[];
   teacherAgentId: string;
-  messages: OpenAIMessage[];
+  messages: ScenarioMessage[];
   agentResponses: AgentTurnSummary[];
   turnCount: number;
   whiteboardOpen?: boolean;
 }
 
-type Variant = 'baseline' | 'with_rule';
-type DecisionClass = 'USER' | 'TEACHER' | 'OTHER_AGENT' | 'END' | 'ERROR';
+type DecisionClass = 'TEACHER' | 'OTHER_AGENT' | 'NO_DISPATCH' | 'ERROR';
 
-interface SampleResult {
-  variant: Variant;
-  raw: string;
+export interface SampleResult {
   classification: DecisionClass;
+  /** agentId the first call_agent asked for. */
   rawAgentId: string | null;
+  /** What the trace shows about the first call beyond its target. */
+  note?: string;
+  /** Run failure only: excludes the sample from the correct-rate denominator. */
   error?: string;
 }
 
 interface ScenarioResult {
   case_id: string;
   description: string;
-  samples: number;
-  baseline: { samples: SampleResult[]; rates: Record<DecisionClass, number>; correctRate: number };
-  withRule: { samples: SampleResult[]; rates: Record<DecisionClass, number>; correctRate: number };
-  delta: number;
+  samples: SampleResult[];
+  rates: Record<DecisionClass, number>;
+  correctRate: number;
   passes: boolean;
 }
 
-// ==================== Prompt building ====================
+// ==================== Request building ====================
 
-function readDirectorTemplate(): string {
-  const p = path.join(process.cwd(), 'lib', 'prompts', 'templates', 'director', 'system.md');
-  return fs.readFileSync(p, 'utf-8').trim();
-}
+const SPEAKER_LABEL = /^\[[^\]]*\]:\s*/;
 
-/**
- * Rule 13 was injected directly into director/system.md. To A/B against a
- * pre-rule baseline, strip rule 13 (and its indented continuation block) out
- * of the current template.
- */
-function withoutAnsweringRule(template: string): string {
-  // Match rule 13 by its number (heading text is reworded often) up to the
-  // next blank-line + section header. Decoupled from the heading wording.
-  const stripped = template.replace(/^13\. \*\*[\s\S]*?(?=\n\n# )/m, '');
-  if (stripped === template) {
-    throw new Error(
-      'answering-runner: rule 13 not found in director template; eval baseline cannot be constructed',
-    );
+/** Visible text of a fixture message, as the app would hold it. */
+function messageText(message: ScenarioMessage): string {
+  if (message.role === 'user') return message.content.replace(SPEAKER_LABEL, '');
+  try {
+    const items: unknown = JSON.parse(message.content);
+    if (Array.isArray(items)) {
+      return items
+        .filter(
+          (item): item is { type: 'text'; content: string } =>
+            item?.type === 'text' && typeof item.content === 'string',
+        )
+        .map((item) => item.content)
+        .join(' ');
+    }
+  } catch {
+    // Not structured output: use the content as written.
   }
-  return stripped.replace(/\n{3,}/g, '\n\n');
+  return message.content;
 }
 
-function buildPromptFromTemplate(
-  template: string,
-  scenario: AnsweringScenario,
-  conversationSummary: string,
-): string {
-  const agentList = scenario.agents
-    .map((a) => `- id: "${a.id}", name: "${a.name}", role: ${a.role}, priority: ${a.priority}`)
-    .join('\n');
-
-  const respondedList =
-    scenario.agentResponses.length > 0
-      ? scenario.agentResponses
-          .map(
-            (r) =>
-              `- ${r.agentName} (${r.agentId}): "${r.contentPreview}" [${r.actionCount} actions]`,
-          )
-          .join('\n')
-      : 'None yet.';
-
-  const rule1 =
-    "1. The teacher (role: teacher, highest priority) should usually speak first to address the user's question or topic.";
-
-  const vars: Record<string, unknown> = {
-    agentList,
-    respondedList,
-    conversationSummary,
-    discussionSection: '',
-    whiteboardSection: '',
-    studentProfileSection: '',
-    rule1,
-    turnCountPlusOne: scenario.turnCount + 1,
-    whiteboardOpenText: scenario.whiteboardOpen
-      ? 'OPEN (slide canvas is hidden — spotlight/laser will not work)'
-      : 'CLOSED (slide canvas is visible)',
-  };
-
-  const withSnippets = processSnippets(template);
-  const withConditionals = processConditionalBlocks(withSnippets, vars);
-  return interpolateVariables(withConditionals, vars);
-}
-
-function buildVariants(scenario: AnsweringScenario): { baseline: string; with_rule: string } {
-  const current = readDirectorTemplate();
-  const summary = summarizeConversation(scenario.messages);
+export function buildRequest(scenario: AnsweringScenario): StatelessChatRequest {
   return {
-    baseline: buildPromptFromTemplate(withoutAnsweringRule(current), scenario, summary),
-    with_rule: buildPromptFromTemplate(current, scenario, summary),
+    messages: scenario.messages.map((message, i) => ({
+      id: `${message.role}-${i}`,
+      role: message.role,
+      parts: [{ type: 'text', text: messageText(message) }],
+      metadata: { createdAt: i },
+    })) as unknown as StatelessChatRequest['messages'],
+    storeState: {
+      stage: null,
+      scenes: [],
+      currentSceneId: null,
+      mode: 'playback',
+      whiteboardOpen: scenario.whiteboardOpen ?? false,
+    },
+    config: {
+      agentIds: scenario.agents.map((agent) => agent.id),
+      agentConfigs: scenario.agents.map((agent) => scenarioAgentConfig(agent)),
+      sessionType: 'qa',
+    },
+    directorState: {
+      turnCount: scenario.turnCount,
+      agentResponses: scenario.agentResponses,
+      whiteboardLedger: [],
+    },
+    apiKey: '',
   };
 }
 
 // ==================== Classifier ====================
 
-function classify(
-  raw: string,
+export function classifyFirstDispatch(
+  done: PiDone,
   scenario: AnsweringScenario,
-): {
-  classification: DecisionClass;
-  rawAgentId: string | null;
-} {
-  const parsed = parseDirectorDecision(raw);
-  if (parsed.shouldEnd || !parsed.nextAgentId) {
-    return { classification: 'END', rawAgentId: null };
+): Omit<SampleResult, 'error'> {
+  const first = callAgentTrace(done)[0];
+  if (!first) {
+    return { classification: 'NO_DISPATCH', rawAgentId: null };
   }
-  if (parsed.nextAgentId === 'USER') {
-    return { classification: 'USER', rawAgentId: 'USER' };
+  const requested = (first.args as { agentId?: unknown } | undefined)?.agentId;
+  const rawAgentId = typeof requested === 'string' ? requested : null;
+  const details = first.details as { skipped?: boolean; reason?: string } | undefined;
+  if (details?.skipped && details.reason === 'invalid_agent_id') {
+    return { classification: 'OTHER_AGENT', rawAgentId, note: 'invalid_agent_id' };
   }
-  if (parsed.nextAgentId === scenario.teacherAgentId) {
-    return { classification: 'TEACHER', rawAgentId: parsed.nextAgentId };
-  }
-  return { classification: 'OTHER_AGENT', rawAgentId: parsed.nextAgentId };
+  const note = details?.skipped
+    ? `skipped: ${details.reason ?? 'unknown'}`
+    : first.isError
+      ? 'agent reply failed'
+      : undefined;
+  return {
+    classification: rawAgentId === scenario.teacherAgentId ? 'TEACHER' : 'OTHER_AGENT',
+    rawAgentId,
+    ...(note ? { note } : {}),
+  };
 }
 
 function emptyRates(): Record<DecisionClass, number> {
-  return { USER: 0, TEACHER: 0, OTHER_AGENT: 0, END: 0, ERROR: 0 };
+  return { TEACHER: 0, OTHER_AGENT: 0, NO_DISPATCH: 0, ERROR: 0 };
 }
 
-function computeRates(samples: SampleResult[]): {
+export function computeRates(samples: SampleResult[]): {
   rates: Record<DecisionClass, number>;
   correctRate: number;
 } {
@@ -207,44 +215,25 @@ function computeRates(samples: SampleResult[]): {
   }
   rates.ERROR = (samples.length - usable.length) / samples.length;
   // Only TEACHER is correct: the teacher answers, or asks a clarifying question
-  // for vague input. USER cue is dead air (no agent speaks); peer/END are wrong.
+  // for vague input. Peer routing and finishing without a dispatch are wrong.
   const correctRate = rates.TEACHER;
   return { rates, correctRate };
 }
 
 // ==================== Sampling ====================
 
-async function sampleVariant(
+export async function sampleScenario(
   scenario: AnsweringScenario,
-  variant: Variant,
-  systemPrompt: string,
-  model: Awaited<ReturnType<typeof resolveEvalModel>>['model'],
+  evalModel: EvalModel,
   samples: number,
 ): Promise<SampleResult[]> {
   const tasks = Array.from({ length: samples }, async (): Promise<SampleResult> => {
     try {
-      const result = await callLLM(
-        {
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: 'Decide which agent should speak next.' },
-          ],
-        },
-        'eval-orchestration-answering',
-      );
-      const raw = result.text;
-      const { classification, rawAgentId } = classify(raw, scenario);
-      return { variant, raw, classification, rawAgentId };
+      const { done } = await runPiClassroomRequest(buildRequest(scenario), evalModel);
+      return classifyFirstDispatch(done, scenario);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return {
-        variant,
-        raw: '',
-        classification: 'ERROR',
-        rawAgentId: null,
-        error: msg,
-      };
+      return { classification: 'ERROR', rawAgentId: null, error: msg };
     }
   });
   return Promise.all(tasks);
@@ -256,6 +245,12 @@ function pct(x: number): string {
   return `${Math.round(x * 100)}%`;
 }
 
+function sampleLabel(s: SampleResult): string {
+  if (s.error) return `ERROR: ${s.error}`;
+  const target = s.rawAgentId && s.classification !== 'TEACHER' ? ` (${s.rawAgentId})` : '';
+  return `${s.classification}${target}${s.note ? ` — ${s.note}` : ''}`;
+}
+
 function writeReport(
   runDir: string,
   results: ScenarioResult[],
@@ -265,40 +260,33 @@ function writeReport(
 ): string {
   const lines: string[] = [];
   const overallPass = results.every((r) => r.passes);
-  const meanBaseline = results.reduce((acc, r) => acc + r.baseline.correctRate, 0) / results.length;
-  const meanWithRule = results.reduce((acc, r) => acc + r.withRule.correctRate, 0) / results.length;
+  const meanCorrect = results.reduce((acc, r) => acc + r.correctRate, 0) / results.length;
 
-  lines.push(`# Director Question-Answering Eval`, ``);
+  lines.push(`# Director Question-Answering Eval (Pi)`, ``);
   lines.push(`- **Date**: ${new Date().toISOString()}`);
-  lines.push(`- **Model**: ${modelStr}`);
-  lines.push(`- **Samples per (scenario, variant)**: ${samples}`);
-  lines.push(`- **with_rule correct-rate threshold**: ${pct(threshold)}`);
-  lines.push(`- **Δ (pre vs post)**: informational — PASS depends only on with_rule rate`);
-  lines.push(``);
-  lines.push(`## Aggregate`);
-  lines.push(``);
-  lines.push(`| Variant | Mean correct rate (TEACHER) |`);
-  lines.push(`|---|---|`);
-  lines.push(`| baseline | ${pct(meanBaseline)} |`);
-  lines.push(`| with_rule | ${pct(meanWithRule)} |`);
-  lines.push(`| Δ | ${pct(meanWithRule - meanBaseline)} |`);
-  lines.push(``);
-  lines.push(`Overall verdict: **${overallPass ? 'PASS' : 'FAIL'}**`);
-  lines.push(``);
-
-  lines.push(`## Per scenario`);
-  lines.push(``);
+  lines.push(`- **Model (director and children)**: ${modelStr}`);
+  lines.push(`- **Samples per scenario**: ${samples}`);
+  lines.push(`- **Correct-rate threshold**: ${pct(threshold)}`);
   lines.push(
-    `| # | Scenario | Baseline USER% TEACHER% OTHER% END% | with_rule USER% TEACHER% OTHER% END% | Δ correct | pass? |`,
+    `- **Classification**: first recorded call_agent tool attempt in the director tool trace. Attempts rejected by the tool schema are not recorded, so a later recorded attempt is classified instead (or NO_DISPATCH if none). A run that threw, was aborted or ended without done is ERROR, even if it had already dispatched an agent, and ERROR samples are excluded from the correct rate.`,
   );
-  lines.push(`|---|---|---|---|---|---|`);
+  lines.push(
+    `- **Limits**: the correct rate covers non-ERROR samples only. It is not an unconditional routing accuracy over every request, nor an end-to-end completion rate. Excluding failed runs that had already dispatched can raise it, so read it together with the Errors and Valid columns. If every sample errors, the correct rate is 0.`,
+  );
+  lines.push(
+    `- **Baseline**: Pi in-process run (legacy child, whiteboard tools on); not comparable with the retired single-step director A/B. Route authorization and tool-capability checks are not exercised.`,
+  );
+  lines.push(``);
+  lines.push(`Mean correct rate (TEACHER): **${pct(meanCorrect)}**`, ``);
+  lines.push(`Overall verdict: **${overallPass ? 'PASS' : 'FAIL'}**`, ``);
+
+  lines.push(`## Per scenario`, ``);
+  lines.push(`| # | Scenario | TEACHER | OTHER_AGENT | NO_DISPATCH | Errors | Valid | pass? |`);
+  lines.push(`|---|---|---|---|---|---|---|---|`);
   results.forEach((r, i) => {
-    const b = r.baseline.rates;
-    const w = r.withRule.rates;
-    const bStr = `${pct(b.USER)}/${pct(b.TEACHER)}/${pct(b.OTHER_AGENT)}/${pct(b.END)}`;
-    const wStr = `${pct(w.USER)}/${pct(w.TEACHER)}/${pct(w.OTHER_AGENT)}/${pct(w.END)}`;
+    const errors = r.samples.filter((s) => s.error).length;
     lines.push(
-      `| ${i + 1} | ${r.case_id} | ${bStr} | ${wStr} | ${pct(r.delta)} | ${r.passes ? '✓' : '✗'} |`,
+      `| ${i + 1} | ${r.case_id} | ${pct(r.rates.TEACHER)} | ${pct(r.rates.OTHER_AGENT)} | ${pct(r.rates.NO_DISPATCH)} | ${errors} | ${r.samples.length - errors} | ${r.passes ? '✓' : '✗'} |`,
     );
   });
   lines.push(``);
@@ -307,25 +295,9 @@ function writeReport(
   for (const r of results) {
     lines.push(``, `### ${r.case_id} ${r.passes ? '✓' : '✗'}`, ``);
     lines.push(`- ${r.description}`);
-    lines.push(
-      `- Baseline correct: ${pct(r.baseline.correctRate)}; with_rule correct: ${pct(r.withRule.correctRate)}; Δ: ${pct(r.delta)}`,
-    );
-    lines.push(``);
-    lines.push(`<details><summary>baseline samples</summary>`, ``);
-    for (const s of r.baseline.samples) {
-      const label = s.error
-        ? `ERROR: ${s.error}`
-        : `${s.classification}${s.rawAgentId && s.classification === 'OTHER_AGENT' ? ` (${s.rawAgentId})` : ''}`;
-      lines.push(`- ${label}`);
-    }
-    lines.push(``, `</details>`, ``);
-    lines.push(`<details><summary>with_rule samples</summary>`, ``);
-    for (const s of r.withRule.samples) {
-      const label = s.error
-        ? `ERROR: ${s.error}`
-        : `${s.classification}${s.rawAgentId && s.classification === 'OTHER_AGENT' ? ` (${s.rawAgentId})` : ''}`;
-      lines.push(`- ${label}`);
-    }
+    lines.push(`- Correct: ${pct(r.correctRate)}`);
+    lines.push(``, `<details><summary>samples</summary>`, ``);
+    for (const s of r.samples) lines.push(`- ${sampleLabel(s)}`);
     lines.push(``, `</details>`, ``);
   }
 
@@ -360,10 +332,10 @@ async function main() {
   const samples = Number(process.env.EVAL_SAMPLES || '5');
   const threshold = Number(process.env.EVAL_PASS_THRESHOLD || '0.7');
 
-  console.log('=== Director Question-Answering Eval ===');
-  console.log(`Model: ${modelStr} | Samples/variant: ${samples} | pass threshold: ${threshold}`);
+  console.log('=== Director Question-Answering Eval (Pi) ===');
+  console.log(`Model: ${modelStr} | Samples: ${samples} | pass threshold: ${threshold}`);
 
-  const { model } = await resolveEvalModel('EVAL_DIRECTOR_MODEL', process.env.DEFAULT_MODEL);
+  const evalModel = await resolveEvalModel('EVAL_DIRECTOR_MODEL', process.env.DEFAULT_MODEL);
   const scenarios = loadScenarios();
   console.log(`Loaded ${scenarios.length} scenario(s)`);
   const runDir = createRunDir(OUTPUT_DIR, modelStr);
@@ -372,27 +344,18 @@ async function main() {
   const results: ScenarioResult[] = [];
   for (const sc of scenarios) {
     process.stdout.write(`  - ${sc.case_id} ... `);
-    const variants = buildVariants(sc);
-    const [bs, ws] = await Promise.all([
-      sampleVariant(sc, 'baseline', variants.baseline, model, samples),
-      sampleVariant(sc, 'with_rule', variants.with_rule, model, samples),
-    ]);
-    const bAgg = computeRates(bs);
-    const wAgg = computeRates(ws);
-    const lift = wAgg.correctRate - bAgg.correctRate;
-    const passes = wAgg.correctRate >= threshold;
+    const sampled = await sampleScenario(sc, evalModel, samples);
+    const { rates, correctRate } = computeRates(sampled);
+    const passes = correctRate >= threshold;
     results.push({
       case_id: sc.case_id,
       description: sc.description,
-      samples,
-      baseline: { samples: bs, rates: bAgg.rates, correctRate: bAgg.correctRate },
-      withRule: { samples: ws, rates: wAgg.rates, correctRate: wAgg.correctRate },
-      delta: lift,
+      samples: sampled,
+      rates,
+      correctRate,
       passes,
     });
-    console.log(
-      `baseline=${pct(bAgg.correctRate)} with_rule=${pct(wAgg.correctRate)} Δ=${pct(lift)} ${passes ? 'PASS' : 'FAIL'}`,
-    );
+    console.log(`correct=${pct(correctRate)} ${passes ? 'PASS' : 'FAIL'}`);
   }
 
   const reportPath = writeReport(runDir, results, modelStr, samples, threshold);
@@ -402,7 +365,13 @@ async function main() {
   process.exit(overallPass ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error('Fatal error:', err);
-  process.exit(1);
-});
+// Run only as the CLI entry point, so tests can import the runner's functions.
+const isEntryPoint =
+  process.argv[1] !== undefined &&
+  fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+if (isEntryPoint) {
+  main().catch((err) => {
+    console.error('Fatal error:', err);
+    process.exit(1);
+  });
+}

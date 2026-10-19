@@ -30,7 +30,7 @@ import { classroomChatUsable, loadModelCapabilities } from '@/lib/model-settings
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
-import { runAgentLoop, type AgentLoopStoreState } from '@/lib/chat/agent-loop';
+import type { AgentLoopStoreState } from '@/lib/chat/store-state';
 import { ActionEngine } from '@/lib/action/engine';
 import {
   buildQuizResultsForStoreState,
@@ -38,7 +38,6 @@ import {
 } from '@/lib/chat/quiz-results-for-store-state';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
-import { isPiChatEnabled } from '@/lib/config/feature-flags';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
@@ -128,7 +127,7 @@ interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
-  onCueUser?: (fromAgentId?: string, prompt?: string) => void;
+  onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
   /** Called immediately when the server semantically closes a QA/Discussion session. */
@@ -345,22 +344,6 @@ export function getPiSingleRequestOutcome(
     return { type: 'cue_user', directorState: doneData.directorState };
   }
   return { type: 'completed', directorState: doneData.directorState };
-}
-
-/**
- * POST /api/chat (the stateless agent loop). The server resolves the model
- * from the workspace's model settings.
- */
-export function fetchStatelessChat(
-  body: Record<string, unknown>,
-  signal: AbortSignal,
-): Promise<Response> {
-  return fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  });
 }
 
 export async function runPiSingleRequest(
@@ -1073,7 +1056,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             onThinkingRef.current?.(data);
           },
 
-          onCueUser(fromAgentId?: string, prompt?: string) {
+          onCueUser(fromAgentId?: string, prompt?: string, options?: string[]) {
             // Track cue_user for agent loop
             if (loopDoneDataRef.current) {
               loopDoneDataRef.current.cueUserReceived = true;
@@ -1083,7 +1066,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 cueUserReceived: true,
               };
             }
-            onCueUserRef.current?.(fromAgentId, prompt);
+            if (options) onCueUserRef.current?.(fromAgentId, prompt, options);
+            else onCueUserRef.current?.(fromAgentId, prompt);
           },
 
           onDone(data: {
@@ -1243,10 +1227,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   );
 
   /**
-   * Frontend-driven agent loop. Delegates to the shared runAgentLoop
-   * from lib/chat/agent-loop.ts, wiring StreamBuffer for UI pacing.
-   *
-   * Each iteration: POST /api/chat → process SSE → wait for buffer drain → check outcome.
+   * Run one classroom turn: a single POST /api/chat/pi, whose server owns the
+   * whole director loop. The SSE stream is paced through StreamBuffer, and the
+   * done event decides the session outcome.
    */
   const runAgentLoopFn = useCallback(
     async (
@@ -1267,101 +1250,39 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         requestTemplate.config.agentConfigs = generatedConfigs;
       }
 
-      if (isPiChatEnabled()) {
-        // Pi bypasses runAgentLoop's per-iteration getStoreState, so its single
-        // request needs the snapshot built here — /api/chat/pi rejects bodies
-        // without storeState.
-        const storeState = await buildFreshAgentLoopStoreState();
-        const firstRequestContext = getFirstPiRequestContext(sessionId);
-        const piRequestTemplate = firstRequestContext
-          ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
-          : { ...requestTemplate, storeState };
-        // Web search is the workspace's webSearch slot, resolved on the server.
-        await runPiSingleRequest(
-          sessionId,
-          withPiInclassWhiteboardTools(piRequestTemplate),
-          controller,
-          sessionType,
-          createStatelessStreamConsumer,
-          clearLiveSessionAfterError,
-          enterSoftClosing,
-          markSessionCompleted,
-          storeDirectorState,
-          onStopSessionRef,
-          t,
-          firstRequestContext || onElementReferenceResponseAccepted
-            ? (response) => {
-                if (firstRequestContext) {
-                  consumePiSessionBoundaryContext(
-                    piSessionBoundariesRef.current,
-                    sessionId,
-                    firstRequestContext,
-                  );
-                }
-                onElementReferenceResponseAccepted?.(response);
+      // The single request needs a fresh store snapshot built here —
+      // /api/chat/pi rejects bodies without storeState.
+      const storeState = await buildFreshAgentLoopStoreState();
+      const firstRequestContext = getFirstPiRequestContext(sessionId);
+      const piRequestTemplate = firstRequestContext
+        ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
+        : { ...requestTemplate, storeState };
+      // Web search is the workspace's webSearch slot, resolved on the server.
+      await runPiSingleRequest(
+        sessionId,
+        withPiInclassWhiteboardTools(piRequestTemplate),
+        controller,
+        sessionType,
+        createStatelessStreamConsumer,
+        clearLiveSessionAfterError,
+        enterSoftClosing,
+        markSessionCompleted,
+        storeDirectorState,
+        onStopSessionRef,
+        t,
+        firstRequestContext || onElementReferenceResponseAccepted
+          ? (response) => {
+              if (firstRequestContext) {
+                consumePiSessionBoundaryContext(
+                  piSessionBoundariesRef.current,
+                  sessionId,
+                  firstRequestContext,
+                );
               }
-            : undefined,
-        );
-        return;
-      }
-
-      const streamConsumer = createStatelessStreamConsumer(sessionId, controller, sessionType);
-
-      const outcome = await runAgentLoop(
-        {
-          config: requestTemplate.config,
-          userProfile: requestTemplate.userProfile,
-        },
-        {
-          getStoreState: buildFreshAgentLoopStoreState,
-
-          getMessages: () => {
-            const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
-            return currentSession?.messages ?? requestTemplate.messages;
-          },
-
-          fetchChat: (body, signal) => fetchStatelessChat(body, signal),
-
-          onEvent: streamConsumer.onEvent,
-          onIterationEnd: streamConsumer.onIterationEnd,
-        },
-        controller.signal,
+              onElementReferenceResponseAccepted?.(response);
+            }
+          : undefined,
       );
-
-      // Handle loop completion (UI-specific). Map each outcome.reason to a
-      // distinct session state — don't conflate error paths with completion.
-      if (!controller.signal.aborted) {
-        switch (outcome.reason) {
-          case 'cue_user':
-            // Session stays active; UI waits for the next user message.
-            break;
-          case 'end':
-            setSessions((prev) =>
-              prev.map((s) =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      status: 'completed' as SessionStatus,
-                      updatedAt: nextChatUpdatedAt(s),
-                    }
-                  : s,
-              ),
-            );
-            onStopSessionRef.current?.({ sessionId, source: 'turn_complete' });
-            break;
-          case 'empty_turns':
-            clearLiveSessionAfterError(sessionId, t('chat.error.emptyAgentResponses'));
-            onStopSessionRef.current?.({ sessionId, source: 'error' });
-            break;
-          case 'no_done':
-            clearLiveSessionAfterError(sessionId, t('chat.error.streamInterrupted'));
-            onStopSessionRef.current?.({ sessionId, source: 'error' });
-            break;
-          case 'aborted':
-            // Already handled elsewhere via abort signal.
-            break;
-        }
-      }
     },
     [
       clearLiveSessionAfterError,

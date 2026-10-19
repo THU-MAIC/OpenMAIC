@@ -438,9 +438,6 @@ Feature flags accept `true` or `1`; unless noted otherwise, all other values are
 # MAIC Editor (Pro mode)
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
-# Pi chat is enabled by default; uncomment the next line for legacy rollback
-# NEXT_PUBLIC_PI_CHAT_ENABLED=false
-
 # PPT and Interactive courseware references in Pi playback (build-time; editor references are separate)
 NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=true
 
@@ -457,13 +454,9 @@ NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=true
 NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true
 ```
 
-Pi chat requires model tool/function calling. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot. If the selected model or provider does not support tool calls, set `NEXT_PUBLIC_PI_CHAT_ENABLED=false` (or `0`) and rebuild to use the legacy chat path.
+Classroom chat always runs on Pi, which requires a model with tool (function) calling: select one for **Classroom** in **Course Model Config**, or set the `classroom` slot (or the `llm` slot it inherits from) in `openmaic.yml`. For Gemini, use the native `google` preset rather than Google's OpenAI-compatible endpoint. It refuses a model that the built-in catalogue lists without tool calling before inference, with `400 MODEL_CONFIG_INVALID` (`reason: tool_calling_required`), and **Course Model Config** notes the requirement on the classroom slot.
 
-With Docker Compose, `.env.local` is loaded by `env_file` at runtime, not used for build-arg interpolation. Rebuild with an explicit build-time override as below; a runtime-only change leaves the built client and server on their original chat path.
-
-```bash
-NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
-```
+The old director-graph classroom chat has been removed, and `NEXT_PUBLIC_PI_CHAT_ENABLED` no longer selects a chat path. Remove it from your configuration: a production build accepts only unset, an empty string, `true` or `1` (exact match) and fails with migration guidance on any other value. With Docker Compose, the service `env_file` (`.env.local`) supplies runtime values, not build args.
 
 PPTX import is still experimental, and its parsed output is not yet fully integrated into the classroom data flow. All `NEXT_PUBLIC_*` variables above are build-time flags. Docker deployments must also pass them as build args; setting them only as container runtime environment variables is not sufficient.
 
@@ -666,7 +659,7 @@ Place workflow JSON exported in API format in OpenMAIC's `public/` directory. Us
 
 Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
-`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
+`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
 
 ### Document and media parsing
 
@@ -695,7 +688,7 @@ AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, B
 
 ### Web search
 
-Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+Configure Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -703,6 +696,9 @@ TAVILY_BASE_URL=           # optional override
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # optional override
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # optional override
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
@@ -763,6 +759,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -788,6 +786,25 @@ slots:
 ```
 
 Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+
+### DeepSeek web search and fetch
+
+The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
+
+In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi chat and web search
 
@@ -820,6 +837,8 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 | --- | --- | --- |
 | `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
 | `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `deepseek` | Existing DeepSeek chat key and API base | Hosted Markdown extraction |
+| `firecrawl` | Firecrawl API key (`preset: firecrawl`) | Hosted Markdown extraction of the page's main content, including PDF URLs |
 
 ```yaml
 providers:
@@ -833,6 +852,12 @@ slots:
 
 Both `kimi` and `kimi-coding-plan` presets offer `webFetch`. For Coding Plan credentials, use `preset: kimi-coding-plan`; its default base is `https://api.kimi.com/coding/v1`. Any explicitly configured base URL is preserved. Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1`) use `/tools/fetch`; Coding Plan uses `/fetch`. Both send `POST` with `{ "url": ... }` and Bearer authentication. The adapter accepts `markdown` or `content`. A maintainer live-tested `POST https://api.kimi.com/coding/v1/fetch` with a real key and confirmed `{ markdown, title, url }`; international endpoint availability remains unverified. Requests respect the provider's `proxy` setting and standard proxy environment variables.
 
+DeepSeek also offers hosted Markdown extraction through the `deepseek` preset, reusing the chat key and API base. Assign `webFetch` explicitly as shown above. It uses `/v1/tools/fetch`; an explicit deployment gateway base is preserved. It retains the same transport deadlines and single transport-error retry as Kimi, without retrying HTTP errors or invalid responses.
+
 In **Settings → Model Services → Web Fetch**, use the existing provider credentials. The key is shared with that provider's chat service: editing or removing it also affects chat. Choose the reader in **Course Model Config → Web Fetch**. Administrator locks make the card read-only. First-run setup keeps the builtin default until a reader is explicitly selected. Workspace credentials can use official API bases; arbitrary fetch endpoints and proxies must be declared by the administrator in `openmaic.yml`.
+
+Unlike `kimi`, `firecrawl` has its own key: declare a provider with `preset: firecrawl` and `apiKey` (for example `${FIRECRAWL_API_KEY}`), or enter the key in **Settings → Model Services → Web Fetch**. It sends `POST /v2/scrape` with Bearer authentication and asks for the page's main content as Markdown. The default base is `https://api.firecrawl.dev`; a self-hosted Firecrawl base must be declared by the administrator in `openmaic.yml`.
+
+The same `firecrawl` provider also serves web search (`POST /v2/search`): one key and base URL cover both, so a single provider can be assigned to `slots.webSearch` and `slots.webFetch`. The legacy `FIRECRAWL_API_KEY` and `FIRECRAWL_BASE_URL` variables configure that provider; web fetch stays on `builtin` until `webFetch` is assigned to it.
 
 The session URL gate, strict URL normalization and all local DNS address checks run before forwarding a URL to a hosted reader. The same checks run against a reported final URL before accepting its content. Hosted readers control their own DNS and intermediate redirects; local checks cannot pin their networks. Their text remains untrusted, with challenge-page detection, byte limits, a truncation notice and the existing web material persistence and `{trusted, untrusted}` result.

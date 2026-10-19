@@ -64,7 +64,6 @@ const PROVIDER_NEUTRAL_FILES = [
   // NOTE: lib/server/agent-runtime/agent-driver-model.ts is not on main yet.
   // Add it back here the moment the agent driver lands on main so the neutral
   // driver surface is guarded from day one.
-  'lib/orchestration/ai-sdk-adapter.ts',
   // Capability routes
   'app/api/generate/tts/route.ts',
   'app/api/generate/voice/route.ts',
@@ -178,7 +177,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
-      ['deepseek', 2],
+      ['deepseek', 4],
       ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
@@ -204,10 +203,10 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['nano', 2],
       ['seedance', 2],
       ['kling', 2],
-      ['veo', 2],
       ['happyhorse', 2],
       ['tavily', 7],
       ['exa', 5],
+      ['firecrawl', 5],
       ['bocha', 5],
       ['brave', 3],
       ['baidu', 5],
@@ -275,6 +274,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/web-search/index.ts',
     'Temporary: web-search execution still uses a central provider switch.',
     [
+      ['deepseek', 4],
       ['kimi', 4],
       ['baidu', 9],
       ['bocha', 4],
@@ -285,12 +285,14 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['searxng', 4],
       ['tavily', 4],
       ['exa', 4],
+      ['firecrawl', 4],
     ],
   ),
   ...groupedDebt(
     'lib/server/web-search-config.ts',
     'Temporary: web-search URL and option validation are still provider-specific.',
     [
+      ['deepseek', 1],
       ['kimi', 1],
       ['baidu', 8],
       ['tavily', 3],
@@ -302,6 +304,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['doubao', 1],
       ['searxng', 2],
       ['exa', 3],
+      ['firecrawl', 3],
     ],
   ),
   ...groupedDebt(

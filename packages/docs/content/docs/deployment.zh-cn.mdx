@@ -89,6 +89,8 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 
 匿名模式下，所有者 cookie 在生产环境中带有 `Secure` 标记，`ACCESS_CODE` 的 cookie 也是如此。浏览器只在 HTTPS 或 `http://localhost` 上保存 `Secure` cookie（Safari 连 localhost 也不保存），因此通过纯 HTTP 提供服务的部署必须设置 `COOKIE_SECURE=0`（必须正好是 `0`）：否则每个请求都会成为新的所有者，写入以 `403` 失败，访问码也会被反复要求输入。没有 TLS 时 cookie 以明文传输，只应在可信网络中这样做。
 
+在 `localhost` 以外的地址上使用纯 HTTP（局域网 IP、Tailscale IP 或 MagicDNS 域名）同样不是安全上下文，浏览器没有 Web Locks API。OpenMAIC 在这种情况下仍然会保存，但同一课程的多个标签页之间不做协调：如果两个标签页修改同一个对话，以最后一次保存为准；在一个标签页删除的对话会保持删除，即使另一个标签页当时仍在编辑它。在局域网内用手机或平板访问时，建议使用 HTTPS，例如在服务前面用 `tailscale serve`。
+
 **`OPENMAIC_SECRET_KEY`** 用于加密在模型设置中保存的服务商 key。不设置时，每个实例会在 `data/instance-secret.key` 中生成自己的密钥，共用数据库的实例之间就无法读取彼此保存的 key。请把它和数据库备份放在一起，见[密钥与 OPENMAIC_SECRET_KEY](./configuration.mdx#密钥与-openmaic_secret_key)。
 
 **多个实例**共用数据库时，还需要共用同一个持久化数据目录（工作目录下的 `data/`，镜像中为 `/app/data`；例如在每个实例上挂载同一个卷或网络文件系统）。课程文档和生成的课程媒体保存在 PostgreSQL（设置 `ASSET_S3_BUCKET` 时为 S3）中，但每个进程会把以下文件放在自己的数据目录里：上传的资料文件及其提取结果、由智能体编辑的课程的讲解与资料媒体（`data/classrooms`，或 `OPENMAIC_CLASSROOMS_DIR`）、用量记录（`data/usage`）以及自动生成的实例密钥。由另一个实例接手的生成任务会从这里读取上传的资料。

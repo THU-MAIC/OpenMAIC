@@ -13,11 +13,7 @@
  * it is stored, so a stored workspace configuration always resolves.
  */
 import type { WebFetchProviderInfo } from '@/lib/web-fetch/types';
-import {
-  DEFAULT_WEB_FETCH_PROVIDER,
-  getWebFetchProvider,
-  webFetchProviderMetadata,
-} from '@/lib/web-fetch/registry';
+import { DEFAULT_WEB_FETCH_PROVIDER, webFetchProviderMetadata } from '@/lib/web-fetch/registry';
 import {
   deploymentAuthorizedModels,
   ModelAuthorizationError,
@@ -50,7 +46,7 @@ import {
   presetRegionalEndpointTemplate,
 } from '@/lib/config/official-endpoints';
 
-import { isForceDisabled, isLocalEndpoint } from './media';
+import { acceptsWorkspaceToolBaseUrl, isForceDisabled, isLocalEndpoint } from './media';
 import {
   checkModelConfigShape,
   thinkingEffortIssue,
@@ -272,8 +268,8 @@ function maskKey(key: string): string {
 
 /**
  * What a provider can be assigned to, with its models: a workspace provider
- * with its own endpoint serves chat only (see media.ts), except official web fetch
- * endpoints accepted by the registry. A preset whose
+ * with its own endpoint serves chat only (see media.ts), except official web search
+ * and web fetch endpoints accepted by the registries. A preset whose
  * registry catalogue says nothing about the endpoint (an OpenAI-compatible
  * server) offers only the models the provider lists.
  */
@@ -300,13 +296,7 @@ function capabilityModels(
     if (
       chatOnly &&
       capability !== 'chat' &&
-      !(
-        capability === 'webFetch' &&
-        baseUrl &&
-        getWebFetchProvider(preset.capabilities.webFetch!.registryId)?.acceptsWorkspaceBaseUrl?.(
-          baseUrl,
-        )
-      )
+      !acceptsWorkspaceToolBaseUrl(capability, preset.capabilities[capability]!.registryId, baseUrl)
     )
       continue;
     // A provider the operator switched off for this capability is not offered.
@@ -825,10 +815,10 @@ export async function applyModelSettingsChange(
           if (
             target?.providerSource === 'workspace' &&
             target.customBaseUrl &&
-            !(
-              getSlot(slot as SlotId).capability === 'webFetch' &&
-              target.baseUrl &&
-              getWebFetchProvider(target.registryId)?.acceptsWorkspaceBaseUrl?.(target.baseUrl)
+            !acceptsWorkspaceToolBaseUrl(
+              getSlot(slot as SlotId).capability,
+              target.registryId,
+              target.baseUrl,
             )
           ) {
             throw new ModelSettingsError(

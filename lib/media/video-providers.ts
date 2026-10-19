@@ -16,7 +16,6 @@ import {
   testSeedanceConnectivity,
 } from './adapters/seedance-adapter';
 import { generateWithKling, testKlingConnectivity } from './adapters/kling-adapter';
-import { generateWithVeo, testVeoConnectivity } from './adapters/veo-adapter';
 import {
   generateWithMiniMaxVideo,
   testMiniMaxVideoConnectivity,
@@ -48,7 +47,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
         id: 'doubao-seedance-2-0-mini-260615',
         name: 'Seedance 2.0 Mini',
       },
-      { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro' },
       { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
       {
         id: 'doubao-seedance-1-0-pro-fast-251015',
@@ -76,25 +74,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
     supportedDurations: [5, 10],
     maxDuration: 10,
-  },
-  veo: {
-    id: 'veo',
-    name: 'Veo',
-    requiresApiKey: true,
-    defaultBaseUrl: 'https://generativelanguage.googleapis.com',
-    models: [
-      // Gemini API model IDs (the -001 names for 3.1 exist only on Vertex AI)
-      { id: 'veo-3.1-fast-generate-preview', name: 'Veo 3.1 Fast' },
-      { id: 'veo-3.1-generate-preview', name: 'Veo 3.1' },
-      { id: 'veo-3.1-lite-generate-preview', name: 'Veo 3.1 Lite' },
-      { id: 'veo-3.0-fast-generate-001', name: 'Veo 3.0 Fast' },
-      { id: 'veo-3.0-generate-001', name: 'Veo 3.0' },
-      { id: 'veo-2.0-generate-001', name: 'Veo 2.0' },
-    ],
-    supportedAspectRatios: ['16:9', '9:16'],
-    supportedDurations: [8],
-    supportedResolutions: ['720p'],
-    maxDuration: 8,
   },
   'minimax-video': {
     id: 'minimax-video',
@@ -162,8 +141,6 @@ export async function testVideoConnectivity(
       return testSeedanceConnectivity(config);
     case 'kling':
       return testKlingConnectivity(config);
-    case 'veo':
-      return testVeoConnectivity(config);
     case 'minimax-video':
       return testMiniMaxVideoConnectivity(config);
     case 'grok-video':
@@ -253,8 +230,6 @@ export async function generateVideo(
       return generateWithSeedance(config, options, control);
     case 'kling':
       return generateWithKling(config, options, control);
-    case 'veo':
-      return generateWithVeo(config, options, control);
     case 'minimax-video':
       return generateWithMiniMaxVideo(config, options, control);
     case 'grok-video':

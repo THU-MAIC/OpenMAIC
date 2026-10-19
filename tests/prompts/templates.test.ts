@@ -1,103 +1,14 @@
 /**
- * Structural assertion tests for the orchestration prompt templates.
+ * Structural assertion tests for the prompt templates.
  *
  * These replace the byte-equal snapshot suite that was initially added — the
- * goal here is catching real regressions (missing variables, broken role
- * dispatch, broken scene-type stripping) without forcing a snapshot update
- * for every intentional prompt-content tweak.
+ * goal here is catching real regressions (missing variables, broken
+ * placeholder naming) without forcing a snapshot update for every intentional
+ * prompt-content tweak.
  */
 
 import { describe, test, expect } from 'vitest';
-import { buildStructuredPrompt } from '@/lib/orchestration/prompt-builder';
-import { buildDirectorPrompt } from '@/lib/orchestration/director-prompt';
 import { loadPrompt } from '@openmaic/generation';
-import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import type { StatelessChatRequest } from '@/lib/types/chat';
-
-const baseAgent: AgentConfig = {
-  id: 'a1',
-  name: 'Mr. Chen',
-  role: 'teacher',
-  persona: 'Patient physics teacher.',
-  avatar: '',
-  color: '#000',
-  allowedActions: [
-    'spotlight',
-    'laser',
-    'wb_open',
-    'wb_draw_text',
-    'wb_draw_latex',
-    'wb_draw_shape',
-    'wb_close',
-  ],
-  priority: 100,
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-  isDefault: true,
-};
-
-const slideState: StatelessChatRequest['storeState'] = {
-  stage: {
-    id: 's1',
-    name: 'Test',
-    createdAt: 0,
-    updatedAt: 0,
-    languageDirective: 'zh-CN',
-  },
-  scenes: [
-    {
-      id: 'sc1',
-      stageId: 's1',
-      type: 'slide',
-      title: 'T',
-      order: 0,
-      content: {
-        type: 'slide',
-        canvas: {
-          id: 'c1',
-          viewportSize: 1000,
-          viewportRatio: 0.5625,
-          theme: {
-            backgroundColor: '#fff',
-            themeColors: [],
-            fontColor: '#333',
-            fontName: 'YaHei',
-          },
-          elements: [],
-        },
-      },
-    },
-  ],
-  currentSceneId: 'sc1',
-  mode: 'autonomous',
-  whiteboardOpen: false,
-};
-
-const quizState: StatelessChatRequest['storeState'] = {
-  ...slideState,
-  scenes: [
-    {
-      ...slideState.scenes[0],
-      type: 'quiz',
-      content: { type: 'quiz', questions: [] },
-    },
-  ],
-};
-
-// Matches any surviving {{placeholder}} token in rendered output
-const UNRESOLVED_PLACEHOLDER = /\{\{\w[\w-]*\}\}/;
-
-describe('no surviving placeholders', () => {
-  test('agent-system / teacher / slide', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    expect(out).not.toMatch(UNRESOLVED_PLACEHOLDER);
-  });
-
-  test('director prompt', () => {
-    const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
-    expect(out).not.toMatch(UNRESOLVED_PLACEHOLDER);
-  });
-});
 
 describe('PBL action workflow', () => {
   test('previews the v2 instructor-guided milestone workspace', () => {
@@ -117,126 +28,6 @@ describe('PBL action workflow', () => {
     expect(prompt?.systemPrompt).toContain('do not invent or rename them');
     expect(prompt?.systemPrompt).not.toContain('available roles');
     expect(prompt?.systemPrompt).not.toContain('select a role');
-  });
-});
-
-describe('role dispatch', () => {
-  test('teacher prompt carries LEAD TEACHER guideline', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    expect(out).toContain('LEAD TEACHER');
-  });
-
-  test('student prompt does NOT carry LEAD TEACHER guideline', () => {
-    const studentAgent: AgentConfig = { ...baseAgent, role: 'student' };
-    const out = buildStructuredPrompt(studentAgent, slideState);
-    expect(out).not.toContain('LEAD TEACHER');
-    expect(out).toContain('STUDENT');
-  });
-
-  test('assistant prompt carries TEACHING ASSISTANT guideline', () => {
-    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
-    const out = buildStructuredPrompt(assistantAgent, slideState);
-    expect(out).toContain('TEACHING ASSISTANT');
-    expect(out).not.toContain('LEAD TEACHER');
-  });
-
-  test('teacher whiteboard prompt is sourced from agent-system-wb-teacher template', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    expect(out).toContain('Whiteboard — Teacher Role');
-  });
-
-  test('assistant whiteboard prompt is sourced from agent-system-wb-assistant template', () => {
-    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
-    const out = buildStructuredPrompt(assistantAgent, slideState);
-    expect(out).toContain('Whiteboard — Teaching Assistant Role');
-  });
-
-  test('student whiteboard prompt is sourced from agent-system-wb-student template', () => {
-    const studentAgent: AgentConfig = { ...baseAgent, role: 'student' };
-    const out = buildStructuredPrompt(studentAgent, slideState);
-    expect(out).toContain('Whiteboard — Student Role');
-  });
-});
-
-describe('scene-type action stripping', () => {
-  test('slide scene exposes spotlight action description', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    expect(out).toMatch(/^- spotlight:/m);
-  });
-
-  test('quiz scene strips spotlight + laser from action descriptions', () => {
-    const out = buildStructuredPrompt(baseAgent, quizState);
-    expect(out).not.toMatch(/^- spotlight:/m);
-    expect(out).not.toMatch(/^- laser:/m);
-  });
-});
-
-describe('whiteboard close contract', () => {
-  test('keeps the shared action description consistent with role prompts', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-
-    expect(out).not.toContain('Always close after you finish drawing');
-    expect(out).toContain('Do not close merely because your own drawing is complete');
-    expect(out).toContain('a later classroom agent still needs the board');
-    expect(out).toContain('Close only when explicitly requested');
-    expect(out).toContain('Do NOT call `wb_close` at the end of a drawing turn');
-    expect(out).toContain('Only close when returning to the slide canvas');
-  });
-});
-
-describe('optional sections toggle on / off correctly', () => {
-  test('peer context appears when other agents have spoken this round', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState, undefined, undefined, undefined, [
-      {
-        agentId: 'other',
-        agentName: 'Lily',
-        contentPreview: 'quick thought',
-        actionCount: 1,
-        whiteboardActions: [],
-      },
-    ]);
-    expect(out).toContain("This Round's Context");
-    expect(out).toContain('Lily');
-  });
-
-  test('peer context is absent when agentResponses is empty/undefined', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    expect(out).not.toContain("This Round's Context");
-  });
-
-  test('language constraint is omitted when stage.languageDirective is absent', () => {
-    const stateNoLang: StatelessChatRequest['storeState'] = {
-      ...slideState,
-      stage: { ...slideState.stage!, languageDirective: undefined },
-    };
-    const out = buildStructuredPrompt(baseAgent, stateNoLang);
-    expect(out).not.toContain('# Language (CRITICAL)');
-  });
-});
-
-describe('director routing contract', () => {
-  test('output spec mentions next_agent JSON field', () => {
-    const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
-    expect(out).toContain('next_agent');
-  });
-
-  test('Q&A mode omits Discussion Mode block', () => {
-    const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
-    expect(out).not.toContain('Discussion Mode');
-  });
-
-  test('discussion mode inserts Discussion Mode block with topic', () => {
-    const out = buildDirectorPrompt(
-      [baseAgent],
-      'No history',
-      [],
-      0,
-      { topic: 'Force decomposition', prompt: 'Think of real examples' },
-      'student_1',
-    );
-    expect(out).toContain('# Discussion Mode');
-    expect(out).toContain('Force decomposition');
-    expect(out).toContain('student_1');
   });
 });
 
@@ -282,39 +73,5 @@ describe('placeholder naming convention lint', () => {
     }
 
     expect(offenders).toEqual([]);
-  });
-});
-
-describe('whiteboard-reference snippet is wired into every role', () => {
-  const KEY_SECTIONS = [
-    'Canvas Specifications',
-    'Action Reference',
-    'LaTeX JSON Escape (CRITICAL)',
-    'Bounds & Overlap',
-    'Font Size Table',
-    'Pre-Output Checklist',
-  ];
-
-  test('teacher prompt contains every key whiteboard-reference section', () => {
-    const out = buildStructuredPrompt(baseAgent, slideState);
-    for (const section of KEY_SECTIONS) {
-      expect(out).toContain(section);
-    }
-  });
-
-  test('assistant prompt contains every key whiteboard-reference section', () => {
-    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
-    const out = buildStructuredPrompt(assistantAgent, slideState);
-    for (const section of KEY_SECTIONS) {
-      expect(out).toContain(section);
-    }
-  });
-
-  test('student prompt contains every key whiteboard-reference section', () => {
-    const studentAgent: AgentConfig = { ...baseAgent, role: 'student' };
-    const out = buildStructuredPrompt(studentAgent, slideState);
-    for (const section of KEY_SECTIONS) {
-      expect(out).toContain(section);
-    }
   });
 });

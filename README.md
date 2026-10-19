@@ -31,7 +31,6 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/LangGraph-1.1-purple?style=flat-square" alt="LangGraph"/>
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS"/>
 </p>
 
@@ -43,6 +42,7 @@
 
 ## 🗞️ News
 
+- **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1): **web research.** Kimi, DeepSeek and Firecrawl join as web-search providers, and a new `webFetch` slot lets the agent read pages through a hosted reader (DeepSeek, Kimi or Firecrawl) instead of the built-in one; each is opt-in. Classroom chat can offer suggested replies, and retired models are removed from the built-in catalogs. Classroom chat now always runs on Pi and needs a classroom model with tool calling; read the release's **Breaking Changes** before upgrading.
 - **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0): **server-first is stable.** Generation runs on the server and survives closed tabs and restarts, models are configured once in `openmaic.yml` (defaults, locks, and an option to forbid user keys), materials are parsed as soon as they are attached, and the web app and the API share one pipeline. New: [classroom export](packages/docs/content/docs/getting-started.mdx#export-a-classroom), as a PPTX that keeps every scene or as one offline HTML file that plays the lesson. It needs PostgreSQL and a long-running server; Vercel deployments stay on [1.1.x](#vercel-deployment-up-to-11x). Read [Upgrading from 1.1.x](packages/docs/content/docs/deployment.mdx#upgrading-from-11x) before upgrading.
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2): security — provider requests connect only to validated addresses and refuse redirects ([GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)).
 - **2026-09-27** — [v1.1.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.1): security — hardened MinerU Cloud parsing ([GHSA-cpjc-vgjh-c5jp](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-cpjc-vgjh-c5jp)).
@@ -942,7 +942,7 @@ OpenMAIC/
 │
 ├── lib/                        # Core business logic
 │   ├── generation/             #   Two-stage lesson generation pipeline
-│   ├── orchestration/          #   LangGraph multi-agent orchestration (director graph)
+│   ├── orchestration/          #   Agent registry, shared summarizers and types
 │   ├── playback/               #   Playback state machine (idle → playing → live)
 │   ├── action/                 #   Action execution engine (speech, whiteboard, effects)
 │   ├── ai/                     #   LLM provider abstraction
@@ -998,7 +998,7 @@ OpenMAIC/
 - **Generation Pipeline** (`@openmaic/generation`) — Two-stage: outline generation → scene content generation
 - **Agent Runtime** (`lib/server/agent-runtime/`) — PostgreSQL-backed sessions with leased execution, resume/steer semantics, skills, materials, and validated course tools
 - **Persistence Layer** (`@openmaic/storage`) — Swappable document, runtime, KV, asset, agent-session, material, and user-skill stores
-- **Multi-Agent Orchestration** (`lib/orchestration/`) — LangGraph state machine managing agent turns and discussions
+- **Multi-Agent Orchestration** (`lib/chat/pi/`) — Server-side Pi director loop that hands each classroom turn to agents through `call_agent`
 - **Playback Engine** (`lib/playback/`) — State machine driving classroom playback and live interaction
 - **Action Engine** (`lib/action/`) — Executes 21 action types (speech, whiteboard draw/text/shape/chart, spotlight, laser …)
 - **Storage Layer** (`@openmaic/storage`) — Runtime/Document/asset storage abstraction with a Postgres reference implementation; its HTTP contracts let you plug in any external storage service

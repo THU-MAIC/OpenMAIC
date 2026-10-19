@@ -683,7 +683,7 @@ describe('OpenAI provider defaults', () => {
     ],
     [
       'tencent-hunyuan',
-      'hy3-preview',
+      'hy3',
       { mode: 'enabled', effort: 'high' },
       { chat_template_kwargs: { reasoning_effort: 'high' } },
     ],

@@ -5,15 +5,7 @@
 /**
  * Prompt template identifier
  */
-export type PromptId =
-  | 'interactive-outlines'
-  | 'task-engine-outlines'
-  | 'web-search-query-rewrite'
-  | 'agent-system'
-  | 'agent-system-wb-teacher'
-  | 'agent-system-wb-assistant'
-  | 'agent-system-wb-student'
-  | 'director';
+export type PromptId = 'interactive-outlines' | 'task-engine-outlines' | 'web-search-query-rewrite';
 
 /**
  * Snippet identifier
@@ -27,9 +19,7 @@ export type SnippetId =
   | 'media-safety-guidelines'
   | 'slide-image-instructions'
   | 'slide-generated-image-instructions'
-  | 'slide-video-instructions'
-  | 'speech-guidelines'
-  | 'whiteboard-reference';
+  | 'slide-video-instructions';
 
 /**
  * Loaded prompt template
