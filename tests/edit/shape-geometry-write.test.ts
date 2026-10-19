@@ -94,6 +94,64 @@ describe('agent shape write validation', () => {
     ).toThrow(/viewBox/);
     expect(shape.viewBox).toEqual([100, 100, 1]);
   });
+
+  it.each([
+    { field: 'viewBox', value: '100 100' },
+    { field: 'viewBox', value: [100, 100, 1] },
+    { field: 'viewBox', value: [100] },
+    { field: 'viewBox', value: [] },
+    { field: 'viewBox', value: [100, '100'] },
+    { field: 'viewBox', value: null },
+    { field: 'viewBox', value: undefined },
+    { field: 'width', value: '100' },
+    { field: 'width', value: null },
+    { field: 'width', value: undefined },
+    { field: 'height', value: false },
+    { field: 'height', value: '100' },
+    { field: 'path', value: 123 },
+    { field: 'path', value: null },
+    { field: 'path', value: undefined },
+  ])('permits style edits without rewriting historical $field=$value', ({ field, value }) => {
+    const slide = content();
+    const shape = slide.canvas.elements[0];
+    if (value === undefined) Reflect.deleteProperty(shape, field);
+    else Reflect.set(shape, field, value);
+    const before = structuredClone(slide);
+
+    const patched = applySlideEdit(slide, {
+      op: 'patch',
+      action: 'set',
+      path: '/canvas/elements/0/fill',
+      value: '#123456',
+    });
+    expect(patched).toMatchObject({ ok: true });
+    if (!patched.ok) throw new Error(patched.error);
+    expect(patched.value.canvas.elements[0]).toEqual({
+      ...before.canvas.elements[0],
+      fill: '#123456',
+    });
+    expect(slide).toEqual(before);
+    expect(validateSlideCanvas(patched.value.canvas, slide.canvas)).toEqual([]);
+    expect(validateSlideCanvas(patched.value.canvas).length).toBeGreaterThan(0);
+    const input = { ...shape };
+    Reflect.deleteProperty(input, 'id');
+    expect(validateElementInput(input).length).toBeGreaterThan(0);
+  });
+
+  it('keeps geometry writes and non-geometry schema validation strict for historical shapes', () => {
+    const slide = content();
+    Reflect.set(slide.canvas.elements[0], 'viewBox', [100, 100, 1]);
+    for (const [path, value] of [
+      ['/canvas/elements/0/viewBox/2', 2],
+      ['/canvas/elements/0/width', 200],
+      ['/canvas/elements/0/fill', 123],
+      ['/canvas/elements/0/unknown', 'value'],
+    ] as const) {
+      expect(applySlideEdit(slide, { op: 'patch', action: 'set', path, value })).toMatchObject({
+        ok: false,
+      });
+    }
+  });
   it.each(['M0 0 Z1 1', 'M0 0 L1e999 0', '<svg/>'])(
     'rejects an invalid complete new path: %s',
     (path) => {

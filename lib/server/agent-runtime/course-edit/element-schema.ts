@@ -756,9 +756,9 @@ export function validateElementInput(element: unknown): string[] {
 
 /** Validate the entire patched canvas, rejecting unknown fields at every level. */
 export function validateSlideCanvas(canvas: unknown, previous?: Slide): string[] {
-  // TypeBox rejects NaN/Infinity even when they are unchanged historical
-  // geometry. Check a numeric projection so style edits can pass without
-  // weakening validation of newly written shape geometry.
+  // Historical geometry can have schema-invalid types, missing fields, or
+  // malformed tuples. Project unchanged geometry solely for the schema check;
+  // new and changed geometry still receives full validation below.
   const schemaCanvas = projectUnchangedHistoricalGeometry(canvas, previous);
   if (Check(SlideCanvasSchema, schemaCanvas)) {
     const old = new Map(previous?.elements.map((element) => [element.id, element]));
@@ -784,20 +784,8 @@ function projectUnchangedHistoricalGeometry(canvas: unknown, previous?: Slide): 
     if (!element || typeof element !== 'object' || element.type !== 'shape') return element;
     const before = old.get(element.id);
     if (before?.type !== 'shape' || shapeGeometryChanged(before, element)) return element;
-    const finite = (value: unknown) =>
-      typeof value === 'number' && !Number.isFinite(value) ? 1 : value;
-    const width = finite(element.width);
-    const height = finite(element.height);
-    const viewBox = Array.isArray(element.viewBox) ? element.viewBox.map(finite) : element.viewBox;
-    if (
-      Object.is(width, element.width) &&
-      Object.is(height, element.height) &&
-      (!Array.isArray(viewBox) ||
-        viewBox.every((value: unknown, index: number) => Object.is(value, element.viewBox[index])))
-    )
-      return element;
     changed = true;
-    return { ...element, width, height, viewBox };
+    return { ...element, path: '', width: 1, height: 1, viewBox: [1, 1] };
   });
   return changed ? { ...canvas, elements: projected } : canvas;
 }
