@@ -372,79 +372,22 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const codeBodyRef = useRef<HTMLDivElement>(null);
 
-  // Drag-to-scroll inside the code body, plus wheel containment. Whiteboard
-  // pan/zoom is bypassed via two mechanisms:
-  //   1. `setPointerCapture` on pointerdown redirects later pointer events to
-  //      the body, so whiteboard's React `onPointerDown` never sees the drag.
-  //   2. The native wheel listener stops propagation so the whiteboard's
+  // Wheel containment: Whiteboard zoom is bypassed via two mechanisms:
+  //   1. The native wheel listener stops propagation so the whiteboard's
   //      native `addEventListener('wheel', ...)` never fires while the cursor
-  //      is over the code body. Outside the body (header / border) is handled
-  //      by the wrapper-level wheel listener below.
+  //      is over the code body.
+  //   2. Outside the body (header / border) is handled by the wrapper-level
+  //      wheel listener below.
   useEffect(() => {
     const el = codeBodyRef.current;
     if (!el) return;
-
-    let dragging = false;
-    let startX = 0;
-    let startY = 0;
-    let startScrollLeft = 0;
-    let startScrollTop = 0;
-    let activePointer: number | null = null;
-
-    const endDrag = () => {
-      if (activePointer !== null && el.hasPointerCapture(activePointer)) {
-        el.releasePointerCapture(activePointer);
-      }
-      dragging = false;
-      activePointer = null;
-      el.style.cursor = 'grab';
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      activePointer = e.pointerId;
-      startX = e.clientX;
-      startY = e.clientY;
-      startScrollLeft = el.scrollLeft;
-      startScrollTop = el.scrollTop;
-      el.setPointerCapture(e.pointerId);
-      el.style.cursor = 'grabbing';
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (!dragging || e.pointerId !== activePointer) return;
-      el.scrollLeft = startScrollLeft - (e.clientX - startX);
-      el.scrollTop = startScrollTop - (e.clientY - startY);
-    };
-
-    const onPointerEnd = (e: PointerEvent) => {
-      if (e.pointerId !== activePointer) return;
-      endDrag();
-    };
-
-    const onLostCapture = () => {
-      endDrag();
-    };
 
     const onWheel = (e: WheelEvent) => {
       e.stopPropagation();
     };
 
-    el.style.cursor = 'grab';
-    el.addEventListener('pointerdown', onPointerDown);
-    el.addEventListener('pointermove', onPointerMove);
-    el.addEventListener('pointerup', onPointerEnd);
-    el.addEventListener('pointercancel', onPointerEnd);
-    el.addEventListener('lostpointercapture', onLostCapture);
     el.addEventListener('wheel', onWheel, { passive: true });
     return () => {
-      endDrag();
-      el.removeEventListener('pointerdown', onPointerDown);
-      el.removeEventListener('pointermove', onPointerMove);
-      el.removeEventListener('pointerup', onPointerEnd);
-      el.removeEventListener('pointercancel', onPointerEnd);
-      el.removeEventListener('lostpointercapture', onLostCapture);
       el.removeEventListener('wheel', onWheel);
     };
   }, []);
@@ -661,13 +604,10 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
           {/* Code body */}
           <div
             ref={codeBodyRef}
-            className="flex-1 overflow-auto py-2"
+            className="flex-1 overflow-auto py-2 select-text cursor-text"
             style={{
               background: '#fafbfc',
               color: '#24292e',
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              touchAction: 'none',
             }}
           >
             <div style={{ minWidth: 'max-content' }}>
