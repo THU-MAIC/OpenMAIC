@@ -182,6 +182,39 @@ describe('EditableSlideCanvas — Shape label editing', () => {
     expect(editor.style.inset).toBe('0px');
   });
 
+  it.each([{ flipH: true }, { flipV: true }, { flipH: true, flipV: true }])(
+    'keeps a recovered label upright while editing a flipped shape: %o',
+    (flip) => {
+      const props = {
+        scale: 1,
+        selection: { elementIds: ['shape-1'], primaryId: 'shape-1', editingId: 'shape-1' },
+        onSelectionChange: vi.fn(),
+        onElementsChange: vi.fn(),
+        onTextContentChange: vi.fn(),
+      };
+      const { container, rerender } = render(
+        <EditableSlideCanvas
+          {...props}
+          slide={{ ...slide, elements: [{ ...shape, ...flip, path: 'M0 0 Z1 1' }] }}
+        />,
+      );
+      const editor = container.querySelector('[data-renderer-shape-label-editor]') as HTMLElement;
+      expect(editor.closest('.base-element-text')).not.toBeNull();
+      expect(editor.style.transform).toBe('');
+
+      rerender(
+        <EditableSlideCanvas {...props} slide={{ ...slide, elements: [{ ...shape, ...flip }] }} />,
+      );
+      const validEditor = container.querySelector(
+        '[data-renderer-shape-label-editor]',
+      ) as HTMLElement;
+      const shapeContent = validEditor.closest('.element-content') as HTMLElement;
+      expect(shapeContent.closest('.base-element-shape')).not.toBeNull();
+      expect(validEditor.style.transform).not.toBe('');
+      expect(validEditor.style.transform).toBe(shapeContent.style.transform);
+    },
+  );
+
   it('aligns a recovered shape hit target and selection border with its visible text box', () => {
     const recovered = {
       ...shape,
@@ -250,19 +283,31 @@ describe('EditableSlideCanvas — Shape label editing', () => {
     ]);
   });
 
-  it('does not expose a hit target for a malformed shape with no text fallback', () => {
-    const { container } = render(
-      <EditableSlideCanvas
-        slide={{ ...slide, elements: [{ ...shape, path: 'M0 0 Z1 1', text: undefined }] }}
-        scale={1}
-        selection={{ elementIds: ['shape-1'], primaryId: 'shape-1' }}
-        onSelectionChange={vi.fn()}
-        onElementsChange={vi.fn()}
-      />,
-    );
-    expect(container.querySelector('[data-select-element-id="shape-1"]')).toBeNull();
-    expect(container.querySelector('[data-selection-border]')).toBeNull();
-  });
+  it.each([undefined, '<p>&#32;&ensp;</p>', '<!-- <img src="unused.png"> -->'])(
+    'does not expose a hit target for a malformed shape with no usable label: %s',
+    (content) => {
+      const { container } = render(
+        <EditableSlideCanvas
+          slide={{
+            ...slide,
+            elements: [
+              {
+                ...shape,
+                path: 'M0 0 Z1 1',
+                text: content === undefined ? undefined : { ...shape.text!, content },
+              },
+            ],
+          }}
+          scale={1}
+          selection={{ elementIds: ['shape-1'], primaryId: 'shape-1' }}
+          onSelectionChange={vi.fn()}
+          onElementsChange={vi.fn()}
+        />,
+      );
+      expect(container.querySelector('[data-select-element-id="shape-1"]')).toBeNull();
+      expect(container.querySelector('[data-selection-border]')).toBeNull();
+    },
+  );
 
   it('removes an empty Shape label when its editor blurs', () => {
     const onElementsChange = vi.fn<(intents: EditIntent[]) => void>();

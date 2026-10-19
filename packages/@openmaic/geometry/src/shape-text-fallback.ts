@@ -1,4 +1,5 @@
 import type { PPTShapeElement, PPTTextElement, TextType } from '@openmaic/dsl';
+import { decodeHTML } from 'entities';
 import tinycolor from 'tinycolor2';
 
 const TEXT_TYPES: ReadonlySet<string> = new Set<TextType>([
@@ -18,11 +19,10 @@ const TEXT_TYPES: ReadonlySet<string> = new Set<TextType>([
 export function shapeToTextFallback(shape: PPTShapeElement): PPTTextElement | null {
   const label = shape.text;
   if (!label || typeof label.content !== 'string') return null;
-  const plain = label.content
-    .replace(/\x3c!--[\s\S]*?-->|<[^>]*>/g, '')
-    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, ' ')
-    .trim();
-  if (!plain && !/data-inline-math|<math\b|<img\b/i.test(label.content)) return null;
+  const content = label.content.replace(/\x3c!--[\s\S]*?-->/g, '');
+  // Decode after stripping tags so escaped markup remains visible text.
+  const plain = decodeHTML(content.replace(/<[^>]*>/g, '')).trim();
+  if (!plain && !/data-inline-math|<math\b|<img\b/i.test(content)) return null;
 
   const dimension = (value: number) =>
     Number.isFinite(value) && value > 0 ? Math.min(value, 4000) : 100;

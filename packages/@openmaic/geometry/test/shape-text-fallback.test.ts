@@ -84,7 +84,18 @@ describe('shared shape-to-text fallback', () => {
     },
   );
 
-  it.each(['', '  ', '<p></p>', '<p>&nbsp;</p>'])('omits empty labels: %s', (content) => {
+  it.each([
+    '',
+    '  ',
+    '<p></p>',
+    '<p>&nbsp;</p>',
+    '<p>&#32;</p>',
+    '<p>&#x20;</p>',
+    '<p>&#9;</p>',
+    '<p>&ensp;&emsp;&thinsp;&Tab;&NewLine;</p>',
+    '<!-- <span data-inline-math="x^2"></span> -->',
+    '<!-- <math></math><img src="unused.png"> -->',
+  ])('omits empty labels: %s', (content) => {
     expect(shapeToTextFallback({ ...shape, text: { ...shape.text!, content } })).toBeNull();
   });
 
@@ -95,6 +106,12 @@ describe('shared shape-to-text fallback', () => {
         text: { ...shape.text!, content: '<span data-inline-math="x^2"></span>' },
       }),
     ).not.toBeNull();
+  });
+  it('retains visible entities as text without mistaking them for markup', () => {
+    const content = '<p>&lt;img&gt; &amp; &#65;</p>';
+    expect(shapeToTextFallback({ ...shape, text: { ...shape.text!, content } })?.content).toBe(
+      content,
+    );
   });
   it('does not copy an invalid model-provided label type into the text element', () => {
     const malformed = {

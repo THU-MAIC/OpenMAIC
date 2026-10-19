@@ -665,6 +665,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:^
         version: link:../dsl
+      entities:
+        specifier: ^6.0.0
+        version: 6.0.1
       svg-pathdata:
         specifier: ^8.0.0
         version: 8.0.0

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@openmaic/dsl": "workspace:^",
+    "entities": "^6.0.0",
     "svg-pathdata": "^8.0.0",
     "tinycolor2": "^1.6.0"
   },

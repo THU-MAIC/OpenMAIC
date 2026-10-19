@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useRef, type CSSProperties } from 'react';
+import { useCallback, useMemo, useRef, type CSSProperties } from 'react';
 import type { PPTShapeElement, ShapeText } from '@openmaic/dsl';
+import { RENDER_PATH_LIMITS, validateShapeGeometry } from '@openmaic/geometry';
 
 import { hasTextInsets, useElementFlip } from '@openmaic/renderer/elements';
 import { isSemanticallyEmptyText } from '../text/richText';
@@ -44,7 +45,25 @@ export function RendererShapeLabelEditor({
 }: RendererShapeLabelEditorProps) {
   const controllerRef = useRef<TextEditorController | null>(null);
   const text = shapeText(element);
-  const { flipStyle } = useElementFlip(element.flipH, element.flipV);
+  const geometryValid = useMemo(
+    () =>
+      validateShapeGeometry(
+        {
+          path: element.path,
+          viewBox: element.viewBox,
+          width: element.width,
+          height: element.height,
+        },
+        RENDER_PATH_LIMITS,
+      ).ok,
+    [element.path, element.viewBox, element.width, element.height],
+  );
+  // Only the SVG renderer flips its parent. Recovered text has no parent flip
+  // to cancel, so applying the shape's flip here would mirror the edited label.
+  const { flipStyle } = useElementFlip(
+    geometryValid && element.flipH,
+    geometryValid && element.flipV,
+  );
   const justifyContent =
     text.align === 'top' ? 'flex-start' : text.align === 'bottom' ? 'flex-end' : 'center';
 
