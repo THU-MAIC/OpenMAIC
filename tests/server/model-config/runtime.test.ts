@@ -79,6 +79,40 @@ describe('lookupFromLayers', () => {
     });
   });
 
+  it('lets slots that name a retired Veo provider follow their parents again', () => {
+    // Google shut down the Veo provider's last models (#1940): a workspace
+    // that chose Veo, its own or the deployment's, falls back to the server
+    // default instead of failing every video call.
+    const deployment: ModelConfigLayer = {
+      source: 'deployment',
+      config: {
+        providers: {
+          kling: { preset: 'kling', apiKey: 'k' },
+          'server-veo': { preset: 'veo', apiKey: 'k' },
+        },
+        slots: { video: 'kling:kling-v2-6' },
+      },
+    };
+    for (const pick of [
+      'own-veo:veo-3.1-generate-preview',
+      'server-veo:veo-3.1-generate-preview',
+    ]) {
+      const workspace: ModelConfigLayer = {
+        source: 'workspace',
+        config: {
+          providers: { 'own-veo': { preset: 'veo', apiKey: 'k' } },
+          slots: { video: pick },
+        },
+      };
+      expect(lookupFromLayers('video', { deployment, workspace })).toMatchObject({
+        status: 'assigned',
+        source: 'default',
+        providerId: 'kling',
+        modelId: 'kling-v2-6',
+      });
+    }
+  });
+
   it('leaves out providers a workspace added once allowUserKeys is false', () => {
     const deployment: ModelConfigLayer = {
       source: 'deployment',

@@ -24,6 +24,7 @@ import {
   type SlotId,
 } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { retiredPresetReason } from '@/lib/config/preset-ids';
 import { VALID_EFFORTS, VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
 
 export const DEFAULT_MODEL_CONFIG_FILE = 'openmaic.yml';
@@ -294,7 +295,11 @@ function crossCheck(
     const at = `providers.${id}.preset`;
     const preset = getProviderPreset(provider.preset);
     if (!preset) {
-      issues.push(`${at}: unknown preset ${shown(provider.preset, at)}`);
+      // A retired preset does not stop the server: the deployment layer
+      // leaves the provider unused and says so (deployment-layer.ts).
+      if (!retiredPresetReason(provider.preset)) {
+        issues.push(`${at}: unknown preset ${shown(provider.preset, at)}`);
+      }
       continue;
     }
     if (preset.requiresBaseUrl && !provider.baseUrl) {

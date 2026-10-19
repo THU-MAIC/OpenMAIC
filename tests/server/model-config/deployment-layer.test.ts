@@ -48,6 +48,9 @@ beforeEach(() => {
     'MODEL_FALLBACK',
     'WEB_SEARCH_KIMI_ENABLED',
     'WEB_SEARCH_DEEPSEEK_ENABLED',
+    'VIDEO_VEO_API_KEY',
+    'VIDEO_VEO_BASE_URL',
+    'VIDEO_VEO_MODELS',
   ]) {
     vi.stubEnv(name, '');
   }
@@ -126,6 +129,47 @@ describe('loadDeploymentLayer', () => {
     expect(layer?.config.providers).toEqual({ ds: { preset: 'deepseek', apiKey: 'sk-ds' } });
     expect(notices).toHaveLength(2);
     expect(notices[0]).toMatch(/^openmaic\.yml is present/);
+  });
+
+  it('leaves a retired Veo provider unused, with a notice, instead of refusing the file', () => {
+    fs.writeFileSync(
+      path.join(dir, 'openmaic.yml'),
+      [
+        'providers:',
+        '  google-video:',
+        '    preset: veo',
+        '    apiKey: k',
+        '  kling:',
+        '    preset: kling',
+        '    apiKey: k',
+        'lock: [video]',
+        'slots:',
+        '  video: google-video:veo-3.1-generate-preview',
+        '  image: null',
+        '',
+      ].join('\n'),
+    );
+    const { layer, notices } = loadDeploymentLayer();
+    // The provider stays declared (the settings list it, so it can be
+    // removed), but no slot resolves through it any more.
+    expect(layer?.config.providers).toHaveProperty('google-video');
+    expect(layer?.config.slots).toEqual({ image: null });
+    expect(notices).toContainEqual(
+      expect.stringMatching(
+        /^providers\.google-video is not used: the Veo video provider was removed because Google shut down its Veo 3\.1 preview models on October 22, 2026\. Slots that named it follow their parents again/,
+      ),
+    );
+  });
+
+  it('says that the retired VIDEO_VEO_* variables are ignored', () => {
+    vi.stubEnv('VIDEO_VEO_API_KEY', 'sk-veo');
+    expect(loadDeploymentLayer()).toEqual({
+      layer: null,
+      legacy: false,
+      notices: [
+        'VIDEO_VEO_* is set but no longer used: the Veo video provider was removed because Google shut down its Veo 3.1 preview models on October 22, 2026',
+      ],
+    });
   });
 
   it('does not mention the legacy configuration when there is none', () => {

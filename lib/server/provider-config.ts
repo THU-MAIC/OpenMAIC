@@ -138,7 +138,6 @@ const IMAGE_ENV_MAP: Record<string, string> = {
 const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_SEEDANCE: 'seedance',
   VIDEO_KLING: 'kling',
-  VIDEO_VEO: 'veo',
   VIDEO_MINIMAX: 'minimax-video',
   VIDEO_GROK: 'grok-video',
   VIDEO_HAPPYHORSE: 'happyhorse',

@@ -1718,7 +1718,6 @@
     "videoModel": "動画生成モデル",
     "providerSeedance": "Seedance（ByteDance）",
     "providerKling": "Kling（快手）",
-    "providerVeo": "Veo（Google）",
     "providerSora": "Sora（OpenAI）",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video（xAI）",

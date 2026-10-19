@@ -3,6 +3,7 @@ import { PROVIDER_PRESETS } from '@/lib/config/provider-presets';
 import { parseModelConfig } from '@/lib/server/model-config/openmaic-yml';
 import {
   SlotResolutionError,
+  resolveModelReference,
   resolveSlot,
   type ModelConfigLayer,
 } from '@/lib/server/model-config/resolve-slot';
@@ -386,6 +387,17 @@ describe('resolveSlot', () => {
         expect((error as Error).message).not.toContain(secret);
       }
     }
+  });
+});
+
+describe('a provider with a retired preset', () => {
+  it('says why it can no longer be used when it is referenced directly', () => {
+    const layers: ModelConfigLayer[] = [
+      { source: 'workspace', config: { providers: { veo: { preset: 'veo', apiKey: 'k' } } } },
+    ];
+    expect(() => resolveModelReference('veo', 'video', layers, { providerOnly: true })).toThrow(
+      'reference: the provider can no longer be used: the Veo video provider was removed because Google shut down its Veo 3.1 preview models on October 22, 2026',
+    );
   });
 });
 

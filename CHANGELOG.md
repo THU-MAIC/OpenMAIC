@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **The built-in Veo video provider (`veo`) is removed.** Google shuts down all three Veo 3.1 preview models (`veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, `veo-3.1-lite-generate-preview`) on October 22, 2026, and they were the provider's last models (Veo 3.0 and 2.0 were removed in [#1939](https://github.com/THU-MAIC/OpenMAIC/pull/1939)). Support for Google's replacement, `gemini-omni-1.1-flash`, is tracked in [#1940](https://github.com/THU-MAIC/OpenMAIC/issues/1940).
+  - Pick another video provider in **Course Model Config → Video**, or assign `slots.video` to one in `openmaic.yml`. Veo 3.1 stays available through OpenRouter Video (`google/veo-3.1`), which OpenRouter serves from Vertex AI and is not part of this shutdown.
+  - Existing configurations keep loading. An `openmaic.yml` provider with `preset: veo` no longer stops the server: it resolves nothing, every slot that named it follows its parent again, and a startup notice asks to remove it. Workspace settings that chose a Veo provider fall back the same way. `VIDEO_VEO_API_KEY`, `VIDEO_VEO_MODELS` and `VIDEO_VEO_BASE_URL` are ignored, with a startup notice when set; a `video.veo` entry in `server-providers.yml` is not carried over.
+
 ## [1.2.1] - 2026-10-18
 
 1.2.1 is a regular patch release. Its main theme is web research: Kimi, DeepSeek and Firecrawl join as web-search providers, and a new `webFetch` slot lets the agent's `fetch_url` tool use a hosted reader instead of the built-in one. It also contains one breaking change, the removal of the legacy director-graph classroom chat ([#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)), and removes retired models from the built-in catalogs ([#1939](https://github.com/THU-MAIC/OpenMAIC/pull/1939)). Read **Breaking Changes** before upgrading from 1.2.0.

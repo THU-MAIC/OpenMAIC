@@ -15,8 +15,8 @@
  *
  * Authentication: Authorization: Bearer <key>
  *
- * Like the Veo adapter, the finished clip is returned as a base64 data URL so
- * nothing is written to disk.
+ * The finished clip is returned as a base64 data URL so nothing is written to
+ * disk.
  *
  * API docs: https://openrouter.ai/docs/api-reference/overview
  */

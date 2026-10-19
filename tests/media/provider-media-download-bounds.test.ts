@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MAX_PROVIDER_MEDIA_BYTES, readResponseBodyWithLimit } from '@/lib/media/bounded-download';
 import { generateWithComfyuiImage } from '@/lib/media/adapters/comfyui-image-adapter';
 import { generateWithOpenRouterVideo } from '@/lib/media/adapters/openrouter-video-adapter';
-import { generateWithVeo } from '@/lib/media/adapters/veo-adapter';
 
 /** A response whose body streams `chunkCount` chunks of `chunkSize` bytes. */
 function streamedResponse(chunkCount: number, chunkSize: number, contentType = 'video/mp4') {
@@ -121,43 +120,6 @@ describe('the media adapters refuse an oversized provider download', () => {
       },
     });
   }
-
-  it('Veo: a download declaring more than the ceiling is refused', async () => {
-    // Same-origin file URL, so no redirect handling is involved. Dispatch on
-    // the download URL itself: whatever the adapter asks its API before the
-    // download, the JSON shape it gets back leads to this file URI.
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/files/clip')) {
-        return oversizedDownload();
-      }
-      return new Response(
-        JSON.stringify({
-          name: 'operations/veo-bounded',
-          done: true,
-          response: {
-            generateVideoResponse: {
-              generatedSamples: [{ video: { uri: 'https://veo.example/files/clip' } }],
-            },
-          },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(
-      generateWithVeo(
-        {
-          providerId: 'veo',
-          apiKey: 'k',
-          baseUrl: 'https://veo.example',
-          model: 'veo-3.0-generate-001',
-        },
-        { prompt: 'a paper city', aspectRatio: '16:9', duration: 8 },
-      ),
-    ).rejects.toThrow('Veo video download: Download exceeded the');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
 
   it('OpenRouter: a content download over the ceiling is refused', async () => {
     vi.useFakeTimers();

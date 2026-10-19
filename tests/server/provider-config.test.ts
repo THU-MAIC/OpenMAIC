@@ -744,7 +744,7 @@ video:
 
     it('resolves the default video provider as the first server-configured one', async () => {
       vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
-      vi.stubEnv('VIDEO_VEO_API_KEY', 'sk-veo');
+      vi.stubEnv('VIDEO_KLING_API_KEY', 'sk-kling');
       const { resolveServerVideoProviderId } = await import('@/lib/server/provider-config');
       expect(resolveServerVideoProviderId()).toBe('seedance');
     });

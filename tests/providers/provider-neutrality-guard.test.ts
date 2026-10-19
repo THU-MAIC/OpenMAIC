@@ -203,7 +203,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['nano', 2],
       ['seedance', 2],
       ['kling', 2],
-      ['veo', 2],
       ['happyhorse', 2],
       ['tavily', 7],
       ['exa', 5],

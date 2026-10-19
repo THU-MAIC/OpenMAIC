@@ -8,7 +8,6 @@ const adapterMocks = vi.hoisted(() => {
   return {
     seedance: { generate: vi.fn(), test: vi.fn(connectivity) },
     kling: { generate: vi.fn(), test: vi.fn(connectivity) },
-    veo: { generate: vi.fn(), test: vi.fn(connectivity) },
     'minimax-video': { generate: vi.fn(), test: vi.fn(connectivity) },
     'grok-video': { generate: vi.fn(), test: vi.fn(connectivity) },
     happyhorse: { generate: vi.fn(), test: vi.fn(connectivity) },
@@ -23,10 +22,6 @@ vi.mock('@/lib/media/adapters/seedance-adapter', () => ({
 vi.mock('@/lib/media/adapters/kling-adapter', () => ({
   generateWithKling: adapterMocks.kling.generate,
   testKlingConnectivity: adapterMocks.kling.test,
-}));
-vi.mock('@/lib/media/adapters/veo-adapter', () => ({
-  generateWithVeo: adapterMocks.veo.generate,
-  testVeoConnectivity: adapterMocks.veo.test,
 }));
 vi.mock('@/lib/media/adapters/minimax-video-adapter', () => ({
   generateWithMiniMaxVideo: adapterMocks['minimax-video'].generate,
@@ -61,6 +56,13 @@ describe('video provider catalog', () => {
     // generation case, so choosing it failed only at execution time. A catalog
     // entry that cannot execute is worse than an absent one.
     expect(CATALOG_IDS).not.toContain('sora');
+  });
+
+  it('does not list the retired Veo provider', () => {
+    // Google shut down every Veo model the provider listed on 2026-10-22
+    // (#1940): with nothing left to select, the entry is removed rather than
+    // kept as a provider that cannot generate.
+    expect(CATALOG_IDS).not.toContain('veo');
   });
 
   it.each(CATALOG_IDS)(
