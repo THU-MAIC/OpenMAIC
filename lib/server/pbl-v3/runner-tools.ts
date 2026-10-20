@@ -1,5 +1,5 @@
 import 'server-only';
-import { assertProjectSource } from './workspace-files';
+import { assertProjectSource, projectFiles } from './workspace-files';
 import {
   learningWorkspaceId,
   withLearningWorkspaceAccess,
@@ -130,7 +130,7 @@ export async function teachingRunnerConfig(input: {
               ownerId: current.owner_id,
               workspaceId: learningWorkspaceId(current.id),
               environmentIds: () => [current.environment_id],
-              operations: name === 'write_file' ? ['write'] : [],
+              operations: name === 'write_file' || name === 'manage_file' ? ['write'] : [],
             },
             () => execute(current, params),
           );
@@ -217,6 +217,59 @@ export async function teachingRunnerConfig(input: {
         },
       ),
     );
+  if (row.environment_id && canReadFiles && bound.role !== 'planner')
+    tools.push(
+      tool(
+        'list_files',
+        'List the current project source paths, including learner-created files.',
+        Type.Object({}),
+        async (current) => ({
+          value: { files: await projectFiles(await service(), current.environment_id!, project) },
+        }),
+      ),
+    );
+  if (row.environment_id && bound.role === 'coder' && project.sourceRoots?.length)
+    tools.push(
+      tool(
+        'manage_file',
+        'Create, rename or delete a source file. Existing files require their observed hash. Never replace PLAN.md.',
+        Type.Object({
+          action: Type.Union([
+            Type.Literal('create'),
+            Type.Literal('rename'),
+            Type.Literal('delete'),
+          ]),
+          path,
+          destination: Type.Optional(path),
+          text: Type.Optional(Type.String({ maxLength: 64000 })),
+          expectedHash: Type.Optional(Type.String({ pattern: '^[a-f0-9]{64}$' })),
+        }),
+        async (current, p) => {
+          if (guided) review.assertWritable();
+          assertProjectSource(project, p.path);
+          if (p.path === 'PLAN.md' || p.destination === 'PLAN.md')
+            throw sandboxConflict('The approved plan is read-only during coding.');
+          if (p.action === 'rename') assertProjectSource(project, p.destination);
+          const sandbox = await service();
+          if (
+            p.action === 'create' &&
+            (await projectFiles(sandbox, current.environment_id!, project)).length >= 256
+          )
+            throw sandboxInvalid(
+              'Learning projects support at most 256 source files.',
+              'PBL_SOURCE_COUNT',
+            );
+          const value = await sandbox.mutateFile(current.environment_id!, p, async () => {
+            const invalid = await store.transaction(async (db) => {
+              await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+              return store.commit(db, current, invalidateWorkspace(current, p.path));
+            });
+            Object.assign(current, invalid);
+          });
+          return { value };
+        },
+      ),
+    );
   if (guided) {
     tools.push(
       tool(
@@ -289,6 +342,17 @@ export async function teachingRunnerConfig(input: {
               !Object.entries(files).some(([path, text]) => path !== 'PLAN.md' && text.trim())
             )
               throw sandboxConflict('No code artifact exists.');
+            // An arbitrary workspace command may have edited PLAN.md. Code review
+            // cannot silently approve a different plan; unchanged approved content
+            // remains valid even when command admission invalidated its cached flag.
+            if (stage.writes === 'code') {
+              const plan = current.state.collected[milestone.id]!.plan;
+              if (plan && plan.contentHash !== digest(files['PLAN.md'] ?? ''))
+                throw sandboxConflict(
+                  'Restore the approved PLAN.md before completing code review.',
+                );
+              if (plan) current.state.collected[milestone.id]!.planReviewCompleted = true;
+            }
             const artifact = {
               id: randomUUID(),
               milestoneId: milestone.id,

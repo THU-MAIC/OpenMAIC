@@ -23,6 +23,7 @@ on:
         integration/agent-workbench,
         integration/material-library,
         integration/shared-sandbox,
+        feat/pbl-v3-workspace-contract,
       ]
 
 concurrency:

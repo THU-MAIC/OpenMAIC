@@ -148,6 +148,10 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     if (error instanceof CommandExitError) {
       if (error.exitCode === 44)
         throw new SandboxError('SANDBOX_FILE_NOT_FOUND', 404, 'Project file not found.');
+      if (error.exitCode === 47)
+        throw sandboxConflict(
+          'The file changed or the destination already exists. Reload the workspace.',
+        );
       if (error.exitCode === 45)
         throw new SandboxError(
           'SANDBOX_FILE_ENCODING',
@@ -497,6 +501,37 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
       await sandbox.commands.run(
         `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} write ${shellQuote(Buffer.from(workspacePath(path)).toString('base64'))} ${shellQuote(transfer)}`,
         { timeoutMs: 30_000, requestTimeoutMs: 35_000 },
+      );
+    } catch (error) {
+      this.fileFailure(error);
+    } finally {
+      await sandbox.files.remove(transfer).catch(() => {});
+    }
+  }
+  async mutateFile(
+    resourceId: string,
+    operationId: string,
+    input: {
+      action: 'create' | 'delete' | 'rename';
+      path: string;
+      destination?: string;
+      expectedHash?: string;
+      text?: string;
+    },
+  ) {
+    const sandbox = await this.connect(resourceId, operationId);
+    const transfer = `/tmp/openmaic-file-${randomUUID()}`;
+    try {
+      const spec = {
+        ...input,
+        ...(input.destination ? { destination: workspacePath(input.destination) } : {}),
+      };
+      await sandbox.files.write(transfer, JSON.stringify(spec), {
+        requestTimeoutMs: REQUEST_TIMEOUT_MS,
+      });
+      await sandbox.commands.run(
+        `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} ${input.action} ${shellQuote(Buffer.from(workspacePath(input.path)).toString('base64'))} ${shellQuote(transfer)}`,
+        { timeoutMs: 30000, requestTimeoutMs: 35000 },
       );
     } catch (error) {
       this.fileFailure(error);

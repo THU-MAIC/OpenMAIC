@@ -5,6 +5,7 @@ import { SandboxError, sandboxInvalid } from '@/lib/sandbox/errors';
 
 export interface PreviewGrant {
   ownerId: string;
+  studyId?: string;
   environmentId: string;
   port: number;
   epoch: number;
@@ -99,6 +100,7 @@ export function verifyPreviewGrant(ticket: string, host: string): PreviewGrant {
     !g ||
     !/^[0-9a-f-]{36}$/.test(g.id) ||
     typeof g.ownerId !== 'string' ||
+    (g.studyId !== undefined && !/^[a-f0-9-]{36}$/.test(g.studyId)) ||
     !Number.isSafeInteger(g.expiresAt) ||
     g.expiresAt <= Date.now() ||
     g.expiresAt > Date.now() + 5 * 60_000 ||

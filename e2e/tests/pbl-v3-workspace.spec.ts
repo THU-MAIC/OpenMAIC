@@ -53,12 +53,45 @@ test('installed sample opens in the normal classroom and preserves progress afte
     evaluation: null,
   };
   let file = 'Write your plan here.';
+  const workCalls: { action: string; path?: string }[] = [];
+  let previewOpen = false;
   const calls: { type: string; path?: string; text?: string; expectedHash?: string }[] = [];
   await page.route('**/api/pbl/v3**', async (route) => {
     const req = route.request(),
       url = new URL(req.url());
     const body = req.method() === 'POST' ? req.postDataJSON() : null;
     if (body?.action === 'sample') return route.continue(); // actual course creation and persistence
+    if (url.pathname === '/api/pbl/v3/workspace') {
+      if (body?.command) {
+        const command = body.command;
+        workCalls.push(command);
+        view.revision++;
+        if (command.action === 'create') view.files.push(command.path);
+        if (command.action === 'rename')
+          view.files = view.files.map((p) => (p === command.path ? command.destination : p));
+        if (command.action === 'delete') view.files = view.files.filter((p) => p !== command.path);
+        if (command.action === 'preview') {
+          previewOpen = true;
+          return route.fulfill({ json: { url: 'https://preview.example.test/' } });
+        }
+        if (command.action === 'stop') previewOpen = false;
+        return route.fulfill({ json: { accepted: true } });
+      }
+      return route.fulfill({
+        json: {
+          environmentId: view.environmentId,
+          revision: view.revision,
+          canEdit: view.actions.includes('edit'),
+          planning: false,
+          canManageFiles: view.actions.includes('edit'),
+          canRun: view.actions.includes('edit'),
+          ports: [8000],
+          commands: [],
+          terminals: [],
+          checkpoint: null,
+        },
+      });
+    }
     if (req.method() === 'GET' && url.searchParams.has('file'))
       return route.fulfill({ json: { text: file, hash: 'a'.repeat(64) } });
     if (body?.command) {
@@ -204,6 +237,42 @@ test('installed sample opens in the normal classroom and preserves progress afte
     text: 'print("Saved code")',
     expectedHash: 'c'.repeat(64),
   });
+  await page.getByLabel('Project-relative file path').fill('src/new.py');
+  await page.getByRole('button', { name: 'Create file', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Project files' })).toHaveValue('src/new.py');
+  await expect(editor).toHaveValue('print("Current code")');
+  await editor.fill('Unsaved learner work');
+  await expect(page.getByRole('button', { name: 'Run command', exact: true })).toBeDisabled();
+  view.environmentId = '22345678-1234-1234-1234-123456789012';
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(editor).toHaveValue('Unsaved learner work');
+  await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
+  await expect(page.getByText('The environment or file changed.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Discard changes and reload' }).click();
+  await expect(editor).toHaveValue('print("Current code")');
+  await page.getByLabel('Project-relative file path').fill('src/moved.py');
+  await page.getByRole('button', { name: 'Rename / move file' }).click();
+  await expect(page.getByRole('combobox', { name: 'Project files' })).toHaveValue('src/moved.py');
+  await page.getByLabel('Project command', { exact: true }).fill('python3 src/moved.py');
+  await page.getByRole('button', { name: 'Run command', exact: true }).click();
+  await expect.poll(() => workCalls.some((c) => c.action === 'run')).toBe(true);
+  await page.route('https://preview.example.test/**', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<h1>Project application</h1><button onclick="this.textContent=\'Clicked\'">Try</button>',
+    }),
+  );
+  await page.getByRole('button', { name: 'Preview port 8000' }).click();
+  const frame = page.frameLocator('iframe[title="Project application"]');
+  await expect(frame.getByRole('heading', { name: 'Project application' })).toBeVisible();
+  await frame.getByRole('button', { name: 'Try' }).click();
+  await expect(frame.getByRole('button', { name: 'Clicked' })).toBeVisible();
+  expect(previewOpen).toBe(true);
+  await page.getByRole('button', { name: 'Stop commands and close terminals' }).click();
+  await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
+  expect(previewOpen).toBe(false);
+  await page.getByRole('button', { name: 'Save checkpoint', exact: true }).click();
+  await expect.poll(() => calls.some((c) => c.type === 'checkpoint')).toBe(true);
   view.questions = [{ q: 'What does return do?', options: ['Returns a value', 'Prints a value'] }];
   view.actions = ['quiz'];
   await page.getByRole('button', { name: 'Refresh progress' }).click();

@@ -3,10 +3,13 @@ import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, basename } from 'node:path';
+import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Pool } from 'pg';
+import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
+import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
+import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 vi.mock('server-only', () => ({}));
@@ -22,6 +25,8 @@ const mocked = vi.hoisted(() => ({
   hideDiscovery: false,
   creates: [] as string[],
   renewals: [] as string[],
+  terminals: new Map<string, number>(),
+  inputs: [] as string[],
   objects: new Map<string, Uint8Array>(),
   responses: [] as Array<Array<Record<string, unknown>>>,
   modelCalls: 0,
@@ -99,9 +104,21 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
     }
     async *exportWorkspace(id: string) {
       const files: Record<string, string> = {};
-      for (const name of (await readdir(join(mocked.root, id))).sort())
-        if (!name.startsWith('.command-') && name !== '__pycache__')
-          files[name] = await readFile(join(mocked.root, id, name), 'utf8');
+      const walk = async (dir: string, prefix = '') => {
+        for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) =>
+          a.name.localeCompare(b.name),
+        )) {
+          if (
+            entry.name.startsWith('.command-') ||
+            ['__pycache__', 'target', '.venv'].includes(entry.name)
+          )
+            continue;
+          const path = prefix + entry.name;
+          if (entry.isDirectory()) await walk(join(dir, entry.name), path + '/');
+          else files[path] = await readFile(join(dir, entry.name), 'utf8');
+        }
+      };
+      await walk(join(mocked.root, id));
       yield Buffer.from(JSON.stringify(files));
     }
     async importWorkspace(id: string, _operation: string, source: AsyncIterable<Uint8Array>) {
@@ -109,21 +126,85 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
       const chunks = [];
       for await (const chunk of source) chunks.push(chunk);
       const files = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, string>;
-      for (const [name, text] of Object.entries(files))
-        await writeFile(join(mocked.root, id, basename(name)), text);
+      for (const [name, text] of Object.entries(files)) {
+        await mkdir(dirname(join(mocked.root, id, name)), { recursive: true });
+        await writeFile(join(mocked.root, id, name), text);
+      }
     }
     async initializeWorkspace() {}
     async readText(id: string, _operation: string, path: string) {
-      return readFile(join(mocked.root, id, basename(path)), 'utf8');
+      path = path.replace(/^\/home\/user\/project\//, '');
+      return readFile(join(mocked.root, id, path), 'utf8');
     }
     async writeText(id: string, _operation: string, path: string, text: string) {
-      await writeFile(join(mocked.root, id, basename(path)), text);
+      path = path.replace(/^\/home\/user\/project\//, '');
+      await mkdir(dirname(join(mocked.root, id, path)), { recursive: true });
+      await writeFile(join(mocked.root, id, path), text);
       if (mocked.loseWriteAck) throw new Error('Write acknowledgement lost');
     }
     async listWorkspace(id: string) {
-      return (await readdir(join(mocked.root, id)))
-        .filter((p) => !p.startsWith('.command-') && p !== '__pycache__')
-        .map((path) => ({ path, kind: 'file', size: 0 }));
+      const result: { path: string; kind: string; size: number }[] = [];
+      const walk = async (dir: string, prefix = '') => {
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+          if (
+            entry.name.startsWith('.command-') ||
+            ['__pycache__', 'target', '.venv'].includes(entry.name)
+          )
+            continue;
+          const path = prefix + entry.name;
+          if (entry.isDirectory()) await walk(join(dir, entry.name), path + '/');
+          else result.push({ path, kind: 'file', size: 0 });
+        }
+      };
+      await walk(join(mocked.root, id));
+      return result;
+    }
+    async mutateFile(
+      id: string,
+      _operation: string,
+      input: {
+        action: string;
+        path: string;
+        destination?: string;
+        text?: string;
+        expectedHash?: string;
+      },
+    ) {
+      const transfer = join(mocked.root, `mutation-${randomUUID()}`);
+      await writeFile(transfer, JSON.stringify(input));
+      await promisify(execFile)('python3', [
+        '-c',
+        WORKSPACE_FILE_RUNNER.replace(
+          "root='/home/user/project'",
+          `root=${JSON.stringify(join(mocked.root, id))}`,
+        ),
+        input.action,
+        Buffer.from(input.path).toString('base64'),
+        transfer,
+      ]);
+    }
+    async previewLifetime() {
+      return Date.now() + 60000;
+    }
+    async nativePreview() {
+      return {
+        url: 'https://8000-example.provider.test',
+        headers: { 'e2b-traffic-access-token': 'test' },
+      };
+    }
+    async createTerminal(_id: string, _op: string, terminal: string) {
+      mocked.terminals.set(terminal, 123);
+      return 123;
+    }
+    async findTerminal(_id: string, _op: string, terminal: string) {
+      return mocked.terminals.get(terminal) ?? null;
+    }
+    async terminalInput(_id: string, _op: string, _pid: number, data: string) {
+      mocked.inputs.push(data);
+    }
+    async resizeTerminal() {}
+    async closeTerminal() {
+      mocked.terminals.clear();
     }
     async startCommand(id: string, _operation: string, input: { id: string; command: string }) {
       let stdout = '',
@@ -305,6 +386,33 @@ async function guided(role: 'teaching' | 'plan' | 'code') {
           ).readText(before.environment_id!, path);
           await invoke(config, 'write_file', { path, text, expectedHash: digest(text) });
           expect((await store.get(studyId, principal.ownerId)).revision).toBe(before.revision);
+        }
+        if (index === 0 && role === 'code') {
+          await invoke(config, 'manage_file', {
+            action: 'create',
+            path: 'src/helper.py',
+            text: '# helper',
+          });
+          const listed = await invoke(config, 'list_files');
+          expect(JSON.stringify(listed)).toContain('src/helper.py');
+          await invoke(config, 'manage_file', {
+            action: 'rename',
+            path: 'src/helper.py',
+            destination: 'src/moved.py',
+            expectedHash: digest('# helper'),
+          });
+          await expect(
+            invoke(config, 'manage_file', {
+              action: 'delete',
+              path: 'PLAN.md',
+              expectedHash: digest(''),
+            }),
+          ).rejects.toThrow('read-only');
+          await invoke(config, 'manage_file', {
+            action: 'delete',
+            path: 'src/moved.py',
+            expectedHash: digest('# helper'),
+          });
         }
         await invoke(config, 'request_skill_review', {
           question: 'Explain and check the current part.',
@@ -1113,7 +1221,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         status: 400,
         reason: 'PBL_SOURCE_COUNT',
       });
-      selectedProject.mockReturnValue({ ...project, files: { '../outside.py': '' } });
+      selectedProject.mockReturnValue({
+        ...project,
+        sourceRoots: undefined,
+        files: { '../outside.py': '' },
+      });
       await expect(learningView(principal, study.id)).rejects.toMatchObject({
         code: 'SANDBOX_INVALID_REQUEST',
         reason: 'PBL_SOURCE_PATH',
@@ -1191,5 +1303,121 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await study.send('prepare');
     expect(mocked.creates.length).toBe(creates + 1);
     expect((await learningView(principal, study.id)).environment?.ready).toBe(true);
+  });
+  it('integrates scoped files, command evidence, terminal controls, previews and recovery', async () => {
+    const fresh = await freshStudy();
+    let row = await store.get(fresh.id, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const send = async (action: string, payload: Record<string, unknown> = {}) =>
+      workbenchCommand(principal, row.id, {
+        id: randomUUID(),
+        revision: (await store.get(row.id, principal.ownerId)).revision,
+        environmentId,
+        action,
+        ...payload,
+      });
+    await expect(send('run', { text: 'echo forbidden' })).rejects.toThrow('teaching review');
+    row.state.introCompleted = true;
+    row.state.position.stageIndex = 3;
+    row.state.milestones[0]!.stageIndex = 3;
+    row.state.collected.greeting!.codeReviewCompleted = true;
+    row = await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const originalRoots = project.sourceRoots;
+    project.sourceRoots = ['src'];
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+    vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+    vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+    vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+    try {
+      await expect(
+        workbenchCommand({ ...principal, ownerId: 'other' }, row.id, {
+          id: randomUUID(),
+          revision: row.revision,
+          environmentId,
+          action: 'stop',
+        }),
+      ).rejects.toMatchObject({ status: 404 });
+      await expect(send('create', { path: 'tests/private.py', text: '' })).rejects.toThrow();
+      await send('create', { path: 'src/new.py', text: 'print("hello")' });
+      expect(
+        (await store.get(row.id, principal.ownerId)).state.collected.greeting!.codeReviewCompleted,
+      ).toBe(false);
+      expect((await learningView(principal, row.id)).files).toContain('src/new.py');
+      await expect(
+        send('delete', { path: 'src/new.py', expectedHash: digest('wrong') }),
+      ).rejects.toThrow('changed');
+      await send('rename', {
+        path: 'src/new.py',
+        destination: 'src/moved.py',
+        expectedHash: digest('print("hello")'),
+      });
+      await expect(send('delete', { path: 'PLAN.md', expectedHash: digest('') })).rejects.toThrow(
+        'plan',
+      );
+      const result = await send('run', { text: 'python3 src/moved.py' });
+      expect(result).toMatchObject({ state: 'exited', stdout: 'hello\n', exitCode: 0 });
+      const terminal = (await send('terminal')) as { id: string };
+      await send('input', { terminalId: terminal.id, data: 'echo hello\n', revision: 0 });
+      expect(mocked.inputs.at(-1)).toBe('echo hello\n');
+      await expect(fresh.send('checkpoint')).rejects.toThrow();
+      const preview = new URL(((await send('preview', { port: 8000 })) as { url: string }).url);
+      await expect(
+        SandboxService.previewTarget(preview.hash.slice(1), preview.host),
+      ).resolves.toMatchObject({ transport: 'native' });
+      await expect(send('preview', { port: 49983 })).rejects.toThrow();
+      const oldGrant = new URL(
+        issuePreviewGrant({ ownerId: principal.ownerId, environmentId, port: 8000, epoch: 0 }).url,
+      );
+      await expect(
+        SandboxService.previewTarget(oldGrant.hash.slice(1), oldGrant.host),
+      ).rejects.toMatchObject({ code: 'PBL_WORKSPACE_MANAGED' });
+      await store.exclusive(row.id, () => send('stop', { revision: 0 }));
+      expect((await workbenchView(principal, row.id)).terminals[0]?.state).toBe('closed');
+      await expect(
+        SandboxService.previewTarget(preview.hash.slice(1), preview.host),
+      ).rejects.toThrow('revoked');
+      await fresh.send('checkpoint');
+      mocked.missing.add(environmentId);
+      await fresh.send('prepare');
+      const restored = await store.get(row.id, principal.ownerId);
+      expect(restored.environment_id).not.toBe(environmentId);
+      expect(
+        await (
+          await SandboxService.forOwner(principal)
+        ).readText(restored.environment_id!, 'src/moved.py'),
+      ).toBe('print("hello")');
+      await expect(send('run', { text: 'echo old' })).rejects.toThrow('changed');
+    } finally {
+      project.sourceRoots = originalRoots;
+    }
+  }, 30000);
+
+  it('admits different learners independently and fails busy requests without exhausting PG', async () => {
+    const first = await freshStudy(),
+      second = await freshStudy();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const ready = new Promise<void>((r) => {
+      entered = r;
+    });
+    const held = store.exclusive(first.id, async () => {
+      entered();
+      await gate;
+    });
+    await ready;
+    try {
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: 24 }, () => first.send('checkpoint')),
+      );
+      expect(outcomes.every((r) => r.status === 'rejected')).toBe(true);
+      await expect(second.send('checkpoint')).resolves.toBeDefined();
+      expect((await pool.query('SELECT 1 AS ok')).rows[0].ok).toBe(1);
+    } finally {
+      release();
+      await held;
+    }
+    await expect(first.send('checkpoint')).resolves.toBeDefined();
   });
 });

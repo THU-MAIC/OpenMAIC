@@ -2571,6 +2571,36 @@
       "unavailable": "教学回复未能完成，请稍后重试。",
       "cancelled": "本轮教学回复已取消。可以重试或发送新的消息。",
       "missing": "教学会话已失效。发送消息可恢复当前环节，学习进度会保留，当前环节需重新审阅。"
+    },
+    "workbench": {
+      "unsaved": "有未保存的修改。切换文件或运行命令前请先保存或放弃修改。",
+      "staleBuffer": "环境或文件发生了变化，未保存的文字已保留；重新加载前可以先复制。",
+      "discard": "放弃修改并重新加载",
+      "manageFiles": "管理源码文件",
+      "newPath": "项目内的文件路径",
+      "create": "新建文件",
+      "rename": "重命名／移动",
+      "delete": "删除文件",
+      "confirmDelete": "确定删除 {{path}}？只有已保存的检查点可以用于恢复。",
+      "execution": "运行与预览",
+      "executionNotice": "命令和终端可以修改项目文件，审阅、测试或保存检查点前请先停止。等待教学审阅时不能启动新的运行任务。",
+      "command": "项目命令",
+      "run": "运行命令",
+      "openTerminal": "打开终端",
+      "stop": "停止命令并关闭终端",
+      "preview": "预览端口 {{port}}",
+      "application": "项目应用",
+      "savedAt": "最近检查点：{{time}}",
+      "notSaved": "还没有持久化检查点。",
+      "commandStates": {
+        "starting": "正在启动",
+        "running": "运行中",
+        "exited": "已退出",
+        "cancelled": "已取消",
+        "timed_out": "已超时",
+        "failed": "执行失败",
+        "unknown": "执行状态未知"
+      }
     }
   }
 }

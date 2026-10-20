@@ -11,6 +11,7 @@ export interface InstalledProject {
   sourceRoots?: readonly string[];
   /** Trusted deployment-owned commands, never read from browser scene content. */
   testCommand: string;
+  previewPorts?: readonly number[];
 }
 const agent = (role: string) => ({
   systemPrompt: `You are the ${role} in a programming learning project. Help the learner understand and do the work. Context: {{seed}}`,
@@ -19,6 +20,7 @@ const agent = (role: string) => ({
 });
 const greeting: InstalledProject = {
   ref: { id: 'greeting-python', version: '1.0.0' },
+  sourceRoots: ['src'],
   files: {
     'PLAN.md': '',
     'greeting.py': 'def greet(name):\n    # Implement a friendly greeting.\n    return ""\n',

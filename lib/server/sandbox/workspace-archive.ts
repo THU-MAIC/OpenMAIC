@@ -26,7 +26,7 @@ export function workspacePath(value: unknown): string {
   return relative;
 }
 export const WORKSPACE_FILE_RUNNER = String.raw`
-import os, sys, stat, base64
+import os, sys, stat, base64, json, hashlib
 try:
     root='/home/user/project'
     mode, encoded, transfer=sys.argv[1:]
@@ -36,7 +36,7 @@ try:
     fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
     try:
         for part in parts[:-1]:
-            if mode=='write':
+            if mode in ('write','create'):
                 try: os.mkdir(part,0o700,dir_fd=fd)
                 except FileExistsError: pass
             child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
@@ -68,6 +68,38 @@ try:
             finally:
                 try: os.unlink(temp,dir_fd=fd)
                 except FileNotFoundError: pass
+        elif mode in ('create','delete','rename'):
+            with open(transfer,'r') as source: spec=json.load(source)
+            if mode=='create':
+                data=spec.get('text','').encode('utf-8')
+                if len(data)>1048576: raise ValueError('size')
+                try: dst=os.open(name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=fd)
+                except FileExistsError: sys.exit(47)
+                with os.fdopen(dst,'wb') as out: out.write(data)
+            else:
+                src=os.open(name,os.O_RDONLY|os.O_NOFOLLOW,dir_fd=fd)
+                with os.fdopen(src,'rb') as source:
+                    info=os.fstat(source.fileno())
+                    if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1: raise ValueError('file')
+                    data=source.read(1048577)
+                if len(data)>1048576: raise ValueError('size')
+                if hashlib.sha256(data).hexdigest()!=spec.get('expectedHash'): sys.exit(47)
+                if mode=='delete': os.unlink(name,dir_fd=fd)
+                else:
+                    target=spec['destination'].split('/')
+                    if any(p in ('','.','..') for p in target): raise ValueError('path')
+                    destfd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+                    try:
+                        for part in target[:-1]:
+                            try: os.mkdir(part,0o700,dir_fd=destfd)
+                            except FileExistsError: pass
+                            child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=destfd)
+                            os.close(destfd);destfd=child
+                        try: os.stat(target[-1],dir_fd=destfd,follow_symlinks=False)
+                        except FileNotFoundError: pass
+                        else: sys.exit(47)
+                        os.rename(name,target[-1],src_dir_fd=fd,dst_dir_fd=destfd)
+                    finally: os.close(destfd)
         else: raise ValueError('action')
     finally: os.close(fd)
 except FileNotFoundError: sys.exit(44)

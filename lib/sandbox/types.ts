@@ -104,6 +104,17 @@ export interface SandboxProvider {
   destroy(resourceId: string, operationId: string): Promise<void>;
   readText(resourceId: string, operationId: string, path: string): Promise<string>;
   writeText(resourceId: string, operationId: string, path: string, text: string): Promise<void>;
+  mutateFile?(
+    resourceId: string,
+    operationId: string,
+    input: {
+      action: 'create' | 'delete' | 'rename';
+      path: string;
+      destination?: string;
+      expectedHash?: string;
+      text?: string;
+    },
+  ): Promise<void>;
   startCommand(resourceId: string, operationId: string, input: SandboxCommandInput): Promise<void>;
   readCommand(resourceId: string, operationId: string, id: string): Promise<SandboxCommandResult>;
   cancelCommand(resourceId: string, operationId: string, id: string): Promise<void>;

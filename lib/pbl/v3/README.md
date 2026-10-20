@@ -1,5 +1,8 @@
 # PBL v3 learning runtime
 
+For the dedicated classroom file, execution and recovery controls, see
+[Learning workbench and recovery](WORKBENCH.md).
+
 This slice opens an installed programming project in the normal classroom, runs
 four teaching roles in the existing Agent runner, and persists learning progress
 in PostgreSQL. It does not enable generated v3 projects.

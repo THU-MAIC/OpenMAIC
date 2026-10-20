@@ -5,7 +5,7 @@ on:
     branches: [main, integration/shared-sandbox]
   pull_request:
     branches:
-      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/shared-sandbox]
+      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/shared-sandbox, feat/pbl-v3-workspace-contract]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}

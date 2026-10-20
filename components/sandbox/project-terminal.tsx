@@ -9,9 +9,16 @@ import { createTerminalInput } from './terminal-input';
 export function ProjectTerminal({
   environmentId,
   terminalId,
+  transport: customTransport,
 }: {
   environmentId: string;
   terminalId: string;
+  transport?: {
+    send: (
+      body: { action: 'input'; data: string } | { action: 'resize'; cols: number; rows: number },
+    ) => Promise<unknown>;
+    eventsUrl: string;
+  };
 }) {
   const { t } = useTranslation();
   const element = useRef<HTMLDivElement>(null);
@@ -37,7 +44,8 @@ export function ProjectTerminal({
       term.open(element.current);
       fit.fit();
       const transport = createTerminalInput(
-        (body) => sandboxApi(`/${environmentId}/terminals/${terminalId}`, 'POST', body),
+        customTransport?.send ??
+          ((body) => sandboxApi(`/${environmentId}/terminals/${terminalId}`, 'POST', body)),
         setError,
       );
       const input = term.onData(transport.input);
@@ -59,7 +67,8 @@ export function ProjectTerminal({
       };
       term.writeln(t('sandbox.connecting'));
       const response = await fetch(
-        `${sandboxBase}/${environmentId}/terminals/${terminalId}/events`,
+        customTransport?.eventsUrl ??
+          `${sandboxBase}/${environmentId}/terminals/${terminalId}/events`,
         {
           headers: { 'X-OpenMAIC-Sandbox': '1' },
           signal: controller.signal,
@@ -101,7 +110,7 @@ export function ProjectTerminal({
       controller.abort();
       dispose();
     };
-  }, [environmentId, terminalId, attempt, t]);
+  }, [environmentId, terminalId, attempt, t, customTransport]);
   return (
     <div className="space-y-2">
       <div ref={element} className="h-80 min-w-0 bg-black p-2" />

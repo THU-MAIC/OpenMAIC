@@ -6,7 +6,10 @@ import { filesFingerprint, readFiles } from '@/lib/server/pbl-v3/runtime';
 import type { SandboxService } from '@/lib/server/sandbox/service';
 import type { Study } from '@/lib/server/pbl-v3/store';
 import { WORKSPACE_EXCLUDES } from '@/lib/server/sandbox/workspace-archive';
-const project = installedProject({ id: 'greeting-python', version: '1.0.0' });
+const project = {
+  ...installedProject({ id: 'greeting-python', version: '1.0.0' }),
+  sourceRoots: undefined,
+};
 const expanded = { ...project, sourceRoots: ['src'] };
 const row = { environment_id: 'environment' } as Study;
 describe('shared project source scope', () => {
