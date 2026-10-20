@@ -93,8 +93,9 @@ They do not call a live model or provision cloud sandboxes.
 Combine with the learning-experience change for Java/Python cross-milestone acceptance:
 edit → run → stop → save → review → tests → next milestone → restore. Check source
 fingerprints and stage evidence together, including arbitrary-command edits of PLAN.md.
-Live-provider preview/PTY and small-cohort capacity must be verified on an authorized
-test deployment before claiming operational readiness.
+Live-provider results for an authorized single-owner installation are recorded in
+[LIVE-ACCEPTANCE.md](LIVE-ACCEPTANCE.md). Small-cohort capacity still needs its own
+staged deployment validation before claiming operational readiness.
 
 Both feature branches build on the shared workspace-contract PR. After that parent
 merges, retarget to `integration/shared-sandbox`, update baselines and repeat combined
