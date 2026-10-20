@@ -66,6 +66,21 @@ function makeBody(overrides: Partial<StatelessChatRequest> = {}): StatelessChatR
 }
 
 describe('Pi director prompt closure routing', () => {
+  it('describes Native shape geometry only when its tool is available', () => {
+    const withShapes = buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_draw_shape']);
+    expect(withShapes).toContain('viewBox:[w,h]');
+    expect(withShapes).toContain('rotate:-36.86989765');
+    expect(withShapes).toContain('viewBox:[4,3]');
+    expect(withShapes).toContain('M 0 1 C 1 0 2 0 3 1');
+    expect(withShapes).toContain('fillColor:"transparent"');
+    expect(buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_read'])).not.toContain(
+      '# Native whiteboard shapes',
+    );
+    expect(buildChildPrompt(makeBody(), agents[0], [], [], ['wb_draw_shape'])).not.toContain(
+      'Rotated square on the hypotenuse',
+    );
+  });
+
   it('keeps a navigable outline and requires scene evidence before delegation', () => {
     const body = makeBody({
       storeState: {

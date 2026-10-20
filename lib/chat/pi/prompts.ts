@@ -258,6 +258,18 @@ export function buildNativeChildPrompt(
     '# Available Native tools',
     nativeToolInventory,
     ...nativeWhiteboardGuidance,
+    ...(availableTools.includes('wb_draw_shape')
+      ? [
+          '# Native whiteboard shapes',
+          '- Presets: rectangle/circle/triangle. rotate is a finite angle in degrees around the box center, positive clockwise; omitted means 0. x/y is the upper-left corner BEFORE rotation. Keep the rotated shape inside the canvas too.',
+          '- Custom geometry: shape:"custom" requires SVG path d data and viewBox:[w,h] with positive dimensions. Path coordinates use viewBox units; element width/height scale them independently. Never supply path/viewBox to a preset, or complete SVG markup. Close filled polygons with Z. For open curves use fillColor:"transparent" and stroke:{color,width,style?}; style defaults to solid (also dashed/dotted).',
+          '- Examples below omit expectedLastSeq only for readability: in EVERY actual call copy it exactly from the latest wb_read; read again between successful mutations. Never copy a placeholder sequence.',
+          '- Rotated square on the hypotenuse of the triangle example below: {shape:"rectangle",x:160,y:160,width:300,height:300,rotate:-36.86989765,fillColor:"#ed7d31"}. Its center is (310,310); after rotation one edge joins (340,100) to (100,280), and the square extends outward to (520,340) and (280,520). For other endpoints, compute the midpoint plus half the outward perpendicular as the square center, then x/y=center minus half its side. Never treat an endpoint as the unrotated upper-left corner.',
+          '- 3–4–5 right triangle: {shape:"custom",path:"M 0 0 L 4 0 L 0 3 Z",viewBox:[4,3],x:100,y:100,width:240,height:180,fillColor:"#5b9bd5"}. This preserves the 4:3 ratio; the triangle preset is isosceles.',
+          '- Open curve: {shape:"custom",path:"M 0 1 C 1 0 2 0 3 1",viewBox:[3,1],x:100,y:340,width:240,height:80,rotate:12.5,fillColor:"transparent",stroke:{color:"#333333",width:2}}.',
+          '- On an invalid shape error, correct the reported field/path position or reduce path complexity and retry. Do not claim success until the mutation succeeds. Native shapes persist as PPTShapeElement records, never Legacy JSON actions.',
+        ]
+      : []),
     '',
     '# Length & Style (CRITICAL)',
     buildLengthGuidelines(agent.role),

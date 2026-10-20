@@ -37,7 +37,7 @@ export function getActionDescriptions(allowedActions: string[]): string {
     wb_draw_text:
       'Add text to the whiteboard. Use for writing steps or key points. Use wb_draw_latex for mathematical equations and scientific notation. Parameters: { content: string, x: number, y: number, width?: number, height?: number, fontSize?: number, color?: string, elementId?: string }',
     wb_draw_shape:
-      'Add a shape to the whiteboard. Use for diagrams and visual explanations. Parameters: { shape: "rectangle"|"circle"|"triangle", x: number, y: number, width: number, height: number, fillColor?: string, elementId?: string }',
+      'Legacy preset-only shape drawing. Rotation, custom paths and strokes require the Native tool; these parameters are rejected here. Parameters: { shape: "rectangle"|"circle"|"triangle", x: number, y: number, width: number, height: number, fillColor?: string, elementId?: string }',
     wb_draw_chart:
       'Add a chart to the whiteboard. Use for data visualization (bar charts, line graphs, pie charts, etc.). Parameters: { chartType: "bar"|"column"|"line"|"pie"|"ring"|"area"|"radar"|"scatter", x: number, y: number, width: number, height: number, data: { labels: string[], legends: string[], series: number[][] }, themeColors?: string[], elementId?: string }',
     wb_draw_latex:

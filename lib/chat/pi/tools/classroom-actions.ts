@@ -6,6 +6,7 @@ import { getEffectiveActions } from '@/lib/chat/pi/tool-schemas';
 import type { WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { SendEvent } from '../types';
+import { legacyShapeCompatibilityError } from '@/lib/whiteboard/legacy-shape';
 
 const SpotlightParams = Type.Object({
   elementId: Type.String(),
@@ -44,15 +45,22 @@ const WbDrawTextParams = Type.Object({
 });
 type WbDrawTextParams = Static<typeof WbDrawTextParams>;
 
-const WbDrawShapeParams = Type.Object({
-  shape: Type.Union([Type.Literal('rectangle'), Type.Literal('circle'), Type.Literal('triangle')]),
-  x: Type.Number(),
-  y: Type.Number(),
-  width: Type.Number(),
-  height: Type.Number(),
-  fillColor: Type.Optional(Type.String()),
-  elementId: Type.Optional(Type.String()),
-});
+const WbDrawShapeParams = Type.Object(
+  {
+    shape: Type.Union([
+      Type.Literal('rectangle'),
+      Type.Literal('circle'),
+      Type.Literal('triangle'),
+    ]),
+    x: Type.Number(),
+    y: Type.Number(),
+    width: Type.Number(),
+    height: Type.Number(),
+    fillColor: Type.Optional(Type.String()),
+    elementId: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
 type WbDrawShapeParams = Static<typeof WbDrawShapeParams>;
 
 const WbDrawChartParams = Type.Object({
@@ -338,6 +346,15 @@ export function buildChildActionTools(opts: {
     parameters,
     executionMode: 'sequential',
     execute: async (_toolCallId, params) => {
+      if (name === 'wb_draw_shape') {
+        const error = legacyShapeCompatibilityError(params);
+        if (error)
+          return {
+            content: [{ type: 'text', text: error }],
+            details: { skipped: true, reason: 'unsupported_legacy_shape' },
+            isError: true,
+          };
+      }
       if (
         name === 'spotlight' &&
         opts.authorizedSpotlightElementIds &&
@@ -695,7 +712,7 @@ export function buildChildActionTools(opts: {
       makeActionTool(
         'wb_draw_shape',
         'Draw whiteboard shape',
-        'Draw a rectangle, circle, or triangle on the whiteboard.',
+        'Legacy preset-only shape drawing. Rotation, custom paths and strokes require the Native wb_draw_shape tool; never send those fields here.',
         WbDrawShapeParams,
       ),
     );
