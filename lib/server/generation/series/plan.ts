@@ -13,20 +13,7 @@
 import { MAX_PDF_CONTENT_CHARS } from '@/lib/constants/generation';
 import type { ParsedDocumentPart } from '@/lib/document/bundle';
 import { materialNeedsSeriesSplit, splitMaterialIntoSeries } from '@/lib/document/series-split';
-
-/** The slice of one material's text a single series part teaches. */
-export interface SeriesPartTextRange {
-  start: number;
-  end: number;
-}
-
-/** One part of a planned course series: everything `seriesContext` needs. */
-export interface PlannedSeriesPart {
-  /** 1-based position in the series. */
-  order: number;
-  /** By original material id, the half-open character range this part teaches. */
-  textRanges: Record<string, SeriesPartTextRange>;
-}
+import type { PendingSeriesPart, SeriesPartTextRange } from '@/lib/persistence/course-series';
 
 /**
  * Plan is a no-op (returns null) when `parts` fits the single-course budget:
@@ -36,7 +23,7 @@ export interface PlannedSeriesPart {
 export function planCourseSeries(
   parts: readonly ParsedDocumentPart[],
   maxChars: number = MAX_PDF_CONTENT_CHARS,
-): PlannedSeriesPart[] | null {
+): PendingSeriesPart[] | null {
   if (!materialNeedsSeriesSplit(parts, maxChars)) return null;
 
   // The offset each material's text starts at within itself (always 0: every

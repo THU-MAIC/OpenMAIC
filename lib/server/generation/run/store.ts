@@ -246,6 +246,13 @@ export interface RunPatch {
    * clears the deadline.
    */
   outlineAutoConfirm?: boolean;
+  /**
+   * The run's material-analysis step just split its material into a course
+   * series and this run became the series' first part (a run is never
+   * un-made a series part, so this is set at most once, early: there is no
+   * matching `undefined`-clearing case in {@link applyPatch}).
+   */
+  series?: GenerationRunSeriesMembership;
 }
 
 export interface StepCommit {
@@ -505,6 +512,10 @@ async function applyPatch(
     // The state the run is left in: the patch's, else the row's own.
     const leftIn = patch.state !== undefined ? `$${stateParam}::text` : 'state';
     sets.push(`media_pending = ${MEDIA_WORK_EXISTS('$1', leftIn)}`);
+  }
+  if (patch.series !== undefined) {
+    set('series_id', patch.series.seriesId);
+    set('series_order', patch.series.order);
   }
   if (resetTakeovers) sets.push('takeovers = 0');
   const updated = await tx.query<RunRow>(

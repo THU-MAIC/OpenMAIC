@@ -35,6 +35,7 @@ import { resolveAgentsForOwner } from '@/lib/server/agents/registry';
 import { resolveClassroomMaterials } from '@/lib/server/classroom-materials';
 import { classroomMediaMimeType } from '@/lib/server/classroom-storage';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
+import { planSeriesSplit, type SeriesSplitPlan } from '@/lib/server/generation/series/orchestrator';
 import {
   generateAgentProfiles,
   type AgentProfilesInput,
@@ -187,6 +188,18 @@ export interface RunStepServices {
     ctx: StepContext,
     textRanges?: Record<string, { start: number; end: number }>,
   ): Promise<AnalyzedMaterials>;
+  /**
+   * Whether the owner's materials, read in full (no `textRanges`), need a
+   * course series: null when they fit one course. Reads the same extraction
+   * results `analyzeMaterials` does, so it waits on the same not-yet-ready
+   * extractions; called once, before `analyzeMaterials`, only for a run that
+   * is not already a series part of its own (`seriesContext` absent).
+   */
+  planMaterialSeries(
+    ownerId: string,
+    materialIds: string[],
+    ctx: StepContext,
+  ): Promise<SeriesSplitPlan | null>;
   /** Research the requirement; null when the webSearch slot resolves to nothing. */
   research(
     ownerId: string,
@@ -294,6 +307,58 @@ function ownerVisionImages(ownerId: string, log: StepContext['log']): VisionImag
   };
 }
 
+/**
+ * Read the owner's materials' extraction results (waiting on what is still
+ * extracting) and turn them into {@link ParsedDocumentPart}s, shared by
+ * {@link RunStepServices.analyzeMaterials} and
+ * {@link RunStepServices.planMaterialSeries} so both see the exact same
+ * parts a series split would act on. `textRanges`, see `analyzeMaterials`.
+ */
+async function extractOwnerMaterialParts(
+  ownerId: string,
+  materialIds: string[],
+  ctx: StepContext,
+  textRanges?: Record<string, { start: number; end: number }>,
+): Promise<ParsedDocumentPart[]> {
+  // Extracted in the background since their upload (lib/server/materials/
+  // extraction.ts): the step waits for what is still extracting, and reads
+  // the stored results.
+  const records = await awaitOwnerMaterialExtractions(
+    await resolveClassroomMaterials(ownerId, materialIds),
+    ctx.signal,
+  );
+  const byteStore = getMaterialByteStore();
+  const parts: ParsedDocumentPart[] = [];
+  for (const [order, record] of records.entries()) {
+    // A course-series run only teaches its own slice of each material: a
+    // material entirely outside this run's ranges contributes nothing (text
+    // or images), and one named in them is cut to its range before the
+    // budget-aware bundling that follows ever sees it.
+    if (textRanges && !(record.id in textRanges)) continue;
+    const fileName = record.originalName ?? record.id;
+    const result = await readMaterialExtractionResult(record, byteStore);
+    const range = textRanges?.[record.id];
+    const text = range ? result.text.slice(range.start, range.end) : result.text;
+    parts.push({
+      source: {
+        id: record.id,
+        name: fileName,
+        size: record.bytes,
+        ...(record.mime ? { mimeType: record.mime } : {}),
+        order,
+      },
+      text,
+      rawTextLength: text.length,
+      ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
+      // Images are presented beside the text that names them; a slice that
+      // is not the material's first keeps none (mirrors how the split
+      // algorithm itself only carries images on a document's first slice).
+      images: !range || range.start === 0 ? result.images : [],
+    });
+  }
+  return parts;
+}
+
 /** The media type of downloaded bytes: what the response declares, else `fallback`. */
 function declaredType(response: Response, fallback: string): string {
   const declared = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
@@ -374,43 +439,13 @@ export const defaultRunStepServices: RunStepServices = {
     );
   },
 
+  async planMaterialSeries(ownerId, materialIds, ctx) {
+    const parts = await extractOwnerMaterialParts(ownerId, materialIds, ctx);
+    return planSeriesSplit(parts);
+  },
+
   async analyzeMaterials(ownerId, materialIds, ctx, textRanges) {
-    // Extracted in the background since their upload (lib/server/materials/
-    // extraction.ts): the step waits for what is still extracting, and reads
-    // the stored results.
-    const records = await awaitOwnerMaterialExtractions(
-      await resolveClassroomMaterials(ownerId, materialIds),
-      ctx.signal,
-    );
-    const byteStore = getMaterialByteStore();
-    const parts: ParsedDocumentPart[] = [];
-    for (const [order, record] of records.entries()) {
-      // A course-series run only teaches its own slice of each material: a
-      // material entirely outside this run's ranges contributes nothing
-      // (text or images), and one named in them is cut to its range before
-      // the budget-aware bundling below ever sees it.
-      if (textRanges && !(record.id in textRanges)) continue;
-      const fileName = record.originalName ?? record.id;
-      const result = await readMaterialExtractionResult(record, byteStore);
-      const range = textRanges?.[record.id];
-      const text = range ? result.text.slice(range.start, range.end) : result.text;
-      parts.push({
-        source: {
-          id: record.id,
-          name: fileName,
-          size: record.bytes,
-          ...(record.mime ? { mimeType: record.mime } : {}),
-          order,
-        },
-        text,
-        rawTextLength: text.length,
-        ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
-        // Images are presented beside the text that names them; a slice that
-        // is not the material's first keeps none (mirrors how the split
-        // algorithm itself only carries images on a document's first slice).
-        images: !range || range.start === 0 ? result.images : [],
-      });
-    }
+    const parts = await extractOwnerMaterialParts(ownerId, materialIds, ctx, textRanges);
     const bundle = buildDocumentBundle(parts);
     const truncated: MaterialTruncation = bundleTruncation(bundle);
     return {

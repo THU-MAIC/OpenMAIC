@@ -77,6 +77,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
   const services: RunStepServices = {
     materialKinds: async (_owner, materialIds) => materialIds.map(() => 'document' as const),
     materialsReady: async () => false,
+    planMaterialSeries: async () => null,
     analyzeMaterials: async (_owner, materialIds) => {
       analyzed.push([...materialIds]);
       return { text: 'material text', images: [] };

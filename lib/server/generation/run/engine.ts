@@ -76,6 +76,7 @@ import {
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 
+import { generationRunConfig } from './config';
 import {
   appendRunScene,
   completeRunCourse,
@@ -86,6 +87,11 @@ import {
   RunCourseDeletedError,
   touchRunCourseIn,
 } from './document';
+import {
+  seriesTitleFromRequirement,
+  startCourseSeries,
+  startNextSeriesPart,
+} from '@/lib/server/generation/series/orchestrator';
 import {
   advertisedVoices,
   clipProviderConfig,
@@ -138,6 +144,7 @@ import {
   readGenerationRunSteps,
   refuseGenerationRunExecution,
   type ClaimedRun,
+  type RunPatch,
   type StepCommit,
   type StoredRun,
 } from './store';
@@ -605,6 +612,26 @@ async function executeClaimedRun(
           const kinds = await services.materialKinds(owner, input.materialIds);
           await commit({ events: [{ type: 'material_kinds', data: { kinds } }] });
         }
+        // A run not already a series part of its own material (a series
+        // part reads its own `seriesContext.textRanges` slice below, never
+        // the whole material, so it never re-triggers a split of itself)
+        // finds out here whether its material needs one: once, before the
+        // ranges this step bundles are decided.
+        let seriesPatch: RunPatch | undefined;
+        let textRanges = input.seriesContext?.textRanges;
+        if (!input.seriesContext) {
+          const plan = await services.planMaterialSeries(owner, input.materialIds, { log, signal });
+          if (plan) {
+            const { seriesId } = await startCourseSeries({
+              ownerId: owner,
+              title: seriesTitleFromRequirement(input.requirement),
+              materialIds: input.materialIds,
+              plan,
+            });
+            seriesPatch = { series: { seriesId, order: 1 } };
+            textRanges = plan.firstPart.textRanges;
+          }
+        }
         // No step deadline around the wait: a material queued behind other
         // extractions waits its turn, and each extraction has the step's
         // budget once a worker runs it (awaitOwnerMaterialExtractions).
@@ -612,14 +639,17 @@ async function executeClaimedRun(
           owner,
           input.materialIds,
           { log, signal },
-          input.seriesContext?.textRanges,
+          textRanges,
         );
         // What the outline will not see in full, as the preview warns about it.
         const warnings = analyzed.truncated
           ? { events: [{ type: 'material_truncated' as const, data: { ...analyzed.truncated } }] }
           : {};
         if (analyzed.images.length === 0) {
-          return done({ pdfText: analyzed.text } satisfies MaterialOutput, warnings);
+          return done({ pdfText: analyzed.text } satisfies MaterialOutput, {
+            ...warnings,
+            ...(seriesPatch ? { patch: seriesPatch } : {}),
+          });
         }
         // The images become assets of the course, whose id is minted now.
         const stageId = generateClassroomId();
@@ -629,7 +659,7 @@ async function executeClaimedRun(
             ...(await storeMaterialImages(stageId, analyzed.images)),
             stageId,
           } satisfies MaterialOutput,
-          warnings,
+          { ...warnings, ...(seriesPatch ? { patch: seriesPatch } : {}) },
         );
       }
 
@@ -1195,6 +1225,9 @@ async function executeClaimedRun(
         stage,
         outlines: outline().outlines,
         firstScene: scene,
+        ...(run.series
+          ? { series: { seriesId: run.series.seriesId, seriesOrder: run.series.order } }
+          : {}),
         inTransaction,
       });
     } else {
@@ -1701,6 +1734,31 @@ async function executeClaimedRun(
     run = committed!;
     reportCommittedRunEvents(run, events, currentOwnerOf);
     for (const checkpoint of unplaced.steps) steps.set(checkpoint.id, checkpoint.output);
+    // This run's own part of the series, if it is one, is done: the next
+    // part (if any are left) starts now, not before, so at most one of a
+    // series' runs is ever active. Best-effort: a failure here leaves the
+    // part in `pending_parts` for a later retry of this same call to pick
+    // up, rather than losing the series; it never fails this run's own
+    // completion, already committed above.
+    if (run.series) {
+      const { seriesId } = run.series;
+      const limits = generationRunConfig();
+      startNextSeriesPart(
+        owner,
+        seriesId,
+        {
+          requirement: input.requirement,
+          interactive: input.interactive,
+          taskEngine: input.taskEngine,
+          agents: input.agents,
+          ...(input.learnerProfile ? { learnerProfile: input.learnerProfile } : {}),
+          ...(input.voice ? { voice: input.voice } : {}),
+        },
+        limits,
+      ).catch((error) => {
+        log.error(`run ${run.id}: failed to start series ${seriesId}'s next part:`, error);
+      });
+    }
   };
 
   const end = async (stageId: string): Promise<void> => {

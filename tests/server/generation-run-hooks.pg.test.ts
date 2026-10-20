@@ -97,6 +97,7 @@ function fakeServices(overrides: Partial<RunStepServices> = {}) {
   const services: RunStepServices = {
     materialKinds: async (_owner, materialIds) => materialIds.map(() => 'document' as const),
     materialsReady: async () => true,
+    planMaterialSeries: async () => null,
     analyzeMaterials: async () => ({ text: 'material text', images: [] }),
     research: async () => {
       seen.push({ step: 'research', context: scope.getStore() });
