@@ -28,7 +28,7 @@
     "exampleFourier": "用直观的例子讲解傅里叶变换",
     "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "openWorkspace": "工作区",
+    "openWorkspace": "工作台",
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
@@ -353,7 +353,7 @@
     "doneEditing": "完成编辑",
     "editDisabledHint": "本页不支持编辑——打开任意课程页即可编辑。",
     "editToggle": "编辑",
-    "editInWorkspace": "在工作区中编辑"
+    "editInWorkspace": "在工作台中编辑"
   },
   "edit": {
     "undo": "撤销",

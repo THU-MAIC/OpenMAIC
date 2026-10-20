@@ -28,7 +28,7 @@
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
     "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
-    "openWorkspace": "工作區",
+    "openWorkspace": "工作台",
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
@@ -353,7 +353,7 @@
     "doneEditing": "完成編輯",
     "editDisabledHint": "此頁面無法編輯——開啟課程投影片即可編輯。",
     "editToggle": "編輯",
-    "editInWorkspace": "在工作區中編輯"
+    "editInWorkspace": "在工作台中編輯"
   },
   "edit": {
     "undo": "復原",
