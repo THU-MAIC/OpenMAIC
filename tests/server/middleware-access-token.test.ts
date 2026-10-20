@@ -2,7 +2,7 @@ import { createHmac } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 
-import { middleware } from '@/middleware';
+import { proxy } from '@/proxy';
 import { ACCESS_TOKEN_MAX_AGE_MS } from '@/lib/server/access-token-shared';
 
 const CODE = 'demo-code-that-is-long-enough';
@@ -35,7 +35,7 @@ describe('middleware access-token gate', () => {
   it('rejects a correctly signed cookie older than the max age', async () => {
     const stale = tokenFor(Date.now() - ACCESS_TOKEN_MAX_AGE_MS - 1000);
 
-    const response = await middleware(apiRequest(stale));
+    const response = await proxy(apiRequest(stale));
 
     expect(response.status).toBe(401);
   });
@@ -43,7 +43,7 @@ describe('middleware access-token gate', () => {
   it('lets a fresh, correctly signed cookie through', async () => {
     const fresh = tokenFor(Date.now());
 
-    const response = await middleware(apiRequest(fresh));
+    const response = await proxy(apiRequest(fresh));
 
     expect(response.status).not.toBe(401);
   });
@@ -51,13 +51,13 @@ describe('middleware access-token gate', () => {
   it('rejects an uppercase-hex signature', async () => {
     const [timestamp, signature] = tokenFor(Date.now()).split('.');
 
-    const response = await middleware(apiRequest(`${timestamp}.${signature.toUpperCase()}`));
+    const response = await proxy(apiRequest(`${timestamp}.${signature.toUpperCase()}`));
 
     expect(response.status).toBe(401);
   });
 
   it('rejects a missing cookie', async () => {
-    const response = await middleware(apiRequest());
+    const response = await proxy(apiRequest());
     expect(response.status).toBe(401);
   });
 });

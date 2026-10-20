@@ -22,16 +22,13 @@ function next(request: NextRequest, identity: NavigationIdentity | undefined): N
   return response;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Return an actual server-side 404 when either half of the workbench is off.
-  // Edge middleware cannot reliably inspect server-only deployment variables,
-  // so it enforces the public gate and leaves the complete runtime/database
-  // check to Node. A Node-hosted middleware uses the same gate as startup.
-  const canInspectServerRuntime = process.env.NEXT_RUNTIME !== 'edge';
-  const workbenchEnabled =
-    isProWorkbenchEnabled() && (!canInspectServerRuntime || isAgentRuntimeConfigured());
+  // The request gateway runs on the Node.js runtime, allowing direct inspection
+  // of server-side deployment configuration to enforce the workbench gate.
+  const workbenchEnabled = isProWorkbenchEnabled() && isAgentRuntimeConfigured();
   if (!workbenchEnabled && (pathname === '/workbench' || pathname.startsWith('/workbench/'))) {
     return new NextResponse('Not found', { status: 404 });
   }
