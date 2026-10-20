@@ -17,6 +17,7 @@ import type { AgentSessionAutomaticTitleStore, AgentSessionTitleStore } from '..
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { runAgentSessionAutomaticTitleContract } from './agent-session-automatic-title-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
+import { runAgentSessionExternalWriterContract } from './agent-session-external-writer-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
 
 function optionsFor(db: PGlite): PgAgentSessionStoreOptions {
@@ -52,6 +53,11 @@ describe('PgAgentSessionStore with PGlite', () => {
       ),
   });
   runAgentSessionUrlContract('Postgres (PGlite)', () => store);
+  runAgentSessionExternalWriterContract(
+    'Postgres (PGlite)',
+    () => store,
+    (body) => db.transaction((tx: Queryable) => body(tx)),
+  );
 
   const textCases = [
     ['before\u0000after', 'beforeafter'],

@@ -472,6 +472,9 @@ BEGIN
   END IF;
 END
 $agent_session_owner_event_type_validation$;
+
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS external_writer TEXT;
 `;
 
 const EXPECTED_USER_SKILL_PG_SCHEMA = `

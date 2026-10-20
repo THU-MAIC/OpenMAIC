@@ -8,6 +8,10 @@ import {
   type Queryable,
   type WithTransaction,
 } from '../src/agent-session/pg.js';
+import {
+  AGENT_SESSION_LIFECYCLE,
+  AgentSessionExternalWriterError,
+} from '../src/agent-session/types.js';
 import { splitSqlStatements } from '../src/document/pg.js';
 import {
   acquireAgentSessionPgContractLock,
@@ -16,6 +20,7 @@ import {
 import { runAgentSessionAutomaticTitleContract } from './agent-session-automatic-title-contract.js';
 import { runAgentSessionConcurrencyContract } from './agent-session-concurrency-contract.js';
 import { makeAgentSessionInput, runAgentSessionStoreContract } from './agent-session-contract.js';
+import { runAgentSessionExternalWriterContract } from './agent-session-external-writer-contract.js';
 import { runAgentSessionUrlContract } from './agent-session-url-contract.js';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
@@ -58,6 +63,19 @@ function deferred<T>() {
 
 function quotePgIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
+}
+
+/** Whether some backend of this database waits on a lock, polled for up to 1.5 s. */
+async function settleForLockWaiter(pool: Pool): Promise<boolean> {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const waiting = await pool.query(
+      `SELECT 1 FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+    );
+    if (waiting.rows.length > 0) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
 }
 
 async function waitForDatabaseMillisecondAfter(pool: Pool, timestamp: number): Promise<void> {
@@ -113,6 +131,205 @@ describe.skipIf(!contractUrl)('PgAgentSessionStore with PostgreSQL 16', () => {
       ),
   });
   runAgentSessionUrlContract('PostgreSQL 16 (node-postgres)', () => store);
+  runAgentSessionExternalWriterContract(
+    'PostgreSQL 16 (node-postgres)',
+    () => store,
+    (body) => transactionFor(pool)(body),
+  );
+
+  describe('external-writer mark against a concurrent holder of the session row', () => {
+    const WRITER = 'generation-run:run-1';
+
+    const createMarked = () =>
+      transactionFor(pool)((tx) =>
+        store.createSessionIn(tx, { ...makeAgentSessionInput(), externalWriter: WRITER }),
+      );
+
+    /**
+     * Each refused write, with what it answers once the mark is gone. Every one
+     * of them waits for the session row lock before it decides.
+     */
+    const operations: Array<{
+      name: string;
+      run: () => Promise<unknown>;
+      accepted: (result: unknown) => void;
+    }> = [
+      {
+        name: 'postUserMessage',
+        run: () => store.postUserMessage('session-1', { text: 'Edit it' }),
+        accepted: (result) => expect(result).toMatchObject({ requeued: true }),
+      },
+      {
+        name: 'appendUserMessage',
+        run: () => store.appendUserMessage('session-1', { text: 'Edit it', delivery: 'queued' }),
+        accepted: (result) => expect(result).toBe(1),
+      },
+      {
+        name: 'softDeleteSession',
+        run: () => store.softDeleteSession('session-1', 'owner-a'),
+        accepted: (result) => expect(result).toBe(true),
+      },
+      {
+        name: 'requestCancel',
+        run: () => store.requestCancel('session-1'),
+        accepted: (result) => expect(result).toBeUndefined(),
+      },
+      {
+        name: 'requeueSession',
+        run: () => store.requeueSession('session-1'),
+        accepted: (result) => expect(result).toBe(true),
+      },
+    ];
+
+    /**
+     * Hold the session row in an open transaction (`hold` runs there), start
+     * `operation` against it, check it waits, then end the holder.
+     */
+    async function raceAgainstHolder(
+      hold: (tx: Queryable) => Promise<unknown>,
+      end: 'COMMIT' | 'ROLLBACK',
+      operation: () => Promise<unknown>,
+    ): Promise<{ waited: boolean; outcome: PromiseSettledResult<unknown> }> {
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        await hold(holder as Queryable);
+        const pending = Promise.allSettled([operation()]);
+        const waited = await settleForLockWaiter(pool);
+        await holder.query(end);
+        const [outcome] = await pending;
+        return { waited, outcome: outcome! };
+      } finally {
+        await holder.query('ROLLBACK').catch(() => {});
+        holder.release();
+      }
+    }
+
+    test.each(operations)(
+      '$name waits for a release that commits, then goes through',
+      async ({ run, accepted }) => {
+        await createMarked();
+        const { waited, outcome } = await raceAgainstHolder(
+          (tx) => store.releaseExternalWriterIn(tx, 'session-1', WRITER),
+          'COMMIT',
+          run,
+        );
+        expect(waited).toBe(true);
+        expect(outcome.status).toBe('fulfilled');
+        accepted((outcome as PromiseFulfilledResult<unknown>).value);
+      },
+    );
+
+    test.each(operations)(
+      '$name waits for a release that rolls back, then is refused',
+      async ({ name, run }) => {
+        await createMarked();
+        const { waited, outcome } = await raceAgainstHolder(
+          (tx) => store.releaseExternalWriterIn(tx, 'session-1', WRITER),
+          'ROLLBACK',
+          run,
+        );
+        expect(waited).toBe(true);
+        if (name === 'requeueSession') {
+          expect(outcome).toEqual({ status: 'fulfilled', value: false });
+        } else {
+          expect(outcome.status).toBe('rejected');
+          expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(
+            AgentSessionExternalWriterError,
+          );
+        }
+        expect(await store.getSession('session-1')).toMatchObject({
+          status: 'succeeded',
+          externalWriter: WRITER,
+        });
+      },
+    );
+
+    test.each(operations)(
+      '$name waits for the writer to commit a turn, then is refused',
+      async ({ name, run }) => {
+        await createMarked();
+        const { waited, outcome } = await raceAgainstHolder(
+          (tx) =>
+            store.appendExternalTurnIn(tx, 'session-1', WRITER, {
+              events: [{ ts: 1, type: 'tool_execution_end', data: { toolCallId: 'call-1' } }],
+            }),
+          'COMMIT',
+          run,
+        );
+        expect(waited).toBe(true);
+        if (name === 'requeueSession') {
+          expect(outcome).toEqual({ status: 'fulfilled', value: false });
+        } else {
+          expect((outcome as PromiseRejectedResult).reason).toBeInstanceOf(
+            AgentSessionExternalWriterError,
+          );
+        }
+        // Only the writer's own event reached the log.
+        expect((await store.readEventsAfter('session-1', 0)).map((event) => event.type)).toEqual([
+          'tool_execution_end',
+        ]);
+      },
+    );
+
+    test('a session created marked is never claimable, before or after its commit', async () => {
+      const holder = await pool.connect();
+      try {
+        await holder.query('BEGIN');
+        await store.createSessionIn(holder as Queryable, {
+          ...makeAgentSessionInput(),
+          externalWriter: WRITER,
+        });
+        expect(
+          await store.claimNextSession('worker-a', 1, { leaseTtlMs: 10_000, maxAttempts: 3 }),
+        ).toBeNull();
+        await holder.query('COMMIT');
+      } finally {
+        await holder.query('ROLLBACK').catch(() => {});
+        holder.release();
+      }
+      expect(
+        await store.claimNextSession('worker-a', 1, {
+          leaseTtlMs: 10_000,
+          maxAttempts: 3,
+          sessionId: 'session-1',
+        }),
+      ).toBeNull();
+      expect(await store.getSession('session-1')).toMatchObject({
+        status: 'succeeded',
+        attempt: 0,
+        externalWriter: WRITER,
+      });
+    });
+
+    test('a release committed in the writer transaction lets a waiting message requeue the session', async () => {
+      // The writer's last turn and its release share one transaction, as the
+      // run's final commit will: a message posted meanwhile lands after both.
+      await createMarked();
+      const { waited, outcome } = await raceAgainstHolder(
+        async (tx) => {
+          await store.appendExternalTurnIn(tx, 'session-1', WRITER, {
+            events: [
+              { ts: 1, type: AGENT_SESSION_LIFECYCLE.userMessage, data: { text: 'Teach it' } },
+            ],
+          });
+          await store.releaseExternalWriterIn(tx, 'session-1', WRITER);
+        },
+        'COMMIT',
+        () => store.postUserMessage('session-1', { text: 'Now edit it' }),
+      );
+      expect(waited).toBe(true);
+      expect(outcome).toEqual({
+        status: 'fulfilled',
+        value: { seq: 2, delivery: 'queued', requeued: true },
+      });
+      expect(await store.getSession('session-1')).toMatchObject({
+        status: 'queued',
+        deliveredUserMessageSeq: 1,
+      });
+      expect(await store.getSession('session-1')).not.toHaveProperty('externalWriter');
+    });
+  });
 
   test('orders title projection timestamps by the actual locked update', async () => {
     await store.createSession(makeAgentSessionInput());

@@ -138,6 +138,13 @@ const SHIPPED: readonly (readonly [
     '5ca438832108d37a5c62efc951cc02bc4d2806c8aba39f1bd3cab426540507d7',
   ],
   [
+    'agent-session',
+    3,
+    'external_writer',
+    true,
+    'c32d35dd43a8071bb4067fc872d38e60b7fd44b9d7e36153e5b127106784fcb2',
+  ],
+  [
     'agent-session-material',
     1,
     'baseline',
@@ -185,6 +192,13 @@ const SHIPPED: readonly (readonly [
     'host_attributes',
     true,
     '73994d78d22a31a3b7c62f9ecb147a20bd70ffa17ab036f7bd6a75df682d9827',
+  ],
+  [
+    'generation-runs',
+    6,
+    'session_id',
+    true,
+    '25998b3c8f7e5782bd1a5d2bf94b22fbc4c54970963eae9e42d22806297d4f34',
   ],
 ];
 

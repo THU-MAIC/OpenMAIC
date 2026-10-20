@@ -93,6 +93,12 @@ export interface AgentSessionMeta {
   updatedAt: number;
   lease?: AgentSessionLease;
   error?: string;
+  /**
+   * The external writer that owns the session while it is set (for example a
+   * generation run). Claims, posted messages, requeues, deletes and cancels
+   * are refused until the writer releases it.
+   */
+  externalWriter?: string;
 }
 
 export interface CreateAgentSessionInput {
@@ -109,6 +115,44 @@ export interface CreateAgentSessionInput {
   titleState?: 'pending';
   /** Existing-course sessions may begin terminal and requeue on the first message. */
   status?: 'queued' | 'succeeded';
+}
+
+export interface CreateExternallyWrittenSessionInput extends CreateAgentSessionInput {
+  /**
+   * Marks the new session as owned by this writer. A marked session is created
+   * idle (`succeeded`); `status: 'queued'` is refused.
+   */
+  externalWriter?: string;
+}
+
+/** What an external writer appends to a session it owns, in one call. */
+/**
+ * An entry an external writer appends. Leaving `parentId` out attaches the
+ * entry to the tree's current leaf; `null` still means a root, and an id still
+ * names its parent. The stored entry always has a concrete `parentId`.
+ */
+export interface AgentSessionExternalEntry {
+  id: string;
+  parentId?: string | null;
+  timestamp: string;
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface AgentSessionExternalTurn {
+  /** Stream events, appended in order; each is stored with the session's current attempt. */
+  events?: Array<Omit<NewAgentSessionEvent, 'attempt'>>;
+  /**
+   * Entry-tree rows, appended in order (parents first). The leaf advances
+   * entry by entry, so an entry without `parentId` attaches to the one before
+   * it (or, after a `leaf` entry, to that entry's target).
+   */
+  entries?: AgentSessionExternalEntry[];
+}
+
+export interface AgentSessionExternalTurnResult {
+  /** The sequence numbers of the appended events, in order. */
+  eventSeqs: number[];
 }
 
 export type AgentSessionClaimReason = 'queued' | 'orphaned';
@@ -164,6 +208,28 @@ export class AgentSessionAccessError extends Error {
   constructor(readonly sessionId: string) {
     super(
       `@openmaic/storage: session ${JSON.stringify(sessionId)} is not accessible by this owner`,
+    );
+  }
+}
+
+/**
+ * A write was refused because of the session's external-writer mark: the
+ * session is owned by an external writer (`externalWriter`), or a writer
+ * appended to or released a session it does not own (`externalWriter` is the
+ * session's current writer, `null` when it has none).
+ */
+export class AgentSessionExternalWriterError extends Error {
+  override readonly name = 'AgentSessionExternalWriterError';
+
+  constructor(
+    readonly sessionId: string,
+    readonly externalWriter: string | null,
+  ) {
+    super(
+      externalWriter === null
+        ? `@openmaic/storage: session ${JSON.stringify(sessionId)} has no external writer`
+        : `@openmaic/storage: session ${JSON.stringify(sessionId)} is owned by external writer ` +
+            JSON.stringify(externalWriter),
     );
   }
 }
@@ -272,7 +338,10 @@ export interface AgentSessionStore {
   createSession(input: CreateAgentSessionInput): Promise<AgentSessionMeta>;
   getSession(sessionId: string): Promise<AgentSessionMeta | null>;
   listSessionsByOwner(ownerId: string): Promise<AgentSessionMeta[]>;
-  /** Tombstone a visible session while deliberately preserving every child row. */
+  /**
+   * Tombstone a visible session while deliberately preserving every child row.
+   * Throws {@link AgentSessionExternalWriterError} while an external writer owns it.
+   */
   softDeleteSession(sessionId: string, ownerId: string): Promise<boolean>;
   /**
    * Scan optimistically, then lock and recheck one candidate. The second
@@ -314,6 +383,7 @@ export interface AgentSessionStore {
     patch: FinishAgentSessionPatch,
   ): Promise<boolean>;
   releaseLease(sessionId: string, workerId: string): Promise<void>;
+  /** Throws {@link AgentSessionExternalWriterError} while an external writer owns the session. */
   requestCancel(sessionId: string): Promise<void>;
   getCancelRequestedAt(sessionId: string): Promise<number | null>;
   isCancelRequested(sessionId: string): Promise<boolean>;
@@ -331,6 +401,7 @@ export interface AgentSessionStore {
    * Lock, persist, classify delivery, and revive a terminal session in one
    * transaction so a message cannot fall into the runner's settle window.
    * A message posted to a queued session clears any pending cancel request.
+   * Throws {@link AgentSessionExternalWriterError} while an external writer owns the session.
    */
   postUserMessage(
     sessionId: string,
@@ -398,7 +469,8 @@ export interface AgentSessionEventLog {
    * stored attempt is the session's current generation, read under the session
    * row lock — it is never host-chosen — so the log carries the generation
    * that was current when the event was written (reference material-event
-   * semantics).
+   * semantics). A `user_message` event throws {@link AgentSessionExternalWriterError}
+   * while an external writer owns the session.
    */
   appendControlEvent(
     sessionId: string,
@@ -431,6 +503,58 @@ export interface AgentSessionEntryTree {
     workerId: string,
     attempt: number,
   ): Promise<AgentSessionEntryTreeHandle>;
+}
+
+/**
+ * Writes an external writer (a process that is not the session runner, such
+ * as a generation run) makes to a session it owns. Each runs in the caller's
+ * transaction, so it commits or rolls back with the caller's own rows.
+ *
+ * While the mark is set, {@link AgentSessionStore.claimNextSession} skips the
+ * session, `postUserMessage` / `appendUserMessage` (and a `user_message`
+ * through `appendControlEvent`), `softDeleteSession` and `requestCancel` throw
+ * {@link AgentSessionExternalWriterError}, and the requeues answer false; each
+ * is decided under the session row lock.
+ *
+ * Lock order: every method locks the session row (and `createSessionIn` the
+ * owner's projection counter, as `createSession` does). A caller that also
+ * locks other rows takes them before the session row, in the order its other
+ * transactions do.
+ */
+export interface AgentSessionExternalWriterStore {
+  /**
+   * {@link AgentSessionStore.createSession} in the caller's transaction,
+   * optionally marked for `input.externalWriter`. The owner hook runs here
+   * too: the caller either has not run a statement yet or already holds the
+   * lock the hook takes.
+   */
+  createSessionIn(
+    transaction: AgentSessionTransaction,
+    input: CreateExternallyWrittenSessionInput,
+  ): Promise<AgentSessionMeta>;
+  /**
+   * Append events and entry-tree rows as `writer`, which must own the session.
+   * A `user_message` event the turn carries is already in the writer's
+   * transcript, so the delivery watermark advances past it and no later run
+   * delivers it again. Throws {@link AgentSessionExternalWriterError} when the
+   * session is missing, deleted or not owned by `writer`.
+   */
+  appendExternalTurnIn(
+    transaction: AgentSessionTransaction,
+    sessionId: string,
+    writer: string,
+    turn: AgentSessionExternalTurn,
+  ): Promise<AgentSessionExternalTurnResult>;
+  /**
+   * Clear the mark when `writer` owns it; from then on the session behaves
+   * like any other. False when the session is missing, deleted or not owned
+   * by `writer`.
+   */
+  releaseExternalWriterIn(
+    transaction: AgentSessionTransaction,
+    sessionId: string,
+    writer: string,
+  ): Promise<boolean>;
 }
 
 export const OWNER_SESSION_EVENT_TYPES = [

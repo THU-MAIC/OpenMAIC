@@ -16,12 +16,16 @@ import {
   AGENT_SESSION_LIFECYCLE,
   AgentSessionAccessError,
   AgentSessionEntryTreeError,
+  AgentSessionExternalWriterError,
   AgentSessionLeaseLostError,
   normalizeObservedUrl,
   type AgentSessionEntry,
   type AgentSessionEntryTree,
   type AgentSessionEntryTreeHandle,
   type AgentSessionEventLog,
+  type AgentSessionExternalTurn,
+  type AgentSessionExternalTurnResult,
+  type AgentSessionExternalWriterStore,
   type AgentSessionHooks,
   type AgentSessionMeta,
   type AgentSessionAutomaticTitleStore,
@@ -34,6 +38,7 @@ import {
   type ClaimedAgentSession,
   type ClaimAgentSessionOptions,
   type CreateAgentSessionInput,
+  type CreateExternallyWrittenSessionInput,
   type FinishAgentSessionPatch,
   type NewAgentSessionEvent,
   type NewOwnerSessionEvent,
@@ -299,11 +304,21 @@ $agent_session_owner_event_type_validation$;
 `;
 
 /**
+ * Version 3: the external-writer mark. Null for every existing session, which
+ * keeps behaving as before; a nullable column without a default is a
+ * catalog-only change.
+ */
+const AGENT_SESSION_PG_EXTERNAL_WRITER = `
+ALTER TABLE agent_sessions
+  ADD COLUMN IF NOT EXISTS external_writer TEXT;
+`;
+
+/**
  * The agent-session backend's migrations, for the default table names
- * (recorded under the store `agent-session`). Both run outside a transaction:
- * each constraint install must release its ACCESS EXCLUSIVE lock before the
- * validation that follows scans existing rows, and every statement is guarded,
- * so a run interrupted part-way is simply repeated.
+ * (recorded under the store `agent-session`). The first two run outside a
+ * transaction: each constraint install must release its ACCESS EXCLUSIVE lock
+ * before the validation that follows scans existing rows, and every statement
+ * is guarded, so a run interrupted part-way is simply repeated.
  */
 export const AGENT_SESSION_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'agent-session',
@@ -315,6 +330,7 @@ export const AGENT_SESSION_PG_MIGRATIONS: SchemaMigrationSet = {
       up: AGENT_SESSION_PG_OWNER_EVENT_TYPE_V2,
       transaction: false,
     },
+    { version: 3, name: 'external_writer', up: AGENT_SESSION_PG_EXTERNAL_WRITER },
   ],
 };
 
@@ -436,13 +452,14 @@ interface SessionRow extends Record<string, unknown> {
   lease_worker_pid: number | null;
   lease_heartbeat_at: number | string | null;
   error: string | null;
+  external_writer: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
 
 const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin,
   existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
-  lease_heartbeat_at, error, created_at, updated_at`;
+  lease_heartbeat_at, error, external_writer, created_at, updated_at`;
 
 function epoch(value: Date | string): number {
   return value instanceof Date ? value.getTime() : new Date(value).getTime();
@@ -482,6 +499,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
         }
       : {}),
     ...(row.error ? { error: row.error } : {}),
+    ...(row.external_writer !== null ? { externalWriter: row.external_writer } : {}),
   };
 }
 
@@ -492,6 +510,26 @@ function decodedObject(value: unknown): Record<string, unknown> {
 
 let savepointSerial = 0;
 
+/** Reference `leafIdAfterEntry`: a leaf target is the leaf id, verbatim. */
+function leafIdAfterEntry(entry: AgentSessionEntry): string | null {
+  if (entry.type !== 'leaf') return entry.id;
+  // An empty-string target is preserved as '' instead of collapsing to null;
+  // only a missing (malformed) target normalizes to null.
+  return (entry.targetId as string | null | undefined) ?? null;
+}
+
+function assertEntryShape(
+  sessionId: string,
+  entry: { id: string; type: string; timestamp: string },
+): void {
+  if (!entry.id || !entry.type || !Number.isFinite(new Date(entry.timestamp).getTime())) {
+    throw new AgentSessionEntryTreeError(
+      sessionId,
+      'entry identity, type, or timestamp is invalid',
+    );
+  }
+}
+
 export class PgAgentSessionStore
   implements
     AgentSessionStore,
@@ -499,6 +537,7 @@ export class PgAgentSessionStore
     AgentSessionAutomaticTitleStore,
     AgentSessionEventLog,
     AgentSessionEntryTree,
+    AgentSessionExternalWriterStore,
     OwnerSessionEventProjection,
     AgentSessionUrlStore
 {
@@ -563,46 +602,58 @@ export class PgAgentSessionStore
   }
 
   async createSession(input: CreateAgentSessionInput): Promise<AgentSessionMeta> {
+    return this.transaction((tx) => this.createSessionIn(tx, input));
+  }
+
+  async createSessionIn(
+    transaction: AgentSessionTransaction,
+    input: CreateExternallyWrittenSessionInput,
+  ): Promise<AgentSessionMeta> {
+    const externalWriter = input.externalWriter ?? null;
+    // A marked session waits idle for its writer: queued, it would be claimed
+    // the moment the writer released it, with nothing posted to run.
+    if (externalWriter !== null && input.status === 'queued') {
+      throw new Error('@openmaic/storage: an externally written session is created idle');
+    }
     const id = input.id ?? this.createId();
-    return this.transaction(async (tx) => {
-      const ownerId = await this.resolveOwnerHook(tx, input.ownerId);
-      // Blank is an internal automatic-title reservation. An older process
-      // clearing or renaming during a rolling deploy replaces it, fencing both
-      // claims and commits without another state or token.
-      const title = input.titleState === 'pending' ? '' : null;
-      const result = await tx.query<SessionRow>(
-        `INSERT INTO ${this.table('sessions')}
-          (id, owner_id, prompt, title, title_state, stage_id, skill_id, origin, existing_course,
-           status, attempt)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0)
-         RETURNING ${SESSION_COLUMNS}`,
-        [
-          id,
-          ownerId,
-          sanitizePgText(input.prompt),
-          title,
-          input.titleState ?? 'manual',
-          input.stageId ?? `stage-${id.slice(0, 8)}`,
-          input.skillId ?? null,
-          input.origin ?? null,
-          input.existingCourse ?? false,
-          input.status ?? 'queued',
-        ],
-      );
-      const meta = sessionMeta(result.rows[0]!);
-      await this.createdHook?.(tx, meta);
-      await this.appendProjection(
-        {
-          type: 'session_created',
-          sessionId: id,
-          ts: this.clock(),
-          status: meta.status,
-          attempt: 0,
-        },
-        tx,
-      );
-      return meta;
-    });
+    const ownerId = await this.resolveOwnerHook(transaction, input.ownerId);
+    // Blank is an internal automatic-title reservation. An older process
+    // clearing or renaming during a rolling deploy replaces it, fencing both
+    // claims and commits without another state or token.
+    const title = input.titleState === 'pending' ? '' : null;
+    const result = await transaction.query<SessionRow>(
+      `INSERT INTO ${this.table('sessions')}
+        (id, owner_id, prompt, title, title_state, stage_id, skill_id, origin, existing_course,
+         status, attempt, external_writer)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11)
+       RETURNING ${SESSION_COLUMNS}`,
+      [
+        id,
+        ownerId,
+        sanitizePgText(input.prompt),
+        title,
+        input.titleState ?? 'manual',
+        input.stageId ?? `stage-${id.slice(0, 8)}`,
+        input.skillId ?? null,
+        input.origin ?? null,
+        input.existingCourse ?? false,
+        input.status ?? (externalWriter !== null ? 'succeeded' : 'queued'),
+        externalWriter,
+      ],
+    );
+    const meta = sessionMeta(result.rows[0]!);
+    await this.createdHook?.(transaction, meta);
+    await this.appendProjection(
+      {
+        type: 'session_created',
+        sessionId: id,
+        ts: this.clock(),
+        status: meta.status,
+        attempt: 0,
+      },
+      transaction,
+    );
+    return meta;
   }
 
   async getSession(sessionId: string): Promise<AgentSessionMeta | null> {
@@ -710,6 +761,13 @@ export class PgAgentSessionStore
 
   async softDeleteSession(sessionId: string, ownerId: string): Promise<boolean> {
     return this.transaction(async (tx) => {
+      const locked = await tx.query<{ external_writer: string | null }>(
+        `SELECT external_writer FROM ${this.table('sessions')}
+         WHERE id = $1 AND owner_id = $2 AND deleted_at IS NULL FOR UPDATE`,
+        [sessionId, ownerId],
+      );
+      const writer = locked.rows[0]?.external_writer ?? null;
+      if (writer !== null) throw new AgentSessionExternalWriterError(sessionId, writer);
       const result = await tx.query<{ id: string }>(
         `UPDATE ${this.table('sessions')}
          SET deleted_at = now(), updated_at = now()
@@ -756,7 +814,7 @@ export class PgAgentSessionStore
          ))`;
     const candidates = await this.queryable.query<{ id: string }>(
       `SELECT id FROM ${this.table('sessions')}
-       WHERE deleted_at IS NULL
+       WHERE deleted_at IS NULL AND external_writer IS NULL
          AND (status = 'queued' OR
               (status = 'running'
                AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at < $1)
@@ -773,7 +831,7 @@ export class PgAgentSessionStore
           cancel_requested_at: number | string | Date | null;
         }>(
           `SELECT status, attempt, cancel_requested_at FROM ${this.table('sessions')}
-           WHERE id = $1 AND deleted_at IS NULL
+           WHERE id = $1 AND deleted_at IS NULL AND external_writer IS NULL
              AND (status = 'queued' OR
                   (status = 'running'
                    AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at < $2)
@@ -981,13 +1039,19 @@ export class PgAgentSessionStore
     tx: Queryable,
     sessionId: string,
     workerId: string | null,
-  ): Promise<{ owner_id: string; status: AgentSessionMeta['status']; attempt: number } | null> {
+  ): Promise<{
+    owner_id: string;
+    status: AgentSessionMeta['status'];
+    attempt: number;
+    external_writer: string | null;
+  } | null> {
     const result = await tx.query<{
       owner_id: string;
       status: AgentSessionMeta['status'];
       attempt: number;
+      external_writer: string | null;
     }>(
-      `SELECT owner_id, status, attempt FROM ${this.table('sessions')}
+      `SELECT owner_id, status, attempt, external_writer FROM ${this.table('sessions')}
        WHERE id = $1 AND deleted_at IS NULL${workerId === null ? '' : ' AND lease_worker_id = $2'}
        FOR UPDATE`,
       workerId === null ? [sessionId] : [sessionId, workerId],
@@ -1076,6 +1140,10 @@ export class PgAgentSessionStore
     return this.transaction(async (tx) => {
       const parent = await this.lockForAppend(tx, sessionId, null);
       if (!parent) return null;
+      // A user message is a posted message whichever entry point writes it.
+      if (parent.external_writer !== null && event.type === AGENT_SESSION_LIFECYCLE.userMessage) {
+        throw new AgentSessionExternalWriterError(sessionId, parent.external_writer);
+      }
       // The stored attempt is the current generation under the row lock
       // (reference material-event semantics), never a host-chosen value.
       return this.insertEvent(tx, sessionId, {
@@ -1093,6 +1161,9 @@ export class PgAgentSessionStore
       const parent = await this.lockForAppend(tx, sessionId, null);
       if (!parent)
         throw new Error(`@openmaic/storage: unknown session ${JSON.stringify(sessionId)}`);
+      if (parent.external_writer !== null) {
+        throw new AgentSessionExternalWriterError(sessionId, parent.external_writer);
+      }
       return this.insertEvent(tx, sessionId, {
         ts: this.clock(),
         attempt: 0,
@@ -1123,6 +1194,9 @@ export class PgAgentSessionStore
         throw new Error(`@openmaic/storage: unknown session ${JSON.stringify(sessionId)}`);
       if (options.expectedOwnerId && parent.owner_id !== options.expectedOwnerId) {
         throw new AgentSessionAccessError(sessionId);
+      }
+      if (parent.external_writer !== null) {
+        throw new AgentSessionExternalWriterError(sessionId, parent.external_writer);
       }
       const pendingAsk = await tx.query<{ pending: boolean }>(
         `SELECT EXISTS (
@@ -1325,6 +1399,14 @@ export class PgAgentSessionStore
   }
 
   private async requeueIn(tx: Queryable, sessionId: string, reset: boolean): Promise<boolean> {
+    // Decided under the row lock: a predicate on the UPDATE alone would answer
+    // from the statement's snapshot without waiting for a writer's release.
+    const locked = await tx.query<{ external_writer: string | null }>(
+      `SELECT external_writer FROM ${this.table('sessions')}
+       WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+      [sessionId],
+    );
+    if (!locked.rows[0] || locked.rows[0].external_writer !== null) return false;
     const result = await tx.query<{ attempt: number }>(
       `UPDATE ${this.table('sessions')}
        SET status = 'queued', attempt = CASE WHEN $2::boolean THEN 0 ELSE attempt END,
@@ -1358,6 +1440,13 @@ export class PgAgentSessionStore
 
   async requestCancel(sessionId: string): Promise<void> {
     await this.transaction(async (tx) => {
+      const locked = await tx.query<{ external_writer: string | null }>(
+        `SELECT external_writer FROM ${this.table('sessions')}
+         WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [sessionId],
+      );
+      const writer = locked.rows[0]?.external_writer ?? null;
+      if (writer !== null) throw new AgentSessionExternalWriterError(sessionId, writer);
       const ts = this.clock();
       const result = await tx.query<{ id: string }>(
         `UPDATE ${this.table('sessions')}
@@ -1487,26 +1576,107 @@ export class PgAgentSessionStore
     attempt: number,
     entry: AgentSessionEntry,
   ): Promise<void> {
-    const { id, parentId, type, timestamp, ...data } = entry;
-    if (!id || !type || !Number.isFinite(new Date(timestamp).getTime())) {
-      throw new AgentSessionEntryTreeError(
-        sessionId,
-        'entry identity, type, or timestamp is invalid',
-      );
-    }
+    assertEntryShape(sessionId, entry);
     await this.transaction(async (tx) => {
       const parent = await this.lockForAppend(tx, sessionId, workerId);
       if (!parent || Number(parent.attempt) !== attempt) {
         throw new AgentSessionLeaseLostError(sessionId, workerId, attempt);
       }
-      await tx.query(
-        `INSERT INTO ${this.table('entries')}
-          (session_id, seq, entry_id, parent_id, type, data, ts, attempt)
-         SELECT $1, COALESCE(MAX(seq), 0) + 1, $2, $3, $4, $5::jsonb, $6, $7
-         FROM ${this.table('entries')} WHERE session_id = $1`,
-        [sessionId, id, parentId, type, encodeJson(data, 'entry data'), timestamp, attempt],
-      );
+      await this.insertEntry(tx, sessionId, attempt, entry);
     });
+  }
+
+  private async insertEntry(
+    tx: Queryable,
+    sessionId: string,
+    attempt: number,
+    entry: AgentSessionEntry,
+  ): Promise<void> {
+    const { id, parentId, type, timestamp, ...data } = entry;
+    await tx.query(
+      `INSERT INTO ${this.table('entries')}
+        (session_id, seq, entry_id, parent_id, type, data, ts, attempt)
+       SELECT $1, COALESCE(MAX(seq), 0) + 1, $2, $3, $4, $5::jsonb, $6, $7
+       FROM ${this.table('entries')} WHERE session_id = $1`,
+      [sessionId, id, parentId, type, encodeJson(data, 'entry data'), timestamp, attempt],
+    );
+  }
+
+  async appendExternalTurnIn(
+    transaction: AgentSessionTransaction,
+    sessionId: string,
+    writer: string,
+    turn: AgentSessionExternalTurn,
+  ): Promise<AgentSessionExternalTurnResult> {
+    for (const entry of turn.entries ?? []) assertEntryShape(sessionId, entry);
+    const parent = await this.lockForAppend(transaction, sessionId, null);
+    if (!parent || parent.external_writer !== writer) {
+      throw new AgentSessionExternalWriterError(sessionId, parent?.external_writer ?? null);
+    }
+    // Stored under the generation current at the row lock, as control-plane
+    // events are; a marked session is never claimed, so it does not move.
+    const attempt = Number(parent.attempt);
+    const eventSeqs: number[] = [];
+    let deliveredThrough = 0;
+    for (const event of turn.events ?? []) {
+      const seq = await this.insertEvent(transaction, sessionId, { ...event, attempt });
+      eventSeqs.push(seq);
+      if (event.type === AGENT_SESSION_LIFECYCLE.userMessage) deliveredThrough = seq;
+    }
+    const entries = turn.entries ?? [];
+    // Read under the row lock every tree append takes, on the caller's
+    // transaction, so it includes what that transaction appended before.
+    let leafId = entries.some((entry) => entry.parentId === undefined)
+      ? await this.currentLeafIdIn(transaction, sessionId)
+      : null;
+    for (const entry of entries) {
+      const stored = {
+        ...entry,
+        parentId: entry.parentId === undefined ? leafId : entry.parentId,
+      } as AgentSessionEntry;
+      await this.insertEntry(transaction, sessionId, attempt, stored);
+      leafId = leafIdAfterEntry(stored);
+    }
+    if (deliveredThrough > 0) {
+      await transaction.query(
+        `UPDATE ${this.table('sessions')}
+         SET delivered_user_message_seq = GREATEST(delivered_user_message_seq, $2),
+             updated_at = now()
+         WHERE id = $1`,
+        [sessionId, deliveredThrough],
+      );
+    }
+    return { eventSeqs };
+  }
+
+  /** The tree's logical leaf: what its last entry leaves it at (see {@link leafIdAfterEntry}). */
+  private async currentLeafIdIn(tx: Queryable, sessionId: string): Promise<string | null> {
+    const result = await tx.query<{ entry_id: string; type: string; data: unknown }>(
+      `SELECT entry_id, type, data FROM ${this.table('entries')}
+       WHERE session_id = $1 ORDER BY seq DESC LIMIT 1`,
+      [sessionId],
+    );
+    const last = result.rows[0];
+    if (!last) return null;
+    return leafIdAfterEntry({
+      ...decodedObject(last.data),
+      id: last.entry_id,
+      type: last.type,
+    } as AgentSessionEntry);
+  }
+
+  async releaseExternalWriterIn(
+    transaction: AgentSessionTransaction,
+    sessionId: string,
+    writer: string,
+  ): Promise<boolean> {
+    const result = await transaction.query<{ id: string }>(
+      `UPDATE ${this.table('sessions')}
+       SET external_writer = NULL, updated_at = now()
+       WHERE id = $1 AND external_writer = $2 AND deleted_at IS NULL RETURNING id`,
+      [sessionId, writer],
+    );
+    return result.rows.length > 0;
   }
 
   async append(
@@ -1749,14 +1919,6 @@ class PgAgentSessionEntryTreeHandle implements AgentSessionEntryTreeHandle {
   private readonly labelsById = new Map<string, string>();
   private currentLeafId: string | null = null;
 
-  /** Reference `leafIdAfterEntry`: a leaf target is the leaf id, verbatim. */
-  private static leafIdAfter(entry: AgentSessionEntry): string | null {
-    if (entry.type !== 'leaf') return entry.id;
-    // An empty-string target is preserved as '' instead of collapsing to null;
-    // only a missing (malformed) target normalizes to null.
-    return (entry.targetId as string | null | undefined) ?? null;
-  }
-
   constructor(
     private readonly store: PgAgentSessionStore,
     private readonly sessionId: string,
@@ -1775,7 +1937,7 @@ class PgAgentSessionEntryTreeHandle implements AgentSessionEntryTreeHandle {
       }
       this.byId.set(entry.id, entry);
       this.updateLabel(entry);
-      this.currentLeafId = PgAgentSessionEntryTreeHandle.leafIdAfter(entry);
+      this.currentLeafId = leafIdAfterEntry(entry);
     }
   }
 
@@ -1855,7 +2017,7 @@ class PgAgentSessionEntryTreeHandle implements AgentSessionEntryTreeHandle {
     this.entries.push(entry);
     this.byId.set(entry.id, entry);
     this.updateLabel(entry);
-    this.currentLeafId = PgAgentSessionEntryTreeHandle.leafIdAfter(entry);
+    this.currentLeafId = leafIdAfterEntry(entry);
   }
 
   async createEntryId(): Promise<string> {
