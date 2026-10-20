@@ -426,6 +426,9 @@ describe('inline math in playback layouts', { timeout: 30_000 }, () => {
     const view = render(<Prose tick={0} />);
     idle.step();
     view.rerender(<Prose tick={1} />);
+    for (const formula of view.container.querySelectorAll('[data-inline-math]:not(.katex)')) {
+      expect(getComputedStyle(formula).visibility).toBe('hidden');
+    }
     idle.flush();
     expect(typesetCount(view.container)).toBe(heavy.length);
   });

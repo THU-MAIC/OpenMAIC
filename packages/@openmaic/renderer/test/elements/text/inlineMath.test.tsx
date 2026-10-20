@@ -379,6 +379,44 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(sources.length);
   });
 
+  it.each(['source', 'markup'] as const)(
+    'hides formulas deferred by the %s budget and reveals them for a snapshot',
+    (budget) => {
+      const sources = Array.from({ length: 8 }, (_, i) =>
+        budget === 'source' ? long(i + 900) : matrix(i + 900),
+      );
+      const root = host(sources.map(stored).join(' '));
+      root.setAttribute('data-inline-math-root', '');
+      expect(renderInlineMath(root)).toBe(true);
+      const pending = root.querySelectorAll('[data-inline-math]:not(.katex)');
+      expect(pending.length).toBeGreaterThan(0);
+      for (const formula of pending) expect(getComputedStyle(formula).visibility).toBe('hidden');
+
+      completeInlineMath(root);
+      const rendered = root.querySelectorAll('.katex[data-inline-math]');
+      expect(rendered).toHaveLength(8);
+      for (const formula of rendered) expect(getComputedStyle(formula).visibility).toBe('visible');
+    },
+  );
+
+  it('reveals the text fallback when a deferred formula cannot be typeset', () => {
+    const unsupported = 'z'.repeat(MAX_INLINE_MATH_SOURCE + 1);
+    const root = render(
+      <div
+        dangerouslySetInnerHTML={{
+          __html: [long(950), long(951), unsupported].map(stored).join(' '),
+        }}
+      />,
+    ).container;
+    expect(renderInlineMath(root)).toBe(true);
+    const fallback = root.querySelector('[data-inline-math]:last-child')!;
+    expect(getComputedStyle(fallback).visibility).toBe('hidden');
+
+    expect(renderInlineMath(root)).toBe(false);
+    expect(fallback.textContent).toBe(unsupported);
+    expect(getComputedStyle(fallback).visibility).toBe('visible');
+  });
+
   it.each(['cold', 'warm'] as const)(
     'budgets rendered size for short matrix sources with a %s cache',
     (cache) => {
@@ -485,6 +523,10 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     const root = host(
       `<p>${Array.from({ length: count }, (_, index) => stored(`q_{${index}}`)).join(' ')}</p>`,
     );
+    expect(renderInlineMath(root)).toBe(true);
+    expect(getComputedStyle(root.querySelector('[data-inline-math]:last-child')!).visibility).toBe(
+      'visible',
+    );
     renderInlineMath(root, { complete: true });
     expect(root.querySelectorAll('.katex[data-inline-math]')).toHaveLength(
       INLINE_MATH_MAX_ROOT_FORMULAS,
@@ -501,6 +543,9 @@ describe('inline math typesetting budget', { timeout: 30_000 }, () => {
     expect(idle.request).toHaveBeenCalled();
     idle.flush();
     expect(typeset()).toBe(sources.length);
+    for (const formula of view.container.querySelectorAll('[data-inline-math]')) {
+      expect(getComputedStyle(formula).visibility).toBe('visible');
+    }
   });
 
   it('falls back to timers where idle callbacks are unavailable', () => {
