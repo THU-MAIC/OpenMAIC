@@ -1117,7 +1117,9 @@
     "runOutlining": "正在生成大纲…",
     "runAwaitingConfirmation": "等待确认",
     "runGenerating": "生成中 {{completed}}/{{total}}",
-    "runPaused": "已暂停"
+    "runPaused": "已暂停",
+    "seriesBadge": "第 {{order}} 部分，共 {{total}} 部分",
+    "seriesSplitNotice": "这份材料内容较长，已拆分为 {{total}} 门课程依次生成，当前是第 {{order}} 部分。"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",

@@ -1117,7 +1117,9 @@
     "runOutlining": "Criando o roteiro…",
     "runAwaitingConfirmation": "Aguardando confirmação",
     "runGenerating": "Gerando {{completed}}/{{total}}",
-    "runPaused": "Pausado"
+    "runPaused": "Pausado",
+    "seriesBadge": "Parte {{order}} de {{total}}",
+    "seriesSplitNotice": "Este material é extenso, por isso foi dividido em {{total}} cursos gerados um após o outro. Esta é a parte {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",

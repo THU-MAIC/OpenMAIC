@@ -1117,7 +1117,9 @@
     "runOutlining": "개요 작성 중…",
     "runAwaitingConfirmation": "확인 대기 중",
     "runGenerating": "생성 중 {{completed}}/{{total}}",
-    "runPaused": "일시 중지됨"
+    "runPaused": "일시 중지됨",
+    "seriesBadge": "{{total}}부 중 {{order}}부",
+    "seriesSplitNotice": "이 자료는 분량이 많아 {{total}}개의 강의로 나누어 순서대로 생성됩니다. 지금은 {{order}}부입니다."
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",

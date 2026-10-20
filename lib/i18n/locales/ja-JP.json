@@ -1117,7 +1117,9 @@
     "runOutlining": "アウトライン作成中…",
     "runAwaitingConfirmation": "確認待ち",
     "runGenerating": "生成中 {{completed}}/{{total}}",
-    "runPaused": "一時停止中"
+    "runPaused": "一時停止中",
+    "seriesBadge": "パート {{order}} / {{total}}",
+    "seriesSplitNotice": "この資料は長いため、{{total}} 本のコースに分割して順番に生成します。これはパート {{order}} です。"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",

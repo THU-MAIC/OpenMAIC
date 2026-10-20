@@ -1117,7 +1117,9 @@
     "runOutlining": "Составление плана…",
     "runAwaitingConfirmation": "Ожидает подтверждения",
     "runGenerating": "Генерация {{completed}}/{{total}}",
-    "runPaused": "Приостановлено"
+    "runPaused": "Приостановлено",
+    "seriesBadge": "Часть {{order}} из {{total}}",
+    "seriesSplitNotice": "Этот материал большой, поэтому он разделён на {{total}} курсов, которые создаются по очереди. Это часть {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",

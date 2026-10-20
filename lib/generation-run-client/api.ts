@@ -98,6 +98,28 @@ export async function fetchGenerationRun(
   return ((await response.json()) as { run: RunSnapshot }).run;
 }
 
+/** `GET /api/course-series/:id`: a series' own state (its parts are read as runs, not here). */
+export interface CourseSeriesInfo {
+  id: string;
+  title: string;
+  partCount: number;
+  pendingPartCount: number;
+  createdAt: string;
+}
+
+export async function fetchCourseSeries(
+  seriesId: string,
+  signal?: AbortSignal,
+): Promise<CourseSeriesInfo | null> {
+  const response = await fetch(`/api/course-series/${encodeURIComponent(seriesId)}`, {
+    cache: 'no-store',
+    ...(signal ? { signal } : {}),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw await failure(response, 'generation.runLoadFailed');
+  return ((await response.json()) as { series: CourseSeriesInfo }).series;
+}
+
 /** The owner's limits on runs: in progress, and waiting for their outline to be confirmed. */
 export interface RunLimits {
   maxActive: number;

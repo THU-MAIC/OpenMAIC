@@ -1117,7 +1117,9 @@
     "runOutlining": "Gliederung wird erstellt…",
     "runAwaitingConfirmation": "Wartet auf Bestätigung",
     "runGenerating": "Wird generiert {{completed}}/{{total}}",
-    "runPaused": "Pausiert"
+    "runPaused": "Pausiert",
+    "seriesBadge": "Teil {{order}} von {{total}}",
+    "seriesSplitNotice": "Dieses Material ist umfangreich und wird daher in {{total}} Kurse aufgeteilt, die nacheinander erstellt werden. Dies ist Teil {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Unterstützt PDF-Dateien bis zu 50 MB",

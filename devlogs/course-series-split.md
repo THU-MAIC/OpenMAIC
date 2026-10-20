@@ -137,3 +137,42 @@
 **Commit**：`fix(generation): bootstrap course_series schema lazily; add integration test`（提交时一并包含本单元的 bug 修复和新测试文件）。
 
 ---
+
+### 单元 6：系列状态读取端点 `GET /api/course-series/:id`
+
+**改动**：
+
+- `lib/server/generation/series/orchestrator.ts`：新增 `getCourseSeriesById(ownerId, seriesId)`，走模块自己懒加载的 `provider()`（和 `startCourseSeries`/`startNextSeriesPart` 同一套，保证在表还没被任何写入建过的情况下，一次纯读也能先把表建出来再查）包一层 `getCourseSeries`。
+- `app/api/course-series/[id]/route.ts`（新增）：`GET`，`withRequestOwner` 鉴权，查不到或属于别的 owner 都答统一的 404（`ownerNotFound`），避免把"系列存在但不是你的"和"系列不存在"区分开泄露信息。返回体只给前端真正缺的那一样东西——系列总分部数（`partCount`）和还没开始的分部数（`pendingPartCount`）——因为某一分部自己的课程内容和生成进度，前端已经能从它自己的 `generation_runs` 快照（`series: { seriesId, order }`）或生成后的 `stage_meta` 镜像字段里读到，不需要这个端点重复给。
+
+**验证**：`tsc --noEmit -p tsconfig.json` 全量通过；路由文件本身没有专门的单测（和同类的 owner-scoped 只读路由一致，走契约测试间接覆盖），本机沙箱无 Postgres，`.pg.test.ts` 契约套件无法运行验证。
+
+---
+
+### 单元 7：前端——`series` 字段穿透 + 系列徽标 + 超预算提示
+
+**改动**：
+
+- `lib/server/generation/run/types.ts` 原有的 `GenerationRunSeriesMembership`（`{ seriesId, order }`）通过 `lib/generation-run-client/types.ts` 重新导出给客户端用；`RunSnapshot.series` 本就在服务端类型上，这次补上 `RunView.series`，并在 `reducer.ts` 的 `viewFromSnapshot` 里把它从快照搬进视图（`applyRunEvent` 每次都 `{...view}` 展开，`series` 本身不随事件变化，天然原样传递下去，不用在每个 `case` 里显式搬一次）。
+- `lib/generation-run-client/api.ts`：新增 `CourseSeriesInfo` 类型和 `fetchCourseSeries(seriesId)`，对应单元 6 的新端点。
+- `lib/generation-run-client/use-course-series.ts`（新增）：`useCourseSeriesPartCount(seriesId)`——`run.series` 只有 `order`，没有系列总分部数，徽标要显示"第 2 部分 / 共 5 部分"就还需要一次按 `seriesId` 的额外读。首页课程网格里，同一系列的多张卡（一张一个分部）会并发用到同一个 `seriesId`，所以用模块级 `Map` 做跨组件实例的缓存 + in-flight 请求去重，不是每张卡各自发一次请求。按 React 19 的 `set-state-in-effect` lint 规则重写过一次：组件渲染期间先从缓存里同步算出当前该显示的值，`useEffect` 只在缓存未命中时负责发请求、在 then 里 `setState` 一次，不在 effect 里做"根据 prop 同步清空"这种纯派生的 `setState`。
+- `components/generation/course-series-badge.tsx`（新增）：`<CourseSeriesBadge seriesId order />`，拿不到 `partCount`（仍在加载或系列已不存在）时不渲染任何东西，不占位不闪烁。
+- `app/page.tsx`：`ClassroomCard` 新增 `series` prop，徽标渲染在原有的"运行状态/页数"那一行旁边；两处调用点（待开始的 pending run 卡、已有课程卡）分别从 `run.series` 和 `runByStageId.get(id)?.series` 取值传入。
+- `app/generation-preview/page.tsx`：新增一个 `useEffect`，在 `view.series` 第一次出现非空值时（`seriesNoticeShownRef` 保证只触发一次，系列归属定了之后不会再变，不需要重复提示），额外调一次 `fetchCourseSeries` 拿 `partCount`，用 `toast.info` 弹一条"材料较长，已拆成 N 门课程依次生成，这是第 M 部分"的提示。没有复用 `view.series` 自带的 `order` 之外的信息，所以这里必须单独请求一次系列总数——和首页徽标是同一个数据缺口，但这两处没有共享同一次请求（场景不同：首页是网格里多张卡同时存在，这里只有一个正在跟随的 run），所以没有强行合并成同一个缓存实例。
+- 12 个 locale 文件新增两个 key：`classroom.seriesBadge`（"Part {{order}} of {{total}}"及各语言对应说法）、`classroom.seriesSplitNotice`（超预算拆分提示文案），`en-US.json`/`zh-CN.json` 为基准手写，其余 10 个语言请求模型给出地道翻译后逐一核对占位符一致。
+
+**未覆盖范围（有意不做，避免超出本单元最小改动的目标）**：
+
+- `components/workbench/workspace/WorkspaceRail.tsx` 的课程侧边栏行（`renderCourseRow`/`renderPendingRunRow`）没有加徽标：生成中的行已经没有空间再塞一个徽标进 `meta` 文案槏，已完成课程的行在渲染时作用域里根本拿不到对应的 `run`/`series`（只有 `StageListItem`），要补上得单独按 `stageId` 查一次 `generation_runs`，是比这次"最小穿透"更大的改动，留给后续单元看是否真的需要。
+- 没有为 `app/page.tsx`、`app/generation-preview/page.tsx`、`course-series-badge.tsx`、`use-course-series.ts` 写新的单测——这几处目前都没有对应的测试文件（`tests/` 下找不到任何 `*page*`/`*generation-preview*` 的既有测试），新增的是纯前端展示层（取数 → 渲染字符串/条件渲染），逻辑已经在 `reducer.test.ts`（`viewFromSnapshot`/`applyRunEvent`）和服务端契约测试里覆盖过"`series` 字段何时出现、何时不变"这一核心行为；本单元新增代码本身只做类型回归验证（`tsc`）和既有回归套件（`vitest run tests/generation-run-client`，78/78 通过）。
+
+**验证**：
+- `tsc --noEmit -p tsconfig.json`：全量通过。
+- `node scripts/check-i18n-keys.mjs`：12 个 locale 文件 key 对齐检查通过。
+- `eslint`（按改动文件逐一跑，全量 `eslint .` 在本机因仓库过大导致 Node OOM 崩溃，与本次改动无关）：本单元新增/改动的 8 个文件全部无 warning/error（修了两处：`use-course-series.ts` 里一处 `react-hooks/set-state-in-effect` 真错误，`course-card.ts` 里一处未用到的类型导入）。
+- `vitest run tests/generation-run-client tests/components/generation tests/app/generation-preview tests/app/page`：后两个目录不存在（预期内，见上）；`tests/generation-run-client` 全量 12 个文件 78 个测试通过。
+- 未验证：`tests/server/course-series.pg.test.ts`（本机沙箱无 Postgres/Docker，契约测试全程 `skipIf` 跳过，同单元 5 遗留的风险点）。
+
+**Commit**：本次提交只纳入本单元（6+7）新增/改动的文件；工作树里另有一批与本系列无关、看起来是别的工作在进行中的改动（`README.md`、`package.json`、`.gitignore`、`openmaic.example.yml`、`e2e/tests/home-to-generation.spec.ts`、`lib/server/generation/run/deadline.ts`、`lib/server/generation/run/document.ts`、`packages/docs/content/docs/deployment.zh-cn.mdx`、`.zcode/`、`data/`、`public/tmp-verify/`、`scripts/start-all.mjs`、`tests/audio/cosyvoice-tts.test.ts`、`public/logos/cosyvoice.svg`），不属于 course-series 这条线，本次未touch、未纳入提交。
+
+---

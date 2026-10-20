@@ -22,7 +22,7 @@ import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import type { SceneOutline } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
-import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
+import { fetchCourseSeries, RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 import { toast } from 'sonner';
 import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, holdOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
@@ -180,6 +180,19 @@ function GenerationPreviewContent() {
     if (view.state === 'ended') return;
     router.replace(`/classroom/${encodeURIComponent(view.stageId)}`);
   }, [view?.stageId, view?.state, agentRevealPending, confirmConflict, router]);
+
+  // Material analysis found more than one course's worth of material and
+  // split the run into a series: told once, the first time this run's
+  // series membership is seen (it never changes after that).
+  const seriesNoticeShownRef = useRef(false);
+  useEffect(() => {
+    if (!view?.series || seriesNoticeShownRef.current) return;
+    seriesNoticeShownRef.current = true;
+    void fetchCourseSeries(view.series.seriesId).then((series) => {
+      if (!series) return;
+      toast.info(t('classroom.seriesSplitNotice', { order: view.series!.order, total: series.partCount }));
+    });
+  }, [view?.series, t]);
 
   // A Retry is queued until a step starts after it (a media item in flight
   // finishes first).

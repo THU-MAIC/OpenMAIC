@@ -11,6 +11,7 @@ import type {
   GenerationRunMediaState,
   GenerationRunOutline,
   GenerationRunProgress,
+  GenerationRunSeriesMembership,
   GenerationRunState,
 } from '@/lib/server/generation/run/types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -19,6 +20,7 @@ import type { GeneratedAgentConfig } from '@/lib/types/stage';
 export type {
   GenerationRunInput,
   GenerationRunMediaState,
+  GenerationRunSeriesMembership,
   GenerationRunState,
 } from '@/lib/server/generation/run/types';
 
@@ -42,6 +44,8 @@ export interface RunSnapshot {
   /** What the material analysis reported (in the run's own snapshot). */
   materialKinds?: Array<'document' | 'media'>;
   materialTruncated?: { textChars?: number; images?: { total: number; max: number } };
+  /** This run is one part of a course series; absent outside one. */
+  series?: GenerationRunSeriesMembership | null;
 }
 
 /** One frame of `GET /api/generation-runs/:id/events`. */
@@ -83,6 +87,8 @@ export interface RunView {
   /** The seq of the failure the run is paused at (the key of its Retry command). */
   failedSeq: number;
   media: Record<string, RunMediaView>;
+  /** This run is one part of a course series; null outside one. */
+  series: GenerationRunSeriesMembership | null;
 }
 
 /** A media element's state, with the seq of the event that set it (the key of its Retry command). */

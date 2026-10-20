@@ -48,6 +48,7 @@ export function viewFromSnapshot(snapshot: RunSnapshot): RunView {
         { ...state, seq: state.failureSeq ?? snapshot.seq },
       ]),
     ),
+    series: snapshot.series ?? null,
   };
 }
 

@@ -66,8 +66,9 @@ import {
   runsByCourse,
   type CourseRunStatus,
 } from '@/lib/generation-run-client/course-card';
-import type { RunSnapshot } from '@/lib/generation-run-client/types';
+import type { GenerationRunSeriesMembership, RunSnapshot } from '@/lib/generation-run-client/types';
 import { CourseRunStatusLabel } from '@/components/generation/course-run-status-label';
+import { CourseSeriesBadge } from '@/components/generation/course-series-badge';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -118,6 +119,7 @@ const log = createLogger('Home');
 
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
+const REQUIREMENT_DRAFT_STORAGE_KEY = 'homeRequirementDraft';
 
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
@@ -210,6 +212,14 @@ function HomePage() {
     try {
       const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
       if (saved !== null) setRecentOpen(saved !== 'false');
+    } catch {
+      /* localStorage unavailable */
+    }
+    try {
+      const savedRequirement = localStorage.getItem(REQUIREMENT_DRAFT_STORAGE_KEY);
+      if (savedRequirement !== null) {
+        setForm((prev) => ({ ...prev, requirement: savedRequirement }));
+      }
     } catch {
       /* localStorage unavailable */
     }
@@ -532,8 +542,11 @@ function HomePage() {
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
-      if (field === 'interactiveMode')
+      if (field === 'requirement') {
+        localStorage.setItem(REQUIREMENT_DRAFT_STORAGE_KEY, String(value));
+      } else if (field === 'interactiveMode') {
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
+      }
     } catch {
       /* ignore */
     }
@@ -1233,6 +1246,7 @@ function HomePage() {
                               classroom={pendingRunListItem(run)}
                               formatDate={formatDate}
                               runStatus={courseRunStatus(run)}
+                              series={run.series ?? null}
                               pendingCourse
                               onDelete={handleDelete}
                               onRename={handleRename}
@@ -1261,6 +1275,7 @@ function HomePage() {
                               const run = runByStageId.get(classroom.id);
                               return run ? courseRunStatus(run) : null;
                             })()}
+                            series={runByStageId.get(classroom.id)?.series ?? null}
                             onDelete={handleDelete}
                             onRename={handleRename}
                             confirmingDelete={pendingDeleteId === classroom.id}
@@ -1624,6 +1639,7 @@ function ClassroomCard({
   requestThumbnail,
   formatDate,
   runStatus = null,
+  series = null,
   pendingCourse = false,
   overlay,
   onDelete,
@@ -1641,6 +1657,8 @@ function ClassroomCard({
   formatDate: (ts: number) => string;
   /** The state of the run generating this course, while it runs. */
   runStatus?: CourseRunStatus | null;
+  /** This card's course is one part of a course series. */
+  series?: GenerationRunSeriesMembership | null;
   /** The card is a run whose course does not exist yet: it can only be opened or deleted. */
   pendingCourse?: boolean;
   /** Extra absolutely-positioned layers over the thumbnail (move menu, badges). */
@@ -1844,6 +1862,7 @@ function ClassroomCard({
             {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
           </span>
         )}
+        {series && <CourseSeriesBadge seriesId={series.seriesId} order={series.order} />}
         {editing ? (
           <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
             <input

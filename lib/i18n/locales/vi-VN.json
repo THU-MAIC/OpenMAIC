@@ -1117,7 +1117,9 @@
     "runOutlining": "Đang lập dàn ý…",
     "runAwaitingConfirmation": "Đang chờ xác nhận",
     "runGenerating": "Đang tạo {{completed}}/{{total}}",
-    "runPaused": "Đã tạm dừng"
+    "runPaused": "Đã tạm dừng",
+    "seriesBadge": "Phần {{order}}/{{total}}",
+    "seriesSplitNotice": "Tài liệu này dài nên được chia thành {{total}} khóa học tạo lần lượt. Đây là phần {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Nhận tệp PDF tối đa 50MB",

@@ -1117,7 +1117,9 @@
     "runOutlining": "جارٍ إعداد المخطط…",
     "runAwaitingConfirmation": "بانتظار التأكيد",
     "runGenerating": "جارٍ التوليد {{completed}}/{{total}}",
-    "runPaused": "متوقف مؤقتًا"
+    "runPaused": "متوقف مؤقتًا",
+    "seriesBadge": "الجزء {{order}} من {{total}}",
+    "seriesSplitNotice": "هذه المادة طويلة، لذا تم تقسيمها إلى {{total}} دورات يتم إنشاؤها واحدة تلو الأخرى. هذا هو الجزء {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",

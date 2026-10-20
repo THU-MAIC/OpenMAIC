@@ -1117,7 +1117,9 @@
     "runOutlining": "Outlining…",
     "runAwaitingConfirmation": "Waiting for confirmation",
     "runGenerating": "Generating {{completed}}/{{total}}",
-    "runPaused": "Paused"
+    "runPaused": "Paused",
+    "seriesBadge": "Part {{order}} of {{total}}",
+    "seriesSplitNotice": "This material is long, so it's split into {{total}} courses generated one after another. This is part {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",

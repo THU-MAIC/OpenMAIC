@@ -1117,7 +1117,9 @@
     "runOutlining": "Creando el esquema…",
     "runAwaitingConfirmation": "Esperando confirmación",
     "runGenerating": "Generando {{completed}}/{{total}}",
-    "runPaused": "En pausa"
+    "runPaused": "En pausa",
+    "seriesBadge": "Parte {{order}} de {{total}}",
+    "seriesSplitNotice": "Este material es extenso, por lo que se dividió en {{total}} cursos generados uno tras otro. Esta es la parte {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Admite archivos PDF de hasta 50 MB",

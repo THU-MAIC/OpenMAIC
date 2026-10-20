@@ -1117,7 +1117,9 @@
     "runOutlining": "Création du plan…",
     "runAwaitingConfirmation": "En attente de confirmation",
     "runGenerating": "Génération {{completed}}/{{total}}",
-    "runPaused": "En pause"
+    "runPaused": "En pause",
+    "seriesBadge": "Partie {{order}} sur {{total}}",
+    "seriesSplitNotice": "Ce contenu est long, il est donc divisé en {{total}} cours générés l'un après l'autre. Ceci est la partie {{order}}."
   },
   "upload": {
     "pdfSizeLimit": "Accepte les fichiers PDF jusqu’à 50 Mo",

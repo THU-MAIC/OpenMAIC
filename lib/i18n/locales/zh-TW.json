@@ -1102,7 +1102,9 @@
     "runOutlining": "正在生成大綱…",
     "runAwaitingConfirmation": "等待確認",
     "runGenerating": "生成中 {{completed}}/{{total}}",
-    "runPaused": "已暫停"
+    "runPaused": "已暫停",
+    "seriesBadge": "第 {{order}} 部分，共 {{total}} 部分",
+    "seriesSplitNotice": "這份材料內容較長，已拆分為 {{total}} 門課程依序生成，目前是第 {{order}} 部分。"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",

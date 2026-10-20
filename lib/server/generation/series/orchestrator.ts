@@ -124,6 +124,22 @@ export async function startCourseSeries(input: {
 }
 
 /**
+ * A series' own row, for a caller that only needs to read it (the
+ * `GET /api/course-series/:id` route): goes through this module's own
+ * lazily-bootstrapped `provider()`, like every other `course_series` access,
+ * instead of reaching `getServerPersistenceProvider` directly -- a read
+ * issued before the table has ever been created by a write must still
+ * provision it rather than fail.
+ */
+export async function getCourseSeriesById(
+  ownerId: string,
+  seriesId: string,
+): ReturnType<typeof getCourseSeries> {
+  const { pool } = await provider();
+  return getCourseSeries(pool, seriesId, ownerId);
+}
+
+/**
  * Called once a series part's run completes: claims the next pending part
  * (if any are left) and starts its run. Best-effort, like the run
  * completion event itself -- a failure here leaves the part in
