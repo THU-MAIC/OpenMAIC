@@ -534,6 +534,10 @@ function fixElementDefaults(
         }
       }
 
+      // Ordinary model-authored text stays upright. Shape recovery returns
+      // above, preserving the original shape label's rotation in its text box.
+      if (normalized.type === 'text') normalized = { ...normalized, rotate: 0 };
+
       // Fit the image box to the assigned PDF image's real aspect ratio (`src` is
       // still the img_id at this point). Producer-specific, so it lives here, not
       // in the DSL's normalize.
@@ -856,7 +860,7 @@ async function generateSlideContent(
   const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
-    // Preserve shape and text rotation, including recovered shape labels.
+    // Ordinary text was reset above; recovered shape labels retain their angle.
     rotate:
       (el.type === 'shape' || el.type === 'text') &&
       typeof el.rotate === 'number' &&

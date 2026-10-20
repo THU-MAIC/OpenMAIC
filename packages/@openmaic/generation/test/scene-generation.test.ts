@@ -27,6 +27,7 @@ describe('scene generation primitives', () => {
             height: 80,
             path: 123,
             viewBox: '0 0 100 80',
+            rotate: -30,
             text: { content: '<p>Preserve label</p>' },
           },
         ],
@@ -41,6 +42,7 @@ describe('scene generation primitives', () => {
           top: 30,
           width: 100,
           height: 80,
+          rotate: -30,
         },
       ],
     });
@@ -131,6 +133,25 @@ describe('scene generation primitives', () => {
       background: { type: 'solid', color: '#ffffff' },
     });
     expect(aiCall).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([30, -45])('keeps ordinary generated text upright despite rotate=%s', async (rotate) => {
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'text',
+            left: 20,
+            top: 30,
+            width: 200,
+            height: 80,
+            content: '<p>Ordinary text</p>',
+            rotate,
+          },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({ elements: [{ type: 'text', rotate: 0 }] });
   });
 
   it.each([0, 36.5, -12.25])(
