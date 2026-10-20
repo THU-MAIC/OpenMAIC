@@ -73,12 +73,11 @@ export async function teachingRunnerConfig(input: {
   const runId = `${bound.stage_key}:${latest?.seq ?? 0}`;
   review.beginRun(runId, latest?.text ?? '', bound.feedback_seq > 1);
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
-  let turnComplete =
-    guided &&
-    (review.state.pending?.runId === runId ||
-      (bound.completion?.stageKey === bound.stage_key &&
-        bound.completion.feedbackSeq === bound.feedback_seq &&
-        bound.completion.userMessageSeq === latest?.seq));
+  const completionRecorded =
+    bound.completion?.stageKey === bound.stage_key &&
+    bound.completion.feedbackSeq === bound.feedback_seq &&
+    bound.completion.userMessageSeq === latest?.seq;
+  let turnComplete = guided && (review.state.pending?.runId === runId || completionRecorded);
   const service = async () => {
     const grant = await (await SandboxStore.open()).sessionGrant(input.sessionId, input.ownerId);
     if (!grant || grant.environment_id !== row.environment_id)
@@ -407,6 +406,15 @@ export async function teachingRunnerConfig(input: {
       seed: {
         ...seed,
         goal: milestone.goal ?? milestone.title,
+        ...(guided
+          ? {
+              teachingContext: {
+                stageKey: bound.stage_key,
+                completionRecorded,
+                activeSection: review.state.activeFile || null,
+              },
+            }
+          : {}),
         ...(recapping
           ? {
               recordedEvidence: {
@@ -447,7 +455,7 @@ export async function teachingRunnerConfig(input: {
         ? '\nPlanning permits changes to PLAN.md only. Source editing, commands and terminals are unavailable. Review the plan and the learner’s reasoning; do not require code implementation or execution for plan approval.'
         : '') +
     (guided
-      ? '\nUse read_next_skill to open one section at a time. After each section use request_skill_review and wait for a NEW student reply. Quote that actual reply to advance. After final feedback, use complete_stage. A completed tool is only a completion signal; the learner separately confirms progression.'
+      ? '\nThe current teachingContext is authoritative for this stage and turn, even when this role appears earlier in the conversation. An earlier stage’s completion does not complete this stage. When activeSection is null, begin this stage with read_next_skill. Never tell the learner to Continue unless complete_stage succeeds for this stage and turn. Use read_next_skill to open one section at a time. After each section use request_skill_review and wait for a NEW student reply. Quote that actual reply to advance. After final feedback, use complete_stage. A completed tool is only a completion signal; the learner separately confirms progression.'
       : repairing
         ? '\nHelp the learner diagnose the observed test failure. Read the current code before making a focused repair. Explain the change and ask the learner to run tests again using the project controls. Never claim the repair passed without a new test result.'
         : '\nDiscuss only the current decisions. The learner records choices using the project controls.');

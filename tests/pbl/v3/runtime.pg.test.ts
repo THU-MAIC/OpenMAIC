@@ -606,6 +606,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   it('prepares once and runs the complete learning flow with actual Python tests', async () => {
     await command('prepare');
     await guided('teaching'); // project intro
+    const mentorSessionId = (await store.roles(studyId)).find(
+      (binding) => binding.role === 'mentor',
+    )!.session_id;
     await guided('teaching'); // concepts
     await expect(command('next')).rejects.toThrow('all milestone decisions');
     await command('decide', { decisionId: 'format', chosen: 'format' });
@@ -683,6 +686,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await command('next');
     await runTools('Please reflect on my results.', async (config) => {
       const tested = (await store.get(studyId, principal.ownerId)).state.collected.greeting!;
+      // Mentor history spans the project; an intro receipt cannot close the later recap.
+      const mentor = (await store.roles(studyId)).find((binding) => binding.role === 'mentor')!;
+      expect(mentor.session_id).toBe(mentorSessionId);
+      expect(mentor.stage_key).toBe('greeting:6');
+      expect(config.systemPrompt).toContain(
+        '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,"activeSection":null}',
+      );
       expect(config.systemPrompt).toContain('"recordedEvidence"');
       expect(config.systemPrompt).toContain('2 checks passed');
       expect(config.systemPrompt).toContain(tested.tests!.revision.id);
