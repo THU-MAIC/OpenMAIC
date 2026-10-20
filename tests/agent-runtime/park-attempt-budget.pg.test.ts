@@ -9,7 +9,6 @@ import {
 } from '../../packages/@openmaic/storage/src/agent-session/pg';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
-const TEST_SCHEMA = `openmaic_park_attempts_${process.pid}`;
 
 function transactionFor(pool: Pool): WithTransaction {
   return async (body) => {
@@ -34,22 +33,18 @@ describe.skipIf(!contractUrl)('session attempt budget takeovers', () => {
   /** Mirrors the runner's verdict against this suite's bound, not its config. */
   const overAttemptCap = (claim: { attempt: number }) => claim.attempt > maxAttempts;
 
-  let admin: Pool;
   let pool: Pool;
   let store: PgAgentSessionStore;
 
   beforeAll(async () => {
-    // Keep cleanup and worker claims local to this suite during parallel CI.
-    admin = new Pool({ connectionString: contractUrl });
-    await admin.query(`CREATE SCHEMA ${TEST_SCHEMA}`);
-    pool = new Pool({ connectionString: contractUrl, options: `-c search_path=${TEST_SCHEMA}` });
+    pool = new Pool({ connectionString: contractUrl });
     await ensureAgentSessionSchema(pool as Queryable);
   });
 
   beforeEach(async () => {
     // CASCADE absorbs every table that has since gained an FK to agent_sessions
     // (agent_session_urls from the URL trust gate, agent_session_materials from
-    // the material store); the suite owns this schema.
+    // the material store); the suite owns the whole database.
     await pool.query(
       `TRUNCATE agent_session_entries, agent_session_events,
                 agent_owner_session_events, agent_owner_session_event_counters,
@@ -60,8 +55,6 @@ describe.skipIf(!contractUrl)('session attempt budget takeovers', () => {
 
   afterAll(async () => {
     await pool.end();
-    await admin.query(`DROP SCHEMA ${TEST_SCHEMA} CASCADE`);
-    await admin.end();
   });
 
   it('survives six clean park and takeover cycles with a cap of five', async () => {
