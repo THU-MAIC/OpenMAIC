@@ -475,6 +475,7 @@
       "moreActions": "더 보기",
       "rename": "이름 바꾸기",
       "sceneIncomplete": "이 페이지의 내용이 미완성입니다",
+      "sceneHasErrors": "이 페이지에 오류가 있습니다",
       "addPage": "페이지 추가",
       "nextPage": "다음 페이지",
       "prevPage": "이전 페이지"

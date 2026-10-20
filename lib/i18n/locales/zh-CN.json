@@ -475,6 +475,7 @@
       "moreActions": "更多操作",
       "rename": "重命名",
       "sceneIncomplete": "本页内容不完整",
+      "sceneHasErrors": "本页存在错误",
       "addPage": "新增页面",
       "nextPage": "下一页",
       "prevPage": "上一页"

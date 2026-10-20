@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useMemo, type RefObject } from 'react';
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import katex from 'katex';
 import { safeKatexOptions } from '@openmaic/dsl';
 
@@ -23,14 +23,20 @@ export const INLINE_MATH_ROOT_ATTRIBUTE = 'data-inline-math-root';
 export const MAX_INLINE_MATH_SOURCE = 2_000;
 
 /**
- * Typesetting budget per pass over one prose root, counting only formulas not
- * already in the typeset cache. Within it formulas are typeset before paint;
- * the rest are typeset in idle time, a chunk of the same size at a time, so a
- * slide packed with large formulas cannot freeze the page. Ordinary prose (a
- * text box with a few dozen short formulas) fits in one pass.
+ * Bound uncached typesetting work in a batch. Live prose roots share a batch;
+ * standalone renderInlineMath calls get their own. Ordinary slides fit before
+ * paint; mixed/dense slides may defer even short formulas to idle time.
  */
 export const INLINE_MATH_SYNC_SOURCE_BUDGET = 4_000;
 export const INLINE_MATH_SYNC_FORMULA_BUDGET = 100;
+
+/**
+ * Also bound inserted markup, including cache hits: short matrix sources can
+ * expand to thousands of nodes whose style/layout cost comes after typesetting.
+ * Uses the serialized size already recorded by the cache, not a DOM traversal.
+ * Leave room for dense ordinary slides (e.g. 32 integrals/sums across text boxes).
+ */
+const INLINE_MATH_SYNC_MARKUP_BUDGET = 256_000;
 
 /**
  * Hard cap per prose root, counting every formula in document order: past it,
@@ -50,8 +56,13 @@ const handled = new WeakSet<Element>();
  */
 const TYPESET_CACHE_MAX_MARKUP = 2_000_000;
 const TYPESET_CACHE_MAX_ENTRY = 64_000;
-const typesetCache = new Map<string, { readonly formula: Element | null; readonly size: number }>();
+type TypesetEntry = { readonly formula: Element | null; readonly size: number };
+const typesetCache = new Map<string, TypesetEntry>();
 let typesetCacheSize = 0;
+// Keep a rejected render with its source node until it can be inserted. Unlike
+// the shared cache, this also covers large entries and cannot be overwritten by
+// another root. Replacing/removing the prose releases its pending renders.
+const deferredTypesets = new WeakMap<Element, { latex: string; entry: TypesetEntry }>();
 
 /** Typeset one formula, or `null` to keep its source as text. */
 function typesetUncached(doc: Document, latex: string): Element | null {
@@ -81,7 +92,7 @@ function typesetUncached(doc: Document, latex: string): Element | null {
   return formula;
 }
 
-function typeset(doc: Document, latex: string): Element | null {
+function typeset(doc: Document, latex: string): TypesetEntry {
   let entry = typesetCache.get(latex);
   if (entry) {
     // Refresh recency.
@@ -100,10 +111,7 @@ function typeset(doc: Document, latex: string): Element | null {
       }
     }
   }
-  if (!entry.formula) return null;
-  return entry.formula.ownerDocument === doc
-    ? (entry.formula.cloneNode(true) as Element)
-    : (doc.importNode(entry.formula, true) as Element);
+  return entry;
 }
 
 export interface RenderInlineMathOptions {
@@ -141,11 +149,23 @@ function showCapped(element: Element, latex: string): void {
  * Returns `true` when formulas were left for a later pass by the budget.
  */
 export function renderInlineMath(root: ParentNode, options: RenderInlineMathOptions = {}): boolean {
+  return renderPass(root, options, newBudget());
+}
+
+type TypesetBudget = { source: number; formulas: number; markup: number; full: boolean };
+
+function newBudget(): TypesetBudget {
+  return { source: 0, formulas: 0, markup: 0, full: false };
+}
+
+function renderPass(
+  root: ParentNode,
+  options: RenderInlineMathOptions,
+  budget: TypesetBudget,
+): boolean {
   const doc = (root as Node).ownerDocument ?? (root as Document);
   let rootSource = 0;
   let rootFormulas = 0;
-  let passSource = 0;
-  let passFormulas = 0;
   let pending = false;
   for (const element of root.querySelectorAll(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
     // Inside a formula replaced earlier in this pass.
@@ -160,25 +180,52 @@ export function renderInlineMath(root: ParentNode, options: RenderInlineMathOpti
       continue;
     }
     if (handled.has(element) && !capped.has(element)) continue;
-    if (!typesetCache.has(latex)) {
+    const deferred = deferredTypesets.get(element);
+    const prepared = deferred?.latex === latex ? deferred.entry : undefined;
+    const cached = prepared ?? typesetCache.get(latex);
+    // Preserve source order within a root, but let a later root use cached
+    // formulas that fit in the space left by a rejected large formula.
+    if (!options.complete && (pending || (budget.full && !cached))) {
+      pending = true;
+      continue;
+    }
+    if (!cached) {
       if (
         !options.complete &&
-        passFormulas > 0 &&
-        (passSource + latex.length > INLINE_MATH_SYNC_SOURCE_BUDGET ||
-          passFormulas >= INLINE_MATH_SYNC_FORMULA_BUDGET)
+        budget.formulas > 0 &&
+        (budget.source + latex.length > INLINE_MATH_SYNC_SOURCE_BUDGET ||
+          budget.formulas >= INLINE_MATH_SYNC_FORMULA_BUDGET)
       ) {
+        budget.full = true;
         pending = true;
         continue;
       }
-      passSource += latex.length;
-      passFormulas += 1;
+      budget.source += latex.length;
+      budget.formulas += 1;
     }
-    const formula = typeset(doc, latex);
-    if (!formula) {
+    const entry = prepared ?? typeset(doc, latex);
+    if (!entry.formula) {
       showSource(element, latex);
       continue;
     }
+    // Always allow one formula to make progress, even if it exceeds a batch.
+    if (
+      !options.complete &&
+      budget.markup > 0 &&
+      budget.markup + entry.size > INLINE_MATH_SYNC_MARKUP_BUDGET
+    ) {
+      budget.full = true;
+      pending = true;
+      deferredTypesets.set(element, { latex, entry });
+      continue;
+    }
+    budget.markup += entry.size;
+    const formula =
+      entry.formula.ownerDocument === doc
+        ? (entry.formula.cloneNode(true) as Element)
+        : (doc.importNode(entry.formula, true) as Element);
     handled.add(formula);
+    deferredTypesets.delete(element);
     element.replaceWith(formula);
   }
   return pending;
@@ -243,17 +290,134 @@ function whenIdle(run: () => void): IdleHandle {
   return { cancel: () => clear.call(scope, handle) };
 }
 
-/** Typeset what a pass left over, one budget-sized chunk per idle period. */
-function finishWhenIdle(root: Element): () => void {
-  let handle: IdleHandle | null = null;
-  const step = () => {
-    handle = null;
-    if (!root.isConnected) return;
-    if (renderInlineMath(root)) handle = whenIdle(step);
+type MathPriority = 'normal' | 'background';
+export const InlineMathPriorityContext = createContext<MathPriority>('normal');
+
+/**
+ * Own the live queues and frame allowances. Background roots share a copy of
+ * the remaining foreground allowance, so an earlier thumbnail commit cannot
+ * spend the next foreground commit's budget. Neither is renewed on removal.
+ */
+function createLiveMath() {
+  // Idle work rotates roots within each priority, with foreground canvases first.
+  const queuedRoots = new Map<Element, MathPriority>();
+  // Only newly admitted background roots may spend the remaining frame allowance.
+  const prePaintCandidates = new Set<Element>();
+  let frameBudget: TypesetBudget | null = null;
+  let backgroundBudget: TypesetBudget | null = null;
+  let cancelFrameReset: (() => void) | null = null;
+  let idleJob: { cancel?: () => void } | null = null;
+  let prePaintScheduled = false;
+
+  function resetFrameBudget(): void {
+    cancelFrameReset?.();
+    cancelFrameReset = null;
+    frameBudget = null;
+    backgroundBudget = null;
+  }
+
+  function frameAllowance(): TypesetBudget {
+    if (!frameBudget) {
+      const budget = (frameBudget = newBudget());
+      const reset = () => {
+        if (frameBudget === budget) {
+          frameBudget = null;
+          backgroundBudget = null;
+          cancelFrameReset = null;
+        }
+      };
+      if (
+        typeof requestAnimationFrame === 'function' &&
+        typeof cancelAnimationFrame === 'function'
+      ) {
+        const cancel = cancelAnimationFrame;
+        const handle = requestAnimationFrame(reset);
+        cancelFrameReset = () => cancel(handle);
+      } else {
+        const cancel = clearTimeout;
+        const handle = setTimeout(reset, 16);
+        cancelFrameReset = () => cancel(handle);
+      }
+    }
+    return frameBudget;
+  }
+
+  function renderIdleRoots(priority: MathPriority, budget: TypesetBudget): void {
+    for (const [root, queuedPriority] of [...queuedRoots]) {
+      if (queuedPriority !== priority) continue;
+      queuedRoots.delete(root);
+      if (root.isConnected && renderPass(root, {}, budget)) queuedRoots.set(root, priority);
+      if (budget.full) break;
+    }
+  }
+
+  function scheduleIdle(): void {
+    if (!queuedRoots.size) {
+      idleJob?.cancel?.();
+      idleJob = null;
+      return;
+    }
+    if (idleJob) return;
+    const job: { cancel?: () => void } = {};
+    idleJob = job;
+    job.cancel = whenIdle(() => {
+      // A cancelled callback must not drain work queued by a later mount.
+      if (idleJob !== job) return;
+      idleJob = null;
+      resetFrameBudget();
+      const budget = newBudget();
+      for (const priority of ['normal', 'background'] as const) {
+        renderIdleRoots(priority, budget);
+        if (budget.full) break;
+      }
+      scheduleIdle();
+    }).cancel;
+  }
+
+  function flushPrePaint(): void {
+    prePaintScheduled = false;
+    if (!prePaintCandidates.size) return;
+    const budget = (backgroundBudget ??= { ...frameAllowance() });
+    // Visit every newly admitted root: cached formulas may fit after an earlier
+    // root fills the allowance. Older queued roots remain in idle time.
+    for (const root of prePaintCandidates) {
+      queuedRoots.delete(root);
+      if (root.isConnected && renderPass(root, {}, budget)) queuedRoots.set(root, 'background');
+    }
+    prePaintCandidates.clear();
+    scheduleIdle();
+  }
+
+  return {
+    isQueued: (root: Element): boolean => queuedRoots.has(root),
+
+    render(root: Element, priority: MathPriority): void {
+      if (priority === 'background') {
+        prePaintCandidates.add(root);
+        if (!prePaintScheduled) {
+          prePaintScheduled = true;
+          queueMicrotask(flushPrePaint);
+        }
+        return;
+      }
+      prePaintCandidates.delete(root);
+      if (renderPass(root, {}, frameAllowance())) queuedRoots.set(root, priority);
+      else queuedRoots.delete(root);
+      scheduleIdle();
+    },
+
+    remove(root: Element): void {
+      prePaintCandidates.delete(root);
+      queuedRoots.delete(root);
+      if (!queuedRoots.size) {
+        idleJob?.cancel?.();
+        idleJob = null;
+      }
+    },
   };
-  handle = whenIdle(step);
-  return () => handle?.cancel();
 }
+
+const liveMath = createLiveMath();
 
 /**
  * Typeset the inline formulas of prose injected into `ref` as `html`. Runs
@@ -261,14 +425,42 @@ function finishWhenIdle(root: Element): () => void {
  * any re-render (not only when `html` changes), which would put the stored
  * source spans back. Formulas already typeset are skipped and cached renders
  * are cloned, so a commit that left the markup alone costs one query. What the
- * budget leaves over is typeset in idle time; the next commit, an unmount or
- * new content cancels that and starts over from the markup then in place.
+ * shared budget leaves over is typeset in idle time, using the current markup.
+ * Pending roots stay in that queue on unchanged commits (including when an
+ * external caller rewrites the HTML). New content can use the current frame's
+ * synchronous allowance. Unmounting or replacing a root removes its queued work.
+ * Foreground roots run in layout effects; background roots use the remaining
+ * allowance in a microtask, following the nearest InlineMathPriorityContext.
  * Never updates React state.
  */
 export function useInlineMath(ref: RefObject<Element | null>, html: string): void {
+  const priority = useContext(InlineMathPriorityContext);
+  const previous = useRef<{ root: Element | null; html: string; priority: MathPriority }>(null);
   useLayoutEffect(() => {
     const root = ref.current;
-    if (!root || !html.includes(INLINE_MATH_ATTRIBUTE)) return;
-    if (renderInlineMath(root)) return finishWhenIdle(root);
+    const before = previous.current;
+    if (before?.root && before.root !== root) liveMath.remove(before.root);
+    previous.current = { root, html, priority };
+    if (!root) return;
+    if (!html.includes(INLINE_MATH_ATTRIBUTE)) {
+      liveMath.remove(root);
+      return;
+    }
+    if (
+      before?.root === root &&
+      before.html === html &&
+      before.priority === priority &&
+      liveMath.isQueued(root)
+    )
+      return;
+    liveMath.render(root, priority);
   });
+  // Only clean up on unmount: per-commit removal would discard pending queue
+  // membership and let unchanged rerenders reenter the pre-paint path.
+  useLayoutEffect(() => {
+    return () => {
+      if (previous.current?.root) liveMath.remove(previous.current.root);
+      previous.current = null;
+    };
+  }, []);
 }

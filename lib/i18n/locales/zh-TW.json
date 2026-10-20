@@ -424,6 +424,7 @@
       "moreActions": "更多操作",
       "rename": "重新命名",
       "sceneIncomplete": "此頁面內容不完整",
+      "sceneHasErrors": "本頁存在錯誤",
       "addPage": "新增頁面",
       "nextPage": "下一頁",
       "prevPage": "上一頁"

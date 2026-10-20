@@ -475,6 +475,7 @@
       "moreActions": "Autres actions",
       "rename": "Renommer",
       "sceneIncomplete": "Le contenu de cette page est incomplet",
+      "sceneHasErrors": "Cette page contient des erreurs",
       "addPage": "Ajouter une page",
       "nextPage": "Page suivante",
       "prevPage": "Page précédente"
