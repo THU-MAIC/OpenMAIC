@@ -44,7 +44,8 @@ function replaceImageIds(text: string, idMap: ReadonlyMap<string, string>): stri
   return nextText;
 }
 
-function truncateTextAtBoundary(text: string, maxChars: number): string {
+/** Cut `text` to at most `maxChars`, backing off to the nearest word/number boundary. */
+export function truncateTextAtBoundary(text: string, maxChars: number): string {
   if (maxChars <= 0) return '';
   if (text.length <= maxChars) return text;
 
