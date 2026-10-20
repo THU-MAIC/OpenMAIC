@@ -124,7 +124,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `course.actions` | chat | `llm` | إجراءات المشاهد (ما يقوله الوكلاء ويفعلونه في كل مشهد) |
 | `classroom` | chat | `llm` | محادثة الصف وتصحيح الاختبارات وبيئة تشغيل PBL |
 | `agent` | chat | `llm` | وكيل workbench. **يتطلب استدعاء الأدوات.** ويقبل أيضًا `api` و`contextWindow` |
-| `agent.title` | chat | `agent` | عناوين جلسات Pro. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
+| `agent.title` | chat | `agent` | عناوين جلسات workbench. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
 | `tts` | tts | — | تحويل النص إلى كلام |
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل Pro موقوفًا.
+احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل workbench موقوفًا.
 
 **server-providers.yml.** قبل:
 

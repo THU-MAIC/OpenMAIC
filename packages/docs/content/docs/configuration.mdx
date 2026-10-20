@@ -124,7 +124,7 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `course.actions` | chat | `llm` | Scene actions (what the agents say and do on each scene) |
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
 | `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
-| `agent.title` | chat | `agent` | Pro session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `agent.title` | chat | `agent` | Workbench session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the Pro agent off.
+Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
 
 **server-providers.yml.** Before:
 

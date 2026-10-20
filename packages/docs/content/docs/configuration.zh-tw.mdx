@@ -123,8 +123,8 @@ Amazon Bedrock（`preset: bedrock`）使用伺服器端的 AWS 憑證鏈（環�
 | `course.content.pbl` | chat | `course.content` | 專題式學習（PBL）場景 |
 | `course.actions` | chat | `llm` | 場景動作（智慧體在每個場景說什麼、做什麼） |
 | `classroom` | chat | `llm` | 課堂對話、測驗評分和 PBL 執行階段 |
-| `agent` | chat | `llm` | Pro 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
-| `agent.title` | chat | `agent` | Pro 工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
+| `agent` | chat | `llm` | 工作台智慧體。**需要工具呼叫能力。** 另外支援 `api` 和 `contextWindow` |
+| `agent.title` | chat | `agent` | 工作台的工作階段標題。只能在 `openmaic.yml` 中設定，模型設定中不顯示 |
 | `tts` | tts | — | 語音合成 |
 | `asr` | asr | — | 語音辨識（語音輸入、影音逐字稿） |
 | `image` | image | — | 圖像生成 |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持 Pro 智慧體關閉，請寫 `agent: null`。
+之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持工作台智慧體關閉，請寫 `agent: null`。
 
 **server-providers.yml。** 遷移前：
 
