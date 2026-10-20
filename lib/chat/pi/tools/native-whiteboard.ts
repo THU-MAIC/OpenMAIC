@@ -59,72 +59,51 @@ const NativeWhiteboardDrawTextParams = Type.Object(
   },
   { additionalProperties: false },
 );
-const ShapeBoxParams = {
-  expectedLastSeq: ExpectedLastSeq,
-  x: Type.Number(),
-  y: Type.Number(),
-  width: Type.Number({ exclusiveMinimum: 0 }),
-  height: Type.Number({ exclusiveMinimum: 0 }),
-  rotate: Type.Optional(
-    Type.Number({
-      description:
-        'Finite angle in degrees around the box center; defaults to 0. Positive is clockwise.',
+const NativeWhiteboardDrawShapeParams = Type.Object(
+  {
+    expectedLastSeq: ExpectedLastSeq,
+    x: Type.Number(),
+    y: Type.Number(),
+    width: Type.Number({ exclusiveMinimum: 0 }),
+    height: Type.Number({ exclusiveMinimum: 0 }),
+    rotate: Type.Optional(
+      Type.Number({
+        description:
+          'Finite angle in degrees around the box center; defaults to 0. Positive is clockwise.',
+      }),
+    ),
+    fillColor: Type.Optional(
+      Type.String({ minLength: 1, description: 'Use transparent for unfilled paths.' }),
+    ),
+    stroke: Type.Optional(
+      Type.Object(
+        {
+          color: Type.String({ minLength: 1 }),
+          width: Type.Number({ exclusiveMinimum: 0, maximum: INPUT_PATH_LIMITS.maxCoordinate }),
+          style: Type.Optional(
+            Type.Union([Type.Literal('solid'), Type.Literal('dashed'), Type.Literal('dotted')]),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    path: Type.String({
+      minLength: 1,
+      maxLength: INPUT_PATH_LIMITS.maxLength,
+      pattern: '\\S',
+      description: 'SVG path d data only, beginning with M or m; never a complete SVG document.',
     }),
-  ),
-  fillColor: Type.Optional(
-    Type.String({ minLength: 1, description: 'Use transparent for unfilled paths.' }),
-  ),
-  stroke: Type.Optional(
-    Type.Object(
-      {
-        color: Type.String({ minLength: 1 }),
-        width: Type.Number({ exclusiveMinimum: 0, maximum: INPUT_PATH_LIMITS.maxCoordinate }),
-        style: Type.Optional(
-          Type.Union([Type.Literal('solid'), Type.Literal('dashed'), Type.Literal('dotted')]),
-        ),
-      },
-      { additionalProperties: false },
-    ),
-  ),
-};
-const NativeWhiteboardDrawShapeParams = Type.Union(
-  [
-    Type.Object(
-      {
-        ...ShapeBoxParams,
-        shape: Type.Union([
-          Type.Literal('rectangle'),
-          Type.Literal('circle'),
-          Type.Literal('triangle'),
-        ]),
-      },
-      { additionalProperties: false },
-    ),
-    Type.Object(
-      {
-        ...ShapeBoxParams,
-        shape: Type.Literal('custom'),
-        path: Type.String({
-          minLength: 1,
-          maxLength: INPUT_PATH_LIMITS.maxLength,
-          pattern: '\\S',
-          description:
-            'SVG path d data only, beginning with M or m; never a complete SVG document.',
-        }),
-        // Homogeneous items works with providers that reject the older tuple items array.
-        viewBox: Type.Unsafe<[number, number]>({
-          type: 'array',
-          items: Type.Number({ exclusiveMinimum: 0 }),
-          minItems: 2,
-          maxItems: 2,
-          description:
-            'Positive [width, height] in path coordinates. The element width/height scale these coordinates independently.',
-        }),
-      },
-      { additionalProperties: false },
-    ),
-  ],
-  { type: 'object' },
+    // Homogeneous items works with providers that reject the older tuple items array.
+    viewBox: Type.Unsafe<[number, number]>({
+      type: 'array',
+      items: Type.Number({ exclusiveMinimum: 0 }),
+      minItems: 2,
+      maxItems: 2,
+      description:
+        'Positive [width, height] in path coordinates. The element width/height scale these coordinates independently.',
+    }),
+  },
+  { additionalProperties: false },
 );
 const NativeWhiteboardDrawChartParams = Type.Object(
   {
@@ -317,7 +296,6 @@ const DRAW_TEXT_KEYS = new Set([
 ]);
 const DRAW_SHAPE_KEYS = new Set([
   'expectedLastSeq',
-  'shape',
   'x',
   'y',
   'width',
@@ -381,12 +359,6 @@ const EDIT_CODE_KEYS = new Set([
   'content',
 ]);
 
-const SHAPE_PATHS = {
-  rectangle: 'M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z',
-  circle: 'M 500 0 A 500 500 0 1 1 499 0 Z',
-  triangle: 'M 500 0 L 1000 1000 L 0 1000 Z',
-} as const;
-
 class WhiteboardShapeInputError extends Error {
   constructor(
     readonly geometryError: { code: string; field: string; message: string; position?: number },
@@ -421,12 +393,12 @@ function prepareShapeArguments(args: unknown): NativeWhiteboardDrawShapeParams {
       code: 'invalid_arguments',
       field: 'params',
       message:
-        'Native whiteboard arguments must match the strict schema. Use rectangle|circle|triangle without path/viewBox, or custom with a non-empty SVG path and positive [width, height] viewBox. Copy expectedLastSeq from wb_read; x/y/rotate must be finite, width/height positive, and stroke requires color and positive width. No extra fields are allowed.',
+        'Native whiteboard arguments must match the strict schema. Every shape requires a non-empty SVG path and positive [width, height] viewBox; omit the removed shape field. Copy expectedLastSeq from wb_read; x/y/rotate must be finite, width/height positive, and stroke requires color and positive width. No extra fields are allowed.',
     });
   }
   const geometry = validateShapeGeometry({
-    path: params.shape === 'custom' ? params.path : SHAPE_PATHS[params.shape],
-    viewBox: params.shape === 'custom' ? params.viewBox : [1000, 1000],
+    path: params.path,
+    viewBox: params.viewBox,
     width: params.width,
     height: params.height,
   });
@@ -885,7 +857,7 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
         name: 'wb_draw_shape',
         label: 'Draw whiteboard shape',
         description:
-          'Append a rectangle, circle, triangle, or custom SVG path to the authoritative learner whiteboard. Copy nextMutation.expectedLastSeq from wb_read. rotate is a finite angle in degrees about the box center (default 0); x/y locate the unrotated upper-left corner. Custom requires path d data and positive viewBox [w,h]; width/height scale path coordinates. Presets forbid path/viewBox. Default fill is #5b9bd5 with no stroke; use fillColor:"transparent" and stroke:{color,width,style?} for open curves. Close filled polygons with Z. Invalid paths return a field, code and optional character position; correct the input and retry.',
+          'Append an SVG path to the authoritative learner whiteboard. Copy nextMutation.expectedLastSeq from wb_read. rotate is a finite angle in degrees about the box center (default 0); x/y locate the unrotated upper-left corner. Every shape requires path d data and positive viewBox [w,h]; width/height scale path coordinates. Default fill is #5b9bd5 with no stroke; use fillColor:"transparent" and stroke:{color,width,style?} for open curves. Close filled polygons with Z. Invalid paths return a field, code and optional character position; correct the input and retry.',
         parameters: NativeWhiteboardDrawShapeParams,
         prepare: prepareShapeArguments,
         createElement: (args, invocationDigest): PPTShapeElement => {
@@ -894,8 +866,8 @@ export function buildNativeWhiteboardTools(opts: NativeWhiteboardToolOptions): A
           return {
             id: `native-wb-element:${invocationDigest}`,
             type: 'shape',
-            viewBox: params.shape === 'custom' ? params.viewBox : [1000, 1000],
-            path: params.shape === 'custom' ? params.path : SHAPE_PATHS[params.shape],
+            viewBox: params.viewBox,
+            path: params.path,
             left: params.x,
             top: params.y,
             width: params.width,

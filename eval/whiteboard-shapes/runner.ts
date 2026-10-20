@@ -93,6 +93,62 @@ function squareOnHypotenuse(s: PPTShapeElement): boolean {
     [100, 280],
   ].every(([x, y]) => vertices.some(([vx, vy]) => Math.hypot(vx - x, vy - y) < 1));
 }
+function isCircle(s: PPTShapeElement, cx: number, cy: number, radius: number): boolean {
+  const result = validateSvgPath(s.path);
+  if (!result.ok) return false;
+  try {
+    const commands = new SVGPathData(result.commands)
+      .toAbs()
+      .normalizeHVZ()
+      .normalizeST()
+      .qtToC()
+      .aToC()
+      .scale(s.width / s.viewBox[0], s.height / s.viewBox[1])
+      .translate(s.left, s.top).commands;
+    const points: number[][] = [];
+    let x = 0,
+      y = 0,
+      moves = 0;
+    for (const c of commands) {
+      if (c.type === SVGPathData.MOVE_TO) {
+        points.push([c.x, c.y]);
+        moves++;
+      } else if (c.type === SVGPathData.LINE_TO || c.type === SVGPathData.CURVE_TO) {
+        for (let i = 1; i <= 32; i++) {
+          const t = i / 32,
+            u = 1 - t;
+          points.push(
+            c.type === SVGPathData.LINE_TO
+              ? [x + t * (c.x - x), y + t * (c.y - y)]
+              : [
+                  u ** 3 * x + 3 * u ** 2 * t * c.x1 + 3 * u * t ** 2 * c.x2 + t ** 3 * c.x,
+                  u ** 3 * y + 3 * u ** 2 * t * c.y1 + 3 * u * t ** 2 * c.y2 + t ** 3 * c.y,
+                ],
+          );
+        }
+      } else return false;
+      x = c.x;
+      y = c.y;
+    }
+    if (moves !== 1 || points.length < 33) return false;
+    const first = points[0],
+      last = points[points.length - 1];
+    if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1) return false;
+    const area =
+      Math.abs(
+        points.reduce((sum, p, i) => {
+          const next = points[(i + 1) % points.length];
+          return sum + p[0] * next[1] - next[0] * p[1];
+        }, 0),
+      ) / 2;
+    return (
+      Math.abs(area / (Math.PI * radius ** 2) - 1) < 0.02 &&
+      points.every(([px, py]) => Math.abs(Math.hypot(px - cx, py - cy) - radius) < 1)
+    );
+  } catch {
+    return false;
+  }
+}
 const cases = [
   {
     id: 'pythagoras',
@@ -120,12 +176,51 @@ const cases = [
       s[0].rotate === 12.5,
   },
   {
-    id: 'presets',
+    id: 'basic-paths',
     request:
-      'Draw exactly three ordinary filled presets in a row: rectangle, circle, triangle, without rotation or custom paths. Use x=80,340,600; y=100; width=height=120.',
-    check: (s: PPTShapeElement[]) =>
-      s.length === 3 &&
-      s.every((v) => v.rotate === 0 && v.viewBox[0] === 1000 && v.viewBox[1] === 1000),
+      'Draw exactly three filled shapes in a row using SVG paths: rectangle, complete circle, and top-centered isosceles triangle. Use x=80,340,600; y=100; width=height=120. No rotation or extra elements.',
+    check: (shapes: PPTShapeElement[]) => {
+      if (shapes.length !== 3 || shapes.some((s) => s.rotate !== 0 || s.fill === 'transparent'))
+        return false;
+      return [80, 340, 600].every((x, i) => {
+        const s = shapes.find(
+          (v) => v.left === x && v.top === 100 && v.width === 120 && v.height === 120,
+        );
+        if (!s) return false;
+        if (i === 1) return isCircle(s, x + 60, 160, 60);
+        const expected =
+          i === 0
+            ? [
+                [x, 100],
+                [x + 120, 100],
+                [x + 120, 220],
+                [x, 220],
+              ]
+            : [
+                [x + 60, 100],
+                [x + 120, 220],
+                [x, 220],
+              ];
+        const actual = polygonVertices(s);
+        const area =
+          Math.abs(
+            actual.reduce((sum, p, index) => {
+              const next = actual[(index + 1) % actual.length];
+              return sum + p[0] * next[1] - next[0] * p[1];
+            }, 0),
+          ) / 2;
+        const expectedArea = i === 0 ? 120 * 120 : (120 * 120) / 2;
+        return (
+          /[zZ]/.test(s.path) &&
+          Math.abs(area / expectedArea - 1) < 0.02 &&
+          actual.length >= expected.length &&
+          actual.every(([px, py]) =>
+            expected.some(([ex, ey]) => Math.hypot(px - ex, py - ey) < 1),
+          ) &&
+          expected.every(([ex, ey]) => actual.some(([px, py]) => Math.hypot(px - ex, py - ey) < 1))
+        );
+      });
+    },
   },
   {
     id: 'correction',

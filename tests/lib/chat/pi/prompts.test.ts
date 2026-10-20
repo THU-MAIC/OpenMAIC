@@ -73,6 +73,12 @@ describe('Pi director prompt closure routing', () => {
     expect(withShapes).toContain('viewBox:[4,3]');
     expect(withShapes).toContain('M 0 1 C 1 0 2 0 3 1');
     expect(withShapes).toContain('fillColor:"transparent"');
+    expect(withShapes).toContain('origin (0,0) is the unrotated element upper-left');
+    expect(withShapes).toContain('M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z');
+    expect(withShapes).toContain('M0 0 A1 1 0 0 1 1 1');
+    expect(withShapes).toContain('radius equals width, not width/2');
+    expect(withShapes).not.toContain('shape:"');
+    expect(withShapes).not.toContain('Presets:');
     expect(buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_read'])).not.toContain(
       '# Native whiteboard shapes',
     );

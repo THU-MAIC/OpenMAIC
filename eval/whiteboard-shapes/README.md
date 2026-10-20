@@ -1,19 +1,35 @@
 # Native whiteboard shape tools (#1853)
 
-`wb_draw_shape` supports existing rectangle/circle/triangle presets plus a
-`custom` SVG path mode. Both modes accept optional `rotate` (finite degrees,
+`wb_draw_shape` uses one SVG path interface for every shape. There is no
+`shape` discriminator or rectangle/circle/triangle preset mode. It accepts
+optional `rotate` (finite degrees,
 clockwise around the element center, default `0`), `fillColor` (default
 `#5b9bd5`, including `transparent`), and
 `stroke: { color, width, style? }` (positive width, style defaults to `solid`,
 also `dashed`/`dotted`). Omitted stroke preserves the existing no-outline behavior.
 
-Custom mode requires both a nonblank SVG `path` **d attribute** and positive
-`viewBox: [width, height]`. It never accepts a complete SVG document. Presets
-reject `path`/`viewBox` rather than giving them ambiguous precedence. Position
+Every call requires both a nonblank SVG `path` **d attribute** and positive
+`viewBox: [width, height]`. It never accepts a complete SVG document. Position
 `x`/`y` is the upper-left corner of the **unrotated** box; element dimensions
 scale viewBox coordinates independently. Use a matching aspect ratio to
 preserve mathematical lengths. Close filled polygons with `Z`; for open curves,
 request transparent fill and an explicit stroke.
+
+Path coordinates are local: `(0,0)` is the unrotated element's upper-left.
+Do not put absolute whiteboard coordinates into the path or center it around
+zero without offsetting it into the viewBox.
+
+| Shape | Path | viewBox |
+| --- | --- | --- |
+| Rectangle | `M0 0 H1 V1 H0 Z` | `[1,1]` |
+| Isosceles triangle | `M1 0 L2 1 L0 1 Z` | `[2,1]` |
+| Circle / ellipse | `M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z` | `[2,2]` |
+| Clockwise upper-right quarter circle | `M0 0 A1 1 0 0 1 1 1` | `[1,1]` |
+
+For a circle, use equal element width/height; unequal dimensions give an
+ellipse. The quarter-circle example runs from the top-left to the bottom-right
+of its box. With equal width/height, its radius equals the element width,
+not half the width. Use transparent fill and an explicit stroke for this arc.
 
 For a 3–4–5 triangle, use `path: "M0 0 L4 0 L0 3 Z"`, `viewBox: [4, 3]`,
 `width: 240`, `height: 180`. At `x: 100, y: 100`, its hypotenuse endpoints are
@@ -52,7 +68,7 @@ stroke. Existing worker tests bound malformed historical rendering.
 
 | Entry | Behavior |
 | --- | --- |
-| Native tool | Supports the extended schema and persists full shape elements. Rejects Legacy `elementId` or missing `expectedLastSeq`. |
+| Native tool | Requires path/viewBox and persists full shape elements. Rejects the removed `shape` discriminator, Legacy `elementId`, or missing `expectedLastSeq`. |
 | Legacy child action tool (`classroom-actions.ts`) | Preset-only schema with `additionalProperties: false`; execution also explicitly rejects Native fields before emitting an action. |
 | Legacy JSON action parser (`call-agent.ts`) | Rejects custom mode, rotation, path/viewBox, stroke and Native sequence fields, returning an action warning. |
 | ActionEngine (including persisted playback/eval actions) | Rejects unsupported shape extensions and unknown shape names **before opening/creating a board**. Keeps supported preset playback unchanged. |
@@ -60,7 +76,10 @@ stroke. Existing worker tests bound malformed historical rendering.
 
 Do not convert Native calls into Legacy JSON actions. Native mutations emit
 projection hints, never draw actions that an older ActionEngine might
-misinterpret. Older Native strict schemas reject added fields/custom mode.
+misinterpret. Historical elements already store path/viewBox/rotation, so they
+remain readable without migration. New Native calls must omit `shape` and
+supply path/viewBox; older Native preset/custom arguments fail explicitly.
+Older Native strict schemas reject the new path-only arguments.
 Unpatched historical Legacy executors can discard rotation or turn custom
 shapes into rectangles; they cannot safely execute this new interface. Use the
 Native tool/projection path, or upgrade the executor to get the explicit
@@ -81,7 +100,7 @@ The runner uses the production Native prompt, Pi agent and tool executors with
 an isolated BrowserRuntimeStore. Browser visibility is settled in-process;
 this is a tool/geometry eval, not an HTTP-route or full classroom UI test.
 The five cases cover a 3–4–5 triangle and hypotenuse square, a pentagon, an open
-stroked curve, all three ordinary presets, and error recovery. Recovery injects
+stroked curve, ordinary shapes drawn through paths, and error recovery. Recovery injects
 `M0 0 Z1 1` into the first otherwise valid custom call; the model receives the
 real error and must retry. This is an intentional fault, not a generation error.
 Runs stop after 24 recorded calls or 120 seconds. Results and raw traces go to the ignored `results/report.json`.
