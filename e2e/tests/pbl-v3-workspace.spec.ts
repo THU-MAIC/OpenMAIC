@@ -268,6 +268,9 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await frame.getByRole('button', { name: 'Try' }).click();
   await expect(frame.getByRole('button', { name: 'Clicked' })).toBeVisible();
   expect(previewOpen).toBe(true);
+  await page
+    .getByTestId('pbl-v3-workspace')
+    .screenshot({ path: 'test-results/pbl-v3-workbench.png' });
   await page.getByRole('button', { name: 'Stop commands and close terminals' }).click();
   await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
   expect(previewOpen).toBe(false);

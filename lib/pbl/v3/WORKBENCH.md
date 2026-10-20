@@ -39,6 +39,12 @@ learning routes. Generic sandbox mutation APIs remain blocked for learning works
 Reads show up to 20 recent/active commands; stop inspects the service's bounded command
 and terminal lists. This is a workbench, not an operational audit dashboard.
 
+## Browser fixture
+
+The classroom workbench below uses local API fixtures, not a live cloud sandbox.
+
+![Learning workbench with interactive application preview](screenshots/workbench.png)
+
 ## Deployment
 
 Follow [shared sandbox configuration](../../server/sandbox/README.md). Keep the existing
