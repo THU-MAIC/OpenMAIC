@@ -73,3 +73,30 @@ They do not establish cohort capacity, adversarial process isolation or desktop
 behavior. Managed-writer safeguards do not supervise arbitrary detached children.
 The five-minute lifetime is renewed while the visible classroom is active; durable
 recovery uses the last successful checkpoint, not unsaved work.
+
+## Independent self-review follow-up — 2026-10-21
+
+Two independent subagents reviewed repository standards and PR requirements against
+`f2e9fa40...cd8394c7`. They identified a Stop/creation race, English-only errors and
+missing AI-assisted PR disclosure. The code findings were fixed and re-reviewed;
+the PR description now identifies AI assistance.
+
+The Stop race was reproduced with real PostgreSQL and a delayed provider boundary:
+after successful Stop, the old code executed a command, left a PTY running and
+issued a valid preview grant. All three cases now fail with `WORKSPACE_STOPPED`.
+The observed epoch travels from the workbench view to atomic command/PTY reservation;
+Stop updates that same durable epoch. Delayed preview/terminal responses cannot
+reopen the browser view, and stale epochs cannot replace newer poll results.
+
+The actual Aliyun installation was then rechecked: all three stale requests were
+refused; a refreshed generation ran an exit-0 cloud command, created/resized a PTY
+and wrote an observed file, and served an HTTP application through the isolated
+gateway. Stop revoked its cookie and ticket before expiry. The temporary probe
+file was removed through the workbench API.
+
+Standalone PBL/Sandbox contracts: **294 passed, 7 skipped**. Chromium's standalone
+workbench contract, including a preview response delayed across Stop: **1 passed**
+(18.0s). TypeScript and changed-file ESLint passed. The initial browser attempt
+used the companion's different course-list interface and was rerun against this
+PR's standalone service. Browser fixtures and the live provider checks above are
+separate evidence.

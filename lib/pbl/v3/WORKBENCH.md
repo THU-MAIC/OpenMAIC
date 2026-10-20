@@ -14,7 +14,11 @@ runtime, queue, scheduler or SSH provider.
   pending guided reviews do not permit arbitrary execution. Command/terminal
   creation invalidates earlier evidence; it does not claim the command passed a test.
 - Stop commands and close terminals independently of the study lock or progress
-  revision. Managed writers must settle before a review snapshot, test or checkpoint.
+  revision. The observed workspace epoch fences command/terminal admission atomically
+  with Stop; pre-Stop preview requests cannot issue a usable grant afterward. Late
+  creation responses cannot reopen the browser view. An in-flight terminal allocation
+  may return busy from Stop; retry after it settles rather than treating that as success.
+  Managed writers must settle before a review snapshot, test or checkpoint.
   Unknown command outcomes remain unknown; do not start a replacement automatically.
 - Preview deployment-approved ports through the existing isolated gateway. Signed
   tickets bind owner, study, environment, port and revocation epoch. Each gateway
@@ -104,8 +108,8 @@ Live-provider results for an authorized single-owner installation are recorded i
 [LIVE-ACCEPTANCE.md](LIVE-ACCEPTANCE.md). Small-cohort capacity still needs its own
 staged deployment validation before claiming operational readiness.
 
-Both feature branches build on the shared workspace-contract PR. After that parent
-merges, retarget to `integration/shared-sandbox`, update baselines and repeat combined
-checks. Teaching Skills, version-aware assessment, reports and cross-milestone recovery
+Both feature branches build on the merged shared workspace-contract PR. This branch
+targets `integration/shared-sandbox`; standalone and combined checks were repeated
+against that baseline. Teaching Skills, version-aware assessment, reports and cross-milestone recovery
 are the companion learning change; full private-course deployment and activity
 operations follow the general capability work.

@@ -2361,6 +2361,13 @@
   "sandbox": {
     "errors": {
       "environmentBusy": "Otra operación está modificando este entorno. Vuelve a intentarlo cuando termine.",
+      "environmentChanged": "El entorno de aprendizaje cambió. Actualiza la página antes de continuar.",
+      "progressChanged": "El progreso de aprendizaje cambió. Actualiza la página y vuelve a intentar la operación.",
+      "workbenchAccessDenied": "Esta operación no está disponible en la etapa de aprendizaje actual. Usa los controles del proyecto que estén habilitados.",
+      "fileConflict": "El archivo cambió o la ruta de destino ya existe. Vuelve a cargar el espacio de trabajo antes de intentarlo de nuevo.",
+      "stopped": "El espacio de trabajo se detuvo. Vuelve a intentar la operación para iniciarlo de nuevo.",
+      "invalidRequest": "La solicitud no es válida. Revisa los valores e inténtalo de nuevo.",
+      "unsupported": "El proveedor de sandbox configurado no admite esta operación.",
       "learningManaged": "Este espacio de trabajo pertenece a un proyecto de aprendizaje. Usa los controles del espacio de aprendizaje.",
       "sourcePath": "Este archivo no forma parte de los archivos fuente del proyecto.",
       "sourceCount": "Los proyectos de aprendizaje admiten un máximo de 256 archivos fuente.",

@@ -2361,6 +2361,13 @@
   "sandbox": {
     "errors": {
       "environmentBusy": "另一個操作正在修改此環境，請在其完成後重試。",
+      "environmentChanged": "學習環境已更換，請重新整理後繼續。",
+      "progressChanged": "學習進度已變更，請重新整理後重試此操作。",
+      "workbenchAccessDenied": "目前的學習階段不允許此操作，請使用可用的專案操作功能。",
+      "fileConflict": "檔案已變更或目標路徑已存在，請重新載入工作區後再試。",
+      "stopped": "工作區已停止，請重試此操作以重新啟動。",
+      "invalidRequest": "請求無效，請檢查輸入內容後再試。",
+      "unsupported": "目前設定的沙盒服務供應商不支援此操作。",
       "learningManaged": "此工作區屬於學習專案，請使用學習工作區內的操作入口。",
       "sourcePath": "此檔案不在專案原始碼範圍內。",
       "sourceCount": "學習專案最多支援 256 個原始碼檔案。",

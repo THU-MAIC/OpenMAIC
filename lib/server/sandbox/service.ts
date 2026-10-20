@@ -456,27 +456,38 @@ export class SandboxService {
       const files = await this.provider.listWorkspace(row.resource_id!, row.id);
       const existing = files.some((f) => f.path === path);
       if (input.action === 'create' ? existing : !existing)
-        throw sandboxConflict('The file list changed. Reload the workspace.');
+        throw sandboxConflict(
+          'The file list changed. Reload the workspace.',
+          'WORKSPACE_FILE_CONFLICT',
+        );
       if (destination && files.some((f) => f.path === destination))
-        throw sandboxConflict('The destination already exists.');
+        throw sandboxConflict('The destination already exists.', 'WORKSPACE_FILE_CONFLICT');
       if (
         input.action !== 'create' &&
         createHash('sha256')
           .update(await this.readText(id, path))
           .digest('hex') !== input.expectedHash
       )
-        throw sandboxConflict('The file changed. Reload before continuing.');
+        throw sandboxConflict(
+          'The file changed. Reload before continuing.',
+          'WORKSPACE_FILE_CONFLICT',
+        );
       await beforeWrite();
       await this.provider.mutateFile(row.resource_id!, row.id, { ...input, path, destination });
       return { changed: true };
     });
   }
-  async startCommand(id: string, body: Record<string, unknown>) {
-    await this.mutation(id, 'command');
-    return this.store.exclusive(id, () => this.startCommandUnlocked(id, body));
+  /** Observed Stop generation, also used for preview revocation; safe to expose to the owner. */
+  async workspaceEpoch(id: string) {
+    return (await this.binding(id)).preview_epoch;
   }
 
-  private async startCommandUnlocked(id: string, body: Record<string, unknown>) {
+  async startCommand(id: string, body: Record<string, unknown>, epoch?: number) {
+    await this.mutation(id, 'command');
+    return this.store.exclusive(id, () => this.startCommandUnlocked(id, body, epoch));
+  }
+
+  private async startCommandUnlocked(id: string, body: Record<string, unknown>, epoch?: number) {
     assertSandboxId(body.requestId);
     if (
       typeof body.command !== 'string' ||
@@ -504,7 +515,7 @@ export class SandboxService {
       timeoutMs,
     };
     const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
-    const created = await this.store.reserveCommand(row, input.id, hash);
+    const created = await this.store.reserveCommand(row, input.id, hash, epoch);
     if (created) {
       try {
         await this.provider.startCommand(row.resource_id, row.id, input);
@@ -612,16 +623,16 @@ export class SandboxService {
     return { cols, rows };
   }
 
-  async createTerminal(id: string, body: Record<string, unknown>) {
+  async createTerminal(id: string, body: Record<string, unknown>, epoch?: number) {
     await this.mutation(id, 'terminal');
-    return this.store.exclusive(id, () => this.createTerminalUnlocked(id, body));
+    return this.store.exclusive(id, () => this.createTerminalUnlocked(id, body, epoch));
   }
 
-  private async createTerminalUnlocked(id: string, body: Record<string, unknown>) {
+  private async createTerminalUnlocked(id: string, body: Record<string, unknown>, epoch?: number) {
     assertSandboxId(body.requestId);
     const { cols, rows } = this.terminalSize(body.cols ?? 80, body.rows ?? 24);
     const env = await this.running(id);
-    const reserved = await this.store.reserveTerminal(env, body.requestId);
+    const reserved = await this.store.reserveTerminal(env, body.requestId, epoch);
     if (reserved.created) {
       try {
         const pid = await this.provider.createTerminal(
@@ -811,7 +822,7 @@ export class SandboxService {
     });
   }
 
-  async preview(id: string, port: unknown) {
+  async preview(id: string, port: unknown, epoch?: number) {
     await this.mutation(id, 'preview');
     if (
       !Number.isInteger(port) ||
@@ -822,6 +833,8 @@ export class SandboxService {
       throw sandboxInvalid('Preview port must be 1024–65535, excluding the runtime control port.');
     previewConfig();
     const row = await this.running(id);
+    if (epoch !== undefined && row.preview_epoch !== epoch)
+      throw sandboxConflict('Workspace was stopped. Retry the operation.', 'WORKSPACE_STOPPED');
     return issuePreviewGrant({
       ownerId: this.ownerId,
       environmentId: row.id,

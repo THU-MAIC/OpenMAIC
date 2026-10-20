@@ -151,6 +151,7 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
       if (error.exitCode === 47)
         throw sandboxConflict(
           'The file changed or the destination already exists. Reload the workspace.',
+          'WORKSPACE_FILE_CONFLICT',
         );
       if (error.exitCode === 45)
         throw new SandboxError(

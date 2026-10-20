@@ -55,6 +55,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   let file = 'Write your plan here.';
   const workCalls: { action: string; path?: string }[] = [];
   let previewOpen = false;
+  let workEpoch = 0;
   const calls: { type: string; path?: string; text?: string; expectedHash?: string }[] = [];
   await page.route('**/api/pbl/v3**', async (route) => {
     const req = route.request(),
@@ -64,6 +65,8 @@ test('installed sample opens in the normal classroom and preserves progress afte
     if (url.pathname === '/api/pbl/v3/workspace') {
       if (body?.command) {
         const command = body.command;
+        if (['run', 'terminal', 'preview'].includes(command.action))
+          expect(command.epoch).toBe(workEpoch);
         workCalls.push(command);
         view.revision++;
         if (command.action === 'create') view.files.push(command.path);
@@ -74,13 +77,17 @@ test('installed sample opens in the normal classroom and preserves progress afte
           previewOpen = true;
           return route.fulfill({ json: { url: 'https://preview.example.test/' } });
         }
-        if (command.action === 'stop') previewOpen = false;
+        if (command.action === 'stop') {
+          previewOpen = false;
+          workEpoch++;
+        }
         return route.fulfill({ json: { accepted: true } });
       }
       return route.fulfill({
         json: {
           environmentId: view.environmentId,
           revision: view.revision,
+          epoch: workEpoch,
           canEdit: view.actions.includes('edit'),
           planning: false,
           canManageFiles: view.actions.includes('edit'),
@@ -274,6 +281,30 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByRole('button', { name: 'Stop commands and close terminals' }).click();
   await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
   expect(previewOpen).toBe(false);
+  // A creation response already in flight cannot reopen a preview after Stop.
+  let releasePreview!: () => void, previewEntered!: () => void;
+  const previewGate = new Promise<void>((resolve) => {
+    releasePreview = resolve;
+  });
+  const previewReady = new Promise<void>((resolve) => {
+    previewEntered = resolve;
+  });
+  await page.route('**/api/pbl/v3/workspace', async (route) => {
+    const command =
+      route.request().method() === 'POST' ? route.request().postDataJSON()?.command : null;
+    if (command?.action !== 'preview') return route.fallback();
+    expect(command.epoch).toBe(workEpoch);
+    previewEntered();
+    await previewGate;
+    return route.fulfill({ json: { url: 'https://preview.example.test/late' } });
+  });
+  await page.getByRole('button', { name: 'Preview port 8000' }).click();
+  await previewReady;
+  await page.getByRole('button', { name: 'Stop commands and close terminals' }).click();
+  await expect.poll(() => workEpoch).toBe(2);
+  releasePreview();
+  await expect(page.getByRole('button', { name: 'Run command', exact: true })).toBeEnabled();
+  await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Save checkpoint', exact: true }).click();
   await expect.poll(() => calls.some((c) => c.type === 'checkpoint')).toBe(true);
   view.questions = [{ q: 'What does return do?', options: ['Returns a value', 'Prints a value'] }];

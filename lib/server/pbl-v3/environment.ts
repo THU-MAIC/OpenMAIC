@@ -18,7 +18,10 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
     // A caller's Study snapshot may predate another caller's successful renewal.
     const current = await store.get(row.id, row.owner_id);
     if (current.environment_id !== row.environment_id)
-      throw sandboxConflict('The learning environment changed. Refresh before continuing.');
+      throw sandboxConflict(
+        'The learning environment changed. Refresh before continuing.',
+        'ENVIRONMENT_CHANGED',
+      );
     if (
       current.environment_checked_at &&
       Date.now() - current.environment_checked_at.getTime() < 20_000
@@ -50,7 +53,10 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
       [row.id, row.owner_id, env.id],
     );
     if (!updated.rows.length)
-      throw sandboxConflict('The learning environment changed. Refresh before continuing.');
+      throw sandboxConflict(
+        'The learning environment changed. Refresh before continuing.',
+        'ENVIRONMENT_CHANGED',
+      );
     return env;
   }
 }

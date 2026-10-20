@@ -12,7 +12,8 @@ export async function GET(request: Request) {
     if (!id || !env || !terminal)
       throw sandboxInvalid('A learning session, environment and terminal are required.');
     const row = await (await LearningStore.open()).get(id, principal.ownerId);
-    if (row.environment_id !== env) throw sandboxConflict('The learning environment changed.');
+    if (row.environment_id !== env)
+      throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
     const service = await SandboxService.forOwner(principal);
     return new Response(await service.terminalStream(env, terminal, request.signal), {
       headers: { 'content-type': 'text/event-stream', 'x-accel-buffering': 'no' },

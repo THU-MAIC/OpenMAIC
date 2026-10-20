@@ -2361,6 +2361,13 @@
   "sandbox": {
     "errors": {
       "environmentBusy": "Ein anderer Vorgang ändert diese Umgebung. Versuche es danach erneut.",
+      "environmentChanged": "Die Lernumgebung hat sich geändert. Aktualisieren Sie die Ansicht, bevor Sie fortfahren.",
+      "progressChanged": "Der Lernfortschritt hat sich geändert. Aktualisieren Sie die Ansicht und wiederholen Sie den Vorgang.",
+      "workbenchAccessDenied": "Dieser Vorgang ist in der aktuellen Lernphase nicht verfügbar. Verwenden Sie die freigegebenen Projektfunktionen.",
+      "fileConflict": "Die Datei wurde geändert oder das Ziel ist bereits vorhanden. Laden Sie den Arbeitsbereich neu und versuchen Sie es erneut.",
+      "stopped": "Der Arbeitsbereich wurde gestoppt. Wiederholen Sie den Vorgang, um ihn erneut zu starten.",
+      "invalidRequest": "Die Anfrage ist ungültig. Prüfen Sie die Eingaben und versuchen Sie es erneut.",
+      "unsupported": "Der konfigurierte Sandbox-Anbieter unterstützt diesen Vorgang nicht.",
       "learningManaged": "Dieser Arbeitsbereich gehört zu einem Lernprojekt. Verwenden Sie die Bedienelemente des Lernarbeitsbereichs.",
       "sourcePath": "Diese Datei gehört nicht zu den Quelldateien des Projekts.",
       "sourceCount": "Lernprojekte unterstützen höchstens 256 Quelldateien.",

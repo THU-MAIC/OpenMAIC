@@ -53,6 +53,7 @@ export function LearningWorkbenchPanel({
     [terminal, setTerminal] = useState(''),
     [preview, setPreview] = useState('');
   const sequence = useRef(0),
+    executionSequence = useRef(0),
     current = useRef(view);
   current.current = view;
   const dirty = !!loaded && text !== loaded.text;
@@ -71,12 +72,15 @@ export function LearningWorkbenchPanel({
     );
     if (current.current.environmentId === id)
       setWork((prior) =>
-        !prior || prior.environmentId !== next.environmentId || prior.revision <= next.revision
+        !prior ||
+        prior.environmentId !== next.environmentId ||
+        (prior.revision <= next.revision && prior.epoch <= next.epoch)
           ? next
           : prior,
       );
   }, [view.id, view.environmentId, view.environment?.ready]);
   useEffect(() => {
+    executionSequence.current++;
     setWork(null);
     setTerminal('');
     setPreview('');
@@ -112,6 +116,9 @@ export function LearningWorkbenchPanel({
     return invalidateRead;
   }, [load, invalidateRead]);
   const run = async (action: string, payload: Record<string, unknown> = {}) => {
+    // Stop invalidates earlier creation responses even when the provider finishes later.
+    if (action === 'stop') executionSequence.current++;
+    const executionTicket = executionSequence.current;
     if (action !== 'stop') setWorking(true);
     setError('');
     try {
@@ -122,11 +129,13 @@ export function LearningWorkbenchPanel({
           id: crypto.randomUUID(),
           revision: selected.revision,
           environmentId: selected.environmentId,
+          epoch: work?.epoch,
           action,
           ...payload,
         },
       });
       if (selected.environmentId !== current.current.environmentId) return;
+      if (executionTicket !== executionSequence.current) return;
       if (action === 'terminal') setTerminal((result as { id: string }).id);
       if (action === 'preview') setPreview((result as { url: string }).url);
       if (action === 'stop') {

@@ -2361,6 +2361,13 @@
   "sandbox": {
     "errors": {
       "environmentBusy": "Another operation is changing this environment. Retry after it finishes.",
+      "environmentChanged": "The learning environment changed. Refresh before continuing.",
+      "progressChanged": "Learning progress changed. Refresh and retry the operation.",
+      "workbenchAccessDenied": "This operation is unavailable at the current learning stage. Use the permitted project controls.",
+      "fileConflict": "The file changed or the destination already exists. Reload the workspace before retrying.",
+      "stopped": "Workspace was stopped. Retry the operation to start it again.",
+      "invalidRequest": "The request is invalid. Check the values and try again.",
+      "unsupported": "This operation is not supported by the configured sandbox provider.",
       "learningManaged": "This workspace belongs to a learning project. Use the learning workspace controls.",
       "sourcePath": "This file is outside the project source files.",
       "sourceCount": "Learning projects support at most 256 source files.",

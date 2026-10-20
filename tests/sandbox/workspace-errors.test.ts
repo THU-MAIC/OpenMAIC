@@ -36,6 +36,13 @@ afterEach(() => vi.unstubAllGlobals());
 
 const cases = [
   [sandboxConflict('server diagnostic', 'ENVIRONMENT_BUSY'), 'environmentBusy'],
+  [sandboxConflict('server diagnostic', 'ENVIRONMENT_CHANGED'), 'environmentChanged'],
+  [sandboxConflict('server diagnostic', 'PROGRESS_CHANGED'), 'progressChanged'],
+  [sandboxConflict('server diagnostic', 'WORKBENCH_ACCESS_DENIED'), 'workbenchAccessDenied'],
+  [sandboxConflict('server diagnostic', 'WORKSPACE_FILE_CONFLICT'), 'fileConflict'],
+  [sandboxConflict('server diagnostic', 'WORKSPACE_STOPPED'), 'stopped'],
+  [sandboxInvalid('server diagnostic'), 'invalidRequest'],
+  [new SandboxError('SANDBOX_UNSUPPORTED', 422, 'server diagnostic'), 'unsupported'],
   [new SandboxError('PBL_WORKSPACE_MANAGED', 409, 'server diagnostic'), 'learningManaged'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_PATH'), 'sourcePath'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_COUNT'), 'sourceCount'],

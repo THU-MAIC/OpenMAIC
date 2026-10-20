@@ -3,6 +3,11 @@ import type { SandboxErrorReason } from './errors';
 
 const reasonKeys: Record<SandboxErrorReason, string> = {
   ENVIRONMENT_BUSY: 'sandbox.errors.environmentBusy',
+  ENVIRONMENT_CHANGED: 'sandbox.errors.environmentChanged',
+  PROGRESS_CHANGED: 'sandbox.errors.progressChanged',
+  WORKBENCH_ACCESS_DENIED: 'sandbox.errors.workbenchAccessDenied',
+  WORKSPACE_FILE_CONFLICT: 'sandbox.errors.fileConflict',
+  WORKSPACE_STOPPED: 'sandbox.errors.stopped',
   PBL_SOURCE_PATH: 'sandbox.errors.sourcePath',
   PBL_SOURCE_COUNT: 'sandbox.errors.sourceCount',
   PBL_SOURCE_SIZE: 'sandbox.errors.sourceSize',
@@ -24,5 +29,9 @@ export function sandboxErrorMessage(error?: {
       : 'sandbox.requestFailed';
     return getClientTranslation(key);
   }
+  if (error?.code === 'SANDBOX_INVALID_REQUEST')
+    return getClientTranslation('sandbox.errors.invalidRequest');
+  if (error?.code === 'SANDBOX_UNSUPPORTED')
+    return getClientTranslation('sandbox.errors.unsupported');
   return error?.message || getClientTranslation('sandbox.requestFailed');
 }

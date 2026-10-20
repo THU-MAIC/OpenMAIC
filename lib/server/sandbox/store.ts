@@ -1,6 +1,7 @@
 import 'server-only';
 import { assertSandboxSettingsRevision } from './settings';
 import type { Pool, PoolClient } from 'pg';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { CheckpointStorage, type SavedCheckpoint } from './checkpoint-storage';
 
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
@@ -91,9 +92,26 @@ export class SandboxStore {
     return result.rows;
   }
 
-  async reserveCommand(row: SandboxRow, id: string, fingerprint: string): Promise<boolean> {
+  /** Serialize admission with Stop's epoch update, without holding a transaction over provider I/O. */
+  private async assertWorkspaceEpoch(tx: Queryable, row: SandboxRow, epoch?: number) {
+    if (epoch === undefined) return;
+    const current = await tx.query<{ preview_epoch: number }>(
+      'SELECT preview_epoch FROM sandbox_environments WHERE owner_id=$1 AND id=$2 FOR UPDATE',
+      [row.owner_id, row.id],
+    );
+    if (current.rows[0]?.preview_epoch !== epoch)
+      throw sandboxConflict('Workspace was stopped. Retry the operation.', 'WORKSPACE_STOPPED');
+  }
+
+  async reserveCommand(
+    row: SandboxRow,
+    id: string,
+    fingerprint: string,
+    epoch?: number,
+  ): Promise<boolean> {
     return this.persistence.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, row.owner_id);
+      await this.assertWorkspaceEpoch(tx, row, epoch);
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
         `sandbox.command:${row.id}`,
       ]);
@@ -172,9 +190,10 @@ export class SandboxStore {
     });
   }
 
-  async reserveTerminal(row: SandboxRow, id: string) {
+  async reserveTerminal(row: SandboxRow, id: string, epoch?: number) {
     return this.persistence.withTransaction(async (tx) => {
       await fenceOwnerWrite(tx, row.owner_id);
+      await this.assertWorkspaceEpoch(tx, row, epoch);
       await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
         `sandbox.terminal:${row.id}`,
       ]);

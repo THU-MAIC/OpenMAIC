@@ -2361,6 +2361,13 @@
   "sandbox": {
     "errors": {
       "environmentBusy": "另一个操作正在修改此环境，请在其完成后重试。",
+      "environmentChanged": "学习环境已更换，请刷新后继续。",
+      "progressChanged": "学习进度已改变，请刷新后重试此操作。",
+      "workbenchAccessDenied": "当前学习阶段不允许此操作，请使用可用的项目操作入口。",
+      "fileConflict": "文件已改变或目标路径已存在，请重新加载工作区后重试。",
+      "stopped": "工作区已停止，请重试此操作以重新启动。",
+      "invalidRequest": "请求无效，请检查输入内容后重试。",
+      "unsupported": "当前配置的沙盒服务商不支持此操作。",
       "learningManaged": "此工作区属于学习项目，请使用学习工作区内的操作入口。",
       "sourcePath": "此文件不在项目源码范围内。",
       "sourceCount": "学习项目最多支持 256 个源文件。",

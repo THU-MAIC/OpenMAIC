@@ -279,6 +279,7 @@ import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { SandboxService } from '@/lib/server/sandbox/service';
+import { SandboxStore } from '@/lib/server/sandbox/store';
 import { E2BCompatibleSandboxProvider } from '@/lib/server/sandbox/providers/e2b-compatible';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 
@@ -1390,11 +1391,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const fresh = await freshStudy();
     let row = await store.get(fresh.id, principal.ownerId);
     const environmentId = row.environment_id!;
+    const sandbox = await SandboxService.forOwner(principal);
     const send = async (action: string, payload: Record<string, unknown> = {}) =>
       workbenchCommand(principal, row.id, {
         id: randomUUID(),
         revision: (await store.get(row.id, principal.ownerId)).revision,
         environmentId,
+        epoch: await sandbox.workspaceEpoch(environmentId),
         action,
         ...payload,
       });
@@ -1473,6 +1476,103 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       project.sourceRoots = originalRoots;
     }
   }, 30000);
+
+  it.each(['run', 'terminal', 'preview'] as const)(
+    'fences an admitted %s that reaches creation after Stop has succeeded',
+    async (action) => {
+      vi.stubEnv('OPENMAIC_SECRET_KEY', 'local-secret-'.repeat(4));
+      vi.stubEnv('OPENMAIC_PREVIEW_GATEWAY_KEY', 'local-gateway-'.repeat(4));
+      vi.stubEnv('OPENMAIC_APP_ORIGIN', 'https://app.example.com');
+      vi.stubEnv('OPENMAIC_SANDBOX_PREVIEW_ORIGIN', 'https://{id}.preview-example.net');
+      const fresh = await freshStudy();
+      let row = await store.get(fresh.id, principal.ownerId);
+      row.state.introCompleted = true;
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      row = await store.transaction((db) =>
+        store.commit(db, row, { state: row.state, events: [] }),
+      );
+      let release!: () => void, entered!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const pause = async () => {
+        entered();
+        await gate;
+      };
+      const originalCommand = SandboxStore.prototype.reserveCommand;
+      const originalTerminal = SandboxStore.prototype.reserveTerminal;
+      const originalPreview = SandboxService.prototype.preview;
+      const spy =
+        action === 'preview'
+          ? vi.spyOn(SandboxService.prototype, 'preview').mockImplementation(async function (
+              this: SandboxService,
+              ...args
+            ) {
+              await pause();
+              return originalPreview.apply(this, args);
+            })
+          : action === 'run'
+            ? vi.spyOn(SandboxStore.prototype, 'reserveCommand').mockImplementation(async function (
+                this: SandboxStore,
+                ...args
+              ) {
+                await pause();
+                return originalCommand.apply(this, args);
+              })
+            : vi
+                .spyOn(SandboxStore.prototype, 'reserveTerminal')
+                .mockImplementation(async function (this: SandboxStore, ...args) {
+                  await pause();
+                  return originalTerminal.apply(this, args);
+                });
+      const request = {
+        id: randomUUID(),
+        revision: row.revision,
+        environmentId: row.environment_id!,
+        epoch: 0,
+        action,
+        text: 'echo should-not-start',
+        port: 8000,
+      };
+      const pending = workbenchCommand(principal, row.id, request);
+      const outcome = pending.then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      try {
+        await ready;
+        await expect(
+          workbenchCommand(principal, row.id, {
+            ...request,
+            id: randomUUID(),
+            action: 'stop',
+            revision: 0,
+          }),
+        ).resolves.toEqual({ stopped: true });
+        release();
+        expect(await outcome).toMatchObject({ error: { reason: 'WORKSPACE_STOPPED' } });
+        const service = await SandboxService.forOwner(principal);
+        expect(await service.listCommands(row.environment_id!)).toEqual([]);
+        expect(await service.listTerminals(row.environment_id!)).toEqual([]);
+        // Also reject an old submission that only reaches the server after Stop.
+        await expect(
+          workbenchCommand(principal, row.id, {
+            ...request,
+            id: randomUUID(),
+            revision: (await store.get(row.id, principal.ownerId)).revision,
+          }),
+        ).rejects.toMatchObject({ reason: 'WORKSPACE_STOPPED' });
+      } finally {
+        release();
+        await outcome;
+        spy.mockRestore();
+      }
+    },
+  );
 
   it('admits different learners independently and fails busy requests without exhausting PG', async () => {
     const first = await freshStudy(),

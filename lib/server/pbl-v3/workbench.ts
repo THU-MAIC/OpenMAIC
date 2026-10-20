@@ -61,6 +61,7 @@ export async function workbenchView(
   return {
     environmentId,
     revision: row.revision,
+    epoch: await service.workspaceEpoch(environmentId),
     ...policy,
     commands,
     terminals,
@@ -77,12 +78,16 @@ export async function authorizeLearningPreview(
     row = await store.get(studyId, ownerId);
   const policy = await permissions(store, row);
   if (row.environment_id !== environmentId || !policy.canRun || !policy.ports.includes(port))
-    throw sandboxConflict('Preview is unavailable at this learning stage.');
+    throw sandboxConflict(
+      'Preview is unavailable at this learning stage.',
+      'WORKBENCH_ACCESS_DENIED',
+    );
 }
 export interface WorkbenchCommand {
   id: string;
   revision: number;
   environmentId: string;
+  epoch?: number;
   action: string;
   path?: string;
   destination?: string;
@@ -114,7 +119,10 @@ export async function workbenchCommand(
   let row = await store.get(id, principal.ownerId);
   const service = await SandboxService.forOwner(principal);
   if (row.environment_id !== command.environmentId)
-    throw sandboxConflict('The learning environment changed. Refresh before continuing.');
+    throw sandboxConflict(
+      'The learning environment changed. Refresh before continuing.',
+      'ENVIRONMENT_CHANGED',
+    );
   // Closing/cancelling is control traffic; it must not wait behind a stalled writer.
   if (command.action === 'stop') {
     await service.revokePreviews(command.environmentId);
@@ -126,13 +134,23 @@ export async function workbenchCommand(
         await service.closeTerminal(command.environmentId, terminal.id);
     return { stopped: true };
   }
+  if (
+    ['run', 'terminal', 'preview'].includes(command.action) &&
+    (!Number.isSafeInteger(command.epoch) || command.epoch! < 0)
+  )
+    throw sandboxInvalid('An observed workspace generation is required.');
   return store.exclusive(id, async () => {
     row = await store.get(id, principal.ownerId);
     if (row.environment_id !== command.environmentId)
-      throw sandboxConflict('The learning environment changed.');
+      throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
     const policy = await permissions(store, row),
       project = projectFor(row),
       environmentId = requireEnvironment(row);
+    if (
+      ['run', 'terminal', 'preview'].includes(command.action) &&
+      (await service.workspaceEpoch(environmentId)) !== command.epoch
+    )
+      throw sandboxConflict('Workspace was stopped. Retry the operation.', 'WORKSPACE_STOPPED');
     assertEnvironmentReady(await touchEnvironment(store, row, service));
     const input = command.action === 'input';
     const receiptId = `workbench:${command.id}`,
@@ -145,22 +163,29 @@ export async function workbenchCommand(
     ).rows[0];
     if (receipt) {
       if (receipt.hash !== hash)
-        throw sandboxConflict('This request ID was used for another operation.');
+        throw sandboxConflict(
+          'This request ID was used for another operation.',
+          'PROGRESS_CHANGED',
+        );
       if (receipt.result !== null) return receipt.result;
       if (receipt.stage_key !== stageKey(row))
-        throw sandboxConflict('This operation belongs to an earlier stage.');
+        throw sandboxConflict('This operation belongs to an earlier stage.', 'PROGRESS_CHANGED');
     } else if (!input && row.revision !== command.revision)
-      throw sandboxConflict('Progress changed. Refresh before continuing.');
+      throw sandboxConflict('Progress changed. Refresh before continuing.', 'PROGRESS_CHANGED');
     const fileAction = ['create', 'delete', 'rename'].includes(command.action);
     if (fileAction) {
       if (!policy.canManageFiles)
-        throw sandboxConflict('File management is unavailable at this stage.');
+        throw sandboxConflict(
+          'File management is unavailable at this stage.',
+          'WORKBENCH_ACCESS_DENIED',
+        );
       assertProjectSource(project, command.path);
-      if (command.path === 'PLAN.md') throw sandboxConflict('Keep the project plan.');
+      if (command.path === 'PLAN.md')
+        throw sandboxConflict('Keep the project plan.', 'WORKBENCH_ACCESS_DENIED');
       if (command.action === 'rename') {
         assertProjectSource(project, command.destination);
         if (command.destination === 'PLAN.md')
-          throw sandboxConflict('The project plan cannot be replaced.');
+          throw sandboxConflict('The project plan cannot be replaced.', 'WORKBENCH_ACCESS_DENIED');
       }
       if (
         command.action === 'create' &&
@@ -174,6 +199,7 @@ export async function workbenchCommand(
       if (!policy.canRun)
         throw sandboxConflict(
           'Stop at the current teaching review before using the terminal or running an application.',
+          'WORKBENCH_ACCESS_DENIED',
         );
     } else throw sandboxInvalid('Unknown workbench operation.');
     const operation: WorkspaceMutation = fileAction
@@ -221,19 +247,27 @@ export async function workbenchCommand(
           )
             throw sandboxInvalid('Enter a command of at most 16000 characters.');
           await invalidate();
-          return service.startCommand(environmentId, {
-            requestId: command.id,
-            command: command.text,
-            timeoutMs: Math.min(300000, (await service.capabilities()).lifetimeMs),
-          });
+          return service.startCommand(
+            environmentId,
+            {
+              requestId: command.id,
+              command: command.text,
+              timeoutMs: Math.min(300000, (await service.capabilities()).lifetimeMs),
+            },
+            command.epoch,
+          );
         }
         if (command.action === 'terminal') {
           await invalidate();
-          return service.createTerminal(environmentId, {
-            requestId: command.id,
-            cols: 100,
-            rows: 28,
-          });
+          return service.createTerminal(
+            environmentId,
+            {
+              requestId: command.id,
+              cols: 100,
+              rows: 28,
+            },
+            command.epoch,
+          );
         }
         if (command.action === 'input') {
           if (typeof command.terminalId !== 'string')
@@ -248,7 +282,7 @@ export async function workbenchCommand(
         }
         if (!policy.ports.includes(command.port!))
           throw sandboxInvalid('Select a configured preview port.');
-        return service.preview(environmentId, command.port);
+        return service.preview(environmentId, command.port, command.epoch);
       },
     );
     if (!input)
