@@ -967,10 +967,13 @@ export function WorkspaceRail({
             className="h-[21px] w-auto max-w-[110px] shrink-0"
           />
         </HomeLink>
+        {/* Gives way before the fold does: at the narrowest rail width the
+            label truncates rather than pushing the fold out of the rail. */}
         <Link
           href="/"
           data-testid="pro-nav-new-course"
-          className="ws-quiet shrink-0 rounded-md px-1.5 py-1 text-[12px]"
+          title={t('workspace.newCourse')}
+          className="ws-quiet min-w-0 truncate rounded-md px-0.5 py-1 text-[12px]"
         >
           {t('workspace.newCourse')}
         </Link>
