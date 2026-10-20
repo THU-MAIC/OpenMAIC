@@ -248,8 +248,17 @@ export interface GenerationRunSnapshot {
   error: GenerationRunFailure | null;
   /** A `countdown` run waiting for its outline: when the run confirms it itself (ISO). */
   outlineAutoConfirmAt?: string;
+  /** This run is one part of a course series (lib/server/generation/series); null outside one. */
+  series: GenerationRunSeriesMembership | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A run's position in the course series it was planned as part of. */
+export interface GenerationRunSeriesMembership {
+  seriesId: string;
+  /** 1-based position of this run's course in the series. */
+  order: number;
 }
 
 /** One durable entry of a run's ordered event log. */

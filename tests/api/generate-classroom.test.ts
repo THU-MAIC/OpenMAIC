@@ -98,6 +98,7 @@ function storedRun(overrides: Partial<StoredRun> = {}): StoredRun {
     stageId: null,
     progress: { scenesTotal: 0, scenesCompleted: 0 },
     error: null,
+    series: null,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     leaseWorkerId: null,

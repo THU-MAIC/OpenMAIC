@@ -51,6 +51,7 @@ import {
   type GenerationRunInput,
   type GenerationRunMediaCheckpoint,
   type GenerationRunOutline,
+  type GenerationRunSeriesMembership,
   type GenerationRunSnapshot,
   type ExecutableRunState,
   type GenerationRunState,
@@ -150,6 +151,8 @@ interface RunRow extends Record<string, unknown> {
   media_summary: RunMediaSummary | null;
   outline_auto_confirm_at: Date | string | null;
   host_attributes: GenerationRunAttributes | null;
+  series_id: string | null;
+  series_order: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -157,7 +160,7 @@ interface RunRow extends Record<string, unknown> {
 const RUN_COLUMNS = `id, owner_id, input, state, step, outline, outline_revision, agents, stage_id,
   scenes_total, scenes_completed, error, seq, lease_worker_id, lease_heartbeat_at,
   lease_generation, takeovers, media_pending, narration_unvoiced, media_summary,
-  outline_auto_confirm_at, host_attributes, created_at, updated_at`;
+  outline_auto_confirm_at, host_attributes, series_id, series_order, created_at, updated_at`;
 
 function isoTimestamp(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
@@ -182,6 +185,7 @@ function storedRun(row: RunRow): StoredRun {
     ...(row.outline_auto_confirm_at
       ? { outlineAutoConfirmAt: isoTimestamp(row.outline_auto_confirm_at) }
       : {}),
+    series: row.series_id === null ? null : { seriesId: row.series_id, order: row.series_order! },
     createdAt: isoTimestamp(row.created_at),
     updatedAt: isoTimestamp(row.updated_at),
     leaseWorkerId: row.lease_worker_id,
@@ -206,6 +210,7 @@ export function runSnapshot(run: StoredRun): GenerationRunSnapshot {
     progress: run.progress,
     error: run.error,
     ...(run.outlineAutoConfirmAt ? { outlineAutoConfirmAt: run.outlineAutoConfirmAt } : {}),
+    series: run.series,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   };
@@ -519,6 +524,8 @@ export interface CreateRunOptions {
    * attributes to store with the run, or throws to refuse it.
    */
   authorize?: (tx: Queryable, runId: string) => Promise<GenerationRunAttributes | undefined>;
+  /** This run is one part of a course series, fixed at creation; absent outside a series. */
+  series?: GenerationRunSeriesMembership;
 }
 
 /** The owner already has as many runs waiting for outline confirmation as allowed. */
@@ -596,13 +603,15 @@ export async function createGenerationRun(
     const id = generateRunId();
     const attributes = options.authorize ? await options.authorize(tx, id) : undefined;
     await tx.query(
-      `INSERT INTO generation_runs (id, owner_id, input, state, host_attributes)
-       VALUES ($1, $2, $3::jsonb, 'preparing', $4::jsonb)`,
+      `INSERT INTO generation_runs (id, owner_id, input, state, host_attributes, series_id, series_order)
+       VALUES ($1, $2, $3::jsonb, 'preparing', $4::jsonb, $5, $6)`,
       [
         id,
         ownerId,
         encodeJson(input, 'run input'),
         attributes === undefined ? null : encodeJson(attributes, 'run attributes'),
+        options.series?.seriesId ?? null,
+        options.series?.order ?? null,
       ],
     );
     await insertEvents(tx, id, [{ type: 'state', data: { state: 'preparing', step: null } }]);

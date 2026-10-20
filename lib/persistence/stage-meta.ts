@@ -14,6 +14,10 @@ export interface StageMetaRow {
   /** Server-side mirror of the document outline's generation-complete flag. */
   generationComplete: boolean;
   deletedAt: Date | null;
+  /** The course series this course belongs to, mirrored from its run; null outside a series. */
+  seriesId: string | null;
+  /** This course's 1-based position in its series; null outside a series. */
+  seriesOrder: number | null;
 }
 
 interface RawStageMetaRow extends Record<string, unknown> {
@@ -23,6 +27,8 @@ interface RawStageMetaRow extends Record<string, unknown> {
   published_at: number | string | null;
   generation_complete: boolean;
   deleted_at: Date | string | null;
+  series_id: string | null;
+  series_order: number | null;
 }
 
 export const STAGE_META_SCHEMA = `
@@ -43,6 +49,19 @@ CREATE INDEX IF NOT EXISTS stage_meta_owner_idx ON stage_meta (owner_id, stage_i
 
 CREATE INDEX IF NOT EXISTS stage_meta_public_live_idx
   ON stage_meta (stage_id) WHERE is_public AND deleted_at IS NULL;
+`;
+
+// Mirrors the run's series_id/series_order (lib/persistence/generation-runs.ts,
+// lib/persistence/course-series.ts) onto the course itself, once its document
+// exists, so a course listing shows series membership without joining back to
+// the run that created it (a run's checkpoints are compacted away once it is
+// no longer executable; the course must carry its own copy to outlive that).
+const SERIES = `
+ALTER TABLE stage_meta ADD COLUMN IF NOT EXISTS series_id TEXT;
+ALTER TABLE stage_meta ADD COLUMN IF NOT EXISTS series_order INTEGER;
+
+CREATE INDEX IF NOT EXISTS stage_meta_series_idx
+  ON stage_meta (series_id, series_order) WHERE series_id IS NOT NULL;
 `;
 
 /** Whether `document_stages` still has the retired `owner_id` column. */
@@ -140,6 +159,7 @@ export const STAGE_META_MIGRATIONS: SchemaMigrationSet = {
   migrations: [
     { version: 1, name: 'baseline', up: STAGE_META_SCHEMA, transaction: false },
     { version: 2, name: 'adopt_legacy_document_owners', up: adoptLegacyDocumentOwnersOnce },
+    { version: 3, name: 'series', up: SERIES },
   ],
 };
 
@@ -160,7 +180,8 @@ export async function readStageMeta(
   stageId: string,
 ): Promise<StageMetaRow | null> {
   const result = await queryable.query<RawStageMetaRow>(
-    `SELECT stage_id, owner_id, is_public, published_at, generation_complete, deleted_at
+    `SELECT stage_id, owner_id, is_public, published_at, generation_complete, deleted_at,
+            series_id, series_order
        FROM stage_meta
       WHERE stage_id = $1`,
     [stageId],
@@ -185,7 +206,28 @@ export async function readStageMeta(
         : row.deleted_at instanceof Date
           ? row.deleted_at
           : new Date(row.deleted_at),
+    seriesId: row.series_id,
+    seriesOrder: row.series_order,
   };
+}
+
+/**
+ * Mirror a run's series membership onto its course, once the course exists.
+ * Idempotent and one-way: a course's series membership is set once, when its
+ * run names one, and never cleared (a course does not leave the series it
+ * was generated into).
+ */
+export async function setStageSeries(
+  queryable: Queryable,
+  stageId: string,
+  series: { seriesId: string; seriesOrder: number },
+): Promise<void> {
+  await queryable.query(
+    `UPDATE stage_meta
+        SET series_id = $2, series_order = $3
+      WHERE stage_id = $1 AND deleted_at IS NULL`,
+    [stageId, series.seriesId, series.seriesOrder],
+  );
 }
 
 export type StageAccessRefusal = 'foreign' | 'unclaimed' | 'tombstoned' | 'reserved-document';

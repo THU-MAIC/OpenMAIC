@@ -31,3 +31,21 @@
 **Commit**：`feat(document): add material series-splitting algorithm`
 
 ---
+
+### 单元 2：数据库层 —— course_series 新表 + generation_runs/stage_meta 系列列
+
+**改动**：
+- `lib/persistence/course-series.ts`（新增）：`course_series` 表（`id`, `owner_id`, `title`, `part_count`, `pending_parts` JSONB, `created_at`），独立的 `ensureCourseSeriesSchema`，采用与 `generation-runs.ts` 相同的“独立模块自带迁移集”写法。`pending_parts` 暂存尚未启动为 run 的后续分片材料（`MaterialSeriesPart[]`），因为那些 run 还不存在，材料无处安放。
+- `lib/persistence/generation-runs.ts`：migration 6（`series`）给 `generation_runs` 加 `series_id`、`series_order` 列和一条部分索引；不加外键到 `course_series`，因为两个模块的 schema 各自独立引导（bootstrap），不能假设对方的表已存在。
+- `lib/persistence/stage-meta.ts`：migration 3（`series`）给 `stage_meta` 镶镜像的 `series_id`、`series_order` 列（课程本身需要留自己的一份拷贝，因为 run 完成后其 checkpoint 会被压实清除，不能永远依赖 run 行）。新增 `setStageSeries()` setter，`StageMetaRow`/`readStageMeta` 同步返回这两个字段。
+- `lib/server/generation/run/types.ts`：`GenerationRunSnapshot` 新增必填字段 `series: GenerationRunSeriesMembership | null`；新增 `GenerationRunSeriesMembership { seriesId, order }` 类型。
+- `lib/server/generation/run/store.ts`：`RunRow`/`RUN_COLUMNS`/`storedRun()`/`runSnapshot()` 同步新增 `series_id`/`series_order` 的读取与映射；`CreateRunOptions` 新增可选 `series` 字段，`createGenerationRun()` 的 INSERT 语句据此写入（系列归属在创建时一次性确定，之后不可变更，所以放在创建选项里而不是 `RunPatch` 里）。
+
+**验证**：
+- `tsc --noEmit`：全量通过。唯一受影响的下游是 `tests/api/generate-classroom.test.ts` 里手工构造 `StoredRun` 的测试 fixture，补了 `series: null` 字段后类型检查通过。
+- `vitest run tests/api/generate-classroom.test.ts tests/document/series-split.test.ts tests/document/bundle.test.ts`：59/59 通过。
+- **未能验证**：`tests/server/generation-runs.pg.test.ts` 等 `.pg.test.ts` 契约测试需要真实 Postgres（通过 `PG_CONTRACT_URL` 环境变量注入），本机沙箱内没有可用的 Postgres 或 Docker（`pg_isready`、`docker` 均不可用），这些套件会被 `describe.skipIf(!contractUrl)` 自动跳过，无法在本环境验证新迁移的实际执行效果（列是否正确创建、索引是否生效等）。建议在有 Postgres 的环境里至少跑一次 `generation-runs.pg.test.ts` 和 `stage-meta-tenancy.pg.test.ts`。
+
+**Commit**：`feat(persistence): add course_series table and series columns`
+
+---

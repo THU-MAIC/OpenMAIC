@@ -36,6 +36,10 @@
  * `authorizeStart` hook attached to the run when it admitted it
  * (`lib/server/generation-run-hooks`), handed back to the host's hooks on
  * every execution of the run. Null for a run started without them.
+ *
+ * Version 6 adds `series_id`/`series_order`: a run that is one part of a
+ * course series (`lib/persistence/course-series.ts`) names the series and
+ * its own 1-based position in it. Both null for a run outside a series.
  */
 import type { Queryable } from '@openmaic/storage/document/pg';
 import { applySchemaMigrations, type SchemaMigrationSet } from '@openmaic/storage/pg-migrations';
@@ -123,6 +127,18 @@ CREATE INDEX IF NOT EXISTS generation_runs_outline_auto_confirm_idx
 const HOST_ATTRIBUTES = `
 ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS host_attributes JSONB`;
 
+// A run that is one part of a course series: which series, and its 1-based
+// position in it. `course_series` (lib/persistence/course-series.ts) holds
+// the series itself; no foreign key here, since that table is provisioned by
+// a separate, independently-bootstrapped module and migrations must not
+// depend on another store's table existing yet.
+const SERIES = `
+ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS series_id TEXT;
+ALTER TABLE generation_runs ADD COLUMN IF NOT EXISTS series_order INTEGER;
+
+CREATE INDEX IF NOT EXISTS generation_runs_series_idx
+  ON generation_runs (series_id) WHERE series_id IS NOT NULL`;
+
 export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
   store: 'generation-runs',
   migrations: [
@@ -131,6 +147,7 @@ export const GENERATION_RUN_MIGRATIONS: SchemaMigrationSet = {
     { version: 3, name: 'run_report', up: RUN_REPORT },
     { version: 4, name: 'outline_auto_confirm', up: OUTLINE_AUTO_CONFIRM },
     { version: 5, name: 'host_attributes', up: HOST_ATTRIBUTES },
+    { version: 6, name: 'series', up: SERIES },
   ],
 };
 
