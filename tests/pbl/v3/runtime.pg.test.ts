@@ -276,8 +276,10 @@ import { SandboxError } from '@/lib/sandbox/errors';
 import { LearningStore } from '@/lib/server/pbl-v3/store';
 import { commandStudy, learningView, digest } from '@/lib/server/pbl-v3/runtime';
 import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
+import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { SandboxService } from '@/lib/server/sandbox/service';
+import { E2BCompatibleSandboxProvider } from '@/lib/server/sandbox/providers/e2b-compatible';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 
 const url = process.env.PG_CONTRACT_URL,
@@ -1135,8 +1137,78 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const count = mocked.renewals.length;
     expect((await learningView(principal, study.id)).environment?.ready).toBe(true);
     await learningView(principal, study.id);
+    await touchEnvironment(store, before, await SandboxService.forOwner(principal));
     expect(mocked.renewals.slice(count)).toEqual([before.environment_id]);
     expect((await store.get(study.id, principal.ownerId)).revision).toBe(before.revision);
+  });
+  it('keeps teaching tools available while a background poll renews the same environment', async () => {
+    const study = await freshStudy();
+    const queued = (await study.send('chat')) as { sessionId: string };
+    const meta = await agents.claimNextSession('renewal-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId: queued.sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'renewal-worker',
+      attempt: meta!.attempt,
+      signal: new AbortController().signal,
+    });
+    await pool.query('UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1', [
+      study.id,
+    ]);
+    let entered!: () => void, release!: () => void, contended!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const collision = new Promise<void>((resolve) => {
+      contended = resolve;
+    });
+    const originalRenew = SandboxService.prototype.renew;
+    const attempt = vi.spyOn(SandboxService.prototype, 'renew').mockImplementation(async function (
+      this: SandboxService,
+      id,
+    ) {
+      try {
+        return await originalRenew.call(this, id);
+      } catch (error) {
+        contended();
+        throw error;
+      }
+    });
+    const renew = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+      .mockImplementationOnce(async () => {
+        entered();
+        await gate;
+      });
+    const polling = learningView(principal, study.id);
+    try {
+      await ready;
+      const teaching = invoke(config, 'read_next_skill');
+      const outcome = expect(teaching).resolves.toMatchObject({
+        content: expect.any(Array),
+      });
+      await collision;
+      release();
+      await outcome;
+      expect(renew).toHaveBeenCalledTimes(1);
+      expect((await store.binding(queued.sessionId))?.guided).toBeTruthy();
+    } finally {
+      release();
+      await polling;
+      renew.mockRestore();
+      attempt.mockRestore();
+      await agents.finishSession(queued.sessionId, 'renewal-worker', {
+        status: 'succeeded',
+        expectedAttempt: meta!.attempt,
+      });
+    }
   });
   it('restores a checkpoint with one durable allocation across an interrupted restore, clearing old evaluation and grants', async () => {
     const study = await freshStudy();

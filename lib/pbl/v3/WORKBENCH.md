@@ -65,6 +65,12 @@ A local test holds one learner's lock while concurrent requests receive busy res
 then verifies another learner and ordinary SQL still proceed. This is bounded admission
 validation, not a production capacity claim or a substitute for staged load testing.
 
+Background polls and teaching tools recheck the durable environment check time before
+renewing. An environment-lock conflict retries only the keepalive, at 50 ms intervals
+for up to five seconds, without retaining a SQL connection while waiting or replaying
+the teaching action. Provider failures, pool-admission limits and workspace mutation
+conflicts still fail normally. Replaced environments cannot receive an old check receipt.
+
 ## Verification
 
 ```sh
@@ -75,6 +81,10 @@ pnpm exec playwright test e2e/tests/pbl-v3-workspace.spec.ts
 The PG tests use actual host service/store logic with a local provider fixture and
 Python execution: file mutation, ownership, command results, terminal input/closure,
 preview grants/revocation, checkpoint restoration and multi-learner lock pressure.
+The renewal regression holds a poll inside the provider while a leased teaching tool
+contends for the same real PG lock, then verifies that both complete with one renewal.
+Focused tests also cover the retry budget, stale snapshots, provider failure and
+environment replacement before/during a check.
 The file-operation tests execute the adapter's actual Python script, including stale
 hashes, occupied destinations, symlink ancestors and multiply linked files. Browser
 fixtures cover dirty/stale buffers, command controls and interactive iframe preview.

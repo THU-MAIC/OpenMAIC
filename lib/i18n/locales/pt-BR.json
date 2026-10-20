@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "Outra operação está alterando este ambiente. Tente novamente quando ela terminar.",
       "learningManaged": "Este espaço de trabalho pertence a um projeto de aprendizagem. Use os controles do espaço de aprendizagem.",
       "sourcePath": "Este arquivo não faz parte dos arquivos-fonte do projeto.",
       "sourceCount": "Os projetos de aprendizagem aceitam no máximo 256 arquivos-fonte.",

@@ -35,6 +35,7 @@ beforeAll(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 const cases = [
+  [sandboxConflict('server diagnostic', 'ENVIRONMENT_BUSY'), 'environmentBusy'],
   [new SandboxError('PBL_WORKSPACE_MANAGED', 409, 'server diagnostic'), 'learningManaged'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_PATH'), 'sourcePath'],
   [sandboxInvalid('server diagnostic', 'PBL_SOURCE_COUNT'), 'sourceCount'],

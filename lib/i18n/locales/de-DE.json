@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "Ein anderer Vorgang ändert diese Umgebung. Versuche es danach erneut.",
       "learningManaged": "Dieser Arbeitsbereich gehört zu einem Lernprojekt. Verwenden Sie die Bedienelemente des Lernarbeitsbereichs.",
       "sourcePath": "Diese Datei gehört nicht zu den Quelldateien des Projekts.",
       "sourceCount": "Lernprojekte unterstützen höchstens 256 Quelldateien.",

@@ -337,6 +337,7 @@ export class SandboxStore {
       if (!locked)
         throw sandboxConflict(
           'Another operation is changing this environment. Retry after it finishes.',
+          'ENVIRONMENT_BUSY',
         );
       return await action();
     } finally {

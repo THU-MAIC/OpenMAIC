@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "Une autre opération modifie cet environnement. Réessayez une fois terminée.",
       "learningManaged": "Cet espace de travail appartient à un projet pédagogique. Utilisez les commandes de cet espace pédagogique.",
       "sourcePath": "Ce fichier ne fait pas partie des fichiers sources du projet.",
       "sourceCount": "Les projets pédagogiques acceptent au maximum 256 fichiers sources.",

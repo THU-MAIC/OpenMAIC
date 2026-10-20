@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "另一個操作正在修改此環境，請在其完成後重試。",
       "learningManaged": "此工作區屬於學習專案，請使用學習工作區內的操作入口。",
       "sourcePath": "此檔案不在專案原始碼範圍內。",
       "sourceCount": "學習專案最多支援 256 個原始碼檔案。",

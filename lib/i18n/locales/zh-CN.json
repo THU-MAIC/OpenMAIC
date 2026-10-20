@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "另一个操作正在修改此环境，请在其完成后重试。",
       "learningManaged": "此工作区属于学习项目，请使用学习工作区内的操作入口。",
       "sourcePath": "此文件不在项目源码范围内。",
       "sourceCount": "学习项目最多支持 256 个源文件。",

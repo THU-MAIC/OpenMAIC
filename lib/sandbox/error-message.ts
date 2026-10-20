@@ -2,6 +2,7 @@ import { getClientTranslation } from '@/lib/i18n';
 import type { SandboxErrorReason } from './errors';
 
 const reasonKeys: Record<SandboxErrorReason, string> = {
+  ENVIRONMENT_BUSY: 'sandbox.errors.environmentBusy',
   PBL_SOURCE_PATH: 'sandbox.errors.sourcePath',
   PBL_SOURCE_COUNT: 'sandbox.errors.sourceCount',
   PBL_SOURCE_SIZE: 'sandbox.errors.sourceSize',

@@ -1,26 +1,58 @@
 import 'server-only';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { SandboxService } from '@/lib/server/sandbox/service';
 import type { SandboxEnvironment } from '@/lib/sandbox/types';
-import { sandboxConflict } from '@/lib/sandbox/errors';
+import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import type { Study, LearningStore } from './store';
 import type { InstalledProject } from './catalog';
 
-/** Renew active studies at most once every 20 seconds (the provider supports a 60-second minimum TTL), including while the learner reads or edits. */
+/** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
 export async function touchEnvironment(store: LearningStore, row: Study, service: SandboxService) {
   if (!row.environment_id) return null;
   let env = await service.get(row.environment_id);
-  if (!row.environment_checked_at || Date.now() - row.environment_checked_at.getTime() >= 20_000) {
-    env = await service.reconcile(env.id);
-    if (env.state === 'running' && env.workspaceReady) {
-      await service.renew(env.id);
-      await store.pool.query(
-        'UPDATE pbl_v3_studies SET environment_checked_at=now() WHERE id=$1 AND environment_id=$2',
-        [row.id, env.id],
-      );
+  const deadline = Date.now() + 5_000;
+  let reconciled = false;
+  for (;;) {
+    // Polls and role tools use different service instances, possibly in different processes.
+    // A caller's Study snapshot may predate another caller's successful renewal.
+    const current = await store.get(row.id, row.owner_id);
+    if (current.environment_id !== row.environment_id)
+      throw sandboxConflict('The learning environment changed. Refresh before continuing.');
+    if (
+      current.environment_checked_at &&
+      Date.now() - current.environment_checked_at.getTime() < 20_000
+    )
+      return env;
+    if (!reconciled) {
+      env = await service.reconcile(env.id);
+      reconciled = true;
     }
+    if (env.state !== 'running' || !env.workspaceReady) return env;
+    try {
+      await service.renew(env.id);
+    } catch (error) {
+      if (
+        !(error instanceof SandboxError) ||
+        error.reason !== 'ENVIRONMENT_BUSY' ||
+        Date.now() >= deadline
+      )
+        throw error;
+      // No SQL connection or environment lock is retained while waiting. Mutation
+      // locks and pool admission stay fail-fast; only this keepalive is retried.
+      await delay(50);
+      env = await service.get(row.environment_id);
+      continue;
+    }
+    const updated = await store.pool.query(
+      `UPDATE pbl_v3_studies SET environment_checked_at=now()
+       WHERE id=$1 AND owner_id=$2 AND environment_id=$3 RETURNING id`,
+      [row.id, row.owner_id, env.id],
+    );
+    if (!updated.rows.length)
+      throw sandboxConflict('The learning environment changed. Refresh before continuing.');
+    return env;
   }
-  return env;
 }
 export function assertEnvironmentReady(env: SandboxEnvironment | null) {
   if (!env || env.state !== 'running' || !env.workspaceReady)

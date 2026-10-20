@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "Another operation is changing this environment. Retry after it finishes.",
       "learningManaged": "This workspace belongs to a learning project. Use the learning workspace controls.",
       "sourcePath": "This file is outside the project source files.",
       "sourceCount": "Learning projects support at most 256 source files.",

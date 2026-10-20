@@ -1,4 +1,5 @@
 export type SandboxErrorReason =
+  | 'ENVIRONMENT_BUSY'
   | 'PBL_SOURCE_PATH'
   | 'PBL_SOURCE_COUNT'
   | 'PBL_SOURCE_SIZE'

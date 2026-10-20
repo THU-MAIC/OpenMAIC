@@ -2360,6 +2360,7 @@
   },
   "sandbox": {
     "errors": {
+      "environmentBusy": "Một thao tác khác đang thay đổi môi trường này. Hãy thử lại sau khi thao tác đó hoàn tất.",
       "learningManaged": "Không gian làm việc này thuộc một dự án học tập. Hãy sử dụng các chức năng điều khiển trong không gian học tập.",
       "sourcePath": "Tệp này nằm ngoài phạm vi mã nguồn của dự án.",
       "sourceCount": "Dự án học tập hỗ trợ tối đa 256 tệp mã nguồn.",
