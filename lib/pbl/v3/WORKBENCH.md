@@ -71,6 +71,13 @@ for up to five seconds, without retaining a SQL connection while waiting or repl
 the teaching action. Provider failures, pool-admission limits and workspace mutation
 conflicts still fail normally. Replaced environments cannot receive an old check receipt.
 
+Teaching requests identify the active stage and current completion receipt explicitly.
+Earlier-stage dialogue is retained as quoted project memory, while the native message
+sequence starts at the first real student turn of the current stage. Earlier tool
+completion results cannot masquerade as the current workflow. The durable transcript,
+reports, feedback counts and student-confirmation gates are unchanged; the projection
+adds no student message and does not invent a teaching result.
+
 ## Verification
 
 ```sh

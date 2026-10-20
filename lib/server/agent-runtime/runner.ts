@@ -1630,6 +1630,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         ? (await import('@/lib/server/pbl-v3/runner-tools')).withTeachingTurnBoundary(
             streamFn,
             teaching.isTurnComplete,
+            teaching.historyWindow,
           )
         : streamFn,
       systemPrompt: execution.systemPrompt,

@@ -30,6 +30,7 @@ import {
 } from './runtime';
 import { touchEnvironment, assertEnvironmentReady } from './environment';
 import { GuidedSkillReview } from './guided-review';
+import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -464,6 +465,7 @@ export async function teachingRunnerConfig(input: {
     systemPrompt,
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
+    historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
   };
 }
 
@@ -472,7 +474,11 @@ export async function teachingRunnerConfig(input: {
  * Settle locally at the model-call boundary after a committed teaching receipt,
  * even for mixed/invalid tool batches. No model call or student message is added.
  */
-export function withTeachingTurnBoundary(streamFn: StreamFn, isComplete: () => boolean): StreamFn {
+export function withTeachingTurnBoundary(
+  streamFn: StreamFn,
+  isComplete: () => boolean,
+  historyWindow?: TeachingHistoryWindow,
+): StreamFn {
   return (model, context, options) => {
     if (!isComplete()) {
       // Empty stop frames are local control receipts, not model conversation.
@@ -486,7 +492,12 @@ export function withTeachingTurnBoundary(streamFn: StreamFn, isComplete: () => b
             message.content.length === 0
           ),
       );
-      return streamFn(model, { ...context, messages }, options);
+      const current = { ...context, messages };
+      return streamFn(
+        model,
+        historyWindow ? currentTeachingContext(current, historyWindow) : current,
+        options,
+      );
     }
     const stream = createAssistantMessageEventStream();
     stream.push({
