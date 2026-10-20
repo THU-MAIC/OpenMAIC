@@ -173,11 +173,19 @@ export interface RunStepServices {
    * no analysis.
    */
   materialsReady(ownerId: string, materialIds: string[]): Promise<boolean>;
-  /** Extract and bundle the owner's materials: the outline's source text and the images. */
+  /**
+   * Extract and bundle the owner's materials: the outline's source text and
+   * the images. `textRanges` (a course-series run's `seriesContext`, see
+   * `GenerationRunInput`) cuts each named material's extracted text down to
+   * its half-open `[start, end)` slice before bundling, and drops the images
+   * of a material absent from it entirely; omitted outside a series, when
+   * every material is read and bundled in full.
+   */
   analyzeMaterials(
     ownerId: string,
     materialIds: string[],
     ctx: StepContext,
+    textRanges?: Record<string, { start: number; end: number }>,
   ): Promise<AnalyzedMaterials>;
   /** Research the requirement; null when the webSearch slot resolves to nothing. */
   research(
@@ -366,7 +374,7 @@ export const defaultRunStepServices: RunStepServices = {
     );
   },
 
-  async analyzeMaterials(ownerId, materialIds, ctx) {
+  async analyzeMaterials(ownerId, materialIds, ctx, textRanges) {
     // Extracted in the background since their upload (lib/server/materials/
     // extraction.ts): the step waits for what is still extracting, and reads
     // the stored results.
@@ -377,8 +385,15 @@ export const defaultRunStepServices: RunStepServices = {
     const byteStore = getMaterialByteStore();
     const parts: ParsedDocumentPart[] = [];
     for (const [order, record] of records.entries()) {
+      // A course-series run only teaches its own slice of each material: a
+      // material entirely outside this run's ranges contributes nothing
+      // (text or images), and one named in them is cut to its range before
+      // the budget-aware bundling below ever sees it.
+      if (textRanges && !(record.id in textRanges)) continue;
       const fileName = record.originalName ?? record.id;
       const result = await readMaterialExtractionResult(record, byteStore);
+      const range = textRanges?.[record.id];
+      const text = range ? result.text.slice(range.start, range.end) : result.text;
       parts.push({
         source: {
           id: record.id,
@@ -387,10 +402,13 @@ export const defaultRunStepServices: RunStepServices = {
           ...(record.mime ? { mimeType: record.mime } : {}),
           order,
         },
-        text: result.text,
-        rawTextLength: result.text.length,
+        text,
+        rawTextLength: text.length,
         ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
-        images: result.images,
+        // Images are presented beside the text that names them; a slice that
+        // is not the material's first keeps none (mirrors how the split
+        // algorithm itself only carries images on a document's first slice).
+        images: !range || range.start === 0 ? result.images : [],
       });
     }
     const bundle = buildDocumentBundle(parts);

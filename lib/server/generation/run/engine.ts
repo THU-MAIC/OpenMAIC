@@ -608,10 +608,12 @@ async function executeClaimedRun(
         // No step deadline around the wait: a material queued behind other
         // extractions waits its turn, and each extraction has the step's
         // budget once a worker runs it (awaitOwnerMaterialExtractions).
-        const analyzed = await services.analyzeMaterials(owner, input.materialIds, {
-          log,
-          signal,
-        });
+        const analyzed = await services.analyzeMaterials(
+          owner,
+          input.materialIds,
+          { log, signal },
+          input.seriesContext?.textRanges,
+        );
         // What the outline will not see in full, as the preview warns about it.
         const warnings = analyzed.truncated
           ? { events: [{ type: 'material_truncated' as const, data: { ...analyzed.truncated } }] }

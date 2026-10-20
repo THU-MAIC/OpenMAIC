@@ -100,6 +100,23 @@ export interface GenerationRunInput {
   voice?: { providerId: string; voiceId: string; speed?: number };
   /** Accepted for older clients; successful uploads are retained regardless. */
   releaseMaterials?: boolean;
+  /**
+   * This run is one part of a course series (`lib/server/generation/series`):
+   * `materialIds` names the series' whole material set, same for every part,
+   * and `textRanges` cuts each material's extracted text down to the slice
+   * this part teaches (a half-open `[start, end)` character range into the
+   * text `analyzeMaterials` would otherwise bundle in full). A material the
+   * split left entirely to another part is absent from `textRanges` and
+   * contributes nothing to this run (its images are dropped too, since they
+   * are presented beside the text that names them). Absent outside a series.
+   */
+  seriesContext?: {
+    seriesId: string;
+    /** This run's 1-based position among the series' parts. */
+    order: number;
+    /** By material id, the half-open character range of its text this part teaches. */
+    textRanges: Record<string, { start: number; end: number }>;
+  };
 }
 
 /** The outline a run generated, as last confirmed or edited. */

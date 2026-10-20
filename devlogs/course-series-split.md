@@ -49,3 +49,23 @@
 **Commit**：`feat(persistence): add course_series table and series columns`
 
 ---
+
+### 单元 3：GenerationRunInput.seriesContext + 材料切片应用 + 纯规划函数
+
+**设计决策**：材料是按 `materialId` 存储、独立走提取流水线的真实上传文件，系列中的每个 run 不应该拥有一份“派生材料”（会重复一整套提取/配额/生命周期机制）。改为：系列里每个 run 的 `materialIds` 和原始材料一致，但 `GenerationRunInput.seriesContext.textRanges` 携带「这个 run 只教每个材料文本的哪一段 `[start, end)`」，在 `analyzeMaterials` 组装 `ParsedDocumentPart[]` 时按此切片，再交给既有的 `buildDocumentBundle`。不在系列中的 run 该字段缺省，行为完全不变。
+
+**改动**：
+- `lib/server/generation/run/types.ts`：`GenerationRunInput` 新增可选 `seriesContext: { seriesId, order, textRanges }`。
+- `lib/server/generation/run/services.ts`：`RunStepServices.analyzeMaterials` 新增可选第 4 参数 `textRanges`；默认实现据此过滤掉完全不在范围内的材料（文本和图片都不带），对范围内的材料做文本切片；只有材料切片里的第一段（`range.start === 0`）保留图片，呼应切分算法本身"图片只跟第一个分片走"的约定。
+- `lib/server/generation/run/engine.ts`：`material-analysis` 步骤调用处把 `input.seriesContext?.textRanges` 传给 `analyzeMaterials`。
+- `lib/server/generation/series/plan.ts`（新增）：纯函数 `planCourseSeries(parts, maxChars)`，包一层 `splitMaterialIntoSeries`，把切分结果转换成每个系列分部的 `textRanges`（通过跟踪每个原始材料 id 被消费到的偏移量，把 `#n` 分片 id 还原回在原文本里的字符区间）。预算内返回 `null`。与真正落库、创建 run 的编排器（下一单元）分开，保持可以脱离数据库单测。
+- `tests/server/generation/series-plan.test.ts`（新增）：5 个用例，覆盖预算内返回 null、材料各自独占一个分部时拿到完整区间、单材料跨分部时区间连续不重叠且拼接还原原文、以及按区间切出的文本能精确重建原文档切片。
+
+**验证**：
+- `tsc --noEmit`：全量通过（包括 `engine.ts`、`services.ts` 的新参数)。
+- `vitest run tests/server/generation/series-plan.test.ts`：5/5 通过。
+- `RunStepServices.analyzeMaterials` 的其他调用点都在 `*.pg.test.ts` 契约测试里（同单元 2 提到的环境限制，无法在本沙箱跑），但新参数是可选的，不会导致这些测试在 compile 阶段出错；运行期行为是否符合预期仍待有 Postgres 的环境验证。
+
+**Commit**：`feat(generation): thread series text ranges through material analysis`
+
+---
