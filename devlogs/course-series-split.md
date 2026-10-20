@@ -112,6 +112,28 @@
 - `vitest run tests/api/generate-classroom.test.ts tests/document/series-split.test.ts tests/server/generation/series-plan.test.ts`：59/59 通过（均为本单元改动波及但不直接测试新逻辑的回归面）。
 - **未跑**：任何真正跑通"晋升为系列 → 完成 → 自动续接"流程的测试（见缺口 4）。
 
-**Commit**：尚未提交（本单元代码已写完、`tsc` 已验证，等下一步补完集成测试或在提交前单独 commit 当前进度，由后续处理决定）。
+**Commit**：`feat(generation): orchestrate course series split and auto-continue`
+
+---
+
+### 单元 5：`course_series` 表从未被真正建表的 bug + 集成测试
+
+**发现的问题（阻断性，单元 4 当时漏掉了）**：`lib/persistence/course-series.ts` 里的 `ensureCourseSeriesSchema` 写完之后一直没有任何地方调用它——既不在 `lib/persistence/server-provider.ts` 的集中建表清单里（那份清单是给"所有部署都用得到"的核心表用的，故意不包含每个可选功能模块），也不像 `generation_runs` 自己那样有一段"懒加载建表"的代码。结果是：即使单元 4 的编排逻辑完全正确，一上真实环境第一次有材料超预算触发 `startCourseSeries` 时也会直接报表不存在的错——这个 bug 本可能一直潜伏到有人在生产环境第一次踩到超预算材料才暴露，而不是在任何单测里，因为所有非 pg 测试都 mock 掉了 `RunStepServices`，根本不会真的碰到 `course_series` 表。
+
+**修复**：参照 `lib/server/generation/run/store.ts` 里 `generation_runs` 自己的懒加载建表写法（`provider()` 内部用 `globalThis` 挂一个按 connection string 做键的"建表完成" promise，第一次用到时在 `withSchemaBootstrapLock` 下跑 `ensureXxxSchema`），在 `lib/server/generation/series/orchestrator.ts` 里加了一份同构的 `provider()`，`startCourseSeries`/`startNextSeriesPart` 都改为经过它取 `pool`，不再直接调用 `getServerPersistenceProvider`。同时导出 `resetCourseSeriesSchemaForTests()`，供测试在 `beforeAll`/`afterAll` 里跟 `resetGenerationRunSchemaForTests()` 配对清掉缓存的 ready-promise（否则多个 `.pg.test.ts` 文件各自起/删 schema 时会互相串）。
+
+**集成测试**：`tests/server/course-series.pg.test.ts`（新增，`.pg.test.ts` 命名与 `describe.skipIf(!contractUrl)` 跳过机制，和 `generation-runs.pg.test.ts` 完全一致的套路——engine 的 `RunStepServices` 全部用 fake，真实的是 run store、`course_series` 表和 engine 自己的 `complete()` 续接路径）：
+
+- 第一个用例是本功能最核心的端到端路径：造一个 `planMaterialSeries` 会返回两段计划的 fake，启动一个普通 run（此刻 `run.series` 为 `null`，系列还不存在）→ 跑到 `completed`，断言这个 run 的 `material-analysis` 步骤只拿到了第 1 部分自己的 `textRanges`（不是全量材料），断言完成后的 run 自己的 `series` 字段变成了 `{ seriesId, order: 1 }`，断言 `course_series` 表里确实多了一行、`partCount` 为 2。再用 `vi.waitFor` + `listGenerationRunsUpdatedSince`（而不是直接等某个已知 id，因为第 2 部分的 run 是引擎内部 fire-and-forget 创建的，测试事先并不知道它的 id）等到第 2 部分的 run 出现，断言它的 `seriesContext`、`outlineReview: 'auto'`、`materialIds` 都符合预期。把第 2 部分也跑到完成后，断言系列的 `pendingParts` 清空，且没有凭空多出一个"第 3 部分"的 run（两部分的系列，不该有第三个）。
+- 第二个用例是回归性质的对照组：`planMaterialSeries` 返回 `null` 的一个普通 run 跑完之后 `series` 必须仍然是 `null`，确认这套改动没有让不需要拆分的材料也被误判。
+
+**本单元也顺手做的小事**：`startNextSeriesPart` 的输入基础字段（`requirement`/`interactive`/`taskEngine`/`agents`/`learnerProfile`/`voice`）是从刚完成的那个 run 自己的 `input` 上现读的（`engine.ts` 的 `complete()` 内），测试里断言了下一部分的 `input.materialIds`/`outlineReview` 确实是按这条路径算出来的，不是沿用了第一部分 run 创建时测试自己传的那份 `runInput()`。
+
+**验证**：
+- `tsc --noEmit -p tsconfig.json`：全量通过。
+- `vitest run tests/server/course-series.pg.test.ts ...`：新文件在没有 `PG_CONTRACT_URL` 时被 `describe.skipIf` 正确跳过（2 skipped），不报错，说明文件本身能被测试运行器正常加载、类型和导入都没问题。
+- **仍未能验证**：这个新集成测试的两个用例实际跑起来是否真的通过——本机沙箱没有 Postgres 也没有 Docker，`PG_CONTRACT_URL` 从未被设置过，所以 `describe.skipIf` 全程跳过真正的测试体。**这是目前最大的风险点**：`startCourseSeries`/`startNextSeriesPart`/`claimNextPendingSeriesPart` 这些直接动 `course_series` 表的函数，以及 engine 里 `material-analysis` 晋升和 `complete()` 自动续接这两段逻辑，到目前为止只被 `tsc` 验证过类型，从未被任何测试真正执行过一次。接手后第一件事应该是找一个有 Postgres（或能跑 `docker compose up -d postgres` 之类）的环境，设置 `PG_CONTRACT_URL` 后跑一次这个文件，把这里记录的"预期行为"和真实行为对一遍。
+
+**Commit**：`fix(generation): bootstrap course_series schema lazily; add integration test`（提交时一并包含本单元的 bug 修复和新测试文件）。
 
 ---

@@ -11,14 +11,18 @@
  * (`startNextSeriesPart`, called from the same engine's run-completion
  * path), so at most one of a series' runs is ever active at once.
  */
+import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+
 import type { ParsedDocumentPart } from '@/lib/document/bundle';
 import {
   claimNextPendingSeriesPart,
   createCourseSeries,
+  ensureCourseSeriesSchema,
   getCourseSeries,
   type PendingSeriesPart,
 } from '@/lib/persistence/course-series';
-import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
+import { getServerPersistenceProvider, type ServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
   createGenerationRun,
   type CreateRunOptions,
@@ -27,6 +31,41 @@ import {
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 
 import { planCourseSeries } from './plan';
+
+/**
+ * Provisioned lazily, like the generation runs' own schema (`lib/server/
+ * generation/run/store.ts`): the first series operation in a process
+ * creates or migrates `course_series` under the bootstrap lock, instead of
+ * every server-backed deployment's startup path needing to know this
+ * feature's table exists.
+ */
+const SCHEMA_STATE_KEY = Symbol.for('openmaic.course-series.schema');
+const schemaState = globalThis as typeof globalThis & {
+  [SCHEMA_STATE_KEY]?: { connectionString: string; ready: Promise<void> };
+};
+
+async function provider(): Promise<ServerPersistenceProvider> {
+  const connectionString = process.env.DATABASE_URL ?? '';
+  const persistence = await getServerPersistenceProvider(connectionString);
+  const cached = schemaState[SCHEMA_STATE_KEY];
+  if (!cached || cached.connectionString !== connectionString) {
+    const ready = withSchemaBootstrapLock(
+      persistence.pool as unknown as ConnectableQueryable,
+      ensureCourseSeriesSchema,
+    );
+    schemaState[SCHEMA_STATE_KEY] = { connectionString, ready };
+    ready.catch(() => {
+      if (schemaState[SCHEMA_STATE_KEY]?.ready === ready) delete schemaState[SCHEMA_STATE_KEY];
+    });
+  }
+  await schemaState[SCHEMA_STATE_KEY]!.ready;
+  return persistence;
+}
+
+/** Forget the provisioned schema (tests that drop it). */
+export function resetCourseSeriesSchemaForTests(): void {
+  delete schemaState[SCHEMA_STATE_KEY];
+}
 
 /** A series' first part's plan: its own ranges, plus every later part's. */
 export interface SeriesSplitPlan {
@@ -73,7 +112,7 @@ export async function startCourseSeries(input: {
   materialIds: string[];
   plan: SeriesSplitPlan;
 }): Promise<{ seriesId: string }> {
-  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const { pool } = await provider();
   const row = await createCourseSeries(pool, {
     ownerId: input.ownerId,
     title: input.title,
@@ -100,7 +139,7 @@ export async function startNextSeriesPart(
   >,
   limits: Pick<CreateRunOptions, 'maxActiveRunsPerOwner' | 'maxWaitingRunsPerOwner'>,
 ): Promise<StoredRun | null> {
-  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const { pool } = await provider();
   const series = await getCourseSeries(pool, seriesId, ownerId);
   if (!series) return null;
   const next = await claimNextPendingSeriesPart(pool, seriesId);
