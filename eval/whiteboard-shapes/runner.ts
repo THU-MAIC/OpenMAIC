@@ -14,8 +14,7 @@ import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import { resolveModel } from '@/lib/server/resolve-model';
-import { validateSvgPath } from '@openmaic/geometry';
-import { SVGPathData } from 'svg-pathdata';
+import { areBasicShapes, isPentagon, isRightTriangle, squareOnHypotenuse } from './geometry-checks';
 
 const teacher: AgentConfig = {
   id: 'shape-eval',
@@ -42,113 +41,6 @@ const body: StatelessChatRequest = {
   },
   config: { agentIds: [teacher.id] },
 };
-function polygonVertices(s: PPTShapeElement): number[][] {
-  const result = validateSvgPath(s.path);
-  if (!result.ok) return [];
-  const commands = new SVGPathData(result.commands).toAbs().normalizeHVZ().commands;
-  if (
-    commands.some(
-      (c) =>
-        c.type !== SVGPathData.MOVE_TO &&
-        c.type !== SVGPathData.LINE_TO &&
-        c.type !== SVGPathData.CLOSE_PATH,
-    )
-  )
-    return [];
-  return commands.flatMap((c) =>
-    'x' in c && 'y' in c
-      ? [[s.left + (c.x * s.width) / s.viewBox[0], s.top + (c.y * s.height) / s.viewBox[1]]]
-      : [],
-  );
-}
-function isRightTriangle(s: PPTShapeElement): boolean {
-  const vertices = polygonVertices(s);
-  return (
-    /[zZ]/.test(s.path) &&
-    vertices.length >= 3 &&
-    [
-      [100, 100],
-      [340, 100],
-      [100, 280],
-    ].every(([x, y]) => vertices.some(([vx, vy]) => Math.hypot(vx - x, vy - y) < 1))
-  );
-}
-function squareOnHypotenuse(s: PPTShapeElement): boolean {
-  if (Math.abs(s.width - 300) > 1 || Math.abs(s.height - 300) > 1) return false;
-  const theta = (s.rotate * Math.PI) / 180;
-  const cx = s.left + s.width / 2,
-    cy = s.top + s.height / 2;
-  if (Math.hypot(cx - 310, cy - 310) > 1) return false;
-  const vertices = [
-    [-150, -150],
-    [150, -150],
-    [150, 150],
-    [-150, 150],
-  ].map(([x, y]) => [
-    cx + x * Math.cos(theta) - y * Math.sin(theta),
-    cy + x * Math.sin(theta) + y * Math.cos(theta),
-  ]);
-  return [
-    [340, 100],
-    [100, 280],
-  ].every(([x, y]) => vertices.some(([vx, vy]) => Math.hypot(vx - x, vy - y) < 1));
-}
-function isCircle(s: PPTShapeElement, cx: number, cy: number, radius: number): boolean {
-  const result = validateSvgPath(s.path);
-  if (!result.ok) return false;
-  try {
-    const commands = new SVGPathData(result.commands)
-      .toAbs()
-      .normalizeHVZ()
-      .normalizeST()
-      .qtToC()
-      .aToC()
-      .scale(s.width / s.viewBox[0], s.height / s.viewBox[1])
-      .translate(s.left, s.top).commands;
-    const points: number[][] = [];
-    let x = 0,
-      y = 0,
-      moves = 0;
-    for (const c of commands) {
-      if (c.type === SVGPathData.MOVE_TO) {
-        points.push([c.x, c.y]);
-        moves++;
-      } else if (c.type === SVGPathData.LINE_TO || c.type === SVGPathData.CURVE_TO) {
-        for (let i = 1; i <= 32; i++) {
-          const t = i / 32,
-            u = 1 - t;
-          points.push(
-            c.type === SVGPathData.LINE_TO
-              ? [x + t * (c.x - x), y + t * (c.y - y)]
-              : [
-                  u ** 3 * x + 3 * u ** 2 * t * c.x1 + 3 * u * t ** 2 * c.x2 + t ** 3 * c.x,
-                  u ** 3 * y + 3 * u ** 2 * t * c.y1 + 3 * u * t ** 2 * c.y2 + t ** 3 * c.y,
-                ],
-          );
-        }
-      } else return false;
-      x = c.x;
-      y = c.y;
-    }
-    if (moves !== 1 || points.length < 33) return false;
-    const first = points[0],
-      last = points[points.length - 1];
-    if (Math.hypot(first[0] - last[0], first[1] - last[1]) > 1) return false;
-    const area =
-      Math.abs(
-        points.reduce((sum, p, i) => {
-          const next = points[(i + 1) % points.length];
-          return sum + p[0] * next[1] - next[0] * p[1];
-        }, 0),
-      ) / 2;
-    return (
-      Math.abs(area / (Math.PI * radius ** 2) - 1) < 0.02 &&
-      points.every(([px, py]) => Math.abs(Math.hypot(px - cx, py - cy) - radius) < 1)
-    );
-  } catch {
-    return false;
-  }
-}
 const cases = [
   {
     id: 'pythagoras',
@@ -161,8 +53,7 @@ const cases = [
     id: 'polygon',
     request:
       'Draw one filled irregular pentagon using a custom SVG path with 5 vertices. Place it in x=100,y=100,width=240,height=180. No other elements.',
-    check: (s: PPTShapeElement[]) =>
-      s.length === 1 && /[zZ]/.test(s[0].path) && polygonVertices(s[0]).length >= 5,
+    check: (s: PPTShapeElement[]) => s.length === 1 && isPentagon(s[0]),
   },
   {
     id: 'curve',
@@ -179,48 +70,7 @@ const cases = [
     id: 'basic-paths',
     request:
       'Draw exactly three filled shapes in a row using SVG paths: rectangle, complete circle, and top-centered isosceles triangle. Use x=80,340,600; y=100; width=height=120. No rotation or extra elements.',
-    check: (shapes: PPTShapeElement[]) => {
-      if (shapes.length !== 3 || shapes.some((s) => s.rotate !== 0 || s.fill === 'transparent'))
-        return false;
-      return [80, 340, 600].every((x, i) => {
-        const s = shapes.find(
-          (v) => v.left === x && v.top === 100 && v.width === 120 && v.height === 120,
-        );
-        if (!s) return false;
-        if (i === 1) return isCircle(s, x + 60, 160, 60);
-        const expected =
-          i === 0
-            ? [
-                [x, 100],
-                [x + 120, 100],
-                [x + 120, 220],
-                [x, 220],
-              ]
-            : [
-                [x + 60, 100],
-                [x + 120, 220],
-                [x, 220],
-              ];
-        const actual = polygonVertices(s);
-        const area =
-          Math.abs(
-            actual.reduce((sum, p, index) => {
-              const next = actual[(index + 1) % actual.length];
-              return sum + p[0] * next[1] - next[0] * p[1];
-            }, 0),
-          ) / 2;
-        const expectedArea = i === 0 ? 120 * 120 : (120 * 120) / 2;
-        return (
-          /[zZ]/.test(s.path) &&
-          Math.abs(area / expectedArea - 1) < 0.02 &&
-          actual.length >= expected.length &&
-          actual.every(([px, py]) =>
-            expected.some(([ex, ey]) => Math.hypot(px - ex, py - ey) < 1),
-          ) &&
-          expected.every(([ex, ey]) => actual.some(([px, py]) => Math.hypot(px - ex, py - ey) < 1))
-        );
-      });
-    },
+    check: areBasicShapes,
   },
   {
     id: 'correction',
