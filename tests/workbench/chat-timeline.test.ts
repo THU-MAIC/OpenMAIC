@@ -378,3 +378,39 @@ describe('course rows', () => {
     expect(markup).toContain('stage-second');
   });
 });
+
+describe('library links across transcript layouts (#1924)', () => {
+  it.each(['single', 'grouped', 'mixed'])(
+    'keeps the user link in the %s layout, inert while folded',
+    async (layout) => {
+      const { WorkbenchCourseNavigationProvider } = await import('@/lib/workbench/panel-context');
+      const linked = {
+        ...tool('create_material_folder', 'folder'),
+        toolDetails: { folderId: 'f' },
+      };
+      const chat =
+        layout === 'single'
+          ? [linked]
+          : layout === 'grouped'
+            ? [linked, tool('list_materials')]
+            : [linked, thinking('thought'), tool('list_materials')];
+      const html = renderToStaticMarkup(
+        // React's createElement overload requires the provider's children prop.
+        // eslint-disable-next-line react/no-children-prop
+        createElement(WorkbenchCourseNavigationProvider, {
+          navigation: {
+            openLibraryAt: () => {},
+            activeCourseId: null,
+            openCourse: () => {},
+            lookupCourse: () => null,
+            courseOptions: [],
+          },
+          children: createElement(ChatTimeline, { chat, plan: [] }),
+        }),
+      );
+      expect(html).toContain('workbench-tool-library-link');
+      expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*<button/);
+      if (layout === 'grouped') expect(html).toContain('inert');
+    },
+  );
+});

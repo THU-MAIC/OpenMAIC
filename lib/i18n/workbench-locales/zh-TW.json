@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
     "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
     "quotaExceeded": "已達到材料上傳限額。",
-    "storageFull": "儲存空間已達上限，無法上傳這份資料。"
+    "storageFull": "儲存空間已達上限，無法上傳這份資料。",
+    "stored": "已存入知識庫 {{count}} 份",
+    "view": "查看",
+    "viewFolder": "查看資料夾",
+    "viewTopLevel": "查看頂層"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",

@@ -2304,6 +2304,10 @@
         "cannotUndo": "此操作無法復原。",
         "folderTitle": "刪除資料夾「{{name}}」？",
         "folderContents": "{{count}} 個檔案將移到頂層，不會刪除任何檔案。"
+      },
+      "focus": {
+        "folderUnavailable": "這個資料夾已不在知識庫中。",
+        "materialsUnavailable": "未在頂層已載入的部分找到這些資料，可能已被移動或刪除。可以搜尋檔名。"
       }
     },
     "untitledCourse": "未命名课堂",

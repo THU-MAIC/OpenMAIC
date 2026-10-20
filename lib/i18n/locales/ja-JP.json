@@ -2319,6 +2319,10 @@
         "cannotUndo": "この操作は元に戻せません。",
         "folderTitle": "フォルダー「{{name}}」を削除しますか？",
         "folderContents": "{{count}} 件のファイルを最上位に移動します。ファイルは削除されません。"
+      },
+      "focus": {
+        "folderUnavailable": "このフォルダーはナレッジベースにありません。",
+        "materialsUnavailable": "読み込まれた最上位の一覧に資料が見つかりません。移動または削除された可能性があります。ファイル名で検索してください。"
       }
     },
     "untitledCourse": "未命名课堂",

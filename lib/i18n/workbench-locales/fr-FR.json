@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum.",
     "unsupportedType": "Type de fichier non pris en charge. Choisissez un fichier compatible.",
     "quotaExceeded": "Limite de téléversement de ressources atteinte.",
-    "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource."
+    "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource.",
+    "stored": "{{count}} fichiers enregistrés dans la base de connaissances",
+    "view": "Voir",
+    "viewFolder": "Voir le dossier",
+    "viewTopLevel": "Voir le premier niveau"
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",

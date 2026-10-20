@@ -2319,6 +2319,10 @@
         "cannotUndo": "Das lässt sich nicht rückgängig machen.",
         "folderTitle": "Ordner „{{name}}“ löschen?",
         "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
+      },
+      "focus": {
+        "folderUnavailable": "Dieser Ordner ist nicht mehr in der Wissensdatenbank.",
+        "materialsUnavailable": "Diese Materialien wurden in den geladenen Einträgen der obersten Ebene nicht gefunden. Sie wurden möglicherweise verschoben oder gelöscht. Suchen Sie nach dem Dateinamen."
       }
     },
     "untitledCourse": "未命名课堂",

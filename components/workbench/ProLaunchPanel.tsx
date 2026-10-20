@@ -21,6 +21,7 @@
  *  3. Prose is not a feature. The agent's first chat message answers "what
  *     will this do" better, in the place where it matters.
  */
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUp } from 'lucide-react';
 import { toast } from 'sonner';
@@ -40,6 +41,7 @@ import {
   AtSignButton,
   AttachButton,
   MaterialChips,
+  StoredMaterialNotice,
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
@@ -80,7 +82,9 @@ export function ProLaunchPanel({
   onSessionCreatedAfterLeaving,
   materialSeed,
   onMaterialSeedConsumed,
+  onViewInLibrary,
 }: {
+  onViewInLibrary?: (target: MaterialLibraryTarget) => void;
   autoFocus?: boolean;
   /** Increment to clear the draft/attachments and focus this existing composer. */
   focusSignal?: number;
@@ -464,6 +468,10 @@ export function ProLaunchPanel({
             />
           </ComposerPillRow>
         ) : null}
+        <StoredMaterialNotice
+          materialIds={materials.uploadedMaterialIds}
+          onView={onViewInLibrary}
+        />
         {/* The mirror layer under it draws `/handle` runs as inline pills — see
             `composer-input`. Both layers take THIS `className`, so the two
             variants' different paddings can never desynchronise. */}

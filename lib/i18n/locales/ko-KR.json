@@ -2319,6 +2319,10 @@
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
         "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
+      },
+      "focus": {
+        "folderUnavailable": "이 폴더는 더 이상 지식 베이스에 없습니다.",
+        "materialsUnavailable": "불러온 최상위 목록에서 자료를 찾지 못했습니다. 이동되거나 삭제되었을 수 있습니다. 파일 이름으로 검색하세요."
       }
     },
     "untitledCourse": "未命名课堂",

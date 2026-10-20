@@ -2319,6 +2319,10 @@
         "cannotUndo": "Không thể hoàn tác thao tác này.",
         "folderTitle": "Xóa thư mục “{{name}}”?",
         "folderContents": "Số tệp sẽ chuyển lên cấp cao nhất: {{count}}. Không tệp nào bị xóa."
+      },
+      "focus": {
+        "folderUnavailable": "Thư mục này không còn trong kho kiến thức.",
+        "materialsUnavailable": "Không tìm thấy các tài liệu này trong các mục cấp cao nhất đã tải. Có thể chúng đã được di chuyển hoặc xóa. Hãy tìm theo tên tệp."
       }
     },
     "untitledCourse": "未命名课堂",

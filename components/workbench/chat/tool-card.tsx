@@ -17,6 +17,7 @@
  *  - A failed card shows its error sentence on the collapsed row (via
  *    `errorLine`, which clips at a word boundary).
  */
+import { useWorkbenchCourseNavigation } from '@/lib/workbench/panel-context';
 import { useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
 import type { ChatNode, PlannedPage } from '@/lib/workbench/session-store';
@@ -44,6 +45,7 @@ export function ToolCard({
   t?: WorkbenchTranslator;
 }) {
   const presentation = presentTool(node, plan, t);
+  const openLibraryAt = useWorkbenchCourseNavigation()?.openLibraryAt;
   const skillLoad = isSkillLoadTool(node);
   const [open, setOpen] = useState(false);
   // A skill load's subject is the skill's id, which is the only thing the
@@ -157,73 +159,94 @@ export function ToolCard({
       data-open={open}
       data-testid={skillLoad ? 'workbench-skill-card' : 'workbench-tool-card'}
     >
-      <button
-        type="button"
-        className={styles.toolCard.head}
-        aria-expanded={open}
-        disabled={!hasBody}
-        onClick={toggleOpen}
-      >
-        {failed ? (
-          <span className={styles.toolCard.status} data-status="error">
-            <X size={13} />
-          </span>
-        ) : node.toolState === 'done' ? (
-          <span className={styles.toolCard.status} data-status="ok">
-            <Check size={13} />
-          </span>
-        ) : (
-          <Loader2
-            size={13}
-            className="shrink-0 animate-spin text-[var(--wb-accent)] motion-reduce:animate-none"
-            aria-hidden="true"
-          />
-        )}
-        <span className={styles.toolCard.icon} aria-hidden="true">
-          <Icon size={13} />
-        </span>
-        <span className={styles.toolCard.text}>
-          <span className={styles.toolCard.name}>{presentation.label}</span>
-          {!open && running && progress ? (
-            <span
-              key={progressLine(progress)}
-              className={styles.toolCard.progressTick}
-              data-testid="workbench-tool-progress"
-              title={summary ?? progressLine(progress)}
-            >
-              {progressLine(progress)}
+      <div className="flex min-w-0 items-center">
+        <button
+          type="button"
+          className={`${styles.toolCard.head} min-w-0 flex-1`}
+          aria-expanded={open}
+          disabled={!hasBody}
+          onClick={toggleOpen}
+        >
+          {failed ? (
+            <span className={styles.toolCard.status} data-status="error">
+              <X size={13} />
             </span>
-          ) : !open && summary ? (
-            <span className={styles.toolCard.arg} title={summary}>
-              {summary}
+          ) : node.toolState === 'done' ? (
+            <span className={styles.toolCard.status} data-status="ok">
+              <Check size={13} />
             </span>
-          ) : null}
-        </span>
-        {!open && inlineChips.length > 0 ? (
-          <span className="inline-flex shrink-0 items-center gap-1">
-            {inlineChips.map((chip) => (
+          ) : (
+            <Loader2
+              size={13}
+              className="shrink-0 animate-spin text-[var(--wb-accent)] motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          )}
+          <span className={styles.toolCard.icon} aria-hidden="true">
+            <Icon size={13} />
+          </span>
+          <span className={styles.toolCard.text}>
+            <span className={styles.toolCard.name}>{presentation.label}</span>
+            {!open && running && progress ? (
               <span
-                key={chip.label}
-                className={styles.toolCard.chip}
-                data-tone={chip.tone ?? 'neutral'}
+                key={progressLine(progress)}
+                className={styles.toolCard.progressTick}
+                data-testid="workbench-tool-progress"
+                title={summary ?? progressLine(progress)}
               >
-                {chip.label}
+                {progressLine(progress)}
               </span>
-            ))}
-            {extraChips > 0 ? (
-              <span className={styles.toolCard.chip} data-tone="neutral">
-                +{extraChips}
+            ) : !open && summary ? (
+              <span className={styles.toolCard.arg} title={summary}>
+                {summary}
               </span>
             ) : null}
           </span>
+          {!open && inlineChips.length > 0 ? (
+            <span className="inline-flex shrink-0 items-center gap-1">
+              {inlineChips.map((chip) => (
+                <span
+                  key={chip.label}
+                  className={styles.toolCard.chip}
+                  data-tone={chip.tone ?? 'neutral'}
+                >
+                  {chip.label}
+                </span>
+              ))}
+              {extraChips > 0 ? (
+                <span className={styles.toolCard.chip} data-tone="neutral">
+                  +{extraChips}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          {duration ? <time className={styles.toolCard.time}>{duration}</time> : null}
+          {hasBody ? (
+            <span className={styles.toolCard.car} aria-hidden="true">
+              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </span>
+          ) : null}
+        </button>
+        {presentation.libraryLink && openLibraryAt ? (
+          <button
+            type="button"
+            data-testid="workbench-tool-library-link"
+            className="shrink-0 px-2 text-xs text-primary underline focus-visible:outline focus-visible:outline-2"
+            onClick={(event) => {
+              event.stopPropagation();
+              // Hand focus off before the chat is hidden beneath the library.
+              event.currentTarget.blur();
+              openLibraryAt(presentation.libraryLink!.target);
+            }}
+          >
+            {t(
+              presentation.libraryLink.label === 'folder'
+                ? 'workbench.material.viewFolder'
+                : 'workbench.material.viewTopLevel',
+            )}
+          </button>
         ) : null}
-        {duration ? <time className={styles.toolCard.time}>{duration}</time> : null}
-        {hasBody ? (
-          <span className={styles.toolCard.car} aria-hidden="true">
-            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </span>
-        ) : null}
-      </button>
+      </div>
 
       {open ? (
         <div className={styles.toolCard.body}>

@@ -93,6 +93,7 @@ import {
   withCourse,
   withLibrary,
   withSession,
+  workspaceLayout,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
 import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
@@ -104,7 +105,7 @@ import {
   rememberWorkspaceSession,
   validateRememberedWorkspaceSession,
 } from '@/lib/workbench/workspace-session-memory';
-import type { WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
+import type { MaterialLibraryTarget, WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type WorkbenchMaterial } from '@/lib/workbench/session-store';
 import { renameWorkbenchSession } from '@/lib/workbench/session-store';
 import { commitSessionRename, createSessionRenameQueue } from '@/lib/workbench/session-title';
@@ -265,12 +266,17 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const chatWidth = useChatWidth();
 
   const panes = navigation.panes;
+  const [libraryFocus, setLibraryFocus] = useState<MaterialLibraryTarget | null>(null);
+  // Browser Back clears the transient target; Forward is an ordinary page visit.
+  if (!panes.library && libraryFocus !== null) setLibraryFocus(null);
   /**
    * Which visit to the home surface this is. Going from home to the knowledge
    * base page over it keeps the visit; every other move -- leaving the page,
    * home again, a conversation, a classroom -- starts a new one. A home
    * message answered after its composer left belongs only to the visit it
-   * was sent in (`openCreatedSessionAfterLeaving`).
+   * was sent in (`openCreatedSessionAfterLeaving`). This check only applies
+   * after the composer unmounts; a composer covered by the library still owns
+   * its request through its existing request generation.
    */
   const surface =
     panes.sessionId !== null || panes.courseId !== null
@@ -632,7 +638,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [collapse, goTo, panes],
   );
 
-  /** The home composer's conversation exists now, the composer still on screen. */
+  /** The home composer's conversation exists now, the composer still mounted. */
   const openCreatedSession = useCallback(
     (sessionId: string) => {
       // Opening the pane is immediate, but the rail still needs a pull fallback
@@ -647,13 +653,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
   /**
    * The home composer's conversation exists now, but its composer left the
-   * tree while the POST was in flight. Leaving home for the knowledge base
-   * page is not leaving the conversation: it attaches under the page, which
-   * stays (replace, so one Back still leaves it) -- if the teacher is still
-   * on the page they opened from that home. Anything else, even the same
-   * page reached again after leaving it, was the teacher moving on; the
-   * conversation stays in the rail, as before. The composer calls the
-   * callback of the render it sent from, which carries that visit.
+   * tree while the POST was in flight. The library now only hides home, so
+   * those completions use openCreatedSession instead. This fallback remains
+   * for an unmounted composer: refresh the rail and reject a result belonging
+   * to an earlier visit or another conversation/classroom. The composer calls
+   * the callback of the render it sent from, which carries that visit.
    */
   const sentInHomeVisit = homeVisit.visit;
   const openCreatedSessionAfterLeaving = useCallback(
@@ -724,8 +728,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [navigateInBackground],
   );
 
+  const openLibraryAt = useCallback(
+    (target: MaterialLibraryTarget) => {
+      setLibraryFocus(target);
+      setMaterialSeed(null);
+      goTo(withLibrary(panes, true));
+    },
+    [goTo, panes],
+  );
+
   /** The rail's knowledge base row: the page takes the main area. */
   const openLibrary = useCallback(() => {
+    setLibraryFocus(null);
     setMaterialSeed(null);
     goTo(withLibrary(panes, true));
   }, [goTo, panes]);
@@ -736,6 +750,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * view, not a history step, so a page opened from a pasted link leaves too.
    */
   const leaveLibrary = useCallback(() => {
+    setLibraryFocus(null);
     setMaterialSeed(null);
     goTo(withLibrary(panes, false));
   }, [goTo, panes]);
@@ -1222,12 +1237,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const courseNavigation = useMemo(
     () => ({
       openCourse,
+      openLibraryAt,
       activeCourseId: panes.courseId,
       lookupCourse,
       courseOptions,
       generatingCourseIds,
     }),
-    [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
+    [courseOptions, generatingCourseIds, lookupCourse, openCourse, openLibraryAt, panes.courseId],
   );
 
   return (
@@ -1357,8 +1373,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         />
       ) : null}
 
-      {render.home ? (
+      {workspaceLayout(panes) === 'home' && !playbackOn ? (
         <WorkspaceHome
+          hidden={render.library}
+          onViewInLibrary={openLibraryAt}
           composerReset={composerReset}
           discoveryContent={courses.discoveryContent}
           // The home composer's `@` picker names courses from the same one list
@@ -1377,7 +1395,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           so leaving the page finds them as they were and the run's stream is
           never detached. */}
       {render.library ? (
-        <MaterialLibraryPage onChatWithMaterial={chatWithMaterial} onLeave={leaveLibrary} />
+        <MaterialLibraryPage
+          initialFocus={libraryFocus ?? undefined}
+          showBack={libraryFocus !== null}
+          onChatWithMaterial={chatWithMaterial}
+          onLeave={leaveLibrary}
+        />
       ) : null}
     </div>
   );

@@ -46,7 +46,11 @@
     "fileTooLargeWithLimit": "파일이 너무 큽니다. {{limit}} MB 이하의 파일을 선택해 주세요.",
     "unsupportedType": "지원하지 않는 파일 형식입니다. 지원되는 파일을 선택해 주세요.",
     "quotaExceeded": "자료 업로드 한도에 도달했습니다.",
-    "storageFull": "저장 공간이 한도에 도달해 이 자료를 업로드할 수 없습니다."
+    "storageFull": "저장 공간이 한도에 도달해 이 자료를 업로드할 수 없습니다.",
+    "stored": "지식 베이스에 파일 {{count}}개 저장됨",
+    "view": "보기",
+    "viewFolder": "폴더 보기",
+    "viewTopLevel": "최상위 보기"
   },
   "skill": {
     "listFailed": "스킬 목록을 불러오지 못했습니다",
