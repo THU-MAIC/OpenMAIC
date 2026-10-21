@@ -1,4 +1,5 @@
 import type { ComposeOption } from 'echarts/core';
+import type { GridComponentOption } from 'echarts/components';
 import type {
   BarSeriesOption,
   LineSeriesOption,
@@ -9,7 +10,12 @@ import type {
 import type { ChartData, ChartType } from '@openmaic/dsl';
 
 type EChartOption = ComposeOption<
-  BarSeriesOption | LineSeriesOption | PieSeriesOption | ScatterSeriesOption | RadarSeriesOption
+  | BarSeriesOption
+  | LineSeriesOption
+  | PieSeriesOption
+  | ScatterSeriesOption
+  | RadarSeriesOption
+  | GridComponentOption
 >;
 
 export interface ChartOptionPayload {
@@ -75,11 +81,25 @@ export const getChartOption = ({
         }
       : undefined;
 
+  const cartesianLegend = legend
+    ? { type: 'scroll' as const, bottom: 0, left: '4%', right: '4%', textStyle }
+    : undefined;
+  // Percent margins reflow on resize. Include axis labels inside the grid and
+  // reserve a separate row for the legend instead of ECharts' fixed 145px gap.
+  const grid: GridComponentOption = {
+    left: '4%',
+    right: '4%',
+    top: type === 'line' || type === 'area' ? '22%' : '8%',
+    bottom: cartesianLegend && type !== 'scatter' ? '26%' : '12%',
+    containLabel: true,
+  };
+
   if (type === 'bar') {
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         data: data.labels,
@@ -113,7 +133,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       yAxis: {
         type: 'category',
         data: data.labels,
@@ -147,7 +168,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         data: data.labels,
@@ -257,7 +279,8 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
-      legend,
+      legend: cartesianLegend,
+      grid,
       xAxis: {
         type: 'category',
         boundaryGap: false,
@@ -333,6 +356,7 @@ export const getChartOption = ({
     return {
       color: themeColors,
       textStyle,
+      grid,
       xAxis: {
         axisLine,
         axisLabel,
