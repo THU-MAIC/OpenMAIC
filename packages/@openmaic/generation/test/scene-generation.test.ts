@@ -15,6 +15,101 @@ import {
 } from './scene-fixtures.js';
 
 describe('scene generation primitives', () => {
+  it('recovers malformed required geometry types before normalization can discard a valid label', async () => {
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'shape',
+            left: 20,
+            top: 30,
+            width: 100,
+            height: 80,
+            path: 123,
+            viewBox: '0 0 100 80',
+            rotate: -30,
+            text: { content: '<p>Preserve label</p>' },
+          },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({
+      elements: [
+        {
+          type: 'text',
+          content: '<p>Preserve label</p>',
+          left: 20,
+          top: 30,
+          width: 100,
+          height: 80,
+          rotate: -30,
+        },
+      ],
+    });
+  });
+  it('recovers invalid shapes as bounded text while retaining valid neighboring elements', async () => {
+    const shape = {
+      type: 'shape',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      viewBox: [100, 100],
+      fill: '#fff',
+      fixedRatio: false,
+    };
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          { ...shape, path: 'M0 0 Z1 1' },
+          {
+            ...shape,
+            path: 'M0 0 L1e999 0',
+            rotate: 45,
+            groupId: 'labels',
+            opacity: 0,
+            text: {
+              content: '<p>Keep this explanation</p>',
+              align: 'middle',
+              defaultFontName: 'Inter',
+              defaultColor: '#000',
+            },
+          },
+          {
+            ...shape,
+            width: 1e100,
+            path: 'M0 0 L100 0 L50 100 Z',
+            text: { content: '<p>Recover within size limits</p>' },
+          },
+          {
+            ...shape,
+            viewBox: [0, 0],
+            path: 'M0 0 L100 0 L50 100 Z',
+            text: { content: '<p>Recover a zero-viewBox label</p>' },
+          },
+          { ...shape, path: 'M0 0 L100 0 L50 100 Z' },
+          { type: 'text', left: 0, top: 120, width: 100, height: 40, content: '<p>Valid text</p>' },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({
+      elements: [
+        {
+          type: 'text',
+          content: '<p>Keep this explanation</p>',
+          vAlign: 'middle',
+          rotate: 45,
+          groupId: 'labels',
+          opacity: 0,
+        },
+        { type: 'text', content: '<p>Recover within size limits</p>', width: 4000 },
+        { type: 'text', content: '<p>Recover a zero-viewBox label</p>' },
+        { type: 'shape', path: 'M0 0 L100 0 L50 100 Z' },
+        { type: 'text', content: '<p>Valid text</p>' },
+      ],
+    });
+  });
+
   it('generates slide content through the injected AI call', async () => {
     const aiCall: AICallFn = vi.fn(async () =>
       JSON.stringify({
@@ -38,6 +133,25 @@ describe('scene generation primitives', () => {
       background: { type: 'solid', color: '#ffffff' },
     });
     expect(aiCall).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([30, -45])('keeps ordinary generated text upright despite rotate=%s', async (rotate) => {
+    const content = await generateSceneContent(slideOutline(), async () =>
+      JSON.stringify({
+        elements: [
+          {
+            type: 'text',
+            left: 20,
+            top: 30,
+            width: 200,
+            height: 80,
+            content: '<p>Ordinary text</p>',
+            rotate,
+          },
+        ],
+      }),
+    );
+    expect(content).toMatchObject({ elements: [{ type: 'text', rotate: 0 }] });
   });
 
   it.each([0, 36.5, -12.25])(

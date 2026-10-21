@@ -152,6 +152,7 @@ export async function generateAndStoreTTS(
     ttsProviderId,
     ttsVoice,
     resolvedVoice.modelId ?? ttsProviderConfig?.modelId,
+    ttsProviderConfig?.voices,
   );
 
   if (ttsProviderId === 'browser-native-tts') return null;

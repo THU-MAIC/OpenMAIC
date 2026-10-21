@@ -951,13 +951,13 @@ async function generateQwenTTS(
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
   const baseUrl = config.baseUrl || TTS_PROVIDERS['qwen-tts'].defaultBaseUrl;
-  const cloneVoice = isQwenCloneVoice(config.voice);
+  const cloneVoice = isQwenCloneVoice(config.voice, config.voices);
 
   if (cloneVoice) {
     const targetModel =
       config.providerOptions?.qwenVoiceClone === true
         ? config.modelId
-        : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
+        : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId, config.voices);
     try {
       return await synthesizeQwenVoiceClone(
         {
@@ -984,7 +984,7 @@ async function generateQwenTTS(
   // speed 1.0 = rate 0, speed 2.0 = rate 500, speed 0.5 = rate -250
   const rate = Math.round(((config.speed || 1.0) - 1.0) * 500);
 
-  const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId);
+  const modelId = resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId, config.voices);
   const response = await ttsFetch(
     config,
     `${baseUrl}/services/aigc/multimodal-generation/generation`,

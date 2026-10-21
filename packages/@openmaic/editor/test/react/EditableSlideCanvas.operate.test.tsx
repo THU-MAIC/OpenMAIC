@@ -157,6 +157,40 @@ describe('EditableSlideCanvas — operate handle gates', () => {
     expect(container.querySelector('[data-shape-keypoint="shape:0"]')).not.toBeNull();
   });
 
+  it('does not offer geometry handles that cannot commit for a historical malformed shape', () => {
+    const malformed = { ...formulaShapeEl, path: 'M0 0 Z1 1', text: { content: '<p>Label</p>' } };
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide([malformed])}
+        scale={1}
+        selection={{ elementIds: ['shape'], primaryId: 'shape' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onElementsChange}
+        shapePathFormulas={shapePathFormulas}
+      />,
+    );
+
+    expect(container.querySelector('[data-shape-geometry-error]')).not.toBeNull();
+    expect(container.textContent).toContain('Label');
+    expect(container.querySelector('[data-resize-handle]')).toBeNull();
+    expect(container.querySelector('[data-shape-keypoint]')).toBeNull();
+    expect(container.querySelector('[data-rotate-handle]')).not.toBeNull();
+    expect(onElementsChange).not.toHaveBeenCalled();
+  });
+
+  it('also blocks resize when an old shape renders but exceeds the editor write limit', () => {
+    const { container } = renderCanvas([{ ...formulaShapeEl, path: 'M0 0 L1000001 0' }], 'shape');
+
+    expect(container.querySelector('[data-shape-geometry-error]')).toBeNull();
+    expect(container.querySelector('[data-resize-handle]')).toBeNull();
+  });
+
+  it('keeps resize handles for a valid shape', () => {
+    const { container } = renderCanvas([formulaShapeEl], 'shape');
+    expect(resizeHandlesIn(container)).toHaveLength(8);
+  });
+
   it('a selected video gets four corner resize handles but NO rotate handle', () => {
     const { container } = renderCanvas([videoEl], 'vid');
     expect(resizeHandlesIn(container)).toEqual([
@@ -215,6 +249,23 @@ describe('EditableSlideCanvas — operate handle gates', () => {
     expect(container.querySelector('[data-resize-handle]')).toBeNull();
     expect(container.querySelector('[data-rotate-handle]')).toBeNull();
   });
+
+  it('a multi-selection containing a malformed shape exposes no geometry handles', () => {
+    const malformed = { ...formulaShapeEl, path: 'M0 0 Z1 1' };
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide([malformed, imageEl])}
+        scale={1}
+        selection={{ elementIds: ['shape', 'img'], primaryId: 'shape' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        shapePathFormulas={shapePathFormulas}
+      />,
+    );
+
+    expect(container.querySelector('[data-resize-handle]')).toBeNull();
+    expect(container.querySelector('[data-shape-keypoint]')).toBeNull();
+  });
 });
 
 describe('EditableSlideCanvas — operate gestures end-to-end', () => {
@@ -241,6 +292,40 @@ describe('EditableSlideCanvas — operate gestures end-to-end', () => {
         props: { left: 100, top: 100, width: 230, height: 100 },
       },
     ]);
+  });
+
+  it('cancels a resize preview and commit when selection changes mid-gesture', () => {
+    const malformed = {
+      ...formulaShapeEl,
+      path: 'M0 0 Z1 1',
+      text: { content: '<p>Historical label</p>' },
+    };
+    const onElementsChange = vi.fn();
+    const slide = makeSlide([imageEl, malformed]);
+    const props = { slide, scale: 1, onSelectionChange: vi.fn(), onElementsChange };
+    const { container, rerender } = render(
+      <EditableSlideCanvas {...props} selection={{ elementIds: ['img'], primaryId: 'img' }} />,
+    );
+    const handle = container.querySelector('[data-resize-handle="right-bottom"]') as HTMLElement;
+    const image = () =>
+      container.querySelector('#slide-element-img .base-element-image') as HTMLElement;
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 300, clientY: 180 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 330, clientY: 200 });
+    expect(image().style.width).toBe('230px');
+    rerender(
+      <EditableSlideCanvas {...props} selection={{ elementIds: ['shape'], primaryId: 'shape' }} />,
+    );
+    expect(image().style.width).toBe('200px');
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 330, clientY: 200 });
+
+    expect(onElementsChange).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-resize-handle]')).toBeNull();
+    expect(container.querySelector('[data-shape-geometry-error]')).not.toBeNull();
+    rerender(
+      <EditableSlideCanvas {...props} selection={{ elementIds: ['img'], primaryId: 'img' }} />,
+    );
+    expect(image().style.width).toBe('200px');
   });
 
   it('dragging the rotate handle emits ONE rotate intent', () => {

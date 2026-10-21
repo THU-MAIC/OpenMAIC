@@ -60,9 +60,11 @@ describe.skipIf(!contractUrl)('session attempt budget takeovers', () => {
   });
 
   afterAll(async () => {
-    await pool.end();
-    await admin.query(`DROP SCHEMA ${TEST_SCHEMA} CASCADE`);
-    await admin.end();
+    try {
+      await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    } finally {
+      await Promise.all([pool?.end(), admin.end()]);
+    }
   });
 
   it('survives six clean park and takeover cycles with a cap of five', async () => {

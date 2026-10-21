@@ -1,3 +1,4 @@
+import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 /**
  * Media and tool capabilities from slot resolutions (RFC #1701, tracked in
  * #1725): text to speech, speech recognition, images, video, web search and
@@ -88,6 +89,7 @@ export interface MediaConnection {
   proxy?: string;
   /** The provider's non-secret options (openmaic.yml `options`): its adapter's settings. */
   options?: Record<string, string | number | boolean>;
+  voices?: ConfiguredTTSVoice[];
   /** The provider is operator configuration (deployment or server providers). */
   managed: boolean;
   /**
@@ -189,6 +191,7 @@ async function fromTarget(
     ...(target.baseUrl !== undefined ? { baseUrl: target.baseUrl } : {}),
     ...(target.credentials !== undefined ? { credentials: target.credentials } : {}),
     ...(target.proxy !== undefined ? { proxy: target.proxy } : {}),
+    ...(target.voices !== undefined ? { voices: target.voices } : {}),
     ...(target.options !== undefined ? { options: target.options } : {}),
     managed,
     // A workspace provider reaches only its preset's own public endpoint (a

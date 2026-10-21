@@ -443,9 +443,12 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         providerId,
         voiceId,
         modelId ?? ttsProvidersConfig[providerId]?.modelId,
+        ttsProvidersConfig[providerId]?.voices,
       );
       const fallbackVoice =
-        agentId && providerId === 'qwen-tts' && isQwenCloneVoice(voiceId)
+        agentId &&
+        providerId === 'qwen-tts' &&
+        isQwenCloneVoice(voiceId, ttsProvidersConfig[providerId]?.voices)
           ? resolveNarratorVoiceBinding(
               undefined,
               {

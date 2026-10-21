@@ -70,6 +70,15 @@ class MockReferenceTrackingNotEnabled extends Error {
   }
 }
 
+class MockReferenceRuleVersion extends Error {
+  readonly databaseVersion = 3;
+  readonly knownVersion = 2;
+  constructor() {
+    super('newer reference rules');
+    this.name = 'AssetReferenceRuleVersionError';
+  }
+}
+
 class MockLockUnavailable extends Error {
   readonly reason: string;
   constructor(reason: 'lock-timeout' | 'deadlock') {
@@ -129,6 +138,7 @@ function mockStorage(collect: () => Promise<Partial<CollectionPass>>): Harness {
   vi.doMock('@openmaic/storage/asset/collector', () => ({
     DEFAULT_ASSET_COLLECTION_GRACE_MS: 60 * 60 * 1000,
     AssetReferenceTrackingNotEnabledError: MockReferenceTrackingNotEnabled,
+    AssetReferenceRuleVersionError: MockReferenceRuleVersion,
     StorageLockUnavailableError: MockLockUnavailable,
     AssetCollector: class {
       collectPass = harness.collectPass;
@@ -307,6 +317,25 @@ describe('asset collector schedule', () => {
     expect(info).toHaveBeenCalledTimes(1);
     expect(String(info.mock.calls[0]?.[0])).toContain('enumerated 50 document(s)');
     info.mockRestore();
+  });
+
+  it('reports newer reference rules as an outdated instance, and keeps collecting', async () => {
+    const harness = mockStorage(async () => ({}));
+    harness.collectPass.mockRejectedValue(new MockReferenceRuleVersion());
+    vi.stubEnv('DATABASE_URL', 'postgres://collector-outdated');
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    schedule = await startSchedule();
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+    expect(harness.collectPass).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledTimes(2);
+    const alarm = String(error.mock.calls[0]?.[0]);
+    expect(alarm).toContain('reference rules version 3');
+    expect(alarm).toContain('Upgrade this instance');
+    expect(alarm).not.toContain('retrying on the next interval');
+    error.mockRestore();
   });
 
   it('reports a marker that is gone as a defect, and keeps collecting', async () => {

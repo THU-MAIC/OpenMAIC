@@ -317,4 +317,6 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
 
 
+{{snippet:interactive-math}}
+
 {{snippet:interactive-observation}}

@@ -45,7 +45,8 @@
     "fileTooLarge": "Файл слишком большой. Сожмите или разделите его и попробуйте снова.",
     "fileTooLargeWithLimit": "Файл слишком большой. Выберите файл размером не более {{limit}} МБ.",
     "unsupportedType": "Этот тип файла не поддерживается. Выберите поддерживаемый файл.",
-    "quotaExceeded": "Достигнут лимит загрузки материалов."
+    "quotaExceeded": "Достигнут лимит загрузки материалов.",
+    "storageFull": "Хранилище заполнено. Не удалось загрузить этот материал."
   },
   "skill": {
     "listFailed": "Не удалось загрузить список скиллов",
@@ -188,7 +189,12 @@
       "listFolderCourses": "Посмотреть библиотеку классов",
       "createStage": "Создать класс",
       "renameStage": "Переименовать класс",
-      "readStageOutline": "Прочитать план класса"
+      "readStageOutline": "Прочитать план класса",
+      "listMaterialFolders": "Проверить папки базы знаний",
+      "createMaterialFolder": "Создать папку в базе знаний",
+      "renameMaterialFolder": "Переименовать папку базы знаний",
+      "moveMaterials": "Переместить материалы",
+      "renameMaterial": "Переименовать материал"
     },
     "chip": {
       "seconds": "{{count}} с",
@@ -222,7 +228,18 @@
       "allCourses": "Все классы",
       "folderCourses": "Классы одной папки",
       "reusedCourse": "Использован существующий класс",
-      "movedToFolder": "Перемещено в папку"
+      "movedToFolder": "Перемещено в папку",
+      "materialFolders": "Папок: {{count}}",
+      "materials": "Материалов: {{count}}",
+      "extractionStarted": "Разбор начат",
+      "extractionInProgress": "Уже идёт разбор",
+      "extractionDone": "Уже разобран",
+      "extractionComplete": "Разбор завершён",
+      "extractionStillRunning": "Разбор ещё идёт",
+      "parseFailed": "Ошибка обработки",
+      "folderExisted": "Папка уже была",
+      "unchanged": "Без изменений",
+      "movedOutOfFolder": "Перемещено из папки"
     },
     "error": {
       "materialExtraction": "Не удалось разобрать материал",
@@ -263,7 +280,12 @@
       "createStage": "Не удалось создать класс",
       "renameStage": "Не удалось переименовать класс",
       "readStageOutline": "Не удалось прочитать план класса",
-      "generic": "Вызов инструмента не удался"
+      "generic": "Вызов инструмента не удался",
+      "listMaterialFolders": "Не удалось проверить папки базы знаний",
+      "createMaterialFolder": "Не удалось создать папку базы знаний",
+      "renameMaterialFolder": "Не удалось переименовать папку базы знаний",
+      "moveMaterials": "Не удалось переместить материалы",
+      "renameMaterial": "Не удалось переименовать материал"
     },
     "progress": {
       "scene": {

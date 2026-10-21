@@ -43,7 +43,10 @@ import {
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
+  useMaterialMentions,
+  useMaterialSeed,
   type AgentSkillInfo,
+  type MaterialSeed,
 } from '@/components/workbench/compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { resolveComposerMenu } from '@/lib/workbench/composer-menus';
@@ -51,6 +54,7 @@ import { useSkillHandleBackspace } from '@/components/workbench/use-skill-handle
 import { ComposerTextarea } from '@/components/workbench/composer-input';
 import { ComposerPillRow } from '@/components/workbench/composer-pill';
 import { CourseMentionMenu } from '@/components/workbench/course-mention-menu';
+import { stagedMaterialOf } from '@/lib/workbench/material-mention';
 import { CourseRefPills } from '@/components/workbench/course-ref-pills';
 import {
   orderCourseMentionCandidates,
@@ -73,6 +77,9 @@ export function ProLaunchPanel({
   variant = 'default',
   courseOptions = NO_COURSE_OPTIONS,
   onSessionCreated,
+  onSessionCreatedAfterLeaving,
+  materialSeed,
+  onMaterialSeedConsumed,
 }: {
   autoFocus?: boolean;
   /** Increment to clear the draft/attachments and focus this existing composer. */
@@ -91,12 +98,23 @@ export function ProLaunchPanel({
   courseOptions?: readonly CourseMentionSource[];
   /** Opens the new conversation through the workspace's client-owned pane controller. */
   onSessionCreated: (sessionId: string) => void;
+  /**
+   * The conversation was created after this composer left the tree (its POST
+   * was in flight). The host decides whether that leaving was the teacher
+   * moving on; without it, such an answer is dropped.
+   */
+  onSessionCreatedAfterLeaving?: (sessionId: string) => void;
+  /** A knowledge base hand-over; this composer takes the ones for `home`. */
+  materialSeed?: MaterialSeed | null;
+  onMaterialSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const [prompt, setPrompt] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  /** Invalidates a slow create when this panel is reset or leaves the tree. */
+  /** Invalidates a slow create when this panel is reset or sends again. */
   const requestGeneration = useRef(0);
+  /** This panel left the tree: a slow create's answer goes to the host. */
+  const left = useRef(false);
   /** The draft an Escape closed the `@` menu on — same rule as the chat composer. */
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -105,12 +123,12 @@ export function ProLaunchPanel({
     if (autoFocus) textareaRef.current?.focus();
   }, [autoFocus]);
 
-  useLayoutEffect(
-    () => () => {
-      requestGeneration.current += 1;
-    },
-    [],
-  );
+  useLayoutEffect(() => {
+    left.current = false;
+    return () => {
+      left.current = true;
+    };
+  }, []);
 
   // The textarea grows with its content instead of scrolling at a fixed
   // height: a composer that starts as two lines and becomes six is the whole
@@ -158,6 +176,7 @@ export function ProLaunchPanel({
    */
   const [courseRefs, setCourseRefs] = useState<readonly CourseRef[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
   // One popover at a time, one rule for both composers. The `@` menu's two
   // ways in: the keystroke and the `@` button.
   const {
@@ -170,8 +189,10 @@ export function ProLaunchPanel({
     slashDismissedOn: slashDismissed,
     mentionDismissedOn: mentionDismissed,
     courseMenuRequested: mentionOpen,
-    courseMenuAvailable: courseOptions.length > 0,
+    // Classrooms, or the knowledge base when materials are enabled.
+    courseMenuAvailable: courseOptions.length > 0 || materials.enabled,
   });
+  const mentionQuery = mentionOpen ? pickerQuery : (mention?.query ?? '');
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
   /**
@@ -184,19 +205,45 @@ export function ProLaunchPanel({
     setMentionDismissed(prompt);
     textareaRef.current?.focus();
   }, [prompt]);
-  /** The `@` button's way in. Focus first: the picker's keys live on the textarea. */
+  /** The toolbar opens the same picker with a dedicated search field. */
   const openMention = useCallback(() => {
     textareaRef.current?.focus();
     setMentionDismissed(null);
+    setPickerQuery('');
     setMentionOpen(true);
   }, []);
+  /**
+   * What every pick leaves behind. Mid-sentence picks are possible, so the
+   * caret goes back to the gap the token left. Same rule as
+   * `WorkbenchChat.finishMentionPick`.
+   */
+  const finishMentionPick = () => {
+    const removal = !mentionOpen && mention ? replaceCourseMention(prompt, mention) : null;
+    if (removal) {
+      pendingCaret.current = removal.caret;
+      setCaret(removal.caret);
+      setPrompt(removal.draft);
+    }
+    setMentionDismissed(mentionOpen ? prompt : null);
+    setMentionOpen(false);
+    setSlashDismissed(removal?.draft ?? prompt);
+    textareaRef.current?.focus();
+  };
+  // No conversation yet: nothing is attached, so no row is marked as such.
+  const materialMentions = useMaterialMentions({
+    open: mentionMenuOpen,
+    enabled: materials.enabled,
+    query: mentionQuery,
+    sessionId: null,
+    staged: materials.materials,
+  });
   const untitledCourse = t('workspace.untitledCourse');
   const mentionCandidates = useMemo(
     () =>
       !mentionMenuOpen
         ? []
         : orderCourseMentionCandidates({
-            query: mention?.query ?? '',
+            query: mentionQuery,
             // No classroom pane on this surface, so the ordering falls through
             // to "recent".
             activeCourseId: null,
@@ -204,7 +251,7 @@ export function ProLaunchPanel({
             referencedIds: courseRefs.map((ref) => ref.stageId),
             untitled: untitledCourse,
           }),
-    [courseOptions, courseRefs, mention?.query, mentionMenuOpen, untitledCourse],
+    [courseOptions, courseRefs, mentionQuery, mentionMenuOpen, untitledCourse],
   );
   const hasComposerExtras =
     courseRefs.length > 0 ||
@@ -284,11 +331,24 @@ export function ProLaunchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusSignal]);
 
-  const canSend = !!prompt.trim() && !submitting && !materials.busy && openMenu === null;
+  // After the reset above: arriving from the knowledge base remounts this
+  // composer with a non-zero `focusSignal`, and that reset runs in the same
+  // commit -- declared first, it clears before the material is staged.
+  // While the material handed over is waiting for the gate, a send would
+  // leave without it: the button and Enter (via `submit`) both wait.
+  const awaitingMaterial = useMaterialSeed({
+    seed: materialSeed,
+    targeted: materialSeed?.target.kind === 'home',
+    materials,
+    onConsumed: onMaterialSeedConsumed,
+  });
+
+  const canSend =
+    !!prompt.trim() && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
 
   async function submit() {
     const text = prompt.trim();
-    if (!text || submitting || materials.busy) return;
+    if (!text || submitting || materials.busy || awaitingMaterial) return;
     setMentionOpen(false);
     setSubmitting(true);
     const generation = ++requestGeneration.current;
@@ -299,12 +359,16 @@ export function ProLaunchPanel({
         ...(courseRefs.length ? { courseRefs } : {}),
       });
       if (requestGeneration.current !== generation) return;
+      if (left.current) {
+        onSessionCreatedAfterLeaving?.(session.id);
+        return;
+      }
       if (session.courseRefsAccepted === false) {
         toast.warning(t('workspace.courseMention.notAccepted'));
       }
       onSessionCreated(session.id);
     } catch (error) {
-      if (requestGeneration.current !== generation) return;
+      if (requestGeneration.current !== generation || left.current) return;
       toast.error(error instanceof Error ? error.message : t('workbench.launch.createFailed'));
       setSubmitting(false);
     }
@@ -366,22 +430,20 @@ export function ProLaunchPanel({
           // entry point (the `@` keystroke).
           <CourseMentionMenu
             id={mentionMenuId}
+            search={mentionOpen ? { query: pickerQuery, onChange: setPickerQuery } : undefined}
             candidates={mentionCandidates}
             onClose={closeMention}
             onPick={(candidate) => {
               const ref = makeCourseRef(candidate.stageId, candidate.title);
               if (ref) setCourseRefs((current) => addCourseRef(current, ref));
-              // Mid-sentence picks are possible now, so the caret goes back to
-              // the gap the token left. Same rule as `WorkbenchChat.pickMention`.
-              const removal = mention ? replaceCourseMention(prompt, mention) : null;
-              if (removal) {
-                pendingCaret.current = removal.caret;
-                setCaret(removal.caret);
-                setPrompt(removal.draft);
-              }
-              setMentionDismissed(null);
-              setMentionOpen(false);
-              setSlashDismissed(removal?.draft ?? prompt);
+              finishMentionPick();
+            }}
+            // A knowledge-base pick stages one more pill, attached when the
+            // conversation starts -- the same rule as the conversation composer.
+            materials={materialMentions}
+            onPickMaterial={(candidate) => {
+              materials.addExisting(stagedMaterialOf(candidate));
+              finishMentionPick();
             }}
           />
         ) : null}
@@ -458,11 +520,15 @@ export function ProLaunchPanel({
             label={t('proMode.attach')}
             onFiles={materials.addFiles}
           />
-          {courseOptions.length > 0 ? (
+          {/* Shown exactly when the menu can open: classrooms to name, or the
+              knowledge base to pick from. */}
+          {courseOptions.length > 0 || materials.enabled ? (
             <AtSignButton
               testId="pro-launch-mention-button"
               disabled={submitting}
-              label={t('proMode.mentionCourse')}
+              label={t(
+                materials.enabled ? 'proMode.mentionCourseOrMaterial' : 'proMode.mentionCourse',
+              )}
               onClick={openMention}
             />
           ) : null}

@@ -128,6 +128,9 @@ importers:
       '@openmaic/generation':
         specifier: workspace:*
         version: link:packages/@openmaic/generation
+      '@openmaic/geometry':
+        specifier: workspace:*
+        version: link:packages/@openmaic/geometry
       '@openmaic/importer':
         specifier: workspace:*
         version: link:packages/@openmaic/importer
@@ -245,6 +248,9 @@ importers:
       mathml2omml:
         specifier: workspace:*
         version: link:packages/mathml2omml
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3
       micromark-extension-math:
         specifier: ^3.1.0
         version: 3.1.0
@@ -528,6 +534,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:^
         version: link:../dsl
+      '@openmaic/geometry':
+        specifier: workspace:^
+        version: link:../geometry
       '@openmaic/renderer':
         specifier: workspace:^
         version: link:../renderer
@@ -628,6 +637,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:^
         version: link:../dsl
+      '@openmaic/geometry':
+        specifier: workspace:^
+        version: link:../geometry
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.3
@@ -644,6 +656,31 @@ importers:
         specifier: ^0.1.7
         version: 0.1.7
     devDependencies:
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jsdom@29.1.1(@noble/hashes@1.8.0)(canvas@3.2.3))(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@8.0.0(@emnapi/core@1.8.1)(@emnapi/runtime@1.11.3)(@types/node@22.19.15)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/@openmaic/geometry:
+    dependencies:
+      '@openmaic/dsl':
+        specifier: workspace:^
+        version: link:../dsl
+      entities:
+        specifier: ^6.0.0
+        version: 6.0.1
+      svg-pathdata:
+        specifier: ^8.0.0
+        version: 8.0.0
+      tinycolor2:
+        specifier: ^1.6.0
+        version: 1.6.0
+    devDependencies:
+      '@types/tinycolor2':
+        specifier: ^1.4.6
+        version: 1.4.6
       typescript:
         specifier: ^5
         version: 5.9.3
@@ -759,6 +796,9 @@ importers:
       '@openmaic/dsl':
         specifier: workspace:^
         version: link:../dsl
+      '@openmaic/geometry':
+        specifier: workspace:^
+        version: link:../geometry
       clsx:
         specifier: ^2.1.1
         version: 2.1.1

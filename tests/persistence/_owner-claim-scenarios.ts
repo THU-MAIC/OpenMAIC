@@ -10,6 +10,7 @@
  */
 import type { Scene } from '@openmaic/dsl';
 import type { AssetStore } from '@openmaic/storage';
+import { changeAssetRoots } from '@openmaic/storage/asset/pg';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
 import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 import { PgUserSkillStore, ensureUserSkillSchema } from '@openmaic/storage/skill/pg';
@@ -28,7 +29,7 @@ import {
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
 import { bindLegacyImport } from '@/lib/persistence/legacy-import-bindings';
-import { registerOwnerMaterial } from '@/lib/persistence/owner-materials';
+import { reassignMaterialFolders, registerOwnerMaterial } from '@/lib/persistence/owner-materials';
 import {
   canonicalizeOwner,
   canonicalizeStoredOwner,
@@ -266,6 +267,7 @@ export async function rowsUnder(pool: ClaimScenarioPool, owner: string) {
     courses: await count('stage_meta WHERE owner_id = $1'),
     folders: await count('document_folders WHERE owner_id = $1'),
     materials: await count('owner_material WHERE owner_id = $1'),
+    materialFolders: await count('material_folders WHERE owner_id = $1'),
     sessions: await count('agent_sessions WHERE owner_id = $1'),
     sessionEvents: await count('agent_owner_session_events WHERE owner_id = $1'),
     sessionEventCounters: await count('agent_owner_session_event_counters WHERE owner_id = $1'),
@@ -302,6 +304,7 @@ const NOTHING = {
   courses: 0,
   folders: 0,
   materials: 0,
+  materialFolders: 0,
   sessions: 0,
   sessionEvents: 0,
   sessionEventCounters: 0,
@@ -628,4 +631,229 @@ export async function forwardingScenario(h: ClaimHarness): Promise<void> {
   );
   expect(principal.rows[0]?.principal).toBe(assetPrincipalForOwner(ACCOUNT).key);
   expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+}
+
+// ---------------------------------------------------------------------------
+// The material library: folders and reference roots.
+
+/** A material folder row, written directly: nothing in core creates one yet. */
+async function materialFolder(
+  h: ClaimHarness,
+  owner: string,
+  id: string,
+  name: string,
+): Promise<void> {
+  await h.pool.query(
+    `INSERT INTO material_folders (owner_id, id, name, normalized_name, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $5)`,
+    [owner, id, name, name.toLocaleLowerCase('en-US'), NOW],
+  );
+}
+
+/** A material, uploaded the way the route reserves it, then filed (or not). */
+async function material(
+  h: ClaimHarness,
+  owner: string,
+  id: string,
+  folderId: string | null,
+): Promise<void> {
+  await registerOwnerMaterial(
+    h.pool as unknown as ConnectableQueryable,
+    { id, ownerId: owner, kind: 'source', bytes: 1, ossKey: `k-${id}` },
+    { maxCount: 100, maxTotalBytes: 10_000 },
+  );
+  if (folderId !== null) {
+    await h.pool.query('UPDATE owner_material SET folder_id = $2 WHERE id = $1', [id, folderId]);
+  }
+}
+
+/** An owner's material library: folders by id, and each material's filing. */
+async function libraryOf(h: ClaimHarness, owner: string) {
+  const folders = await h.pool.query<{ id: string; name: string }>(
+    'SELECT id, name FROM material_folders WHERE owner_id = $1 ORDER BY id',
+    [owner],
+  );
+  const materials = await h.pool.query<{ id: string; folder_id: string | null }>(
+    'SELECT id, folder_id FROM owner_material WHERE owner_id = $1 ORDER BY id',
+    [owner],
+  );
+  return {
+    folders: Object.fromEntries(folders.rows.map((row) => [row.id, row.name])),
+    materials: Object.fromEntries(materials.rows.map((row) => [row.id, row.folder_id])),
+  };
+}
+
+/**
+ * The anonymous library collides with the account's the way course folders
+ * can: "Notes" / "notes" by name, "mf-shared" by id. Plus a folder that moves
+ * as it is, and a material in Unfiled.
+ */
+async function seedCollidingLibraries(h: ClaimHarness): Promise<void> {
+  await materialFolder(h, ACCOUNT, 'mf-account-notes', 'notes');
+  await materialFolder(h, ACCOUNT, 'mf-shared', 'Reading');
+  await material(h, ACCOUNT, 'mat-account', 'mf-shared');
+  await materialFolder(h, ANON, 'mf-notes', 'Notes');
+  await materialFolder(h, ANON, 'mf-shared', 'Labs');
+  await materialFolder(h, ANON, 'mf-solo', 'Solo');
+  await material(h, ANON, 'mat-in-notes', 'mf-notes');
+  await material(h, ANON, 'mat-in-labs', 'mf-shared');
+  await material(h, ANON, 'mat-in-solo', 'mf-solo');
+  await material(h, ANON, 'mat-unfiled', null);
+}
+
+/** Name-merge, id-renumber and plain moves, with filed and Unfiled materials together. */
+export async function materialFolderClaimScenario(h: ClaimHarness): Promise<void> {
+  await seedCollidingLibraries(h);
+
+  const result = await claimOwner(ANON, ACCOUNT, { provider: h.provider });
+
+  expect(result).toMatchObject({ status: 'claimed', moved: { 'owner-materials': 4 } });
+  expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+  const { folders, materials } = await libraryOf(h, ACCOUNT);
+  const labs = Object.entries(folders).find(([, name]) => name === 'Labs')?.[0];
+  expect(labs).toBeDefined();
+  // "Labs" could not keep "mf-shared": the account's "Reading" holds that id.
+  expect(labs).not.toBe('mf-shared');
+  expect(folders).toEqual({
+    'mf-account-notes': 'notes',
+    'mf-shared': 'Reading',
+    'mf-solo': 'Solo',
+    [labs!]: 'Labs',
+  });
+  expect(materials).toEqual({
+    'mat-account': 'mf-shared',
+    // "Notes" merged into the account's "notes".
+    'mat-in-notes': 'mf-account-notes',
+    'mat-in-labs': labs,
+    'mat-in-solo': 'mf-solo',
+    'mat-unfiled': null,
+  });
+}
+
+/** An owner with Unfiled materials only: every one moves, and stays Unfiled. */
+export async function unfiledOnlyMaterialClaimScenario(h: ClaimHarness): Promise<void> {
+  await material(h, ANON, 'mat-a', null);
+  await material(h, ANON, 'mat-b', null);
+
+  const result = await claimOwner(ANON, ACCOUNT, { provider: h.provider });
+
+  expect(result).toMatchObject({ status: 'claimed', moved: { 'owner-materials': 2 } });
+  expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+  expect(await libraryOf(h, ACCOUNT)).toEqual({
+    folders: {},
+    materials: { 'mat-a': null, 'mat-b': null },
+  });
+}
+
+/** An owner with empty folders only: they move or merge, and none is left behind. */
+export async function emptyFoldersOnlyMaterialClaimScenario(h: ClaimHarness): Promise<void> {
+  await materialFolder(h, ACCOUNT, 'mf-account-notes', 'notes');
+  await materialFolder(h, ANON, 'mf-notes', 'NOTES');
+  await materialFolder(h, ANON, 'mf-empty', 'Empty');
+
+  const result = await claimOwner(ANON, ACCOUNT, { provider: h.provider });
+
+  expect(result).toMatchObject({ status: 'claimed', moved: { 'owner-materials': 0 } });
+  expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+  expect(await libraryOf(h, ACCOUNT)).toEqual({
+    folders: { 'mf-account-notes': 'notes', 'mf-empty': 'Empty' },
+    materials: {},
+  });
+}
+
+/**
+ * Reassigning an owner's library onto itself changes nothing: an empty folder
+ * is not dropped and a filed material keeps its folder. The claim entry point
+ * refuses the same owner before this runs; the helper holds on its own too.
+ */
+export async function selfReassignMaterialFoldersScenario(h: ClaimHarness): Promise<void> {
+  await materialFolder(h, ACCOUNT, 'mf-empty', 'Empty');
+  await materialFolder(h, ACCOUNT, 'mf-filed', 'Filed');
+  await material(h, ACCOUNT, 'mat-filed', 'mf-filed');
+  const before = await libraryOf(h, ACCOUNT);
+
+  expect(await reassignMaterialFolders(h.pool, ACCOUNT, ACCOUNT)).toEqual({
+    materials: 0,
+    folders: [],
+  });
+  expect(await libraryOf(h, ACCOUNT)).toEqual(before);
+}
+
+/** A claim that fails after the materials moved keeps both libraries as they were. */
+export async function materialFolderAtomicityScenario(h: ClaimHarness): Promise<void> {
+  await seedCollidingLibraries(h);
+  const anonBefore = await libraryOf(h, ANON);
+  const accountBefore = await libraryOf(h, ACCOUNT);
+  resetClaimParticipantsForTests();
+  registerClaimParticipant({
+    name: 'host-ledger',
+    order: 450,
+    rekey: async () => {
+      throw new Error('host ledger unavailable');
+    },
+  });
+
+  await expect(claimOwner(ANON, ACCOUNT, { provider: h.provider })).rejects.toThrow(
+    'host ledger unavailable',
+  );
+
+  expect(await libraryOf(h, ANON)).toEqual(anonBefore);
+  expect(await libraryOf(h, ACCOUNT)).toEqual(accountBefore);
+  resetClaimParticipantsForTests();
+}
+
+/**
+ * A filed material whose original is rooted in the pool: the claim moves the
+ * folder and the material, keeps the root exactly as it was (roots are keyed
+ * by material id), re-keys the entry's principal, and leaves its lifecycle
+ * alone.
+ */
+export async function rootedMaterialClaimScenario(h: ClaimHarness): Promise<void> {
+  const assetId = await h
+    .assets(ANON)
+    .put(assetPrincipalForOwner(ANON), new Blob(['%PDF-original'], { type: 'application/pdf' }), {
+      contentType: 'application/pdf',
+    });
+  await materialFolder(h, ANON, 'mf-unit', 'Unit 1');
+  await material(h, ANON, 'mat-rooted', 'mf-unit');
+  await h.provider.withTransaction((tx) =>
+    changeAssetRoots(tx, {
+      add: [{ rootKind: 'material', rootId: 'mat-rooted', assetIds: [assetId] }],
+      principals: [assetPrincipalForOwner(ANON).key],
+    }),
+  );
+  const lifecycle = async () =>
+    (
+      await h.pool.query<{
+        principal: string;
+        committed_at: unknown;
+        expires_at: unknown;
+        unreferenced_at: unknown;
+      }>(
+        'SELECT principal, committed_at, expires_at, unreferenced_at FROM asset_entries WHERE id = $1',
+        [assetId],
+      )
+    ).rows[0];
+  const roots = async () =>
+    (
+      await h.pool.query<{ root_kind: string; root_id: string; asset_id: string }>(
+        'SELECT root_kind, root_id, asset_id FROM asset_root_refs ORDER BY root_id',
+      )
+    ).rows;
+  const before = await lifecycle();
+  const rootsBefore = await roots();
+  expect(rootsBefore).toEqual([
+    { root_kind: 'material', root_id: 'mat-rooted', asset_id: assetId },
+  ]);
+  expect(before).toMatchObject({ expires_at: null, unreferenced_at: null });
+
+  await claimOwner(ANON, ACCOUNT, { provider: h.provider });
+
+  expect(await rowsUnder(h.pool, ANON)).toEqual(NOTHING);
+  expect(await libraryOf(h, ACCOUNT)).toEqual({
+    folders: { 'mf-unit': 'Unit 1' },
+    materials: { 'mat-rooted': 'mf-unit' },
+  });
+  expect(await roots()).toEqual(rootsBefore);
+  expect(await lifecycle()).toEqual({ ...before, principal: assetPrincipalForOwner(ACCOUNT).key });
 }

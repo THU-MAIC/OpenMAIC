@@ -87,7 +87,7 @@ jobs:
       # once, so the previous commit is not the range that needs checking, and
       # publishing requires this run to be green.
       - name: Package version bumps (main push)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           base="$BEFORE_SHA"
@@ -166,6 +166,9 @@ jobs:
 
       - name: Unit Tests (importer)
         run: pnpm --filter @openmaic/importer test
+
+      - name: Unit Tests (geometry)
+        run: pnpm --filter @openmaic/geometry test
 
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test

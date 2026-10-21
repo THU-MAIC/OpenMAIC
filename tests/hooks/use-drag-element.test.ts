@@ -2,7 +2,7 @@
 import { act, createElement, useState, type RefObject } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PPTElement, PPTLineElement, PPTTextElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement, PPTShapeElement, PPTTextElement } from '@openmaic/dsl';
 import type { AlignmentLineProps } from '@/lib/types/edit';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useKeyboardStore } from '@/lib/store/keyboard';
@@ -113,6 +113,64 @@ afterEach(() => {
 });
 
 describe('legacy canvas line drag bounds', () => {
+  it('moves a recovered shape from its visible box without rewriting invalid geometry', () => {
+    const shape: PPTShapeElement = {
+      id: 'broken',
+      type: 'shape',
+      left: NaN,
+      top: Infinity,
+      width: 0,
+      height: NaN,
+      rotate: 0,
+      path: 'M0 0 Z1 1',
+      viewBox: [100, 100],
+      fixedRatio: false,
+      fill: '#fff',
+      text: {
+        content: '<p>Recovered</p>',
+        align: 'middle',
+        defaultColor: '#000',
+        defaultFontName: 'Arial',
+      },
+    };
+    const drag = mount([shape]);
+    drag.move(33, 47);
+    expect(drag.ref.current[0]).toMatchObject({ ...shape, left: 33, top: 47 });
+    drag.finish(33, 47);
+    expect(persistence.updateSlide).toHaveBeenCalledWith({ elements: drag.ref.current });
+  });
+
+  it('moves a mixed selection from recovered bounds across successive previews', () => {
+    const shape: PPTShapeElement = {
+      id: 'broken',
+      type: 'shape',
+      left: NaN,
+      top: Infinity,
+      width: 0,
+      height: NaN,
+      rotate: 0,
+      path: 'M0 0 Z1 1',
+      viewBox: [100, 100],
+      fixedRatio: false,
+      fill: '#fff',
+      text: {
+        content: '<p>Recovered</p>',
+        align: 'middle',
+        defaultColor: '#000',
+        defaultFontName: 'Arial',
+      },
+    };
+    const drag = mount([shape, box()]);
+    drag.move(33, 47);
+    expect(drag.ref.current[0]).toMatchObject({ ...shape, left: 33, top: 47 });
+    expect(drag.ref.current[1]).toMatchObject({ left: 233, top: 167 });
+    drag.move(50, 65);
+    expect(drag.ref.current[0]).toMatchObject({ ...shape, left: 50, top: 65 });
+    expect(drag.ref.current[1]).toMatchObject({ left: 250, top: 185 });
+    drag.finish(50, 65);
+    expect(persistence.updateSlide).toHaveBeenCalledWith({ elements: drag.ref.current });
+  });
+
   it('snaps a quadratic control hull to the bottom and persists that position', () => {
     const drag = mount([line({ curve: [50, 60] })]);
     drag.move(20, 442);

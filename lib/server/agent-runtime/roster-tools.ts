@@ -117,6 +117,12 @@ export function agentVoiceCatalog(
       continue;
     }
     if (config.requiresApiKey && !hasKey()) continue;
+    // An explicit deployment catalogue replaces presets for both listing and binding.
+    if (slot?.voices?.length) {
+      providers.push({ ...config, voices: slot.voices.map((voice) => ({ ...voice })) });
+      continue;
+    }
+
     providers.push(config);
   }
   // A registration backend means clone-kind registered voices are

@@ -59,6 +59,36 @@ describe('narration step', () => {
     mocks.recordGenerationUsage.mockReset();
   });
 
+  it('uses the connection default voice while preserving explicit requests', async () => {
+    for (const [requestedVoice, expected] of [
+      [undefined, 'vivian'],
+      ['alloy', 'alloy'],
+    ] as const) {
+      await synthesizeNarration(
+        {
+          text: 'Hello',
+          audioId: 'default-voice-test',
+          connection: { ...connection, options: { defaultVoice: 'vivian' } },
+          requestedVoice,
+        },
+        { log: testLogger() },
+      );
+      expect(mocks.generateTTS.mock.calls.at(-1)?.[0].voice).toBe(expected);
+    }
+  });
+
+  it('uses the configured catalogue fallback without an explicit default', async () => {
+    await synthesizeNarration(
+      {
+        text: 'Hello',
+        audioId: 'catalogue-default-test',
+        connection: { ...connection, voices: [{ id: 'vivian', name: 'Vivian' }] },
+      },
+      { log: testLogger() },
+    );
+    expect(mocks.generateTTS.mock.calls.at(-1)?.[0].voice).toBe('vivian');
+  });
+
   it('speaks with the requested voice through the slot provider and records the usage', async () => {
     const trace: { providerId?: string; voice?: string } = {};
     const result = await synthesizeNarration(

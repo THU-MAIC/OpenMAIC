@@ -59,9 +59,11 @@ describe.skipIf(!contractUrl)('prior runs read from the PostgreSQL event log', (
   });
 
   afterAll(async () => {
-    await pool.end();
-    await admin.query(`DROP SCHEMA ${TEST_SCHEMA} CASCADE`);
-    await admin.end();
+    try {
+      await admin.query(`DROP SCHEMA IF EXISTS ${TEST_SCHEMA} CASCADE`);
+    } finally {
+      await Promise.all([pool?.end(), admin.end()]);
+    }
   });
 
   it('tells a failed start from a run that completed messages', async () => {

@@ -126,8 +126,15 @@ export interface RenderInlineMathOptions {
 /** Formulas shown as text because they fell past a root's hard cap. */
 const capped = new WeakSet<Element>();
 
-function showSource(element: Element, latex: string): void {
+function hidePendingMath(root: ParentNode): void {
+  for (const element of root.querySelectorAll<HTMLElement>(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
+    if (!handled.has(element)) element.style.visibility = 'hidden';
+  }
+}
+
+function showSource(element: HTMLElement, latex: string): void {
   element.textContent = latex;
+  element.style.removeProperty('visibility');
   handled.add(element);
 }
 
@@ -146,7 +153,7 @@ function showCapped(element: Element, latex: string): void {
  * Typeset the inline formulas under `root`. Each `span[data-inline-math]` is
  * replaced by a KaTeX render of its source carrying the same attribute (the
  * editor's storage shape); a source that cannot be typeset is shown as text.
- * Returns `true` when formulas were left for a later pass by the budget.
+ * Returns `true` when the budget deferred formulas; pending sources stay hidden.
  */
 export function renderInlineMath(root: ParentNode, options: RenderInlineMathOptions = {}): boolean {
   return renderPass(root, options, newBudget());
@@ -167,7 +174,7 @@ function renderPass(
   let rootSource = 0;
   let rootFormulas = 0;
   let pending = false;
-  for (const element of root.querySelectorAll(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
+  for (const element of root.querySelectorAll<HTMLElement>(`span[${INLINE_MATH_ATTRIBUTE}]`)) {
     // Inside a formula replaced earlier in this pass.
     if (!(root as Node).contains(element)) continue;
     const latex = element.getAttribute(INLINE_MATH_ATTRIBUTE) ?? '';
@@ -228,6 +235,7 @@ function renderPass(
     deferredTypesets.delete(element);
     element.replaceWith(formula);
   }
+  if (pending) hidePendingMath(root);
   return pending;
 }
 
@@ -451,8 +459,10 @@ export function useInlineMath(ref: RefObject<Element | null>, html: string): voi
       before.html === html &&
       before.priority === priority &&
       liveMath.isQueued(root)
-    )
+    ) {
+      hidePendingMath(root);
       return;
+    }
     liveMath.render(root, priority);
   });
   // Only clean up on unmount: per-commit removal would discard pending queue

@@ -112,8 +112,9 @@ Use `mathPriority="background"` for thumbnails: newly mounted or changed content
 shares a copy of the frame's remaining allowance after foreground layout effects,
 before paint. This leaves foreground capacity available if the user switches slides
 after thumbnails mount in the same frame; that frame may use both allowances.
-Remaining formulas render in idle time after foreground canvases; unrelated
-parent rerenders do not advance that queued work. Snapshot APIs still finish all
+Remaining formulas stay hidden until rendered in idle time after foreground
+canvases; unrelated parent rerenders do not advance that queued work. Formulas
+that cannot be typeset still appear as text. Snapshot APIs still finish all
 formulas synchronously within the existing per-prose-root hard caps.
 
 ### Play-time effects

@@ -33,6 +33,7 @@ const SNIPPET_IDS = [
   'image-instructions',
   'video-instructions',
   'media-safety-guidelines',
+  'interactive-math',
   'interactive-observation',
   'slide-image-instructions',
   'slide-generated-image-instructions',

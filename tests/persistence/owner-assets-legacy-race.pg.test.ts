@@ -11,7 +11,10 @@
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { LEGACY_SHARED_ASSET_PRINCIPAL } from '@/lib/persistence/owner-assets';
+import {
+  LEGACY_SHARED_ASSET_PRINCIPAL,
+  assetPrincipalForOwner,
+} from '@/lib/persistence/owner-assets';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 
 const contractUrl = process.env.PG_CONTRACT_URL;
@@ -91,7 +94,7 @@ describe.skipIf(!contractUrl)('legacy shared-asset mutation under a racing refer
 
   beforeEach(async () => {
     await pool.query(
-      'TRUNCATE document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
+      'TRUNCATE asset_root_refs, document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
         'stage_meta, document_stages CASCADE',
     );
   });
@@ -168,6 +171,108 @@ describe.skipIf(!contractUrl)('legacy shared-asset mutation under a racing refer
       [id],
     );
     expect(refs.rows).toEqual([{ stage_id: 'stage-alice' }, { stage_id: 'stage-bob' }]);
+  });
+
+  it('refuses the delete when a reference root arrives before the check commits', async () => {
+    const id = await legacyEntry();
+    const aliceCourse = await call(ALICE_COOKIE, '/documents/stage-alice', {
+      method: 'PUT',
+      body: JSON.stringify(courseDocument('stage-alice', [id])),
+    });
+    expect(aliceCourse.status).toBeLessThan(300);
+
+    // A root on the shared entry, written and not committed yet.
+    const racing = await pool.connect();
+    try {
+      await racing.query('BEGIN');
+      const holder = Number(
+        (await racing.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+      );
+      await racing.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'mat-elsewhere', $1)`,
+        [id],
+      );
+
+      const deleting = call(ALICE_COOKIE, `/assets/${id}`, { method: 'DELETE' });
+      // The delete's locked re-check queues behind the root's key-share lock.
+      for (let attempt = 0; ; attempt += 1) {
+        const blocked = await admin.query(
+          'SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY(pg_blocking_pids(pid))',
+          [holder],
+        );
+        if (blocked.rows.length > 0) break;
+        if (attempt >= 400) throw new Error('the delete never queued behind the root');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await racing.query('COMMIT');
+
+      expect((await deleting).status).toBe(204);
+    } finally {
+      racing.release();
+    }
+
+    // Refused: the entry and the root both survive.
+    const entry = await pool.query('SELECT id FROM asset_entries WHERE id = $1', [id]);
+    expect(entry.rows).toHaveLength(1);
+    const roots = await pool.query('SELECT root_id FROM asset_root_refs WHERE asset_id = $1', [id]);
+    expect(roots.rows).toEqual([{ root_id: 'mat-elsewhere' }]);
+  });
+
+  it('refuses the owner’s own delete when a root on its entry commits while the delete waits', async () => {
+    const provider = await getServerPersistenceProvider(databaseUrl);
+    const id = await provider.assetStore.put(
+      assetPrincipalForOwner(`anon:${ALICE_COOKIE}`),
+      new Blob(['own-bytes']),
+      { contentType: 'image/png' },
+    );
+
+    // A root on Alice's own entry, written and not committed yet.
+    const racing = await pool.connect();
+    let deleting: Promise<Response> | undefined;
+    try {
+      await racing.query('BEGIN');
+      const holder = Number(
+        (await racing.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]!.pid,
+      );
+      await racing.query(
+        `INSERT INTO asset_root_refs (root_kind, root_id, asset_id)
+         VALUES ('material', 'mat-alice', $1)`,
+        [id],
+      );
+
+      deleting = call(ALICE_COOKIE, `/assets/${id}`, { method: 'DELETE' });
+      deleting.catch(() => undefined);
+      // The route runs on the provider's shared pool, so its backend is found
+      // by what it is doing: the registry delete's own entry lock, queued
+      // behind this holder. Any other waiter on the holder does not count.
+      for (let attempt = 0; ; attempt += 1) {
+        const waiter = await admin.query(
+          `SELECT pid FROM pg_stat_activity
+            WHERE $1::int = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%FROM asset_entries%'
+              AND query LIKE '%FOR UPDATE%'`,
+          [holder],
+        );
+        if (waiter.rows.length > 0) break;
+        if (attempt >= 120) throw new Error('the delete never queued behind the root');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      await racing.query('COMMIT');
+
+      expect((await deleting).status).toBe(409);
+    } finally {
+      // Whatever failed above: end the holder's transaction before returning
+      // its connection, and let a started delete finish.
+      await racing.query('ROLLBACK').catch(() => undefined);
+      racing.release();
+      await deleting?.catch(() => undefined);
+    }
+
+    const entry = await pool.query('SELECT id FROM asset_entries WHERE id = $1', [id]);
+    expect(entry.rows).toHaveLength(1);
+    const roots = await pool.query('SELECT root_id FROM asset_root_refs WHERE asset_id = $1', [id]);
+    expect(roots.rows).toEqual([{ root_id: 'mat-alice' }]);
   });
 
   it('deletes when the owner of every referencing course asks and nothing races', async () => {
