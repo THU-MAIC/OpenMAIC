@@ -821,7 +821,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       echarts:
-        specifier: '>=5'
+        specifier: '>=5.5'
         version: 6.0.0
       html-to-image:
         specifier: ^1.11.13
