@@ -5,7 +5,7 @@ import { sandboxInvalid } from '@/lib/sandbox/errors';
 import { WORKSPACE_EXCLUDES } from '@/lib/server/sandbox/workspace-archive';
 
 const excluded = new Set([...WORKSPACE_EXCLUDES, '.git', 'build', 'dist']);
-function validPath(path: unknown): path is string {
+export function validSourcePath(path: unknown): path is string {
   return (
     typeof path === 'string' &&
     !!path &&
@@ -16,10 +16,10 @@ function validPath(path: unknown): path is string {
 }
 /** Trusted course source roots opt in to additional files; legacy packages keep their closed file set. */
 export function isProjectSource(project: InstalledProject, path: unknown): path is string {
-  if (!validPath(path)) return false;
+  if (!validSourcePath(path)) return false;
   if (Object.hasOwn(project.files, path)) return true;
   return (
-    !!project.sourceRoots?.some((root) => validPath(root) && path.startsWith(`${root}/`)) &&
+    !!project.sourceRoots?.some((root) => validSourcePath(root) && path.startsWith(`${root}/`)) &&
     /\.(?:java|py|js|ts|tsx|jsx|json|css|html|md|txt|xml|ya?ml)$/.test(path)
   );
 }

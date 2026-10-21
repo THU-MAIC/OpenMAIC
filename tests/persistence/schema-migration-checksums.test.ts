@@ -249,6 +249,13 @@ const SHIPPED: readonly (readonly [
     true,
     '5e9cf4ab91fc2db5388bde7140533c74f4aece46bab33173fa66ba7dba63bb13',
   ],
+  [
+    'pbl-projects',
+    1,
+    'validated-project-assets',
+    true,
+    '8ce2ab0cdf1a49271d597e22cd293be301794be34715ccd11ef9a9497f574180',
+  ],
 ];
 
 /**

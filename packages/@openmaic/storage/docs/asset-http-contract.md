@@ -337,6 +337,7 @@ The client raises `HttpAssetStoreError` in every throwing case below.
 | Method not allowed on this route | `405` | `METHOD_NOT_ALLOWED` | Throw |
 | Metadata, bytes, or the whole request exceed the deployment's bound | `413` | `PAYLOAD_TOO_LARGE` | Throw |
 | The principal's logical bytes would exceed its quota | `507` | `ASSET_QUOTA_EXCEEDED` | Throw |
+| A host policy refuses replacement/deletion of an immutable template | `409` | `ASSET_IMMUTABLE` | Throw `AssetImmutableError` |
 | Request target exceeds the deployment's ceiling | `431` | (transport) | A transport limit for a pathologically long id, not an id-domain rejection |
 | No entry is stored under the id, or the entry is not this principal's | `404` | `ASSET_NOT_FOUND` | `resolve` returns `null`; `remove` succeeds; `replace` throws |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw |

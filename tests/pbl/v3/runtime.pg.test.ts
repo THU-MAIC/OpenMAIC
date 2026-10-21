@@ -1,5 +1,5 @@
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
-import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,17 @@ import { join, dirname } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Pool } from 'pg';
+import { PgAssetStore, ensureAssetSchema } from '@openmaic/storage/asset/pg';
+import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
+import { PgDocumentStore, ensureDocumentSchema } from '@openmaic/storage/document/pg';
+import { ensureStageMetaSchema, claimStageMeta } from '@/lib/persistence/stage-meta';
+import { ensurePBLProjectSchema } from '@/lib/persistence/pbl-projects';
+import { installProjectPackage } from '@/lib/server/pbl-v3/project-resolver';
+import {
+  packageBuiltin,
+  indexProjectFiles,
+  type ProjectDescriptor,
+} from '@/lib/server/pbl-v3/project-package';
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
 import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
 import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
@@ -35,6 +46,28 @@ const mocked = vi.hoisted(() => ({
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: mocked.pool,
+    assetStore: new PgAssetStore(mocked.pool as Pool, {
+      withTransaction: async (fn) => {
+        const db = await (mocked.pool as Pool).connect();
+        try {
+          await db.query('BEGIN');
+          const result = await fn(db);
+          await db.query('COMMIT');
+          return result;
+        } catch (error) {
+          await db.query('ROLLBACK');
+          throw error;
+        } finally {
+          db.release();
+        }
+      },
+      byteStore: new PgAssetByteStore(mocked.pool as Pool),
+    }),
+    assetStoreIn: (db: Pool) =>
+      new PgAssetStore(db, {
+        withTransaction: (fn) => fn(db),
+        byteStore: new PgAssetByteStore(mocked.pool as Pool),
+      }),
     withTransaction: async (fn: (db: unknown) => Promise<unknown>) => {
       const db = await (mocked.pool as Pool).connect();
       try {
@@ -274,7 +307,13 @@ import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import * as catalog from '@/lib/server/pbl-v3/catalog';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { LearningStore } from '@/lib/server/pbl-v3/store';
-import { commandStudy, learningView, digest } from '@/lib/server/pbl-v3/runtime';
+import {
+  commandStudy,
+  learningView,
+  digest,
+  stageFor,
+  stageKey,
+} from '@/lib/server/pbl-v3/runtime';
 import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
@@ -493,6 +532,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     pool = new Pool({ connectionString: url, options: `-c search_path=${schema}`, max: 12 });
     mocked.pool = pool;
     await ensureOwnerMergeSchema(pool);
+    await ensureDocumentSchema(pool);
+    await ensureStageMetaSchema(pool);
+    await ensureAssetSchema(pool);
+    await ensurePBLProjectSchema(pool);
     await ensureSandboxEnvironmentSchema(pool);
     await ensureAgentSessionSchema(pool);
     agents = new PgAgentSessionStore(pool, {
@@ -1602,4 +1645,203 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     await expect(first.send('checkpoint')).resolves.toBeDefined();
   });
+
+  it.each(['greeting-python-lab', 'greeting-java'])(
+    'runs an unregistered imported %s course from pinned teaching, starter and private evaluation resources',
+    async (projectId) => {
+      const selected = installedProject({ id: projectId, version: '1.0.0' });
+      const bundle = packageBuiltin(selected);
+      const descriptor: ProjectDescriptor = JSON.parse(bundle.files['project.json']);
+      const importedId = `imported-${projectId}`;
+      descriptor.id = descriptor.definition.id = importedId;
+      for (const role of ['mentor', 'discussion', 'planner', 'coder'] as const)
+        descriptor.definition.agents[role].systemPrompt = 'Help me with this course task.';
+      for (const binding of descriptor.teaching) {
+        bundle.files[binding.entrypoint] = `PACKAGED SKILL ${binding.stage}`;
+        for (const document of binding.documents)
+          bundle.files[document] = `PACKAGED REFERENCE ${binding.stage}`;
+      }
+      const java = descriptor.runtime.profile === 'java';
+      bundle.files['rubric/expected.txt'] = 'Hello, Ada!\nHello, Lin!\n';
+      bundle.files['tests/private.py'] = java
+        ? 'import pathlib,subprocess,sys\nexpected=pathlib.Path(sys.argv[1]).read_text().splitlines()\nactual=[subprocess.run(["java","-cp",sys.argv[2],"Greeting",name],check=True,text=True,stdout=subprocess.PIPE).stdout.strip() for name in ["  Ada  ","Lin"]]\nassert actual==expected\nprint("private course checks passed")\n'
+        : 'import pathlib,sys\nsys.path.insert(0,str(pathlib.Path.cwd()/"src"))\nfrom greeting import greet\nexpected=pathlib.Path(sys.argv[1]).read_text().splitlines()\nassert [greet(name) for name in ["  Ada  ","Lin"]]==expected\nprint("private course checks passed")\n';
+      bundle.files['tests/private.json'] = JSON.stringify({
+        ...(java ? { prepare: ['javac', '-d', '{build}', 'src/Greeting.java'] } : {}),
+        cases: [
+          {
+            id: 'course-owned-private-check',
+            argv: [
+              'python3',
+              '{resources}/tests/private.py',
+              '{resources}/rubric/expected.txt',
+              ...(java ? ['{build}'] : []),
+            ],
+            stdout: 'private course checks passed\n',
+          },
+        ],
+      });
+      for (const milestone of descriptor.definition.milestones)
+        descriptor.runtime.evaluations[milestone.id] = 'tests/private.json';
+      bundle.files['project.json'] = JSON.stringify(descriptor);
+      const projectRef = await installProjectPackage(
+        principal.ownerId,
+        indexProjectFiles(importedId, selected.ref.version, bundle.files),
+      );
+      const stageId = randomUUID();
+      const documents = new PgDocumentStore<
+        import('@/lib/types/stage').Scene,
+        import('@/lib/types/stage').Stage
+      >(pool, { withTransaction: (fn) => store.transaction(fn), trackAssetReferences: true });
+      await documents.saveDocument({
+        stage: { id: stageId, name: 'Imported course', createdAt: 1, updatedAt: 1 },
+        scenes: [
+          {
+            id: 'scene',
+            stageId,
+            type: 'pbl',
+            title: 'Project',
+            order: 0,
+            content: { type: 'pbl', projectV3: projectRef },
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      });
+      await claimStageMeta(pool, stageId, principal.ownerId);
+      const created = await store.create(
+        {
+          ownerId: principal.ownerId,
+          stageId,
+          sceneId: 'scene',
+          projectId: importedId,
+          version: projectRef.version,
+          projectRef,
+        },
+        startOrchestration(descriptor.definition),
+      );
+      const lookup = vi.spyOn(catalog, 'installedProject');
+      onTestFinished(() => lookup.mockRestore());
+      const reloaded = await new LearningStore(pool).get(created.id, principal.ownerId);
+      expect(reloaded.project_reference).toEqual(projectRef);
+      expect(reloaded.project?.coursePackage?.descriptor.id).toBe(importedId);
+      expect(reloaded.project?.files).toEqual(selected.files);
+      const send = async (type: string, payload: Record<string, unknown> = {}) =>
+        commandStudy(principal, created.id, {
+          id: randomUUID(),
+          revision: (await store.get(created.id, principal.ownerId)).revision,
+          type,
+          ...payload,
+        });
+      const turn = async (
+        text: string,
+        run: (config: Awaited<ReturnType<typeof teachingRunnerConfig>>) => Promise<void>,
+      ) => {
+        const queued = (await send('chat', { text })) as { sessionId: string };
+        const claimed = await agents.claimNextSession('package-worker', process.pid, {
+          sessionId: queued.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        const config = await teachingRunnerConfig({
+          sessionId: queued.sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'package-worker',
+          attempt: claimed!.attempt,
+          signal: new AbortController().signal,
+        });
+        await run(config);
+        await agents.finishSession(queued.sessionId, 'package-worker', {
+          status: 'succeeded',
+          expectedAttempt: claimed!.attempt,
+        });
+      };
+      await send('prepare');
+      const service = await SandboxService.forOwner(principal);
+      const environmentId = (await store.get(created.id, principal.ownerId)).environment_id!;
+      for (const [path, text] of Object.entries(selected.files))
+        expect(await service.readText(environmentId, path)).toBe(text);
+      expect(await service.listFiles(environmentId)).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'tests/private.py' })]),
+      );
+      let evaluations = 0;
+      while ((await store.get(created.id, principal.ownerId)).state.status !== 'completed') {
+        const row = await store.get(created.id, principal.ownerId),
+          stage = stageFor(row),
+          key = stageKey(row);
+        const milestone = descriptor.definition.milestones[row.state.position.milestoneIndex]!;
+        if (stage.kind === 'mentor_say' || stage.kind === 'produce') {
+          const teaching = descriptor.teaching.find((binding) => binding.stage === key)!;
+          for (let part = 0; part < teaching.sections.length; part++)
+            await turn(part ? 'I reviewed this section.' : 'Please start.', async (config) => {
+              const section = await invoke(config, 'read_next_skill', {
+                ...(part ? { studentFeedback: 'I reviewed this section.' } : {}),
+              });
+              expect(JSON.stringify(section)).toContain(`PACKAGED SKILL ${key}`);
+              expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+              if (part === 0 && stage.kind === 'produce') {
+                const path =
+                  stage.writes === 'plan'
+                    ? 'PLAN.md'
+                    : java
+                      ? 'src/Greeting.java'
+                      : 'src/greeting.py';
+                await invoke(config, 'write_file', {
+                  path,
+                  text:
+                    stage.writes === 'plan'
+                      ? `Implement and review ${milestone.title}.`
+                      : java
+                        ? 'public class Greeting { public static String greet(String name) { return "Hello, " + name.trim() + "!"; } public static void main(String[] args) { System.out.println(greet(args[0])); } }'
+                        : 'def greet(name):\n    return f"Hello, {name.strip()}!"\n',
+                  expectedHash: digest(await service.readText(environmentId, path)),
+                });
+                if (stage.compileBeforeReview) {
+                  await invoke(config, 'run_build');
+                  await invoke(config, 'collect_build');
+                }
+              }
+              await invoke(config, 'request_skill_review', { question: 'Explain this section.' });
+            });
+          await turn('I reviewed this section.', async (config) => {
+            await invoke(config, 'complete_stage', { studentFeedback: 'I reviewed this section.' });
+          });
+          await send('next');
+        } else if (stage.kind === 'dialogue') {
+          await turn('I understand the course decisions.', async (config) => {
+            expect(config.systemPrompt).toContain(`PACKAGED SKILL ${key}`);
+            expect(config.systemPrompt).toContain(`PACKAGED REFERENCE ${key}`);
+          });
+          for (const decisionId of milestone.decisions) {
+            const decision = descriptor.definition.decisions.find(
+              (item) => item.id === decisionId,
+            )!;
+            await send('decide', { decisionId, chosen: decision.options[0].id });
+          }
+          await send('next');
+        } else if (stage.kind === 'check' && stage.checker === 'tests') {
+          await send('evaluate');
+          await send('collect');
+          const tested = (await store.get(created.id, principal.ownerId)).state.collected[
+            milestone.id
+          ]!.tests;
+          expect(tested?.status).toBe('passed');
+          expect(tested?.publicFeedback).toContain('1 / 1 checks passed');
+          evaluations++;
+          await send('next');
+        } else if (stage.kind === 'check' && stage.checker === 'quiz') {
+          await send('quiz', { answers: milestone.quiz.map((question) => question.answer) });
+          await send('next');
+        } else throw new Error(`Unexpected packaged stage: ${stage.kind}`);
+      }
+      expect(evaluations).toBe(2);
+      const finished = await new LearningStore(pool).get(created.id, principal.ownerId);
+      expect(finished.project_reference).toEqual(projectRef);
+      expect(finished.project?.coursePackage?.bundle.files['tests/private.py']).toBe(
+        bundle.files['tests/private.py'],
+      );
+      expect(lookup).not.toHaveBeenCalled();
+    },
+    120000,
+  );
 });

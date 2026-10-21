@@ -29,6 +29,8 @@ import {
   invalidateWorkspace,
 } from './runtime';
 import { touchEnvironment, assertEnvironmentReady } from './environment';
+import { startBuild, collectBuild, assertBuilt } from './compilation';
+import { packagedStageSkill } from './project-package';
 import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
 
@@ -53,22 +55,12 @@ export async function teachingRunnerConfig(input: {
   const agents = await getAgentSessionStore();
   const userMessages = await listAgentUserMessages(agents, input.sessionId);
   const latest = userMessages.at(-1);
-  const signal =
-    stage.kind === 'produce'
-      ? stage.writes === 'plan'
-        ? 'plan_review'
-        : 'code_review'
-      : 'teaching';
-  const progression =
-    signal === 'plan_review'
-      ? ['SKILL.md', 'A-generate.md', 'B-understand.md', 'C-review.md', 'D-approve.md']
-      : signal === 'code_review'
-        ? ['SKILL.md', 'A-implement.md', 'B-understand.md', 'C-review.md', 'D-confirm.md']
-        : ['SKILL.md', 'A-teach.md', 'B-dialogue.md', 'C-reflect.md'];
+  const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role);
+  const progression = skill.progression;
   const protocol = {
     progression,
     final: progression.at(-1)!,
-    digest: digest(JSON.stringify([project.ref, bound.stage_key, progression])),
+    digest: digest(JSON.stringify([project.ref, bound.stage_key, progression, skill.content])),
   };
   const review = new GuidedSkillReview(protocol, bound.guided ?? undefined);
   const runId = `${bound.stage_key}:${latest?.seq ?? 0}`;
@@ -105,6 +97,7 @@ export async function teachingRunnerConfig(input: {
     execute: (
       current: Study,
       params: Static<T>,
+      callId: string,
     ) => Promise<{ value: unknown; transition?: EngineTransition }>,
   ) {
     return {
@@ -130,9 +123,14 @@ export async function teachingRunnerConfig(input: {
               ownerId: current.owner_id,
               workspaceId: learningWorkspaceId(current.id),
               environmentIds: () => [current.environment_id],
-              operations: name === 'write_file' || name === 'manage_file' ? ['write'] : [],
+              operations:
+                name === 'write_file' || name === 'manage_file'
+                  ? ['write']
+                  : name === 'run_build'
+                    ? ['command']
+                    : [],
             },
-            () => execute(current, params),
+            () => execute(current, params, _id),
           );
           if (input.signal.aborted || toolSignal?.aborted)
             throw new Error('Teaching run cancelled.');
@@ -217,6 +215,25 @@ export async function teachingRunnerConfig(input: {
         },
       ),
     );
+  if (row.environment_id && bound.role === 'coder' && project.buildCommand)
+    tools.push(
+      tool(
+        'run_build',
+        'Start the registered project build. Collect its result before reviewing code.',
+        Type.Object({}),
+        async (current, _params, callId) => {
+          const raw = digest(`${input.sessionId}:${callId}`);
+          const id = `${raw.slice(0, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}-${raw.slice(16, 20)}-${raw.slice(20, 32)}`;
+          return { value: await startBuild(store, current, await service(), id) };
+        },
+      ),
+      tool(
+        'collect_build',
+        'Collect the pending build. Running or unknown results are not success.',
+        Type.Object({}),
+        async (current) => ({ value: await collectBuild(store, current, await service()) }),
+      ),
+    );
   if (row.environment_id && canReadFiles && bound.role !== 'planner')
     tools.push(
       tool(
@@ -288,17 +305,12 @@ export async function teachingRunnerConfig(input: {
               'All sections are open; request final feedback and complete the review.',
             );
           if (!reread) review.advance(next, p.studentFeedback, await fingerprint(current));
-          const instruction = next.startsWith('A-')
-            ? 'Introduce this step and produce the appropriate initial work. Explain one manageable part.'
-            : next.startsWith('B-')
-              ? 'Ask the learner to explain the work in their own words. Address gaps before accepting their understanding.'
-              : next === protocol.final
-                ? 'Review the current artifact and the learner’s explanation. Request a specific final check and wait for the learner’s next reply.'
-                : 'Review the work against the contract and decisions. Ask the learner to check a concrete example.';
+          const instruction = skill.content[next];
           return {
             value: {
               section: next,
               instruction,
+              referenceMaterials: skill.documents,
               goal: milestone.goal ?? milestone.title,
               stage: stage.kind === 'mentor_say' ? stage.say : stage.writes,
             },
@@ -312,7 +324,9 @@ export async function teachingRunnerConfig(input: {
         'Record a concrete student review question for this section. End your turn and wait for a new student reply.',
         Type.Object({ question: Type.String({ minLength: 1, maxLength: 2000 }) }),
         async (current, p) => {
-          review.checkpoint(p.question, await fingerprint(current));
+          const hash = await fingerprint(current);
+          await assertBuilt(store, current, hash);
+          review.checkpoint(p.question, hash);
           return { value: { question: p.question, waitForStudent: true } };
         },
       ),
@@ -324,6 +338,7 @@ export async function teachingRunnerConfig(input: {
         Type.Object({ studentFeedback: Type.String({ minLength: 1, maxLength: 2000 }) }),
         async (current, p) => {
           const hash = await fingerprint(current);
+          await assertBuilt(store, current, hash);
           review.complete(p.studentFeedback, hash);
           let transition: EngineTransition = { state: current.state, events: [] };
           if (!current.state.introCompleted)
@@ -405,6 +420,7 @@ export async function teachingRunnerConfig(input: {
     buildSystemPrompt({
       role: bound.role,
       seed: {
+        referenceMaterials: skill.documents,
         ...seed,
         goal: milestone.goal ?? milestone.title,
         ...(guided

@@ -2,6 +2,8 @@
 
 For the dedicated classroom file, execution and recovery controls, see
 [Learning workbench and recovery](WORKBENCH.md).
+For self-contained `.maic.zip` delivery, see
+[Project packages, permissions and verification](PROJECT-PACKAGES.md).
 
 This slice opens an installed programming project in the normal classroom, runs
 four teaching roles in the existing Agent runner, and persists learning progress

@@ -1,21 +1,8 @@
 import type { PblSessionState } from './domain/orchestration/types';
 import type { AgentRole, StageDefinition } from './domain/project/project-schema';
 
-/** A scene selects a server-installed, immutable project; it never carries teaching state. */
-export interface PBLV3Reference {
-  id: string;
-  version: string;
-}
-export function isPBLV3Reference(value: unknown): value is PBLV3Reference {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const ref = value as Record<string, unknown>;
-  return (
-    typeof ref.id === 'string' &&
-    /^[a-z0-9-]{1,80}$/.test(ref.id) &&
-    typeof ref.version === 'string' &&
-    /^[a-zA-Z0-9.-]{1,40}$/.test(ref.version)
-  );
-}
+export { isPBLV3Reference } from '@openmaic/dsl';
+export type { PBLV3Reference } from '@openmaic/dsl';
 export interface LearningView {
   id: string;
   revision: number;

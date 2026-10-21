@@ -619,6 +619,10 @@ export function createOwnerBoundDocumentStore<
         }
 
         const result = await body(queryable);
+        if (operation?.content && operation.stageId) {
+          const { assertDocumentProjectsInstalled } = await import('./pbl-projects');
+          await assertDocumentProjectsInstalled(queryable, operation.stageId, options.ownerId);
+        }
         if (operation?.mode === 'create') {
           // "Created" means exactly this: the transaction that inserts the
           // ownership row. A save of a course the owner already holds -- found

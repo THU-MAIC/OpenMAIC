@@ -38,6 +38,7 @@ import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
+import { attachClassroomProjects } from '@/lib/pbl/v3/package-client';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -76,6 +77,8 @@ export interface ClassroomExportSnapshot {
 
 /** What a snapshot collects; every payload is collected by default. */
 export interface ClassroomExportSnapshotOptions {
+  /** Include runnable course templates; briefing-only formats omit private project resources. */
+  pblProjects?: boolean;
   /** Collect narration audio: stored rows and legacy audio URLs. */
   audio?: boolean;
   /**
@@ -184,7 +187,10 @@ export async function buildClassroomExportSnapshot(
       )
     : [];
   const mediaEntries = assetManifest.entries.filter(
-    (entry) => entry.kind !== 'audio' && (includeVideoBytes || entry.kind !== 'video'),
+    (entry) =>
+      entry.kind !== 'audio' &&
+      entry.kind !== 'pbl-project' &&
+      (includeVideoBytes || entry.kind !== 'video'),
   );
   const posterOnlyVideoEntries = includeVideoBytes
     ? []
@@ -331,6 +337,7 @@ export async function buildClassroomExportSnapshot(
   for (const video of posterOnlyVideos) {
     videoPosters.set(video.sourceRef, video.poster);
   }
+  if (options.pblProjects !== false) await attachClassroomProjects(stage.id, manifest, files);
 
   return {
     manifest,

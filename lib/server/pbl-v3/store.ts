@@ -11,6 +11,9 @@ import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events'
 import type { PblSessionState } from '@/lib/pbl/v3/domain/orchestration/types';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
+import type { PBLV3Reference } from '@openmaic/dsl';
+import type { InstalledProject } from './catalog';
+import { resolveProject } from './project-resolver';
 
 export interface Study extends Record<string, unknown> {
   id: string;
@@ -19,6 +22,9 @@ export interface Study extends Record<string, unknown> {
   scene_id: string;
   project_id: string;
   project_version: string;
+  project_reference?: PBLV3Reference | null;
+  /** Hydrated from durable template bytes on every read, never persisted with learner state. */
+  project?: InstalledProject;
   revision: number;
   state: PblSessionState;
   environment_id: string | null;
@@ -28,7 +34,13 @@ export interface Study extends Record<string, unknown> {
     checkpointRevision?: number;
     progressReset?: boolean;
   } | null;
-  evaluation: { id: string; fingerprint: string; stageKey: string; startedAt: string } | null;
+  evaluation: {
+    id: string;
+    fingerprint: string;
+    stageKey: string;
+    startedAt: string;
+    purpose?: 'compile';
+  } | null;
 }
 export interface RoleBinding extends Record<string, unknown> {
   session_id: string;
@@ -77,6 +89,12 @@ CREATE TABLE pbl_v3_events (
         ADD COLUMN environment_checked_at TIMESTAMPTZ,
         ADD COLUMN environment_recovery JSONB;`,
     },
+    {
+      version: 3,
+      name: 'pin-project-template',
+      transaction: true,
+      up: 'ALTER TABLE pbl_v3_studies ADD COLUMN project_reference JSONB;',
+    },
   ],
 };
 
@@ -97,7 +115,16 @@ export class LearningStore {
     );
     if (!result.rows[0])
       throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row.project_reference?.assetId)
+      row.project = await resolveProject(
+        ownerId,
+        row.stage_id,
+        row.project_reference,
+        undefined,
+        row.scene_id,
+      );
+    return row;
   }
   async binding(sessionId: string): Promise<RoleBinding | null> {
     return (
@@ -118,13 +145,14 @@ export class LearningStore {
       sceneId: string;
       projectId: string;
       version: string;
+      projectRef?: PBLV3Reference;
     },
     initial: EngineTransition,
   ) {
     return this.transaction(async (db) => {
       const inserted = await db.query<Study>(
-        `INSERT INTO pbl_v3_studies(id,owner_id,stage_id,scene_id,project_id,project_version,state)
-        VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(owner_id,stage_id,scene_id) DO NOTHING RETURNING *`,
+        `INSERT INTO pbl_v3_studies(id,owner_id,stage_id,scene_id,project_id,project_version,state,project_reference)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(owner_id,stage_id,scene_id) DO NOTHING RETURNING *`,
         [
           randomUUID(),
           input.ownerId,
@@ -133,6 +161,7 @@ export class LearningStore {
           input.projectId,
           input.version,
           JSON.stringify(initial.state),
+          JSON.stringify(input.projectRef ?? null),
         ],
       );
       const row =
@@ -145,6 +174,8 @@ export class LearningStore {
         ).rows[0]!;
       if (row.project_id !== input.projectId || row.project_version !== input.version)
         throw sandboxConflict('This learning instance is pinned to a different project version.');
+      if ((row.project_reference?.checksum ?? null) !== (input.projectRef?.checksum ?? null))
+        throw sandboxConflict('This learning instance is pinned to different project content.');
       if (inserted.rows.length) await this.events(db, row.id, initial);
       return row;
     });
@@ -212,7 +243,7 @@ export class LearningStore {
     if (!result.rows[0])
       throw sandboxConflict('Learning progress changed. Refresh before retrying.');
     await this.events(db, row.id, transition);
-    return result.rows[0];
+    return { ...result.rows[0], ...(row.project ? { project: row.project } : {}) };
   }
   private async events(db: PoolClient, id: string, transition: EngineTransition) {
     const first = transition.state.lastSequence - transition.events.length + 1;

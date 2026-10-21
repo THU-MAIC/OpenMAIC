@@ -1,4 +1,5 @@
 /** Dependency-free persisted contract for project-based learning content. */
+import { isPBLV3Reference, type PBLV3Reference } from './pbl-v3.js';
 
 export type PBLProjectStatus = 'designing' | 'review' | 'active' | 'completed' | 'archived';
 export type PBLMilestoneStatus = 'locked' | 'active' | 'completed';
@@ -150,6 +151,7 @@ export interface PBLProject {
 
 export interface PBLContent {
   type: 'pbl';
+  projectV3?: PBLV3Reference;
   projectV2?: PBLProject;
   /**
    * Pre-v2 scenes carry the legacy payload; current code still writes a
@@ -193,6 +195,13 @@ export function isPBLContent(value: unknown): value is PBLContent {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const content = value as Record<string, unknown>;
   if (content.type !== 'pbl') return false;
+  if (
+    content.projectV3 !== undefined &&
+    (!isPBLV3Reference(content.projectV3) ||
+      content.projectV2 != null ||
+      content.projectConfig != null)
+  )
+    return false;
   if (content.projectV2 !== undefined && !isPBLProject(content.projectV2)) return false;
   if (
     content.projectConfig !== undefined &&

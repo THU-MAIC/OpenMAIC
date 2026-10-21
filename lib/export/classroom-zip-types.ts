@@ -13,6 +13,8 @@ export const CLASSROOM_ZIP_EXTENSION = '.maic.zip';
 
 export interface ClassroomManifest {
   formatVersion: number;
+  requiredCapabilities?: string[];
+  pblProjects?: import('@openmaic/dsl').PBLProjectPackageEntry[];
   exportedAt: string;
   appVersion: string;
   stage: ManifestStage;

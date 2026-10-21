@@ -15,11 +15,14 @@ import { InvalidEngineTransitionError } from '@/lib/pbl/v3/domain/orchestration/
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { touchEnvironment, assertEnvironmentReady } from '@/lib/server/pbl-v3/environment';
 import { assertProjectSource } from '@/lib/server/pbl-v3/workspace-files';
-import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import { installedProject, publicProjects } from '@/lib/server/pbl-v3/catalog';
+import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 
 export const runtime = 'nodejs';
 export async function GET(request: Request) {
   return sandboxPrincipalResponse(request, async (principal) => {
+    if (new URL(request.url).searchParams.get('samples') === '1')
+      return Response.json(publicProjects());
     const params = new URL(request.url).searchParams,
       id = params.get('id');
     if (!id) throw sandboxInvalid('A learning session is required.');
@@ -43,7 +46,9 @@ export async function POST(request: Request) {
       if (body.action === 'sample') {
         if (typeof body.id !== 'string' || !/^pbl-[a-f0-9-]{36}$/.test(body.id))
           throw sandboxInvalid('A stable classroom ID is required.');
-        const project = installedProject({ id: 'greeting-python', version: '1.0.0' });
+        const ref = body.project ?? { id: 'greeting-python', version: '1.0.0' };
+        if (!isPBLV3Reference(ref)) throw sandboxInvalid('Select an installed sample.');
+        const project = installedProject(ref);
         const documents = await getOwnerScopedDocumentStore(principal);
         const existing = await documents.loadDocument(body.id);
         if (!existing)

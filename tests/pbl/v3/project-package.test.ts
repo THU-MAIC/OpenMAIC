@@ -1,0 +1,282 @@
+import { describe, expect, it, vi } from 'vitest';
+import JSZip from 'jszip';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+vi.mock('server-only', () => ({}));
+import { installedProject } from '@/lib/server/pbl-v3/catalog';
+import {
+  packageBuiltin,
+  validateProjectPackage,
+  indexProjectFiles,
+  packagedStageSkill,
+  canonicalJson,
+} from '@/lib/server/pbl-v3/project-package';
+import { evaluationFor, evaluationCommand, evaluationPassed } from '@/lib/server/pbl-v3/evaluation';
+import {
+  readClassroomProjects,
+  validateClassroomPackageCompatibility,
+  attachClassroomProjects,
+  installClassroomProjects,
+} from '@/lib/pbl/v3/package-client';
+import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
+import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
+import { enumerateAssetManifest, validatePBLContent, isPBLV3Reference } from '@openmaic/dsl';
+
+const source = (id = 'greeting-python-lab') => installedProject({ id, version: '1.0.0' });
+function revised(change: (files: Record<string, string>) => void) {
+  const original = packageBuiltin(source());
+  const files = { ...original.files };
+  change(files);
+  return indexProjectFiles(original.entry.id, original.entry.version, files);
+}
+function manifest(): ClassroomManifest {
+  return {
+    formatVersion: 1,
+    exportedAt: '',
+    appVersion: '',
+    stage: { name: 'Course', createdAt: 1, updatedAt: 1 },
+    agents: [],
+    mediaIndex: {},
+    scenes: [0, 1].map((order) => ({
+      type: 'pbl',
+      title: 'Project',
+      order,
+      content: { type: 'pbl', projectV3: source().ref },
+    })),
+  };
+}
+async function archive(bundle: ReturnType<typeof packageBuiltin>) {
+  const zip = new JSZip();
+  for (const [path, text] of Object.entries(bundle.files))
+    zip.file(`${bundle.entry.root}/${path}`, text);
+  return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
+}
+describe('self-contained PBL project packages', () => {
+  it.each(['greeting-python', 'greeting-python-lab', 'greeting-java'])(
+    'round-trips %s through ZIP without catalog resolution',
+    async (id) => {
+      const bundle = packageBuiltin(source(id));
+      const [loaded] = await readClassroomProjects(await archive(bundle), [bundle.entry]);
+      const { project } = validateProjectPackage(loaded);
+      expect(project.definition).toEqual({
+        ...source(id).definition,
+        paths: { ...source(id).definition.paths, requirements: 'docs', pedagogy: 'skills' },
+      });
+      expect(project.files).toEqual(source(id).files);
+      expect(project.evaluations).toEqual(JSON.parse(JSON.stringify(source(id).evaluations)));
+      expect(loaded).toEqual(bundle);
+      expect(
+        Object.keys(project.files).some((path) => /^(skills|docs|tests|rubric)\//.test(path)),
+      ).toBe(false);
+    },
+  );
+  it('consumes the packaged Skill and only its role/stage reference materials', () => {
+    const bundle = revised((files) => {
+      files['skills/1/A-teach.md'] = 'COURSE-SPECIFIC TEACHING';
+      files['docs/1.md'] = 'ACTIVE REFERENCE';
+      files['docs/2.md'] = 'FUTURE REFERENCE';
+    });
+    const { project } = validateProjectPackage(bundle);
+    const stage = project.definition.milestones[0].stages[0];
+    const skill = packagedStageSkill(project, stage, 'greeting:0', 'discussion');
+    expect(skill.content['A-teach.md']).toContain('COURSE-SPECIFIC TEACHING');
+    expect(skill.documents).toEqual([{ path: 'docs/1.md', text: 'ACTIVE REFERENCE' }]);
+    expect(JSON.stringify(skill)).not.toContain('FUTURE REFERENCE');
+    expect(() => packagedStageSkill(project, stage, 'greeting:0', 'coder')).toThrow('unavailable');
+  });
+  it('rejects corrupt, missing, unsafe, excessive and unsupported resources before installation', () => {
+    const bundle = packageBuiltin(source());
+    const corrupt = structuredClone(bundle);
+    corrupt.files['skeleton/PLAN.md'] = 'tampered';
+    expect(() => validateProjectPackage(corrupt)).toThrow('checksum');
+    const missing = structuredClone(bundle);
+    delete missing.files['project.json'];
+    expect(() => validateProjectPackage(missing)).toThrow('index');
+    for (const path of [
+      'skeleton/../secret',
+      '/skeleton/secret',
+      'skills/\\secret',
+      'docs/.hidden',
+      'docs/x\0y',
+    ]) {
+      expect(() =>
+        validateProjectPackage(
+          revised((files) => {
+            files[path] = 'bad';
+          }),
+        ),
+      ).toThrow();
+    }
+    expect(() =>
+      validateProjectPackage(
+        revised((files) => {
+          files['docs/big.md'] = 'x'.repeat(512 * 1024 + 1);
+        }),
+      ),
+    ).toThrow();
+    expect(() =>
+      validateProjectPackage(
+        revised((files) => {
+          const spec = JSON.parse(files['project.json']);
+          spec.runtime.profile = 'maven';
+          files['project.json'] = canonicalJson(spec);
+        }),
+      ),
+    ).toThrow('runtime profile');
+    expect(() =>
+      validateProjectPackage(
+        revised((files) => {
+          delete files['skills/1/A-teach.md'];
+        }),
+      ),
+    ).toThrow('Missing');
+    expect(() =>
+      validateProjectPackage(
+        revised((files) => {
+          const spec = JSON.parse(files['project.json']);
+          spec.runtime.sourceRoots = ['tests'];
+          files['project.json'] = canonicalJson(spec);
+        }),
+      ),
+    ).toThrow('private');
+  });
+  it('rejects ZIP traversal, symlinks, extra files and false size indexes before decompression', async () => {
+    const bundle = packageBuiltin(source());
+    for (const mode of ['traversal', 'symlink', 'extra', 'size']) {
+      const zip = new JSZip();
+      for (const [name, text] of Object.entries(bundle.files))
+        zip.file(`${bundle.entry.root}/${name}`, text);
+      const entry = structuredClone(bundle.entry);
+      if (mode === 'traversal') zip.file(`${bundle.entry.root}/docs/../escape`, 'bad');
+      if (mode === 'extra') zip.file(`${bundle.entry.root}/docs/extra.md`, 'bad');
+      if (mode === 'symlink')
+        zip.file(`${bundle.entry.root}/skeleton/PLAN.md`, '', { unixPermissions: 0o120777 });
+      if (mode === 'size') entry.files['project.json'].size = 0;
+      const loaded = await JSZip.loadAsync(
+        await zip.generateAsync({ type: 'uint8array', platform: 'UNIX' }),
+      );
+      await expect(readClassroomProjects(loaded, [entry])).rejects.toThrow();
+    }
+  });
+  it('exports deduplicated bindings, imports them and re-exports identical pinned resources', async () => {
+    const bundle = packageBuiltin(source()),
+      m = manifest(),
+      files = new Map<string, Blob>();
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+      const input = JSON.parse(init!.body as string);
+      if (input.action === 'install')
+        return Response.json({
+          references: [
+            {
+              id: bundle.entry.id,
+              version: bundle.entry.version,
+              assetId: 'installed-template',
+              checksum: bundle.entry.checksum,
+            },
+          ],
+        });
+      return Response.json({ projects: input.refs.map(() => bundle) });
+    });
+    try {
+      await attachClassroomProjects('original', m, files);
+      expect(m.formatVersion).toBe(2);
+      expect(m.pblProjects).toHaveLength(1);
+      expect(files.size).toBe(Object.keys(bundle.files).length);
+      const first = structuredClone(m);
+      const zip = await archive(bundle);
+      await installClassroomProjects(zip, m);
+      expect(m.scenes[0].content).toMatchObject({ projectV3: { assetId: 'installed-template' } });
+      await attachClassroomProjects('imported', m, new Map());
+      expect(m).toEqual(first);
+      expect(JSON.stringify(m)).not.toContain('installed-template');
+    } finally {
+      fetcher.mockRestore();
+    }
+  });
+  it('rejects unsupported formats/capabilities and unbound references; preserves ordinary v1 archives', () => {
+    expect(() => validateClassroomPackageCompatibility(manifest())).not.toThrow();
+    expect(() =>
+      validateClassroomPackageCompatibility({ ...manifest(), formatVersion: 9 }),
+    ).toThrow('version');
+    expect(() =>
+      validateClassroomPackageCompatibility({ ...manifest(), requiredCapabilities: ['unknown'] }),
+    ).toThrow('capabilities');
+    expect(() => bindPackageReferences(manifest().scenes, new Map())).toThrow('packaged');
+    expect(
+      validatePBLContent({ type: 'pbl', projectV3: { id: 'x', version: '1', assetId: 'a' } }).valid,
+    ).toBe(false);
+    expect(
+      isPBLV3Reference({ id: 'x', version: '1', assetId: 'a', checksum: 'a'.repeat(64) }),
+    ).toBe(true);
+  });
+  it('enumerates project assets per scene for copy/delete/collection reference maintenance', () => {
+    const scenes = ['a', 'b'].map((id) => ({
+      id,
+      stageId: 'course',
+      type: 'pbl' as const,
+      title: id,
+      order: 0,
+      content: {
+        type: 'pbl' as const,
+        projectV3: { id: 'x', version: '1', assetId: 'asset', checksum: 'a'.repeat(64) },
+      },
+    }));
+    const result = enumerateAssetManifest({ stage: {}, scenes });
+    expect(result.entries).toEqual([{ ref: 'asset', kind: 'pbl-project' }]);
+    expect(result.referenceCounts.get('asset')).toBe(2);
+  });
+  it
+    .runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')
+    .each(['greeting-python-lab', 'greeting-java'])(
+    'executes the imported %s profile and private evaluation resources',
+    async (id) => {
+      const bundle = packageBuiltin(source(id));
+      if (id === 'greeting-python-lab') {
+        bundle.files['tests/check.py'] =
+          'import sys,os,pathlib\nsys.path.insert(0,os.path.join(os.getcwd(),"src"))\nfrom greeting import greet\nexpected=(pathlib.Path(__file__).parents[1]/"rubric/expected.txt").read_text()\nprint(greet("  Ada  ")==expected)\n';
+        bundle.files['rubric/expected.txt'] = 'Hello, Ada!';
+        bundle.files['tests/normalize.json'] = JSON.stringify({
+          cases: [
+            {
+              id: 'private-resource',
+              argv: ['python3', '{resources}/tests/check.py'],
+              stdout: 'True\n',
+            },
+          ],
+        });
+      }
+      const { project } = validateProjectPackage(
+        indexProjectFiles(bundle.entry.id, bundle.entry.version, bundle.files),
+      );
+      const dir = await mkdtemp(join(tmpdir(), 'pbl-package-profile-'));
+      try {
+        for (const [path, text] of Object.entries(project.files)) {
+          await mkdir(dirname(join(dir, path)), { recursive: true });
+          await writeFile(join(dir, path), text);
+        }
+        const java = id === 'greeting-java';
+        await writeFile(
+          join(dir, java ? 'src/Greeting.java' : 'src/greeting.py'),
+          java
+            ? 'public class Greeting { public static void main(String[] args) { System.out.println("Hello, " + args[0].trim() + "!"); } }'
+            : 'def greet(name):\n    return f"Hello, {name.strip()}!"\n',
+        );
+        await promisify(execFile)('/bin/sh', ['-c', project.buildCommand!], { cwd: dir });
+        const spec = evaluationFor(project, 'normalize');
+        const { stdout } = await promisify(execFile)(
+          '/bin/sh',
+          ['-c', evaluationCommand(spec, 'package-eval')],
+          { cwd: dir },
+        );
+        expect(evaluationPassed(spec, 'package-eval', stdout)).toBe(true);
+        expect(spec.resources).toHaveProperty('tests/normalize.json');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+});

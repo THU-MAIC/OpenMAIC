@@ -79,6 +79,15 @@ export class AssetQuotaExceededError extends Error {
   }
 }
 
+/** A host-owned immutable template must be versioned by allocating a new asset. */
+export class AssetImmutableError extends Error {
+  readonly code = 'ASSET_IMMUTABLE' as const;
+  constructor() {
+    super('@openmaic/storage: immutable asset; install a new content version instead');
+    this.name = 'AssetImmutableError';
+  }
+}
+
 /**
  * Media types served inline by default.
  *

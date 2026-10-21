@@ -23,6 +23,14 @@ import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import { installedProject } from './catalog';
+import { resolveProject } from './project-resolver';
+import { startBuild, collectBuild } from './compilation';
+import {
+  evaluationCommand,
+  evaluationFor,
+  evaluationPassed,
+  evaluationFeedback,
+} from './evaluation';
 import { LearningStore, type Study, type RoleBinding } from './store';
 import {
   learningWorkspaceId,
@@ -38,6 +46,11 @@ export function stageKey(row: Study) {
   return `${row.state.introCompleted ? row.state.position.milestoneId : 'intro'}:${row.state.introCompleted ? row.state.position.stageIndex : -1}`;
 }
 export function projectFor(row: Study) {
+  if (row.project) return row.project;
+  if (row.project_reference?.assetId)
+    throw sandboxConflict(
+      'Pinned project resources have not been resolved. Reopen the learning session.',
+    );
   return installedProject({ id: row.project_id, version: row.project_version });
 }
 export function stageFor(row: Study) {
@@ -115,7 +128,7 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
       404,
       'The classroom does not contain this learning project.',
     );
-  const project = installedProject(content.projectV3);
+  const project = await resolveProject(principal.ownerId, stageId, content.projectV3);
   return (await LearningStore.open()).create(
     {
       ownerId: principal.ownerId,
@@ -123,6 +136,7 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
       sceneId,
       projectId: project.ref.id,
       version: project.ref.version,
+      projectRef: project.ref,
     },
     transitions.startOrchestration(project.definition),
   );
@@ -225,7 +239,7 @@ export async function commandStudy(
       ? ['create', 'restore', 'write']
       : command.type === 'save'
         ? ['write']
-        : command.type === 'evaluate'
+        : command.type === 'evaluate' || command.type === 'compile'
           ? ['command']
           : command.type === 'checkpoint' || command.type === 'next'
             ? ['checkpoint']
@@ -439,6 +453,10 @@ export async function commandStudy(
         total: judged.total,
         wrong: judged.wrong,
       });
+    } else if (command.type === 'compile') {
+      check('edit');
+      result = await startBuild(store, row, service, command.id);
+      transition = { state: row.state, events: [] };
     } else if (command.type === 'evaluate') {
       check('evaluate');
       if (row.evaluation && row.evaluation.id !== command.id)
@@ -455,12 +473,25 @@ export async function commandStudy(
       );
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
-        command: project.testCommand,
+        command: evaluationCommand(
+          evaluationFor(project, row.state.position.milestoneId!),
+          command.id,
+        ),
         timeoutMs: 60_000,
       });
       transition = { state: row.state, events: [] };
     } else if (command.type === 'collect') {
       if (!row.evaluation) throw sandboxConflict('No test is awaiting collection.');
+      if (row.evaluation.purpose === 'compile') {
+        const buildResult = await collectBuild(store, row, service);
+        if ('pending' in buildResult) return buildResult;
+        result = buildResult;
+        transition = { state: row.state, events: [] };
+        return store.transaction(async (db) => {
+          await persist(db);
+          return result;
+        });
+      }
       const evaluation = row.evaluation;
       const observed = await service.command(requireEnvironment(row), evaluation.id);
       if (['starting', 'running', 'unknown'].includes(observed.state))
@@ -483,7 +514,12 @@ export async function commandStudy(
             id: evaluation.id,
             status:
               observed.state === 'exited'
-                ? observed.exitCode === 0
+                ? observed.exitCode === 0 &&
+                  evaluationPassed(
+                    evaluationFor(project, milestone.id),
+                    evaluation.id,
+                    observed.stdout,
+                  )
                   ? 'passed'
                   : 'failed'
                 : 'error',
@@ -500,7 +536,7 @@ export async function commandStudy(
             codeArtifactId: collected.code?.id,
             startedAt: evaluation.startedAt,
             completedAt: new Date().toISOString(),
-            publicFeedback: (observed.stdout + '\n' + observed.stderr).slice(0, 8000),
+            publicFeedback: evaluationFeedback(observed.stdout, observed.stderr),
             failureKind: observed.state === 'exited' ? 'assertion' : 'infrastructure',
           },
           { remediationId: randomUUID() },
@@ -685,8 +721,11 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
         evaluation = {
           id: observed.id,
           state: observed.state,
-          stdout: observed.stdout.slice(0, 8000),
-          stderr: observed.stderr.slice(0, 8000),
+          stdout:
+            row.evaluation.purpose === 'compile'
+              ? observed.stdout.slice(0, 8000)
+              : evaluationFeedback(observed.stdout, observed.stderr),
+          stderr: row.evaluation.purpose === 'compile' ? observed.stderr.slice(0, 8000) : '',
         };
     } catch {
       evaluation = { id: row.evaluation.id, state: 'unavailable', stdout: '', stderr: '' };
@@ -694,10 +733,17 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     }
   }
 
-  const actions =
+  const actions: string[] =
     row.state.status === 'completed'
       ? []
       : [...transitions.allowedStudentActions(project.definition, row.state)];
+  if (
+    actions.includes('edit') &&
+    stage.kind === 'produce' &&
+    stage.writes === 'code' &&
+    project.buildCommand
+  )
+    actions.push('compile');
   const guided = stage.kind === 'mentor_say' || stage.kind === 'produce';
   const approvalCurrent =
     roleRun?.status === 'succeeded' &&
