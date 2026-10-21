@@ -17,6 +17,7 @@ import { forwardOwnerWrite } from '@/lib/persistence/owner-merges';
 import {
   markStageGenerationComplete,
   readStageMeta,
+  setStageSeries,
   StageAccessError,
 } from '@/lib/persistence/stage-meta';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -61,6 +62,8 @@ export async function createRunCourse(input: {
   stage: Stage;
   outlines: SceneOutline[];
   firstScene: Scene;
+  /** This run is one part of a course series: mirrored onto the course as it is created. */
+  series?: { seriesId: string; seriesOrder: number };
   inTransaction: (queryable: Queryable) => Promise<void>;
 }): Promise<void> {
   const now = Date.now();
@@ -79,7 +82,21 @@ export async function createRunCourse(input: {
       scenes: [sanitizeSceneContent(input.firstScene)],
       outline,
     },
-    { inTransaction: input.inTransaction },
+    {
+      inTransaction: async (queryable) => {
+        // `stage_meta`'s ownership row for this course exists already at this
+        // point (the create path claims it before running `inTransaction`),
+        // so the mirror and the checkpoint that records the course commit
+        // together with it.
+        if (input.series) {
+          await setStageSeries(queryable, input.stage.id, {
+            seriesId: input.series.seriesId,
+            seriesOrder: input.series.seriesOrder,
+          });
+        }
+        await input.inTransaction(queryable);
+      },
+    },
   );
 }
 
