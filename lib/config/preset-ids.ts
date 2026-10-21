@@ -32,3 +32,23 @@ export function presetIdFor(capability: SlotCapability, registryId: string): str
 export function tokenPlanPresetId(planId: string): string {
   return TOKEN_PLAN_ID_OVERRIDES[planId] ?? planId;
 }
+
+/**
+ * Presets earlier versions offered and this build no longer has, with why
+ * they were removed and the environment prefix the legacy variables used. A
+ * configuration that still declares a provider with one of them keeps
+ * loading: the provider resolves nothing, and the slots that named it follow
+ * their parents again (see retiredProviderIds in resolve-slot.ts).
+ */
+export const RETIRED_PRESETS: Readonly<Record<string, { reason: string; envPrefix?: string }>> = {
+  veo: {
+    reason:
+      'the Veo video provider was removed because Google shut down its Veo 3.1 preview models on October 22, 2026',
+    envPrefix: 'VIDEO_VEO',
+  },
+};
+
+/** Why a preset was removed, when it is one this build retired. */
+export function retiredPresetReason(presetId: string): string | undefined {
+  return Object.hasOwn(RETIRED_PRESETS, presetId) ? RETIRED_PRESETS[presetId].reason : undefined;
+}

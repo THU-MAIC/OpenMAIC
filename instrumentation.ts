@@ -81,6 +81,9 @@ export async function register(): Promise<void> {
   let extractionRunner:
     | import('@/lib/server/material-extraction/runner').MaterialExtractionRunnerHandle
     | undefined;
+  let ownerExtractionRunner:
+    | import('@/lib/server/material-extraction/owner-extraction').OwnerExtractionRunnerHandle
+    | undefined;
   let stopAgentEventNotifyBus: (() => Promise<void>) | null = null;
   let generationRunner:
     | import('@/lib/server/generation/run/runner').GenerationRunnerHandle
@@ -125,6 +128,30 @@ export async function register(): Promise<void> {
       runner = runtime.startAgentRunner();
       const extraction = await import('@/lib/server/material-extraction/runner');
       extractionRunner = extraction.startMaterialExtractionRunner();
+      // Owner-level extraction of library sources (RFC #1716): what a
+      // conversation links is extracted once per owner, beside the session
+      // chain, which keeps serving copies made before links.
+      const ownerExtraction = await import('@/lib/server/material-extraction/owner-extraction');
+      ownerExtractionRunner = ownerExtraction.startOwnerExtractionRunner();
+      // Two bounded passes over old material objects, one per start each;
+      // neither blocks register() (see lib/server/materials/migrate-to-pool.ts).
+      const materialPasses = import('@/lib/server/materials/migrate-to-pool');
+      // Moving pre-pool material uploads into the asset pool is opt-in: it
+      // deletes their old objects, so an operator turns it on only once every
+      // instance runs this release.
+      if (process.env.MATERIALS_POOL_BACKFILL === '1') {
+        void materialPasses
+          .then(({ migrateOwnerMaterialsToPool }) => migrateOwnerMaterialsToPool())
+          .then((report) => console.info('[material-backfill] pass finished', report))
+          .catch((error) => console.error('[material-backfill] pass failed', error));
+      }
+      // Old originals of deleted sources whose cleanup after deletion failed.
+      // No new read reaches a deleted row, and this only retries a cleanup
+      // the deletion already authorized, so it needs no flag.
+      void materialPasses
+        .then(({ removeDeletedOriginals }) => removeDeletedOriginals())
+        .then((report) => console.info('[material-delete] cleanup pass finished', report))
+        .catch((error) => console.error('[material-delete] cleanup pass failed', error));
     }
   } catch (error) {
     console.error('[instrumentation] Agent runtime startup failed', error);
@@ -139,6 +166,20 @@ export async function register(): Promise<void> {
         await extractionRunner?.stop();
       } catch (error) {
         console.error('[instrumentation] Material extraction runner drain failed', error);
+      }
+      try {
+        // Bounded: a provider call cannot be cancelled. A run still going
+        // when the pool closes cannot commit anything (every write of it
+        // checks its claim in a transaction of its own); its lease expires
+        // and another instance claims the source again.
+        const drained = await ownerExtractionRunner?.stop();
+        if (drained && !drained.drained) {
+          console.warn(
+            `[instrumentation] Owner extraction not drained: ${drained.running} run(s) still going`,
+          );
+        }
+      } catch (error) {
+        console.error('[instrumentation] Owner extraction runner drain failed', error);
       }
       try {
         await materialExtractor?.stop();

@@ -77,6 +77,24 @@ export function runAgentSessionStoreContract(
       expect(await store.listSessionsByOwner('owner-a')).toEqual([created]);
     });
 
+    test('keeps the locale a session was created in and each message was sent from', async () => {
+      const store = makeStore();
+      const created = await store.createSession(makeAgentSessionInput({ locale: 'en-US' }));
+      expect(created.locale).toBe('en-US');
+      expect((await store.getSession('session-1'))?.locale).toBe('en-US');
+      expect((await store.listSessionsByOwner('owner-a'))[0]?.locale).toBe('en-US');
+
+      // Opaque to the store: kept per message as posted, absent when not given.
+      await store.postUserMessage('session-1', { text: 'first', locale: 'ja-JP' });
+      await store.postUserMessage('session-1', { text: 'second' });
+      const messages = await store.listUserMessages('session-1');
+      expect(messages.map((message) => message.locale)).toEqual(['ja-JP', undefined]);
+
+      // A session created without one reads back without one.
+      const plain = await store.createSession(makeAgentSessionInput({ id: 'session-2' }));
+      expect(plain.locale).toBeUndefined();
+    });
+
     test('tombstones only through the owner and hides all public child reads', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());

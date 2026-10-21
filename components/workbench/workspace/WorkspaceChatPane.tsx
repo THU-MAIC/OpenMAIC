@@ -18,6 +18,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { WorkbenchChat } from '@/components/workbench/WorkbenchChat';
+import type { MaterialSeed } from '@/components/workbench/compose-extras';
 import { PaneFoldButton } from './PaneFoldButton';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { presentWorkspaceSession } from '@/lib/workbench/workspace-navigation';
@@ -33,11 +34,14 @@ export function WorkspaceChatPane({
   width,
   fill,
   hidden,
+  covered,
   navigation,
   draftConversation = null,
   onCollapse,
   onRename,
   resizeHandle,
+  materialSeed,
+  onMaterialSeedConsumed,
 }: {
   /**
    * The pane's width in px. The conversation keeps ITS OWN column in every
@@ -59,6 +63,8 @@ export function WorkspaceChatPane({
    * hundred bytes of an unmounted subtree.
    */
   readonly hidden: boolean;
+  /** Hidden under the knowledge base page, not merely collapsed. */
+  readonly covered: boolean;
   /** Course links in hosted chat read and drive this one shell-owned seam. */
   readonly navigation: WorkbenchCourseNavigation;
   /**
@@ -80,6 +86,9 @@ export function WorkspaceChatPane({
    */
   readonly onRename?: (title: string) => Promise<string | null>;
   readonly resizeHandle?: React.ReactNode;
+  /** A knowledge base hand-over, passed through to the chat's composer. */
+  readonly materialSeed?: MaterialSeed | null;
+  readonly onMaterialSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const sessionPrompt = useWorkbenchStore((s) => s.sessionPrompt);
@@ -181,7 +190,13 @@ export function WorkspaceChatPane({
       <div className="relative min-h-0 flex-1">
         <WorkbenchCourseNavigationProvider navigation={navigation}>
           <WorkbenchDraftConversationProvider draft={draftConversation}>
-            <WorkbenchChat hosted adjacentPanelOpen={!fill} />
+            <WorkbenchChat
+              hosted
+              adjacentPanelOpen={!fill}
+              covered={covered}
+              materialSeed={materialSeed}
+              onMaterialSeedConsumed={onMaterialSeedConsumed}
+            />
           </WorkbenchDraftConversationProvider>
         </WorkbenchCourseNavigationProvider>
       </div>

@@ -16,11 +16,13 @@ import type { LlmStage } from '@/lib/server/model-routes';
 import type { OwnerAuthRequest } from '@/lib/server/identity/types';
 
 import { loadDeploymentLayer, type DeploymentLayer } from './deployment-layer';
-import { parseModelRef, type ModelConfigFile, type SlotAssignment } from './openmaic-yml';
+import type { ModelConfigFile } from './openmaic-yml';
 import {
   resolveModelReference,
   resolveSlot,
+  retiredProviderIds,
   SlotResolutionError,
+  withoutAssignmentsNaming,
   type ModelConfigLayer,
   type ResolvedModelTarget,
   type SlotResolution,
@@ -173,44 +175,32 @@ export function workspaceOnlyProviders(
 }
 
 /**
- * The workspace layer as the deployment lets it count. With `allowUserKeys:
- * false`, providers a workspace added earlier are not used: they are left out,
- * with the assignments that name them (an assignment whose fallback alone
- * names one keeps its model).
+ * The workspace layer as the deployment lets it count. Assignments that name
+ * a provider whose preset this build retired (the workspace's own or the
+ * deployment's) are left out, so those slots follow their parents again. With
+ * `allowUserKeys: false`, providers a workspace added earlier are not used:
+ * they are left out, with the assignments that name them (an assignment whose
+ * fallback alone names one keeps its model).
  */
 export function usableWorkspace(
-  workspace: ModelConfigLayer | null,
+  stored: ModelConfigLayer | null,
   deployment: ModelConfigLayer | null,
 ): ModelConfigLayer | null {
-  if (!workspace || userKeysAllowed(deployment)) return workspace;
+  if (!stored) return stored;
+  const retired = retiredProviderIds([deployment, stored]);
+  const workspace: ModelConfigLayer = retired.size
+    ? {
+        ...stored,
+        config: {
+          ...stored.config,
+          slots: withoutAssignmentsNaming(stored.config.slots, retired),
+        } as ModelConfigFile,
+      }
+    : stored;
+  if (userKeysAllowed(deployment)) return workspace;
   const own = workspaceOnlyProviders(workspace, deployment);
   if (!own.size && !workspace.config.providers) return workspace;
-  const names = (ref: string | undefined) => {
-    if (!ref) return false;
-    try {
-      return own.has(parseModelRef(ref).providerId);
-    } catch {
-      return false;
-    }
-  };
-  const slots: Record<string, SlotAssignment> = {};
-  for (const [slot, assignment] of Object.entries(workspace.config.slots ?? {})) {
-    if (assignment === null || assignment === undefined) {
-      if (assignment === null) slots[slot] = null;
-      continue;
-    }
-    if (typeof assignment === 'string') {
-      if (!names(assignment)) slots[slot] = assignment;
-      continue;
-    }
-    if (names(assignment.model)) continue;
-    if (names(assignment.fallback)) {
-      const { fallback: _fallback, ...kept } = assignment;
-      slots[slot] = kept as SlotAssignment;
-    } else {
-      slots[slot] = assignment;
-    }
-  }
+  const slots = withoutAssignmentsNaming(workspace.config.slots, own);
   const { providers: _providers, ...rest } = workspace.config;
   return { ...workspace, config: { ...rest, slots } as ModelConfigFile };
 }

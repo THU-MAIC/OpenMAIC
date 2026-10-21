@@ -5,7 +5,7 @@
  * Endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
  *
  * Supported models:
- * - qwen-image-max     (highest quality)
+ * - qwen-image-3.0     (recommended)
  * - z-image-turbo      (fast, good quality)
  *
  * API docs: https://help.aliyun.com/zh/model-studio/developer-reference/text-to-image
@@ -21,7 +21,7 @@ import { probeAuth } from '../probe-auth';
 import { assertNotRedirected } from '../redirect-guard';
 import { requireModel } from '../require-model';
 
-const DEFAULT_MODEL = 'qwen-image-max';
+const DEFAULT_MODEL = 'qwen-image-3.0';
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
 
 /**

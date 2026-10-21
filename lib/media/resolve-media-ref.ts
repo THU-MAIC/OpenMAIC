@@ -1,5 +1,8 @@
 'use client';
 
+import { isConcreteMediaAddress } from '@openmaic/dsl';
+export { isConcreteMediaAddress } from '@openmaic/dsl';
+
 import type { MediaTask } from '@/lib/store/media-generation';
 import { useMayGenerateForStage } from '@/lib/classroom/generation-permission';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
@@ -26,20 +29,6 @@ export type MediaTaskState = Pick<
 >;
 
 export const MISSING_ASSET_LEASE: AssetUrlLeaseState = Object.freeze({ status: 'missing' });
-
-export function isConcreteMediaAddress(value: string | undefined): boolean {
-  const candidate = value?.trimStart();
-  if (!candidate || /\s/.test(candidate)) return false;
-  if (/^(https?:|data:|blob:|\/|\.\.?\/)/i.test(candidate)) return true;
-  // User-inserted browser-relative media is concrete too. Keep this narrow
-  // enough that allocated ids and other opaque document refs do not become a
-  // network request merely because their pool entry is missing.
-  return (
-    /^(?:[^:?#]+\/)+[^?#]*(?:[?#].*)?$/.test(candidate) ||
-    /^[^:?#]+[?#].*$/.test(candidate) ||
-    /^(?:[^:?#]+\/)?[^/:?#]+\.[a-z0-9]{1,12}(?:[?#].*)?$/i.test(candidate)
-  );
-}
 
 function isRetryableFailure(task: MediaTaskState): boolean {
   // A generation run says itself whether its Retry would be accepted.

@@ -1,12 +1,16 @@
+import type { MaterialExtractionReasonCode } from '@/lib/types/material-extraction-failure';
+
 /** An extraction failure whose retryability is known at the point of origin. */
 export class MaterialExtractionError extends Error {
+  readonly reasonCode?: MaterialExtractionReasonCode;
   constructor(
     message: string,
     readonly retryable: boolean,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { reasonCode?: MaterialExtractionReasonCode },
   ) {
     super(message, options);
     this.name = 'MaterialExtractionError';
+    this.reasonCode = options?.reasonCode;
   }
 }
 

@@ -9,16 +9,26 @@
  * - Script tag protection during LaTeX conversion
  */
 
+import { parse, type DefaultTreeAdapterTypes } from 'parse5';
+
+/** Marks the KaTeX markup this module injects, so a second pass adds nothing. */
+const KATEX_INJECTION_MARKER = 'data-openmaic-katex';
+
 /**
  * Main entry point: post-process generated interactive HTML
  * Converts LaTeX delimiters and injects KaTeX rendering resources.
+ *
+ * The platform's KaTeX is injected even when the page references KaTeX itself.
+ * The page's own copy may not be there when the page needs it (an unreachable
+ * CDN, a wrong `integrity` hash, an `async` tag), and a page that then calls
+ * `renderMathInElement` or `katex.render` aborts with a ReferenceError.
+ * The page's markup is left as authored.
  */
 export function postProcessInteractiveHtml(html: string): string {
   // Convert LaTeX delimiters while protecting script tags
   let processed = convertLatexDelimiters(html);
 
-  // Inject KaTeX resources if not already present
-  if (!processed.toLowerCase().includes('katex')) {
+  if (!processed.includes(KATEX_INJECTION_MARKER)) {
     processed = injectKatex(processed);
   }
 
@@ -64,15 +74,39 @@ function convertLatexDelimiters(html: string): string {
 }
 
 /**
- * Inject KaTeX CSS, JS, auto-render, and MutationObserver before </head>.
- * Falls back to appending at end if </head> is not found.
+ * Inject KaTeX CSS, JS, auto-render, and a MutationObserver at the start of
+ * <head>, ahead of every script the page authored.
+ *
+ * - The libraries load synchronously before the page's own scripts, so
+ *   `katex` and `renderMathInElement` exist when those scripts and their
+ *   DOMContentLoaded handlers run. A page that loads its own KaTeX later
+ *   replaces these globals with the same library.
+ * - When the CDN is unreachable, no-op stand-ins keep the page's own math
+ *   calls from throwing; the math then stays as written.
+ * - The render handler is registered before the page's handlers, so the
+ *   observer is already watching when the page fills its labels.
  */
 function injectKatex(html: string): string {
   const katexInjection = `
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<script>
+<link ${KATEX_INJECTION_MARKER} rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script ${KATEX_INJECTION_MARKER}>
+(function () {
+    if (!window.katex) {
+        window.katex = {
+            render: function (tex, element) {
+                if (element) element.textContent = String(tex);
+            },
+            renderToString: function (tex) {
+                return String(tex).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+        };
+    }
+    if (typeof window.renderMathInElement !== 'function') {
+        window.renderMathInElement = function () {};
+    }
+})();
 document.addEventListener("DOMContentLoaded", function() {
     const katexOptions = {
         delimiters: [
@@ -86,15 +120,21 @@ document.addEventListener("DOMContentLoaded", function() {
         trust: true
     };
 
+    function render() {
+        try {
+            renderMathInElement(document.body, katexOptions);
+        } catch (e) {
+            // A failed pass must not stop the observer from being installed.
+        }
+    }
+
     let renderTimeout;
     function safeRender() {
         if (renderTimeout) clearTimeout(renderTimeout);
-        renderTimeout = setTimeout(() => {
-            renderMathInElement(document.body, katexOptions);
-        }, 100);
+        renderTimeout = setTimeout(render, 100);
     }
 
-    renderMathInElement(document.body, katexOptions);
+    render();
 
     const observer = new MutationObserver((mutations) => {
         let shouldRender = false;
@@ -126,32 +166,47 @@ document.addEventListener("DOMContentLoaded", function() {
         }
     }, 2000);
 });
-</script>`;
+</script>
+`;
 
-  // Use indexOf + substring instead of String.replace() because the
-  // katexInjection string contains '$' characters that .replace() would
-  // interpret as special substitution patterns ($$ → $, $' → post-match text).
-  const headCloseIdx = html.indexOf('</head>');
-  if (headCloseIdx !== -1) {
-    return (
-      html.substring(0, headCloseIdx) +
-      katexInjection +
-      '\n</head>' +
-      html.substring(headCloseIdx + 7)
-    );
-  }
+  return insertAtHeadStart(html, katexInjection);
+}
 
-  // Fallback: inject before </body> if </head> is missing
-  const bodyCloseIdx = html.indexOf('</body>');
-  if (bodyCloseIdx !== -1) {
-    return (
-      html.substring(0, bodyCloseIdx) +
-      katexInjection +
-      '\n</body>' +
-      html.substring(bodyCloseIdx + 7)
-    );
-  }
+/**
+ * Insert markup at the start of the document's <head> without rewriting the
+ * authored bytes. A document without an explicit <head> gets one after its
+ * <html> start tag or doctype; anything else gets the markup prepended.
+ *
+ * Offsets come from parse5, so a `<head>` inside a script or comment is never
+ * mistaken for the element. The markup is spliced with string slicing, not
+ * `String.replace()`, because it contains `$` characters.
+ */
+function insertAtHeadStart(html: string, markup: string): string {
+  const document = parse(html, { sourceCodeLocationInfo: true });
+  const htmlElement = document.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'html',
+  );
+  const headElement = htmlElement?.childNodes.find(
+    (node): node is DefaultTreeAdapterTypes.Element => isElement(node) && node.tagName === 'head',
+  );
+  const insertAt = (offset: number, text: string) =>
+    html.slice(0, offset) + text + html.slice(offset);
 
-  // Last resort: append at end
-  return html + katexInjection;
+  const headStartEnd = headElement?.sourceCodeLocation?.startTag?.endOffset;
+  if (headStartEnd !== undefined) return insertAt(headStartEnd, markup);
+
+  const htmlStartEnd = htmlElement?.sourceCodeLocation?.startTag?.endOffset;
+  if (htmlStartEnd !== undefined) return insertAt(htmlStartEnd, `<head>${markup}</head>`);
+
+  const doctype = document.childNodes.find((node) => node.nodeName === '#documentType');
+  const doctypeEnd = doctype?.sourceCodeLocation?.endOffset;
+  if (doctypeEnd !== undefined) return insertAt(doctypeEnd, `<head>${markup}</head>`);
+
+  return markup + html;
+}
+
+function isElement(
+  node: DefaultTreeAdapterTypes.ChildNode,
+): node is DefaultTreeAdapterTypes.Element {
+  return !node.nodeName.startsWith('#');
 }

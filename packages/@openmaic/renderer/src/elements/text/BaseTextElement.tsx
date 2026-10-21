@@ -6,28 +6,29 @@ import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
+import { hasTextInsets } from '../shared/hasTextInsets';
 
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
   target?: string;
   renderContent?: (element: PPTTextElement, defaultContent: ReactNode) => ReactNode;
+  /** Keep a recovered shape's label container sized for an absolute-positioned editor. */
+  fillHeight?: boolean;
 }
 
-export function BaseTextElement({ elementInfo, target, renderContent }: BaseTextElementProps) {
+export function BaseTextElement({
+  elementInfo,
+  target,
+  renderContent,
+  fillHeight = false,
+}: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
   const proseRef = useRef<HTMLDivElement>(null);
   const innerHtml = useInnerHtml(elementInfo.content);
   useInlineMath(proseRef, elementInfo.content);
   // Imported OOXML text carries its own bodyPr insets on the outer div.
-  // Adding the editor's default inset again shifts vertical text left and
-  // reduces the available line width for horizontal text.
-  const hasExplicitTextInsets = /^\s*<div\b[^>]*\sdata-pptx-text-insets\s*=\s*(["'])true\1/i.test(
-    elementInfo.content,
-  );
-  // Legacy saved slides predate the marker. Retain their existing inset behavior.
-  const hasTextInsets =
-    hasExplicitTextInsets ||
-    /^\s*<div\b[^>]*\bstyle\s*=\s*["'][^"']*\bpadding\s*:/i.test(elementInfo.content);
+  // Adding the editor's default inset again shifts the label and reduces line width.
+  const contentHasTextInsets = hasTextInsets(elementInfo.content);
 
   const vAlign = elementInfo.vAlign ?? 'top';
   const justifyContent =
@@ -76,10 +77,13 @@ export function BaseTextElement({ elementInfo, target, renderContent }: BaseText
           style={{
             position: 'relative',
             boxSizing: 'border-box',
-            padding: hasTextInsets ? 0 : '10px',
+            padding: contentHasTextInsets ? 0 : '10px',
             overflowWrap: 'break-word',
             width: elementInfo.vertical ? 'auto' : '100%',
-            height: elementInfo.vertical ? '100%' : 'auto',
+            height: elementInfo.vertical || fillHeight ? '100%' : 'auto',
+            display: fillHeight ? 'flex' : undefined,
+            flexDirection: fillHeight ? 'column' : undefined,
+            justifyContent: fillHeight ? justifyContent : undefined,
             textShadow: shadowStyle,
             lineHeight: elementInfo.lineHeight,
             letterSpacing:

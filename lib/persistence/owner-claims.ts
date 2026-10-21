@@ -24,7 +24,7 @@
  * |------:|-------------------|--------------------------------------------------------|
  * |   100 | `document-folders`| `document_folders`, `document_stages.folder_id`        |
  * |   200 | `courses`         | `stage_meta` (and the retired `document_stages.owner_id`) |
- * |   300 | `owner-materials` | `owner_material`                                       |
+ * |   300 | `owner-materials` | `material_folders`, `owner_material` (folder conflicts as course folders') |
  * |   400 | `agent-sessions`  | `agent_sessions`, the owner session-event projection   |
  * |   500 | `user-skills`     | `agent_user_skill`                                     |
  * |   600 | `runtime`         | `runtime_sessions` (records follow their session)      |
@@ -93,7 +93,7 @@ import { assetPrincipalForOwner } from './owner-assets';
 import { rekeyLegacyImportBindings } from './legacy-import-bindings';
 import { isLockContention, isOwnerBusyError, lockOwnerIdentities } from './owner-merges';
 import { resolveClaimLockWaitMs } from './owner-lock-waits';
-import { ownerMaterialQuotaLockKey } from './owner-materials';
+import { ownerMaterialQuotaLockKey, reassignMaterialFolders } from './owner-materials';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from './server-provider';
 import { STAGE_META_OWNERSHIP } from './stage-meta-ownership';
 import { rekeyWorkspaceModelConfig } from './workspace-model-config';
@@ -262,14 +262,10 @@ function coreParticipants(provider: ServerPersistenceProvider): ClaimParticipant
       rekey: async (tx, from, to) => {
         // The quota locks uploads take, for both owners.
         await lockTextKeys(tx, [ownerMaterialQuotaLockKey(from), ownerMaterialQuotaLockKey(to)]);
-        await tx.query('SELECT id FROM owner_material WHERE owner_id = $1 ORDER BY id FOR UPDATE', [
-          from,
-        ]);
-        const moved = await tx.query<{ id: string } & Record<string, unknown>>(
-          'UPDATE owner_material SET owner_id = $2 WHERE owner_id = $1 RETURNING id',
-          [from, to],
-        );
-        return moved.rows.length;
+        // Folders and materials together, folder conflicts resolved the way
+        // course folders' are. Reference roots are keyed by material id and
+        // do not move; the entries they name move with `assets` below.
+        return (await reassignMaterialFolders(tx, from, to)).materials;
       },
     },
     {

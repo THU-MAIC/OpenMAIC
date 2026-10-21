@@ -14,7 +14,6 @@ import { testOpenAIImageConnectivity } from '@/lib/media/adapters/openai-image-a
 import { testQwenImageConnectivity } from '@/lib/media/adapters/qwen-image-adapter';
 import { testSeedanceConnectivity } from '@/lib/media/adapters/seedance-adapter';
 import { testSeedreamConnectivity } from '@/lib/media/adapters/seedream-adapter';
-import { testVeoConnectivity } from '@/lib/media/adapters/veo-adapter';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -536,20 +535,6 @@ describe('non-matching connectivity probe sentinels', () => {
   });
 
   const googleCases = [
-    {
-      name: 'Veo',
-      probe: () =>
-        testVeoConnectivity({
-          providerId: 'veo',
-          apiKey: 'google-key',
-          baseUrl: 'https://google.example.com',
-          model: 'veo-test',
-        }),
-      successMessage: 'Connected to Veo (veo-test)',
-      failureMessage:
-        'Invalid API key or unauthorized (400). Check your API Key and Base URL match the same provider.',
-      redirectFailureMessage: 'Veo connectivity error: Redirects are not allowed',
-    },
     {
       name: 'Nano Banana',
       probe: () =>

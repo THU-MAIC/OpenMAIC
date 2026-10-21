@@ -181,6 +181,18 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
 // These accounts share one key and base URL across capability registries.
 const SHARED_ACCOUNT_PRESETS: ProviderPreset[] = [
   {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    kind: 'single',
+    capabilities: { chat: { registryId: 'deepseek' }, webSearch: { registryId: 'deepseek' } },
+  },
+  {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    kind: 'single',
+    capabilities: { webSearch: { registryId: 'firecrawl' }, webFetch: { registryId: 'firecrawl' } },
+  },
+  {
     id: 'kimi',
     name: 'Kimi',
     kind: 'single',

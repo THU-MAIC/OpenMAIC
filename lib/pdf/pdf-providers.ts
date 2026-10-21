@@ -151,7 +151,7 @@ import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-f
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
 
-function getMinerUBackend(): string {
+export function getMinerUBackend(): string {
   return process.env.PDF_MINERU_BACKEND?.trim() || DEFAULT_MINERU_BACKEND;
 }
 

@@ -16,6 +16,11 @@ import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement'
 import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
 import type { PPTElement, Whiteboard } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { createTextProseStyles } from '@openmaic/renderer';
+
+const WHITEBOARD_SHAPE_PROSE_STYLES = createTextProseStyles(
+  '.whiteboard-screen-canvas .screen-element .slide-renderer-prose',
+);
 
 export type WhiteboardCanvasHandle = {
   resetView: () => void;
@@ -436,7 +441,8 @@ export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCan
     }, []);
 
     return (
-      <div ref={containerRef} className="w-full h-full overflow-hidden">
+      <div ref={containerRef} className="whiteboard-screen-canvas w-full h-full overflow-hidden">
+        <style dangerouslySetInnerHTML={{ __html: WHITEBOARD_SHAPE_PROSE_STYLES }} />
         <InteractiveWhiteboardCanvas
           ref={ref}
           canvasHeight={canvasHeight}

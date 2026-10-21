@@ -87,7 +87,7 @@ jobs:
       # once, so the previous commit is not the range that needs checking, and
       # publishing requires this run to be green.
       - name: Package version bumps (main push)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           base="$BEFORE_SHA"
@@ -167,8 +167,17 @@ jobs:
       - name: Unit Tests (importer)
         run: pnpm --filter @openmaic/importer test
 
+      - name: Unit Tests (geometry)
+        run: pnpm --filter @openmaic/geometry test
+
       - name: Unit Tests (dsl)
         run: pnpm --filter @openmaic/dsl test
+
+      - name: Unit Tests (renderer)
+        run: pnpm --filter @openmaic/renderer test
+
+      - name: Unit Tests (editor)
+        run: pnpm --filter @openmaic/editor test
 
       - name: TypeScript (generation)
         run: pnpm --filter @openmaic/generation run typecheck
@@ -371,7 +380,6 @@ jobs:
       # Dedicated so a cold `next build` is not charged against Playwright's
       # webServer readiness budget (120s). NEXT_PUBLIC_MAIC_EDITOR_ENABLED is a
       # build-time flag and must be set here, not only on `pnpm start`.
-      # Leave NEXT_PUBLIC_PI_CHAT_ENABLED unset so E2E covers the shipped default.
       - name: Build
         run: pnpm build
         env:

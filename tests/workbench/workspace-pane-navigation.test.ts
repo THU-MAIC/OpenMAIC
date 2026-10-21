@@ -3,14 +3,20 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
+import {
+  useWorkspacePaneNavigation,
+  type WorkspacePaneNavigation,
+} from '@/lib/workbench/use-workspace-pane-navigation';
 import type { WorkspacePanes } from '@/lib/workbench/workspace-panes';
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
+/** The navigation as the FIRST render saw it: what a late callback holds. */
+let firstRender: WorkspacePaneNavigation | null = null;
 
 function Probe({ initial }: { readonly initial: WorkspacePanes }) {
   const navigation = useWorkspacePaneNavigation(initial);
+  firstRender ??= navigation;
   return createElement(
     'div',
     null,
@@ -30,6 +36,14 @@ function Probe({ initial }: { readonly initial: WorkspacePanes }) {
         onClick: () => navigation.replace({ ...navigation.panes, sessionId: 'session-2' }),
       },
       'session',
+    ),
+    createElement(
+      'button',
+      {
+        'data-testid': 'open-library',
+        onClick: () => navigation.push({ ...navigation.panes, library: true }),
+      },
+      'library',
     ),
     createElement(
       'button',
@@ -64,6 +78,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  firstRender = null;
   if (root) await act(async () => root?.unmount());
   root = null;
   container?.remove();
@@ -99,5 +114,41 @@ describe('workspace pane navigation', () => {
     const push = vi.spyOn(window.history, 'pushState');
     await click('push-current');
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('opens the knowledge base as its own history entry, and Back leaves it', async () => {
+    const push = vi.spyOn(window.history, 'pushState');
+    await click('open-library');
+    expect(push).toHaveBeenCalledWith(
+      null,
+      '',
+      '/workspace?session=session-1&course=course-1&view=library',
+    );
+    window.history.replaceState(null, '', '/workspace?session=session-1&course=course-1');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(state()).toBe('{"sessionId":"session-1","courseId":"course-1"}');
+  });
+
+  it('decides a late update from the panes as they are when it runs', async () => {
+    const push = vi.spyOn(window.history, 'pushState');
+    const replace = vi.spyOn(window.history, 'replaceState');
+    await click('open-library');
+    push.mockClear();
+    // A callback created before the page opened, finishing after.
+    await act(async () =>
+      firstRender!.update((current) => ({
+        next: { ...current, sessionId: 'session-late' },
+        mode: current.library ? 'replace' : 'push',
+      })),
+    );
+    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","library":true}');
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenLastCalledWith(
+      null,
+      '',
+      '/workspace?session=session-late&course=course-1&view=library',
+    );
+    await act(async () => firstRender!.update(() => null));
+    expect(state()).toBe('{"sessionId":"session-late","courseId":"course-1","library":true}');
   });
 });

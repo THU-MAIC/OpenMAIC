@@ -8,10 +8,8 @@
  * extracting (parsing a document, transcribing audio or video) → ready, or
  * failed with its reason (Retry uploads or extracts it again).
  *
- * Removing a material deletes it on the server, which drops an extraction in
- * progress. Materials a run was started from are handed off to it (the run
- * releases them when it is over); the rest are deleted when the composer goes
- * away (a navigation, a reload or a closed tab), as nothing restores them.
+ * Removing a material only removes this composer's selection. Successful
+ * uploads remain in the knowledge base after navigation and run completion.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { nanoid } from 'nanoid';
@@ -25,7 +23,6 @@ import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
 
 import {
-  deleteMaterial,
   fetchMaterialPolicy,
   fetchOwnerMaterial,
   materialMime,
@@ -67,9 +64,8 @@ const POLL_MS = 1500;
 /** Uploads at once. */
 const MAX_CONCURRENT_UPLOADS = 3;
 /**
- * How often an open, visible composer reads its materials back: each read
- * keeps the upload from the server's unused-upload sweep (24 hours by
- * default) and shows one that went meanwhile as removed.
+ * How often an open, visible composer reconciles its selected materials,
+ * including explicit library deletions made elsewhere.
  */
 const KEEPALIVE_MS = 10 * 60 * 1000;
 
@@ -196,19 +192,19 @@ export interface CourseMaterials {
   materials: CourseMaterialEntry[];
   /** Attach files: checked against the server's policy, then uploaded. The refusal, if any. */
   add(files: File[]): Promise<CourseMaterialMessage | null>;
-  /** Detach one, deleting it on the server (and stopping its upload). */
+  /** Detach one from this composer and stop its unfinished upload. */
   remove(id: string): void;
   /** Upload or extract a failed one again. */
   retry(id: string): void;
   /** Whether every attached material is ready (true when there are none). */
   allReady: boolean;
-  /** Hand the ready materials to a run (it releases them); their server ids, in order. */
+  /** Hand the ready materials to a run; their server ids, in order. */
   handOff(): string[];
   /** Take back what {@link handOff} handed, when the run did not start. */
   takeBack(materialIds: readonly string[]): void;
   /**
-   * Read the attached materials back from the server (which keeps them in
-   * use); false when one has gone, which its chip then shows as removed.
+   * Read the selected materials back from the server; false when one has
+   * been explicitly deleted, which its chip then shows as removed.
    */
   verify(): Promise<boolean>;
 }
@@ -245,7 +241,6 @@ export function useCourseMaterials(): CourseMaterials {
         .then((view) => {
           if (abort.signal.aborted || !files.current.has(id)) {
             // Removed while its answer was on the way.
-            void deleteMaterial(view.materialId).catch(() => undefined);
             return;
           }
           update(id, (entry) => fromServer(entry, view));
@@ -330,11 +325,9 @@ export function useCourseMaterials(): CourseMaterials {
   );
 
   const remove = useCallback((id: string) => {
-    const entry = latest.current.find((item) => item.id === id);
     files.current.delete(id);
     queue.current = queue.current.filter((queued) => queued !== id);
     uploads.current.get(id)?.abort();
-    if (entry?.materialId) void deleteMaterial(entry.materialId).catch(() => undefined);
     setMaterials((prev) =>
       prev.filter((item) => item.id !== id).map((item, index) => ({ ...item, order: index + 1 })),
     );
@@ -440,17 +433,11 @@ export function useCourseMaterials(): CourseMaterials {
     return () => clearInterval(timer);
   }, [reconcile]);
 
-  // What was not handed to a run is deleted when the composer goes away. A
-  // page kept in the back/forward cache keeps its materials (it may come back
-  // as it was); the server sweeps them if it never does.
+  // Leaving the composer aborts unfinished transfers, but successful uploads
+  // remain in the owner's library.
   useEffect(() => {
     const releaseAll = () => {
       for (const abort of uploads.current.values()) abort.abort();
-      for (const entry of latest.current) {
-        if (!entry.materialId || handedOff.current.has(entry.materialId)) continue;
-        handedOff.current.add(entry.materialId);
-        void deleteMaterial(entry.materialId, { keepalive: true }).catch(() => undefined);
-      }
     };
     const onPageHide = (event: PageTransitionEvent) => {
       if (!event.persisted) releaseAll();

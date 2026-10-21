@@ -16,6 +16,8 @@ export interface ShapeKeypointDrag {
 export interface UseShapeKeypointGestureArgs {
   scale: number;
   shapePathFormulas?: ShapePathFormulaMap;
+  /** Current single selection. Null cancels a gesture when selection changes. */
+  selectedElementId?: string | null;
   onElementsChange?: (intents: EditIntent[]) => void;
 }
 
@@ -44,17 +46,40 @@ function deltaForRelative(relative: ShapeKeypointRelative, moveX: number, moveY:
 export function useShapeKeypointGesture({
   scale,
   shapePathFormulas,
+  selectedElementId,
   onElementsChange,
 }: UseShapeKeypointGestureArgs) {
   const [shapeKeypointDrag, setShapeKeypointDrag] = useState<ShapeKeypointDrag | null>(null);
+  // Clear the preview in the selection-change render; the effect below tears
+  // down the old pointer listeners after that render commits.
+  const [lastSelectedElementId, setLastSelectedElementId] = useState(selectedElementId);
+  if (lastSelectedElementId !== selectedElementId) {
+    setLastSelectedElementId(selectedElementId);
+    setShapeKeypointDrag(null);
+  }
   const cleanupRef = useRef<(() => void) | null>(null);
   const pointerIdRef = useRef<number | null>(null);
+  const gestureElementIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      selectedElementId === undefined ||
+      pointerIdRef.current === null ||
+      gestureElementIdRef.current === selectedElementId
+    )
+      return;
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    pointerIdRef.current = null;
+    gestureElementIdRef.current = null;
+  }, [selectedElementId]);
 
   useEffect(
     () => () => {
       cleanupRef.current?.();
       cleanupRef.current = null;
       pointerIdRef.current = null;
+      gestureElementIdRef.current = null;
     },
     [],
   );
@@ -84,6 +109,7 @@ export function useShapeKeypointGesture({
 
     event.stopPropagation();
     pointerIdRef.current = event.pointerId;
+    gestureElementIdRef.current = element.id;
     const startX = event.clientX;
     const startY = event.clientY;
     const effectiveScale = scale || 1;
@@ -131,6 +157,7 @@ export function useShapeKeypointGesture({
       removeListeners();
       cleanupRef.current = null;
       pointerIdRef.current = null;
+      gestureElementIdRef.current = null;
       setShapeKeypointDrag(null);
     };
 

@@ -1,9 +1,62 @@
 import { describe, expect, it } from 'vitest';
+import { validateToolArguments } from '@earendil-works/pi-ai';
 import { buildCallAgentTool } from '@/lib/chat/pi/tools/call-agent';
 import { buildCueUserTool } from '@/lib/chat/pi/tools/cue-user';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 
 describe('Pi chat cue_user tool', () => {
-  it('emits the existing cue_user payload once', async () => {
+  it('describes option bounds without hard schema limits, with no client action schema', () => {
+    const tool = buildCueUserTool({ getLastAgentId: () => 'default-1', cueUser: async () => true });
+    const { prompt, options } = tool.parameters.properties as unknown as Record<
+      'prompt' | 'options',
+      { description?: string; items?: object }
+    >;
+    expect(options).toMatchObject({ type: 'array', items: { type: 'string' } });
+    for (const key of ['minItems', 'maxItems']) expect(options).not.toHaveProperty(key);
+    for (const key of ['minLength', 'maxLength']) {
+      expect(options.items).not.toHaveProperty(key);
+      expect(prompt).not.toHaveProperty(key);
+    }
+    expect(options.description).toMatch(/two to four/i);
+    expect(options.description).toContain('60 characters');
+    expect(prompt.description).toContain('240 characters');
+  });
+
+  it('accepts an over-limit call at validation and normalizes it in execute', async () => {
+    const events: unknown[] = [];
+    const tool = buildCueUserTool({
+      getLastAgentId: () => 'default-1',
+      cueUser: async (data) => {
+        events.push(data);
+        return true;
+      },
+    });
+    const longLabel = 'x'.repeat(61);
+    const args = {
+      prompt: 'p'.repeat(300),
+      options: ['One', longLabel, 'Three', 'Four', 'Five'],
+    };
+    const validated = validateToolArguments(tool, {
+      type: 'toolCall',
+      id: 'cue-over-limit',
+      name: 'cue_user',
+      arguments: args,
+    });
+    expect(validated).toEqual(args);
+
+    const result = await tool.execute('cue-over-limit', validated);
+
+    expect(result.details).toEqual({ emitted: true });
+    expect(events).toEqual([
+      {
+        fromAgentId: 'default-1',
+        prompt: 'p'.repeat(240),
+        options: ['One', 'x'.repeat(60), 'Three', 'Four'],
+      },
+    ]);
+  });
+
+  it('emits normalized string suggestions only once', async () => {
     const events: unknown[] = [];
     let userCued = false;
     const tool = buildCueUserTool({
@@ -15,18 +68,34 @@ describe('Pi chat cue_user tool', () => {
         return true;
       },
     });
-
-    const first = await tool.execute('cue-1', { prompt: 'Any follow-up?' });
+    const first = await tool.execute('cue-1', {
+      prompt: ' Any follow-up? ',
+      options: [' Show an example ', 'Back to the lesson', ' Show an example '],
+    });
     const second = await tool.execute('cue-2', { prompt: 'Again?' });
-
     expect(events).toEqual([
       {
         type: 'cue_user',
-        data: { fromAgentId: 'default-1', prompt: 'Any follow-up?' },
+        data: {
+          fromAgentId: 'default-1',
+          prompt: 'Any follow-up?',
+          options: ['Show an example', 'Back to the lesson'],
+        },
       },
     ]);
     expect(first.details).toEqual({ emitted: true });
     expect(second.details).toEqual({ emitted: false });
+  });
+
+  it('normalizes 2-4 unique nonempty labels capped at60chars and omits a lone choice', () => {
+    expect(normalizeCueUserOptions([' ', ' A ', 'A', 'x'.repeat(70), 'C', 'D', 'E'])).toEqual([
+      'A',
+      'x'.repeat(60),
+      'C',
+      'D',
+    ]);
+    expect(normalizeCueUserOptions([' ', ' A ', 'A'])).toBeUndefined();
+    expect(normalizeCueUserOptions()).toBeUndefined();
   });
 
   it('does not emit cue_user before any classroom agent turn when guarded', async () => {

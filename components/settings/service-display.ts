@@ -38,7 +38,6 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
-  veo: '/logos/gemini.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
   'openrouter-video': '/logos/openrouter.svg',

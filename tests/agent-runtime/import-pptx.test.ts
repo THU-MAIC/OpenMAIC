@@ -25,7 +25,7 @@ import {
   type ParsePptxOptions,
 } from '@/lib/server/agent-runtime/import-pptx';
 import { installNodeXmlHttpRequest, NodeXMLHttpRequest } from '@/lib/server/agent-runtime/node-xhr';
-import { sessionMaterialsPromptBlock } from '@/lib/server/agent-runtime/session-materials';
+import { materialsPromptBlock } from '@/lib/server/agent-runtime/material-prompt';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -579,36 +579,42 @@ describe('import_pptx tool', () => {
 
 describe('session material prompt', () => {
   it('mentions import_pptx only when a pptx is attached', () => {
-    const pdf = sessionMaterialsPromptBlock([
+    const pdf = materialsPromptBlock([
       {
-        id: 'mat_1',
-        sessionId: 'ses_1',
-        kind: 'source',
-        title: 'lecture.pdf',
-        sourceUrl: null,
-        textAssetId: null,
-        rawAssetId: null,
-        textChars: 0,
-        derivedFrom: null,
-        extraction: { status: 'idle' as const, attempts: 0 },
-        createdAt: new Date(0).toISOString(),
+        origin: 'session',
+        record: {
+          id: 'mat_1',
+          sessionId: 'ses_1',
+          kind: 'source',
+          title: 'lecture.pdf',
+          sourceUrl: null,
+          textAssetId: null,
+          rawAssetId: null,
+          textChars: 0,
+          derivedFrom: null,
+          extraction: { status: 'idle' as const, attempts: 0 },
+          createdAt: new Date(0).toISOString(),
+        },
       },
     ]);
     expect(pdf).not.toContain('import_pptx');
 
-    const pptx = sessionMaterialsPromptBlock([
+    const pptx = materialsPromptBlock([
       {
-        id: 'mat_ppt',
-        sessionId: 'ses_1',
-        kind: 'source',
-        title: 'deck.pptx',
-        sourceUrl: null,
-        textAssetId: null,
-        rawAssetId: 'ast_raw_ppt',
-        textChars: 0,
-        derivedFrom: null,
-        extraction: { status: 'idle' as const, attempts: 0 },
-        createdAt: new Date(0).toISOString(),
+        origin: 'session',
+        record: {
+          id: 'mat_ppt',
+          sessionId: 'ses_1',
+          kind: 'source',
+          title: 'deck.pptx',
+          sourceUrl: null,
+          textAssetId: null,
+          rawAssetId: 'ast_raw_ppt',
+          textChars: 0,
+          derivedFrom: null,
+          extraction: { status: 'idle' as const, attempts: 0 },
+          createdAt: new Date(0).toISOString(),
+        },
       },
     ]);
     expect(pptx).toContain('import_pptx');

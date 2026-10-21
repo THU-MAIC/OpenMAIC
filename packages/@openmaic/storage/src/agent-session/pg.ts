@@ -315,6 +315,12 @@ export const AGENT_SESSION_PG_MIGRATIONS: SchemaMigrationSet = {
       up: AGENT_SESSION_PG_OWNER_EVENT_TYPE_V2,
       transaction: false,
     },
+    {
+      version: 3,
+      name: 'locale',
+      up: `ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS locale TEXT;`,
+      transaction: true,
+    },
   ],
 };
 
@@ -428,6 +434,7 @@ interface SessionRow extends Record<string, unknown> {
   stage_id: string;
   skill_id: string | null;
   origin: string | null;
+  locale: string | null;
   existing_course: boolean;
   status: AgentSessionMeta['status'];
   attempt: number;
@@ -440,7 +447,7 @@ interface SessionRow extends Record<string, unknown> {
   updated_at: Date | string;
 }
 
-const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin,
+const SESSION_COLUMNS = `id, owner_id, prompt, title, stage_id, skill_id, origin, locale,
   existing_course, status, attempt, delivered_user_message_seq, lease_worker_id, lease_worker_pid,
   lease_heartbeat_at, error, created_at, updated_at`;
 
@@ -466,6 +473,7 @@ function sessionMeta(row: SessionRow): AgentSessionMeta {
     stageId: row.stage_id,
     ...(row.skill_id ? { skillId: row.skill_id } : {}),
     ...(row.origin ? { origin: row.origin } : {}),
+    ...(row.locale ? { locale: row.locale } : {}),
     existingCourse: row.existing_course,
     status: row.status,
     attempt: Number(row.attempt),
@@ -573,8 +581,8 @@ export class PgAgentSessionStore
       const result = await tx.query<SessionRow>(
         `INSERT INTO ${this.table('sessions')}
           (id, owner_id, prompt, title, title_state, stage_id, skill_id, origin, existing_course,
-           status, attempt)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0)
+           status, attempt, locale)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11)
          RETURNING ${SESSION_COLUMNS}`,
         [
           id,
@@ -587,6 +595,7 @@ export class PgAgentSessionStore
           input.origin ?? null,
           input.existingCourse ?? false,
           input.status ?? 'queued',
+          input.locale ? sanitizePgText(input.locale).slice(0, 35) : null,
         ],
       );
       const meta = sessionMeta(result.rows[0]!);
@@ -1109,6 +1118,7 @@ export class PgAgentSessionStore
       materials?: unknown[];
       elementRefs?: unknown[];
       courseRefs?: unknown[];
+      locale?: string;
     },
     options: PostAgentUserMessageOptions = {},
   ): Promise<PostAgentUserMessageResult> {
@@ -1155,6 +1165,7 @@ export class PgAgentSessionStore
           ...(input.materials?.length ? { materials: input.materials } : {}),
           ...(input.elementRefs?.length ? { elementRefs: input.elementRefs } : {}),
           ...(input.courseRefs?.length ? { courseRefs: input.courseRefs } : {}),
+          ...(input.locale ? { locale: input.locale.slice(0, 35) } : {}),
         },
       });
       const row = await this.loadSession(tx, sessionId, false);
@@ -1207,6 +1218,7 @@ export class PgAgentSessionStore
         delivery: String(data.delivery ?? ''),
         materials: Array.isArray(data.materials) ? data.materials : [],
         ...(Array.isArray(data.courseRefs) ? { courseRefs: data.courseRefs } : {}),
+        ...(typeof data.locale === 'string' && data.locale ? { locale: data.locale } : {}),
       };
     });
   }

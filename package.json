@@ -1,6 +1,6 @@
 {
   "name": "openmaic",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "license": "MIT",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "postinstall": "pnpm run build:packages",
-    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
+    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../geometry && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
     "build:standalone-player": "node scripts/build-standalone-player.mjs",
     "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",
@@ -30,11 +30,10 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "eval:pbl-v2-planner": "tsx eval/pbl-v2-planner/runner.ts",
-    "eval:whiteboard": "tsx eval/whiteboard-layout/runner.ts",
+    "eval:whiteboard": "tsx --conditions=import eval/whiteboard-layout/runner.ts",
     "eval:outline-language": "tsx eval/outline-language/runner.ts",
-    "eval:orchestration": "tsx eval/orchestration/runner.ts",
-    "eval:orchestration:answering": "tsx eval/orchestration/answering-runner.ts",
-    "eval:orchestration:answer-content": "tsx eval/orchestration/answer-content-runner.ts"
+    "eval:orchestration:answering": "tsx --conditions=import eval/orchestration/answering-runner.ts",
+    "eval:orchestration:answer-content": "tsx --conditions=import eval/orchestration/answer-content-runner.ts"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.103",
@@ -71,7 +70,6 @@
     "@fontsource/zcool-kuaile": "^5.2.8",
     "@joplin/turndown-plugin-gfm": "^1.0.67",
     "@langchain/core": "^1.1.16",
-    "@langchain/langgraph": "^1.1.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
     "@napi-rs/canvas": "^0.1.88",
@@ -117,6 +115,7 @@
     "lodash": "4.18.1",
     "lucide-react": "^0.562.0",
     "mathml2omml": "workspace:*",
+    "mdast-util-from-markdown": "2.0.3",
     "micromark-extension-math": "^3.1.0",
     "mitt": "^3.0.1",
     "motion": "^12.27.5",
@@ -170,7 +169,8 @@
     "use-stick-to-bottom": "^1.1.1",
     "zod": "^4.3.5",
     "zustand": "^5.0.10",
-    "remark-cjk-friendly": "^2.3.1"
+    "remark-cjk-friendly": "^2.3.1",
+    "@openmaic/geometry": "workspace:*"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.16",

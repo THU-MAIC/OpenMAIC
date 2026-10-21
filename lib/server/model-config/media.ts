@@ -16,9 +16,11 @@
  * caller-supplied base URL, and a workspace may not set a proxy.
  */
 import { getWebFetchProvider } from '@/lib/web-fetch/registry';
+import { isOfficialWebSearchBaseUrl, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { assertDeploymentModelAuthorized, selectsUpstreamModel } from './model-authorization';
 import { presetIdFor } from '@/lib/config/preset-ids';
-import { getSlot, type SlotId } from '@/lib/config/model-slots';
+import { getSlot, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { registryDefaultBaseUrl } from '@/lib/config/provider-presets';
 import { apiError, modelAuthorizationResponse } from '@/lib/server/api-response';
 import { InvalidOwnerCredentialError } from '@/lib/server/identity/resolve';
@@ -123,6 +125,23 @@ export function isLocalEndpoint(url: string): boolean {
   );
 }
 
+/** Only registry-approved tool endpoints may receive a workspace's key. */
+export function acceptsWorkspaceToolBaseUrl(
+  capability: SlotCapability,
+  registryId: string,
+  baseUrl?: string,
+): boolean {
+  if (!baseUrl) return false;
+  if (capability === 'webFetch') {
+    return !!getWebFetchProvider(registryId)?.acceptsWorkspaceBaseUrl?.(baseUrl);
+  }
+  return (
+    capability === 'webSearch' &&
+    !!WEB_SEARCH_PROVIDERS[registryId as WebSearchProviderId]?.officialBaseUrls?.length &&
+    isOfficialWebSearchBaseUrl(registryId, baseUrl)
+  );
+}
+
 async function fromTarget(
   slot: MediaSlot,
   target: ResolvedModelTarget,
@@ -147,11 +166,7 @@ async function fromTarget(
     }
     if (
       target.customBaseUrl &&
-      !(
-        slot === 'webFetch' &&
-        target.baseUrl &&
-        getWebFetchProvider(target.registryId)?.acceptsWorkspaceBaseUrl?.(target.baseUrl)
-      )
+      !acceptsWorkspaceToolBaseUrl(getSlot(slot).capability, target.registryId, target.baseUrl)
     ) {
       throw new WorkspaceEndpointError(
         `A custom endpoint for ${slot} can only be configured by the deployment (openmaic.yml)`,
@@ -178,7 +193,7 @@ async function fromTarget(
     managed,
     // A workspace provider reaches only its preset's own public endpoint (a
     // custom one and a local-default preset are refused above), exactly the
-    // endpoint a deployment's default would use: no user-typed endpoint, so
+    // endpoint a deployment's default would use: registry-approved endpoints, so
     // the transports keep the operator's policy.
     userEndpoint: false,
     origin,

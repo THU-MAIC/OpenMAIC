@@ -74,6 +74,16 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => 
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
   return { ...actual, listSessionMaterials: vi.fn(async () => []) };
 });
+// The runner lists what the session reaches through the shared resolver;
+// links need a database these tests do not have.
+vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => {
+  const actual =
+    await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
+  return {
+    ...actual,
+    listSessionScopeMaterials: vi.fn(async () => []),
+  };
+});
 
 vi.mock('@/lib/server/agent-runtime/entry-tree-storage', async (importActual) => {
   const actual =
@@ -282,6 +292,11 @@ describe('skills runner registration', () => {
       'search_material',
       'extract_material',
       'wait_for_materials',
+      'list_material_folders',
+      'create_material_folder',
+      'rename_material_folder',
+      'move_materials',
+      'rename_material',
       'list_voices',
       'set_roster',
       'clip_audio',
@@ -294,6 +309,7 @@ describe('skills runner registration', () => {
       'ask_user',
       'clip_audio',
       'create_folder',
+      'create_material_folder',
       'create_skill',
       'create_stage',
       'duplicate_scene',
@@ -307,9 +323,11 @@ describe('skills runner registration', () => {
       'grep_stage',
       'import_pptx',
       'list_folder_stages',
+      'list_material_folders',
       'list_materials',
       'list_scenes',
       'list_voices',
+      'move_materials',
       'move_to_folder',
       'patch_skill',
       'patch_stage',
@@ -320,6 +338,8 @@ describe('skills runner registration', () => {
       'read_skill',
       'read_stage',
       'read_stage_outline',
+      'rename_material',
+      'rename_material_folder',
       'rename_stage',
       'search_chats',
       'search_classrooms',

@@ -18,6 +18,8 @@ const DRAG_THRESHOLD_PX = 2;
 
 export interface UseEditGestureArgs {
   slide: Slide;
+  /** Visual boxes for interaction; the working/rendered slide retains original records. */
+  interactionElements?: PPTElement[];
   scale: number;
   selection: Selection;
   snapping?: boolean | SnappingOptions;
@@ -71,8 +73,16 @@ interface Working {
  * Pure gesture glue: no store, no `@/` imports.
  */
 export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
-  const { slide, scale, selection, snapping, onSelectionChange, onElementsChange, onElementClick } =
-    args;
+  const {
+    slide,
+    interactionElements = slide.elements,
+    scale,
+    selection,
+    snapping,
+    onSelectionChange,
+    onElementsChange,
+    onElementClick,
+  } = args;
 
   const [working, setWorking] = useState<Working | null>(null);
 
@@ -138,9 +148,9 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     // multi core, whose union geometry supports line ranges.
     const selectedSet = new Set(dragIds);
     const isMover = (o: PPTElement) => selectedSet.has(o.id) && !o.lock;
-    const selectedElements = slide.elements.filter(isMover);
+    const selectedElements = interactionElements.filter(isMover);
     const selectedById = new Map(selectedElements.map((selected) => [selected.id, selected]));
-    const others = slide.elements.filter((o) => !isMover(o));
+    const others = interactionElements.filter((o) => !isMover(o));
     const isMulti = selectedElements.length > 1;
     const viewport = {
       width: slide.viewportSize,

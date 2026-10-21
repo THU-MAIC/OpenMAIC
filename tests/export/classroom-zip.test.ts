@@ -319,4 +319,35 @@ describe('manifest round-trip', () => {
     expect('voiceConfig' in imported).toBe(false);
     expect(imported.voiceDesign).toEqual({ identity: 'adult', texture: 'low', delivery: 'calm' });
   });
+
+  test('a language-independent voiceDesign.gender survives export and import', () => {
+    const config: GeneratedAgentConfig = {
+      id: 'gen-original',
+      name: '小青',
+      role: 'student',
+      persona: '认真听课',
+      avatar: '/avatars/student.png',
+      color: '#ec4899',
+      priority: 5,
+      voiceDesign: {
+        identity: '年轻女性学生',
+        texture: '清亮',
+        delivery: '轻快',
+        gender: 'female',
+      },
+    };
+
+    const imported = agentConfigFromManifest(
+      JSON.parse(JSON.stringify(manifestAgentFromConfig(config))),
+      'gen-new',
+    );
+
+    expect(imported.voiceDesign).toEqual({
+      identity: '年轻女性学生',
+      texture: '清亮',
+      delivery: '轻快',
+      gender: 'female',
+    });
+    expect(imported.id).toBe('gen-new');
+  });
 });

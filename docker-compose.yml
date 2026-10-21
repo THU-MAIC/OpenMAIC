@@ -8,8 +8,7 @@ services:
         # NEXT_PUBLIC_* values are compiled into the browser bundle. Empty values
         # follow each feature's documented default; explicit build-time overrides
         # can be supplied on the command line.
-        # env_file below does not feed build args. For a legacy-chat rollback:
-        # NEXT_PUBLIC_PI_CHAT_ENABLED=false docker compose up -d --build openmaic
+        # env_file below does not feed build args.
         - ALLOWED_FRAME_ANCESTORS=${ALLOWED_FRAME_ANCESTORS:-}
         - NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_ENABLED:-}
         - NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED:-}

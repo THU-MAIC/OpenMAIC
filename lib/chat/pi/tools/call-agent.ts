@@ -11,7 +11,7 @@ import {
   looksLikeStructuredFragment,
   parseStructuredChunk,
   type ParseResult,
-} from '@/lib/orchestration/stateless-generate';
+} from '@/lib/chat/structured-output';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { ThinkingConfig } from '@/lib/types/provider';

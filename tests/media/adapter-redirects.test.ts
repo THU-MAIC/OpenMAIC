@@ -16,7 +16,6 @@ import { generateWithOpenAIImage } from '@/lib/media/adapters/openai-image-adapt
 import { generateWithQwenImage } from '@/lib/media/adapters/qwen-image-adapter';
 import { generateWithSeedance } from '@/lib/media/adapters/seedance-adapter';
 import { generateWithSeedream } from '@/lib/media/adapters/seedream-adapter';
-import { generateWithVeo } from '@/lib/media/adapters/veo-adapter';
 import type { ImageGenerationConfig, VideoGenerationConfig } from '@/lib/media/types';
 
 /**
@@ -135,10 +134,6 @@ const cases: RedirectCase[] = [
   {
     name: 'MiniMax video submission',
     run: () => generateWithMiniMaxVideo(videoConfig('minimax-video'), videoOptions),
-  },
-  {
-    name: 'Veo video submission',
-    run: () => generateWithVeo(videoConfig('veo'), videoOptions),
   },
 ];
 

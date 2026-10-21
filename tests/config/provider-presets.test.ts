@@ -11,6 +11,7 @@ import { getSlot, isSlotId, type SlotCapability, type SlotId } from '@/lib/confi
 import {
   PROVIDER_PRESETS,
   getProviderPreset,
+  presetModels,
   tokenPlanToPreset,
 } from '@/lib/config/provider-presets';
 
@@ -85,6 +86,21 @@ describe('provider presets', () => {
     });
   });
 
+  it('offers Firecrawl search and fetch as one shared-account preset', () => {
+    expect(PROVIDER_PRESETS.filter((preset) => preset.id === 'firecrawl')).toHaveLength(1);
+    expect(getProviderPreset('firecrawl')).toMatchObject({
+      kind: 'single',
+      capabilities: {
+        webSearch: { registryId: 'firecrawl' },
+        webFetch: { registryId: 'firecrawl' },
+      },
+    });
+    expect(Object.keys(getProviderPreset('firecrawl')!.capabilities).sort()).toEqual([
+      'webFetch',
+      'webSearch',
+    ]);
+  });
+
   it('carries plan recommendations onto slots', () => {
     const tokendance = getProviderPreset('tokendance')!;
     expect(tokendance.recommended).toMatchObject({
@@ -103,6 +119,24 @@ describe('provider presets', () => {
         if (models) expect(models, `${preset.id} → ${slot}`).toContain(model);
       }
     }
+  });
+
+  it('offers Ark migration targets with thinking metadata at the plan endpoint', () => {
+    const preset = getProviderPreset('volcengine-ark')!;
+    expect(preset.capabilities.chat?.baseUrl).toBe('https://ark.cn-beijing.volces.com/api/plan/v3');
+    const models = presetModels(preset, 'chat');
+    for (const id of ['doubao-seed-2.1-lite', 'glm-5.3', 'kimi-k3', 'kimi-k2.8-preview']) {
+      const model = models.find((entry) => entry.id === id);
+      expect(model, id).toBeDefined();
+      expect(model?.capabilities?.thinking?.defaultMode, id).toBe('enabled');
+    }
+    for (const id of ['glm-5.3', 'kimi-k3', 'kimi-k2.8-preview']) {
+      expect(models.find((entry) => entry.id === id)?.capabilities?.thinking?.toggleable, id).toBe(
+        false,
+      );
+    }
+    expect(preset.capabilities.chat?.models).not.toContain('glm-5.2');
+    expect(preset.recommended?.llm).toBe('doubao-seed-2.1-pro');
   });
 });
 
@@ -130,4 +164,13 @@ it('lets any token plan declare a fetch provider and endpoint', () => {
     webSearch: 'kimi',
   });
   expect(getProviderPreset('kimi')?.recommended).not.toHaveProperty('webFetch');
+});
+
+it('shares one DeepSeek account across chat, search and fetch without recommending tool assignments', () => {
+  expect(getProviderPreset('deepseek')?.capabilities).toEqual({
+    chat: { registryId: 'deepseek' },
+    webSearch: { registryId: 'deepseek' },
+    webFetch: { registryId: 'deepseek', baseUrl: undefined },
+  });
+  expect(getProviderPreset('deepseek')?.recommended).toBeUndefined();
 });

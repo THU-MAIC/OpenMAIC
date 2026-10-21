@@ -28,15 +28,7 @@ describe('Xiaomi MiMo provider defaults', () => {
   it('matches the supported MiMo text and multimodal model catalog', () => {
     const modelIds = getProvider('xiaomi')?.models.map((model) => model.id) ?? [];
 
-    expect(modelIds).toEqual([
-      'mimo-v2.6-pro',
-      'mimo-v2.6-flash',
-      'mimo-v2.5-pro',
-      'mimo-v2-pro',
-      'mimo-v2.5',
-      'mimo-v2-omni',
-      'mimo-v2-flash',
-    ]);
+    expect(modelIds).toEqual(['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.5-pro', 'mimo-v2.5']);
   });
 
   it('registers MiMo V2.6 models with their documented limits and capabilities', () => {

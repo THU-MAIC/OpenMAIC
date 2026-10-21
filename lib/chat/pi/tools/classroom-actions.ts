@@ -2,7 +2,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import { Type, type Static } from 'typebox';
 import { nanoid } from 'nanoid';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import { getEffectiveActions } from '@/lib/orchestration/tool-schemas';
+import { getEffectiveActions } from '@/lib/chat/pi/tool-schemas';
 import type { WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { SendEvent } from '../types';

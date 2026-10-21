@@ -1129,6 +1129,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           outlines,
           generationComplete,
           generatingOutlines,
+          // Export readiness reads the failed outlines too; set them together so a
+          // previous classroom's failures don't carry over.
+          failedOutlines,
           // A course the browser was generating before generation moved to
           // the server: no run will produce the rest (a server job's course
           // is its job's to finish).

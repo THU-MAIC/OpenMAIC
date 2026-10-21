@@ -96,6 +96,18 @@ beforeEach(() => {
 });
 
 describe('agent session collection route', () => {
+  it('returns 503 and Retry-After when opening material binding loses an identity lock race', async () => {
+    const { OwnerBusyError } = await import('@/lib/persistence/owner-merges');
+    mocks.bindOwnerMaterialsToSession.mockRejectedValueOnce(new OwnerBusyError());
+    const response = await post({ prompt: 'Read this', materialIds: ['material-1'] });
+
+    expect(mocks.softDeleteSession).toHaveBeenCalledWith('session-1', 'anon:test');
+    expect(mocks.postUserMessage).not.toHaveBeenCalled();
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('2');
+    expect(response.headers.get('set-cookie')).toContain('anonymous_id=test');
+  });
+
   it('creates a queued session and propagates a newly minted owner cookie', async () => {
     const response = await post({ prompt: ' Build a course ', skill: 'custom-skill' });
 
@@ -112,6 +124,21 @@ describe('agent session collection route', () => {
       }),
     );
     expect(mocks.scheduleConversationTitle).toHaveBeenCalledWith('session-1', 'anon:test');
+  });
+
+  it('records a supported interface locale on the session and its opening message (#1880)', async () => {
+    await post({ prompt: 'Read this', materialIds: ['material-1'], locale: 'ja-JP' });
+    expect(mocks.createSession).toHaveBeenCalledWith(expect.objectContaining({ locale: 'ja-JP' }));
+    expect(mocks.postUserMessage).toHaveBeenCalledWith(
+      'session-1',
+      expect.objectContaining({ locale: 'ja-JP' }),
+      { expectedOwnerId: 'anon:test' },
+    );
+  });
+
+  it('ignores an unsupported interface locale on a new session', async () => {
+    await post({ prompt: 'Build a course', locale: 'not-a-locale' });
+    expect(mocks.createSession.mock.calls.at(-1)![0]).not.toHaveProperty('locale');
   });
 
   it('does not schedule an ordinary session until its create write resolves', async () => {
