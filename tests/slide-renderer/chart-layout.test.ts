@@ -30,6 +30,7 @@ const sizes = [
   { width: 280, height: 145 },
   { width: 160, height: 100 },
   { width: 560, height: 300 },
+  { width: 800, height: 450 },
 ];
 const data = {
   labels: ['A', 'B'],
@@ -75,6 +76,17 @@ describe.each([
   ['SDK', getPackageChartOption],
 ] as const)('%s Cartesian chart layout', (_, getChartOption) => {
   describe.each(chartTypes)('%s', (type) => {
+    it('preserves at least the baseline plot height at normal size with multiple series', () => {
+      const size = { width: 800, height: 450 };
+      const chart = render(getChartOption({ type, data, themeColors }), size);
+      try {
+        // Main's default ECharts grid reserves 65px above and 80px below the plot.
+        expect(plotRect(chart).height).toBeGreaterThanOrEqual(size.height - 65 - 80);
+      } finally {
+        chart.dispose();
+      }
+    });
+
     it.each(sizes)('fits the plot, axes and legend in $width x $height', ({ width, height }) => {
       for (const seriesCount of [1, 2]) {
         const chart = render(

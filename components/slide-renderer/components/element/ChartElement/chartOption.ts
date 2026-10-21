@@ -90,13 +90,13 @@ export const getChartOption = ({
   const cartesianLegend = legend
     ? { type: 'scroll' as const, bottom: 0, left: '4%', right: '4%', textStyle }
     : undefined;
-  // Percent margins reflow on resize. Include axis labels inside the grid and
-  // reserve a separate row for the legend instead of ECharts' fixed 145px gap.
+  // Text headroom and a single legend row need fixed pixels, not a share of
+  // the chart height. Other margins reflow on resize; containLabel fits axes.
   const grid: GridComponentOption = {
     left: '4%',
     right: '4%',
-    top: type === 'line' || type === 'area' ? '22%' : '8%',
-    bottom: cartesianLegend && type !== 'scatter' ? '26%' : '12%',
+    top: type === 'line' || type === 'area' ? 22 : '8%',
+    bottom: cartesianLegend && type !== 'scatter' ? 26 : '12%',
     containLabel: true,
   };
 

@@ -92,7 +92,8 @@ export const getChartOption = ({
     : undefined;
   const plot = importedStyle?.plotArea;
   // Preserve an imported plot rectangle exactly; ordinary charts reflow with
-  // the container and keep axis labels and the legend out of the plot.
+  // the container and keep axis labels and the legend out of the plot. Text
+  // headroom and a single legend row need fixed pixels, not percent heights.
   const grid: GridComponentOption = plot
     ? {
         left: `${plot.x * 100}%`,
@@ -105,8 +106,8 @@ export const getChartOption = ({
     : {
         left: '4%',
         right: '4%',
-        top: type === 'line' || type === 'area' ? '22%' : '8%',
-        bottom: cartesianLegend && type !== 'scatter' ? '26%' : '12%',
+        top: type === 'line' || type === 'area' ? 22 : '8%',
+        bottom: cartesianLegend && type !== 'scatter' ? 26 : '12%',
         containLabel: true,
       };
 
