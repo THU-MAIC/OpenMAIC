@@ -2,6 +2,7 @@
  * Prompt loader for packaged Markdown templates and snippets.
  */
 
+import { interactiveLibraryPrompt, interactiveLibraryUrl } from '../interactive-libraries.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +32,9 @@ export function loadSnippet(
   const snippetPath = join(promptsDir, 'snippets', `${snippetId}.md`);
 
   try {
-    return readFileSync(snippetPath, 'utf-8').trim();
+    return readFileSync(snippetPath, 'utf-8')
+      .trim()
+      .replace('{{interactiveLibraryAllowlist}}', interactiveLibraryPrompt());
   } catch {
     // Fail loud rather than silently shipping `{{snippet:foo}}` to the model.
     throw new Error(`Snippet not found: ${snippetId}`);
@@ -87,6 +90,10 @@ export function loadPrompt(
     if (!isMissingFileError(error)) throw error;
   }
   userPromptTemplate = processSnippets(userPromptTemplate, promptsDir);
+
+  systemPrompt = systemPrompt
+    .replaceAll('{{threeModuleUrl}}', interactiveLibraryUrl('three'))
+    .replaceAll('{{threeAddonsUrl}}', interactiveLibraryUrl('three', 'examples/jsm/'));
 
   return {
     id: promptId,

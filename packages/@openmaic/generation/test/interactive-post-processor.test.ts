@@ -15,7 +15,7 @@ describe('interactive HTML post-processing', () => {
     const processed = postProcessInteractiveHtml(source);
     expect(processed).toContain('translate(${pos.x}, ${pos.y})');
     expect(processed).toContain('cost $5 ${pos.x}');
-    expect(processed).toContain('data-after="${pos.x}\\(x\\)"');
+    expect(processed).toContain('data-after="${pos.x}$x$"');
     expect(processed).toContain('\\(\\frac{1}{2}\\)');
   });
 
@@ -43,7 +43,7 @@ const PAGE_WITH_OWN_KATEX = [
   '</script></body></html>',
 ].join('\n');
 
-const INJECTED_SCRIPT = /<script data-openmaic-katex>([\s\S]*?)<\/script>/;
+const INJECTED_SCRIPT = /<script data-openmaic-katex="2">([\s\S]*?)<\/script>/;
 const PAGE_INLINE_SCRIPT = /<script>([\s\S]*?)<\/script>/;
 
 /**
@@ -87,9 +87,9 @@ describe('KaTeX injection', () => {
     const injected = processed.indexOf('data-openmaic-katex');
     expect(injected).toBeGreaterThan(processed.indexOf('<head>'));
     expect(injected).toBeLessThan(processed.indexOf('<meta charset'));
-    expect(processed.match(/<script data-openmaic-katex>/g) ?? []).toHaveLength(1);
-    // The page's own tags stay exactly as authored.
-    expect(processed).toContain(PAGE_WITH_OWN_KATEX.slice(PAGE_WITH_OWN_KATEX.indexOf('<meta')));
+    expect(processed.match(/<script data-openmaic-katex="2">/g) ?? []).toHaveLength(1);
+    expect(processed).not.toContain('cdn.jsdelivr.net');
+    expect(processed).toContain('/vendor/interactive/katex@0.16.38/dist/katex.min.js');
     expect(postProcessInteractiveHtml(processed)).toBe(processed);
   });
 
@@ -107,26 +107,23 @@ describe('KaTeX injection', () => {
     expect((context.pageInit as { observing: boolean }).observing).toBe(true);
   });
 
-  it('leaves a page without math unchanged apart from the injection', () => {
+  it('leaves a page without math unchanged', () => {
     const source = '<html><head><title>Plain</title></head><body><p>No math</p></body></html>';
-    const processed = postProcessInteractiveHtml(source);
-    const injectionEnd = processed.lastIndexOf('</script>') + '</script>'.length;
-    expect(processed.slice(0, '<html><head>'.length)).toBe('<html><head>');
-    expect(processed.slice(injectionEnd).trim()).toBe(source.slice('<html><head>'.length));
+    expect(postProcessInteractiveHtml(source)).toBe(source);
   });
 
   it('places the injection in head for documents without an explicit head', () => {
-    const withHtml = postProcessInteractiveHtml('<html><body>x</body></html>');
-    expect(withHtml.startsWith('<html><head>\n<link data-openmaic-katex')).toBe(true);
-    const withDoctype = postProcessInteractiveHtml('<!DOCTYPE html><p>x</p>');
-    expect(withDoctype.startsWith('<!DOCTYPE html><head>\n<link data-openmaic-katex')).toBe(true);
+    const withHtml = postProcessInteractiveHtml('<html><body>$x$</body></html>');
+    expect(withHtml.startsWith('<html><head>\n<script data-openmaic-katex')).toBe(true);
+    const withDoctype = postProcessInteractiveHtml('<!DOCTYPE html><p>$x$</p>');
+    expect(withDoctype.startsWith('<!DOCTYPE html><head>\n<script data-openmaic-katex')).toBe(true);
   });
 
   it('ignores a head tag that only appears inside a comment', () => {
     const processed = postProcessInteractiveHtml(
-      '<!-- <head> --><html><head><title>t</title></head><body></body></html>',
+      '<!-- <head> --><html><head><title>t</title></head><body>$x$</body></html>',
     );
-    expect(processed.startsWith('<!-- <head> --><html><head>\n<link data-openmaic-katex')).toBe(
+    expect(processed.startsWith('<!-- <head> --><html><head>\n<script data-openmaic-katex')).toBe(
       true,
     );
   });

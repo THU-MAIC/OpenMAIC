@@ -482,7 +482,7 @@ function prepareScene(
     return {
       ...rest,
       content: html
-        ? { ...interactive, html: patchHtmlForIframe(html) }
+        ? { ...interactive, html: patchHtmlForIframe(html, undefined, { processed: true }) }
         : { ...interactive, html: undefined },
     };
   }

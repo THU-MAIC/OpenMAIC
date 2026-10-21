@@ -861,3 +861,13 @@ DeepSeek 也通过 `deepseek` 预设提供托管 Markdown 提取，复用对话�
 同一个 `firecrawl` 服务商也提供联网搜索（`POST /v2/search`）：一把密钥和一个基础地址同时用于两者，因此可以把同一个服务商同时指定给 `slots.webSearch` 和 `slots.webFetch`。旧版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 变量配置的就是这个服务商；在把 `webFetch` 指定给它之前，网页抓取仍使用 `builtin`。
 
 网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。
+
+## Interactive scene libraries
+
+`INTERACTIVE_ASSET_BASE_URL` is a public build-time setting. It defaults to `/vendor/interactive` on the deployment's own origin. `pnpm install`, `pnpm dev`, and `pnpm build` copy pinned KaTeX (including fonts), Three.js (including addons), Chart.js, and the Tailwind v4 browser runtime from installed packages into `public/vendor/interactive`. No public CDN is needed for these libraries.
+
+To host these files on your own CDN or object storage, copy that directory with its package/version paths intact, set `INTERACTIVE_ASSET_BASE_URL=https://assets.example.com/interactive` before building, and rebuild. For Docker, pass `--build-arg INTERACTIVE_ASSET_BASE_URL=...`. The asset host must serve JavaScript/CSS/font MIME types and allow CORS (`Access-Control-Allow-Origin: *`) for sandboxed iframe modules and fonts. This URL is public and must not contain credentials.
+
+Stored interactive HTML is reprocessed when opened in the classroom and before standalone HTML or video export, so known compatible CDN references do not require course regeneration. KaTeX loads only when page text contains math delimiters; dynamic-only math should include an initial formula in the HTML. Legacy Tailwind v3 Play CDN (`cdn.tailwindcss.com`), Google Fonts, unsupported versions, and unknown libraries remain unchanged. The v4 browser runtime is not a compatible replacement for the legacy v3 API. Regenerate or edit those pages to use the available libraries or system fonts. Python/TypeScript execution requires an explicitly supplied runtime; Pyodide/Babel are not hosted.
+
+The generation package's `rewriteInteractiveLibraries` API returns `unmatchedExternalHosts` counts for resource references in script/link attributes, CSS imports, ESM imports, and import maps. Applications can aggregate these counts to guide allowlist additions. Computed dynamic imports, URLs in ordinary JavaScript strings, external stylesheet contents, and import-map scope keys are not rewritten.

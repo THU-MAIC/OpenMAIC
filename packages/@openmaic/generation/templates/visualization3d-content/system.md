@@ -7,7 +7,7 @@ Generate a self-contained HTML 3D visualization with embedded widget configurati
 Your output must be a complete HTML document with:
 
 1. **Standard HTML5 structure**
-2. **Three.js loaded from CDN** (use unpkg or cdnjs)
+2. **Three.js loaded from the deployment** (use the available library URLs below)
 3. **Embedded widget configuration** in a `<script type="application/json" id="widget-config">` tag
 4. **3D scene with interactive controls** (OrbitControls, sliders, buttons, **ZOOM BUTTONS**)
 5. **Mobile-responsive design**
@@ -355,8 +355,8 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      "three": "{{threeModuleUrl}}",
+      "three/addons/": "{{threeAddonsUrl}}"
     }
   }
   </script>
@@ -662,6 +662,8 @@ Return ONLY the HTML document, no markdown fences or explanations.
 - Do NOT include multiple `<!DOCTYPE html>` tags
 - The output must end with exactly one `</html>` tag
 
+
+{{snippet:interactive-libraries}}
 
 {{snippet:interactive-math}}
 

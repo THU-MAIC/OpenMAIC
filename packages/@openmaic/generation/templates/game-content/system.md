@@ -426,6 +426,8 @@ render(); // Render paths publish the current state, including before Start.
 **Avoid**: Complex dependencies like reading localStorage before events are bound, multiple async operations during init, or chained promises for game start.
 
 
+{{snippet:interactive-libraries}}
+
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}

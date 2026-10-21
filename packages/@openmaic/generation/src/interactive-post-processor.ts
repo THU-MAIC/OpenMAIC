@@ -10,93 +10,109 @@
  */
 
 import { parse, type DefaultTreeAdapterTypes } from 'parse5';
+import {
+  htmlNodes,
+  patchHtml,
+  rewriteInteractiveLibraries,
+  type HtmlPatch,
+} from './interactive-library-mapper.js';
+import { interactiveLibraryUrl } from './interactive-libraries.js';
 
 /** Marks the KaTeX markup this module injects, so a second pass adds nothing. */
 const KATEX_INJECTION_MARKER = 'data-openmaic-katex';
 
-/**
- * Main entry point: post-process generated interactive HTML
- * Converts LaTeX delimiters and injects KaTeX rendering resources.
- *
- * The platform's KaTeX is injected even when the page references KaTeX itself.
- * The page's own copy may not be there when the page needs it (an unreachable
- * CDN, a wrong `integrity` hash, an `async` tag), and a page that then calls
- * `renderMathInElement` or `katex.render` aborts with a ReferenceError.
- * The page's markup is left as authored.
- */
+/** Re-process stored HTML as well as newly generated pages. */
 export function postProcessInteractiveHtml(html: string): string {
-  // Convert LaTeX delimiters while protecting script tags
-  let processed = convertLatexDelimiters(html);
-
-  if (!processed.includes(KATEX_INJECTION_MARKER)) {
-    processed = injectKatex(processed);
-  }
-
-  return processed;
-}
-
-/**
- * Convert LaTeX delimiters while protecting <script> tags.
- *
- * - Protects script blocks from modification
- * - Converts $$...$$ to \[...\] (display math)
- * - Converts $...$ to \(...\) (inline math)
- * - Restores script blocks after conversion
- */
-function convertLatexDelimiters(html: string): string {
-  const scriptBlocks: string[] = [];
-
-  // Protect script tags by replacing them with placeholders
-  let processed = html.replace(/<script\b[^>]*>[\s\S]*?(?:<\/script>|$)/gi, (match) => {
-    scriptBlocks.push(match);
-    return `__SCRIPT_BLOCK_${scriptBlocks.length - 1}__`;
-  });
-
-  // Convert display math: $$...$$ -> \[...\]
-  processed = processed.replace(/\$\$([^$]+)\$\$/g, '\\[$1\\]');
-
-  // Convert inline math: $...$ -> \(...\)
-  // Use non-greedy match and exclude newlines to avoid false positives
-  processed = processed.replace(/\$(?!\{)([^$\n]+?)\$(?!\{)/g, '\\($1\\)');
-
-  // Restore script blocks in a single pass. A replacer FUNCTION (not a string)
-  // is safe even when script content contains `$` — a function's return value
-  // is inserted literally, with no `$&`/`$1` substitution. The previous
-  // indexOf+substring loop rebuilt the entire string once per block, i.e.
-  // O(blocks × length), which balloons memory and blocks the event loop when
-  // the generated widget HTML contains many <script> tags.
-  processed = processed.replace(
-    /__SCRIPT_BLOCK_(\d+)__/g,
-    (whole, index) => scriptBlocks[Number(index)] ?? whole,
+  // Upgrade the synchronous #1966 injection, including pages that no longer contain math.
+  const nodes = htmlNodes(html);
+  const legacy = nodes.some(
+    (node) =>
+      'attrs' in node &&
+      node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER && attr.value !== '2'),
   );
+  if (legacy) {
+    html = patchHtml(
+      html,
+      nodes.flatMap((node) => {
+        if (!('attrs' in node) || !node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER))
+          return [];
+        const range = node.sourceCodeLocation;
+        return range ? [{ start: range.startOffset, end: range.endOffset, text: '' }] : [];
+      }),
+    );
+  }
+  let processed = rewriteInteractiveLibraries(html).html;
+  if (
+    htmlNodes(processed).some(
+      (node) => 'attrs' in node && node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER),
+    )
+  )
+    return processed;
 
-  return processed;
+  const patches: HtmlPatch[] = [];
+  let hasMath = false;
+  for (const node of htmlNodes(processed)) {
+    if (node.nodeName !== '#text' || !('value' in node)) continue;
+    // Script/style/code examples and attributes are never LaTeX input.
+    let parent = node.parentNode;
+    let excluded = false;
+    while (parent) {
+      if (
+        'tagName' in parent &&
+        ['script', 'style', 'pre', 'code', 'textarea', 'noscript'].includes(parent.tagName)
+      )
+        excluded = true;
+      parent = 'parentNode' in parent ? parent.parentNode : null;
+    }
+    if (excluded) continue;
+    const range = node.sourceCodeLocation;
+    if (!range) continue;
+    const source = processed.slice(range.startOffset, range.endOffset);
+    if (/\\\([\s\S]+?\\\)|\\\[[\s\S]+?\\\]/.test(source)) hasMath = true;
+    const converted = source
+      .replace(/(?<!\\)\$\$([^$]+)\$\$/g, (_, tex: string) => {
+        hasMath = true;
+        return `\\[${tex}\\]`;
+      })
+      // Avoid common currency ($5, $10), interpolation, and escaped dollar signs.
+      .replace(/(?<![\\\w$])\$(?![\s{])([^$\n]+?)(?<!\s)\$(?![\w${])/g, (_, tex: string) => {
+        hasMath = true;
+        return `\\(${tex}\\)`;
+      });
+    if (converted !== source)
+      patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
+  }
+  processed = patchHtml(processed, patches);
+  // Pages that explicitly call KaTeX need the #1966 guards even with dynamic-only math.
+  const hasMathCalls = /\b(?:katex\s*\.|renderMathInElement\s*\()/.test(processed);
+  return hasMath || hasMathCalls ? injectKatex(processed, hasMath) : processed;
 }
 
-/**
- * Inject KaTeX CSS, JS, auto-render, and a MutationObserver at the start of
- * <head>, ahead of every script the page authored.
- *
- * - The libraries load synchronously before the page's own scripts, so
- *   `katex` and `renderMathInElement` exist when those scripts and their
- *   DOMContentLoaded handlers run. A page that loads its own KaTeX later
- *   replaces these globals with the same library.
- * - When the CDN is unreachable, no-op stand-ins keep the page's own math
- *   calls from throwing; the math then stays as written.
- * - The render handler is registered before the page's handlers, so the
- *   observer is already watching when the page fills its labels.
- */
-function injectKatex(html: string): string {
+/** The guard runs immediately; local libraries never block the HTML parser. */
+function injectKatex(html: string, loadLibraries: boolean): string {
+  const resources = loadLibraries
+    ? `
+<link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" media="print" onload="this.media='all'" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
+<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex')}"></script>
+<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`
+    : '';
   const katexInjection = `
-<link ${KATEX_INJECTION_MARKER} rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-<script ${KATEX_INJECTION_MARKER} src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-<script ${KATEX_INJECTION_MARKER}>
+<script ${KATEX_INJECTION_MARKER}="2">
 (function () {
+    var pending = [];
+    window.__openmaicFlushMath = function () {
+        if (window.katex && !window.katex.__openmaicStub) {
+            pending.splice(0).forEach(function (args) { window.katex.render.apply(window.katex, args); });
+        }
+    };
     if (!window.katex) {
         window.katex = {
+            __openmaicStub: true,
             render: function (tex, element) {
-                if (element) element.textContent = String(tex);
+                if (element) {
+                    element.textContent = String(tex);
+                    pending.push(Array.prototype.slice.call(arguments));
+                }
             },
             renderToString: function (tex) {
                 return String(tex).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -122,6 +138,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function render() {
         try {
+            window.__openmaicFlushMath();
             renderMathInElement(document.body, katexOptions);
         } catch (e) {
             // A failed pass must not stop the observer from being installed.
@@ -167,6 +184,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 2000);
 });
 </script>
+${resources}
 `;
 
   return insertAtHeadStart(html, katexInjection);
