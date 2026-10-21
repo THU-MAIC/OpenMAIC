@@ -184,7 +184,10 @@ export function rewriteInteractiveLibraries(
     const range = textNode?.sourceCodeLocation;
     if (!textNode || !range) continue;
     let rewritten = textNode.value;
-    const type = node.attrs.find((entry) => entry.name === 'type')?.value;
+    const type = node.attrs
+      .find((entry) => entry.name === 'type')
+      ?.value.trim()
+      .toLowerCase();
     if (node.tagName === 'style') {
       try {
         const css = postcss.parse(rewritten);
@@ -208,19 +211,15 @@ export function rewriteInteractiveLibraries(
       }
     } else if (node.tagName === 'script' && type === 'importmap') {
       try {
-        const data = JSON.parse(rewritten);
-        const rewriteEntries = (entries: unknown) => {
-          if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return;
-          for (const [key, value] of Object.entries(entries)) {
-            if (typeof value === 'string') (entries as Record<string, string>)[key] = map(value);
-          }
-        };
-        rewriteEntries(data.imports);
-        for (const entries of Object.values(data.scopes ?? {})) rewriteEntries(entries);
-        const serialized = JSON.stringify(data).replace(/</g, '\\u003c');
-        // Preserve bytes on the second pass and when nothing matched.
-        if (JSON.stringify(JSON.parse(textNode.value)) !== JSON.stringify(data))
-          rewritten = serialized;
+        JSON.parse(rewritten);
+        // Rewrite string values in place so the authored JSON layout is preserved.
+        // Keys (specifiers and scope prefixes) are left alone; non-URL values map to themselves.
+        rewritten = rewritten.replace(/"(?:[^"\\]|\\.)*"(\s*:)?/g, (token, key?: string) => {
+          if (key) return token;
+          const value = JSON.parse(token) as string;
+          const mapped = map(value);
+          return mapped === value ? token : JSON.stringify(mapped).replace(/</g, '\\u003c');
+        });
       } catch {
         /* Leave malformed import maps untouched. */
       }

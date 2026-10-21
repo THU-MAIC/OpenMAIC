@@ -75,6 +75,12 @@ describe('HTML source mapping', () => {
     expect(result).toContain(`const literal='${url}'`);
     expect(rewriteInteractiveLibraries(result).html).toBe(result);
   });
+  it('preserves import-map layout and handles case-insensitive script types', () => {
+    const three = 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    const input = `<script type="importmap">\n  {\n    "imports": { "three": "${three}", "x": "https://esm.sh/x" }\n  }\n</script><script type="Module">import "${three}";</script>`;
+    const html = rewriteInteractiveLibraries(input).html;
+    expect(html).toBe(input.replaceAll(three, interactiveLibraryUrl('three')));
+  });
   it('counts unmatched external resource hosts', () => {
     const input =
       '<script src="https://cdn.tailwindcss.com"></script><link href="https://fonts.googleapis.com/css2"><script src="https://cdn.tailwindcss.com"></script>';
@@ -113,6 +119,17 @@ describe('on-demand math', () => {
     },
   );
   it.each([
+    `<div id="a"></div><script>katex.render('x^2', document.getElementById('a'));</script>`,
+    `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
+    `<script>const f = '\\\\frac{1}{2}';</script>`,
+  ])('loads local KaTeX for script-only math %s', (input) => {
+    const html = postProcessInteractiveHtml(input);
+    expect(html).toContain('defer src="/vendor/interactive/katex@');
+    expect(html).toContain('defer src="/vendor/interactive/katex@0.16.38/dist/contrib/auto-render');
+  });
+  it.each([
+    '<title>Save $5 or $10 today</title><p>No math</p>',
+    '<title>$x$</title><p>No math</p>',
     '<p>Prices: $5 and $10</p>',
     '<script>const x="$x$"; const y=`${value}`;</script>',
     '<style>.x::before{content:"$x$"}</style>',

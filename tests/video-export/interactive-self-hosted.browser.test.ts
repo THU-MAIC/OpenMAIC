@@ -112,6 +112,25 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
     }
   });
 
+  it('loads KaTeX and replays early calls for a page whose only math is a script call', async () => {
+    const page = await browser.newPage();
+    const html = postProcessInteractiveHtml(
+      `<!doctype html><html><head></head><body><p id="formula"></p><script>katex.render('x^2', document.getElementById('formula'));</script></body></html>`,
+    );
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
+      const asset = await fetchAsset(url);
+      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
+    });
+    try {
+      await page.goto(ORIGIN);
+      await expect.poll(() => page.locator('#formula .katex').count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('makes no library request for a page without math', async () => {
     const page = await browser.newPage();
     const requests: string[] = [];

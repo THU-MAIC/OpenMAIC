@@ -59,12 +59,22 @@ export function postProcessInteractiveHtml(html: string): string {
     while (parent) {
       if (
         'tagName' in parent &&
-        ['script', 'style', 'pre', 'code', 'textarea', 'noscript'].includes(parent.tagName)
+        ['script', 'style', 'pre', 'code', 'textarea', 'noscript', 'title'].includes(parent.tagName)
       )
         excluded = true;
       parent = 'parentNode' in parent ? parent.parentNode : null;
     }
-    if (excluded) continue;
+    if (excluded) {
+      // Scripts that call KaTeX, or hold TeX strings written into the page later, need it too.
+      if (
+        node.parentNode &&
+        'tagName' in node.parentNode &&
+        node.parentNode.tagName === 'script' &&
+        (SCRIPT_TEX.test(node.value) || KATEX_CALL.test(node.value))
+      )
+        hasMath = true;
+      continue;
+    }
     const range = node.sourceCodeLocation;
     if (!range) continue;
     const source = processed.slice(range.startOffset, range.endOffset);
@@ -83,19 +93,22 @@ export function postProcessInteractiveHtml(html: string): string {
       patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
   }
   processed = patchHtml(processed, patches);
-  // Pages that explicitly call KaTeX need the #1966 guards even with dynamic-only math.
-  const hasMathCalls = /\b(?:katex\s*\.|renderMathInElement\s*\()/.test(processed);
-  return hasMath || hasMathCalls ? injectKatex(processed, hasMath) : processed;
+  return hasMath ? injectKatex(processed) : processed;
 }
 
+/** A page script that calls KaTeX needs the #1966 guards and the library. */
+const KATEX_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
+
+/** A JS-escaped TeX delimiter or common command inside a script string literal. */
+const SCRIPT_TEX =
+  /\\\\(?:[([]|begin\{|(?:frac|sqrt|sum|int|lim|cdot|times|div|pm|infty|alpha|beta|gamma|delta|theta|lambda|sigma|omega|Delta|vec|mathrm|mathbf)(?![A-Za-z]))/;
+
 /** The guard runs immediately; local libraries never block the HTML parser. */
-function injectKatex(html: string, loadLibraries: boolean): string {
-  const resources = loadLibraries
-    ? `
+function injectKatex(html: string): string {
+  const resources = `
 <link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" media="print" onload="this.media='all'" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
 <script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex')}"></script>
-<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`
-    : '';
+<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`;
   const katexInjection = `
 <script ${KATEX_INJECTION_MARKER}="2">
 (function () {

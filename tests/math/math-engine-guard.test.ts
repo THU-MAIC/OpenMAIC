@@ -60,6 +60,12 @@ const ALLOWLIST: Record<string, { kind: 'render-calls' | 'reviewed'; reason: str
       'arbitrary model-written scripts in a sandboxed iframe, so a formula there has no more ' +
       'power than the page itself',
   },
+  'packages/@openmaic/generation/src/interactive-libraries.ts': {
+    kind: 'reviewed',
+    reason:
+      'lists the KaTeX auto-render file among the self-hosted assets that the interactive ' +
+      'post-processor injects; it renders nothing itself',
+  },
 };
 
 const NON_PRODUCT_PATH_RE = /(^|\/)(tests?|__tests__|__snapshots__)\/|\.(test|spec)\.[cm]?[jt]sx?$/;

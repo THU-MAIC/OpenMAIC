@@ -181,7 +181,7 @@ describe('CI video-export workflow contract', () => {
     const guard = step(parseWorkflow(), 'e2e', 'Interactive static HTML Chromium smoke');
 
     expect(guard.run).toBe(
-      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts',
+      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts tests/video-export/interactive-self-hosted.browser.test.ts',
     );
     expect(guard.env).toEqual({ INTERACTIVE_STATIC_BROWSER: '1' });
     expect(guard.if).toBeUndefined();

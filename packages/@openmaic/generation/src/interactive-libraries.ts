@@ -76,7 +76,7 @@ export function interactiveLibraryUrl(
 export function interactiveLibraryPrompt(): string {
   return [
     '## Available libraries',
-    'Use only the deployment-hosted URLs below, exactly as written. Load only libraries you need. Do not use public CDNs, Google Fonts, or other external libraries; use system fonts. Initialize classic-script libraries after their load event or DOMContentLoaded when using defer.',
+    'The deployment hosts the libraries below. When a page needs one of them, load it from the URL listed here, exactly as written, instead of a public CDN. Load only libraries the page needs. Initialize classic-script libraries after their load event, or after DOMContentLoaded when using defer.',
     ...INTERACTIVE_LIBRARIES.map(
       (library) =>
         `- ${library.package} ${library.version}: ${interactiveLibraryUrl(library.package)}`,

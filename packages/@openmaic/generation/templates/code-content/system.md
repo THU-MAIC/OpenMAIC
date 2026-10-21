@@ -4,9 +4,9 @@ Generate a self-contained HTML code editor with execution and test validation.
 
 ## Supported Languages
 
-- Python (only when a runtime URL is explicitly supplied in the task)
+- Python (via Pyodide CDN)
 - JavaScript (native browser execution)
-- TypeScript (only when a transpiler URL is explicitly supplied in the task)
+- TypeScript (via Babel CDN transpilation)
 
 ## Widget Config Schema
 
@@ -24,9 +24,7 @@ Generate a self-contained HTML code editor with execution and test validation.
 }
 ```
 
-Use JavaScript by default. Pyodide and Babel are not in the deployment library allowlist; do not invent URLs for them. When Python or TypeScript is requested without a supplied runtime, explain that limitation in the page and provide editable code without claiming it can execute.
-
-## Python Execution Requirements (CRITICAL; only with a supplied runtime)
+## Python Execution Requirements (CRITICAL)
 
 When generating Python widgets using Pyodide, follow these **mandatory patterns**:
 
@@ -125,7 +123,7 @@ async function runCode() {
 
 ## Technical Requirements
 
-- Use a native textarea for editing; do not load CodeMirror or Monaco from a CDN
+- Use CodeMirror or Monaco via CDN for editing
 - Syntax highlighting for the language
 - Run button with output display
 - Test case validation with pass/fail indicators

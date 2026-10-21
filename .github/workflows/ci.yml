@@ -330,7 +330,10 @@ jobs:
           COVER_LAYOUT_BROWSER: '1'
 
       - name: Interactive static HTML Chromium smoke
-        run: pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts
+        run: >-
+          pnpm exec vitest run
+          tests/video-export/interactive-static-html.browser.test.ts
+          tests/video-export/interactive-self-hosted.browser.test.ts
         env:
           INTERACTIVE_STATIC_BROWSER: '1'
 

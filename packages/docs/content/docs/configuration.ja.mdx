@@ -862,12 +862,10 @@ DeepSeek は `deepseek` プリセットでホスト型 Markdown 抽出も提供�
 
 ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。
 
-## Interactive scene libraries
+## インタラクティブシーンのライブラリ
 
-`INTERACTIVE_ASSET_BASE_URL` is a public build-time setting. It defaults to `/vendor/interactive` on the deployment's own origin. `pnpm install`, `pnpm dev`, and `pnpm build` copy pinned KaTeX (including fonts), Three.js (including addons), Chart.js, and the Tailwind v4 browser runtime from installed packages into `public/vendor/interactive`. No public CDN is needed for these libraries.
+インタラクティブシーンは、KaTeX、Three.js（addons を含む）、Chart.js、Tailwind v4 ブラウザランタイムを公開 CDN ではなくデプロイ自身から読み込みます。`pnpm install`、`pnpm dev`、`pnpm build` は、インストール済みパッケージから固定バージョンを `public/vendor/interactive` にコピーし、`/vendor/interactive` で配信します。KaTeX は数式を含むページでのみ読み込まれます。
 
-To host these files on your own CDN or object storage, copy that directory with its package/version paths intact, set `INTERACTIVE_ASSET_BASE_URL=https://assets.example.com/interactive` before building, and rebuild. For Docker, pass `--build-arg INTERACTIVE_ASSET_BASE_URL=...`. The asset host must serve JavaScript/CSS/font MIME types and allow CORS (`Access-Control-Allow-Origin: *`) for sandboxed iframe modules and fonts. This URL is public and must not contain credentials.
+`INTERACTIVE_ASSET_BASE_URL` は公開されるビルド時の設定です。独自の CDN やオブジェクトストレージからこれらのファイルを配信する場合は、パッケージ/バージョンのパスを保ったまま `public/vendor/interactive` をコピーし、この変数を新しいベース URL（例：`https://assets.example.com/interactive`）に設定して再ビルドしてください。Docker では `--build-arg` で渡します。インタラクティブシーンはサンドボックス化された iframe で動作するため、配信先は JavaScript、CSS、フォントを正しい MIME タイプで返し、`Access-Control-Allow-Origin: *` を送信する必要があります。
 
-Stored interactive HTML is reprocessed when opened in the classroom and before standalone HTML or video export, so known compatible CDN references do not require course regeneration. KaTeX loads only when page text contains math delimiters; dynamic-only math should include an initial formula in the HTML. Legacy Tailwind v3 Play CDN (`cdn.tailwindcss.com`), Google Fonts, unsupported versions, and unknown libraries remain unchanged. The v4 browser runtime is not a compatible replacement for the legacy v3 API. Regenerate or edit those pages to use the available libraries or system fonts. Python/TypeScript execution requires an explicitly supplied runtime; Pyodide/Babel are not hosted.
-
-The generation package's `rewriteInteractiveLibraries` API returns `unmatchedExternalHosts` counts for resource references in script/link attributes, CSS imports, ESM imports, and import maps. Applications can aggregate these counts to guide allowlist additions. Computed dynamic imports, URLs in ordinary JavaScript strings, external stylesheet contents, and import-map scope keys are not rewritten.
+保存済みのインタラクティブ HTML は、教室で開くときと、スタンドアロン HTML または動画をエクスポートする前に再処理されます。そのため、これらのライブラリを指す互換性のある公開 CDN 参照は、コースを再生成しなくても書き換えられます。その他のライブラリ、互換性のないバージョン、旧 Tailwind v3 Play CDN（`cdn.tailwindcss.com`）、Google Fonts への参照は変更されず、引き続きそれらのホストへのネットワークアクセスが必要です。
