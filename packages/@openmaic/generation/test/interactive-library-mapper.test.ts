@@ -129,6 +129,29 @@ describe('on-demand math', () => {
     expect(postProcessInteractiveHtml(html)).toBe(html);
   });
   it.each([
+    '<p>$x$</p><script src="/app.js"></script>',
+    '<p>$x$</p><script src="https://unpkg.com/chart.js@4"></script>',
+    '<p>$x$</p><script type="text/javascript" src="/app.js"></script>',
+  ])('loads KaTeX synchronously before a blocking external classic script %s', (input) => {
+    const html = postProcessInteractiveHtml(input);
+    expect(html).toContain('<script data-openmaic-katex="2" src="/vendor/interactive/katex@');
+    expect(postProcessInteractiveHtml(html)).toBe(html);
+  });
+  it.each([
+    '<p>$x$</p><script defer src="/app.js"></script>',
+    '<p>$x$</p><script async src="/app.js"></script>',
+    '<p>$x$</p><script type="module" src="/app.js"></script>',
+    '<p>$x$</p><script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>',
+  ])('keeps KaTeX deferred when no opaque script blocks parsing %s', (input) => {
+    const html = postProcessInteractiveHtml(input);
+    expect(html).toContain('defer src="/vendor/interactive/katex@');
+    expect(postProcessInteractiveHtml(html)).toBe(html);
+  });
+  it('injects nothing for a page without math that has a blocking script', () => {
+    const input = '<p>No math</p><script src="/app.js"></script>';
+    expect(postProcessInteractiveHtml(input)).toBe(input);
+  });
+  it.each([
     `<div id="a"></div><script type="module">a.innerHTML = katex.renderToString('x^2');</script>`,
     `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
     `<script>const f = '\\\\frac{1}{2}';</script>`,

@@ -52,7 +52,19 @@ export function postProcessInteractiveHtml(html: string): string {
   const patches: HtmlPatch[] = [];
   let hasMath = false;
   let synchronous = false;
+  let blockingExternalScript = false;
+  const hostedKatex = interactiveLibraryUrl('katex', '');
   for (const node of htmlNodes(processed)) {
+    // A blocking classic external script may call KaTeX during parsing; its code is opaque here.
+    if (
+      'tagName' in node &&
+      node.tagName === 'script' &&
+      isClassicScript(node) &&
+      !node.attrs.some((attr) => attr.name === 'async' || attr.name === 'defer')
+    ) {
+      const src = node.attrs.find((attr) => attr.name === 'src')?.value.trim();
+      if (src && !src.startsWith(hostedKatex)) blockingExternalScript = true;
+    }
     if (node.nodeName !== '#text' || !('value' in node)) continue;
     // Script/style/code examples and attributes are never LaTeX input.
     let parent = node.parentNode;
@@ -99,7 +111,7 @@ export function postProcessInteractiveHtml(html: string): string {
       patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
   }
   processed = patchHtml(processed, patches);
-  return hasMath ? injectKatex(processed, synchronous) : processed;
+  return hasMath ? injectKatex(processed, synchronous || blockingExternalScript) : processed;
 }
 
 /** A page script that calls KaTeX needs the #1966 guards and the library. */

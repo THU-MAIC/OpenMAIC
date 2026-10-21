@@ -150,6 +150,30 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
     }
   });
 
+  it('loads KaTeX before a blocking external script that renders during parsing', async () => {
+    const page = await browser.newPage();
+    const html = postProcessInteractiveHtml(
+      '<!doctype html><html><head></head><body><p id="label">$y$</p><p id="formula"></p><script src="/app.js"></script></body></html>',
+    );
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
+      if (url === `${ORIGIN}/app.js`)
+        return route.fulfill({
+          contentType: 'text/javascript',
+          body: "document.getElementById('formula').innerHTML = katex.renderToString('x^2');",
+        });
+      const asset = await fetchAsset(url);
+      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
+    });
+    try {
+      await page.goto(ORIGIN);
+      expect(await page.locator('#formula .katex').count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('applies authored auto-render options from a parse-time renderMathInElement call', async () => {
     const page = await browser.newPage();
     const html = postProcessInteractiveHtml(
