@@ -322,6 +322,10 @@ const objectY = baseY - BOTTOM_MARGIN - (value / maxValue) * playableHeight;
 - [ ] **Animation is OBVIOUS, not subtle - user can tell simulation is running**
 
 
+## Math typesetting
+
+The platform loads KaTeX into every interactive page and typesets math wherever it appears, including text your scripts add or change after the page loads. Write math as LaTeX between \`\\(\` and \`\\)\` for inline math or \`\\[\` and \`\\]\` for display math, and leave typesetting to the platform. Do not load KaTeX, MathJax or any other math library yourself, and do not call their functions: the page can run where such a copy never loads, and a call into a missing library stops the page's script.
+
 ## REQUIRED: declared current state for newly generated interactive content (v1)
 
 This contract applies to every interactive content type. Report what the activity *is* right now, in the lesson's own terms — not a dump of JavaScript variables. The platform reads the same data for every lesson; there are no slider/circuit/game-specific collectors. Do not present protocol names to students.

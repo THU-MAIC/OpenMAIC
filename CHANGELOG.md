@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Course generation passes each catalogue voice's `gender` into the voice list and asks the model to pick a voice whose gender matches the agent, keeping the agent's name and persona consistent with that gender. `voiceDesign.gender` (`male` or `female`) is part of the agent DSL, the export sanitizer, and `set_roster`, so a course-language identity can still drive the match. When the model's voice is missing or invalid, playback falls back by index within that gender. A catalogue with no male/female data, or an agent whose gender is unknown, keeps the previous full-list index pick. [#1084](https://github.com/THU-MAIC/OpenMAIC/issues/1084)
 
+### Bug Fixes
+
+- Interactive scenes that load KaTeX themselves now get the platform's KaTeX too. Previously any page that mentioned KaTeX was skipped, so its math stayed raw when the page's own copy did not render it, and a page that called `renderMathInElement` after its copy failed to load stopped with a `ReferenceError` and showed the runtime-error notice. The platform's KaTeX now loads ahead of the page's scripts, its observer typesets labels the page fills in on load, and when the CDN is unreachable the page's math calls do nothing instead of throwing. The interactive prompts ask pages to leave math typesetting to the platform. `@openmaic/generation` 0.3.23. [#1538](https://github.com/THU-MAIC/OpenMAIC/issues/1538)
+
 ## [1.2.1] - 2026-10-18
 
 1.2.1 is a regular patch release. Its main theme is web research: Kimi, DeepSeek and Firecrawl join as web-search providers, and a new `webFetch` slot lets the agent's `fetch_url` tool use a hosted reader instead of the built-in one. It also contains one breaking change, the removal of the legacy director-graph classroom chat ([#1913](https://github.com/THU-MAIC/OpenMAIC/pull/1913)), and removes retired models from the built-in catalogs ([#1939](https://github.com/THU-MAIC/OpenMAIC/pull/1939)). Read **Breaking Changes** before upgrading from 1.2.0.
