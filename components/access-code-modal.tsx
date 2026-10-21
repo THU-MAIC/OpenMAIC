@@ -39,6 +39,9 @@ export function AccessCodeModal({ open, onSuccess }: AccessCodeModalProps) {
 
       if (res.ok) {
         setSuccess(true);
+        // Probes fired while this modal was up saw a 401; tell every gate
+        // listener to re-probe now that the access cookie is in place.
+        window.dispatchEvent(new CustomEvent('openmaic:access-code-verified'));
         setTimeout(onSuccess, 600);
       } else {
         setError(t('accessCode.error'));

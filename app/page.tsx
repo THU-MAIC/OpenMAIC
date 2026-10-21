@@ -158,23 +158,32 @@ function HomePage() {
     workbenchRuntimeCache === true,
   );
   useEffect(() => {
-    if (!workbenchBuildEnabled || workbenchRuntimeCache !== null) return;
+    if (!workbenchBuildEnabled) return;
     let cancelled = false;
-    fetch('/api/agent/runtime')
-      .then((response) => {
-        // Not cached: a 401 before the access code is accepted is not an answer.
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((body) => {
-        workbenchRuntimeCache = body?.enabled === true;
-        if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
-      })
-      .catch(() => {
-        // A failed probe keeps the entry hidden and allows a later visit to retry.
-      });
+    const probe = () => {
+      fetch('/api/agent/runtime')
+        .then((response) => {
+          // Not cached: a 401 before the access code is accepted is not an answer.
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then((body) => {
+          workbenchRuntimeCache = body?.enabled === true;
+          if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
+        })
+        .catch(() => {
+          // A failed probe keeps the entry hidden and allows a later visit to retry.
+        });
+    };
+    if (workbenchRuntimeCache === null) probe();
+    const onAccessVerified = () => {
+      workbenchRuntimeCache = null;
+      probe();
+    };
+    window.addEventListener('openmaic:access-code-verified', onAccessVerified);
     return () => {
       cancelled = true;
+      window.removeEventListener('openmaic:access-code-verified', onAccessVerified);
     };
   }, [workbenchBuildEnabled]);
   const workbenchEntryEnabled = workbenchBuildEnabled && workbenchRuntimeEnabled;
