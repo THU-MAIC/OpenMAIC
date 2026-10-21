@@ -41,6 +41,12 @@ and omits private project resources.
 
 ## Authoring a project
 
+For a complete, independently authored minimal course, see
+[`examples/pbl/README.md`](../../../examples/pbl/README.md). Running
+`node scripts/build-pbl-example.mjs` produces an importable ZIP with one
+Python function, bound teaching Skills, a requirement document, and private tests.
+It requires no built-in project registration.
+
 `project.json` wraps the existing PBL v3 definition:
 
 ```json

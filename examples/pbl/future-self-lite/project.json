@@ -1,0 +1,115 @@
+{
+  "formatVersion": 1,
+  "id": "future-self-lite",
+  "version": "1.0.0",
+  "definition": {
+    "id": "future-self-lite",
+    "title": "给未来的自己留一句话",
+    "language": "Python",
+    "providerRef": "host",
+    "paths": {
+      "requirements": "docs",
+      "pedagogy": "skills",
+      "skeleton": "skeleton",
+      "tests": "tests",
+      "rubric": "rubric"
+    },
+    "protectedPaths": [],
+    "testing": {
+      "runCmd": "python3",
+      "reportPath": "report",
+      "reportFormat": "exit-code"
+    },
+    "agents": {
+      "commonRules": "用中文引导学习者。依据当前阶段绑定的材料和实际工具结果解释任务，等待平台推进阶段。",
+      "mentor": {
+        "systemPrompt": "帮助学习者理解给未来的自己留言这个任务。",
+        "tools": [],
+        "skillPaths": []
+      },
+      "discussion": {
+        "systemPrompt": "围绕当前留言需求回答学习者的问题。",
+        "tools": [],
+        "skillPaths": []
+      },
+      "planner": {
+        "systemPrompt": "帮助学习者描述实现留言函数的步骤。",
+        "tools": [],
+        "skillPaths": []
+      },
+      "coder": {
+        "systemPrompt": "帮助学习者实现并解释 src/main.py 中的 future_message 函数。",
+        "tools": [],
+        "skillPaths": []
+      }
+    },
+    "intro": {
+      "kind": "mentor_say",
+      "agent": "mentor",
+      "skill": "future-self-lite",
+      "say": "我们要写一个返回给未来自己的留言的 Python 函数。先读需求，再实现并检查结果。",
+      "studentActions": ["chat", "next"]
+    },
+    "visibility": {
+      "roleViews": {
+        "discussion": [],
+        "planner": [],
+        "coder": ["docs/brief.md"]
+      },
+      "answerKeys": [],
+      "testSupport": []
+    },
+    "decisions": [],
+    "milestones": [
+      {
+        "id": "message",
+        "type": "task",
+        "title": "完成留言函数",
+        "contract": "future_message(name) 返回字符串：给未来的{name}：继续保持好奇心。保留传入的名字，不打印结果。",
+        "tests": ["tests/check.py"],
+        "stages": [
+          {
+            "kind": "produce",
+            "agent": "coder",
+            "skill": "future-self-lite",
+            "reads": ["contract", "plan"],
+            "writes": "code",
+            "reviewRequired": true,
+            "compileBeforeReview": true,
+            "studentActions": ["chat", "edit", "next"]
+          },
+          {
+            "kind": "check",
+            "checker": "tests",
+            "evaluation": {
+              "capabilityIds": ["exit-code"],
+              "evaluatorRefs": ["tests/check.py"]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "runtime": {
+    "profile": "python3",
+    "sourceRoots": ["src"],
+    "buildSources": ["src/main.py"],
+    "evaluations": { "message": "tests/message.json" }
+  },
+  "teaching": [
+    {
+      "stage": "intro:-1",
+      "role": "mentor",
+      "entrypoint": "skills/SKILL.md",
+      "sections": [{ "name": "A-intro.md", "path": "skills/A-intro.md" }],
+      "documents": ["docs/brief.md"]
+    },
+    {
+      "stage": "message:0",
+      "role": "coder",
+      "entrypoint": "skills/SKILL.md",
+      "sections": [{ "name": "A-implement.md", "path": "skills/A-implement.md" }],
+      "documents": ["docs/brief.md"]
+    }
+  ]
+}

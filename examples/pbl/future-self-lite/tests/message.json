@@ -1,0 +1,9 @@
+{
+  "cases": [
+    {
+      "id": "future-message",
+      "argv": ["python3", "{resources}/tests/check.py"],
+      "stdout": "future-self-lite: 3 checks passed\n"
+    }
+  ]
+}
