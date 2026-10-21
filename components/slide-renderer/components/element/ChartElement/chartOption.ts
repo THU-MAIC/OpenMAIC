@@ -56,6 +56,12 @@ export const getChartOption = ({
     color: textColor ?? '#333333',
   };
 
+  // Legacy containLabel does not include horizontal endpoint overhang.
+  const horizontalEndpointAlignment = {
+    alignMinLabel: 'left' as const,
+    alignMaxLabel: 'right' as const,
+  };
+
   const splitLine = lineColor
     ? {
         lineStyle: {
@@ -144,7 +150,7 @@ export const getChartOption = ({
       xAxis: {
         type: 'value',
         axisLine,
-        axisLabel,
+        axisLabel: { ...axisLabel, ...horizontalEndpointAlignment },
         splitLine,
       },
       series: data.series.map((item, index) => {
@@ -286,7 +292,7 @@ export const getChartOption = ({
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel: categoryAxisLabel,
+        axisLabel: { ...categoryAxisLabel, ...horizontalEndpointAlignment },
       },
       yAxis: {
         type: 'value',
@@ -296,7 +302,13 @@ export const getChartOption = ({
       },
       series: data.series.map((item, index) => {
         const seriesItem: LineSeriesOption = {
-          data: item,
+          // Area points sit on the plot edges; turn endpoint values inward.
+          data: item.map((value, dataIndex) => ({
+            value,
+            label: {
+              align: dataIndex === 0 ? 'left' : dataIndex === item.length - 1 ? 'right' : 'center',
+            },
+          })),
           name: data.legends[index],
           type: 'line',
           areaStyle: {},
@@ -359,7 +371,7 @@ export const getChartOption = ({
       grid,
       xAxis: {
         axisLine,
-        axisLabel,
+        axisLabel: { ...axisLabel, ...horizontalEndpointAlignment },
         splitLine,
       },
       yAxis: {

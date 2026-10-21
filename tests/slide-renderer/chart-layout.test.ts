@@ -132,6 +132,37 @@ describe.each([
         chart.dispose();
       }
     });
+
+    it.each([{ values: [5000, 10000] }, { values: [100000, 100000] }])(
+      'keeps large endpoint values visible on render and resize ($values)',
+      ({ values }) => {
+        const chart = render(
+          getChartOption({
+            type,
+            data: { labels: ['A', 'B'], legends: ['Value'], series: [values] },
+            themeColors,
+          }),
+          { width: 280, height: 300 },
+        );
+        try {
+          for (const size of [{ width: 280, height: 300 }, ...sizes]) {
+            chart.resize(size);
+            chart.renderToSVGString();
+            expectInside(componentRect(chart, 'xAxis'), size.width, size.height);
+            expectInside(componentRect(chart, 'yAxis'), size.width, size.height);
+            for (const element of chart.getZr().storage.getDisplayList()) {
+              if (element.type !== 'tspan' || element.invisible) continue;
+              const rect = element.getBoundingRect().clone();
+              const transform = element.getComputedTransform();
+              if (transform) rect.applyTransform(transform);
+              expectInside(rect, size.width, size.height);
+            }
+          }
+        } finally {
+          chart.dispose();
+        }
+      },
+    );
   });
 
   it('keeps many long legend entries in a single scrollable row', () => {
@@ -154,6 +185,40 @@ describe.each([
       chart.dispose();
     }
   });
+
+  it.each(['bar', 'line'] as const)(
+    'keeps padded %s category labels centered and separate',
+    (type) => {
+      const labels = ['First long label', 'Second long label'];
+      const chart = render(
+        getChartOption({
+          type,
+          data: { labels, legends: ['Value'], series: [[1, 2]] },
+          themeColors,
+        }),
+      );
+      try {
+        const rects = chart
+          .getZr()
+          .storage.getDisplayList()
+          .filter(
+            (element) => element.type === 'tspan' && labels.includes(String(element.style.text)),
+          )
+          .map((element) => {
+            const rect = element.getBoundingRect().clone();
+            const transform = element.getComputedTransform();
+            if (transform) rect.applyTransform(transform);
+            return rect;
+          })
+          .sort((a, b) => a.x - b.x);
+        expect(rects).toHaveLength(2);
+        for (const rect of rects) expectInside(rect, 280, 140);
+        expect(rects[0].x + rects[0].width).toBeLessThan(rects[1].x);
+      } finally {
+        chart.dispose();
+      }
+    },
+  );
 });
 
 it.each(chartTypes)('preserves an imported %s plot area on render and resize', (type) => {

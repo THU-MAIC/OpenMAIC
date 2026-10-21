@@ -74,6 +74,10 @@ export const getChartOption = ({
 
   const axisLine = textColor ? { lineStyle: { color: textColor } } : undefined;
   const axisLabel = { show: true, color: textColor ?? '#333333' };
+  // Preserve explicit imported layouts; ordinary endpoints face into the plot.
+  const horizontalEndpointAlignment = importedStyle?.plotArea
+    ? {}
+    : { alignMinLabel: 'left' as const, alignMaxLabel: 'right' as const };
   const splitLine = lineColor ? { lineStyle: { color: lineColor } } : {};
 
   const categoryAxisLabel = {
@@ -183,7 +187,10 @@ export const getChartOption = ({
       textStyle,
       legend: cartesianLegend,
       grid,
-      xAxis: type === 'bar' ? category : value,
+      xAxis:
+        type === 'bar'
+          ? category
+          : { ...value, axisLabel: { ...value.axisLabel, ...horizontalEndpointAlignment } },
       yAxis: type === 'bar' ? value : category,
       series: plotSeries.map((item, index) => {
         const style = importedSeries[index];
@@ -245,7 +252,12 @@ export const getChartOption = ({
       textStyle,
       legend: cartesianLegend,
       grid,
-      xAxis: { type: 'category', data: data.labels, axisLine, axisLabel: categoryAxisLabel },
+      xAxis: {
+        type: 'category',
+        data: data.labels,
+        axisLine,
+        axisLabel: categoryAxisLabel,
+      },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: plotSeries.map((item, index) => {
         const seriesItem: LineSeriesOption = {
@@ -313,12 +325,21 @@ export const getChartOption = ({
         boundaryGap: false,
         data: data.labels,
         axisLine,
-        axisLabel: categoryAxisLabel,
+        axisLabel: { ...categoryAxisLabel, ...horizontalEndpointAlignment },
       },
       yAxis: { type: 'value', axisLine, axisLabel, splitLine },
       series: plotSeries.map((item, index) => {
         const seriesItem: LineSeriesOption = {
-          data: item,
+          // Area points sit on the plot edges; turn endpoint values inward.
+          data: plot
+            ? item
+            : item.map((value, dataIndex) => ({
+                value,
+                label: {
+                  align:
+                    dataIndex === 0 ? 'left' : dataIndex === item.length - 1 ? 'right' : 'center',
+                },
+              })),
           name: data.legends[index],
           type: 'line',
           areaStyle: {},
@@ -361,7 +382,7 @@ export const getChartOption = ({
       color: themeColors,
       textStyle,
       grid,
-      xAxis: { axisLine, axisLabel, splitLine },
+      xAxis: { axisLine, axisLabel: { ...axisLabel, ...horizontalEndpointAlignment }, splitLine },
       yAxis: { axisLine, axisLabel, splitLine },
       series: [{ symbolSize: 12, data: formatedData, type: 'scatter' }],
     };
