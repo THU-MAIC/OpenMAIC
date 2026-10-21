@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { jsonSchema } from 'ai';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS } from '@/lib/server/classroom-content-review';
 
 const mocks = vi.hoisted(() => ({
   resolveModel: vi.fn(),
@@ -1167,8 +1168,8 @@ describe('classroom scene generation retries', () => {
   });
 
   for (const [delay, shouldComplete] of [
-    [100000, true],
-    [150000, false],
+    [CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS - 1, true],
+    [CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS + 1, false],
   ] as const) {
     it(`uses a separate bounded full-material review and rejects a late result (${delay}ms)`, async () => {
       vi.useFakeTimers();
@@ -1386,7 +1387,7 @@ describe('classroom scene generation retries', () => {
     }
 
     for (const required of [true, false]) {
-      it(`keeps all other content/actions at 75 seconds and review at 120 seconds (codeBound=${required})`, async () => {
+      it(`keeps all other content/actions at 75 seconds and review at its exported budget (codeBound=${required})`, async () => {
         mocks.generateSceneOutlinesFromRequirements.mockResolvedValue({
           success: true,
           data: {
@@ -1418,7 +1419,16 @@ describe('classroom scene generation retries', () => {
         else await generateWithProgress();
         expect(timeout.mock.calls.map(([milliseconds]) => milliseconds)).toEqual(
           required
-            ? [720_000, 75_000, 75_000, 180_000, 75_000, 75_000, 75_000, 120_000]
+            ? [
+                720_000,
+                75_000,
+                75_000,
+                180_000,
+                75_000,
+                75_000,
+                75_000,
+                CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS,
+              ]
             : [720_000, 75_000, 75_000, 75_000, 75_000, 75_000, 75_000],
         );
         expect(mocks.callLLM.mock.calls.map(([params]) => params.messages[0].content)).toEqual([

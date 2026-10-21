@@ -266,10 +266,10 @@ export async function generateClassroom(
   const { requirement, pdfContent } = input;
   // These bounds cancel the real transport; a late result cannot start paid
   // follow-up stages or reach persistence after this job has expired.
-  const generationDeadline = Date.now() + 720_000;
+  const generationDeadline = Date.now() + 1800000;
   const generationSignal = options.signal
-    ? AbortSignal.any([options.signal, AbortSignal.timeout(720_000)])
-    : AbortSignal.timeout(720_000);
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(1800000)])
+    : AbortSignal.timeout(1800000);
   generationSignal.throwIfAborted();
   const reportProgress = async (progress: ClassroomGenerationProgress) => {
     generationSignal.throwIfAborted();

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { UserRequirements } from '@openmaic/generation';
 import {
   CLASSROOM_CONTENT_REVIEW_VERSION,
+  CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS,
   createClassroomContentCallbacks,
   matchesClassroomContentProof,
   reviewClassroomContent,
@@ -432,7 +433,7 @@ describe('native classroom content contract', () => {
           repair,
         },
       }),
-    ).rejects.toMatchObject({ code: 'content_unresolved' });
+    ).rejects.toMatchObject({ code: 'requires_regeneration' });
     expect(calls).toBe(2);
     expect(repair).toHaveBeenCalledTimes(1);
   });
@@ -810,7 +811,7 @@ describe('native classroom content contract', () => {
         record,
       });
       const rejected = expect(pending).rejects.toMatchObject({ code: 'review_timeout' });
-      await vi.advanceTimersByTimeAsync(129999);
+      await vi.advanceTimersByTimeAsync(CLASSROOM_CONTENT_REQUEST_TIMEOUT_MS + 9999);
       expect(record).not.toHaveBeenCalled();
       expect(repair).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
@@ -971,7 +972,7 @@ describe('native classroom content contract', () => {
             ]),
         },
       }),
-    ).rejects.toMatchObject({ code: 'content_rejected' });
+    ).rejects.toMatchObject({ code: 'requires_regeneration' });
     expect(record.mock.calls[0][0].findings).toHaveLength(3);
     expect(record.mock.calls[0][0].findings[2].reason).toBe('无需修改。');
   });
