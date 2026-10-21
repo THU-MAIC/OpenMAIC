@@ -1,3 +1,4 @@
+import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 /**
  * The model settings a workspace sees and edits (RFC #1701, tracked in #1725,
  * P2). This is the service behind `/api/model-config`: it reads the slot tree
@@ -88,6 +89,9 @@ export interface ProviderView {
   source: 'deployment' | 'workspace';
   baseUrl?: string;
   models?: string[];
+  /** Non-secret adapter options, also available when previewing an inactive provider. */
+  options?: Record<string, string | number | boolean>;
+  voices?: ConfiguredTTSVoice[];
   /** What it offers, with the models to pick from per capability. */
   capabilities: CapabilityModels;
   /** Workspace providers only. */
@@ -487,6 +491,8 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       ...presetLabel(provider.preset),
       source: 'deployment' as const,
       ...(provider.models ? { models: [...provider.models] } : {}),
+      ...(provider.options ? { options: { ...provider.options } } : {}),
+      ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
         strictModels: usesServerCredentials(provider),
         deployment: deployment?.config,
@@ -500,6 +506,8 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       source: 'workspace' as const,
       ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
       ...(provider.models ? { models: [...provider.models] } : {}),
+      ...(provider.options ? { options: { ...provider.options } } : {}),
+      ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
       capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
         // An official regional endpoint is the service's own, not a custom one.
         chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),

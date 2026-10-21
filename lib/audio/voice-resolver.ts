@@ -1,7 +1,8 @@
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
+  QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -37,7 +38,10 @@ export interface AgentVoiceOverride {
 /** Persisted per-agent voice picks, keyed by agent id (settings store). */
 export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
 
-type ProviderConfigMap = Record<string, (TTSEnablementConfig & { modelId?: string }) | undefined>;
+type ProviderConfigMap = Record<
+  string,
+  (TTSEnablementConfig & { modelId?: string; voices?: ConfiguredTTSVoice[] }) | undefined
+>;
 
 /** Prefer a persisted narrator binding, retaining the global fallback when it is unusable. */
 export function resolveNarratorVoiceBinding(
@@ -54,13 +58,22 @@ export function resolveNarratorVoiceBinding(
       bound.providerId,
       bound.voiceId,
       providerConfigs[bound.providerId]?.modelId || bound.modelId,
+      providerConfigs[bound.providerId]?.voices,
     )
   ) {
     // Qwen clone IDs are account-scoped but self-contained: local IndexedDB is
     // not an authority. Catalog voices remain validated against the catalog.
     return {
       providerId: bound.providerId,
-      modelId: resolveTTSModelForVoice(bound.providerId, bound.voiceId, bound.modelId),
+      modelId: resolveTTSModelForVoice(
+        bound.providerId,
+        bound.voiceId,
+        bound.providerId === 'qwen-tts' &&
+          providerConfigs[bound.providerId]?.voices?.some((voice) => voice.id === bound.voiceId)
+          ? (providerConfigs[bound.providerId]?.modelId ?? bound.modelId)
+          : bound.modelId,
+        providerConfigs[bound.providerId]?.voices,
+      ),
       voiceId: bound.voiceId,
     };
   }
@@ -70,6 +83,7 @@ export function resolveNarratorVoiceBinding(
       globalVoice.providerId,
       globalVoice.voiceId,
       globalVoice.modelId,
+      providerConfigs[globalVoice.providerId]?.voices,
     ),
   };
 }
@@ -118,11 +132,20 @@ export function resolveAgentVoice(
     const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
     if (!fromEnabled) continue;
     if (choice.providerId === 'qwen-tts') {
-      const catalogVoice = isQwenCatalogVoice(choice.voiceId);
+      const catalogVoice = isQwenCatalogVoice(choice.voiceId, fromEnabled.configuredVoices);
       if (catalogVoice || choice.voiceId.trim()) {
         return {
           providerId: choice.providerId,
-          modelId: resolveTTSModelForVoice(choice.providerId, choice.voiceId, choice.modelId),
+          modelId: resolveTTSModelForVoice(
+            choice.providerId,
+            choice.voiceId,
+            (fromEnabled.configuredVoiceList
+              ? fromEnabled.modelGroups.find((group) =>
+                  group.voices.some((voice) => voice.id === choice.voiceId),
+                )?.modelId
+              : undefined) ?? choice.modelId,
+            fromEnabled.configuredVoices,
+          ),
           voiceId: choice.voiceId,
         };
       }
@@ -143,12 +166,27 @@ export function resolveAgentVoice(
       : true;
     // Without compatibility metadata, legacy providers are assumed to accept
     // their known voices on the configured default model, preserving prior behavior.
+    const configuredLegacyVoice =
+      fromEnabled.configuredVoiceList &&
+      !!declaredVoice &&
+      voiceServesModel(choice.providerId, choice.voiceId, fromEnabled.modelGroups[0]?.modelId);
+    // Explicit provider-local membership is authoritative even when its id
+    // collides with a built-in voice restricted to a different vendor model.
+    const configuredCatalogueVoice =
+      fromEnabled.configuredVoiceList &&
+      fromEnabled.modelGroups.some((group) =>
+        group.voices.some((voice) => voice.id === choice.voiceId),
+      );
     const modelCompatible =
-      matchingModelGroup?.voices.some((voice) => voice.id === choice.voiceId) ??
-      staleModelCanUseDefault;
+      configuredCatalogueVoice ||
+      configuredLegacyVoice ||
+      (matchingModelGroup?.voices.some((voice) => voice.id === choice.voiceId) ??
+        staleModelCanUseDefault);
     // The provider's list holds only the voices its model in use can speak.
     const offered =
-      !declaredVoice || fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
+      configuredLegacyVoice ||
+      !declaredVoice ||
+      fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
     if (allVoiceIds.has(choice.voiceId) && modelCompatible && offered) {
       return {
         providerId: choice.providerId,
@@ -195,7 +233,7 @@ export function resolveDeterministicFallbackVoice(
   const first = enabledProviders[0];
   const fallbackVoices =
     first.providerId === 'qwen-tts'
-      ? first.voices.filter((voice) => isQwenCatalogVoice(voice.id))
+      ? first.voices.filter((voice) => isQwenCatalogVoice(voice.id, first.configuredVoices))
       : first.voices;
   if (fallbackVoices.length === 0) return null;
   const sameGender = agentGender
@@ -270,15 +308,23 @@ export function narratorVoiceAfterMissingClone(input: {
 export function resolveNarratorVoiceForGeneration(
   providerId: TTSProviderId,
   voiceId: string | undefined,
-  providerConfig: (TTSEnablementConfig & { modelId?: string }) | undefined,
+  providerConfig:
+    | (TTSEnablementConfig & { modelId?: string; voices?: ConfiguredTTSVoice[] })
+    | undefined,
 ): ResolvedVoice | undefined {
   const trimmed = voiceId?.trim();
   if (!providerId || !trimmed) return undefined;
   if (!isTTSProviderEnabled(providerId, providerConfig)) return undefined;
-  if (!voiceServesModel(providerId, trimmed, providerConfig?.modelId)) return undefined;
+  if (!voiceServesModel(providerId, trimmed, providerConfig?.modelId, providerConfig?.voices))
+    return undefined;
   const modelId =
-    providerId === 'qwen-tts' && isQwenCloneVoice(trimmed)
-      ? resolveTTSModelForVoice(providerId, trimmed, providerConfig?.modelId)
+    providerId === 'qwen-tts' && isQwenCloneVoice(trimmed, providerConfig?.voices)
+      ? resolveTTSModelForVoice(
+          providerId,
+          trimmed,
+          providerConfig?.modelId,
+          providerConfig?.voices,
+        )
       : undefined;
   return { providerId, voiceId: trimmed, ...(modelId ? { modelId } : {}) };
 }
@@ -320,6 +366,10 @@ export interface ProviderWithVoices {
     /** Catalogue gender, when the provider lists one. `neutral` is explicit. */
     gender?: 'male' | 'female' | 'neutral';
   }>;
+  /** A display-only replacement; existing compatible built-in bindings remain valid. */
+  configuredVoiceList?: true;
+  /** Ordinary catalogue entries, excluding merged user clones. */
+  configuredVoices?: ConfiguredTTSVoice[];
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
@@ -348,6 +398,7 @@ export function getEnabledProvidersWithVoices(
       modelId?: string;
       providerOptions?: Record<string, unknown>;
       customName?: string;
+      voices?: ConfiguredTTSVoice[];
     }
   >,
   voiceProfiles: UserVoiceProfile[] = [],
@@ -362,7 +413,6 @@ export function getEnabledProvidersWithVoices(
 
     const providerConfig = ttsProvidersConfig[providerId];
     if (!isTTSProviderEnabled(providerId, providerConfig)) continue;
-
     const providerProfiles = voiceProfiles.filter(
       (profile) =>
         (profile.providerId || VOXCPM_TTS_PROVIDER_ID) === providerId && profile.kind === 'clone',
@@ -387,6 +437,43 @@ export function getEnabledProvidersWithVoices(
             name: profile.name,
             language: 'auto',
           }));
+
+    // Only an explicit provider-local list replaces the built-in catalogue.
+    if (providerConfig?.voices?.length) {
+      const voices = providerConfig.voices.map((voice) => ({
+        ...voice,
+        language: voice.language ?? 'auto',
+      }));
+      const modelId = providerConfig.modelId ?? config.defaultModelId ?? '';
+      const extraVoices = userVoices.filter(
+        (voice) => !voices.some((entry) => entry.id === voice.id),
+      );
+      const allVoices = [...voices, ...extraVoices];
+      result.push({
+        providerId,
+        providerName: config.name,
+        configuredVoiceList: true,
+        configuredVoices: providerConfig.voices,
+        voices: allVoices,
+        modelGroups: [
+          {
+            modelId,
+            modelName: modelId || config.name,
+            voices: providerId === VOXCPM_TTS_PROVIDER_ID ? allVoices : voices,
+          },
+          ...(providerId === 'qwen-tts' && extraVoices.length
+            ? [
+                {
+                  modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+                  modelName: 'Qwen3 TTS Voice Clone',
+                  voices: extraVoices,
+                },
+              ]
+            : []),
+        ],
+      });
+      continue;
+    }
 
     {
       const allVoices = [
