@@ -121,6 +121,7 @@ describe('on-demand math', () => {
   it.each([
     `<div id="a"></div><script>katex.render('x^2', document.getElementById('a'));</script>`,
     `<div id="a"></div><script type="text/javascript">a.innerHTML = katex.renderToString('x^2');</script>`,
+    `<p>@@x@@</p><script>renderMathInElement(document.body, { delimiters: [{ left: '@@', right: '@@', display: false }] });</script>`,
   ])('loads KaTeX synchronously for parse-time calls %s', (input) => {
     const html = postProcessInteractiveHtml(input);
     expect(html).toContain('<script data-openmaic-katex="2" src="/vendor/interactive/katex@');

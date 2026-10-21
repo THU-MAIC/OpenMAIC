@@ -74,8 +74,8 @@ export function postProcessInteractiveHtml(html: string): string {
         (scriptHasTex(node.value) || KATEX_CALL.test(node.value))
       ) {
         hasMath = true;
-        // A classic inline script runs during parsing and may use the return value
-        // of katex.renderToString, which a deferred library cannot supply in time.
+        // A classic inline script runs during parsing: renderToString's return value and
+        // renderMathInElement's authored options cannot wait for a deferred library.
         if (isClassicScript(node.parentNode) && KATEX_SYNC_CALL.test(node.value))
           synchronous = true;
       }
@@ -103,7 +103,7 @@ export function postProcessInteractiveHtml(html: string): string {
 }
 
 /** A page script that calls KaTeX needs the #1966 guards and the library. */
-const KATEX_SYNC_CALL = /\bkatex\s*\.\s*render(?:ToString)?\s*\(/;
+const KATEX_SYNC_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
 
 const CLASSIC_SCRIPT_TYPES = new Set([
   '',

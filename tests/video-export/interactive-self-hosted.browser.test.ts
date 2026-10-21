@@ -150,6 +150,25 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
     }
   });
 
+  it('applies authored auto-render options from a parse-time renderMathInElement call', async () => {
+    const page = await browser.newPage();
+    const html = postProcessInteractiveHtml(
+      `<!doctype html><html><head></head><body><p id="formula">@@x^2@@</p><script>renderMathInElement(document.body, { delimiters: [{ left: '@@', right: '@@', display: false }] });</script></body></html>`,
+    );
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
+      const asset = await fetchAsset(url);
+      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
+    });
+    try {
+      await page.goto(ORIGIN);
+      expect(await page.locator('#formula .katex').count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('typesets TeX that a script writes from a String.raw template', async () => {
     const page = await browser.newPage();
     const html = postProcessInteractiveHtml(
