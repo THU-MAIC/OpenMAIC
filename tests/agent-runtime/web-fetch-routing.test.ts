@@ -8,6 +8,7 @@ import {
 } from '@/lib/server/agent-runtime/fetch-url';
 import { kimi as provider } from '@/lib/web-fetch/providers/kimi';
 import { firecrawl } from '@/lib/web-fetch/providers/firecrawl';
+import { keenable } from '@/lib/web-fetch/providers/keenable';
 import {
   setDeploymentConfigForTests,
   setWorkspaceLayerLoaderForTests,
@@ -303,5 +304,78 @@ describe('Firecrawl behind the same trust boundary', () => {
       finalUrl: 'http://10.0.0.1/internal',
     });
     await expect(fetchAndExtractUrl(url, firecrawlOptions)).rejects.toBeInstanceOf(FetchUrlError);
+  });
+});
+
+describe('Keenable behind the same trust boundary', () => {
+  const keenableOptions = { ...options, providerId: 'keenable' };
+  beforeEach(() => {
+    vi.spyOn(keenable, 'extract').mockResolvedValue({ title: 'Article', markdown: text });
+  });
+  it('dispatches a safe URL to Keenable after the local checks, without a key', async () => {
+    expect(await fetchAndExtractUrl(url, keenableOptions)).toMatchObject({
+      sourceUrl: url,
+      title: 'Article',
+      markdown: text,
+    });
+    expect(vi.mocked(dns.lookup).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(keenable.extract).mock.invocationCallOrder[0],
+    );
+  });
+  it.each(['http://127.0.0.1', 'http://metadata.google.internal', 'file:///tmp/example'])(
+    'never forwards an unsafe URL to Keenable: %s',
+    async (input) => {
+      await expect(fetchAndExtractUrl(input, keenableOptions)).rejects.toBeInstanceOf(
+        FetchUrlError,
+      );
+      expect(keenable.extract).not.toHaveBeenCalled();
+    },
+  );
+  it('never forwards a session-refused URL to Keenable', async () => {
+    options.isUrlAllowed.mockResolvedValue(false);
+    await expect(fetchAndExtractUrl(url, keenableOptions)).rejects.toMatchObject({
+      reason: 'blocked',
+    });
+    expect(keenable.extract).not.toHaveBeenCalled();
+  });
+  it('checks a redirect target against the session gate before accepting it', async () => {
+    vi.mocked(keenable.extract).mockResolvedValue({
+      markdown: text,
+      finalUrl: 'https://unapproved.example/landed',
+    });
+    options.isUrlAllowed.mockImplementation(async (input) => !input.includes('unapproved'));
+    await expect(fetchAndExtractUrl(url, keenableOptions)).rejects.toMatchObject({
+      reason: 'blocked',
+    });
+  });
+  it('resolves a keyless deployment provider through the shared media path', async () => {
+    setDeploymentConfigForTests({
+      legacy: false,
+      notices: [],
+      layer: {
+        source: 'deployment',
+        config: { providers: { kn: { preset: 'keenable' } }, slots: { webFetch: 'kn' } },
+      },
+    });
+    const fetch = buildFetchUrlTool({
+      sessionId: 'session-1',
+      isUrlAllowed: async () => true,
+      saveWebMaterial: vi.fn().mockResolvedValue({ id: 'material' }),
+    });
+    await fetch.execute('call-1', { url } as never, undefined);
+    expect(keenable.extract).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({
+        providerId: 'keenable',
+        credentials: expect.objectContaining({ apiKey: undefined }),
+      }),
+    );
+  });
+  it('rejects a private final URL reported by Keenable', async () => {
+    vi.mocked(keenable.extract).mockResolvedValue({
+      markdown: text,
+      finalUrl: 'http://10.0.0.1/internal',
+    });
+    await expect(fetchAndExtractUrl(url, keenableOptions)).rejects.toBeInstanceOf(FetchUrlError);
   });
 });

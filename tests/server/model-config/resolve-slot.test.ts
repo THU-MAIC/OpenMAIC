@@ -334,6 +334,23 @@ describe('resolveSlot', () => {
     }
   });
 
+  it('serves web search and web fetch from one keyless Keenable provider', () => {
+    const config = parseModelConfig(
+      'providers:\n  kn:\n    preset: keenable\nslots:\n  webSearch: kn\n  webFetch: kn\n',
+      { env: {} },
+    );
+    const layers = [{ source: 'deployment' as const, config }];
+    for (const slot of ['webSearch', 'webFetch'] as const) {
+      const resolved = resolveSlot(slot, layers);
+      expect(resolved).toMatchObject({
+        status: 'assigned',
+        providerId: 'kn',
+        registryId: 'keenable',
+      });
+      expect(resolved).not.toHaveProperty('apiKey');
+    }
+  });
+
   it("resolves a provider-only reference to a token plan's own default model", () => {
     const plan = PROVIDER_PRESETS.find(
       (preset) => preset.kind === 'token-plan' && preset.capabilities.video?.defaultModel,

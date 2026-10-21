@@ -690,7 +690,7 @@ AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPE
 
 ### 聯網搜尋
 
-設定 Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+設定 Tavily、Exa、Firecrawl、Keenable、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
@@ -713,9 +713,14 @@ SEARXNG_BASE_URL=
 
 WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 選填覆寫值
+
+KEENABLE_API_KEY=          # 選填；僅當上面都未設定時伺服器才選用它
+KEENABLE_BASE_URL=         # 選填覆寫值，僅與 KEENABLE_API_KEY 一起生效
 ```
 
 Brave 和 SearXNG 不需要 API key。網路搜尋沒有逐次生成的開關：只要工作區的 `webSearch` 插槽能解析就會執行；關閉它（在 `openmaic.yml` 中寫 `webSearch: null`，或在 **設定 → 課程模型設定** 中關閉搜尋開關）會影響該工作區之後的生成。Grok 的聯網搜尋透過 Grok LLM 的搜尋工具提供，不是獨立的聯網搜尋 provider。
+
+Keenable 同樣不需要 API key：可在模型服務或課程模型設定中選擇它，或在 `openmaic.yml` 中宣告 `preset: keenable` 的供應商。無金鑰請求共用伺服器位址的公共限額（每小時 1,000 次）；金鑰僅用於提高限額。設定 `KEENABLE_API_KEY` 還會讓 Keenable 成為伺服器端設定的供應商，但只有在上述變數設定的供應商之後才會被選用。
 
 ### server-providers.yml
 
@@ -841,6 +846,7 @@ slots:
 | `kimi` | 既有 Kimi 供應商的金鑰和基底網址 | 託管 Markdown 擷取服務，也接收 PDF 網址 |
 | `deepseek` | 既有 DeepSeek 對話金鑰與 API 基底位址 | 託管 Markdown 擷取 |
 | `firecrawl` | Firecrawl API 金鑰（`preset: firecrawl`） | 託管 Markdown 擷取服務，回傳頁面主要內容，也接收 PDF 網址 |
+| `keenable` | 不需金鑰；選填的 Keenable API 金鑰（`preset: keenable`）僅提高速率限制 | 託管 Markdown 擷取服務 |
 
 ```yaml
 providers:
@@ -861,5 +867,7 @@ DeepSeek 也透過 `deepseek` 預設提供託管 Markdown 擷取，共用對話�
 與 `kimi` 不同，`firecrawl` 使用獨立的金鑰：在 `openmaic.yml` 中宣告 `preset: firecrawl` 的供應商並設定 `apiKey`（例如 `${FIRECRAWL_API_KEY}`），或在 **設定 → 模型服務 → 網頁擷取** 中填寫金鑰。它以 Bearer 驗證傳送 `POST /v2/scrape`，以 Markdown 回傳頁面主要內容。預設基底網址為 `https://api.firecrawl.dev`；自行託管 Firecrawl 的基底網址須由管理員在 `openmaic.yml` 中宣告。
 
 同一個 `firecrawl` 供應商也提供網路搜尋（`POST /v2/search`）：一把金鑰和一個基底網址同時用於兩者，因此可以把同一個供應商同時指定給 `slots.webSearch` 和 `slots.webFetch`。舊版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 變數設定的就是這個供應商；在把 `webFetch` 指定給它之前，網頁擷取仍使用 `builtin`。
+
+`keenable` 不需金鑰：在 `openmaic.yml` 中宣告 `preset: keenable` 的供應商，或在 **課程模型設定 → 網頁擷取** 中選擇它。選填的金鑰（`apiKey`，或在 **設定 → 模型服務 → 網頁擷取** 中填寫）僅提高速率限制。未設定金鑰時傳送 `GET /v1/fetch/public?url=...`；設定金鑰後傳送 `GET /v1/fetch?url=...`，金鑰放在 `X-API-Key` 中。請求帶有 `X-Keenable-Title: OpenMAIC` 標頭。同一個供應商也提供網路搜尋（`POST /v1/search/public`，設定金鑰時為 `/v1/search`），因此可以把同一個供應商同時指定給 `slots.webSearch` 和 `slots.webFetch`；在把 `webFetch` 指定給它之前，網頁擷取仍使用 `builtin`。
 
 網址轉送至託管服務之前，必須通過工作階段網址授權、嚴格網址正規化及全部本機 DNS 位址檢查。接收內容前，也會對服務回傳的最終網址執行相同檢查。託管服務控制其自身的 DNS 和中間重新導向，本機檢查無法固定其網路連線。回傳的文字仍是不可信資料，經過驗證頁面偵測、位元組限制和截斷標記處理，並沿用網頁素材持久化及 `{trusted, untrusted}` 結果結構。

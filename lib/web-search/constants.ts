@@ -3,6 +3,7 @@
  */
 
 import { FIRECRAWL_DEFAULT_BASE_URL, FIRECRAWL_OFFICIAL_BASE_URLS } from './firecrawl-endpoint';
+import { KEENABLE_DEFAULT_BASE_URL, KEENABLE_OFFICIAL_BASE_URLS } from './keenable-endpoint';
 import type { BaiduSubSources, WebSearchProviderId, WebSearchProviderConfig } from './types';
 
 /** The provider a search that names none means when the server configures none. */
@@ -129,6 +130,18 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.deepseek.com/v1',
     endpointPath: '/tools/search',
     icon: '/logos/deepseek.svg',
+  },
+  keenable: {
+    id: 'keenable',
+    name: 'Keenable',
+    // Keyless by default; a key only lifts rate limits. Shares the `keenable`
+    // provider (one optional key and base URL) with web fetch.
+    officialBaseUrls: KEENABLE_OFFICIAL_BASE_URLS,
+    requiresApiKey: false,
+    keylessNoticeKey: 'settings.keenableApiKeyOptional',
+    defaultBaseUrl: KEENABLE_DEFAULT_BASE_URL,
+    endpointPath: '/v1/search/public',
+    icon: '/logos/keenable.svg',
   },
 };
 

@@ -21,6 +21,8 @@ export interface WebFetchMetadata {
   nameKey?: string;
   icon?: string;
   requiresApiKey: boolean;
+  /** Works without a key but takes one (for higher limits), so settings still offer the field. */
+  apiKeyOptional?: boolean;
   defaultBaseUrl?: string;
   /** Share an existing preset's credentials instead of creating a separate service. */
   credentialPresets?: readonly string[];
@@ -45,5 +47,6 @@ export interface WebFetchProviderInfo {
   nameKey?: string;
   icon?: string;
   requiresApiKey: boolean;
+  apiKeyOptional?: boolean;
   credentialPresets?: readonly string[];
 }

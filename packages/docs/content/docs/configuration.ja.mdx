@@ -690,7 +690,7 @@ AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/J
 
 ### Web 検索
 
-Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+Tavily、Exa、Firecrawl、Keenable、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
 
 ```bash
 TAVILY_API_KEY=
@@ -713,9 +713,14 @@ SEARXNG_BASE_URL=
 
 WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 任意の上書き
+
+KEENABLE_API_KEY=          # 任意。上記がどれも未設定のときだけサーバーが選ぶ
+KEENABLE_BASE_URL=         # 任意の上書き。KEENABLE_API_KEY と併用時のみ有効
 ```
 
 Brave と SearXNG は API key 不要です。Web 検索には生成ごとのスイッチはなく、ワークスペースの `webSearch` スロットが解決される限り実行されます。無効にする（`openmaic.yml` で `webSearch: null`、または **設定 → コースモデル設定** の検索スイッチで無効化）と、そのワークスペースの以降の生成に影響します。Grok の Web 検索は Grok LLM の検索ツール経由で提供され、独立した Web 検索 provider ではありません。
+
+Keenable も API key なしで使えます。モデルサービスやコースモデル設定で選ぶか、`openmaic.yml` で `preset: keenable` のプロバイダーを宣言します。キーなしのリクエストはサーバーのアドレスの公開枠（1 時間あたり 1,000 回）を共有し、キーは上限を引き上げるだけです。`KEENABLE_API_KEY` を設定すると Keenable はサーバー設定のプロバイダーにもなりますが、選ばれるのは上記の変数で設定したプロバイダーの後です。
 
 ### server-providers.yml
 
@@ -841,6 +846,7 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 | `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
 | `deepseek` | 既存の DeepSeek チャットキーと API ベース | ホスト型 Markdown 抽出 |
 | `firecrawl` | Firecrawl の API キー（`preset: firecrawl`） | ホスト型の Markdown 抽出（ページの本文）。PDF の URL にも対応 |
+| `keenable` | 不要。任意の Keenable API キー（`preset: keenable`）はレート制限を引き上げるだけ | ホスト型の Markdown 抽出 |
 
 ```yaml
 providers:
@@ -861,5 +867,7 @@ DeepSeek は `deepseek` プリセットでホスト型 Markdown 抽出も提供�
 `kimi` と異なり、`firecrawl` は専用のキーを使います。`openmaic.yml` で `preset: firecrawl` のプロバイダーと `apiKey`（例: `${FIRECRAWL_API_KEY}`）を宣言するか、**設定 → モデルサービス → Webページ取得** でキーを入力します。Bearer 認証で `POST /v2/scrape` を送り、ページの本文を Markdown で取得します。既定のベース URL は `https://api.firecrawl.dev` です。セルフホストの Firecrawl のベース URL は、管理者が `openmaic.yml` で宣言する必要があります。
 
 同じ `firecrawl` プロバイダーは Web 検索（`POST /v2/search`）にも使えます。1 つのキーとベース URL で両方をまかなうため、1 つのプロバイダーを `slots.webSearch` と `slots.webFetch` の両方に割り当てられます。従来の `FIRECRAWL_API_KEY` と `FIRECRAWL_BASE_URL` 変数はこのプロバイダーを設定します。`webFetch` をこのプロバイダーに割り当てるまで、Webページ取得は `builtin` のままです。
+
+`keenable` はキー不要です。`openmaic.yml` で `preset: keenable` のプロバイダーを宣言するか、**コースモデル設定 → Webページ取得** で選びます。任意のキー（`apiKey`、または **設定 → モデルサービス → Webページ取得**）はレート制限を引き上げるだけです。キーがなければ `GET /v1/fetch/public?url=...` を、キーがあれば `X-API-Key` にキーを付けて `GET /v1/fetch?url=...` を送ります。リクエストには `X-Keenable-Title: OpenMAIC` ヘッダーが付きます。同じプロバイダーは Web 検索（`POST /v1/search/public`、キーがあれば `/v1/search`）にも使えるため、1 つのプロバイダーを `slots.webSearch` と `slots.webFetch` の両方に割り当てられます。`webFetch` をこのプロバイダーに割り当てるまで、Webページ取得は `builtin` のままです。
 
 ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。

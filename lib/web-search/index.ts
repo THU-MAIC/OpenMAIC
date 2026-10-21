@@ -6,6 +6,7 @@ import { searchWithDeepSeek } from './deepseek';
 import { searchWithDoubao } from './doubao';
 import { searchWithExa } from './exa';
 import { searchWithFirecrawl } from './firecrawl';
+import { searchWithKeenable } from './keenable';
 import { searchWithKimi } from './kimi';
 import { searchWithMiniMax } from './minimax';
 import { searchWithSearxng } from './searxng';
@@ -75,6 +76,14 @@ export async function searchWeb(params: {
       return searchWithExa({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'firecrawl':
       return searchWithFirecrawl({ query, apiKey, maxResults, baseUrl, ...abortOptions });
+    case 'keenable':
+      return searchWithKeenable({
+        query,
+        apiKey: apiKey || undefined,
+        maxResults,
+        baseUrl,
+        ...abortOptions,
+      });
     case 'kimi':
       return searchWithKimi({ query, apiKey, maxResults, baseUrl, ...abortOptions });
     case 'minimax':

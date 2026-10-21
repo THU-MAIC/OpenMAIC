@@ -35,8 +35,8 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | ASR | `openai-whisper`、`qwen-asr`、`azure-asr`、`browser-native`、`funasr-asr`、`lemonade-asr` |
 | 圖像 | `seedream`、`openai-image`、`qwen-image`、`nano-banana`、`minimax-image`、`grok-image`、`comfyui-image`、`lemonade-image`、`openrouter-image` |
 | 影片 | `seedance`、`kling`、`minimax-video`、`grok-video`、`happyhorse`、`openrouter-video` |
-| 網路搜尋 | `tavily`、`exa`、`firecrawl`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
-| 網頁擷取 | `builtin`、`deepseek`、`firecrawl`、`kimi`、`kimi-coding-plan` |
+| 網路搜尋 | `tavily`、`exa`、`firecrawl`、`keenable`、`bocha`、`brave`、`baidu`、`claude`、`minimax-search`、`doubao-search`、`deepseek`、`kimi`、`kimi-coding-plan`、`searxng` |
+| 網頁擷取 | `builtin`、`deepseek`、`firecrawl`、`keenable`、`kimi`、`kimi-coding-plan` |
 | 文件解析 | `unpdf`、`mineru`、`mineru-cloud`、`alidocmind` |
 
 `azure`、`openai-compatible`、`searxng` 和 `mineru` 需要 `baseUrl`；`alidocmind` 使用 `credentials`（金鑰對）驗證。自架的 TTS、ASR、圖像、搜尋和文件範本、金鑰對範本以及 Bedrock 只能在 `openmaic.yml` 中設定，請見[設定說明](./configuration.mdx)。
@@ -141,6 +141,7 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | Tavily       | `tavily`    | No preset model IDs. |
 | Exa          | `exa`       | No preset model IDs. |
 | Firecrawl    | `firecrawl`       | No preset model IDs. |
+| Keenable     | `keenable`        | No preset model IDs. |
 | Bocha        | `bocha`     | No preset model IDs. |
 | Brave Search | `brave`     | No preset model IDs. |
 | Baidu        | `baidu`     | No preset model IDs. |
@@ -184,7 +185,7 @@ Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 
 
 ## 網頁擷取
 
-`webFetch` 插槽預設使用不需金鑰的 `builtin` 讀取服務（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都重用對應供應商的金鑰和 API 基底網址進行託管擷取。Moonshot 開放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。`firecrawl` 使用獨立的 Firecrawl 金鑰（與 Firecrawl 網路搜尋共用），呼叫 `/v2/scrape`。沒有備援服務。可在模型服務或課程模型設定中選擇讀取服務，也可在 `openmaic.yml` 中指定 `slots.webFetch`。Kimi 的金鑰與對話共用。所有讀取服務都保留本機工作階段授權、公開位址檢查和不可信結果邊界。
+`webFetch` 插槽預設使用不需金鑰的 `builtin` 讀取服務（Readability 和 Turndown；PDF 仍使用 `document`）。`kimi` 和 `kimi-coding-plan` 都重用對應供應商的金鑰和 API 基底網址進行託管擷取。Moonshot 開放平台使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。`firecrawl` 使用獨立的 Firecrawl 金鑰（與 Firecrawl 網路搜尋共用），呼叫 `/v2/scrape`。`keenable` 不需金鑰（選填的 Keenable 金鑰與 Keenable 網路搜尋共用，僅提高速率限制），呼叫 `/v1/fetch/public`（設定金鑰時為 `/v1/fetch`）。沒有備援服務。可在模型服務或課程模型設定中選擇讀取服務，也可在 `openmaic.yml` 中指定 `slots.webFetch`。Kimi 的金鑰與對話共用。所有讀取服務都保留本機工作階段授權、公開位址檢查和不可信結果邊界。
 
 DeepSeek 也透過 `deepseek` 預設提供託管 Markdown 擷取，共用對話金鑰與 API 基底位址。依上述範例明確指定 `webFetch`，呼叫 `/v1/tools/fetch`，並保留部署中的閘道位址。逾時與僅對傳輸錯誤重試一次的行為與 Kimi 相同，不重試 HTTP 錯誤或無效回應。
 

@@ -1,6 +1,7 @@
 import { builtin } from './providers/builtin';
 import { deepseek } from './providers/deepseek';
 import { firecrawl } from './providers/firecrawl';
+import { keenable } from './providers/keenable';
 import { kimi } from './providers/kimi';
 import type { WebFetchProvider } from './types';
 
@@ -10,6 +11,7 @@ export const WEB_FETCH_PROVIDERS: Readonly<Record<string, WebFetchProvider>> = {
   kimi,
   deepseek,
   firecrawl,
+  keenable,
 };
 export const DEFAULT_WEB_FETCH_PROVIDER = builtin;
 export function getWebFetchProvider(id: string): WebFetchProvider | undefined {
@@ -19,12 +21,13 @@ export function getWebFetchProvider(id: string): WebFetchProvider | undefined {
 /** Serializable projection for settings; the browser never imports executable adapters. */
 export function webFetchProviderMetadata() {
   return Object.values(WEB_FETCH_PROVIDERS).map(
-    ({ id, name, nameKey, icon, requiresApiKey, credentialPresets }) => ({
+    ({ id, name, nameKey, icon, requiresApiKey, apiKeyOptional, credentialPresets }) => ({
       id,
       name,
       nameKey,
       icon,
       requiresApiKey,
+      apiKeyOptional,
       credentialPresets,
     }),
   );

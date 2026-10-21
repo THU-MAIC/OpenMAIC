@@ -690,7 +690,7 @@ AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, B
 
 ### Web search
 
-Configure Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+Configure Tavily, Exa, Firecrawl, Keenable, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -713,9 +713,14 @@ SEARXNG_BASE_URL=
 
 WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
+
+KEENABLE_API_KEY=          # optional; picked by the server only when nothing above is set
+KEENABLE_BASE_URL=         # optional override, read only with KEENABLE_API_KEY
 ```
 
 Brave and SearXNG do not require an API key. Web search has no per-generation switch: it runs whenever the workspace's `webSearch` slot resolves, and turning it off (`webSearch: null` in `openmaic.yml`, or with the search switch in **Settings → Course Model Config**) affects later generations of that workspace. Grok web search is provided through the Grok LLM search tool, not a standalone web-search provider.
+
+Keenable also works without an API key: choose it in Model Services / Course Model Config, or declare a provider with `preset: keenable` in `openmaic.yml`. Keyless requests share the public limit of the server's address (1,000 an hour); a key only raises the limits. `KEENABLE_API_KEY` also makes Keenable a server-configured provider, which the server picks only when none of the other variables above configures one.
 
 ### server-providers.yml
 
@@ -841,6 +846,7 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 | `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
 | `deepseek` | Existing DeepSeek chat key and API base | Hosted Markdown extraction |
 | `firecrawl` | Firecrawl API key (`preset: firecrawl`) | Hosted Markdown extraction of the page's main content, including PDF URLs |
+| `keenable` | None; an optional Keenable API key (`preset: keenable`) raises rate limits | Hosted Markdown extraction |
 
 ```yaml
 providers:
@@ -861,5 +867,7 @@ In **Settings → Model Services → Web Fetch**, use the existing provider cred
 Unlike `kimi`, `firecrawl` has its own key: declare a provider with `preset: firecrawl` and `apiKey` (for example `${FIRECRAWL_API_KEY}`), or enter the key in **Settings → Model Services → Web Fetch**. It sends `POST /v2/scrape` with Bearer authentication and asks for the page's main content as Markdown. The default base is `https://api.firecrawl.dev`; a self-hosted Firecrawl base must be declared by the administrator in `openmaic.yml`.
 
 The same `firecrawl` provider also serves web search (`POST /v2/search`): one key and base URL cover both, so a single provider can be assigned to `slots.webSearch` and `slots.webFetch`. The legacy `FIRECRAWL_API_KEY` and `FIRECRAWL_BASE_URL` variables configure that provider; web fetch stays on `builtin` until `webFetch` is assigned to it.
+
+`keenable` needs no key: declare a provider with `preset: keenable`, or choose it in **Course Model Config → Web Fetch**. An optional key (`apiKey`, or **Settings → Model Services → Web Fetch**) only raises rate limits. Without a key it sends `GET /v1/fetch/public?url=...`; with one it sends `GET /v1/fetch?url=...` with the key in `X-API-Key`. Requests carry an `X-Keenable-Title: OpenMAIC` header. The same provider also serves web search (`POST /v1/search/public`, or `/v1/search` with a key), so one provider can be assigned to `slots.webSearch` and `slots.webFetch`; web fetch stays on `builtin` until `webFetch` is assigned to it.
 
 The session URL gate, strict URL normalization and all local DNS address checks run before forwarding a URL to a hosted reader. The same checks run against a reported final URL before accepting its content. Hosted readers control their own DNS and intermediate redirects; local checks cannot pin their networks. Their text remains untrusted, with challenge-page detection, byte limits, a truncation notice and the existing web material persistence and `{trusted, untrusted}` result.

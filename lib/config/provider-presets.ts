@@ -193,6 +193,12 @@ const SHARED_ACCOUNT_PRESETS: ProviderPreset[] = [
     capabilities: { webSearch: { registryId: 'firecrawl' }, webFetch: { registryId: 'firecrawl' } },
   },
   {
+    id: 'keenable',
+    name: 'Keenable',
+    kind: 'single',
+    capabilities: { webSearch: { registryId: 'keenable' }, webFetch: { registryId: 'keenable' } },
+  },
+  {
     id: 'kimi',
     name: 'Kimi',
     kind: 'single',

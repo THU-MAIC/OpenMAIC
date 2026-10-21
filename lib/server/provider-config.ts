@@ -157,6 +157,8 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   // Dedicated prefix avoids colliding with the Doubao LLM provider vars.
   WEB_SEARCH_DOUBAO: 'doubao',
   SEARXNG: 'searxng',
+  // Last, so a server that configures any provider above keeps it as its default.
+  KEENABLE: 'keenable',
 };
 
 // ---------------------------------------------------------------------------

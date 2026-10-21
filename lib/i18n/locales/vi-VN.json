@@ -1348,6 +1348,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1997,6 +1998,7 @@
     "webSearchApiKey": "Khóa API tìm kiếm",
     "webSearchApiKeyHint": "Lấy khóa API từ nhà cung cấp tìm kiếm bạn đã chọn",
     "webSearchApiKeyOptional": "Khóa API không bắt buộc. Không có khóa thì hệ thống sẽ đọc trang công khai để thay thế.",
+    "keenableApiKeyOptional": "Khóa API không bắt buộc. Không có khóa thì hệ thống dùng API công khai không cần khóa của Keenable; khóa chỉ nâng giới hạn tần suất.",
     "webSearchBaseUrl": "Địa chỉ gốc",
     "webSearchSettings": "Tìm trên web",
     "serverConfig": {

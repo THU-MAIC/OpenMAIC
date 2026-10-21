@@ -20,13 +20,15 @@ export function WebFetchSettings({ view, apply, entry }: ServicePanelProps) {
       <p className="text-sm text-muted-foreground">{t('settings.webFetchHint')}</p>
       {entry.state === 'deployment' && <ServerConfiguredNotice view={view} capability="webFetch" />}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
-      {editable && provider?.requiresApiKey && (
+      {editable && (provider?.requiresApiKey || provider?.apiKeyOptional) && (
         <div className="space-y-2">
           <Label>{t('settings.webFetchApiKey')}</Label>
           <ApiKeyField
             name={`web-fetch-api-key-${entry.id}`}
             provider={entry.provider}
-            placeholder={t('settings.enterApiKey')}
+            placeholder={
+              provider.requiresApiKey ? t('settings.enterApiKey') : t('settings.optionalOverride')
+            }
             onSave={(apiKey) => saveServiceProvider(view, apply, entry, { apiKey }, t)}
             onRemove={() => saveServiceProvider(view, apply, entry, { apiKey: '' }, t)}
           />

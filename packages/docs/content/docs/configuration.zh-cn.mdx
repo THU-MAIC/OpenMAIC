@@ -690,7 +690,7 @@ AliDocMind 的文档解析支持 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPE
 
 ### 联网搜索
 
-配置 Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+配置 Tavily、Exa、Firecrawl、Keenable、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
@@ -713,9 +713,14 @@ SEARXNG_BASE_URL=
 
 WEB_SEARCH_MINIMAX_API_KEY=
 WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 可选覆盖
+
+KEENABLE_API_KEY=          # 可选；仅当上面都未配置时服务端才选用它
+KEENABLE_BASE_URL=         # 可选覆盖，仅与 KEENABLE_API_KEY 一起生效
 ```
 
 Brave 和 SearXNG 不需要 API key。联网搜索没有逐次生成的开关：只要工作区的 `webSearch` 槽位能解析就会运行；关闭它（在 `openmaic.yml` 中写 `webSearch: null`，或在 **设置 → 课程模型配置** 中关闭搜索开关）会影响该工作区之后的生成。Grok 的联网搜索通过 Grok LLM 的搜索工具提供，不是独立的联网搜索 provider。
+
+Keenable 同样无需 API key：可在模型服务或课程模型配置中选择它，或在 `openmaic.yml` 中声明 `preset: keenable` 的服务商。无密钥请求共享服务器地址的公共限额（每小时 1,000 次）；密钥仅用于提高限额。设置 `KEENABLE_API_KEY` 还会让 Keenable 成为服务端配置的服务商，但只有在上述变量配置的服务商之后才会被选用。
 
 ### server-providers.yml
 
@@ -841,6 +846,7 @@ slots:
 | `kimi` | 已有 Kimi 服务商的密钥和基础地址 | 托管 Markdown 提取服务，也接收 PDF 网址 |
 | `deepseek` | 现有 DeepSeek 对话密钥和 API 基础地址 | 托管 Markdown 提取 |
 | `firecrawl` | Firecrawl API 密钥（`preset: firecrawl`） | 托管 Markdown 提取服务，返回页面主体内容，也接收 PDF 网址 |
+| `keenable` | 无需密钥；可选的 Keenable API 密钥（`preset: keenable`）仅提高速率限制 | 托管 Markdown 提取服务 |
 
 ```yaml
 providers:
@@ -861,5 +867,7 @@ DeepSeek 也通过 `deepseek` 预设提供托管 Markdown 提取，复用对话�
 与 `kimi` 不同，`firecrawl` 使用单独的密钥：在 `openmaic.yml` 中声明 `preset: firecrawl` 的服务商并设置 `apiKey`（例如 `${FIRECRAWL_API_KEY}`），或在 **设置 → 模型服务 → 网页抓取** 中填写密钥。它以 Bearer 认证发送 `POST /v2/scrape`，以 Markdown 返回页面主体内容。默认基础地址为 `https://api.firecrawl.dev`；自托管 Firecrawl 的基础地址须由管理员在 `openmaic.yml` 中声明。
 
 同一个 `firecrawl` 服务商也提供联网搜索（`POST /v2/search`）：一把密钥和一个基础地址同时用于两者，因此可以把同一个服务商同时指定给 `slots.webSearch` 和 `slots.webFetch`。旧版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 变量配置的就是这个服务商；在把 `webFetch` 指定给它之前，网页抓取仍使用 `builtin`。
+
+`keenable` 无需密钥：在 `openmaic.yml` 中声明 `preset: keenable` 的服务商，或在 **课程模型配置 → 网页抓取** 中选择它。可选的密钥（`apiKey`，或在 **设置 → 模型服务 → 网页抓取** 中填写）仅提高速率限制。未设置密钥时发送 `GET /v1/fetch/public?url=...`；设置密钥后发送 `GET /v1/fetch?url=...`，密钥放在 `X-API-Key` 中。请求带有 `X-Keenable-Title: OpenMAIC` 请求头。同一个服务商也提供联网搜索（`POST /v1/search/public`，设置密钥时为 `/v1/search`），因此可以把同一个服务商同时指定给 `slots.webSearch` 和 `slots.webFetch`；在把 `webFetch` 指定给它之前，网页抓取仍使用 `builtin`。
 
 网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。

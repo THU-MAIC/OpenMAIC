@@ -1348,6 +1348,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1997,6 +1998,7 @@
     "webSearchApiKey": "Such-API-Schlüssel",
     "webSearchApiKeyHint": "API-Schlüssel vom ausgewählten Suchanbieter beziehen",
     "webSearchApiKeyOptional": "Der API-Schlüssel ist optional. Ohne Schlüssel werden ersatzweise öffentlich zugängliche Seiten ausgelesen.",
+    "keenableApiKeyOptional": "Der API-Schlüssel ist optional. Ohne Schlüssel wird die öffentliche Keenable-API ohne Schlüssel verwendet; ein Schlüssel erhöht nur die Ratenlimits.",
     "webSearchBaseUrl": "Basis-URL",
     "webSearchSettings": "Websuche",
     "serverConfig": {

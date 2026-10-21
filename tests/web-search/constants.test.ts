@@ -55,6 +55,19 @@ describe('web search provider constants', () => {
     expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('firecrawl');
   });
 
+  it('registers Keenable as a keyless web search provider with an optional key', () => {
+    expect(WEB_SEARCH_PROVIDERS.keenable).toMatchObject({
+      id: 'keenable',
+      name: 'Keenable',
+      requiresApiKey: false,
+      keylessNoticeKey: 'settings.keenableApiKeyOptional',
+      defaultBaseUrl: 'https://api.keenable.ai',
+      endpointPath: '/v1/search/public',
+    });
+    expect(getAllWebSearchProviders().map((provider) => provider.id)).toContain('keenable');
+    expect(isWebSearchProviderConfigured(WEB_SEARCH_PROVIDERS.keenable)).toBe(true);
+  });
+
   it('registers Claude as an API-key web search provider with a model list', () => {
     expect(WEB_SEARCH_PROVIDERS.claude).toMatchObject({
       id: 'claude',

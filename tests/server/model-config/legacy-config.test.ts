@@ -145,6 +145,27 @@ describe('translateLegacyConfig: media defaults', () => {
     expect(alone.config.slots?.webSearch).toBe('firecrawl');
   });
 
+  it('keeps the earlier web search providers ahead of Keenable', () => {
+    const withFirecrawl = translateLegacyConfig(
+      server({ webSearch: { keenable: { apiKey: 'k' }, firecrawl: { apiKey: 'f' } } }),
+    );
+    expect(withFirecrawl.config.slots?.webSearch).toBe('firecrawl');
+    // Keyless Brave, configured first, stays the default next to a Keenable key.
+    const withBrave = translateLegacyConfig(
+      server({
+        webSearch: {
+          brave: { apiKey: '', baseUrl: 'https://search.brave.com' },
+          keenable: { apiKey: 'k' },
+        },
+      }),
+    );
+    expect(withBrave.config.slots?.webSearch).toBe('brave');
+    const alone = translateLegacyConfig(server({ webSearch: { keenable: { apiKey: 'k' } } }));
+    expect(alone.config.slots?.webSearch).toBe('keenable');
+    // Web fetch keeps its builtin default until it is assigned explicitly.
+    expect(alone.config.slots?.webFetch).toBeUndefined();
+  });
+
   it('lets the legacy Firecrawl key serve web fetch once that slot is assigned', () => {
     const { config } = translateLegacyConfig(
       server({ webSearch: { firecrawl: { apiKey: 'f', baseUrl: 'https://fc.example.com' } } }),

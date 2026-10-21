@@ -35,8 +35,8 @@ description: Встроенные модели и список провайде�
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Изображения | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Видео | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Загрузка веб-страниц | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
+| Веб-поиск | `tavily`, `exa`, `firecrawl`, `keenable`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Загрузка веб-страниц | `builtin`, `deepseek`, `firecrawl`, `keenable`, `kimi`, `kimi-coding-plan` |
 | Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
@@ -141,6 +141,7 @@ description: Встроенные модели и список провайде�
 | Tavily          | `tavily`    | No preset model IDs. |
 | Exa             | `exa`       | No preset model IDs. |
 | Firecrawl       | `firecrawl`       | No preset model IDs. |
+| Keenable        | `keenable`        | No preset model IDs. |
 | Bocha           | `bocha`     | No preset model IDs. |
 | Brave Search    | `brave`     | No preset model IDs. |
 | Baidu           | `baidu`     | No preset model IDs. |
@@ -184,7 +185,7 @@ slots:
 
 ## Загрузка веб-страниц
 
-По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. `firecrawl` использует собственный ключ Firecrawl (общий с веб-поиском Firecrawl) и вызывает `/v2/scrape`. Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ Kimi общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.
+По умолчанию слот `webFetch` использует `builtin` без ключа (Readability и Turndown; PDF по-прежнему используют `document`). `kimi` и `kimi-coding-plan` повторно используют ключ и базовый URL API своего провайдера для размещённого извлечения. Moonshot Open Platform использует `/tools/fetch`, Coding Plan — `/fetch`. `firecrawl` использует собственный ключ Firecrawl (общий с веб-поиском Firecrawl) и вызывает `/v2/scrape`. `keenable` не требует ключа (необязательный ключ Keenable, общий с веб-поиском Keenable, только повышает лимиты) и вызывает `/v1/fetch/public` (с ключом — `/v1/fetch`). Резервного сервиса нет. Выберите сервис в настройках сервисов моделей или моделей курса либо задайте `slots.webFetch` в `openmaic.yml`. Ключ Kimi общий с чатом. Все сервисы сохраняют локальные проверки сеанса и публичных адресов и возвращают недоверенные данные.
 
 DeepSeek также предоставляет размещённое извлечение Markdown через пресет `deepseek` с ключом и базовым URL чата. Явно назначьте `webFetch`, как в примере выше. Используется `/v1/tools/fetch`, адрес шлюза из развёртывания сохраняется. Тайм-ауты и одна повторная попытка только при транспортной ошибке совпадают с Kimi; HTTP-ошибки и неверные ответы не повторяются.
 

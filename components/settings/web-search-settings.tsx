@@ -60,7 +60,7 @@ export function WebSearchSettings({ view, apply, entry }: ServicePanelProps) {
 
       {editable && provider && !provider.requiresApiKey && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
-          {t('settings.webSearchApiKeyOptional')}
+          {t(provider.keylessNoticeKey ?? 'settings.webSearchApiKeyOptional')}
         </div>
       )}
 

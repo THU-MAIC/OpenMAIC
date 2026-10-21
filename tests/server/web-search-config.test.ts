@@ -10,6 +10,8 @@ describe('server web search config', () => {
     delete process.env.EXA_BASE_URL;
     delete process.env.FIRECRAWL_API_KEY;
     delete process.env.FIRECRAWL_BASE_URL;
+    delete process.env.KEENABLE_API_KEY;
+    delete process.env.KEENABLE_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
     delete process.env.BRAVE_API_KEY;
@@ -130,6 +132,32 @@ describe('server web search config', () => {
       providerId: 'firecrawl',
       apiKey: 'fc-server-key',
       baseUrl: 'https://firecrawl.internal',
+    });
+  });
+
+  it('resolves Keenable classroom config without a key and with an optional client key', async () => {
+    const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
+      await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveSafeClientWebSearchBaseUrl('keenable', 'https://api.keenable.ai/v1/search/public'),
+    ).toBe('https://api.keenable.ai/v1/search/public');
+    expect(() => resolveSafeClientWebSearchBaseUrl('keenable', 'http://127.0.0.1:8080')).toThrow(
+      'Unsupported Keenable base URL',
+    );
+    expect(
+      await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'keenable' }),
+    ).toEqual({ providerId: 'keenable', apiKey: '', baseUrl: undefined });
+    expect(
+      await resolveClassroomWebSearchConfig(null, {
+        webSearchProviderId: 'keenable',
+        webSearchApiKey: 'kn-client-key',
+        webSearchBaseUrl: 'https://api.keenable.ai',
+      }),
+    ).toEqual({
+      providerId: 'keenable',
+      apiKey: 'kn-client-key',
+      baseUrl: 'https://api.keenable.ai',
     });
   });
 

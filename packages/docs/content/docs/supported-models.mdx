@@ -35,8 +35,8 @@ All preset IDs:
 | ASR | `openai-whisper`, `qwen-asr`, `azure-asr`, `browser-native`, `funasr-asr`, `lemonade-asr` |
 | Image | `seedream`, `openai-image`, `qwen-image`, `nano-banana`, `minimax-image`, `grok-image`, `comfyui-image`, `lemonade-image`, `openrouter-image` |
 | Video | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
-| Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
-| Web fetch | `builtin`, `deepseek`, `firecrawl`, `kimi`, `kimi-coding-plan` |
+| Web search | `tavily`, `exa`, `firecrawl`, `keenable`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `kimi`, `kimi-coding-plan`, `searxng` |
+| Web fetch | `builtin`, `deepseek`, `firecrawl`, `keenable`, `kimi`, `kimi-coding-plan` |
 | Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
 
 `azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
@@ -141,6 +141,7 @@ Most web search providers have no model selector, so slots usually name them by 
 | Tavily       | `tavily`    | No preset model IDs. |
 | Exa          | `exa`       | No preset model IDs. |
 | Firecrawl    | `firecrawl`       | No preset model IDs. |
+| Keenable     | `keenable`        | No preset model IDs. |
 | Bocha        | `bocha`     | No preset model IDs. |
 | Brave Search | `brave`     | No preset model IDs. |
 | Baidu        | `baidu`     | No preset model IDs. |
@@ -184,7 +185,7 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 
 ## Web fetch
 
-The `webFetch` slot defaults to the keyless `builtin` reader (Readability and Turndown; PDFs still use `document`). Both `kimi` and `kimi-coding-plan` reuse their provider's key and API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`, while Coding Plan uses `/fetch`. `firecrawl` uses its own Firecrawl key, shared with Firecrawl web search, and calls `/v2/scrape`. There is no fallback. Choose the reader in Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`. The Kimi key is shared with chat. All readers retain local session and public-address checks and untrusted results.
+The `webFetch` slot defaults to the keyless `builtin` reader (Readability and Turndown; PDFs still use `document`). Both `kimi` and `kimi-coding-plan` reuse their provider's key and API base for hosted extraction. Moonshot Open Platform uses `/tools/fetch`, while Coding Plan uses `/fetch`. `firecrawl` uses its own Firecrawl key, shared with Firecrawl web search, and calls `/v2/scrape`. `keenable` needs no key (an optional Keenable key, shared with Keenable web search, raises rate limits) and calls `/v1/fetch/public` (`/v1/fetch` with a key). There is no fallback. Choose the reader in Model Services / Course Model Config or assign `slots.webFetch` in `openmaic.yml`. The Kimi key is shared with chat. All readers retain local session and public-address checks and untrusted results.
 
 DeepSeek also offers hosted Markdown extraction through the `deepseek` preset, reusing the chat key and API base. Assign `webFetch` explicitly as shown above. It uses `/v1/tools/fetch`; an explicit deployment gateway base is preserved. It retains the same transport deadlines and single transport-error retry as Kimi, without retrying HTTP errors or invalid responses.
 

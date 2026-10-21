@@ -1348,6 +1348,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1997,6 +1998,7 @@
     "webSearchApiKey": "مفتاح API للبحث",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
     "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
+    "keenableApiKeyOptional": "مفتاح API اختياري. بدونه، تُستخدم واجهة Keenable العامة دون مفتاح؛ ويرفع المفتاح حدود المعدل فقط.",
     "webSearchBaseUrl": "العنوان الأساسي",
     "webSearchSettings": "بحث الإنترنت",
     "serverConfig": {

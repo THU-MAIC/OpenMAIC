@@ -8,7 +8,13 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 describe('web fetch registry and configuration', () => {
   it('lists and looks up each provider', () => {
-    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi', 'deepseek', 'firecrawl']);
+    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual([
+      'builtin',
+      'kimi',
+      'deepseek',
+      'firecrawl',
+      'keenable',
+    ]);
     for (const provider of Object.values(WEB_FETCH_PROVIDERS))
       expect(getWebFetchProvider(provider.id)).toBe(provider);
   });
@@ -57,6 +63,19 @@ describe('web fetch registry and configuration', () => {
     expect(getProviderPreset('firecrawl')?.capabilities).toEqual({
       webSearch: { registryId: 'firecrawl' },
       webFetch: { registryId: 'firecrawl' },
+    });
+  });
+  it('validates and resolves a keyless Keenable assignment', () => {
+    const config = parseModelConfig(
+      'providers:\n  reader:\n    preset: keenable\nslots:\n  webFetch: reader\n',
+    );
+    const resolved = resolveSlot('webFetch', [{ source: 'deployment', config }]);
+    expect(resolved).toMatchObject({ status: 'assigned', registryId: 'keenable' });
+    expect(resolved).not.toHaveProperty('apiKey');
+    // One Keenable provider serves web search and web fetch.
+    expect(getProviderPreset('keenable')?.capabilities).toEqual({
+      webSearch: { registryId: 'keenable' },
+      webFetch: { registryId: 'keenable' },
     });
   });
   it('accepts an explicit builtin assignment without credentials', () => {

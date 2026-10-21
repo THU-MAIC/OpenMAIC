@@ -1348,6 +1348,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1997,6 +1998,7 @@
     "webSearchApiKey": "検索APIキー",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
     "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
+    "keenableApiKeyOptional": "APIキーは任意です。未設定の場合、Keenable のキー不要の公開 API が使用されます。キーはレート制限を引き上げるだけです。",
     "webSearchBaseUrl": "ベースURL",
     "webSearchSettings": "ウェブ検索",
     "serverConfig": {

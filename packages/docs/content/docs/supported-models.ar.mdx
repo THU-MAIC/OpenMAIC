@@ -35,8 +35,8 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | ASR | `openai-whisper` و`qwen-asr` و`azure-asr` و`browser-native` و`funasr-asr` و`lemonade-asr` |
 | الصور | `seedream` و`openai-image` و`qwen-image` و`nano-banana` و`minimax-image` و`grok-image` و`comfyui-image` و`lemonade-image` و`openrouter-image` |
 | الفيديو | `seedance` و`kling` و`minimax-video` و`grok-video` و`happyhorse` و`openrouter-video` |
-| البحث على الويب | `tavily` و`exa` و`firecrawl` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`kimi` و`kimi-coding-plan` و`searxng` |
-| جلب صفحات الويب | `builtin` و`deepseek` و`firecrawl` و`kimi` و`kimi-coding-plan` |
+| البحث على الويب | `tavily` و`exa` و`firecrawl` و`keenable` و`bocha` و`brave` و`baidu` و`claude` و`minimax-search` و`doubao-search` و`deepseek` و`kimi` و`kimi-coding-plan` و`searxng` |
+| جلب صفحات الويب | `builtin` و`deepseek` و`firecrawl` و`keenable` و`kimi` و`kimi-coding-plan` |
 | تحليل المستندات | `unpdf` و`mineru` و`mineru-cloud` و`alidocmind` |
 
 تحتاج `azure` و`openai-compatible` و`searxng` و`mineru` إلى `baseUrl`، ويصادق `alidocmind` عبر `credentials` (زوج مفاتيح). إعدادات TTS وASR والصور والبحث والمستندات المستضافة ذاتيًا، وإعدادات أزواج المفاتيح، وBedrock لا تُضبط إلا في `openmaic.yml`؛ راجع [الإعدادات](./configuration.mdx).
@@ -141,6 +141,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | Tavily       | `tavily`    | No preset model IDs. |
 | Exa          | `exa`       | No preset model IDs. |
 | Firecrawl    | `firecrawl`       | No preset model IDs. |
+| Keenable     | `keenable`        | No preset model IDs. |
 | Bocha        | `bocha`     | No preset model IDs. |
 | Brave Search | `brave`     | No preset model IDs. |
 | Baidu        | `baidu`     | No preset model IDs. |
@@ -184,7 +185,7 @@ slots:
 
 ## جلب صفحات الويب
 
-تستخدم خانة `webFetch` افتراضيًا القارئ `builtin` دون مفتاح (Readability وTurndown؛ وتظل ملفات PDF تستخدم `document`). يعيد كل من `kimi` و`kimi-coding-plan` استخدام مفتاح مزوّده والعنوان الأساسي لواجهة API للاستخراج المستضاف. يستخدم Moonshot Open Platform المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يستخدم `firecrawl` مفتاح Firecrawl خاصًا به، مشتركًا مع البحث على الويب عبر Firecrawl، ويستدعي `/v2/scrape`. لا توجد خدمة احتياطية. اختر القارئ في خدمات النماذج أو إعداد نماذج المقرر، أو اضبط `slots.webFetch` في `openmaic.yml`. مفتاح Kimi مشترك مع الدردشة. تحتفظ جميع الخدمات بفحوص الجلسة والعناوين العامة المحلية وتعيد بيانات غير موثوقة.
+تستخدم خانة `webFetch` افتراضيًا القارئ `builtin` دون مفتاح (Readability وTurndown؛ وتظل ملفات PDF تستخدم `document`). يعيد كل من `kimi` و`kimi-coding-plan` استخدام مفتاح مزوّده والعنوان الأساسي لواجهة API للاستخراج المستضاف. يستخدم Moonshot Open Platform المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يستخدم `firecrawl` مفتاح Firecrawl خاصًا به، مشتركًا مع البحث على الويب عبر Firecrawl، ويستدعي `/v2/scrape`. لا يحتاج `keenable` إلى مفتاح (مفتاح Keenable الاختياري مشترك مع البحث على الويب عبر Keenable ويرفع حدود المعدل فقط)، ويستدعي `/v1/fetch/public` (أو `/v1/fetch` مع مفتاح). لا توجد خدمة احتياطية. اختر القارئ في خدمات النماذج أو إعداد نماذج المقرر، أو اضبط `slots.webFetch` في `openmaic.yml`. مفتاح Kimi مشترك مع الدردشة. تحتفظ جميع الخدمات بفحوص الجلسة والعناوين العامة المحلية وتعيد بيانات غير موثوقة.
 
 يوفر DeepSeek أيضًا استخراج Markdown المستضاف عبر الإعداد `deepseek` مع إعادة استخدام مفتاح المحادثة وعنوان API الأساسي. عيّن `webFetch` صراحةً كما في المثال أعلاه. يستخدم `/v1/tools/fetch` ويحفظ عنوان البوابة المضبوط في النشر. المهل الزمنية وإعادة المحاولة مرة واحدة لأخطاء النقل فقط مماثلة لـ Kimi، دون إعادة أخطاء HTTP أو الاستجابات غير الصالحة.
 

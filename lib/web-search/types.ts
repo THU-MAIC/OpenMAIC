@@ -14,6 +14,7 @@ export type WebSearchProviderId =
   | 'baidu'
   | 'claude'
   | 'deepseek'
+  | 'keenable'
   | 'kimi'
   | 'minimax'
   | 'doubao'
@@ -41,6 +42,8 @@ export interface WebSearchProviderConfig {
   enableEnvVar?: string;
   /** Official account bases accepted by search settings and client requests. */
   officialBaseUrls?: readonly string[];
+  /** i18n key of the notice shown when the key is optional (defaults to the scraping fallback notice). */
+  keylessNoticeKey?: string;
   /** Self-hosted instances need an explicit base URL (no public default). */
   requiresBaseUrl?: boolean;
   defaultBaseUrl?: string;

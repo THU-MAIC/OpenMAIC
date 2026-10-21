@@ -1333,6 +1333,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1982,6 +1983,7 @@
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
     "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
+    "keenableApiKeyOptional": "API Key 為可選項。未填寫時使用 Keenable 的免金鑰公共介面，填寫 Key 僅用於提高速率限制。",
     "webSearchBaseUrl": "Base URL",
     "webSearchSettings": "網路搜尋",
     "serverConfig": {

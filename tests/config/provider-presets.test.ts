@@ -101,6 +101,18 @@ describe('provider presets', () => {
     ]);
   });
 
+  it('offers Keenable search and fetch as one shared-account preset', () => {
+    expect(PROVIDER_PRESETS.filter((preset) => preset.id === 'keenable')).toHaveLength(1);
+    expect(getProviderPreset('keenable')).toMatchObject({
+      kind: 'single',
+      capabilities: {
+        webSearch: { registryId: 'keenable' },
+        webFetch: { registryId: 'keenable' },
+      },
+    });
+    expect(getProviderPreset('keenable')).not.toHaveProperty('recommended');
+  });
+
   it('carries plan recommendations onto slots', () => {
     const tokendance = getProviderPreset('tokendance')!;
     expect(tokendance.recommended).toMatchObject({

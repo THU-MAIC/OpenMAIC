@@ -57,6 +57,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_GROK',
   'EXA',
   'FIRECRAWL',
+  'KEENABLE',
   'BOCHA',
   'WEB_SEARCH_MINIMAX',
   'WEB_SEARCH_KIMI',
@@ -474,6 +475,24 @@ providers:
       expect(resolveWebSearchApiKey('firecrawl', undefined)).toBe('fc-env-key');
       expect(resolveWebSearchBaseUrl('firecrawl')).toBe('https://firecrawl.internal');
       expect(getServerWebSearchProviders().firecrawl).toEqual({});
+    });
+
+    it('resolves an optional Keenable API key from env vars', async () => {
+      vi.stubEnv('KEENABLE_API_KEY', 'kn-env-key');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('keenable', undefined)).toBe('kn-env-key');
+      expect(getServerWebSearchProviders().keenable).toEqual({});
+    });
+
+    it('does not turn Keenable on server-wide from a base URL alone', async () => {
+      vi.stubEnv('KEENABLE_BASE_URL', 'https://api.keenable.ai');
+      const { getServerWebSearchProviders, resolveServerWebSearchProviderId } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerWebSearchProviders().keenable).toBeUndefined();
+      expect(resolveServerWebSearchProviderId()).toBeUndefined();
     });
 
     it('ignores client key and base URL for a server-managed Bocha provider', async () => {
@@ -975,6 +994,18 @@ video:
       expect(getServerWebSearchProviders().firecrawl).toEqual({ disabled: true });
     });
 
+    it.each([['with a key'], ['without a key']])(
+      'web-search: force-disables Keenable through KEENABLE_ENABLED=false %s',
+      async (withKey) => {
+        if (withKey === 'with a key') vi.stubEnv('KEENABLE_API_KEY', 'kn-key');
+        vi.stubEnv('KEENABLE_ENABLED', 'false');
+        const { getServerWebSearchProviders, isServerProviderDisabled } =
+          await import('@/lib/server/provider-config');
+        expect(getServerWebSearchProviders().keenable).toEqual({ disabled: true });
+        expect(isServerProviderDisabled('webSearch', 'keenable')).toBe(true);
+      },
+    );
+
     it('web-search: force-disables the keyless SearXNG provider via env', async () => {
       vi.stubEnv('SEARXNG_BASE_URL', 'http://searxng.internal');
       vi.stubEnv('SEARXNG_ENABLED', 'false');
@@ -1056,6 +1087,34 @@ video:
       const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
       expect(resolveServerWebSearchProviderId()).toBe('claude');
       expect(resolveServerWebSearchProviderId('firecrawl')).toBe('firecrawl');
+    });
+
+    it('web-search preference chain keeps existing providers ahead of Keenable', async () => {
+      vi.stubEnv('KEENABLE_API_KEY', 'kn');
+      vi.stubEnv('FIRECRAWL_API_KEY', 'fc');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBe('firecrawl');
+      expect(resolveServerWebSearchProviderId('keenable')).toBe('keenable');
+    });
+
+    it.each([
+      ['BRAVE_BASE_URL', 'https://search.brave.com', 'brave'],
+      ['SEARXNG_BASE_URL', 'http://searxng.internal', 'searxng'],
+      ['WEB_SEARCH_DOUBAO_API_KEY', 'doubao-key', 'doubao'],
+    ])(
+      'web-search fallback keeps %s ahead of a Keenable key',
+      async (variable, value, expected) => {
+        vi.stubEnv('KEENABLE_API_KEY', 'kn');
+        vi.stubEnv(variable, value);
+        const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+        expect(resolveServerWebSearchProviderId()).toBe(expected);
+      },
+    );
+
+    it('web-search fallback uses a Keenable key when nothing else is configured', async () => {
+      vi.stubEnv('KEENABLE_API_KEY', 'kn');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBe('keenable');
     });
 
     it('web-search preference chain skips a disabled client-preferred provider', async () => {

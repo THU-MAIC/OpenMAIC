@@ -1348,6 +1348,7 @@
       "tavily": "Tavily",
       "exa": "Exa",
       "firecrawl": "Firecrawl",
+      "keenable": "Keenable",
       "bocha": "博查",
       "brave": "Brave Search",
       "baidu": "百度",
@@ -1997,6 +1998,7 @@
     "webSearchApiKey": "搜索 API Key",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
     "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
+    "keenableApiKeyOptional": "API Key 为可选项。未填写时使用 Keenable 的免密钥公共接口，填写 Key 仅用于提高速率限制。",
     "webSearchBaseUrl": "Base URL",
     "webSearchSettings": "网络搜索",
     "serverConfig": {

@@ -32,3 +32,36 @@ it('shows the shared-key hint beside editable provider credentials', () => {
   expect(html).toContain('settings.webFetchSharedKeyHint');
   expect(html).toContain('web-fetch-api-key-reader');
 });
+
+it('offers an optional key field for a keyless reader that takes one', () => {
+  const panel = (metadata: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      createElement(WebFetchSettings, {
+        view: {
+          allowUserKeys: true,
+          slots: [],
+          providers: [],
+          presets: [],
+          revision: null,
+        } as ModelSettingsView,
+        apply: vi.fn(),
+        entry: {
+          id: 'reader',
+          registryId: String(metadata.id),
+          state: 'available',
+          metadata: metadata as never,
+        },
+      }),
+    );
+  const optional = panel({
+    id: 'keenable',
+    name: 'Keenable',
+    requiresApiKey: false,
+    apiKeyOptional: true,
+  });
+  expect(optional).toContain('web-fetch-api-key-reader');
+  expect(optional).toContain('settings.optionalOverride');
+  expect(panel({ id: 'builtin', name: 'Built-in', requiresApiKey: false })).not.toContain(
+    'web-fetch-api-key-reader',
+  );
+});

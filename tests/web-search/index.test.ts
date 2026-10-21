@@ -11,6 +11,7 @@ const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
 const searchWithExaMock = vi.hoisted(() => vi.fn());
 const searchWithFirecrawlMock = vi.hoisted(() => vi.fn());
+const searchWithKeenableMock = vi.hoisted(() => vi.fn());
 const searchWithSearxngMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
@@ -53,6 +54,10 @@ vi.mock('@/lib/web-search/firecrawl', () => ({
   searchWithFirecrawl: searchWithFirecrawlMock,
 }));
 
+vi.mock('@/lib/web-search/keenable', () => ({
+  searchWithKeenable: searchWithKeenableMock,
+}));
+
 vi.mock('@/lib/web-search/searxng', () => ({
   searchWithSearxng: searchWithSearxngMock,
 }));
@@ -71,6 +76,7 @@ describe('searchWeb', () => {
     searchWithDoubaoMock.mockReset();
     searchWithExaMock.mockReset();
     searchWithFirecrawlMock.mockReset();
+    searchWithKeenableMock.mockReset();
     searchWithSearxngMock.mockReset();
   });
 
@@ -185,6 +191,34 @@ describe('searchWeb', () => {
       apiKey: 'fc-key',
       maxResults: 8,
       baseUrl: 'https://api.firecrawl.dev',
+    });
+  });
+
+  it('dispatches Keenable provider requests with an optional key', async () => {
+    const result = { answer: '', sources: [], query: 'q', responseTime: 0.2 };
+    searchWithKeenableMock.mockResolvedValue(result);
+
+    await expect(
+      searchWeb({
+        providerId: 'keenable',
+        query: 'q',
+        maxResults: 8,
+        baseUrl: 'https://api.keenable.ai',
+      }),
+    ).resolves.toEqual(result);
+    expect(searchWithKeenableMock).toHaveBeenLastCalledWith({
+      query: 'q',
+      apiKey: undefined,
+      maxResults: 8,
+      baseUrl: 'https://api.keenable.ai',
+    });
+
+    await searchWeb({ providerId: 'keenable', query: 'q', apiKey: 'kn-key' });
+    expect(searchWithKeenableMock).toHaveBeenLastCalledWith({
+      query: 'q',
+      apiKey: 'kn-key',
+      maxResults: undefined,
+      baseUrl: undefined,
     });
   });
 
@@ -390,6 +424,7 @@ describe('searchWeb', () => {
       { providerId: 'tavily', adapter: searchWithTavilyMock },
       { providerId: 'exa', adapter: searchWithExaMock },
       { providerId: 'firecrawl', adapter: searchWithFirecrawlMock },
+      { providerId: 'keenable', adapter: searchWithKeenableMock },
       { providerId: 'bocha', adapter: searchWithBochaMock },
       { providerId: 'brave', adapter: searchWithBraveMock },
       { providerId: 'baidu', adapter: searchWithBaiduMock },
