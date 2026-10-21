@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   mapInteractiveLibraryUrl,
   rewriteInteractiveLibraries,
@@ -137,6 +137,42 @@ describe('on-demand math', () => {
     expect(html).not.toContain('defer');
     expect(html).not.toContain('cdn.jsdelivr.net');
     expect(postProcessInteractiveHtml(html)).toBe(html);
+  });
+  describe('asset base changes', () => {
+    const original = process.env.INTERACTIVE_ASSET_BASE_URL;
+    afterEach(() => {
+      if (original === undefined) delete process.env.INTERACTIVE_ASSET_BASE_URL;
+      else process.env.INTERACTIVE_ASSET_BASE_URL = original;
+    });
+    const page =
+      '<!doctype html><html><head></head><body><p>$x$</p><script src="https://unpkg.com/chart.js@4"></script></body></html>';
+
+    it('re-injects platform KaTeX for the current base and is idempotent for the same base', () => {
+      process.env.INTERACTIVE_ASSET_BASE_URL = 'https://old.example/interactive';
+      const first = postProcessInteractiveHtml(page);
+      expect(first).toContain('https://old.example/interactive/katex@0.16.38/dist/katex.min.js');
+      expect(postProcessInteractiveHtml(first)).toBe(first);
+
+      process.env.INTERACTIVE_ASSET_BASE_URL = 'https://new.example/lib';
+      const refreshed = postProcessInteractiveHtml(first);
+      expect(refreshed).toBe(
+        postProcessInteractiveHtml(page).replace(
+          'https://new.example/lib/chart.js@4.4.8/dist/chart.umd.js',
+          'https://old.example/interactive/chart.js@4.4.8/dist/chart.umd.js',
+        ),
+      );
+      expect(refreshed.match(/data-openmaic-katex/g)).toHaveLength(4);
+      expect(postProcessInteractiveHtml(refreshed)).toBe(refreshed);
+    });
+
+    it('re-points library URLs under the default hosted path', () => {
+      delete process.env.INTERACTIVE_ASSET_BASE_URL;
+      const first = postProcessInteractiveHtml(page);
+      process.env.INTERACTIVE_ASSET_BASE_URL = 'https://new.example/lib';
+      const refreshed = postProcessInteractiveHtml(first);
+      expect(refreshed).toBe(postProcessInteractiveHtml(page));
+      expect(refreshed).not.toContain('"/vendor/interactive/');
+    });
   });
   it('injects nothing for a page without math that has a blocking script', () => {
     const input = '<p>No math</p><script src="/app.js"></script>';

@@ -18,37 +18,17 @@ import {
 } from './interactive-library-mapper.js';
 import { interactiveLibraryUrl } from './interactive-libraries.js';
 
-/** Marks the KaTeX markup this module injects, so a second pass adds nothing. */
+/** Marks the KaTeX markup this module owns; a later pass replaces it instead of adding more. */
 const KATEX_INJECTION_MARKER = 'data-openmaic-katex';
 
-/** Re-process stored HTML as well as newly generated pages. */
+/**
+ * Re-process stored HTML as well as newly generated pages. Platform-owned
+ * KaTeX markup (marked with {@link KATEX_INJECTION_MARKER}, including the
+ * #1966 CDN injection) is removed and injected again for the current asset
+ * base, so a page re-processed with the same base comes out byte-identical.
+ */
 export function postProcessInteractiveHtml(html: string): string {
-  // Upgrade the synchronous #1966 injection, including pages that no longer contain math.
-  const nodes = htmlNodes(html);
-  const legacy = nodes.some(
-    (node) =>
-      'attrs' in node &&
-      node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER && attr.value !== '2'),
-  );
-  if (legacy) {
-    html = patchHtml(
-      html,
-      nodes.flatMap((node) => {
-        if (!('attrs' in node) || !node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER))
-          return [];
-        const range = node.sourceCodeLocation;
-        return range ? [{ start: range.startOffset, end: range.endOffset, text: '' }] : [];
-      }),
-    );
-  }
-  let processed = rewriteInteractiveLibraries(html).html;
-  if (
-    htmlNodes(processed).some(
-      (node) => 'attrs' in node && node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER),
-    )
-  )
-    return processed;
-
+  let processed = rewriteInteractiveLibraries(stripKatexInjection(html)).html;
   const patches: HtmlPatch[] = [];
   let hasMath = false;
   for (const node of htmlNodes(processed)) {
@@ -94,6 +74,26 @@ export function postProcessInteractiveHtml(html: string): string {
   }
   processed = patchHtml(processed, patches);
   return hasMath ? injectKatex(processed) : processed;
+}
+
+/** Remove marked nodes together with the newline the injection puts before each, and after the last. */
+function stripKatexInjection(html: string): string {
+  const ranges = htmlNodes(html).flatMap((node) =>
+    'attrs' in node &&
+    node.attrs.some((attr) => attr.name === KATEX_INJECTION_MARKER) &&
+    node.sourceCodeLocation
+      ? [node.sourceCodeLocation]
+      : [],
+  );
+  if (!ranges.length) return html;
+  const patches = ranges.map(({ startOffset, endOffset }) => ({
+    start: html[startOffset - 1] === '\n' ? startOffset - 1 : startOffset,
+    end: endOffset,
+    text: '',
+  }));
+  const last = patches.reduce((a, b) => (b.end > a.end ? b : a));
+  if (html[last.end] === '\n') last.end += 1;
+  return patchHtml(html, patches);
 }
 
 /** A page script that calls KaTeX needs the #1966 guards and the library. */
