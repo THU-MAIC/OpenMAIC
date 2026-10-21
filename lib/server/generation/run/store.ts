@@ -535,6 +535,12 @@ export interface CreateRunOptions {
    * attributes to store with the run, or throws to refuse it.
    */
   authorize?: (tx: Queryable, runId: string) => Promise<GenerationRunAttributes | undefined>;
+  /**
+   * Prepare another durable record that must commit with this run. Throwing
+   * aborts the whole create transaction. Used by course-series continuation
+   * to claim its pending part without a claim/create crash window.
+   */
+  prepare?: (tx: Queryable, runId: string) => Promise<void>;
   /** This run is one part of a course series, fixed at creation; absent outside a series. */
   series?: GenerationRunSeriesMembership;
 }
@@ -613,6 +619,7 @@ export async function createGenerationRun(
     }
     const id = generateRunId();
     const attributes = options.authorize ? await options.authorize(tx, id) : undefined;
+    if (options.prepare) await options.prepare(tx, id);
     await tx.query(
       `INSERT INTO generation_runs (id, owner_id, input, state, host_attributes, series_id, series_order)
        VALUES ($1, $2, $3::jsonb, 'preparing', $4::jsonb, $5, $6)`,

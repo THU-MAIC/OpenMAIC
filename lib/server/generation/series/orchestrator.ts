@@ -15,16 +15,20 @@ import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
 
 import type { ParsedDocumentPart } from '@/lib/document/bundle';
 import {
-  claimNextPendingSeriesPart,
+  claimPendingSeriesPart,
   createCourseSeries,
   ensureCourseSeriesSchema,
   getCourseSeries,
+  listStalledCourseSeries,
+  readNextPendingSeriesPart,
   type PendingSeriesPart,
 } from '@/lib/persistence/course-series';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { getServerPersistenceProvider, type ServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
+  ActiveRunLimitError,
   createGenerationRun,
+  WaitingRunLimitError,
   type CreateRunOptions,
   type StoredRun,
 } from '@/lib/server/generation/run/store';
@@ -158,7 +162,7 @@ export async function startNextSeriesPart(
   const { pool } = await provider();
   const series = await getCourseSeries(pool, seriesId, ownerId);
   if (!series) return null;
-  const next = await claimNextPendingSeriesPart(pool, seriesId);
+  const next = await readNextPendingSeriesPart(pool, seriesId, ownerId);
   if (!next) return null;
 
   const input: GenerationRunInput = {
@@ -171,7 +175,69 @@ export async function startNextSeriesPart(
     outlineReview: 'auto',
     seriesContext: { seriesId, order: next.order, textRanges: next.textRanges },
   };
-  return createGenerationRun(ownerId, input, { ...limits, series: { seriesId, order: next.order } });
+  try {
+    return await createGenerationRun(ownerId, input, {
+      ...limits,
+      series: { seriesId, order: next.order },
+      prepare: async (tx) => {
+        const claimed = await claimPendingSeriesPart(tx, {
+          seriesId,
+          ownerId,
+          expectedOrder: next.order,
+        });
+        if (!claimed) throw new SeriesPartAlreadyClaimedError();
+      },
+    });
+  } catch (error) {
+    if (error instanceof SeriesPartAlreadyClaimedError) return null;
+    throw error;
+  }
+}
+
+class SeriesPartAlreadyClaimedError extends Error {
+  constructor() {
+    super('The next course-series part was already claimed or is not ready');
+    this.name = 'SeriesPartAlreadyClaimedError';
+  }
+}
+
+/**
+ * Recover series whose predecessor completed without creating its successor.
+ * Each candidate is rechecked under the series-row lock by
+ * `startNextSeriesPart`; another process winning the race is a harmless no-op.
+ */
+export async function resumeStalledCourseSeries(
+  limits: Pick<CreateRunOptions, 'maxActiveRunsPerOwner' | 'maxWaitingRunsPerOwner'>,
+  options: { limit?: number; onError?: (seriesId: string, error: unknown) => void } = {},
+): Promise<number> {
+  const { pool } = await provider();
+  const candidates = await listStalledCourseSeries(pool, options.limit);
+  let started = 0;
+  for (const candidate of candidates) {
+    try {
+      const previous = candidate.previousInput as GenerationRunInput;
+      const run = await startNextSeriesPart(
+        candidate.ownerId,
+        candidate.seriesId,
+        {
+          requirement: previous.requirement,
+          interactive: previous.interactive,
+          taskEngine: previous.taskEngine,
+          agents: previous.agents,
+          ...(previous.learnerProfile ? { learnerProfile: previous.learnerProfile } : {}),
+          ...(previous.voice ? { voice: previous.voice } : {}),
+        },
+        limits,
+      );
+      if (run) started += 1;
+    } catch (error) {
+      // Capacity is transient: leave the part pending and let a later runner
+      // scan retry without logging the same expected condition every poll.
+      if (error instanceof ActiveRunLimitError || error instanceof WaitingRunLimitError) continue;
+      options.onError?.(candidate.seriesId, error);
+    }
+  }
+  return started;
 }
 
 /** A series' course gets a readable, numbered title ("Requirement — Part 2 of 5"). */

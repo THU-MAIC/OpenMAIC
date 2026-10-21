@@ -101,6 +101,50 @@ export function toCourseSeriesRow(row: RawCourseSeriesRow): CourseSeriesRow {
 export const COURSE_SERIES_COLUMNS =
   'id, owner_id, title, part_count, material_ids, pending_parts, created_at';
 
+export interface StalledCourseSeries {
+  seriesId: string;
+  ownerId: string;
+  /** Input of the latest completed part, used to inherit generation settings. */
+  previousInput: unknown;
+}
+
+/**
+ * Series whose latest run completed but whose next planned part has not
+ * become a run. The transaction-level claim rechecks every candidate, so
+ * this deliberately cheap scan may race with another process safely.
+ */
+export async function listStalledCourseSeries(
+  queryable: Queryable,
+  limit = 20,
+): Promise<StalledCourseSeries[]> {
+  const result = await queryable.query<{
+    series_id: string;
+    owner_id: string;
+    previous_input: unknown;
+  }>(
+    `SELECT s.id AS series_id, s.owner_id, latest.input AS previous_input
+       FROM course_series s
+       JOIN LATERAL (
+         SELECT r.input, r.state, r.series_order
+           FROM generation_runs r
+          WHERE r.series_id = s.id AND r.owner_id = s.owner_id
+          ORDER BY r.series_order DESC
+          LIMIT 1
+       ) latest ON true
+      WHERE jsonb_array_length(s.pending_parts) > 0
+        AND latest.state = 'completed'
+        AND latest.series_order + 1 = (s.pending_parts->0->>'order')::integer
+      ORDER BY s.created_at, s.id
+      LIMIT $1`,
+    [limit],
+  );
+  return result.rows.map((row) => ({
+    seriesId: row.series_id,
+    ownerId: row.owner_id,
+    previousInput: row.previous_input,
+  }));
+}
+
 /** A fresh series id (same shape as `generateClassroomId`, prefixed for readability in logs). */
 function generateCourseSeriesId(): string {
   return `series-${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
@@ -151,27 +195,52 @@ export async function getCourseSeries(
   return result.rows[0] ? toCourseSeriesRow(result.rows[0]) : null;
 }
 
-/**
- * Pop the series' next pending part (lowest `order`), atomically: locks the
- * row, so two callers racing to start the next part (the run completion path
- * and a retry of it) cannot both pop the same one. Null when none are left.
- */
-export async function claimNextPendingSeriesPart(
+/** The lowest-order part that has not been started yet, without claiming it. */
+export async function readNextPendingSeriesPart(
   queryable: Queryable,
   seriesId: string,
+  ownerId: string,
+): Promise<PendingSeriesPart | null> {
+  const row = await getCourseSeries(queryable, seriesId, ownerId);
+  return row?.pendingParts.toSorted((a, b) => a.order - b.order)[0] ?? null;
+}
+
+/**
+ * Claim `expectedOrder` on an open transaction. The series row is the lock
+ * all continuation paths share. The latest run must be the completed
+ * predecessor, so retries cannot skip over a still-running part.
+ */
+export async function claimPendingSeriesPart(
+  queryable: Queryable,
+  input: { seriesId: string; ownerId: string; expectedOrder: number },
 ): Promise<PendingSeriesPart | null> {
   const result = await queryable.query<RawCourseSeriesRow>(
-    `SELECT ${COURSE_SERIES_COLUMNS} FROM course_series WHERE id = $1 FOR UPDATE`,
-    [seriesId],
+    `SELECT ${COURSE_SERIES_COLUMNS}
+       FROM course_series
+      WHERE id = $1 AND owner_id = $2
+      FOR UPDATE`,
+    [input.seriesId, input.ownerId],
   );
   const row = result.rows[0];
   if (!row) return null;
   const pending = [...row.pending_parts].sort((a, b) => a.order - b.order);
   const next = pending[0];
-  if (!next) return null;
-  await queryable.query(
-    `UPDATE course_series SET pending_parts = $2::jsonb WHERE id = $1`,
-    [seriesId, JSON.stringify(pending.slice(1))],
+  if (!next || next.order !== input.expectedOrder) return null;
+
+  const predecessor = await queryable.query<{ series_order: number; state: string }>(
+    `SELECT series_order, state
+       FROM generation_runs
+      WHERE series_id = $1 AND owner_id = $2
+      ORDER BY series_order DESC
+      LIMIT 1`,
+    [input.seriesId, input.ownerId],
   );
+  const latest = predecessor.rows[0];
+  if (latest?.series_order !== next.order - 1 || latest.state !== 'completed') return null;
+
+  await queryable.query(`UPDATE course_series SET pending_parts = $2::jsonb WHERE id = $1`, [
+    input.seriesId,
+    JSON.stringify(pending.slice(1)),
+  ]);
   return next;
 }

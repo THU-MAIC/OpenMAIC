@@ -6,6 +6,7 @@
  * `generation-runs.pg.test.ts`); the run store, the series table and the
  * engine's own completion path are real.
  */
+import { NextRequest } from 'next/server';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,6 +26,9 @@ import {
 import type { GenerationRunInput } from '@/lib/server/generation/run/types';
 import {
   resetCourseSeriesSchemaForTests,
+  resumeStalledCourseSeries,
+  startCourseSeries,
+  startNextSeriesPart,
   type SeriesSplitPlan,
 } from '@/lib/server/generation/series/orchestrator';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -41,6 +45,10 @@ const OUTLINES: SceneOutline[] = [
 ];
 
 const UNTIL = { timeout: 25_000, interval: 20 };
+
+function cookie(value: string) {
+  return { cookie: `anonymous_id=${value}` };
+}
 
 /** A single-scene course, enough to drive a run through to `completed`. */
 function slideScene(stageId: string, outline: SceneOutline): Scene {
@@ -172,6 +180,29 @@ function runInput(overrides: Partial<GenerationRunInput> = {}): GenerationRunInp
   };
 }
 
+function threePartPlan(): SeriesSplitPlan {
+  return {
+    firstPart: { order: 1, textRanges: { [MATERIAL_ID]: { start: 0, end: 400 } } },
+    restParts: [
+      { order: 2, textRanges: { [MATERIAL_ID]: { start: 400, end: 800 } } },
+      { order: 3, textRanges: { [MATERIAL_ID]: { start: 800, end: 1200 } } },
+    ],
+  };
+}
+
+const CONTINUATION_LIMITS = { maxActiveRunsPerOwner: 50, maxWaitingRunsPerOwner: 50 };
+
+function continuationBase(input: GenerationRunInput) {
+  return {
+    requirement: input.requirement,
+    interactive: input.interactive,
+    taskEngine: input.taskEngine,
+    agents: input.agents,
+    ...(input.learnerProfile ? { learnerProfile: input.learnerProfile } : {}),
+    ...(input.voice ? { voice: input.voice } : {}),
+  };
+}
+
 describe.skipIf(!contractUrl)('course series on PostgreSQL', () => {
   let admin: Pool;
   let pool: Pool;
@@ -288,6 +319,22 @@ describe.skipIf(!contractUrl)('course series on PostgreSQL', () => {
       // Every later part is confirmed on its own: nobody is shown its outline.
       expect(part2!.input.outlineReview).toBe('auto');
 
+      // The read route carries the series-wide count once only a part's
+      // `seriesId` is known. At this deterministic point part 2 has already
+      // been claimed, so no planned part remains pending.
+      const seriesRoute = await import('@/app/api/course-series/[id]/route');
+      const seriesRead = await seriesRoute.GET(
+        new NextRequest(`http://localhost/api/course-series/${seriesId}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: seriesId }) },
+      );
+      expect((await seriesRead.json()).series).toMatchObject({
+        id: seriesId,
+        partCount: 2,
+        pendingPartCount: 0,
+      });
+
       // Part 2's own material-analysis never asks for another split: a
       // series part reads only its own slice, so `planMaterialSeries` would
       // not even be consulted in a real run; this fake simply never answers
@@ -306,6 +353,14 @@ describe.skipIf(!contractUrl)('course series on PostgreSQL', () => {
       const stillActive = await listGenerationRunsUpdatedSince(OWNER, since);
       expect(stillActive.find((candidate) => candidate.series?.order === 3)).toBeUndefined();
 
+      const seriesReadAfter = await seriesRoute.GET(
+        new NextRequest(`http://localhost/api/course-series/${seriesId}`, {
+          headers: cookie(OWNER_COOKIE),
+        }),
+        { params: Promise.resolve({ id: seriesId }) },
+      );
+      expect((await seriesReadAfter.json()).series).toMatchObject({ pendingPartCount: 0 });
+
       const seriesAfter = await getCourseSeries(pool, seriesId, OWNER);
       expect(seriesAfter!.pendingParts).toEqual([]);
     },
@@ -318,5 +373,164 @@ describe.skipIf(!contractUrl)('course series on PostgreSQL', () => {
     const completed = await driveToCompletion(run.id, services);
     expect(completed.state).toBe('completed');
     expect(completed.series).toBeNull();
+  });
+
+  it('rolls back the pending claim when successor creation fails after claiming it', async () => {
+    const owner = `${OWNER}:rollback`;
+    const input = runInput();
+    const predecessor = await createGenerationRun(owner, input, CONTINUATION_LIMITS);
+    const { seriesId } = await startCourseSeries({
+      ownerId: owner,
+      title: 'Rollback series',
+      materialIds: input.materialIds,
+      plan: twoPartPlan(),
+    });
+    await pool.query(
+      `UPDATE generation_runs
+          SET series_id = $2, series_order = 1, state = 'completed'
+        WHERE id = $1`,
+      [predecessor.id, seriesId],
+    );
+    const cyclicAgents: Record<string, unknown> = {};
+    cyclicAgents.self = cyclicAgents;
+
+    await expect(
+      startNextSeriesPart(
+        owner,
+        seriesId,
+        { ...continuationBase(input), agents: cyclicAgents as GenerationRunInput['agents'] },
+        CONTINUATION_LIMITS,
+      ),
+    ).rejects.toThrow();
+    expect((await getCourseSeries(pool, seriesId, owner))!.pendingParts).toHaveLength(1);
+    const runs = await pool.query<{ n: string }>(
+      'SELECT count(*) AS n FROM generation_runs WHERE series_id = $1',
+      [seriesId],
+    );
+    expect(Number(runs.rows[0]!.n)).toBe(1);
+    await expect(
+      startNextSeriesPart(owner, seriesId, continuationBase(input), CONTINUATION_LIMITS),
+    ).resolves.not.toBeNull();
+  });
+
+  it('creates only one successor under concurrent continuation calls', async () => {
+    const owner = `${OWNER}:concurrent`;
+    const input = runInput();
+    const predecessor = await createGenerationRun(owner, input, CONTINUATION_LIMITS);
+    const { seriesId } = await startCourseSeries({
+      ownerId: owner,
+      title: 'Concurrent series',
+      materialIds: input.materialIds,
+      plan: twoPartPlan(),
+    });
+    await pool.query(
+      `UPDATE generation_runs
+          SET series_id = $2, series_order = 1, state = 'completed'
+        WHERE id = $1`,
+      [predecessor.id, seriesId],
+    );
+
+    const results = await Promise.all([
+      startNextSeriesPart(owner, seriesId, continuationBase(input), CONTINUATION_LIMITS),
+      startNextSeriesPart(owner, seriesId, continuationBase(input), CONTINUATION_LIMITS),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const runs = await pool.query<{ series_order: number }>(
+      'SELECT series_order FROM generation_runs WHERE series_id = $1 ORDER BY series_order',
+      [seriesId],
+    );
+    expect(runs.rows.map((row) => row.series_order)).toEqual([1, 2]);
+  });
+
+  it('recovers a missing successor but never skips past a running part', async () => {
+    const owner = `${OWNER}:recovery`;
+    const input = runInput();
+    const predecessor = await createGenerationRun(owner, input, CONTINUATION_LIMITS);
+    const { seriesId } = await startCourseSeries({
+      ownerId: owner,
+      title: 'Recovery series',
+      materialIds: input.materialIds,
+      plan: threePartPlan(),
+    });
+    await pool.query(
+      `UPDATE generation_runs
+          SET series_id = $2, series_order = 1, state = 'completed'
+        WHERE id = $1`,
+      [predecessor.id, seriesId],
+    );
+
+    expect(await resumeStalledCourseSeries(CONTINUATION_LIMITS)).toBeGreaterThanOrEqual(1);
+    const runs = await pool.query<{ series_order: number; state: string }>(
+      'SELECT series_order, state FROM generation_runs WHERE series_id = $1 ORDER BY series_order',
+      [seriesId],
+    );
+    expect(runs.rows).toMatchObject([
+      { series_order: 1, state: 'completed' },
+      { series_order: 2, state: 'preparing' },
+    ]);
+
+    expect(await resumeStalledCourseSeries(CONTINUATION_LIMITS)).toBe(0);
+    const runsAfterRetry = await pool.query<{ series_order: number }>(
+      'SELECT series_order FROM generation_runs WHERE series_id = $1 ORDER BY series_order',
+      [seriesId],
+    );
+    expect(runsAfterRetry.rows.map((row) => row.series_order)).toEqual([1, 2]);
+    expect((await getCourseSeries(pool, seriesId, owner))!.pendingParts.map((part) => part.order)).toEqual([
+      3,
+    ]);
+  });
+
+  it('keeps a stalled part pending at the owner limit and starts it after capacity returns', async () => {
+    const owner = `${OWNER}:capacity`;
+    const input = runInput();
+    const predecessor = await createGenerationRun(owner, input, CONTINUATION_LIMITS);
+    const blocker = await createGenerationRun(owner, runInput({ materialIds: [] }), CONTINUATION_LIMITS);
+    const { seriesId } = await startCourseSeries({
+      ownerId: owner,
+      title: 'Capacity series',
+      materialIds: input.materialIds,
+      plan: twoPartPlan(),
+    });
+    await pool.query(
+      `UPDATE generation_runs
+          SET series_id = $2, series_order = 1, state = 'completed'
+        WHERE id = $1`,
+      [predecessor.id, seriesId],
+    );
+
+    expect(
+      await resumeStalledCourseSeries({ maxActiveRunsPerOwner: 1, maxWaitingRunsPerOwner: 50 }),
+    ).toBe(0);
+    expect((await getCourseSeries(pool, seriesId, owner))!.pendingParts).toHaveLength(1);
+
+    await pool.query(`UPDATE generation_runs SET state = 'completed' WHERE id = $1`, [blocker.id]);
+    expect(
+      await resumeStalledCourseSeries({ maxActiveRunsPerOwner: 1, maxWaitingRunsPerOwner: 50 }),
+    ).toBeGreaterThanOrEqual(1);
+    expect((await getCourseSeries(pool, seriesId, owner))!.pendingParts).toEqual([]);
+  });
+
+  it('answers 404 for an unknown series id, and for another owner\'s series', async () => {
+    const run = await start(runInput());
+    const { services } = fakeServices(twoPartPlan());
+    const completed = await driveToCompletion(run.id, services);
+    const seriesId = completed.series!.seriesId;
+
+    const route = await import('@/app/api/course-series/[id]/route');
+    const unknown = await route.GET(
+      new NextRequest('http://localhost/api/course-series/series-doesnotexist', {
+        headers: cookie(OWNER_COOKIE),
+      }),
+      { params: Promise.resolve({ id: 'series-doesnotexist' }) },
+    );
+    expect(unknown.status).toBe(404);
+
+    const otherOwner = await route.GET(
+      new NextRequest(`http://localhost/api/course-series/${seriesId}`, {
+        headers: cookie('9f8e7d6c-5b4a-4a3b-8c2d-1e0f9a8b7c6d'),
+      }),
+      { params: Promise.resolve({ id: seriesId }) },
+    );
+    expect(otherOwner.status).toBe(404);
   });
 });

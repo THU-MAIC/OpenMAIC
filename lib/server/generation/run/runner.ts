@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { createLogger } from '@/lib/logger';
 
 import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
+import { resumeStalledCourseSeries } from '@/lib/server/generation/series/orchestrator';
 
 import { generationRunConfig, type GenerationRunConfig } from './config';
 import { executeGenerationRun } from './engine';
@@ -130,10 +131,19 @@ export function startGenerationRunner(
         rescan = false;
         const config = { ...generationRunConfig(), ...options.config };
         // Outlines whose countdown ran out are confirmed first, so this scan
-        // claims those runs too.
+        // claims those runs too. This also provisions the generation-run
+        // schema before the course-series recovery query joins against it.
         await confirmDueGenerationRunOutlines().catch((error) =>
           log.warn('confirming due outlines failed', error),
         );
+        // A process may have died after committing a series part but before
+        // creating its successor. Reconcile those gaps before claiming work;
+        // the series-row lock makes concurrent runner scans safe.
+        await resumeStalledCourseSeries(config, {
+          limit: config.maxConcurrent,
+          onError: (seriesId, error) =>
+            log.warn(`resuming stalled course series ${seriesId} failed`, error),
+        }).catch((error) => log.warn('stalled course-series scan failed', error));
         while (running.size < config.maxConcurrent && !stopping) {
           const claim = await claimNextGenerationRun(workerId, {
             leaseTtlMs: config.leaseTtlMs,

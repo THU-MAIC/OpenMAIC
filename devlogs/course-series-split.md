@@ -176,3 +176,27 @@
 **Commit**：本次提交只纳入本单元（6+7）新增/改动的文件；工作树里另有一批与本系列无关、看起来是别的工作在进行中的改动（`README.md`、`package.json`、`.gitignore`、`openmaic.example.yml`、`e2e/tests/home-to-generation.spec.ts`、`lib/server/generation/run/deadline.ts`、`lib/server/generation/run/document.ts`、`packages/docs/content/docs/deployment.zh-cn.mdx`、`.zcode/`、`data/`、`public/tmp-verify/`、`scripts/start-all.mjs`、`tests/audio/cosyvoice-tts.test.ts`、`public/logos/cosyvoice.svg`），不属于 course-series 这条线，本次未touch、未纳入提交。
 
 ---
+
+### 单元 8：系列续接原子性 + 停滞恢复扫描
+
+**发现的问题（阻断性）**：单元 4 的 `startNextSeriesPart()` 注释声称“创建 run 失败会把分部留在 `pending_parts`”，实际实现却先用连接池执行 `SELECT ... FOR UPDATE`、再 `UPDATE` 删除 pending，最后才调用另一个事务里的 `createGenerationRun()`。连接池上的两条语句各自自动提交，`FOR UPDATE` 根本没有保护后续更新；创建 run 失败时分部已经永久丢失，并发续接也可能重复领取。也就是说，单元 4 记录的核心可靠性不变量并未成立。
+
+**修复**：
+
+- `lib/server/generation/run/store.ts`：`CreateRunOptions` 新增服务端内部的 `prepare(tx, runId)` 钩子，在 owner 限额/授权检查之后、run INSERT 之前执行，和 run 行、初始事件、owner notify 同属 `createGenerationRun()` 的一个事务；抛错会整体回滚。
+- `lib/persistence/course-series.ts`：原 `claimNextPendingSeriesPart` 拆成无锁候选读取 `readNextPendingSeriesPart()` 与必须运行在调用方事务内的 `claimPendingSeriesPart()`。后者锁 `course_series` 行，重新验证 owner、期望 order，并检查该系列最新 run 恰好是 `order - 1` 且状态为 `completed`，通过后才删除 pending。这样并发调用只有一个能成功，且 part 2 未完成时绝不会抢先启动 part 3。
+- `startNextSeriesPart()`：先读取候选来构造轻量 input，真正领取放进 `createGenerationRun.prepare`；限额、序列化、INSERT 或后续事务步骤任一失败，pending 删除都会回滚。并发竞争失败被归一为返回 `null`。
+- `listStalledCourseSeries()` + `resumeStalledCourseSeries()`：查询“pending 非空、最新系列 run 已 completed、下一 pending order 连续”的小批候选，从前一 run 的 input 继承生成设置并调用同一条事务安全续接路径。并发 runner 同时扫描也是安全的。owner active/waiting 限额属于预期瞬态条件，不刷 warning，pending 保留到下一轮。
+- `lib/server/generation/run/runner.ts`：每轮 scan 在 run schema 引导完成后执行一次有上限的系列恢复，再领取普通 run；进程若在前一 part completion 提交后、创建下一 run 前崩溃，后续任意进程的 runner scan 都能补建。复用既有 scan 定时器，没有新增后台组件。
+
+**测试**：`tests/server/course-series.pg.test.ts` 从 3 个扩展到 7 个契约用例，新增覆盖“领取后创建失败整体回滚且之后可重试”、“两个并发续接只建一个 successor”、“恢复扫描补建丢失 successor 但不会越过 preparing part 2 创建 part 3”、“owner 达限时保留 pending、释放容量后恢复成功”。这些测试直接查 `generation_runs` 和 `course_series`，验证的是数据库不变量而非 mock 调用次数。
+
+**验证**：
+- `tsc --noEmit -p tsconfig.json`：全量通过。
+- 改动的 5 个实现/测试文件逐一 eslint：无 warning/error。
+- 使用 Rancher Desktop 中项目 PostgreSQL（`PG_CONTRACT_URL=postgres://openmaic:openmaic-dev@127.0.0.1:5432/openmaic`）运行 `tests/server/course-series.pg.test.ts`：7/7 通过，真实验证了系列自动晋升与续接、事务失败回滚、并发唯一领取、顺序约束、停滞恢复、限额释放后重试以及 owner 隔离的读取端点。首次执行有 1 个测试因错误假设 fire-and-forget 尚未启动 part 2、期望 `pendingPartCount: 1` 而失败；实现已正确返回 0。把断言移到明确等待 part 2 创建之后并改为 0，重跑 7/7 通过。
+- `vitest run tests/server/generation/series-plan.test.ts tests/document/series-split.test.ts tests/generation-run-client`：14 个文件、92/92 通过。
+
+**Commit**：未提交；本单元已完成 PostgreSQL 验收，可以提交。
+
+---
