@@ -131,6 +131,8 @@ describe('on-demand math', () => {
     `<div id="a"></div><script type="module">a.innerHTML = katex.renderToString('x^2');</script>`,
     `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
     `<script>const f = '\\\\frac{1}{2}';</script>`,
+    '<p id="a"></p><script>a.textContent = String.raw`\\(\\frac{1}{2}\\)`;</script>',
+    '<p id="a"></p><script>a.textContent = String.raw`Area: \\sqrt{${n}}`;</script>',
   ])('loads local KaTeX for script-only math %s', (input) => {
     const html = postProcessInteractiveHtml(input);
     expect(html).toContain('defer src="/vendor/interactive/katex@');
@@ -141,6 +143,8 @@ describe('on-demand math', () => {
     '<title>$x$</title><p>No math</p>',
     '<p>Prices: $5 and $10</p>',
     '<script>const x="$x$"; const y=`${value}`;</script>',
+    '<script>const re = /\\(\\d+\\)/; const t = `a\\(b`;</script>',
+    '<script>const p = String.raw`C:\\temp\\new`;</script>',
     '<style>.x::before{content:"$x$"}</style>',
     '<p data-value="$x$">No math</p>',
     '<pre>$x$</pre><code>$x$</code>',

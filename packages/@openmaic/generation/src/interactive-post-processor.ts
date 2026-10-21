@@ -71,7 +71,7 @@ export function postProcessInteractiveHtml(html: string): string {
         node.parentNode &&
         'tagName' in node.parentNode &&
         node.parentNode.tagName === 'script' &&
-        (SCRIPT_TEX.test(node.value) || KATEX_CALL.test(node.value))
+        (scriptHasTex(node.value) || KATEX_CALL.test(node.value))
       ) {
         hasMath = true;
         // A classic inline script runs during parsing and may use the return value
@@ -125,9 +125,19 @@ function isClassicScript(node: DefaultTreeAdapterTypes.ParentNode): boolean {
 
 const KATEX_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
 
-/** A JS-escaped TeX delimiter or common command inside a script string literal. */
-const SCRIPT_TEX =
-  /\\\\(?:[([]|begin\{|(?:frac|sqrt|sum|int|lim|cdot|times|div|pm|infty|alpha|beta|gamma|delta|theta|lambda|sigma|omega|Delta|vec|mathrm|mathbf)(?![A-Za-z]))/;
+/** TeX delimiters and common commands after a single backslash. */
+const TEX =
+  /\\(?:[([]|begin\{|(?:frac|sqrt|sum|int|lim|cdot|times|div|pm|infty|alpha|beta|gamma|delta|theta|lambda|sigma|omega|Delta|vec|mathrm|mathbf)(?![A-Za-z]))/;
+/** The same, JS-escaped (two backslashes) inside an ordinary string literal. */
+const SCRIPT_TEX = new RegExp(`\\\\${TEX.source}`);
+/** String.raw template literals keep TeX backslashes single. */
+const RAW_TEMPLATE = /\bString\s*\.\s*raw\s*`((?:[^`\\]|\\[\s\S])*)`/g;
+
+function scriptHasTex(source: string): boolean {
+  if (SCRIPT_TEX.test(source)) return true;
+  for (const match of source.matchAll(RAW_TEMPLATE)) if (TEX.test(match[1]!)) return true;
+  return false;
+}
 
 /** The guard runs immediately; local libraries are deferred unless the page needs them during parsing. */
 function injectKatex(html: string, synchronous: boolean): string {
