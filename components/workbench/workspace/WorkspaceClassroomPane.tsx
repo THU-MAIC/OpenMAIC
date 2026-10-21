@@ -34,6 +34,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   readOnly,
   playback,
   hidden,
+  onRequestInteractiveRepair,
   onCollapse,
 }: {
   /**
@@ -63,6 +64,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * context; the attached Chat store is not involved.
    */
   readonly hidden: boolean;
+  /** Stage-scoped capability to stage a repair request in the Pro composer. */
+  readonly onRequestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
   /**
    * Minimise this pane, leaving its reopen tab and this chat's remembered set
    * intact. Rendered at the end of the pane's own header — see `PaneFoldButton`
@@ -167,7 +170,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           classroom document or the stage store says about play/edit does not
           participate. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} playback={playback}>
+        <WorkbenchPanelProvider
+          visible={!hidden}
+          playback={playback}
+          requestInteractiveRepair={onRequestInteractiveRepair}
+        >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

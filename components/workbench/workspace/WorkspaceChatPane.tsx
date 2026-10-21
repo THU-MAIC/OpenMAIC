@@ -22,6 +22,7 @@ import { PaneFoldButton } from './PaneFoldButton';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { presentWorkspaceSession } from '@/lib/workbench/workspace-navigation';
 import { SESSION_TITLE_MAX_LENGTH, workbenchSessionTitle } from '@/lib/workbench/session-title';
+import type { WorkbenchComposerPrefill } from '@/lib/workbench/interactive-repair-prefill';
 import {
   WorkbenchCourseNavigationProvider,
   WorkbenchDraftConversationProvider,
@@ -35,6 +36,9 @@ export function WorkspaceChatPane({
   hidden,
   navigation,
   draftConversation = null,
+  paneSessionId = null,
+  prefill = null,
+  onPrefillConsumed,
   onCollapse,
   onRename,
   resizeHandle,
@@ -67,6 +71,11 @@ export function WorkspaceChatPane({
    * ordinary attached chat.
    */
   readonly draftConversation?: WorkbenchDraftConversation | null;
+  /** The session the workspace pane has selected, even before chat attach completes. */
+  readonly paneSessionId?: string | null;
+  /** Product-owned text to stage in the composer without sending it. */
+  readonly prefill?: WorkbenchComposerPrefill | null;
+  readonly onPrefillConsumed?: (id: number) => void;
   /**
    * Fold this pane away, when there is another pane to take the column. Rendered
    * at the end of the pane's own header — see `PaneFoldButton` for why it is not
@@ -181,7 +190,13 @@ export function WorkspaceChatPane({
       <div className="relative min-h-0 flex-1">
         <WorkbenchCourseNavigationProvider navigation={navigation}>
           <WorkbenchDraftConversationProvider draft={draftConversation}>
-            <WorkbenchChat hosted adjacentPanelOpen={!fill} />
+            <WorkbenchChat
+              hosted
+              adjacentPanelOpen={!fill}
+              paneSessionId={paneSessionId}
+              prefill={prefill}
+              onPrefillConsumed={onPrefillConsumed}
+            />
           </WorkbenchDraftConversationProvider>
         </WorkbenchCourseNavigationProvider>
       </div>

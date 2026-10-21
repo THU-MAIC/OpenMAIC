@@ -234,8 +234,12 @@ describe('fold placement', () => {
     expect(shell).toContain('setClassroom(false)');
     expect(shell).toContain('collapse.collapseChat');
     expect(shell).toContain('collapse.collapseClassroom');
-    expect(pane).toContain('<WorkbenchPanelProvider visible={!hidden} playback={playback}>');
-    expect(chatPane).toContain('<WorkbenchChat hosted adjacentPanelOpen={!fill} />');
+    expect(pane).toContain('<WorkbenchPanelProvider');
+    expect(pane).toContain('visible={!hidden}');
+    expect(pane).toContain('playback={playback}');
+    expect(chatPane).toContain('<WorkbenchChat');
+    expect(chatPane).toContain('adjacentPanelOpen={!fill}');
+    expect(chatPane).toContain('prefill={prefill}');
     expect(shell).not.toContain('panelOpen !== classroomVisible');
   });
 

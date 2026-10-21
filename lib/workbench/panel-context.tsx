@@ -30,6 +30,11 @@ export interface WorkbenchPanelState {
    * Learning and stepped into full-screen playback.
    */
   readonly editPinned: boolean;
+  /**
+   * Optional bridge into the visible Pro conversation. Its presence means the
+   * host can stage a repair request for the user without invoking the model.
+   */
+  readonly requestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -45,14 +50,22 @@ export function WorkbenchPanelProvider({
   children,
   visible = true,
   playback = false,
+  requestInteractiveRepair,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly playback?: boolean;
+  readonly requestInteractiveRepair?: (sceneId: string, runtimeError: string) => void;
 }) {
   const value = useMemo<WorkbenchPanelState>(
-    () => ({ hosted: true, visible, playback, editPinned: visible && !playback }),
-    [playback, visible],
+    () => ({
+      hosted: true,
+      visible,
+      playback,
+      editPinned: visible && !playback,
+      requestInteractiveRepair: visible && !playback ? requestInteractiveRepair : undefined,
+    }),
+    [playback, requestInteractiveRepair, visible],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

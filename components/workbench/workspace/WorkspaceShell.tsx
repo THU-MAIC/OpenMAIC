@@ -66,6 +66,14 @@ import { startProSwap } from '@/lib/workbench/pro-swap';
 import { createdCourseTabsToOpen } from '@/lib/workbench/created-course-tabs';
 import { isCourseReadOnly } from '@/lib/workbench/course-read-only';
 import {
+  buildInteractiveRepairPrefill,
+  type WorkbenchComposerPrefill,
+} from '@/lib/workbench/interactive-repair-prefill';
+import {
+  consumeInteractiveRepairHandoff,
+  INTERACTIVE_REPAIR_HANDOFF_EVENT,
+} from '@/lib/workbench/interactive-repair-handoff';
+import {
   clampRailWidth,
   parseRailWidth,
   RAIL_WIDTH_DEFAULT,
@@ -220,6 +228,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const sessionsRef = useRef(sessions);
   const [sessionState, setSessionState] = useState<HomeDiscoveryState>('loading');
   const [composerReset, setComposerReset] = useState(0);
+  const [composerPrefill, setComposerPrefill] = useState<WorkbenchComposerPrefill | null>(null);
+  const composerPrefillSequence = useRef(0);
   /**
    * The user asked for a NEW conversation and a classroom is open beside it.
    *
@@ -366,6 +376,58 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * tab beside it is the affordance; `display: none` is the mechanism.
    */
   const chatMounted = panes.sessionId !== null || draftCourseId !== null;
+  const repairConversationAvailable =
+    draftCourseId !== null || (panes.sessionId !== null && attachedSessionId === panes.sessionId);
+
+  // ── Read-only ─────────────────────────────────────────────────────────
+  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
+  // saved from Discover) and a generation run still producing the course.
+  const selectedCourse = courses.classrooms.find((course) => course.id === panes.courseId);
+  const courseGenerating = useStageStore((s) => s.courseGenerating);
+  const readOnlyCourse = isCourseReadOnly({
+    isOwner: selectedCourse?.isOwner,
+    generating: courseGenerating,
+  });
+  const canRepairCourse =
+    !!selectedCourse && !readOnlyCourse && !generatingCourseIds.has(selectedCourse.id);
+
+  const requestInteractiveRepair = useCallback(
+    (sceneId: string, runtimeError: string) => {
+      composerPrefillSequence.current += 1;
+      if (!panes.courseId) return;
+      setComposerPrefill({
+        id: composerPrefillSequence.current,
+        courseId: panes.courseId,
+        text: buildInteractiveRepairPrefill({ sceneId, error: runtimeError, t }),
+      });
+      // On narrow layouts the classroom and chat are mutually exclusive. A
+      // repair request stages text only, then brings the composer into view.
+      collapse.expandChat();
+      setNarrowFocus('chat');
+    },
+    [collapse, panes.courseId, t],
+  );
+
+  useEffect(() => {
+    const consumeHandoff = () => {
+      // Re-check the same writable course gate before consuming a navigation handoff.
+      if (!canRepairCourse || !repairConversationAvailable) return;
+      const handoff = consumeInteractiveRepairHandoff(panes.courseId);
+      if (!handoff) return;
+      requestInteractiveRepair(handoff.sceneId, handoff.error);
+    };
+
+    // Standalone classrooms leave the one-shot payload behind before routing
+    // here; hosted learning can deliver the same handoff while this shell stays
+    // mounted, so support both the initial read and the same-tab event.
+    consumeHandoff();
+    window.addEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
+    return () => window.removeEventListener(INTERACTIVE_REPAIR_HANDOFF_EVENT, consumeHandoff);
+  }, [panes.courseId, canRepairCourse, repairConversationAvailable, requestInteractiveRepair]);
+
+  const acknowledgeComposerPrefill = useCallback((id: number) => {
+    setComposerPrefill((current) => (current?.id === id ? null : current));
+  }, []);
 
   // The right pane has two lifecycle states: content, or no pane. When it is
   // closed (or no course has ever been opened for this conversation), chat
@@ -949,19 +1011,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     if (!panes.courseId && playbackOn) setPlaybackOn(false);
   }, [panes.courseId, playbackOn, setPlaybackOn]);
 
-  // ── Read-only ─────────────────────────────────────────────────────────
-  // See `isCourseReadOnly`: the course list's `isOwner` (false for a course
-  // saved from Discover) and a generation run still producing the course.
-  const courseIsOwner = useMemo(
-    () => courses.classrooms.find((course) => course.id === panes.courseId)?.isOwner,
-    [courses.classrooms, panes.courseId],
-  );
-  const courseGenerating = useStageStore((s) => s.courseGenerating);
-  const readOnlyCourse = isCourseReadOnly({
-    isOwner: courseIsOwner,
-    generating: courseGenerating,
-  });
-
   /* ── What a course is CALLED ───────────────────────────────────────────
      Tabs and in-chat links both need a name and a page count for an id, and
      both must degrade rather than invent one. The authoritative list is the
@@ -1092,6 +1141,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           width={chatWidth.value}
           navigation={courseNavigation}
           draftConversation={draftConversation}
+          paneSessionId={panes.sessionId}
+          prefill={composerPrefill}
+          onPrefillConsumed={acknowledgeComposerPrefill}
           onRename={
             // Only a conversation that exists can be named. A draft one has no
             // id to PATCH — its first message mints the session, and the title
@@ -1127,6 +1179,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           hidden={!classroomOpen}
           readOnly={readOnlyCourse}
           playback={playbackOn}
+          onRequestInteractiveRepair={
+            repairConversationAvailable && canRepairCourse ? requestInteractiveRepair : undefined
+          }
           // Symmetric with the conversation's fold: offered only while both
           // panes are on screen (the last visible pane cannot fold — see
           // `resolveWorkspaceRender`). Its button lives in the pane's own header.
