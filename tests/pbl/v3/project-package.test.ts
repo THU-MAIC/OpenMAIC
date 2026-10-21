@@ -23,6 +23,7 @@ import {
 } from '@/lib/pbl/v3/package-client';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { bindPackageReferences } from '@/lib/server/pbl-v3/project-resolver';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import { enumerateAssetManifest, validatePBLContent, isPBLV3Reference } from '@openmaic/dsl';
 
 const source = (id = 'greeting-python-lab') => installedProject({ id, version: '1.0.0' });
@@ -142,6 +143,86 @@ describe('self-contained PBL project packages', () => {
         }),
       ),
     ).toThrow('private');
+  });
+  it.each(['skeleton/src', 'tests/greeting.json/extra.txt'])(
+    'rejects files that conflict with resource directories: %s',
+    (name) => {
+      expect(() =>
+        validateProjectPackage(
+          revised((files) => {
+            files[name] = 'conflicting file';
+          }),
+        ),
+      ).toThrow('Project file conflicts with a resource directory');
+    },
+  );
+  it.each(['src/greeting.py', 'src/greeting.py/nested'])(
+    'rejects source roots that name or descend from a starter file: %s',
+    (root) => {
+      expect(() =>
+        validateProjectPackage(
+          revised((files) => {
+            const spec = JSON.parse(files['project.json']);
+            spec.runtime.sourceRoots = [root];
+            files['project.json'] = JSON.stringify(spec);
+          }),
+        ),
+      ).toThrow('Source root must be a directory');
+    },
+  );
+  it('bounds the complete evaluation command, including private resources and its runtime UUID', () => {
+    const bundle = packageBuiltin(source('greeting-python'));
+    const { project } = validateProjectPackage(bundle);
+    const spec = evaluationFor(project, 'greeting');
+    const requestId = '12345678-1234-1234-1234-123456789012';
+    const commandBytes = (padding: number) =>
+      Buffer.byteLength(
+        evaluationCommand(
+          { ...spec, resources: { ...spec.resources, 'rubric/padding.txt': 'x'.repeat(padding) } },
+          requestId,
+        ),
+      );
+    const privateBytes = Object.values(spec.resources!).reduce(
+      (total, text) => total + Buffer.byteLength(text),
+      0,
+    );
+    let accepted = 0,
+      rejected = 24 * 1024 - privateBytes;
+    expect(commandBytes(rejected)).toBeGreaterThan(MAX_COMMAND_BYTES);
+    while (rejected - accepted > 1) {
+      const candidate = Math.floor((accepted + rejected) / 2);
+      if (commandBytes(candidate) <= MAX_COMMAND_BYTES) accepted = candidate;
+      else rejected = candidate;
+    }
+    const padded = (padding: number) =>
+      indexProjectFiles(bundle.entry.id, bundle.entry.version, {
+        ...bundle.files,
+        'rubric/padding.txt': 'x'.repeat(padding),
+      });
+    const acceptedProject = validateProjectPackage(padded(accepted)).project;
+    expect(
+      Buffer.byteLength(evaluationCommand(evaluationFor(acceptedProject, 'greeting'), requestId)),
+    ).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
+    expect(() => validateProjectPackage(padded(rejected))).toThrow(
+      'Evaluation exceeds the sandbox 32 KiB command limit',
+    );
+  });
+  it('counts UTF-8 bytes in generated build commands before accepting a package', () => {
+    const withBuildPaths = (characters: number) =>
+      revised((files) => {
+        const spec = JSON.parse(files['project.json']);
+        spec.runtime.buildSources = Array.from(
+          { length: 128 },
+          (_, index) => `src/${'课'.repeat(characters)}${index}.py`,
+        );
+        for (const name of spec.runtime.buildSources) files[`skeleton/${name}`] = '';
+        files['project.json'] = JSON.stringify(spec);
+      });
+    const { project } = validateProjectPackage(withBuildPaths(70));
+    expect(Buffer.byteLength(project.buildCommand!)).toBeLessThanOrEqual(MAX_COMMAND_BYTES);
+    expect(() => validateProjectPackage(withBuildPaths(100))).toThrow(
+      'Build sources exceed the sandbox 32 KiB command limit',
+    );
   });
   it('rejects ZIP traversal, symlinks, extra files and false size indexes before decompression', async () => {
     const bundle = packageBuiltin(source());

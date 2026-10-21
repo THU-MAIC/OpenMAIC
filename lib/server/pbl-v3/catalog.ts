@@ -11,6 +11,7 @@ export interface InstalledProject {
   /** Optional trusted relative directories (without trailing slashes), never browser input. */
   sourceRoots?: readonly string[];
   /** Trusted deployment-owned commands, never read from browser scene content. */
+  testCommand?: string;
   evaluations: Record<string, ProjectEvaluation>;
   buildCommand?: string;
   previewPorts?: readonly number[];
@@ -31,6 +32,7 @@ const greeting: InstalledProject = {
     'PLAN.md': '',
     'greeting.py': 'def greet(name):\n    # Implement a friendly greeting.\n    return ""\n',
   },
+  testCommand: `python3 -c 'from greeting import greet; assert greet("Ada") == "Hello, Ada!"; assert greet("Lin") == "Hello, Lin!"; print("2 checks passed")'`,
   evaluations: {
     greeting: {
       cases: ['Ada', 'Lin'].map((name) => ({

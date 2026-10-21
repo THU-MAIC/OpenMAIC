@@ -6,6 +6,7 @@ import {
   type ServerPersistenceProvider,
 } from '@/lib/persistence/server-provider';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import { resolveAssetPendingTtlMs } from '@/lib/persistence/asset-pending-ttl';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { SandboxError, sandboxInvalid } from '@/lib/sandbox/errors';
 import { installedProject, type InstalledProject } from './catalog';
@@ -38,13 +39,25 @@ export async function installProjectPackage(
     const existing = await db.query<{ asset_id: string }>(
       `SELECT p.asset_id FROM pbl_project_installations p JOIN asset_entries e ON e.id=p.asset_id
        WHERE p.checksum=$1 AND p.content_hash=$2 AND e.content_hash=$2 AND e.principal=$3
-       AND e.revision=1 AND (e.expires_at IS NULL OR e.expires_at>now()) ORDER BY e.id LIMIT 1`,
+       AND e.revision=1 AND e.unreferenced_at IS NULL
+       AND (e.expires_at IS NULL OR e.expires_at>now())
+       ORDER BY e.id LIMIT 1 FOR UPDATE OF e`,
       [bundle.entry.checksum, hash, assetPrincipalForOwner(ownerId).key],
     );
     let assetId: string | undefined = existing.rows[0]?.asset_id;
     if (assetId) {
       const stored = await store.assetStoreIn(db).resolve(assetPrincipalForOwner(ownerId), assetId);
       if (!stored || `sha256-${sha256(stored.bytes)}` !== hash) assetId = undefined;
+      else {
+        // A retry gets the same publication window as a fresh allocation. The entry lock
+        // keeps collection from racing verification and renewal. Previously unreferenced
+        // entries take the put path instead, which accounts for their quota again.
+        await db.query(
+          `UPDATE asset_entries SET expires_at=now()+($2::double precision * interval '1 millisecond')
+           WHERE id=$1 AND committed_at IS NULL AND expires_at IS NOT NULL`,
+          [assetId, resolveAssetPendingTtlMs()],
+        );
+      }
     }
     if (!assetId) {
       assetId = await store

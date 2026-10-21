@@ -8,16 +8,14 @@ import {
   type AgentRole,
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import { SandboxError } from '@/lib/sandbox/errors';
+import { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
+import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
+import { evaluationCommand } from './evaluation';
 import { stageSkill } from './skills';
 import { validSourcePath } from './workspace-files';
 
-export const PROJECT_LIMITS = {
-  files: 512,
-  fileBytes: 512 * 1024,
-  bytes: 8 * 1024 * 1024,
-  projects: 16,
-};
+export { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
 export const sha256 = (value: string | Uint8Array) =>
   createHash('sha256').update(value).digest('hex');
 export function canonicalJson(value: unknown): string {
@@ -30,20 +28,6 @@ export function canonicalJson(value: unknown): string {
       )
       .join(',')}}`;
   return JSON.stringify(value);
-}
-export function safeProjectPath(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= 240 &&
-    !/[\\\x00-\x1f\x7f:%]/.test(value) &&
-    !value
-      .split('/')
-      .some(
-        (part) =>
-          !part || part === '.' || part === '..' || part.startsWith('.') || part.trim() !== part,
-      )
-  );
 }
 const path = z.string().refine(safeProjectPath, 'Invalid relative project path');
 const section = z.object({ name: z.string().regex(/^[A-Z]-[a-z-]+\.md$/), path }).strict();
@@ -176,6 +160,15 @@ export function validateProjectPackage(input: unknown): {
     names.length !== Object.keys(bundle.entry.files).length
   )
     return invalid('Project file index does not match its resources or exceeds the file limit.');
+  const fileNames = new Set(names);
+  for (const name of names) {
+    let directory = name;
+    while (directory.includes('/')) {
+      directory = directory.slice(0, directory.lastIndexOf('/'));
+      if (fileNames.has(directory))
+        return invalid(`Project file conflicts with a resource directory: ${directory}`);
+    }
+  }
   let total = 0;
   for (const name of names) {
     if (name !== 'project.json' && !/^(skeleton|skills|docs|tests|rubric)\//.test(name))
@@ -278,6 +271,13 @@ export function validateProjectPackage(input: unknown): {
     );
     if (Buffer.byteLength(JSON.stringify({ ...spec, resources })) > 48 * 1024)
       return invalid(`Evaluation payload exceeds 48 KiB: ${name}`);
+    // Runtime request IDs are UUIDs. Account for the complete encoded runner, not just its JSON.
+    if (
+      Buffer.byteLength(
+        evaluationCommand({ ...spec, resources }, '00000000-0000-0000-0000-000000000000'),
+      ) > MAX_COMMAND_BYTES
+    )
+      return invalid(`Evaluation exceeds the sandbox 32 KiB command limit: ${name}`);
   }
   const files = Object.fromEntries(
     names
@@ -295,6 +295,9 @@ export function validateProjectPackage(input: unknown): {
     return invalid(
       'Starter files exceed the supported source paths, 256 files or 1 MiB snapshot limit.',
     );
+  for (const root of config.runtime.sourceRoots)
+    if (Object.keys(files).some((name) => root === name || root.startsWith(`${name}/`)))
+      return invalid(`Source root must be a directory, but conflicts with a starter file: ${root}`);
   // Assessment and teaching resources must never become learner source paths.
   if (Object.keys(files).some((name) => /^(skills|docs|tests|rubric)(\/|$)/.test(name)))
     return invalid('Starter files overlap private course resources.');
@@ -315,6 +318,8 @@ export function validateProjectPackage(input: unknown): {
       ? `javac -d /tmp/pbl-project-build ${buildSources.map((name) => quote(`./${name}`)).join(' ')}`
       : `python3 -c ${quote(`import ast,pathlib; [ast.parse(pathlib.Path(p).read_text()) for p in ${JSON.stringify(buildSources)}]`)}`
     : undefined;
+  if (buildCommand && Buffer.byteLength(buildCommand) > MAX_COMMAND_BYTES)
+    return invalid('Build sources exceed the sandbox 32 KiB command limit.');
   const keys = new Set<string>();
   for (const item of config.teaching) {
     const stage = projectStages(config).find((s) => s.key === item.stage)?.stage;

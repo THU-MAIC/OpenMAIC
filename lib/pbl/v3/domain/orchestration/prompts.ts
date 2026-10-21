@@ -23,7 +23,10 @@ export function buildSystemPrompt({
   mentorNote,
 }: BuildSystemPromptInput): string {
   const template = project.agents[role]?.systemPrompt ?? `你是 ${role}。`;
-  const rendered = template.replace('{{seed}}', JSON.stringify(seed));
+  const context = JSON.stringify(seed);
+  const rendered = template.includes('{{seed}}')
+    ? template.replace('{{seed}}', () => context)
+    : `${template}\n\n${context}`;
   const commonRules = project.commonRules ?? '';
   const note = mentorNote ? `\n\n[导师提示] ${mentorNote}` : '';
   return `${rendered}${commonRules}${note}`;

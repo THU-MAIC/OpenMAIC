@@ -7,13 +7,8 @@ import {
   type PBLV3Reference,
 } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
+import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
 
-const safePath = (v: unknown): v is string =>
-  typeof v === 'string' &&
-  v.length > 0 &&
-  v.length <= 240 &&
-  !/[\\\x00-\x1f\x7f:%]/.test(v) &&
-  !v.split('/').some((p) => !p || p === '.' || p === '..' || p.startsWith('.') || p.trim() !== p);
 async function call(body: unknown) {
   const response = await fetch('/api/pbl/v3/packages', {
     method: 'POST',
@@ -40,7 +35,7 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
     throw new Error('This classroom requires unsupported import capabilities.');
   if (
     manifest.pblProjects !== undefined &&
-    (!Array.isArray(manifest.pblProjects) || manifest.pblProjects.length > 16)
+    (!Array.isArray(manifest.pblProjects) || manifest.pblProjects.length > PROJECT_LIMITS.projects)
   )
     throw new Error('Invalid or excessive project package index.');
   if (
@@ -63,6 +58,8 @@ export async function attachClassroomProjects(
 ) {
   const scenes = projectScenes(manifest);
   if (!scenes.length) return;
+  if (scenes.length > PROJECT_LIMITS.scenes)
+    throw new Error('Classroom project scenes exceed the export limit.');
   const refs = [
     ...new Map(
       scenes.map((s) => {
@@ -71,7 +68,7 @@ export async function attachClassroomProjects(
       }),
     ).values(),
   ];
-  if (refs.length > 16 || !refs.every(isPBLV3Reference))
+  if (refs.length > PROJECT_LIMITS.scenes || !refs.every(isPBLV3Reference))
     throw new Error('Invalid or excessive PBL project references.');
   const { projects }: { projects: PBLProjectPackage[] } = await call({
     action: 'export',
@@ -80,6 +77,8 @@ export async function attachClassroomProjects(
   });
   if (!Array.isArray(projects) || projects.length !== refs.length)
     throw new Error('Incomplete project export.');
+  if (!projectResourcesWithinLimits(projects.map(({ entry }) => entry)))
+    throw new Error('Classroom project resource limit exceeded.');
   const byRef = new Map(refs.map((ref, i) => [JSON.stringify(ref), projects[i]]));
   manifest.pblProjects = [...new Map(projects.map((p) => [p.entry.checksum, p.entry])).values()];
   manifest.formatVersion = 2;
@@ -121,11 +120,11 @@ export async function readClassroomProjects(
     const files: Record<string, string> = {};
     for (const [name, info] of Object.entries(entry.files)) {
       if (
-        !safePath(name) ||
+        !safeProjectPath(name) ||
         !info ||
         !Number.isSafeInteger(info.size) ||
         info.size < 0 ||
-        info.size > 512 * 1024 ||
+        info.size > PROJECT_LIMITS.fileBytes ||
         !/^[a-f0-9]{64}$/.test(info.sha256)
       )
         throw new Error(`Invalid project file index: ${name}`);
@@ -134,7 +133,7 @@ export async function readClassroomProjects(
       paths.add(path);
       count++;
       total += info.size;
-      if (count > 512 || total > 8 * 1024 * 1024)
+      if (count > PROJECT_LIMITS.files || total > PROJECT_LIMITS.bytes)
         throw new Error('Classroom project resources exceed the import limit.');
       const file = zip.file(path);
       const internal = file as unknown as {
@@ -164,7 +163,7 @@ export async function readClassroomProjects(
       (file as unknown as { unsafeOriginalName?: string }).unsafeOriginalName ?? file.name;
     if (
       (file.name.startsWith('pbl/') || original.startsWith('pbl/')) &&
-      (!safePath(original.replace(/\/$/, '')) ||
+      (!safeProjectPath(original.replace(/\/$/, '')) ||
         (!file.dir && !paths.has(file.name)) ||
         original !== file.name)
     )

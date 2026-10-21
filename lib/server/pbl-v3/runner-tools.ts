@@ -421,6 +421,7 @@ export async function teachingRunnerConfig(input: {
       role: bound.role,
       seed: {
         referenceMaterials: skill.documents,
+        ...(!guided && project.coursePackage ? { teachingInstructions: skill.content } : {}),
         ...seed,
         goal: milestone.goal ?? milestone.title,
         ...(guided

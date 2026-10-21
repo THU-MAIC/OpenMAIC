@@ -7,6 +7,7 @@ import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
 import {
   MAX_TEXT_FILE_BYTES,
+  MAX_COMMAND_BYTES,
   type SandboxProvider,
   type SandboxCommandResult,
   type DesktopAction,
@@ -493,7 +494,7 @@ export class SandboxService {
       typeof body.command !== 'string' ||
       !body.command.trim() ||
       body.command.includes('\0') ||
-      Buffer.byteLength(body.command) > 32_768
+      Buffer.byteLength(body.command) > MAX_COMMAND_BYTES
     )
       throw sandboxInvalid('command must be a non-empty string of at most 32 KiB.');
     if (body.cwd !== undefined) assertPath(body.cwd);

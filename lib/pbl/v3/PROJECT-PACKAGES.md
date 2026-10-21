@@ -79,7 +79,10 @@ introduction. Section names follow `A-teach.md` style and array order controls
 progression. The teaching runner reads the root Skill and active section through
 `read_next_skill` with its existing review/new-learner-turn gates. Only bound
 documents for that role/stage enter context. Non-guided stages receive their
-bound documents and existing stage instructions. Course Skills never enter the
+bound documents and Skill sections directly in the role context. Guided stages
+retain the section-by-section `read_next_skill` gates. Role prompt templates can
+place context with `{{seed}}`; when omitted, the runtime appends the context so
+course materials and stage state still reach the agent. Course Skills never enter the
 global/user general-purpose Skill catalog or grant tools or future-stage access.
 
 Built-in Java/Python samples are converted through this same contract during
@@ -123,9 +126,12 @@ incomplete classrooms. Generic asset replace/delete refuses templates with
 authors.
 
 Resolution requires a live classroom owned by the caller and a matching pinned
-resource. Identical imports deduplicate within one owner, including retries
-before publication. Different owners get separate entries. Different content
-claiming the same ID/version gets a separate checksum and never replaces a
+resource. Identical live or pending imports deduplicate within one owner, including
+retries before publication. Pending retries renew the publication TTL. Reimporting
+a released template allocates a new pending entry through the normal quota checks,
+so collection of the previous entry cannot interrupt publication. Different owners
+get separate entries. Different content claiming the same ID/version gets a
+separate checksum and never replaces a
 previous course. Transfer between authors uses export/import. Learning instances
 pin the full reference; changing a scene's content does not silently migrate
 its existing learning journey. Use a new scene for that new journey.
@@ -141,10 +147,15 @@ rows deleted alongside assets. Back up the database/registry and configured byte
 store together. Restore missing bytes or re-import the archive after a partial
 restore reports unavailable resources.
 
-Version 1 supports UTF-8 text resources only: at most 16 projects, 512 files and
-8 MiB per classroom; 512 KiB per file. Tests/rubric files total at most 24 KiB;
+Version 1 supports UTF-8 text resources only: at most 256 PBL scenes, 16 projects,
+512 files and 8 MiB per classroom; 512 KiB per file. Export applies the same
+aggregate limits as import, counting each content checksum once. Tests/rubric files
+total at most 24 KiB;
 starter source snapshots fit the runtime's 256-file / 1 MiB limit;
-each evaluation payload is at most 48 KiB. Unsafe paths, symlinks, extra files,
+each evaluation payload is at most 48 KiB. Generated build/evaluation commands must
+also fit the sandbox's 32 KiB UTF-8 command limit, including encoded private
+resources and the runner itself; import validates this tighter bound.
+Unsafe paths, symlinks, extra files,
 invalid UTF-8, missing references, checksum/size failures and unsupported profiles
 produce errors before publication. No external resource URLs are downloaded.
 Correct the archive and retry. If later media/course writes fail, installed
@@ -159,10 +170,11 @@ PG_CONTRACT_URL=postgres://... pnpm exec vitest run tests/pbl/v3/runtime.pg.test
 ```
 
 Toolchain checks require `python3`, `java` and `javac` on PATH. The PostgreSQL
-suite exercises built-in and imported Java/Python two-milestone journeys through
-production teaching tools, builds, evaluations, reports and checkpoint recovery.
-It asserts packaged Skill/material consumption and no static catalog lookups
-for imported journeys. The on-disk persistence fixture closes/reopens its database,
+suite preserves the integration branch's runtime regression cases and adds
+imported Java/Python two-milestone journeys through production teaching tools,
+builds and private evaluations. It asserts packaged Skill/material consumption,
+pinned resource reload, and no static catalog lookups for imported journeys.
+The on-disk persistence fixture closes/reopens its database,
 transfers an unregistered course, and checks isolation, immutable assets,
 retries, conflicts, copying, deletion and actual collection. Archive fixtures
 cover re-export and corrupt input.

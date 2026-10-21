@@ -473,10 +473,9 @@ export async function commandStudy(
       );
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
-        command: evaluationCommand(
-          evaluationFor(project, row.state.position.milestoneId!),
-          command.id,
-        ),
+        command:
+          project.testCommand ??
+          evaluationCommand(evaluationFor(project, row.state.position.milestoneId!), command.id),
         timeoutMs: 60_000,
       });
       transition = { state: row.state, events: [] };
@@ -515,11 +514,12 @@ export async function commandStudy(
             status:
               observed.state === 'exited'
                 ? observed.exitCode === 0 &&
-                  evaluationPassed(
-                    evaluationFor(project, milestone.id),
-                    evaluation.id,
-                    observed.stdout,
-                  )
+                  (project.testCommand !== undefined ||
+                    evaluationPassed(
+                      evaluationFor(project, milestone.id),
+                      evaluation.id,
+                      observed.stdout,
+                    ))
                   ? 'passed'
                   : 'failed'
                 : 'error',
@@ -536,7 +536,9 @@ export async function commandStudy(
             codeArtifactId: collected.code?.id,
             startedAt: evaluation.startedAt,
             completedAt: new Date().toISOString(),
-            publicFeedback: evaluationFeedback(observed.stdout, observed.stderr),
+            publicFeedback: project.testCommand
+              ? (observed.stdout + '\n' + observed.stderr).slice(0, 8000)
+              : evaluationFeedback(observed.stdout, observed.stderr),
             failureKind: observed.state === 'exited' ? 'assertion' : 'infrastructure',
           },
           { remediationId: randomUUID() },
@@ -722,10 +724,13 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
           id: observed.id,
           state: observed.state,
           stdout:
-            row.evaluation.purpose === 'compile'
+            row.evaluation.purpose === 'compile' || project.testCommand
               ? observed.stdout.slice(0, 8000)
               : evaluationFeedback(observed.stdout, observed.stderr),
-          stderr: row.evaluation.purpose === 'compile' ? observed.stderr.slice(0, 8000) : '',
+          stderr:
+            row.evaluation.purpose === 'compile' || project.testCommand
+              ? observed.stderr.slice(0, 8000)
+              : '',
         };
     } catch {
       evaluation = { id: row.evaluation.id, state: 'unavailable', stdout: '', stderr: '' };

@@ -199,4 +199,68 @@ describe('persisted project templates and classroom lifecycle', () => {
       ).rows,
     ).toHaveLength(0);
   }, 30_000);
+
+  it('renews pending retries and keeps reinstalled resources alive until classroom publication', async () => {
+    vi.stubEnv('ASSET_S3_BUCKET', '');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    vi.stubEnv('ASSET_PENDING_TTL_MS', '60000');
+    const db = new PGlite();
+    await db.waitReady;
+    const pool = new DiskPool(db),
+      url = 'postgres://project-package-reinstall';
+    vi.stubEnv('DATABASE_URL', url);
+    try {
+      const persistence = await getServerPersistenceProvider(url, () => pool as never);
+      const bundle = packageBuiltin(
+        installedProject({ id: 'greeting-python-lab', version: '1.0.0' }),
+      );
+      const ref = await installProjectPackage('reimport-owner', bundle);
+      await db.query(
+        "UPDATE asset_entries SET expires_at=now()+interval '10 seconds' WHERE id=$1",
+        [ref.assetId],
+      );
+      expect(await installProjectPackage('reimport-owner', bundle)).toEqual(ref);
+      expect(
+        (
+          await db.query<{ renewed: boolean }>(
+            "SELECT expires_at>now()+interval '50 seconds' AS renewed FROM asset_entries WHERE id=$1",
+            [ref.assetId],
+          )
+        ).rows[0]?.renewed,
+      ).toBe(true);
+
+      const courses = await getOwnerScopedDocumentStore('reimport-owner');
+      await courses.createDocument(document('before-reimport', ref));
+      await courses.deleteDocument('before-reimport');
+      await db.query(
+        "UPDATE asset_entries SET unreferenced_at=now()-interval '2 hours' WHERE id=$1",
+        [ref.assetId],
+      );
+      const reinstalled = await installProjectPackage('reimport-owner', bundle);
+      expect(reinstalled.assetId).not.toBe(ref.assetId);
+      const collector = new AssetCollector(
+        persistence.pool,
+        new PgAssetByteStore(persistence.pool),
+        {
+          withTransaction: persistence.withTransaction,
+          graceMs: 60 * 60 * 1000,
+          documentReferences: true,
+          assetReferencePrincipals: assetReferencePrincipalsForOwner,
+          documentOwnership: STAGE_META_OWNERSHIP,
+        },
+      );
+      await collector.collectPass();
+      expect(
+        (await db.query('SELECT 1 FROM pbl_project_installations WHERE asset_id=$1', [ref.assetId]))
+          .rows,
+      ).toHaveLength(0);
+      await courses.createDocument(document('after-reimport', reinstalled));
+      expect(
+        (await resolveProject('reimport-owner', 'after-reimport', reinstalled)).coursePackage
+          ?.bundle,
+      ).toEqual(bundle);
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
 });

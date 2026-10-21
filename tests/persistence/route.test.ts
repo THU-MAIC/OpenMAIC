@@ -38,6 +38,10 @@ describe('embedded persistence route', () => {
     }));
     // The provider's remaining schema stores: their migrations need a real
     // database (the advisory lock), which the fakes here are not.
+    vi.doMock('@/lib/persistence/pbl-projects', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensurePBLProjectSchema: vi.fn().mockResolvedValue(undefined),
+    }));
     vi.doMock('@/lib/persistence/legacy-classroom-imports', async (importOriginal) => ({
       ...(await importOriginal<object>()),
       ensureLegacyClassroomImportSchema: vi.fn().mockResolvedValue(undefined),
@@ -518,6 +522,8 @@ describe('embedded persistence route', () => {
     expect(ensureSchema).toHaveBeenCalledWith(pool);
     expect(ensureDocumentSchema).toHaveBeenCalledWith(pool);
     expect(ensureAssetSchema).toHaveBeenCalledWith(pool);
+    const { ensurePBLProjectSchema } = await import('@/lib/persistence/pbl-projects');
+    expect(ensurePBLProjectSchema).toHaveBeenCalledWith(pool);
     expect(nodePostgresTransaction).toHaveBeenCalledWith(pool);
     expect(runtimeConstructions[0]?.queryable).toBe(pool);
     expect(documentConstructions[0]?.queryable).toBe(pool);
