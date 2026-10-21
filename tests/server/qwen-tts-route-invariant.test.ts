@@ -1,3 +1,4 @@
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
@@ -29,10 +30,14 @@ function request(voice: string, modelId: string, speed = 1.25): NextRequest {
 
 describe('Qwen TTS route model-follows-voice invariant', () => {
   beforeEach(() => {
+    setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
     mocks.generateTTS.mockReset().mockResolvedValue({ audio: new Uint8Array([1]), format: 'wav' });
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setDeploymentConfigForTests();
+  });
 
   it('never dispatches a catalog voice through VC even with a stale VC model', async () => {
     const response = await POST(request('Cherry', QWEN_TTS_VOICE_CLONE_MODEL));
@@ -73,4 +78,42 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
     const emptyResponse = await POST(request('   ', QWEN_TTS_VOICE_CLONE_MODEL));
     expect(emptyResponse.status).toBe(400);
   });
+});
+
+it('keeps configured Qwen catalogue voices on the authorised normal model', async () => {
+  setDeploymentConfigForTests({
+    layer: {
+      source: 'deployment',
+      config: {
+        providers: {
+          qwen: {
+            preset: 'qwen-tts',
+            apiKey: 'server-key',
+            models: ['qwen3-tts'],
+            voices: [{ id: 'vivian', name: 'Vivian' }],
+          },
+        },
+        slots: { tts: 'qwen:qwen3-tts' },
+      },
+    },
+    legacy: false,
+    notices: [],
+  });
+  mocks.generateTTS.mockReset().mockResolvedValue({ audio: new Uint8Array([1]), format: 'wav' });
+  try {
+    const response = await POST(request('vivian', 'qwen3-tts'));
+    expect(response.status).toBe(200);
+    expect(mocks.generateTTS).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: 'qwen3-tts',
+        voice: 'vivian',
+        speed: 1.25,
+        voices: [{ id: 'vivian', name: 'Vivian' }],
+        providerOptions: expect.not.objectContaining({ qwenVoiceClone: true }),
+      }),
+      'Hello',
+    );
+  } finally {
+    setDeploymentConfigForTests();
+  }
 });
