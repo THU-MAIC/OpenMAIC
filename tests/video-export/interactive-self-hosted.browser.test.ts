@@ -42,22 +42,20 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
     await browser?.close();
   });
 
-  it('parses the body while deferred scripts are delayed, then typesets using local requests only', async () => {
+  /** Serves `html` at ORIGIN, extra routes by URL, and hosted libraries from public/. */
+  async function openPage(
+    html: string,
+    extra: Record<string, string> = {},
+    options: { failLibraries?: boolean } = {},
+  ) {
     const page = await browser.newPage();
     const requests: string[] = [];
-    let release!: () => void;
-    const delay = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     await page.route('**/*', async (route) => {
       const url = route.request().url();
       requests.push(url);
-      if (url === `${ORIGIN}/`)
-        return route.fulfill({
-          contentType: 'text/html',
-          body: `<iframe sandbox="allow-scripts" srcdoc="${patchHtmlForIframe(math).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></iframe>`,
-        });
-      if (url.endsWith('.js') || url.endsWith('.css')) await delay;
+      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
+      if (url in extra) return route.fulfill({ contentType: 'text/javascript', body: extra[url]! });
+      if (options.failLibraries) return route.abort();
       const asset = await fetchAsset(url);
       await route.fulfill({
         body: Buffer.from(asset!.bytes),
@@ -65,42 +63,39 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
         headers: { 'Access-Control-Allow-Origin': '*' },
       });
     });
+    await page.goto(ORIGIN);
+    return { page, requests };
+  }
+
+  const parseTimeRender =
+    "document.getElementById('formula').innerHTML = katex.renderToString('x^2');";
+
+  it('typesets in a sandboxed classroom iframe using local requests only', async () => {
+    const { page, requests } = await openPage(
+      `<iframe sandbox="allow-scripts" srcdoc="${patchHtmlForIframe(math).replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></iframe>`,
+    );
     try {
-      await page.goto(ORIGIN, { waitUntil: 'commit' });
-      await page.waitForSelector('iframe');
       const frame = page.frames().find((frame) => frame !== page.mainFrame())!;
-      await expect
-        .poll(() => frame.evaluate(() => document.querySelector('#formula')?.textContent))
-        .toBe('\\(2+2=4\\)');
-      expect(
-        await frame.evaluate(
-          () => (window as unknown as { parserReachedBody: boolean }).parserReachedBody,
-        ),
-      ).toBe(true);
-      release();
       await expect.poll(() => frame.locator('.katex').count()).toBe(1);
       expect(requests.every((url) => url.startsWith(ORIGIN))).toBe(true);
       expect(requests.some((url) => url.endsWith('.woff2'))).toBe(true);
     } finally {
-      release();
       await page.close();
     }
   });
 
   it('keeps parsing and page initialization working when local libraries fail', async () => {
-    const page = await browser.newPage();
-    await page.route('**/vendor/interactive/**', (route) => route.abort());
-    try {
-      await page.setContent(
-        postProcessInteractiveHtml(
-          math
-            .replace('<head>', `<head><base href="${ORIGIN}/">`)
-            .replace(
-              'window.parserReachedBody = true;',
-              "katex.render('x', document.getElementById('formula')); window.parserReachedBody = true;",
-            ),
+    const { page } = await openPage(
+      postProcessInteractiveHtml(
+        math.replace(
+          'window.parserReachedBody = true;',
+          "katex.render('x', document.getElementById('formula')); window.parserReachedBody = true;",
         ),
-      );
+      ),
+      {},
+      { failLibraries: true },
+    );
+    try {
       expect(
         await page.evaluate(
           () => (window as unknown as { parserReachedBody: boolean }).parserReachedBody,
@@ -112,101 +107,50 @@ describe.skipIf(!REQUIRED)('self-hosted interactive libraries in Chromium', () =
     }
   });
 
-  it('loads KaTeX and replays early calls for a page whose only math is a script call', async () => {
-    const page = await browser.newPage();
-    const html = postProcessInteractiveHtml(
-      `<!doctype html><html><head></head><body><p id="formula"></p><script>katex.render('x^2', document.getElementById('formula'));</script></body></html>`,
+  it.each([
+    [
+      'an inline katex.render call',
+      `<script>katex.render('x^2', document.getElementById('formula'));</script>`,
+      {},
+    ],
+    ['an inline katex.renderToString call', `<script>${parseTimeRender}</script>`, {}],
+    [
+      'a blocking external script',
+      '<script src="/app.js"></script>',
+      { [`${ORIGIN}/app.js`]: parseTimeRender },
+    ],
+    [
+      'an async external script',
+      '<script async src="/app.js"></script>',
+      { [`${ORIGIN}/app.js`]: parseTimeRender },
+    ],
+    [
+      'a String.raw template',
+      '<script>document.getElementById("formula").textContent = String.raw`\\(\\frac{1}{2}\\)`;</script>',
+      {},
+    ],
+  ])('typesets math rendered during parsing by %s', async (_name, script, extra) => {
+    const { page } = await openPage(
+      postProcessInteractiveHtml(
+        `<!doctype html><html><head></head><body><p>$y$</p><p id="formula"></p>${script}</body></html>`,
+      ),
+      extra,
     );
-    await page.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
-      const asset = await fetchAsset(url);
-      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
-    });
     try {
-      await page.goto(ORIGIN);
       await expect.poll(() => page.locator('#formula .katex').count()).toBe(1);
-    } finally {
-      await page.close();
-    }
-  });
-
-  it('supplies real katex.renderToString output to scripts that run during parsing', async () => {
-    const page = await browser.newPage();
-    const html = postProcessInteractiveHtml(
-      `<!doctype html><html><head></head><body><p id="formula"></p><script>document.getElementById('formula').innerHTML = katex.renderToString('x^2');</script></body></html>`,
-    );
-    await page.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
-      const asset = await fetchAsset(url);
-      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
-    });
-    try {
-      await page.goto(ORIGIN);
-      expect(await page.locator('#formula .katex').count()).toBe(1);
-    } finally {
-      await page.close();
-    }
-  });
-
-  it('loads KaTeX before a blocking external script that renders during parsing', async () => {
-    const page = await browser.newPage();
-    const html = postProcessInteractiveHtml(
-      '<!doctype html><html><head></head><body><p id="label">$y$</p><p id="formula"></p><script src="/app.js"></script></body></html>',
-    );
-    await page.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
-      if (url === `${ORIGIN}/app.js`)
-        return route.fulfill({
-          contentType: 'text/javascript',
-          body: "document.getElementById('formula').innerHTML = katex.renderToString('x^2');",
-        });
-      const asset = await fetchAsset(url);
-      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
-    });
-    try {
-      await page.goto(ORIGIN);
-      expect(await page.locator('#formula .katex').count()).toBe(1);
     } finally {
       await page.close();
     }
   });
 
   it('applies authored auto-render options from a parse-time renderMathInElement call', async () => {
-    const page = await browser.newPage();
-    const html = postProcessInteractiveHtml(
-      `<!doctype html><html><head></head><body><p id="formula">@@x^2@@</p><script>renderMathInElement(document.body, { delimiters: [{ left: '@@', right: '@@', display: false }] });</script></body></html>`,
+    const { page } = await openPage(
+      postProcessInteractiveHtml(
+        `<!doctype html><html><head></head><body><p id="formula">@@x^2@@</p><script>renderMathInElement(document.body, { delimiters: [{ left: '@@', right: '@@', display: false }] });</script></body></html>`,
+      ),
     );
-    await page.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
-      const asset = await fetchAsset(url);
-      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
-    });
     try {
-      await page.goto(ORIGIN);
       expect(await page.locator('#formula .katex').count()).toBe(1);
-    } finally {
-      await page.close();
-    }
-  });
-
-  it('typesets TeX that a script writes from a String.raw template', async () => {
-    const page = await browser.newPage();
-    const html = postProcessInteractiveHtml(
-      '<!doctype html><html><head></head><body><p id="formula"></p><script>document.getElementById("formula").textContent = String.raw`\\(\\frac{1}{2}\\)`;</script></body></html>',
-    );
-    await page.route('**/*', async (route) => {
-      const url = route.request().url();
-      if (url === `${ORIGIN}/`) return route.fulfill({ contentType: 'text/html', body: html });
-      const asset = await fetchAsset(url);
-      await route.fulfill({ body: Buffer.from(asset!.bytes), contentType: asset!.contentType });
-    });
-    try {
-      await page.goto(ORIGIN);
-      await expect.poll(() => page.locator('#formula .katex').count()).toBe(1);
     } finally {
       await page.close();
     }

@@ -110,57 +110,37 @@ describe('HTML source mapping', () => {
 });
 
 describe('on-demand math', () => {
-  it.each(['$x+1$', '$$2+2$$', '\\(x\\)', '\\[x\\]'])(
-    'loads local deferred math for %s',
-    (formula) => {
-      const html = postProcessInteractiveHtml(`<p>${formula}</p>`);
-      expect(html).toContain('defer src="/vendor/interactive/katex@');
-      expect(html).not.toContain('cdn.jsdelivr.net');
-    },
-  );
+  const SYNC_KATEX =
+    '<script data-openmaic-katex="2" src="/vendor/interactive/katex@0.16.38/dist/katex.min.js">';
+  const SYNC_AUTO_RENDER =
+    '<script data-openmaic-katex="2" src="/vendor/interactive/katex@0.16.38/dist/contrib/auto-render.min.js">';
   it.each([
+    '<p>$x+1$</p>',
+    '<p>$$2+2$$</p>',
+    '<p>\\(x\\)</p>',
+    '<p>\\[x\\]</p>',
     `<div id="a"></div><script>katex.render('x^2', document.getElementById('a'));</script>`,
-    `<div id="a"></div><script type="text/javascript">a.innerHTML = katex.renderToString('x^2');</script>`,
+    `<div id="a"></div><script type="module">a.innerHTML = katex.renderToString('x^2');</script>`,
     `<p>@@x@@</p><script>renderMathInElement(document.body, { delimiters: [{ left: '@@', right: '@@', display: false }] });</script>`,
-  ])('loads KaTeX synchronously for parse-time calls %s', (input) => {
-    const html = postProcessInteractiveHtml(input);
-    expect(html).toContain('<script data-openmaic-katex="2" src="/vendor/interactive/katex@');
-    expect(html).not.toContain('defer src="/vendor/interactive/katex@');
-    expect(postProcessInteractiveHtml(html)).toBe(html);
-  });
-  it.each([
-    '<p>$x$</p><script src="/app.js"></script>',
-    '<p>$x$</p><script src="https://unpkg.com/chart.js@4"></script>',
-    '<p>$x$</p><script type="text/javascript" src="/app.js"></script>',
-  ])('loads KaTeX synchronously before a blocking external classic script %s', (input) => {
-    const html = postProcessInteractiveHtml(input);
-    expect(html).toContain('<script data-openmaic-katex="2" src="/vendor/interactive/katex@');
-    expect(postProcessInteractiveHtml(html)).toBe(html);
-  });
-  it.each([
-    '<p>$x$</p><script defer src="/app.js"></script>',
+    `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
+    `<script>const f = '\\\\frac{1}{2}';</script>`,
+    '<p id="a"></p><script>a.textContent = String.raw`\\(\\frac{1}{2}\\)`;</script>',
+    '<p id="a"></p><script>a.textContent = String.raw`Area: \\sqrt{${n}}`;</script>',
     '<p>$x$</p><script async src="/app.js"></script>',
-    '<p>$x$</p><script type="module" src="/app.js"></script>',
-    '<p>$x$</p><script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>',
-  ])('keeps KaTeX deferred when no opaque script blocks parsing %s', (input) => {
+  ])('loads hosted KaTeX synchronously for math in %s', (input) => {
     const html = postProcessInteractiveHtml(input);
-    expect(html).toContain('defer src="/vendor/interactive/katex@');
+    expect(html).toContain(SYNC_KATEX);
+    expect(html).toContain(SYNC_AUTO_RENDER);
+    expect(html).toContain(
+      '<link data-openmaic-katex="2" rel="stylesheet" href="/vendor/interactive/katex@0.16.38/dist/katex.min.css">',
+    );
+    expect(html).not.toContain('defer');
+    expect(html).not.toContain('cdn.jsdelivr.net');
     expect(postProcessInteractiveHtml(html)).toBe(html);
   });
   it('injects nothing for a page without math that has a blocking script', () => {
     const input = '<p>No math</p><script src="/app.js"></script>';
     expect(postProcessInteractiveHtml(input)).toBe(input);
-  });
-  it.each([
-    `<div id="a"></div><script type="module">a.innerHTML = katex.renderToString('x^2');</script>`,
-    `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
-    `<script>const f = '\\\\frac{1}{2}';</script>`,
-    '<p id="a"></p><script>a.textContent = String.raw`\\(\\frac{1}{2}\\)`;</script>',
-    '<p id="a"></p><script>a.textContent = String.raw`Area: \\sqrt{${n}}`;</script>',
-  ])('loads local KaTeX for script-only math %s', (input) => {
-    const html = postProcessInteractiveHtml(input);
-    expect(html).toContain('defer src="/vendor/interactive/katex@');
-    expect(html).toContain('defer src="/vendor/interactive/katex@0.16.38/dist/contrib/auto-render');
   });
   it.each([
     '<title>Save $5 or $10 today</title><p>No math</p>',

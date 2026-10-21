@@ -51,20 +51,7 @@ export function postProcessInteractiveHtml(html: string): string {
 
   const patches: HtmlPatch[] = [];
   let hasMath = false;
-  let synchronous = false;
-  let blockingExternalScript = false;
-  const hostedKatex = interactiveLibraryUrl('katex', '');
   for (const node of htmlNodes(processed)) {
-    // A blocking classic external script may call KaTeX during parsing; its code is opaque here.
-    if (
-      'tagName' in node &&
-      node.tagName === 'script' &&
-      isClassicScript(node) &&
-      !node.attrs.some((attr) => attr.name === 'async' || attr.name === 'defer')
-    ) {
-      const src = node.attrs.find((attr) => attr.name === 'src')?.value.trim();
-      if (src && !src.startsWith(hostedKatex)) blockingExternalScript = true;
-    }
     if (node.nodeName !== '#text' || !('value' in node)) continue;
     // Script/style/code examples and attributes are never LaTeX input.
     let parent = node.parentNode;
@@ -84,13 +71,8 @@ export function postProcessInteractiveHtml(html: string): string {
         'tagName' in node.parentNode &&
         node.parentNode.tagName === 'script' &&
         (scriptHasTex(node.value) || KATEX_CALL.test(node.value))
-      ) {
+      )
         hasMath = true;
-        // A classic inline script runs during parsing: renderToString's return value and
-        // renderMathInElement's authored options cannot wait for a deferred library.
-        if (isClassicScript(node.parentNode) && KATEX_SYNC_CALL.test(node.value))
-          synchronous = true;
-      }
       continue;
     }
     const range = node.sourceCodeLocation;
@@ -111,30 +93,10 @@ export function postProcessInteractiveHtml(html: string): string {
       patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
   }
   processed = patchHtml(processed, patches);
-  return hasMath ? injectKatex(processed, synchronous || blockingExternalScript) : processed;
+  return hasMath ? injectKatex(processed) : processed;
 }
 
 /** A page script that calls KaTeX needs the #1966 guards and the library. */
-const KATEX_SYNC_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
-
-const CLASSIC_SCRIPT_TYPES = new Set([
-  '',
-  'text/javascript',
-  'application/javascript',
-  'text/ecmascript',
-  'application/ecmascript',
-]);
-
-function isClassicScript(node: DefaultTreeAdapterTypes.ParentNode): boolean {
-  if (!('attrs' in node)) return false;
-  const type =
-    node.attrs
-      .find((attr) => attr.name === 'type')
-      ?.value.trim()
-      .toLowerCase() ?? '';
-  return CLASSIC_SCRIPT_TYPES.has(type);
-}
-
 const KATEX_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
 
 /** TeX delimiters and common commands after a single backslash. */
@@ -151,31 +113,30 @@ function scriptHasTex(source: string): boolean {
   return false;
 }
 
-/** The guard runs immediately; local libraries are deferred unless the page needs them during parsing. */
-function injectKatex(html: string, synchronous: boolean): string {
-  // Pages that call KaTeX from classic inline scripts get the synchronous #1966 order.
-  const defer = synchronous ? '' : ' defer';
-  const resources = `
-<link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" media="print" onload="this.media='all'" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
-<script ${KATEX_INJECTION_MARKER}="2"${defer} src="${interactiveLibraryUrl('katex')}"></script>
-<script ${KATEX_INJECTION_MARKER}="2"${defer} src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`;
+/**
+ * Inject KaTeX CSS, JS, auto-render, and a MutationObserver at the start of
+ * <head>, ahead of every script the page authored.
+ *
+ * - The libraries load synchronously before the page's own scripts, so
+ *   `katex` and `renderMathInElement` exist when those scripts and their
+ *   DOMContentLoaded handlers run. A page that loads its own KaTeX later
+ *   replaces these globals with the same library.
+ * - When the hosted asset fails to load, no-op stand-ins keep the page's own math
+ *   calls from throwing; the math then stays as written.
+ * - The render handler is registered before the page's handlers, so the
+ *   observer is already watching when the page fills its labels.
+ */
+function injectKatex(html: string): string {
   const katexInjection = `
+<link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
+<script ${KATEX_INJECTION_MARKER}="2" src="${interactiveLibraryUrl('katex')}"></script>
+<script ${KATEX_INJECTION_MARKER}="2" src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>
 <script ${KATEX_INJECTION_MARKER}="2">
 (function () {
-    var pending = [];
-    window.__openmaicFlushMath = function () {
-        if (window.katex && !window.katex.__openmaicStub) {
-            pending.splice(0).forEach(function (args) { window.katex.render.apply(window.katex, args); });
-        }
-    };
     if (!window.katex) {
         window.katex = {
-            __openmaicStub: true,
             render: function (tex, element) {
-                if (element) {
-                    element.textContent = String(tex);
-                    pending.push(Array.prototype.slice.call(arguments));
-                }
+                if (element) element.textContent = String(tex);
             },
             renderToString: function (tex) {
                 return String(tex).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -201,7 +162,6 @@ document.addEventListener("DOMContentLoaded", function() {
 
     function render() {
         try {
-            window.__openmaicFlushMath();
             renderMathInElement(document.body, katexOptions);
         } catch (e) {
             // A failed pass must not stop the observer from being installed.
@@ -247,7 +207,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }, 2000);
 });
 </script>
-${resources}
 `;
 
   return insertAtHeadStart(html, katexInjection);

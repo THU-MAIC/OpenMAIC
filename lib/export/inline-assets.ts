@@ -712,12 +712,9 @@ export async function inlineHtmlAssets(
       cssText = rewritten;
       for (const f of cssFailed) markFailed(f.url, f.reason);
       for (const inlined of cssInlined) markInlined(inlined);
-      const mediaAttr =
-        asset.attributes['data-openmaic-katex'] === '2'
-          ? ''
-          : asset.attributes.media
-            ? ` media="${asset.attributes.media.replace(/"/g, '&quot;')}"`
-            : '';
+      const mediaAttr = asset.attributes.media
+        ? ` media="${asset.attributes.media.replace(/"/g, '&quot;')}"`
+        : '';
       markInlined(asset.url);
       patches.push({
         range: asset.elementRange,

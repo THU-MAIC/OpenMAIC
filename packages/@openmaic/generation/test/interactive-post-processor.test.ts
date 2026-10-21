@@ -114,16 +114,16 @@ describe('KaTeX injection', () => {
 
   it('places the injection in head for documents without an explicit head', () => {
     const withHtml = postProcessInteractiveHtml('<html><body>$x$</body></html>');
-    expect(withHtml.startsWith('<html><head>\n<script data-openmaic-katex')).toBe(true);
+    expect(withHtml.startsWith('<html><head>\n<link data-openmaic-katex')).toBe(true);
     const withDoctype = postProcessInteractiveHtml('<!DOCTYPE html><p>$x$</p>');
-    expect(withDoctype.startsWith('<!DOCTYPE html><head>\n<script data-openmaic-katex')).toBe(true);
+    expect(withDoctype.startsWith('<!DOCTYPE html><head>\n<link data-openmaic-katex')).toBe(true);
   });
 
   it('ignores a head tag that only appears inside a comment', () => {
     const processed = postProcessInteractiveHtml(
       '<!-- <head> --><html><head><title>t</title></head><body>$x$</body></html>',
     );
-    expect(processed.startsWith('<!-- <head> --><html><head>\n<script data-openmaic-katex')).toBe(
+    expect(processed.startsWith('<!-- <head> --><html><head>\n<link data-openmaic-katex')).toBe(
       true,
     );
   });
