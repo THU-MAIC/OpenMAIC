@@ -51,6 +51,7 @@ export function postProcessInteractiveHtml(html: string): string {
 
   const patches: HtmlPatch[] = [];
   let hasMath = false;
+  let synchronous = false;
   for (const node of htmlNodes(processed)) {
     if (node.nodeName !== '#text' || !('value' in node)) continue;
     // Script/style/code examples and attributes are never LaTeX input.
@@ -71,8 +72,13 @@ export function postProcessInteractiveHtml(html: string): string {
         'tagName' in node.parentNode &&
         node.parentNode.tagName === 'script' &&
         (SCRIPT_TEX.test(node.value) || KATEX_CALL.test(node.value))
-      )
+      ) {
         hasMath = true;
+        // A classic inline script runs during parsing and may use the return value
+        // of katex.renderToString, which a deferred library cannot supply in time.
+        if (isClassicScript(node.parentNode) && KATEX_SYNC_CALL.test(node.value))
+          synchronous = true;
+      }
       continue;
     }
     const range = node.sourceCodeLocation;
@@ -93,22 +99,44 @@ export function postProcessInteractiveHtml(html: string): string {
       patches.push({ start: range.startOffset, end: range.endOffset, text: converted });
   }
   processed = patchHtml(processed, patches);
-  return hasMath ? injectKatex(processed) : processed;
+  return hasMath ? injectKatex(processed, synchronous) : processed;
 }
 
 /** A page script that calls KaTeX needs the #1966 guards and the library. */
+const KATEX_SYNC_CALL = /\bkatex\s*\.\s*render(?:ToString)?\s*\(/;
+
+const CLASSIC_SCRIPT_TYPES = new Set([
+  '',
+  'text/javascript',
+  'application/javascript',
+  'text/ecmascript',
+  'application/ecmascript',
+]);
+
+function isClassicScript(node: DefaultTreeAdapterTypes.ParentNode): boolean {
+  if (!('attrs' in node)) return false;
+  const type =
+    node.attrs
+      .find((attr) => attr.name === 'type')
+      ?.value.trim()
+      .toLowerCase() ?? '';
+  return CLASSIC_SCRIPT_TYPES.has(type);
+}
+
 const KATEX_CALL = /\b(?:katex\s*\.\s*render(?:ToString)?|renderMathInElement)\s*\(/;
 
 /** A JS-escaped TeX delimiter or common command inside a script string literal. */
 const SCRIPT_TEX =
   /\\\\(?:[([]|begin\{|(?:frac|sqrt|sum|int|lim|cdot|times|div|pm|infty|alpha|beta|gamma|delta|theta|lambda|sigma|omega|Delta|vec|mathrm|mathbf)(?![A-Za-z]))/;
 
-/** The guard runs immediately; local libraries never block the HTML parser. */
-function injectKatex(html: string): string {
+/** The guard runs immediately; local libraries are deferred unless the page needs them during parsing. */
+function injectKatex(html: string, synchronous: boolean): string {
+  // Pages that call KaTeX from classic inline scripts get the synchronous #1966 order.
+  const defer = synchronous ? '' : ' defer';
   const resources = `
 <link ${KATEX_INJECTION_MARKER}="2" rel="stylesheet" media="print" onload="this.media='all'" href="${interactiveLibraryUrl('katex', 'dist/katex.min.css')}">
-<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex')}"></script>
-<script ${KATEX_INJECTION_MARKER}="2" defer src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`;
+<script ${KATEX_INJECTION_MARKER}="2"${defer} src="${interactiveLibraryUrl('katex')}"></script>
+<script ${KATEX_INJECTION_MARKER}="2"${defer} src="${interactiveLibraryUrl('katex', 'dist/contrib/auto-render.min.js')}"></script>`;
   const katexInjection = `
 <script ${KATEX_INJECTION_MARKER}="2">
 (function () {

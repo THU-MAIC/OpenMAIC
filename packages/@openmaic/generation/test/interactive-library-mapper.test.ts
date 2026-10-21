@@ -120,6 +120,15 @@ describe('on-demand math', () => {
   );
   it.each([
     `<div id="a"></div><script>katex.render('x^2', document.getElementById('a'));</script>`,
+    `<div id="a"></div><script type="text/javascript">a.innerHTML = katex.renderToString('x^2');</script>`,
+  ])('loads KaTeX synchronously for parse-time calls %s', (input) => {
+    const html = postProcessInteractiveHtml(input);
+    expect(html).toContain('<script data-openmaic-katex="2" src="/vendor/interactive/katex@');
+    expect(html).not.toContain('defer src="/vendor/interactive/katex@');
+    expect(postProcessInteractiveHtml(html)).toBe(html);
+  });
+  it.each([
+    `<div id="a"></div><script type="module">a.innerHTML = katex.renderToString('x^2');</script>`,
     `<div id="a"></div><script>a.textContent = 'Area \\\\(\\\\pi r^2\\\\)';</script>`,
     `<script>const f = '\\\\frac{1}{2}';</script>`,
   ])('loads local KaTeX for script-only math %s', (input) => {
