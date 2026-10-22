@@ -7,6 +7,10 @@ const ui = vi.hoisted(() => ({ locale: 'de-DE' }));
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ locale: ui.locale, t: (key: string) => key }),
 }));
+vi.mock('@/lib/audio/voxcpm-voices', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/audio/voxcpm-voices')>()),
+  useAllVoiceProfiles: () => ({ profiles: [] }),
+}));
 vi.mock('@/components/ui/select', async () => {
   const { createElement: h, Fragment } = await import('react');
   type Props = { children?: ReactNode };
@@ -24,11 +28,13 @@ vi.mock('@/components/ui/select', async () => {
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useBrowserASR } from '@/lib/hooks/use-browser-asr';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { useSettingsStore } from '@/lib/store/settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import { ASRSettings } from '@/components/settings/asr-settings';
 import { modelSettingsViewFor } from '../helpers/model-settings-view';
 import { workspaceProvider } from '../model-settings/fixtures';
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -268,5 +274,63 @@ describe('speech consumers follow the current locale', () => {
     expect(utterances.at(-1)?.lang).toBe('zh-TW');
     await act(async () => hook.current.startPreview({ ...chineseOptions, voice: 'english' }));
     expect(utterances.at(-1)?.lang).toBe('en-GB');
+  });
+
+  it('uses the current locale for queued browser discussion speech and preserves explicit voices', async () => {
+    const utterances: SpeechSynthesisUtterance[] = [];
+    const englishVoice = { voiceURI: 'english', lang: 'en-GB' } as SpeechSynthesisVoice;
+    vi.stubGlobal(
+      'SpeechSynthesisUtterance',
+      class {
+        lang = '';
+      },
+    );
+    vi.stubGlobal('speechSynthesis', {
+      getVoices: () => [englishVoice],
+      cancel() {},
+      addEventListener() {},
+      removeEventListener() {},
+      speak(utterance: SpeechSynthesisUtterance) {
+        utterances.push(utterance);
+        (utterance.onstart as () => void)?.();
+      },
+    });
+    modelSettingsClient.adopt(modelSettingsViewFor({ tts: { registryId: 'browser-native-tts' } }));
+    useSettingsStore.setState({
+      ttsVoice: 'default',
+      ttsVoiceProviderId: 'browser-native-tts',
+      ttsMuted: false,
+    });
+    const agents = [{ id: 'teacher', role: 'teacher' } as AgentConfig];
+    const hook = mountHook(() => useDiscussionTTS({ enabled: true, agents }));
+    await act(async () => {
+      hook.current.handleSegmentSealed('message', 'german', 'Guten Morgen.', 'teacher');
+      hook.current.handleSegmentSealed('message', 'chinese', '你好，這是一段測試語音。', 'teacher');
+    });
+    expect(utterances).toHaveLength(1);
+    expect(utterances[0].lang).toBe('de-DE');
+
+    ui.locale = 'zh-TW';
+    hook.rerender();
+    await act(async () => (utterances[0].onend as () => void)?.());
+    expect(utterances).toHaveLength(2);
+    expect(utterances[1].lang).toBe('zh-TW');
+    await act(async () => (utterances[1].onend as () => void)?.());
+
+    await act(async () => {
+      useSettingsStore.setState({ ttsVoice: 'english' });
+    });
+    await act(async () =>
+      hook.current.handleSegmentSealed(
+        'message',
+        'explicit',
+        '你好，這是一段測試語音。',
+        'teacher',
+      ),
+    );
+    expect(utterances[2].voice).toBe(englishVoice);
+    expect(utterances[2].lang).toBe('en-GB');
+    await act(async () => (utterances[2].onend as () => void)?.());
+    expect(hook.current.shouldHold().holding).toBe(false);
   });
 });

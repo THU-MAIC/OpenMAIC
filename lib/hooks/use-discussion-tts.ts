@@ -108,6 +108,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     cancel: browserCancel,
   } = useBrowserTTS({
     rate: ttsSpeed,
+    lang: locale,
     onEnd: () => {
       if (currentProviderRef.current !== 'browser-native-tts' || !isPlayingRef.current) return;
       currentItemRef.current = null;
