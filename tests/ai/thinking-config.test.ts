@@ -68,7 +68,7 @@ describe('thinking config metadata', () => {
     });
   });
 
-  it('removes deprecated and legacy models from the built-in catalog', () => {
+  it('keeps the curated model catalog current', () => {
     const openaiModels = getProvider('openai')?.models.map((item) => item.id);
     const glmModels = getProvider('glm')?.models.map((item) => item.id);
     const googleModels = getProvider('google')?.models.map((item) => item.id);
@@ -92,22 +92,16 @@ describe('thinking config metadata', () => {
     );
     expect(googleModels).toContain('gemini-3.1-pro-preview');
     expect(googleModels).not.toContain('gemini-3-pro-preview');
-    expect(deepseekModels).toEqual([
-      'deepseek-v4-pro',
-      'deepseek-v4-flash',
-      'deepseek-v4-flash-vision-exp',
-    ]);
+    expect(deepseekModels).toEqual(['deepseek-v4-pro', 'deepseek-flash']);
     // Pin the vision model's capabilities so a regression to vision: false
     // (silently dropping document images during generation) fails this test.
-    const visionModel = getProvider('deepseek')?.models.find(
-      (m) => m.id === 'deepseek-v4-flash-vision-exp',
-    );
+    const visionModel = getProvider('deepseek')?.models.find((m) => m.id === 'deepseek-flash');
     expect(visionModel?.capabilities).toMatchObject({
       streaming: true,
       tools: true,
       vision: true,
     });
-    expect(hunyuanModels).toEqual(['hy3-preview']);
+    expect(hunyuanModels).toEqual(['hy3']);
     expect(minimaxModels).toEqual(['MiniMax-M3', 'MiniMax-M2.7']);
     expect(siliconflowModels).not.toContain('MiniMaxAI/MiniMax-M2');
   });
@@ -326,7 +320,7 @@ describe('thinking config normalization', () => {
   });
 
   it('normalizes Tencent HY3 thinking as no_think/low/high effort levels', () => {
-    const thinking = getThinking('tencent-hunyuan', 'hy3-preview');
+    const thinking = getThinking('tencent-hunyuan', 'hy3');
 
     expect(getDefaultThinkingConfig(thinking)).toEqual({
       mode: 'disabled',

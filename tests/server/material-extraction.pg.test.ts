@@ -673,7 +673,7 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
   });
 
   describe('the sweep of unused uploads', () => {
-    it('counts age from the last time the owner read the material back', async () => {
+    it('keeps successful uploads regardless of age or recent reads', async () => {
       const old = Date.now() - 48 * 60 * 60 * 1000;
       const held = await upload('held.pdf', { createdAt: old });
       const dropped = await upload('dropped.pdf', { createdAt: old });
@@ -681,22 +681,25 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
       expect((await touchOwnerMaterial(pool, OWNER, held.id))?.id).toBe(held.id);
       expect(await touchOwnerMaterial(pool, OTHER, held.id)).toBeNull();
       const swept = await sweepUnusedOwnerMaterialsNow(bytes);
-      expect(swept).toMatchObject({ marked: 1, removed: 1 });
+      expect(swept).toMatchObject({ marked: 0, removed: 0 });
       expect(await getOwnerMaterial(pool, OWNER, held.id)).not.toBeNull();
-      expect(await getOwnerMaterial(pool, OWNER, dropped.id)).toBeNull();
+      expect(await getOwnerMaterial(pool, OWNER, dropped.id)).not.toBeNull();
     });
 
-    it('keeps a material whose read commits while the sweep waits for its row', async () => {
+    it('keeps a reservation that publishes while the sweep waits for its row', async () => {
       const old = Date.now() - 48 * 60 * 60 * 1000;
       const material = await upload('read-meanwhile.pdf', { createdAt: old });
-      // A read (GET /api/materials/{id}) holds the row in its transaction...
+      await pool.query("UPDATE owner_material SET status = 'uploading' WHERE id = $1", [
+        material.id,
+      ]);
+      // The sweep sees uploading until this publication commits.
       const reader = await pool.connect();
       try {
         await reader.query('BEGIN');
-        await reader.query('UPDATE owner_material SET touched_at = $2 WHERE id = $1', [
-          material.id,
-          Date.now(),
-        ]);
+        await reader.query(
+          "UPDATE owner_material SET status = 'ready', touched_at = $2 WHERE id = $1",
+          [material.id, Date.now()],
+        );
         // ...while the sweep, which chose the material from the old version,
         // waits for that row.
         const sweeping = sweepUnusedOwnerMaterialsNow(bytes);
@@ -738,7 +741,7 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
       expect(published(material).sort()).toEqual([publishedKey, `${prefix}live.json`].sort());
     });
 
-    it('deletes old uploads nothing references, keeps used and recent ones, and finishes released ones', async () => {
+    it('retains successful uploads and finishes explicitly deleted objects', async () => {
       await pool.query(
         'CREATE TABLE IF NOT EXISTS generation_runs (id TEXT PRIMARY KEY, input JSONB NOT NULL)',
       );
@@ -765,12 +768,14 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
           Date.now(),
         ]);
 
-        expect(await sweepUnusedOwnerMaterialsNow(bytes)).toMatchObject({ marked: 1, removed: 2 });
-        const left = await pool.query<{ id: string }>('SELECT id FROM owner_material ORDER BY id');
-        expect(left.rows.map((row) => row.id).sort()).toEqual(
-          [usedByRun.id, usedBySession.id, recent.id].sort(),
+        expect(await sweepUnusedOwnerMaterialsNow(bytes)).toMatchObject({ marked: 0, removed: 1 });
+        const left = await pool.query<{ id: string }>(
+          'SELECT id FROM owner_material WHERE deleted_at IS NULL ORDER BY id',
         );
-        for (const gone of [unused, released]) {
+        expect(left.rows.map((row) => row.id).sort()).toEqual(
+          [unused.id, usedByRun.id, usedBySession.id, recent.id].sort(),
+        );
+        for (const gone of [released]) {
           expect([...bytes.objects.keys()].filter((key) => key.includes(gone.id))).toEqual([]);
         }
         expect(bytes.objects.has(usedByRun.ossKey)).toBe(true);

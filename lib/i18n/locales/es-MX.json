@@ -475,6 +475,7 @@
       "moreActions": "Más acciones",
       "rename": "Renombrar",
       "sceneIncomplete": "Esta página tiene contenido incompleto",
+      "sceneHasErrors": "Esta página contiene errores",
       "addPage": "Agregar página",
       "nextPage": "Página siguiente",
       "prevPage": "Página anterior"
@@ -1346,6 +1347,7 @@
       "ollama": "Ollama (local)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1717,7 +1719,6 @@
     "videoModel": "Modelo de generación de videos",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -2209,6 +2210,117 @@
     "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "Base de conocimientos",
+      "topLevel": "Nivel superior",
+      "back": "Volver",
+      "search": "Buscar por nombre o tipo de archivo",
+      "loading": "Cargando…",
+      "retry": "Reintentar",
+      "loadMore": "Cargar más",
+      "failure": {
+        "more": "Información del error: {{reason}}",
+        "storage_full": {
+          "label": "Espacio insuficiente",
+          "description": "No hay espacio suficiente para guardar los resultados. Libera espacio e inténtalo de nuevo."
+        },
+        "source_unavailable": {
+          "label": "Archivo original no disponible",
+          "description": "No se pudo leer el archivo original. Súbelo de nuevo y vuelve a intentarlo."
+        },
+        "service_unavailable": {
+          "label": "Servicio de análisis no disponible",
+          "description": "No hay ningún servicio de análisis configurado para este tipo de archivo. Pide a tu administrador que configure uno y vuelve a analizar el archivo."
+        },
+        "media_too_long": {
+          "label": "Audio o video demasiado largo",
+          "description": "Este método de análisis procesa audio o video de hasta {{minutes}} minutos. Acórtalo o divídelo y vuelve a subirlo."
+        },
+        "no_text_extracted": {
+          "label": "No se extrajo texto",
+          "description": "Esta vez no se extrajo texto utilizable. Revisa el contenido o prueba con otro archivo."
+        },
+        "processing_interrupted": {
+          "label": "Análisis sin completar",
+          "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        }
+      },
+      "status": {
+        "uploading": "Subiendo",
+        "stored": "Guardado · sin analizar",
+        "parsing": "Analizando",
+        "searchable": "Consultable",
+        "failed": "Error al analizar"
+      },
+      "column": {
+        "name": "Nombre",
+        "status": "Estado",
+        "folder": "Carpeta",
+        "size": "Tamaño",
+        "date": "Fecha"
+      },
+      "limits": {
+        "perFile": "Hasta {{document}} por documento o imagen, {{media}} por audio o video"
+      },
+      "usage": {
+        "summary": "{{used}} usados de {{max}} · {{count}} de {{maxCount}} archivos",
+        "fileStorage": "Almacenamiento de archivos aparte: {{used}} usados de {{max}} (incluye contenido analizado y medios de cursos)",
+        "fileStorageUnlimited": "Almacenamiento de archivos aparte: {{used}} usados (incluye contenido analizado y medios de cursos)"
+      },
+      "empty": {
+        "title": "Tu base de conocimientos está vacía",
+        "body": "Sube tus materiales didácticos, deja que el asistente los organice y analice, y elígelos con @ al preparar un curso.",
+        "folder": "Esta carpeta aún no tiene materiales",
+        "query": "Ningún material coincide con “{{query}}”"
+      },
+      "upload": {
+        "button": "Subir materiales",
+        "dismiss": "Descartar"
+      },
+      "error": {
+        "load": "No se pudo cargar la base de conocimientos",
+        "busy": "Tu cuenta se está actualizando. Inténtalo de nuevo en un momento",
+        "identity": "Tu inicio de sesión cambió. Vuelve a cargar la página",
+        "stale": "lo que se muestra podría no estar actualizado",
+        "nameTaken": "Ya existe otra carpeta con este nombre",
+        "invalidName": "Escribe un nombre de 255 caracteres como máximo",
+        "folderNameEmpty": "Escribe un nombre de carpeta",
+        "folderNameTooLong": "El nombre de la carpeta es demasiado largo",
+        "folderLimit": "Llegaste al límite de carpetas",
+        "notMovable": "Este material no se puede mover",
+        "gone": "Ya no existe",
+        "save": "No funcionó. Inténtalo de nuevo",
+        "notEmpty": "Esta carpeta aún tiene materiales. Muévelos primero"
+      },
+      "actions": {
+        "parse": "Analizar",
+        "reparse": "Volver a analizar",
+        "more": "Más acciones para {{name}}",
+        "rename": "Cambiar nombre",
+        "delete": "Eliminar",
+        "open": "Abrir",
+        "downloadOriginal": "Descargar el original",
+        "chat": "Conversar sobre este material"
+      },
+      "folder": {
+        "new": "Nueva carpeta",
+        "items": "{{count}} elementos",
+        "items_one": "{{count}} elemento",
+        "items_other": "{{count}} elementos"
+      },
+      "dialog": {
+        "cancel": "Cancelar",
+        "close": "Cerrar"
+      },
+      "delete": {
+        "materialTitle": "¿Eliminar “{{name}}”?",
+        "materialLinks": "Las conversaciones que lo usan ya no podrán leerlo; el texto que ya está en esas conversaciones se conserva.",
+        "materialCourses": "El contenido ya guardado en un curso no se ve afectado.",
+        "cannotUndo": "Esta acción no se puede deshacer.",
+        "folderTitle": "¿Eliminar la carpeta “{{name}}”?",
+        "folderContents": "Archivos que se moverán al nivel superior: {{count}}. No se eliminará ningún archivo."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2216,14 +2328,29 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "Buscar aulas y materiales",
+      "searchMaterials": "Buscar materiales",
+      "searchClassrooms": "Buscar aulas",
+      "courseOrder": "Aula abierta primero, luego actualizaciones recientes",
+      "materialOrder": "Cargas más recientes primero",
       "title": "为这条消息引用课堂",
+      "titleBoth": "Mencionar un aula o adjuntar material de la base de conocimientos a este mensaje",
+      "titleMaterials": "Adjuntar material de la base de conocimientos a este mensaje",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "El servidor no está disponible temporalmente. Vuelve a intentarlo en un momento.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "Aulas",
+      "knowledgeBase": "Base de conocimientos",
+      "emptyWithMaterials": "Ningún aula ni material coincide",
+      "attachMaterial": "Adjuntar {{name}} a este mensaje",
+      "materialUnavailable": "No se puede adjuntar {{name}} ({{reason}}). Abre la base de conocimientos para ver por qué y analizarlo de nuevo.",
+      "materialAttached": "Ya está en esta conversación",
+      "materialStaged": "Ya está en este mensaje",
+      "materialsCapped": "Se muestran los primeros {{count}} materiales — sigue escribiendo para acotar"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2357,7 +2484,8 @@
     "badgeEnter": "Modo Pro",
     "badgeExit": "Volver al modo clásico",
     "launchPlaceholder": "Describe la experiencia de aprendizaje que quieres crear",
-    "launchSend": "Iniciar construcción"
+    "launchSend": "Iniciar construcción",
+    "mentionCourseOrMaterial": "Mencionar un aula o un material de la base de conocimientos"
   },
   "workbench": {
     "tool": {

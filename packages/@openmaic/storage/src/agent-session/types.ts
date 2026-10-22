@@ -83,6 +83,11 @@ export interface AgentSessionMeta {
   stageId: string;
   skillId?: string;
   origin?: string;
+  /**
+   * The interface language the session was created in, as the host recorded
+   * it. Opaque to the package: stored and read back, never interpreted.
+   */
+  locale?: string;
   existingCourse: boolean;
   status: AgentSessionStatus;
   /** The consecutive-failure generation, incremented by every successful claim. */
@@ -104,6 +109,8 @@ export interface CreateAgentSessionInput {
   stageId?: string;
   skillId?: string;
   origin?: string;
+  /** The interface language of the creating request; opaque to the package. */
+  locale?: string;
   existingCourse?: boolean;
   /** New callers opt into the one-shot automatic-title lifecycle explicitly. */
   titleState?: 'pending';
@@ -155,6 +162,8 @@ export interface PostAgentUserMessageInput {
   materials?: unknown[];
   elementRefs?: unknown[];
   courseRefs?: unknown[];
+  /** The interface language the message was sent from; opaque to the package. */
+  locale?: string;
 }
 
 /** A control-plane write was attempted through a retired or different owner. */
@@ -382,6 +391,8 @@ export interface AgentSessionUserMessage {
   materials: unknown[];
   /** Classrooms the message named with `@`; the runner composes them into the run. */
   courseRefs?: unknown[];
+  /** The interface language the message was sent from, as posted. */
+  locale?: string;
 }
 
 /** The durable stream has separate lease-bound and control-plane writers. */

@@ -8,7 +8,7 @@ import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 describe('web fetch registry and configuration', () => {
   it('lists and looks up each provider', () => {
-    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi']);
+    expect(Object.keys(WEB_FETCH_PROVIDERS)).toEqual(['builtin', 'kimi', 'deepseek', 'firecrawl']);
     for (const provider of Object.values(WEB_FETCH_PROVIDERS))
       expect(getWebFetchProvider(provider.id)).toBe(provider);
   });
@@ -43,6 +43,21 @@ describe('web fetch registry and configuration', () => {
       baseUrl: 'https://api.moonshot.cn/v1',
     });
     expect(getProviderPreset('kimi')?.capabilities).toHaveProperty('chat');
+  });
+  it('validates and resolves a Firecrawl assignment with its own key', () => {
+    const config = parseModelConfig(
+      'providers:\n  reader:\n    preset: firecrawl\n    apiKey: test-key\nslots:\n  webFetch: reader\n',
+    );
+    expect(resolveSlot('webFetch', [{ source: 'deployment', config }])).toMatchObject({
+      status: 'assigned',
+      registryId: 'firecrawl',
+      apiKey: 'test-key',
+    });
+    // One Firecrawl account serves web search and web fetch.
+    expect(getProviderPreset('firecrawl')?.capabilities).toEqual({
+      webSearch: { registryId: 'firecrawl' },
+      webFetch: { registryId: 'firecrawl' },
+    });
   });
   it('accepts an explicit builtin assignment without credentials', () => {
     expect(parseModelConfig('slots:\n  webFetch: builtin\n').slots?.webFetch).toBe('builtin');
@@ -234,8 +249,8 @@ it('lets an existing workspace kimi provider rotate or clear its key, edit model
   setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   try {
     const current = {
-      providers: { kimi: { preset: 'kimi', apiKey: 'old-key', models: ['kimi-k2.5'] } },
-      slots: { llm: 'kimi:kimi-k2.5', webFetch: 'kimi' },
+      providers: { kimi: { preset: 'kimi', apiKey: 'old-key', models: ['kimi-k2.6'] } },
+      slots: { llm: 'kimi:kimi-k2.6', webFetch: 'kimi' },
     };
     const rotated = await applyModelSettingsChange(current, {
       kind: 'provider',
@@ -249,9 +264,9 @@ it('lets an existing workspace kimi provider rotate or clear its key, edit model
       kind: 'provider',
       id: 'kimi',
       preset: 'kimi',
-      models: ['kimi-k2.5', 'custom-model'],
+      models: ['kimi-k2.6', 'custom-model'],
     });
-    expect(edited.providers?.kimi.models).toEqual(['kimi-k2.5', 'custom-model']);
+    expect(edited.providers?.kimi.models).toEqual(['kimi-k2.6', 'custom-model']);
     expect(edited.providers?.kimi.apiKey).toBe('new-key');
     const cleared = await applyModelSettingsChange(edited, {
       kind: 'provider',
@@ -276,13 +291,13 @@ it('keeps a legacy browser kimi provider and its assignments on import', async (
   try {
     const proposal = buildModelSettingsProposal({
       providerId: 'kimi',
-      modelId: 'kimi-k2.5',
+      modelId: 'kimi-k2.6',
       providersConfig: { kimi: { apiKey: 'legacy-key', baseUrl: '' } },
     })!;
     const result = await importModelSettings(null, proposal);
     expect(result.skipped).toEqual([]);
     expect(result.config.providers?.kimi).toEqual({ preset: 'kimi', apiKey: 'legacy-key' });
-    expect(result.config.slots?.llm).toBe('kimi:kimi-k2.5');
+    expect(result.config.slots?.llm).toBe('kimi:kimi-k2.6');
     expect(result.imported).toEqual([
       { kind: 'provider', id: 'kimi' },
       { kind: 'slot', id: 'llm' },

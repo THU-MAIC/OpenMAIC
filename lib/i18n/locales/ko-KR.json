@@ -475,6 +475,7 @@
       "moreActions": "더 보기",
       "rename": "이름 바꾸기",
       "sceneIncomplete": "이 페이지의 내용이 미완성입니다",
+      "sceneHasErrors": "이 페이지에 오류가 있습니다",
       "addPage": "페이지 추가",
       "nextPage": "다음 페이지",
       "prevPage": "이전 페이지"
@@ -1346,6 +1347,7 @@
       "ollama": "Ollama (로컬)",
       "tavily": "Tavily",
       "exa": "Exa",
+      "firecrawl": "Firecrawl",
       "bocha": "Bocha",
       "brave": "Brave Search",
       "baidu": "Baidu",
@@ -1717,7 +1719,6 @@
     "videoModel": "동영상 생성 모델",
     "providerSeedance": "Seedance (ByteDance)",
     "providerKling": "Kling (Kuaishou)",
-    "providerVeo": "Veo (Google)",
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
@@ -2209,6 +2210,117 @@
     "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다."
   },
   "workspace": {
+    "knowledgeBase": {
+      "title": "지식 베이스",
+      "topLevel": "최상위",
+      "back": "뒤로",
+      "search": "이름 또는 파일 형식 검색",
+      "loading": "불러오는 중…",
+      "retry": "다시 시도",
+      "loadMore": "더 불러오기",
+      "failure": {
+        "more": "실패 설명: {{reason}}",
+        "storage_full": {
+          "label": "저장 공간 부족",
+          "description": "분석 결과를 저장할 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요."
+        },
+        "source_unavailable": {
+          "label": "원본 파일을 읽을 수 없음",
+          "description": "원본 파일을 읽지 못했습니다. 다시 업로드한 후 시도하세요."
+        },
+        "service_unavailable": {
+          "label": "분석 서비스 이용 불가",
+          "description": "이 파일 형식을 처리할 수 있는 분석 서비스가 설정되지 않았습니다. 관리자에게 설정을 요청한 후 다시 분석하세요."
+        },
+        "media_too_long": {
+          "label": "오디오 또는 동영상이 너무 긺",
+          "description": "현재 분석 방식은 최대 {{minutes}}분 길이의 오디오·동영상까지 처리할 수 있습니다. 길이를 줄이거나 나누어 다시 업로드하세요."
+        },
+        "no_text_extracted": {
+          "label": "추출된 텍스트 없음",
+          "description": "이번 분석에서 사용할 수 있는 텍스트를 추출하지 못했습니다. 내용을 확인하거나 다른 파일을 시도하세요."
+        },
+        "processing_interrupted": {
+          "label": "분석 미완료",
+          "description": "분석을 완료하지 못했습니다. 나중에 다시 시도할 수 있습니다."
+        }
+      },
+      "status": {
+        "uploading": "업로드 중",
+        "stored": "저장됨 · 분석 전",
+        "parsing": "분석 중",
+        "searchable": "검색 가능",
+        "failed": "분석 실패"
+      },
+      "column": {
+        "name": "이름",
+        "status": "상태",
+        "folder": "폴더",
+        "size": "크기",
+        "date": "날짜"
+      },
+      "limits": {
+        "perFile": "문서·이미지는 최대 {{document}}, 오디오·동영상은 최대 {{media}}"
+      },
+      "usage": {
+        "summary": "{{max}} 중 {{used}} 사용 · 파일 {{count}} / {{maxCount}}개",
+        "fileStorage": "별도 파일 저장 공간: {{max}} 중 {{used}} 사용 (분석된 내용과 수업 자료 포함)",
+        "fileStorageUnlimited": "별도 파일 저장 공간: {{used}} 사용 (분석된 내용과 수업 자료 포함)"
+      },
+      "empty": {
+        "title": "지식 베이스가 비어 있습니다",
+        "body": "수업 자료를 업로드하면 어시스턴트가 정리하고 분석합니다. 수업을 준비할 때 @로 선택하세요.",
+        "folder": "이 폴더에는 아직 자료가 없습니다",
+        "query": "“{{query}}”와 일치하는 자료가 없습니다"
+      },
+      "upload": {
+        "button": "자료 업로드",
+        "dismiss": "닫기"
+      },
+      "error": {
+        "load": "지식 베이스를 불러오지 못했습니다",
+        "busy": "계정을 업데이트하는 중입니다. 잠시 후 다시 시도하세요",
+        "identity": "로그인 상태가 바뀌었습니다. 페이지를 새로 고치세요",
+        "stale": "표시된 내용이 최신이 아닐 수 있습니다",
+        "nameTaken": "같은 이름의 폴더가 이미 있습니다",
+        "invalidName": "255자 이하의 이름을 입력하세요",
+        "folderNameEmpty": "폴더 이름을 입력하세요",
+        "folderNameTooLong": "폴더 이름이 너무 깁니다",
+        "folderLimit": "폴더 개수 한도에 도달했습니다",
+        "notMovable": "이 자료는 이동할 수 없습니다",
+        "gone": "더 이상 존재하지 않습니다",
+        "save": "처리하지 못했습니다. 다시 시도하세요",
+        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요"
+      },
+      "actions": {
+        "parse": "분석",
+        "reparse": "다시 분석",
+        "more": "{{name}} 추가 작업",
+        "rename": "이름 변경",
+        "delete": "삭제",
+        "open": "열기",
+        "downloadOriginal": "원본 파일 다운로드",
+        "chat": "이 자료로 대화하기"
+      },
+      "folder": {
+        "new": "새 폴더",
+        "items": "{{count}}개 항목",
+        "items_one": "{{count}}개 항목",
+        "items_other": "{{count}}개 항목"
+      },
+      "dialog": {
+        "cancel": "취소",
+        "close": "닫기"
+      },
+      "delete": {
+        "materialTitle": "“{{name}}”을(를) 삭제할까요?",
+        "materialLinks": "삭제하면 대화에서 이 자료를 더 이상 읽을 수 없습니다. 대화에 이미 있는 내용은 그대로 남습니다.",
+        "materialCourses": "코스에 이미 저장된 내용에는 영향이 없습니다.",
+        "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
+        "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
+        "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
+      }
+    },
     "untitledCourse": "未命名课堂",
     "sceneCount": "{{count}} 页",
     "sceneCount_one": "{{count}} 页",
@@ -2216,14 +2328,29 @@
     "courseLinkHint": "在右侧打开《{{name}}》",
     "courseLinkMore": "还有 {{count}} 节课堂",
     "courseMention": {
+      "search": "교실 및 자료 검색",
+      "searchMaterials": "자료 검색",
+      "searchClassrooms": "교실 검색",
+      "courseOrder": "열린 교실 우선, 나머지는 최근 수정순",
+      "materialOrder": "최근 업로드순",
       "title": "为这条消息引用课堂",
+      "titleBoth": "이 메시지에 교실을 참조하거나 지식 베이스 자료 첨부",
+      "titleMaterials": "이 메시지에 지식 베이스 자료 첨부",
       "empty": "没有匹配的课堂",
       "alreadyNamed": "已引用",
       "remove": "移除{{name}}",
       "pillHint": "这条消息引用了「{{name}}」",
       "notAccepted": "서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
       "reference": "引用「{{name}}」",
-      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围"
+      "capped": "仅显示前 {{count}} 个，继续输入以缩小范围",
+      "classrooms": "수업",
+      "knowledgeBase": "지식 베이스",
+      "emptyWithMaterials": "일치하는 수업이나 자료가 없습니다",
+      "attachMaterial": "{{name}}을(를) 이 메시지에 첨부",
+      "materialUnavailable": "{{name}}을(를) 첨부할 수 없습니다({{reason}}). 지식 베이스에서 이유를 확인하고 다시 분석하세요.",
+      "materialAttached": "이 대화에 이미 있습니다",
+      "materialStaged": "이 메시지에 이미 있습니다",
+      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요"
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
@@ -2357,7 +2484,8 @@
     "badgeEnter": "Pro 모드",
     "badgeExit": "일반 모드로 돌아가기",
     "launchPlaceholder": "만들고 싶은 학습 경험을 설명해 보세요",
-    "launchSend": "구축 시작"
+    "launchSend": "구축 시작",
+    "mentionCourseOrMaterial": "수업 또는 지식 베이스 자료 참조"
   },
   "workbench": {
     "tool": {

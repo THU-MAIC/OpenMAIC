@@ -38,6 +38,7 @@ import type {
 } from './types';
 import { isCustomTTSProvider } from './types';
 import {
+  getVoxCPMProfileIdFromVoiceId,
   VOXCPM_AUTO_VOICE,
   VOXCPM_AUTO_VOICE_ID,
   VOXCPM_TTS_PROVIDER_ID,
@@ -79,6 +80,8 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
 ] as const;
 
+// Legacy sentinel for saved clone voices, excluded from manual model pickers.
+// Keep voice-driven dispatch compatible until the replacement protocol is supported.
 export const DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL = 'qwen3-tts-vc-2026-01-22';
 /** Client-visible VC model. Server-only overrides are resolved in provider-config. */
 export const QWEN_TTS_VOICE_CLONE_MODEL = DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
@@ -90,14 +93,24 @@ export function isQwenVoiceCloneModel(modelId?: string, configuredModelId?: stri
   );
 }
 
-/** A Qwen catalog voice is provider-owned and must never use the clone model. */
-export function isQwenCatalogVoice(voiceId?: string): boolean {
-  return !!voiceId && TTS_PROVIDERS['qwen-tts'].voices.some((voice) => voice.id === voiceId);
+/** Built-in and explicitly configured Qwen catalogue voices never use the clone model. */
+export function isQwenCatalogVoice(
+  voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
+): boolean {
+  return (
+    !!voiceId &&
+    (configuredVoices?.some((voice) => voice.id === voiceId) ||
+      TTS_PROVIDERS['qwen-tts'].voices.some((voice) => voice.id === voiceId))
+  );
 }
 
 /** A non-catalog Qwen voice ID is an enrolled clone; local profile storage is not authoritative. */
-export function isQwenCloneVoice(voiceId?: string): boolean {
-  return !!voiceId && !isQwenCatalogVoice(voiceId);
+export function isQwenCloneVoice(
+  voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
+): boolean {
+  return !!voiceId && !isQwenCatalogVoice(voiceId, configuredVoices);
 }
 
 /**
@@ -108,12 +121,24 @@ export function resolveTTSModelForVoice(
   providerId: TTSProviderId,
   voiceId: string,
   requestedModelId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   if (providerId !== 'qwen-tts') return requestedModelId;
-  if (isQwenCloneVoice(voiceId)) return QWEN_TTS_VOICE_CLONE_MODEL;
+  if (isQwenCloneVoice(voiceId, configuredVoices)) return QWEN_TTS_VOICE_CLONE_MODEL;
   return requestedModelId && !isQwenVoiceCloneModel(requestedModelId)
     ? requestedModelId
     : TTS_PROVIDERS['qwen-tts'].defaultModelId;
+}
+
+/** Replacement catalogues restrict presets while retaining provider-specific user voices. */
+export function voiceAllowedByConfiguredCatalogue(
+  providerId: string,
+  voiceId: string,
+  configuredVoices?: readonly { id: string }[],
+): boolean {
+  if (!configuredVoices || configuredVoices.some((voice) => voice.id === voiceId)) return true;
+  if (providerId === 'qwen-tts') return isQwenCloneVoice(voiceId, configuredVoices);
+  return providerId === VOXCPM_TTS_PROVIDER_ID && !!getVoxCPMProfileIdFromVoiceId(voiceId);
 }
 
 /**
@@ -122,7 +147,14 @@ export function resolveTTSModelForVoice(
  * other voice (no such list, a clone, a user voice) on any model. Without a
  * model the provider's default model is meant.
  */
-export function voiceServesModel(providerId: string, voiceId: string, modelId?: string): boolean {
+export function voiceServesModel(
+  providerId: string,
+  voiceId: string,
+  modelId?: string,
+  configuredVoices?: readonly { id: string }[],
+): boolean {
+  // Explicit provider-local entries take precedence over static vendor metadata.
+  if (configuredVoices?.some((voice) => voice.id === voiceId)) return true;
   const provider = TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
   const voice = provider?.voices.find((entry) => entry.id === voiceId);
   if (!voice?.compatibleModels) return true;
@@ -365,8 +397,6 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     excludeFromAgentVoiceCatalog: true,
     models: [
       { id: 'qwen3-tts-flash', name: 'Qwen3 TTS Flash' },
-      { id: 'qwen3-tts-instruct-flash', name: 'Qwen3 TTS Instruct Flash' },
-      { id: 'qwen-tts', name: 'Qwen TTS' },
       { id: QWEN_TTS_VOICE_CLONE_MODEL, name: 'Qwen3 TTS Voice Clone' },
     ],
     defaultModelId: 'qwen3-tts-flash',

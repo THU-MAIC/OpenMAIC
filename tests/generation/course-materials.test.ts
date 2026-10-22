@@ -294,7 +294,7 @@ describe('the composer materials', () => {
     expect(probe.current!.materials).toEqual([]);
   });
 
-  it('retries a failed upload and a failed extraction, and deletes what it removes', async () => {
+  it('retries a failed upload and a failed extraction, and retains what it removes', async () => {
     api.uploadMaterial.mockRejectedValueOnce(
       new RunApiError(500, undefined, undefined, 'upload.materialUploadFailed', {
         name: 'notes.pdf',
@@ -335,12 +335,37 @@ describe('the composer materials', () => {
     expect(probe.current!.materials[0]).toMatchObject({ status: 'extracting' });
 
     await act(async () => probe.current!.remove(probe.current!.materials[0]!.id));
-    expect(api.deleteMaterial).toHaveBeenCalledWith('mat_2');
+    expect(api.deleteMaterial).not.toHaveBeenCalled();
     expect(probe.current!.materials).toEqual([]);
     expect(probe.current!.allReady).toBe(true);
   });
 
-  it('deletes what no run took when the composer goes away', async () => {
+  it('does not delete a successful response arriving after removal of the selection', async () => {
+    let finish!: (value: Awaited<ReturnType<typeof api.uploadMaterial>>) => void;
+    api.uploadMaterial.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => {
+      await probe.current!.add([pdf()]);
+    });
+    await flush();
+    await act(async () => probe.current!.remove(probe.current!.materials[0]!.id));
+    await act(async () =>
+      finish({
+        materialId: 'late-success',
+        bytes: 4,
+        mediaKind: 'document',
+        extraction: { status: 'ready' },
+      }),
+    );
+    expect(probe.current!.materials).toEqual([]);
+    expect(api.deleteMaterial).not.toHaveBeenCalled();
+  });
+
+  it('retains successful uploads when the composer goes away', async () => {
     api.uploadMaterial.mockResolvedValue({
       materialId: 'mat_3',
       bytes: 4,
@@ -352,7 +377,7 @@ describe('the composer materials', () => {
     });
     await flush();
     await act(async () => root.unmount());
-    expect(api.deleteMaterial).toHaveBeenCalledWith('mat_3', { keepalive: true });
+    expect(api.deleteMaterial).not.toHaveBeenCalled();
     root = createRoot(document.createElement('div'));
     await act(async () => root.render(createElement(Probe)));
   });
@@ -467,8 +492,8 @@ describe('the composer materials', () => {
       status: 'failed',
       failure: { key: 'toolbar.materialUnavailable' },
     });
-    // A real unload releases what is left.
+    // A real unload also leaves successful uploads in the library.
     await act(async () => void window.dispatchEvent(page('pagehide', false)));
-    expect(api.deleteMaterial).toHaveBeenCalledWith('mat_5', { keepalive: true });
+    expect(api.deleteMaterial).not.toHaveBeenCalled();
   });
 });

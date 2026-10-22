@@ -2,6 +2,7 @@ import {
   createMaterialId,
   type ClaimedMaterialExtraction,
   type CompleteMaterialExtractionInput,
+  type MaterialExtractionStats,
 } from '@openmaic/storage';
 
 import {
@@ -9,8 +10,10 @@ import {
   getMediaExtractorProviders,
   selectMediaExtractorProvider,
   type DocumentArtifact,
+  type DocumentExtractorInput,
   type DocumentExtractorProvider,
   type MediaArtifact,
+  type MediaExtractorInput,
   type MediaExtractorProvider,
 } from '@/lib/document';
 import {
@@ -19,27 +22,29 @@ import {
   resolveExtractionServices,
   type ExtractionServices,
 } from './services';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import {
   getAgentSessionMaterialStore,
   resolveSessionMaterialRawAsset,
   storeSessionMaterialRawAsset,
 } from '@/lib/server/agent-runtime/session-materials';
 
-import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { isTransientExtractionError, MaterialExtractionError } from './errors';
 
-export interface MaterialExtractionExecutionDependencies {
+/** Which extractors a source's bytes go to: the registry seams both extraction paths share. */
+export interface ExtractorRegistryDependencies {
+  providers?: () => DocumentExtractorProvider[];
+  mediaProviders?: () => MediaExtractorProvider[];
+  configuredProviderIds?: () => string[];
+  services?: ExtractionServices;
+}
+
+export interface MaterialExtractionExecutionDependencies extends ExtractorRegistryDependencies {
+  sessionOwner?: (sessionId: string) => Promise<string | undefined>;
   resolveSource?: (
     sessionId: string,
     assetId: string,
   ) => Promise<{ bytes: Buffer; mime: string } | null>;
-  providers?: () => DocumentExtractorProvider[];
-  mediaProviders?: () => MediaExtractorProvider[];
-  configuredProviderIds?: () => string[];
-  /** The owner's document and speech services; resolved from its slots by default. */
-  services?: ExtractionServices;
-  /** The owner a session belongs to, whose slots apply. */
-  sessionOwner?: (sessionId: string) => Promise<string | undefined>;
   putText?: (sessionId: string, text: Buffer) => Promise<string>;
   putBytes?: (sessionId: string, bytes: Buffer, mime: string) => Promise<string>;
   complete?: (input: CompleteMaterialExtractionInput) => Promise<boolean>;
@@ -115,69 +120,89 @@ async function defaultPutBytes(sessionId: string, bytes: Buffer, mime: string): 
   return storeSessionMaterialRawAsset(sessionId, bytes, mime);
 }
 
-export type MaterialSourceExtraction =
-  | { kind: 'media'; text: string; artifact: MediaArtifact; extractorVersion: string }
-  | { kind: 'document'; text: string; artifact: DocumentArtifact; extractorVersion: string };
-
 /**
- * Extract text from one source file's bytes through the upstream extractor
- * registry, with server-managed provider configuration only. Media yields a
- * timestamped transcript (and fails when there is none); documents yield their
- * text and markdown blocks. Persistence of the result is the caller's.
+ * The extractor a source will go to, chosen before anything runs: one media
+ * provider, or the document providers in the order they are tried.
  */
-export async function extractMaterialSource(
-  raw: { bytes: Buffer; mime: string; fileName?: string },
-  dependencies: Pick<
-    MaterialExtractionExecutionDependencies,
-    'providers' | 'mediaProviders' | 'configuredProviderIds' | 'services'
-  > & { ownerId?: string } = {},
-): Promise<MaterialSourceExtraction> {
-  const services = dependencies.services ?? (await resolveExtractionServices(dependencies.ownerId));
+export type SourceExtractionPlan =
+  | { kind: 'media'; provider: MediaExtractorProvider; input: MediaExtractorInput }
+  | {
+      kind: 'document';
+      candidates: DocumentExtractorProvider[];
+      input: Omit<DocumentExtractorInput, 'config'>;
+      /**
+       * Every candidate is a parsing service the deployment has not
+       * configured: if they all fail, the reason is `service_unavailable`.
+       */
+      noServiceConfigured?: boolean;
+      services: ExtractionServices;
+    };
+
+/** An image the extractor returned, not yet decoded or stored. */
+export interface ExtractedSourceImage {
+  /** Base64 or data-URL bytes, as the provider returned them (see {@link decodeMediaAssetData}). */
+  data: string;
+  mimeType: string;
+  title: string;
+  pageNumber?: number;
+  timeMs?: number;
+  /** What the extracted text calls this image (`openmaic-derivative:<key>`), if it names it. */
+  key?: string;
+}
+
+/** What one extraction produced, before any of it is stored. */
+export interface SourceExtractionOutcome {
+  text: string;
+  /** Positions written by the document-image parser, before publication. */
+  imageRefs?: Array<{ start: number; end: number; key: string }>;
+  images: ExtractedSourceImage[];
+  /** The provider that actually produced the result (after any fallback). */
+  extractor: { id: string; version: string };
+  stats: MaterialExtractionStats;
+}
+
+function wrapProviderError(error: unknown): MaterialExtractionError {
+  if (error instanceof ModelAuthorizationError) throw error;
+  return new MaterialExtractionError(
+    error instanceof Error ? error.message : String(error),
+    isTransientExtractionError(error),
+    {
+      cause: error,
+      reasonCode: error instanceof MaterialExtractionError ? error.reasonCode : undefined,
+    },
+  );
+}
+
+/** Choose the extractor for a source's bytes without running it. */
+export async function planSourceExtraction(
+  raw: { bytes: Buffer; mime: string },
+  title: string | null,
+  dependencies: ExtractorRegistryDependencies = {},
+): Promise<SourceExtractionPlan> {
+  const services = dependencies.services ?? (await resolveExtractionServices());
   const mediaProviders = dependencies.mediaProviders?.() ?? getMediaExtractorProviders();
   const isMedia = mediaProviders.some((provider) =>
     provider.supportedMimeTypes.includes(raw.mime.toLowerCase()),
   );
   if (isMedia) {
-    const mediaInput = {
+    const input = {
       buffer: raw.bytes,
-      fileName: raw.fileName,
+      fileName: title ?? undefined,
       fileSize: raw.bytes.byteLength,
       mimeType: raw.mime,
       config: mediaExtractorConfig(services),
     };
-    let selected: MediaExtractorProvider;
-    let artifact: MediaArtifact;
+    let provider: MediaExtractorProvider;
     try {
-      selected = await selectMediaExtractorProvider({
+      provider = await selectMediaExtractorProvider({
         mimeType: raw.mime,
-        input: mediaInput,
+        input,
         providers: mediaProviders,
       });
-      artifact = await selected.extract({
-        ...mediaInput,
-        config: { ...mediaInput.config, providerId: selected.id },
-      });
     } catch (error) {
-      if (error instanceof ModelAuthorizationError) throw error;
-      throw new MaterialExtractionError(
-        error instanceof Error ? error.message : String(error),
-        isTransientExtractionError(error),
-        { cause: error },
-      );
+      throw wrapProviderError(error);
     }
-    const text = mediaArtifactText(artifact);
-    if (!text) {
-      throw new MaterialExtractionError(
-        'media extraction produced no transcript; configure a working local ASR provider or a cloud media extractor',
-        false,
-      );
-    }
-    return {
-      kind: 'media',
-      text,
-      artifact,
-      extractorVersion: `${selected.id}@${selected.version}`,
-    };
+    return { kind: 'media', provider, input };
   }
 
   const providers = dependencies.providers?.() ?? getDocumentExtractorProviders();
@@ -185,51 +210,166 @@ export async function extractMaterialSource(
     dependencies.configuredProviderIds?.() ??
     (services.document ? [services.document.providerId] : []);
   const candidates = extractorCandidates(raw.mime, providers, configuredIds);
+  // No extractor for this type is not a missing service: no reason code.
   if (candidates.length === 0) throw new Error(`no document extractor supports ${raw.mime}`);
-
-  const errors: string[] = [];
-  const failures: unknown[] = [];
-  let artifact: DocumentArtifact | undefined;
-  let selected: DocumentExtractorProvider | undefined;
-  for (const provider of candidates) {
-    try {
-      artifact = await provider.extract({
-        buffer: raw.bytes,
-        fileName: raw.fileName,
-        fileSize: raw.bytes.byteLength,
-        mimeType: raw.mime,
-        config: extractorConfigFor(provider.id, services),
-      });
-      selected = provider;
-      break;
-    } catch (error) {
-      errors.push(`${provider.id}: ${error instanceof Error ? error.message : String(error)}`);
-      failures.push(error);
-    }
-  }
-  if (!artifact || !selected) {
-    throw new MaterialExtractionError(
-      `document extraction failed (${errors.join('; ')})`,
-      failures.some(isTransientExtractionError),
-    );
-  }
+  // Only parsing services the deployment has not configured: a provider
+  // that runs as is (`plain-text`, every PDF's local `unpdf`) is no missing
+  // service, whatever made it fail.
+  const configured = new Set(configuredIds);
+  const noServiceConfigured = candidates.every(
+    (provider) => provider.requiresServiceConfig === true && !configured.has(provider.id),
+  );
   return {
     kind: 'document',
-    text: artifactText(artifact),
-    artifact,
-    extractorVersion: `${selected.id}@${selected.version}`,
+    services,
+    candidates,
+    ...(noServiceConfigured ? { noServiceConfigured } : {}),
+    input: {
+      buffer: raw.bytes,
+      fileName: title ?? undefined,
+      fileSize: raw.bytes.byteLength,
+      mimeType: raw.mime,
+    },
   };
 }
 
-/** Extract one lease-fenced source through the upstream extractor registry. */
-/** The owner of a session, whose slots its material extraction uses. */
+/** The extractor a plan tries first: the one that runs unless it fails. */
+export function plannedExtractor(plan: SourceExtractionPlan): { id: string; version: string } {
+  const provider = plan.kind === 'media' ? plan.provider : plan.candidates[0];
+  return { id: provider.id, version: provider.version };
+}
+
+/** Run a plan's extractor (falling back across document providers) and return its output. */
+export async function runSourceExtraction(
+  plan: SourceExtractionPlan,
+  title: string | null,
+): Promise<SourceExtractionOutcome> {
+  if (plan.kind === 'media') {
+    let artifact: MediaArtifact;
+    try {
+      artifact = await plan.provider.extract({
+        ...plan.input,
+        config: { ...plan.input.config, providerId: plan.provider.id },
+      });
+    } catch (error) {
+      throw wrapProviderError(error);
+    }
+    const text = mediaArtifactText(artifact);
+    if (!text) {
+      throw new MaterialExtractionError(
+        'media extraction produced no transcript; configure a working local ASR provider or a cloud media extractor',
+        false,
+        { reasonCode: 'no_text_extracted' },
+      );
+    }
+    const images: ExtractedSourceImage[] = [];
+    for (const asset of artifact.assets ?? []) {
+      if (asset.type !== 'image' || !asset.data) continue;
+      const timeMs = asset.metadata?.timeMs;
+      images.push({
+        data: asset.data,
+        mimeType: asset.mimeType ?? 'image/webp',
+        title: asset.description ?? `${title ?? 'media'}.${asset.id}.webp`,
+        ...(asset.pageNumber === undefined ? {} : { pageNumber: asset.pageNumber }),
+        ...(typeof timeMs === 'number' ? { timeMs } : {}),
+      });
+    }
+    return {
+      text,
+      images,
+      extractor: { id: plan.provider.id, version: plan.provider.version },
+      stats: {
+        chars: text.length,
+        pages: 0,
+        imageCount: images.length,
+        durationSec: artifact.metadata.durationMs ? artifact.metadata.durationMs / 1000 : undefined,
+        asrChunks: artifact.transcript?.length ?? 0,
+        ...(artifact.diagnostics?.length
+          ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
+          : {}),
+      },
+    };
+  }
+
+  const errors: string[] = [];
+  const failures: unknown[] = [];
+  for (const provider of plan.candidates) {
+    let artifact: DocumentArtifact;
+    try {
+      artifact = await extractWithDocumentProvider(provider, plan);
+    } catch (error) {
+      errors.push(documentFailureLine(provider, error));
+      failures.push(error);
+      continue;
+    }
+    return documentOutcome(artifact, provider);
+  }
+  throw documentExtractionFailure(errors, failures, plan.noServiceConfigured);
+}
+
+/** Run one document provider on a planned input; a failure is the provider's own error. */
+export function extractWithDocumentProvider(
+  provider: DocumentExtractorProvider,
+  plan: Extract<SourceExtractionPlan, { kind: 'document' }>,
+): Promise<DocumentArtifact> {
+  return provider.extract({
+    ...plan.input,
+    config: extractorConfigFor(provider.id, plan.services),
+  });
+}
+
+/** One line of the combined failure message, for a provider that failed. */
+export function documentFailureLine(provider: DocumentExtractorProvider, error: unknown): string {
+  return `${provider.id}: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+/**
+ * The failure once every document provider failed: retryable if any failure
+ * was transient, and `service_unavailable` when no candidate was a service
+ * the deployment configured (any other failure keeps no reason code).
+ */
+export function documentExtractionFailure(
+  errors: string[],
+  failures: unknown[],
+  noServiceConfigured = false,
+): MaterialExtractionError {
+  return new MaterialExtractionError(
+    `document extraction failed (${errors.join('; ')})`,
+    failures.some(isTransientExtractionError),
+    noServiceConfigured ? { reasonCode: 'service_unavailable' } : undefined,
+  );
+}
+
+/** What a document provider's artifact is kept as. */
+export function documentOutcome(
+  artifact: DocumentArtifact,
+  provider: DocumentExtractorProvider,
+): SourceExtractionOutcome {
+  const text = artifactText(artifact);
+  return {
+    text,
+    // Document images are not kept: the text is stored as the provider
+    // returned it, the same output the session chain has always published.
+    images: [],
+    extractor: { id: provider.id, version: provider.version },
+    stats: {
+      chars: text.length,
+      pages: artifact.metadata.pageCount ?? 0,
+      imageCount: artifact.assets.filter((asset) => asset.type === 'image').length,
+      ...(artifact.diagnostics?.length
+        ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
+        : {}),
+    },
+  };
+}
+
 async function defaultSessionOwner(sessionId: string): Promise<string | undefined> {
-  // Sessions live in the database; without one there is no owner to ask.
   if (!process.env.DATABASE_URL?.trim()) return undefined;
   const { getAgentSessionStore } = await import('@/lib/server/agent-runtime/store');
   return (await (await getAgentSessionStore()).getSession(sessionId))?.ownerId;
 }
 
+/** Extract one lease-fenced source through the upstream extractor registry. */
 export async function extractClaimedSessionMaterial(
   claim: ClaimedMaterialExtraction,
   dependencies: MaterialExtractionExecutionDependencies = {},
@@ -241,88 +381,54 @@ export async function extractClaimedSessionMaterial(
   if (!raw) throw new Error(`source bytes are unavailable for material ${source.id}`);
 
   const ownerId = await (dependencies.sessionOwner ?? defaultSessionOwner)(source.sessionId);
-  const extraction = await extractMaterialSource(
-    { bytes: raw.bytes, mime: raw.mime, fileName: source.title ?? undefined },
-    { ...dependencies, ownerId },
+  const services = dependencies.services ?? (await resolveExtractionServices(ownerId));
+  const plan = await planSourceExtraction(raw, source.title, { ...dependencies, services });
+  const outcome = await runSourceExtraction(plan, source.title);
+  const { text } = outcome;
+  const textAssetId = await (dependencies.putText ?? defaultPutText)(
+    source.sessionId,
+    Buffer.from(text, 'utf8'),
   );
-  const { text, extractorVersion } = extraction;
-
-  if (extraction.kind === 'media') {
-    const { artifact } = extraction;
-    const textAssetId = await (dependencies.putText ?? defaultPutText)(
-      source.sessionId,
-      Buffer.from(text, 'utf8'),
-    );
-    const transcriptId = createMaterialId();
-    const putBytes = dependencies.putBytes ?? defaultPutBytes;
-    const images = [];
-    for (const asset of artifact.assets ?? []) {
-      if (asset.type !== 'image' || !asset.data) continue;
-      const bytes = decodeMediaAssetData(asset.data);
-      const rawAssetId = await putBytes(source.sessionId, bytes, asset.mimeType ?? 'image/webp');
-      images.push({
-        id: createMaterialId(),
-        kind: 'image' as const,
-        title: asset.description ?? `${source.title ?? 'media'}.${asset.id}.webp`,
-        rawAssetId,
-      });
-    }
-    const store = dependencies.complete ? undefined : await getAgentSessionMaterialStore();
-    const complete = dependencies.complete ?? store!.completeExtraction.bind(store);
-    const completed = await complete({
-      sourceId: source.id,
-      workerId: claim.workerId,
-      extractorVersion,
-      stats: {
-        chars: text.length,
-        pages: 0,
-        imageCount: images.length,
-        durationSec: artifact.metadata.durationMs ? artifact.metadata.durationMs / 1000 : undefined,
-        asrChunks: artifact.transcript?.length ?? 0,
-        ...(artifact.diagnostics?.length
-          ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
-          : {}),
-      },
-      derived: [
-        {
-          id: transcriptId,
-          kind: 'transcript',
-          title: source.title ? `${source.title}.transcript.md` : 'transcript.md',
-          textAssetId,
-          textChars: text.length,
-        },
-        ...images,
-      ],
+  const putBytes = dependencies.putBytes ?? defaultPutBytes;
+  const images = [];
+  for (const image of outcome.images) {
+    const bytes = decodeMediaAssetData(image.data);
+    const rawAssetId = await putBytes(source.sessionId, bytes, image.mimeType);
+    images.push({
+      id: createMaterialId(),
+      kind: 'image' as const,
+      title: image.title,
+      rawAssetId,
     });
-    if (!completed) throw new Error(`material extraction lease lost for ${source.id}`);
-    return { materialId: transcriptId, text, extractorVersion };
   }
-
-  const { artifact } = extraction;
-  const bytes = Buffer.from(text, 'utf8');
-  const textAssetId = await (dependencies.putText ?? defaultPutText)(source.sessionId, bytes);
-  const derivativeId = createMaterialId();
   const store = dependencies.complete ? undefined : await getAgentSessionMaterialStore();
   const complete = dependencies.complete ?? store!.completeExtraction.bind(store);
+  const extractorVersion = `${outcome.extractor.id}@${outcome.extractor.version}`;
+  const derivativeId = createMaterialId();
   const completed = await complete({
     sourceId: source.id,
     workerId: claim.workerId,
     extractorVersion,
-    stats: {
-      chars: text.length,
-      pages: artifact.metadata.pageCount ?? 0,
-      imageCount: artifact.assets.filter((asset) => asset.type === 'image').length,
-      ...(artifact.diagnostics?.length
-        ? { diagnostics: artifact.diagnostics.map((diagnostic) => diagnostic.message) }
-        : {}),
-    },
-    derived: {
-      id: derivativeId,
-      kind: 'extraction',
-      title: source.title ? `${source.title}.extracted.md` : 'extracted.md',
-      textAssetId,
-      textChars: text.length,
-    },
+    stats: outcome.stats,
+    derived:
+      plan.kind === 'media'
+        ? [
+            {
+              id: derivativeId,
+              kind: 'transcript',
+              title: source.title ? `${source.title}.transcript.md` : 'transcript.md',
+              textAssetId,
+              textChars: text.length,
+            },
+            ...images,
+          ]
+        : {
+            id: derivativeId,
+            kind: 'extraction',
+            title: source.title ? `${source.title}.extracted.md` : 'extracted.md',
+            textAssetId,
+            textChars: text.length,
+          },
   });
   if (!completed) throw new Error(`material extraction lease lost for ${source.id}`);
   return { materialId: derivativeId, text, extractorVersion };

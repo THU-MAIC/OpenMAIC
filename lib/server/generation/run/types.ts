@@ -98,11 +98,7 @@ export interface GenerationRunInput {
    * preference, not a model); the provider's default voice otherwise.
    */
   voice?: { providerId: string; voiceId: string; speed?: number };
-  /**
-   * The materials were uploaded for this run only (the composer's): they are
-   * released when the run completes or ends. Callers that reuse material ids
-   * across runs leave it out.
-   */
+  /** Accepted for older clients; successful uploads are retained regardless. */
   releaseMaterials?: boolean;
 }
 

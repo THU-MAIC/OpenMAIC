@@ -101,6 +101,8 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `proxy` | لا | عنوان وكيل HTTP لطلبات هذا المزود. |
 | `credentials` | لبعض الإعدادات المسبقة | أزواج مفاتيح للخدمات التي لا تستخدم مفتاحًا واحدًا. يستخدم AliDocMind الحقلين `accessKeyId` و`accessKeySecret`. |
 | `options` | لا | إعدادات غير سرية خاصة بالمزود، مثل `backend` لـ `voxcpm-tts`. الأسماء أحرف وأرقام و`_` و`-`؛ والقيم سلاسل نصية أو أرقام أو قيم منطقية (بلا خرائط أو قوائم متداخلة)، ويعمل `${VAR}`. تعرض إعدادات النماذج الخيارات، لذا لا تضع فيها مفتاحًا أبدًا. للنشر فقط: لا تستطيع إعدادات النماذج ضبطها. |
+| `voices` | لا | لإعدادات TTS المسبقة فقط. يستبدل الكتالوج المدمج بقائمة غير فارغة؛ يتطلب كل عنصر `id` و`name`، مع `language` و`gender` (`male` أو `female` أو `neutral`) اختياريين. يجب ألا تتكرر المعرّفات وألا تحتوي على فاصل الربط المحجوز `::`. تبقى أصوات المستخدم متاحة، وتستخدم أصوات Qwen المستنسخة نموذج الاستنساخ. عند الإغفال يبقى الكتالوج الأصلي. |
+| `options.defaultVoice` | لا | معرّف الصوت الافتراضي لهذا المزود؛ يجب أن يكون نصًا غير فارغ ولا يتكون من مسافات فقط. يتطلب قائمة `voices` غير فارغة تحتوي على هذا المعرّف. عند ضبط `voices` وحدها يُستخدم أول عنصر. للاختيار الصريح الصالح الأولوية. عند إغفال كلا الخيارين يبقى السلوك الأصلي. |
 
 تغطي معظم الإعدادات المسبقة قدرة واحدة وفق السجلات المدمجة: الإعداد `openai` للمحادثة فقط، أما صور OpenAI وتحويل النص إلى كلام والتفريغ الصوتي فهي الإعدادات `openai-image` و`openai-tts` و`openai-whisper`. أعلن مزودًا واحدًا لكل قدرة، وأشر إلى `${VAR}` نفسه عندما يغطي مفتاح واحد عدة قدرات. **إعدادات Token Plan المسبقة** (`minimax` و`tokendance` و`volcengine-ark` و`kimi-coding-plan`) تغطي عدة قدرات بمفتاح واحد، كل منها على عنوان الخطة الخاص. يستبدل `baseUrl` على المزود العنوان لكل القدرات التي يغطيها، لذا لا تضع `baseUrl` لـ Token Plan إلا إذا انتقلت كل قدراته معه.
 
@@ -659,7 +661,7 @@ slots:
 
 يستخدم موفرو الفيديو متغيرات `VIDEO_<PROVIDER>_API_KEY`، مع خيار `VIDEO_<PROVIDER>_BASE_URL`. البادئات المدعومة تشمل:
 
-`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_VEO_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
+`VIDEO_SEEDANCE_`، `VIDEO_KLING_`، `VIDEO_SORA_`، `VIDEO_MINIMAX_`، `VIDEO_GROK_` و `VIDEO_HAPPYHORSE_`.
 
 ### تحليل المستندات والوسائط
 
@@ -688,7 +690,7 @@ ALIDOCMIND_BASE_URL=       # تجاوز اختياري
 
 ### البحث عبر الإنترنت
 
-اضبط موفري البحث Tavily، Exa، Bocha، Brave، Baidu، SearXNG أو MiniMax:
+اضبط موفري البحث Tavily، Exa، Firecrawl، Bocha، Brave، Baidu، SearXNG أو MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +698,9 @@ TAVILY_BASE_URL=           # تجاوز اختياري
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # تجاوز اختياري
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # تجاوز اختياري
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # تجاوز اختياري
@@ -756,6 +761,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +788,25 @@ slots:
 ```
 
 المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
+
+### البحث وجلب الصفحات باستخدام DeepSeek
+
+يشترك الإعداد `deepseek` في `DEEPSEEK_API_KEY` وعنوان API الأساسي بين المحادثة والبحث واستخراج Markdown المستضاف. يستخدم البحث `POST /v1/tools/search` ويعيد حتى 50 نتيجة، ويقتطع الاستعلام إلى 128 نقطة ترميز Unicode. يستخدم `summary` ثم `snippet` عند فراغه. يستخدم الجلب `POST /v1/tools/fetch` ويقرأ `content` و`title` الاختياري غير الفارغ.
+
+في الإعدادات القديمة، فعّل `WEB_SEARCH_DEEPSEEK_ENABLED=true` أو أضف `web-search.deepseek` صراحةً إلى `server-providers.yml`. بيانات اعتماد المحادثة وحدها لا تفعّل البحث ولا تستبدل مزود البحث الافتراضي الحالي. يعطّل `WEB_SEARCH_DEEPSEEK_ENABLED=false` البحث قسرًا. عند وجود `openmaic.yml` لا يستطيع المتغير القديم تعيين خانة؛ أعلن المزود وعيّن `webSearch` و/أو `webFetch` صراحةً.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### محادثة Kimi والبحث على الويب
 
@@ -813,6 +839,8 @@ slots:
 | --- | --- | --- |
 | `builtin` | غير مطلوبة | قارئ Readability/Turndown محلي؛ تستخدم ملفات PDF خانة `document` |
 | `kimi` | مفتاح المزوّد Kimi الحالي وعنوانه الأساسي | خدمة مستضافة لاستخراج Markdown، تشمل روابط PDF |
+| `deepseek` | مفتاح محادثة DeepSeek وعنوان API الأساسي | استخراج Markdown المستضاف |
+| `firecrawl` | مفتاح Firecrawl API (`preset: firecrawl`) | خدمة مستضافة لاستخراج المحتوى الرئيسي للصفحة بصيغة Markdown، تشمل روابط PDF |
 
 ```yaml
 providers:
@@ -826,6 +854,20 @@ slots:
 
 يوفر كلا الإعدادين المسبقين `kimi` و`kimi-coding-plan` قدرة `webFetch`. لبيانات اعتماد Coding Plan، استخدم `preset: kimi-coding-plan`؛ وعنوانه الأساسي الافتراضي هو `https://api.kimi.com/coding/v1`. يُحافظ على أي عنوان أساسي مضبوط صراحةً. تستخدم عناوين Moonshot Open Platform (`https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1`) المسار `/tools/fetch`، بينما يستخدم Coding Plan المسار `/fetch`. يرسل كلاهما طلب `POST` يحتوي على `{ "url": ... }` مع مصادقة Bearer. يقبل المهايئ `markdown` أو `content`. اختبر أحد المشرفين `POST https://api.kimi.com/coding/v1/fetch` باستخدام مفتاح فعلي وأكد الاستجابة `{ markdown, title, url }`؛ لا يزال توافر العناوين الدولية غير متحقق منه. تراعي الطلبات إعداد `proxy` الخاص بالمزوّد ومتغيرات بيئة الوكيل القياسية.
 
+يوفر DeepSeek أيضًا استخراج Markdown المستضاف عبر الإعداد `deepseek` مع إعادة استخدام مفتاح المحادثة وعنوان API الأساسي. عيّن `webFetch` صراحةً كما في المثال أعلاه. يستخدم `/v1/tools/fetch` ويحفظ عنوان البوابة المضبوط في النشر. المهل الزمنية وإعادة المحاولة مرة واحدة لأخطاء النقل فقط مماثلة لـ Kimi، دون إعادة أخطاء HTTP أو الاستجابات غير الصالحة.
+
 استخدم بيانات الاعتماد الحالية في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**، واختر القارئ في **إعداد نماذج المقرر ← جلب صفحات الويب**. يُستخدم المفتاح نفسه للدردشة مع هذا المزوّد؛ تغييره أو حذفه يؤثر في الدردشة أيضًا. تكون البطاقة للقراءة فقط عندما يثبّتها المسؤول. يحتفظ الإعداد الأولي بالقارئ المدمج حتى اختيار قارئ آخر صراحةً. يمكن لبيانات اعتماد مساحة العمل استخدام عناوين API الأساسية الرسمية؛ أما عناوين الجلب المخصصة والوكلاء فيجب أن يعلنها المسؤول في `openmaic.yml`.
 
+بخلاف `kimi`، يستخدم `firecrawl` مفتاحًا خاصًا به: عرّف مزوّدًا بالإعداد `preset: firecrawl` والمفتاح `apiKey` (مثل `${FIRECRAWL_API_KEY}`)، أو أدخل المفتاح في **الإعدادات ← خدمات النماذج ← جلب صفحات الويب**. يرسل الطلب `POST /v2/scrape` بمصادقة Bearer ويطلب المحتوى الرئيسي للصفحة بصيغة Markdown. العنوان الأساسي الافتراضي هو `https://api.firecrawl.dev`؛ ويجب أن يعرّف المسؤول العنوان الأساسي لخادم Firecrawl المستضاف ذاتيًا في `openmaic.yml`.
+
+يخدم مزوّد `firecrawl` نفسه البحث على الويب أيضًا (`POST /v2/search`): مفتاح واحد وعنوان أساسي واحد يكفيان للأمرين، لذا يمكن تعيين مزوّد واحد في `slots.webSearch` و`slots.webFetch` معًا. تضبط المتغيرات القديمة `FIRECRAWL_API_KEY` و`FIRECRAWL_BASE_URL` هذا المزوّد نفسه، ويبقى جلب صفحات الويب على `builtin` إلى أن يُعيَّن `webFetch` له.
+
 قبل إرسال رابط إلى خدمة مستضافة، تُطبق بوابة روابط الجلسة والتطبيع الصارم للرابط وفحص جميع عناوين DNS المحلية. تُطبق الفحوص نفسها على الرابط النهائي الذي تعيده الخدمة قبل قبول المحتوى. تتحكم الخدمات المستضافة في DNS والتحويلات الوسيطة الخاصة بها، لذلك لا تستطيع الفحوص المحلية تثبيت اتصالاتها الشبكية. يظل النص بيانات غير موثوقة، ويخضع لاكتشاف صفحات التحقق وحدود الحجم بالبايت وعلامة الاقتطاع، مع حفظ مواد الويب وصيغة النتيجة `{trusted, untrusted}` كما في السابق.
+
+## مكتبات المشاهد التفاعلية
+
+تحمّل المشاهد التفاعلية KaTeX وThree.js (مع addons) وChart.js وبيئة تشغيل Tailwind v4 للمتصفح من النشر نفسه بدلًا من شبكة CDN عامة. تنسخ الأوامر `pnpm install` و`pnpm dev` و`pnpm build` الإصدارات المثبّتة من الحزم المثبَّتة إلى `public/vendor/interactive`، وتُقدَّم من المسار `/vendor/interactive`. لا يُحمَّل KaTeX إلا في الصفحات التي تحتوي على صيغ رياضية.
+
+`INTERACTIVE_ASSET_BASE_URL` إعداد عام يُحدَّد وقت البناء. لتقديم هذه الملفات من شبكة CDN خاصة بك أو من تخزين كائنات، انسخ `public/vendor/interactive` مع الحفاظ على مسارات الحزمة/الإصدار، واضبط المتغير على عنوان URL الأساسي الجديد (مثل `https://assets.example.com/interactive`) ثم أعد البناء؛ وفي Docker مرّره عبر `--build-arg`. ولأن المشاهد التفاعلية تعمل داخل إطارات iframe معزولة، يجب أن يقدّم المضيف ملفات JavaScript وCSS والخطوط بأنواع MIME الصحيحة وأن يرسل `Access-Control-Allow-Origin: *`.
+
+يُعاد معالجة HTML التفاعلي المحفوظ عند فتحه في الصف وقبل التصدير إلى HTML مستقل أو فيديو، لذا تُعاد كتابة مراجع CDN العامة المتوافقة إلى هذه المكتبات دون إعادة توليد المقرر. أما المراجع إلى مكتبات أخرى أو إصدارات غير متوافقة أو Tailwind v3 Play CDN القديم (`cdn.tailwindcss.com`) أو Google Fonts فتبقى كما هي، وما زالت تتطلب الوصول إلى تلك المضيفات.

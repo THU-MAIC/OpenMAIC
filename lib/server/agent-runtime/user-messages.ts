@@ -38,6 +38,7 @@ export async function listAgentUserMessages(
         materials: Array.isArray(data.materials) ? data.materials : [],
         ...(Array.isArray(data.elementRefs) ? { elementRefs: data.elementRefs } : {}),
         ...(Array.isArray(data.courseRefs) ? { courseRefs: data.courseRefs } : {}),
+        ...(typeof data.locale === 'string' && data.locale ? { locale: data.locale } : {}),
       });
     }
     if (events.length < 500) return messages;

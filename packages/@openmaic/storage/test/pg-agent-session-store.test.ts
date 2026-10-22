@@ -382,6 +382,9 @@ describe('PgAgentSessionStore with PGlite', () => {
       prompt: 'Existing prompt',
     });
     expect(detail).not.toHaveProperty('title');
+    // The locale column arrives empty on old rows; a second run changes nothing.
+    expect(detail).not.toHaveProperty('locale');
+    await expect(ensureAgentSessionSchema(db, legacyTables)).resolves.toBeUndefined();
     await expect(
       db.query<{ title_state: string }>(
         `SELECT title_state FROM legacy_sessions WHERE id = 'legacy-1'`,

@@ -10,12 +10,17 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   resolveOwnedSession: vi.fn(),
   listSessionMaterials: vi.fn(),
+  getSessionMaterial: vi.fn(),
+  listLinkedOwnerMaterials: vi.fn(),
   createSourceMaterial: vi.fn(),
   registerOwnerMaterial: vi.fn(),
-  reclaimStaleOwnerMaterialUploads: vi.fn(),
   finalizeOwnerMaterial: vi.fn(),
+  reclaimStaleOwnerMaterialUploads: vi.fn(),
+  allocateOwnerMaterialBytes: vi.fn(),
+  publishOwnerMaterialUpload: vi.fn(),
   abandonOwnerMaterial: vi.fn(),
-  deleteOwnerMaterial: vi.fn(),
+  deleteMaterial: vi.fn(),
+  getOwnerMaterial: vi.fn(),
   byteStore: {
     put: vi.fn(),
     get: vi.fn(),
@@ -26,6 +31,13 @@ const mocks = vi.hoisted(() => ({
     query: vi.fn(),
     connect: vi.fn(),
   },
+  /** The pool registry, plain and transaction-pinned: no upload may remove from it. */
+  assetStore: { remove: vi.fn(), replace: vi.fn() },
+}));
+
+vi.mock('@/lib/persistence/owner-merges', async (original) => ({
+  ...(await original<typeof import('@/lib/persistence/owner-merges')>()),
+  fenceOwnerWrite: vi.fn(async () => {}),
 }));
 
 vi.mock('@/lib/config/feature-flags', () => ({
@@ -44,12 +56,24 @@ vi.mock('@/lib/server/agent-runtime/session-materials', async (importOriginal) =
     ...actual,
     resolveOwnedSession: mocks.resolveOwnedSession,
     listSessionMaterials: mocks.listSessionMaterials,
+    getSessionMaterial: mocks.getSessionMaterial,
+    getSessionMaterialQueryable: async () => mocks.queryPool,
     createSourceMaterial: mocks.createSourceMaterial,
   };
 });
+// The materials the session's links reach (covered over PGlite in
+// material-library-routes.test.ts); none here.
+vi.mock('@/lib/persistence/session-material-links', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/persistence/session-material-links')>()),
+  listLinkedOwnerMaterials: mocks.listLinkedOwnerMaterials,
+}));
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: mocks.queryPool,
+    withTransaction: async (body: (tx: typeof mocks.queryPool) => Promise<unknown>) =>
+      body(mocks.queryPool),
+    assetStore: mocks.assetStore,
+    assetStoreIn: () => mocks.assetStore,
   }),
 }));
 vi.mock('@/lib/server/materials/bytes', async (importOriginal) => ({
@@ -61,12 +85,16 @@ vi.mock('@/lib/persistence/owner-materials', async (importOriginal) => {
   return {
     ...actual,
     registerOwnerMaterial: mocks.registerOwnerMaterial,
-    reclaimStaleOwnerMaterialUploads: mocks.reclaimStaleOwnerMaterialUploads,
     finalizeOwnerMaterial: mocks.finalizeOwnerMaterial,
+    reclaimStaleOwnerMaterialUploads: mocks.reclaimStaleOwnerMaterialUploads,
+    allocateOwnerMaterialBytes: mocks.allocateOwnerMaterialBytes,
+    publishOwnerMaterialUpload: mocks.publishOwnerMaterialUpload,
     abandonOwnerMaterial: mocks.abandonOwnerMaterial,
-    deleteOwnerMaterial: mocks.deleteOwnerMaterial,
+    getOwnerMaterial: mocks.getOwnerMaterial,
   };
 });
+
+vi.mock('@/lib/persistence/material-library', () => ({ deleteMaterial: mocks.deleteMaterial }));
 
 import { GET, POST } from '@/app/api/materials/route';
 import { DELETE } from '@/app/api/materials/[id]/route';
@@ -101,7 +129,9 @@ function ownerMaterial(overrides: Partial<OwnerMaterialRecord> = {}): OwnerMater
     mime: 'application/pdf',
     bytes: 5,
     originalName: '讲义.pdf',
-    ossKey: 'materials/owner-1/mat_00000000000000000000000000',
+    ossKey: '',
+
+    assetId: 'ast_00000000000000000000000000',
     sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
     status: 'ready',
     extraction: { status: 'idle' },
@@ -118,16 +148,25 @@ beforeEach(() => {
   mocks.resolveRequestOwnerId.mockReturnValue('owner-1');
   mocks.resolveOwnedSession.mockResolvedValue({ id: SESSION_ID, ownerId: 'owner-1' });
   mocks.listSessionMaterials.mockResolvedValue([material()]);
+  mocks.getSessionMaterial.mockResolvedValue(material());
+  mocks.listLinkedOwnerMaterials.mockResolvedValue([]);
+  mocks.getOwnerMaterial.mockImplementation(async (_pool, _owner, id) =>
+    id === 'mat_00000000000000000000000000' ? ownerMaterial({ assetId: null }) : null,
+  );
   mocks.registerOwnerMaterial.mockResolvedValue(ownerMaterial());
+  mocks.finalizeOwnerMaterial.mockImplementation(async (_pool, id, _bytes, _sha, options) =>
+    ownerMaterial({
+      id,
+      assetId: null,
+      extraction: { status: options.extract ? 'extracting' : 'idle' },
+    }),
+  );
   mocks.reclaimStaleOwnerMaterialUploads.mockResolvedValue(undefined);
-  mocks.finalizeOwnerMaterial.mockImplementation(
-    async (
-      _pool: unknown,
-      id: string,
-      _bytes: number,
-      _sha: string,
-      options?: { extract?: boolean },
-    ) => ownerMaterial({ id, extraction: { status: options?.extract ? 'extracting' : 'idle' } }),
+  mocks.allocateOwnerMaterialBytes.mockResolvedValue('ast_00000000000000000000000000');
+  // A publication queues the source's extraction in the same transaction.
+  mocks.publishOwnerMaterialUpload.mockImplementation(
+    async (_provider: unknown, _owner: string, id: string) =>
+      ownerMaterial({ id, extraction: { status: 'pending' } }),
   );
   mocks.abandonOwnerMaterial.mockResolvedValue(undefined);
   mocks.byteStore.put.mockResolvedValue(undefined);
@@ -156,10 +195,10 @@ describe('GET /api/materials', () => {
       ],
     });
     expect(mocks.resolveOwnedSession).toHaveBeenCalledWith(SESSION_ID, 'owner-1');
-    expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID, {});
+    expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID, { limit: 50 });
   });
 
-  it('passes limit and before through as keyset paging', async () => {
+  it('passes limit and a session row before through as keyset paging', async () => {
     const response = await GET(
       new NextRequest(
         `http://localhost/api/materials?sessionId=${SESSION_ID}&limit=10&before=mat_prev`,
@@ -170,6 +209,18 @@ describe('GET /api/materials', () => {
       limit: 10,
       before: 'mat_prev',
     });
+  });
+
+  it('drops the backend error of a legacy row whose retryable failure went back to pending', async () => {
+    mocks.listSessionMaterials.mockResolvedValue([
+      material({ extraction: { status: 'pending', attempts: 1, error: 'PRIVATE_UPSTREAM_BODY' } }),
+    ]);
+    const response = await GET(
+      new NextRequest(`http://localhost/api/materials?sessionId=${SESSION_ID}`),
+    );
+    const body = await response.json();
+    expect(body.materials[0].extraction).toEqual({ status: 'pending', attempts: 1 });
+    expect(JSON.stringify(body)).not.toContain('PRIVATE_UPSTREAM_BODY');
   });
 
   it('rejects an empty sessionId instead of listing the library', async () => {
@@ -250,7 +301,7 @@ describe('GET /api/materials', () => {
 describe('POST /api/materials', () => {
   async function post(body: unknown, headers: Record<string, string> = {}) {
     return POST(
-      new NextRequest('http://localhost/api/materials', {
+      new NextRequest('http://localhost/api/materials?scope=library', {
         method: 'POST',
         headers: { 'content-type': 'application/pdf', 'x-material-filename': 'a.pdf', ...headers },
         body: body as BodyInit,
@@ -277,6 +328,48 @@ describe('POST /api/materials', () => {
     );
   });
 
+  it('keeps the default upload on its classic extraction and byte-store path', async () => {
+    const response = await POST(
+      new NextRequest('http://localhost/api/materials', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'a.pdf' },
+        body: Buffer.from('hello'),
+      }),
+    );
+    expect(response.status).toBe(201);
+    expect((await response.json()).extraction.status).toBe('extracting');
+    expect(mocks.registerOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        ossKey: expect.stringContaining('materials/owner-1/'),
+      }),
+      expect.anything(),
+    );
+    expect(mocks.byteStore.put).toHaveBeenCalledOnce();
+    expect(mocks.allocateOwnerMaterialBytes).not.toHaveBeenCalled();
+    expect(mocks.publishOwnerMaterialUpload).not.toHaveBeenCalled();
+  });
+
+  it('keeps classic failed-finalize cleanup before releasing its reservation', async () => {
+    mocks.finalizeOwnerMaterial.mockRejectedValueOnce(new Error('finalize failed'));
+    const response = await POST(
+      new NextRequest('http://localhost/api/materials', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'a.pdf' },
+        body: Buffer.from('hello'),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(mocks.byteStore.delete).not.toHaveBeenCalled();
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner-1',
+      expect.any(String),
+      expect.any(Function),
+    );
+    // Persistence owns the locked ready/uploading recheck and invokes cleanup only if safe.
+  });
+
   it('uploads raw bytes into the owner library and returns the flat 201 view', async () => {
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(201);
@@ -293,9 +386,8 @@ describe('POST /api/materials', () => {
       originalName: '讲义.pdf',
       bytes: 5,
       mime: 'application/pdf',
+      extraction: { status: 'pending' },
       mediaKind: 'document',
-      // Extraction starts with the upload.
-      extraction: { status: 'extracting' },
     });
     // The uploader's error pairing header is echoed.
     expect(response.headers.get('x-request-id')).toBeTruthy();
@@ -307,29 +399,41 @@ describe('POST /api/materials', () => {
         maxTotalBytes: agentRuntimeConfig.maxMaterialBytesPerOwner,
       }),
     );
-    expect(mocks.byteStore.put).toHaveBeenCalledWith(
-      `materials/owner-1/${body.materialId}`,
+    // The reservation names no byte-store object: the bytes go to the pool.
+    expect(mocks.registerOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ id: body.materialId, ossKey: '' }),
+      expect.anything(),
+    );
+    expect(mocks.allocateOwnerMaterialBytes).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner-1',
       expect.any(Buffer),
       'application/pdf',
     );
-    expect((mocks.byteStore.put.mock.calls[0]![1] as Buffer).toString()).toBe('hello');
-    expect(mocks.finalizeOwnerMaterial).toHaveBeenCalledWith(
+    expect((mocks.allocateOwnerMaterialBytes.mock.calls[0]![2] as Buffer).toString()).toBe('hello');
+    expect(mocks.publishOwnerMaterialUpload).toHaveBeenCalledWith(
       expect.anything(),
+      'owner-1',
       body.materialId,
-      5,
-      '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
-      { extract: true },
+      {
+        assetId: 'ast_00000000000000000000000000',
+        bytes: 5,
+        sha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      },
     );
-    // The object key is part of the reservation before its bytes are written,
-    // closing the crash window between the byte write and finalize.
     expect(mocks.reclaimStaleOwnerMaterialUploads).toHaveBeenCalledWith(
       expect.anything(),
       'owner-1',
       expect.any(Function),
     );
-    const putCall = mocks.byteStore.put.mock.invocationCallOrder[0]!;
-    const finalizeCall = mocks.finalizeOwnerMaterial.mock.invocationCallOrder[0]!;
-    expect(putCall).toBeLessThan(finalizeCall);
+    expect(mocks.allocateOwnerMaterialBytes.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.publishOwnerMaterialUpload.mock.invocationCallOrder[0]!,
+    );
+    // Nothing is written to, or deleted from, the material byte store.
+    expect(mocks.byteStore.put).not.toHaveBeenCalled();
+    expect(mocks.byteStore.delete).not.toHaveBeenCalled();
+    expect(mocks.abandonOwnerMaterial).not.toHaveBeenCalled();
   });
 
   it('rejects an unsupported mime type with 415', async () => {
@@ -357,8 +461,9 @@ describe('POST /api/materials', () => {
       expect.objectContaining({ ownerId: 'owner-1', kind: 'source', mime: pptxMime }),
       expect.anything(),
     );
-    expect(mocks.byteStore.put).toHaveBeenCalledWith(
-      expect.any(String),
+    expect(mocks.allocateOwnerMaterialBytes).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner-1',
       expect.any(Buffer),
       pptxMime,
     );
@@ -399,7 +504,8 @@ describe('POST /api/materials', () => {
     await expect(response.json()).resolves.toMatchObject({
       maxBytes: Math.min(agentRuntimeConfig.maxDocumentBytes, agentRuntimeConfig.maxUploadBytes),
     });
-    expect(mocks.finalizeOwnerMaterial).not.toHaveBeenCalled();
+    expect(mocks.allocateOwnerMaterialBytes).not.toHaveBeenCalled();
+    expect(mocks.publishOwnerMaterialUpload).not.toHaveBeenCalled();
   });
 
   it('does not include maxBytes when the body exceeds its declared length', async () => {
@@ -417,7 +523,7 @@ describe('POST /api/materials', () => {
     const payload = (await response.json()) as { error?: string };
     expect(payload.error).toBe('upload body exceeds its declared content length');
     expect(payload).not.toHaveProperty('maxBytes');
-    expect(mocks.byteStore.put).not.toHaveBeenCalled();
+    expect(mocks.allocateOwnerMaterialBytes).not.toHaveBeenCalled();
     expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
   });
 
@@ -431,34 +537,77 @@ describe('POST /api/materials', () => {
     expect(mocks.byteStore.delete).not.toHaveBeenCalled();
   });
 
-  it('abandons the reservation and answers 500 when the byte store fails', async () => {
-    mocks.byteStore.put.mockRejectedValue(new Error('material byte store unavailable'));
+  /** Nothing an upload failure does may delete stored bytes, in the byte store or the pool. */
+  function expectNothingDeleted() {
+    expect(mocks.byteStore.delete).not.toHaveBeenCalled();
+    expect(mocks.byteStore.put).not.toHaveBeenCalled();
+    expect(mocks.assetStore.remove).not.toHaveBeenCalled();
+    expect(mocks.assetStore.replace).not.toHaveBeenCalled();
+  }
+
+  it('abandons the reservation and answers 500 when the allocation fails', async () => {
+    mocks.allocateOwnerMaterialBytes.mockRejectedValue(new Error('asset registry unavailable'));
+    const response = await post(Buffer.from('hello'));
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'INTERNAL_ERROR' });
+    expect(mocks.publishOwnerMaterialUpload).not.toHaveBeenCalled();
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalledWith(
+      expect.anything(),
+      'owner-1',
+      expect.stringMatching(/^mat_/),
+    );
+    expectNothingDeleted();
+  });
+
+  it('answers 507 and abandons the reservation when the pool quota has no room', async () => {
+    const { AssetQuotaExceededError } = await import('@openmaic/storage');
+    mocks.allocateOwnerMaterialBytes.mockRejectedValue(new AssetQuotaExceededError());
+    const response = await post(Buffer.from('hello'));
+    expect(response.status).toBe(507);
+    await expect(response.json()).resolves.toMatchObject({ errorCode: 'ASSET_QUOTA_EXCEEDED' });
+    expect(mocks.publishOwnerMaterialUpload).not.toHaveBeenCalled();
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
+    expectNothingDeleted();
+  });
+
+  it('abandons the reservation and deletes nothing when the publication fails', async () => {
+    // Including a publication that may have committed before its answer was
+    // lost: the abandon only matches a row still uploading.
+    mocks.publishOwnerMaterialUpload.mockRejectedValue(new Error('connection reset'));
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({ errorCode: 'INTERNAL_ERROR' });
     expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
+    expectNothingDeleted();
   });
 
-  it('removes stored bytes before abandoning the reservation when finalize fails', async () => {
-    mocks.finalizeOwnerMaterial.mockRejectedValue(new Error('finalize failed'));
+  it('answers 500 and abandons the reservation when the publication is refused', async () => {
+    mocks.publishOwnerMaterialUpload.mockResolvedValue('refused');
     const response = await post(Buffer.from('hello'));
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toMatchObject({ errorCode: 'INTERNAL_ERROR' });
-    expect(mocks.byteStore.delete).toHaveBeenCalledWith(
-      expect.stringMatching(/^materials\/owner-1\/mat_/),
-    );
     expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
-    expect(mocks.byteStore.delete.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.abandonOwnerMaterial.mock.invocationCallOrder[0]!,
-    );
+    expectNothingDeleted();
   });
 
-  it('keeps the reservation when byte cleanup fails after finalize fails', async () => {
-    mocks.finalizeOwnerMaterial.mockRejectedValue(new Error('finalize failed'));
-    mocks.byteStore.delete.mockRejectedValue(new Error('delete failed'));
+  it('answers 403 OWNER_RETIRED when the owner was claimed before the publication', async () => {
+    const { OwnerRetiredError } = await import('@/lib/persistence/owner-merges');
+    mocks.publishOwnerMaterialUpload.mockRejectedValue(new OwnerRetiredError('owner-1'));
     const response = await post(Buffer.from('hello'));
-    expect(response.status).toBe(500);
-    expect(mocks.abandonOwnerMaterial).not.toHaveBeenCalled();
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'OWNER_RETIRED' } });
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
+    expectNothingDeleted();
+  });
+
+  it('answers 503 OWNER_BUSY when the owner fence times out at the allocation', async () => {
+    const { OwnerBusyError } = await import('@/lib/persistence/owner-merges');
+    mocks.allocateOwnerMaterialBytes.mockRejectedValue(new OwnerBusyError());
+    const response = await post(Buffer.from('hello'));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'OWNER_BUSY' } });
+    expect(mocks.abandonOwnerMaterial).toHaveBeenCalled();
+    expectNothingDeleted();
   });
 
   it('answers 404 when server persistence is not configured', async () => {
@@ -467,9 +616,15 @@ describe('POST /api/materials', () => {
     expect(response.status).toBe(404);
   });
 
-  it('uploads without the agent runtime (classroom generation consumes the library)', async () => {
+  it('uploads a classic temporary attachment without the agent runtime', async () => {
     mocks.runtimeConfigured = false;
-    const response = await post(Buffer.from('hello'));
+    const response = await POST(
+      new NextRequest('http://localhost/api/materials', {
+        method: 'POST',
+        headers: { 'content-type': 'application/pdf', 'x-material-filename': 'a.pdf' },
+        body: Buffer.from('hello'),
+      }),
+    );
     expect(response.status).toBe(201);
   });
 });
@@ -493,7 +648,7 @@ describe('configured material upload limit metadata', () => {
 
       for (const declared of [true, false]) {
         const response = await configuredPost(
-          new NextRequest('http://localhost/api/materials', {
+          new NextRequest('http://localhost/api/materials?scope=library', {
             method: 'POST',
             headers: {
               'content-type': mime,
@@ -525,40 +680,26 @@ describe('DELETE /api/materials/[id]', () => {
     });
 
   it("deletes the owner's material and removes its bytes", async () => {
-    mocks.deleteOwnerMaterial.mockImplementation(
-      async (
-        _pool: unknown,
-        _owner: string,
-        _id: string,
-        deleteBytes: (key: string) => Promise<void>,
-      ) => {
-        await deleteBytes('materials/owner-1/key');
-        return true;
-      },
-    );
+    mocks.deleteMaterial.mockResolvedValue({ status: 'deleted', materialIds: [MATERIAL_ID] });
     const response = await del();
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ materialId: MATERIAL_ID, deleted: true });
-    expect(mocks.deleteOwnerMaterial).toHaveBeenCalledWith(
-      mocks.queryPool,
-      'owner-1',
-      MATERIAL_ID,
-      expect.any(Function),
-    );
-    // The bytes, and the extraction result stored next to them.
-    expect(mocks.byteStore.delete).toHaveBeenCalledWith('materials/owner-1/key');
-    expect(mocks.byteStore.deletePrefix).toHaveBeenCalledWith('materials/owner-1/key.extraction/');
+    expect(mocks.deleteMaterial).toHaveBeenCalledWith(expect.anything(), {
+      ownerId: 'owner-1',
+      materialId: MATERIAL_ID,
+      fence: 'request',
+    });
   });
 
   it('answers a plain 404 for a material the owner does not have', async () => {
-    mocks.deleteOwnerMaterial.mockResolvedValue(false);
+    mocks.deleteMaterial.mockResolvedValue(false);
     const response = await del(`mat_${'z'.repeat(26)}`);
     expect(response.status).toBe(404);
     await expect(response.text()).resolves.toBe('Not found');
   });
 
   it('maps a retired owner to the owner-retired response', async () => {
-    mocks.deleteOwnerMaterial.mockRejectedValue(new OwnerRetiredError('owner-1'));
+    mocks.deleteMaterial.mockRejectedValue(new OwnerRetiredError('owner-1'));
     const response = await del();
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
@@ -569,11 +710,11 @@ describe('DELETE /api/materials/[id]', () => {
   it('answers a malformed id with the same 404 before touching the database', async () => {
     const response = await del(`mat_${'0'.repeat(25)}\u0000`);
     expect(response.status).toBe(404);
-    expect(mocks.deleteOwnerMaterial).not.toHaveBeenCalled();
+    expect(mocks.deleteMaterial).not.toHaveBeenCalled();
   });
 
   it('serves without the agent runtime and 404s without server persistence', async () => {
-    mocks.deleteOwnerMaterial.mockResolvedValue(true);
+    mocks.deleteMaterial.mockResolvedValue({ status: 'deleted', materialIds: [MATERIAL_ID] });
     mocks.runtimeConfigured = false;
     expect((await del()).status).toBe(200);
     mocks.persistenceConfigured = false;

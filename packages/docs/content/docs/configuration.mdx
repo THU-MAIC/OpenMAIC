@@ -101,6 +101,8 @@ Each entry under `providers` declares one provider. The key is its id, which slo
 | `proxy` | No | HTTP proxy URL for this provider's requests. |
 | `credentials` | Some presets | Key pairs for services that do not use one key. AliDocMind takes `accessKeyId` and `accessKeySecret`. |
 | `options` | No | Non-secret, provider-specific settings, such as `backend` for `voxcpm-tts`. Names are letters, digits, `_` and `-`; values are strings, numbers or booleans (no nested maps or lists), and `${VAR}` works. The model settings show options, so never put a key in them. Deployment only: the model settings cannot set them. |
+| `voices` | No | TTS presets only. Replaces the built-in catalogue with a non-empty list of entries: required `id` and `name`, optional `language` and `gender` (`male`, `female`, `neutral`). IDs must be unique and cannot contain the reserved binding delimiter `::`. User voice profiles remain available; Qwen clones keep their clone model. Omitting this field preserves the built-in catalogue. |
+| `options.defaultVoice` | No | Provider-local default voice ID; must be a nonblank string. Requires a non-empty `voices` list containing this ID. With `voices` alone, its first entry is used. An explicit valid selection takes precedence. Without either override, existing defaults apply. |
 
 Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
 
@@ -659,7 +661,7 @@ Place workflow JSON exported in API format in OpenMAIC's `public/` directory. Us
 
 Video generation providers use `VIDEO_<PROVIDER>_API_KEY` and optionally `VIDEO_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
-`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_VEO_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
+`VIDEO_SEEDANCE_`, `VIDEO_KLING_`, `VIDEO_SORA_`, `VIDEO_MINIMAX_`, `VIDEO_GROK_`, and `VIDEO_HAPPYHORSE_`.
 
 ### Document and media parsing
 
@@ -688,7 +690,7 @@ AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, B
 
 ### Web search
 
-Configure Tavily, Exa, Bocha, Brave, Baidu, SearXNG, or MiniMax:
+Configure Tavily, Exa, Firecrawl, Bocha, Brave, Baidu, SearXNG, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +698,9 @@ TAVILY_BASE_URL=           # optional override
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # optional override
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # optional override
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
@@ -756,6 +761,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +788,25 @@ slots:
 ```
 
 Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
+
+### DeepSeek web search and fetch
+
+The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
+
+In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi chat and web search
 
@@ -813,6 +839,8 @@ When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and a
 | --- | --- | --- |
 | `builtin` | None | Local Readability/Turndown reader; PDFs use the `document` slot |
 | `kimi` | Existing Kimi provider key and base URL | Hosted Markdown extraction, including PDF URLs |
+| `deepseek` | Existing DeepSeek chat key and API base | Hosted Markdown extraction |
+| `firecrawl` | Firecrawl API key (`preset: firecrawl`) | Hosted Markdown extraction of the page's main content, including PDF URLs |
 
 ```yaml
 providers:
@@ -826,6 +854,20 @@ slots:
 
 Both `kimi` and `kimi-coding-plan` presets offer `webFetch`. For Coding Plan credentials, use `preset: kimi-coding-plan`; its default base is `https://api.kimi.com/coding/v1`. Any explicitly configured base URL is preserved. Moonshot Open Platform bases (`https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1`) use `/tools/fetch`; Coding Plan uses `/fetch`. Both send `POST` with `{ "url": ... }` and Bearer authentication. The adapter accepts `markdown` or `content`. A maintainer live-tested `POST https://api.kimi.com/coding/v1/fetch` with a real key and confirmed `{ markdown, title, url }`; international endpoint availability remains unverified. Requests respect the provider's `proxy` setting and standard proxy environment variables.
 
+DeepSeek also offers hosted Markdown extraction through the `deepseek` preset, reusing the chat key and API base. Assign `webFetch` explicitly as shown above. It uses `/v1/tools/fetch`; an explicit deployment gateway base is preserved. It retains the same transport deadlines and single transport-error retry as Kimi, without retrying HTTP errors or invalid responses.
+
 In **Settings → Model Services → Web Fetch**, use the existing provider credentials. The key is shared with that provider's chat service: editing or removing it also affects chat. Choose the reader in **Course Model Config → Web Fetch**. Administrator locks make the card read-only. First-run setup keeps the builtin default until a reader is explicitly selected. Workspace credentials can use official API bases; arbitrary fetch endpoints and proxies must be declared by the administrator in `openmaic.yml`.
 
+Unlike `kimi`, `firecrawl` has its own key: declare a provider with `preset: firecrawl` and `apiKey` (for example `${FIRECRAWL_API_KEY}`), or enter the key in **Settings → Model Services → Web Fetch**. It sends `POST /v2/scrape` with Bearer authentication and asks for the page's main content as Markdown. The default base is `https://api.firecrawl.dev`; a self-hosted Firecrawl base must be declared by the administrator in `openmaic.yml`.
+
+The same `firecrawl` provider also serves web search (`POST /v2/search`): one key and base URL cover both, so a single provider can be assigned to `slots.webSearch` and `slots.webFetch`. The legacy `FIRECRAWL_API_KEY` and `FIRECRAWL_BASE_URL` variables configure that provider; web fetch stays on `builtin` until `webFetch` is assigned to it.
+
 The session URL gate, strict URL normalization and all local DNS address checks run before forwarding a URL to a hosted reader. The same checks run against a reported final URL before accepting its content. Hosted readers control their own DNS and intermediate redirects; local checks cannot pin their networks. Their text remains untrusted, with challenge-page detection, byte limits, a truncation notice and the existing web material persistence and `{trusted, untrusted}` result.
+
+## Interactive scene libraries
+
+Interactive scenes load KaTeX, Three.js (with its addons), Chart.js and the Tailwind v4 browser runtime from the deployment instead of a public CDN. `pnpm install`, `pnpm dev` and `pnpm build` copy the pinned versions from the installed packages into `public/vendor/interactive`, which is served at `/vendor/interactive`. KaTeX loads only on pages that contain math.
+
+`INTERACTIVE_ASSET_BASE_URL` is a public, build-time setting. To serve these files from your own CDN or object storage, copy `public/vendor/interactive` with its package/version paths intact, set the variable to the new base URL (for example `https://assets.example.com/interactive`) and rebuild; for Docker, pass it with `--build-arg`. Because interactive scenes run in sandboxed iframes, the host must serve JavaScript, CSS and fonts with their correct MIME types and send `Access-Control-Allow-Origin: *`.
+
+Stored interactive HTML is reprocessed when it opens in the classroom and before standalone HTML or video export, so compatible public CDN references to these libraries are rewritten without regenerating the course. References to other libraries, incompatible versions, the legacy Tailwind v3 Play CDN (`cdn.tailwindcss.com`) and Google Fonts are left unchanged and still need network access to those hosts.

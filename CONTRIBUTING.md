@@ -144,7 +144,7 @@ docs: add CONTRIBUTING.md
 
 ## Changing a Published Package
 
-Four packages under `packages/@openmaic/` are published to npm: `dsl`, `storage`, `renderer`, and `importer`. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
+The `@openmaic` packages listed in [`scripts/openmaic-packages.mjs`](scripts/openmaic-packages.mjs) are published to npm. Anything that ships inside one of those tarballs is under version control in the literal sense — the version number on npm has to keep meaning "this exact source".
 
 **If your PR changes a publishable file in one of those packages, bump that package's `version` in its `package.json` in the same PR.** CI enforces this, and without the bump you will see:
 
@@ -165,6 +165,16 @@ For packages below `1.0.0`, a **minor** bump signals a breaking change and a **p
 Be deliberate with `@openmaic/dsl`. It is the contract the other packages and downstream deployments validate against, so a change that narrows what an existing document may contain is a breaking change even when the diff looks small.
 
 You never publish anything yourself. Once your PR is merged, a version that is not yet on the registry is released automatically, and a `@openmaic/<name>@<version>` tag is written afterwards to record it. That tag is a marker, not a trigger: pushing one does not release anything.
+
+## App Releases
+
+App versions (the `vX.Y.Z` tags and GitHub Releases) say what a release is about. They are separate from the npm package rules above.
+
+- **Minor (`x.Y.0`)** — a themed release, titled by its theme (1.0.0 *Build courses with an agent*, 1.1.0 *Classroom chat on an agent loop*, 1.2.0 *Server-first*). Large migrations go through `-rc.N` pre-releases first.
+- **Patch (`x.y.Z`)** — cut from `main` with whatever has merged since the last release: fixes, security, and features alike, typically every one to three weeks. A patch may carry a breaking change when one is needed (tightening a default, retiring a superseded path); it is listed first under **Breaking Changes** with upgrade steps.
+- While `main` is in a minor's release-candidate cycle, security fixes for the current line ship as patches from a `release/x.y.x` branch.
+
+Every release has a `CHANGELOG.md` section, and the GitHub Release title names its headline.
 
 ## AI-Assisted PRs 🤖
 

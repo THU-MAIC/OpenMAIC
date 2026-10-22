@@ -1,4 +1,9 @@
 import {
+  postProcessInteractiveHtml,
+  rewriteInteractiveLibraries,
+  interactiveAssetBaseUrl,
+} from '@openmaic/generation/browser';
+import {
   toDataUri,
   type InlineReport,
   type InlineOptions,
@@ -604,6 +609,12 @@ export async function inlineHtmlAssets(
   html: string,
   options?: InlineOptions,
 ): Promise<{ html: string; report: InlineReport; unresolved: string[] }> {
+  html = postProcessInteractiveHtml(html);
+  const assetBase = interactiveAssetBaseUrl();
+  const origin =
+    options?.baseUrl ?? (typeof window !== 'undefined' ? window.location.origin : undefined);
+  if (origin && assetBase.startsWith('/'))
+    html = rewriteInteractiveLibraries(html, new URL(assetBase, origin).href).html;
   const fetchAsset = options?.fetcher ?? createAssetFetcher(options);
   const report: InlineReport = { inlined: [], failed: [] };
   const unsupported = unsupportedImportmapFeatures(html);

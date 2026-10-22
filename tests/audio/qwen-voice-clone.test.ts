@@ -505,6 +505,35 @@ describe('Qwen voice cloning', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
+  it('dispatches a configured ordinary voice through the normal Qwen API', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ output: { audio: { url: 'https://dashscope.example.com/audio.wav' } } }),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([1])));
+    await generateTTS(
+      {
+        providerId: 'qwen-tts',
+        modelId: 'qwen3-tts',
+        voice: 'vivian',
+        voices: [{ id: 'vivian', name: 'Vivian' }],
+        speed: 1.25,
+        apiKey: CONFIG.apiKey,
+        baseUrl: CONFIG.baseUrl,
+      },
+      'Hello',
+    );
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      '/services/aigc/multimodal-generation/generation',
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.model).toBe('qwen3-tts');
+    expect(body.input.voice).toBe('vivian');
+    expect(body.parameters.rate).toBe(125);
+  });
+
   it('dispatches from the voice identity, not a stale model id', async () => {
     const fetchSpy = fetchMock
       .mockResolvedValueOnce(

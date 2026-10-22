@@ -138,7 +138,6 @@ const IMAGE_ENV_MAP: Record<string, string> = {
 const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_SEEDANCE: 'seedance',
   VIDEO_KLING: 'kling',
-  VIDEO_VEO: 'veo',
   VIDEO_MINIMAX: 'minimax-video',
   VIDEO_GROK: 'grok-video',
   VIDEO_HAPPYHORSE: 'happyhorse',
@@ -148,6 +147,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   EXA: 'exa',
+  FIRECRAWL: 'firecrawl',
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
@@ -197,6 +197,7 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
   webSearch: {
     ...WEB_SEARCH_ENV_MAP,
     WEB_SEARCH_KIMI: 'kimi',
+    WEB_SEARCH_DEEPSEEK: 'deepseek',
   },
 };
 
@@ -797,8 +798,9 @@ export function slotTTSModel(
   providerId: string,
   modelId: string | undefined,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  return ttsModelFor(providerId, [], modelId, voiceId);
+  return ttsModelFor(providerId, [], modelId, voiceId, configuredVoices);
 }
 
 /** Resolve a TTS model authorized by the deployment, or the BYOK client's choice. */
@@ -806,9 +808,10 @@ export function resolveTTSModel(
   providerId: string,
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   const requested = resolveManagedMediaModel('tts', providerId, clientModel);
-  const model = ttsModelFor(providerId, [], requested, voiceId);
+  const model = ttsModelFor(providerId, [], requested, voiceId, configuredVoices);
   // Voice compatibility may change the wire model; it still needs authorization.
   return resolveManagedMediaModel('tts', providerId, model);
 }
@@ -818,6 +821,7 @@ function ttsModelFor(
   pinnedModels: string[],
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
@@ -834,7 +838,7 @@ function ttsModelFor(
     }
 
     if (voiceId) {
-      if (!isQwenCatalogVoice(voiceId)) return vcModel;
+      if (!isQwenCatalogVoice(voiceId, configuredVoices)) return vcModel;
       const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
       if (pinnedModels.length > 0 && !pinnedCatalogModel) {
         throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
@@ -1073,6 +1077,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (enabled('baidu') && webSearch.baidu?.apiKey) return 'baidu';
   if (enabled('minimax') && webSearch.minimax?.apiKey) return 'minimax';
   if (enabled('claude') && webSearch.claude?.apiKey) return 'claude';
+  if (enabled('firecrawl') && webSearch.firecrawl?.apiKey) return 'firecrawl';
   return Object.keys(webSearch).find(enabled);
 }
 

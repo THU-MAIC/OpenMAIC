@@ -22,7 +22,6 @@ export const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
 export const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   seedance: 'providerSeedance',
   kling: 'providerKling',
-  veo: 'providerVeo',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
   'openrouter-video': 'providerOpenRouterVideo',

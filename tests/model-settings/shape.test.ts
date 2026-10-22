@@ -167,7 +167,7 @@ describe('canResetToServerDefault', () => {
     const untouched = modelSettingsView(null);
     expect(canResetToServerDefault(slot(untouched, 'llm'))).toBe(false);
     const changed = modelSettingsView({
-      config: { slots: { llm: 'operator:deepseek-v4-flash', 'course.outline': null } },
+      config: { slots: { llm: 'operator:deepseek-flash', 'course.outline': null } },
       revision: 1,
       unreadableSecrets: [],
     });

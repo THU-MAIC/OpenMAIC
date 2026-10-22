@@ -29,7 +29,7 @@ beforeEach(() => {
       operator: {
         preset: 'deepseek',
         apiKey: 'sk-operator-secret-0001',
-        models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+        models: ['deepseek-v4-pro', 'deepseek-flash'],
       },
     },
     // llm is a server default the workspace may change; video is locked off.
@@ -129,7 +129,7 @@ describe('modelSettingsView', () => {
     expect(view.providers.map(({ capabilities: _capabilities, ...rest }) => rest)).toEqual([
       {
         id: 'operator',
-        models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+        models: ['deepseek-v4-pro', 'deepseek-flash'],
         preset: 'deepseek',
         presetName: 'DeepSeek',
         presetKind: 'single',
@@ -201,7 +201,7 @@ describe('modelSettingsView', () => {
         operator: {
           preset: 'deepseek',
           apiKey: 'sk-operator-secret-0001',
-          models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+          models: ['deepseek-v4-pro', 'deepseek-flash'],
         },
       },
       slots: { llm: 'operator:deepseek-v4-pro' },
@@ -210,7 +210,7 @@ describe('modelSettingsView', () => {
     const view = modelSettingsView({
       config: {
         providers: { mine: { preset: 'openai', apiKey: 'sk-workspace-secret-9876' } },
-        slots: { llm: 'mine:gpt-5.6', 'course.outline': 'operator:deepseek-v4-flash' },
+        slots: { llm: 'mine:gpt-5.6', 'course.outline': 'operator:deepseek-flash' },
       },
       revision: 2,
       unreadableSecrets: [],
@@ -222,7 +222,7 @@ describe('modelSettingsView', () => {
     expect(slot('llm')).toMatchObject({ source: { kind: 'default' } });
     // A choice among the deployment's providers stays.
     expect(slot('course.outline')).toMatchObject({
-      assignment: 'operator:deepseek-v4-flash',
+      assignment: 'operator:deepseek-flash',
       source: { kind: 'workspace' },
     });
   });
@@ -384,7 +384,7 @@ describe('applyModelSettingsChange', () => {
         operator: {
           preset: 'deepseek',
           apiKey: 'sk-operator-secret-0001',
-          models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+          models: ['deepseek-v4-pro', 'deepseek-flash'],
         },
       },
       slots: { llm: 'operator:deepseek-v4-pro' },
@@ -398,14 +398,14 @@ describe('applyModelSettingsChange', () => {
     // Clearing a stale assignment made before the lock is allowed.
     expect(
       await applyModelSettingsChange(
-        { slots: { 'course.outline': 'operator:deepseek-v4-flash', image: null } },
+        { slots: { 'course.outline': 'operator:deepseek-flash', image: null } },
         { kind: 'slots', clear: ['course.outline'] },
       ),
     ).toEqual({ slots: { image: null } });
     await expect(
       applyModelSettingsChange(null, {
         kind: 'slots',
-        set: { 'course.content.slide': 'operator:deepseek-v4-flash' },
+        set: { 'course.content.slide': 'operator:deepseek-flash' },
       }),
     ).rejects.toMatchObject({
       code: 'SLOT_LOCKED',
@@ -424,13 +424,13 @@ describe('applyModelSettingsChange', () => {
   it('lets the workspace replace a server default, and reset it by clearing', async () => {
     const changed = await applyModelSettingsChange(null, {
       kind: 'slots',
-      set: { llm: 'operator:deepseek-v4-flash' },
+      set: { llm: 'operator:deepseek-flash' },
     });
     const view = modelSettingsView({ config: changed, revision: 1, unreadableSecrets: [] });
     expect(view.slots.find((slot) => slot.slot === 'llm')).toMatchObject({
       source: { kind: 'workspace' },
       serverDefault: 'operator:deepseek-v4-pro',
-      effective: { modelId: 'deepseek-v4-flash' },
+      effective: { modelId: 'deepseek-flash' },
     });
     const reset = await applyModelSettingsChange(changed, { kind: 'slots', clear: ['llm'] });
     expect(reset).toEqual({});
@@ -439,13 +439,13 @@ describe('applyModelSettingsChange', () => {
   it('assigns, turns off and clears slots, over deployment providers too', async () => {
     const next = await applyModelSettingsChange(null, {
       kind: 'slots',
-      set: { 'course.outline': 'operator:deepseek-v4-flash', image: null },
+      set: { 'course.outline': 'operator:deepseek-flash', image: null },
     });
     expect(next).toEqual({
-      slots: { 'course.outline': 'operator:deepseek-v4-flash', image: null },
+      slots: { 'course.outline': 'operator:deepseek-flash', image: null },
     });
     expect(await applyModelSettingsChange(next, { kind: 'slots', clear: ['image'] })).toEqual({
-      slots: { 'course.outline': 'operator:deepseek-v4-flash' },
+      slots: { 'course.outline': 'operator:deepseek-flash' },
     });
   });
 
@@ -454,9 +454,9 @@ describe('applyModelSettingsChange', () => {
       applyModelSettingsChange(null, {
         kind: 'slots',
         set: {
-          'course.outline': 'operator:deepseek-v4-flash',
+          'course.outline': 'operator:deepseek-flash',
           agent: {
-            model: 'operator:deepseek-v4-flash',
+            model: 'operator:deepseek-flash',
             thinking: { mode: 'enabled', effort: 'high' },
           },
         },
@@ -470,8 +470,8 @@ describe('applyModelSettingsChange', () => {
       await applyModelSettingsChange(null, {
         kind: 'slots',
         set: {
-          classroom: { model: 'operator:deepseek-v4-flash', thinking: { effort: 'high' } },
-          agent: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'enabled' } },
+          classroom: { model: 'operator:deepseek-flash', thinking: { effort: 'high' } },
+          agent: { model: 'operator:deepseek-flash', thinking: { mode: 'enabled' } },
         },
       }),
     ).toMatchObject({ slots: { agent: { thinking: { mode: 'enabled' } } } });
@@ -749,7 +749,7 @@ describe('applyModelSettingsChange', () => {
     });
     config = await applyModelSettingsChange(config, {
       kind: 'slots',
-      set: { llm: 'ds:deepseek-v4-pro', 'course.content.slide': 'ds:deepseek-v4-flash' },
+      set: { llm: 'ds:deepseek-v4-pro', 'course.content.slide': 'ds:deepseek-flash' },
     });
     config = await applyModelSettingsChange(config, {
       kind: 'provider',
@@ -829,4 +829,63 @@ describe('importModelSettings', () => {
       expect.objectContaining({ kind: 'provider', id: 'tts', code: 'INVALID_PROVIDER' }),
     ]);
   });
+});
+
+it('exposes non-secret voice defaults for previewing an inactive deployment provider', async () => {
+  deployment({
+    providers: {
+      active: { preset: 'openai-tts', apiKey: 'active-secret', models: ['tts-1'] },
+      inactive: {
+        preset: 'openai-tts',
+        apiKey: 'inactive-secret',
+        models: ['custom-tts'],
+        options: { defaultVoice: 'vivian' },
+      },
+    },
+    slots: { tts: 'active:tts-1' },
+  });
+  const view = modelSettingsView(null);
+  const inactive = view.providers.find((p) => p.id === 'inactive')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', 'custom-tts', inactive.options)).toBe('vivian');
+  expect(JSON.stringify(inactive)).not.toContain('inactive-secret');
+  expect(view.providers.find((p) => p.id === 'active')?.options).toBeUndefined();
+});
+
+it('also exposes imported workspace defaults for inactive provider previews', async () => {
+  const view = modelSettingsView({
+    config: {
+      providers: {
+        own: {
+          preset: 'openai-tts',
+          apiKey: 'workspace-secret',
+          options: { defaultVoice: 'serena' },
+        },
+      },
+    },
+    revision: 1,
+    unreadableSecrets: [],
+  });
+  const provider = view.providers.find((p) => p.id === 'own')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', undefined, provider.options)).toBe('serena');
+  expect(JSON.stringify(provider)).not.toContain('workspace-secret');
+});
+
+it('passes an inactive provider catalogue to previews when no default is configured', async () => {
+  deployment({
+    providers: {
+      inactive: {
+        preset: 'openai-tts',
+        apiKey: 'secret',
+        models: ['custom-tts'],
+        voices: [{ id: 'vivian', name: 'Vivian' }],
+      },
+    },
+  });
+  const provider = modelSettingsView(null).providers.find((p) => p.id === 'inactive')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', 'custom-tts', provider.options, provider.voices)).toBe(
+    'vivian',
+  );
 });

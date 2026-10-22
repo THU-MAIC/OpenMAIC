@@ -78,7 +78,7 @@ describe('/api/model-config', () => {
             operator: {
               preset: 'deepseek',
               apiKey: 'sk-operator',
-              models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+              models: ['deepseek-v4-pro', 'deepseek-flash'],
             },
           },
           slots: { video: null },
@@ -194,7 +194,7 @@ describe('/api/model-config', () => {
             operator: {
               preset: 'deepseek',
               apiKey: 'sk-operator',
-              models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+              models: ['deepseek-v4-pro', 'deepseek-flash'],
             },
           },
           slots: { llm: 'operator:deepseek-v4-pro' },
@@ -206,7 +206,7 @@ describe('/api/model-config', () => {
     });
     const below = await put('alice', 1, {
       kind: 'slots',
-      set: { 'course.content.slide': 'operator:deepseek-v4-flash' },
+      set: { 'course.content.slide': 'operator:deepseek-flash' },
     });
     expect(below.status).toBe(409);
     expect((await below.json()).error.code).toBe('SLOT_LOCKED');
@@ -215,7 +215,7 @@ describe('/api/model-config', () => {
   it('refuses a thinking effort on the agent slot, and drops the one it inherits', async () => {
     const refused = await put('alice', null, {
       kind: 'slots',
-      set: { agent: { model: 'operator:deepseek-v4-flash', thinking: { effort: 'high' } } },
+      set: { agent: { model: 'operator:deepseek-flash', thinking: { effort: 'high' } } },
     });
     expect(refused.status).toBe(400);
     const error = (await refused.json()).error;
@@ -227,7 +227,7 @@ describe('/api/model-config', () => {
     // On/off without an effort is fine on the agent itself.
     const toggled = await put('alice', null, {
       kind: 'slots',
-      set: { agent: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'disabled' } } },
+      set: { agent: { model: 'operator:deepseek-flash', thinking: { mode: 'disabled' } } },
     });
     expect(toggled.status).toBe(200);
 
@@ -236,7 +236,7 @@ describe('/api/model-config', () => {
     const saved = await put('alice', 1, {
       kind: 'slots',
       set: {
-        llm: { model: 'operator:deepseek-v4-flash', thinking: { mode: 'enabled', effort: 'max' } },
+        llm: { model: 'operator:deepseek-flash', thinking: { mode: 'enabled', effort: 'max' } },
       },
       clear: ['agent'],
     });
@@ -245,7 +245,7 @@ describe('/api/model-config', () => {
       await import('@/lib/server/agent-runtime/agent-driver-model');
     const driver = await resolveAgentDriverModel('user:alice');
     expect(driver.connection).toMatchObject({
-      modelId: 'deepseek-v4-flash',
+      modelId: 'deepseek-flash',
       thinkingConfig: { mode: 'enabled' },
     });
   });

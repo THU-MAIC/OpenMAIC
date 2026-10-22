@@ -4,8 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches:
-      [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
+    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1, integration/material-library]
 
 concurrency:
   group: storage-pg-contract-${{ github.ref }}
@@ -88,6 +87,9 @@ jobs:
             tests/persistence/owner-claims.pg.test.ts \
             tests/persistence/owner-assets-legacy-race.pg.test.ts \
             tests/persistence/owner-materials.pg.test.ts \
+            tests/persistence/owner-material-extraction.pg.test.ts \
+            tests/persistence/owner-material-pool.pg.test.ts \
+            tests/persistence/material-library.pg.test.ts \
             tests/persistence/workspace-model-config.pg.test.ts \
             tests/server/agents/owner-agents.pg.test.ts \
             tests/persistence/runtime-tombstone-collision.pg.test.ts \

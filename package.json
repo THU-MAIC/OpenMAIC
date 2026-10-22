@@ -1,6 +1,6 @@
 {
   "name": "openmaic",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "license": "MIT",
   "engines": {
@@ -8,14 +8,14 @@
   },
   "scripts": {
     "postinstall": "pnpm run build:packages",
-    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs",
+    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../geometry && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs",
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
     "build:standalone-player": "node scripts/build-standalone-player.mjs",
     "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",
     "gen:video-export-noto-cjk": "node scripts/generate-video-export-noto-cjk.mjs",
     "gen:video-export-noto-script-fonts": "node scripts/generate-video-export-noto-script-fonts.mjs",
-    "dev": "node scripts/build-standalone-player.mjs && next dev",
-    "build": "node scripts/assert-vendor-maic-importer.mjs && node scripts/build-standalone-player.mjs && next build",
+    "dev": "node scripts/sync-interactive-assets.mjs && node scripts/build-standalone-player.mjs && next dev",
+    "build": "node scripts/sync-interactive-assets.mjs && node scripts/assert-vendor-maic-importer.mjs && node scripts/build-standalone-player.mjs && next build",
     "start": "next start",
     "db:up": "docker compose -p openmaic-dev-db -f docker-compose.db.yml up -d --wait postgres",
     "db:down": "docker compose -p openmaic-dev-db -f docker-compose.db.yml stop postgres",
@@ -33,7 +33,8 @@
     "eval:whiteboard": "tsx --conditions=import eval/whiteboard-layout/runner.ts",
     "eval:outline-language": "tsx eval/outline-language/runner.ts",
     "eval:orchestration:answering": "tsx --conditions=import eval/orchestration/answering-runner.ts",
-    "eval:orchestration:answer-content": "tsx --conditions=import eval/orchestration/answer-content-runner.ts"
+    "eval:orchestration:answer-content": "tsx --conditions=import eval/orchestration/answer-content-runner.ts",
+    "sync:interactive-assets": "node scripts/sync-interactive-assets.mjs"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.103",
@@ -110,11 +111,12 @@
     "js-yaml": "4.3.0",
     "jsonrepair": "^3.13.2",
     "jszip": "^3.10.1",
-    "katex": "^0.16.33",
+    "katex": "0.16.38",
     "linkedom": "^0.18.13",
     "lodash": "4.18.1",
     "lucide-react": "^0.562.0",
     "mathml2omml": "workspace:*",
+    "mdast-util-from-markdown": "2.0.3",
     "micromark-extension-math": "^3.1.0",
     "mitt": "^3.0.1",
     "motion": "^12.27.5",
@@ -168,7 +170,11 @@
     "use-stick-to-bottom": "^1.1.1",
     "zod": "^4.3.5",
     "zustand": "^5.0.10",
-    "remark-cjk-friendly": "^2.3.1"
+    "remark-cjk-friendly": "^2.3.1",
+    "@openmaic/geometry": "workspace:*",
+    "three": "0.160.0",
+    "chart.js": "4.4.8",
+    "@tailwindcss/browser": "4.1.18"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.16",

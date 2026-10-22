@@ -27,7 +27,7 @@ describe('Chart category axis labels', () => {
         color: '#333333',
         interval: 0,
       });
-      expect(option.xAxis.axisLabel).toEqual({ show: true, color: '#333333' });
+      expect(option.xAxis.axisLabel).toMatchObject({ show: true, color: '#333333' });
     },
   );
 

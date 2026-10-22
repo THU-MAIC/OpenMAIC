@@ -101,6 +101,8 @@ allowUserKeys: false               # ユーザーはこれらのプロバイダ�
 | `proxy` | いいえ | このプロバイダーへのリクエストに使う HTTP プロキシの URL。 |
 | `credentials` | 一部のプリセット | 単一のキーを使わないサービス用のキーペア。AliDocMind は `accessKeyId` と `accessKeySecret` を使います。 |
 | `options` | いいえ | 秘密でない、プロバイダー固有の設定。たとえば `voxcpm-tts` の `backend`。名前は英数字、`_`、`-` で、値は文字列・数値・真偽値（ネストしたマップやリストは不可）です。`${VAR}` も使えます。オプションはモデル設定に表示されるため、キーを入れてはいけません。デプロイ専用で、モデル設定からは設定できません。 |
+| `voices` | いいえ | TTS プリセット専用。組み込み音声一覧を空でないリストで置き換えます。各項目は `id` と `name` が必須、`language` と `gender`（`male`、`female`、`neutral`）は任意です。ID は重複不可で、予約済みのバインド区切り文字 `::` は使用できません。ユーザー音声は保持され、Qwen のクローン音声はクローンモデルを使います。省略時は従来の一覧を保持します。 |
+| `options.defaultVoice` | いいえ | このプロバイダーのデフォルト音声 ID。空白だけでない文字列である必要があります。この ID を含む空でない `voices` リストが必須です。`voices` のみの場合は先頭を使い、有効な明示的選択が優先されます。両方を省略すると従来の動作を維持します。 |
 
 ほとんどのプリセットは組み込みレジストリに対応し、1 つの機能だけをカバーします。`openai` プリセットはチャットのみで、OpenAI の画像・音声合成・文字起こしはそれぞれ `openai-image`、`openai-tts`、`openai-whisper` プリセットです。機能ごとにプロバイダーを 1 つ宣言し、1 つのキーで複数の機能を使う場合は同じ `${VAR}` を参照してください。**Token Plan プリセット**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）は 1 つのキーで複数の機能をカバーし、各機能はプラン独自のエンドポイントを使います。プロバイダーに設定した `baseUrl` は、そのプロバイダーがカバーするすべての機能のエンドポイントを置き換えるため、Token Plan に `baseUrl` を設定するのは全機能が一緒に移る場合だけにしてください。
 
@@ -659,7 +661,7 @@ API 形式でエクスポートしたワークフロー JSON を OpenMAIC の `p
 
 動画生成プロバイダーは `VIDEO_<PROVIDER>_API_KEY` と任意の `VIDEO_<PROVIDER>_BASE_URL` を使います。対応 prefix は：
 
-`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_`、`VIDEO_HAPPYHORSE_`
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_`、`VIDEO_HAPPYHORSE_`
 
 ### ドキュメント・メディア解析
 
@@ -688,7 +690,7 @@ AliDocMind のドキュメント解析は PDF、DOCX、PPTX、XLSX、PNG、JPG/J
 
 ### Web 検索
 
-Tavily、Exa、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
+Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG、MiniMax を設定可能です。
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +698,9 @@ TAVILY_BASE_URL=           # 任意の上書き
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 任意の上書き
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # 任意の上書き
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 任意の上書き
@@ -756,6 +761,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +788,25 @@ slots:
 ```
 
 旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
+
+### DeepSeek の Web 検索と取得
+
+`deepseek` プリセットはチャット、Web 検索、ホスト型 Markdown 抽出で `DEEPSEEK_API_KEY` と API ベース URL を共有します。検索は `POST /v1/tools/search` を使い、最大 50 件を返します。クエリは Unicode コードポイント単位で 128 文字に切り詰め、結果には `summary`、空の場合は `snippet` を使います。取得は `POST /v1/tools/fetch` を使い、`content` と空でない任意の `title` を読み取ります。
+
+旧設定では `WEB_SEARCH_DEEPSEEK_ENABLED=true`、または `server-providers.yml` の明示的な `web-search.deepseek` エントリーで有効にします。チャットの認証情報だけでは検索を有効にせず、既存の検索の既定値も変更しません。`WEB_SEARCH_DEEPSEEK_ENABLED=false` は検索を強制無効化します。`openmaic.yml` がある場合、旧変数はスロットを割り当てられません。プロバイダーを宣言し、`webSearch` と／または `webFetch` を明示的に割り当ててください。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi のチャットと Web 検索
 
@@ -813,6 +839,8 @@ Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-c
 | --- | --- | --- |
 | `builtin` | 不要 | ローカルの Readability/Turndown。PDF は `document` スロットを使用 |
 | `kimi` | 既存の Kimi プロバイダーのキーとベース URL | ホスト型の Markdown 抽出。PDF の URL にも対応 |
+| `deepseek` | 既存の DeepSeek チャットキーと API ベース | ホスト型 Markdown 抽出 |
+| `firecrawl` | Firecrawl の API キー（`preset: firecrawl`） | ホスト型の Markdown 抽出（ページの本文）。PDF の URL にも対応 |
 
 ```yaml
 providers:
@@ -826,6 +854,20 @@ slots:
 
 `kimi` と `kimi-coding-plan` の両プリセットが `webFetch` を提供します。Coding Plan の認証情報には `preset: kimi-coding-plan` を使います。既定のベース URL は `https://api.kimi.com/coding/v1` で、明示したベース URL は保持されます。Moonshot Open Platform のベース URL（`https://api.moonshot.cn/v1`、`https://api.moonshot.ai/v1`）には `/tools/fetch`、Coding Plan には `/fetch` を使用します。いずれも Bearer 認証で `{ "url": ... }` を含む `POST` を送ります。アダプターは `markdown` または `content` を受け付けます。メンテナーが実際のキーで `POST https://api.kimi.com/coding/v1/fetch` をテストし、応答に `{ markdown, title, url }` が含まれることを確認しました。国際エンドポイントの利用可否は引き続き未検証です。リクエストはプロバイダーの `proxy` 設定と標準のプロキシ環境変数に従います。
 
+DeepSeek は `deepseek` プリセットでホスト型 Markdown 抽出も提供し、チャットのキーと API ベースを共有します。上の例のように `webFetch` を明示的に割り当てます。`/v1/tools/fetch` を使い、デプロイで指定したゲートウェイのベースを保持します。タイムアウトと転送エラーのみ 1 回再試行する動作は Kimi と同じで、HTTP エラーや不正な応答は再試行しません。
+
 **設定 → モデルサービス → Webページ取得** で既存の認証情報を使用し、**コースモデル設定 → Webページ取得** でサービスを選びます。キーは同じプロバイダーのチャットと共有され、変更や削除はチャットにも影響します。管理者が固定したカードは読み取り専用です。初回設定では、別のサービスを明示的に選ぶまで組み込みの既定値を維持します。ワークスペースの認証情報は公式 API のベース URL を使用でき、独自の取得エンドポイントとプロキシは管理者が `openmaic.yml` に記述する必要があります。
 
+`kimi` と異なり、`firecrawl` は専用のキーを使います。`openmaic.yml` で `preset: firecrawl` のプロバイダーと `apiKey`（例: `${FIRECRAWL_API_KEY}`）を宣言するか、**設定 → モデルサービス → Webページ取得** でキーを入力します。Bearer 認証で `POST /v2/scrape` を送り、ページの本文を Markdown で取得します。既定のベース URL は `https://api.firecrawl.dev` です。セルフホストの Firecrawl のベース URL は、管理者が `openmaic.yml` で宣言する必要があります。
+
+同じ `firecrawl` プロバイダーは Web 検索（`POST /v2/search`）にも使えます。1 つのキーとベース URL で両方をまかなうため、1 つのプロバイダーを `slots.webSearch` と `slots.webFetch` の両方に割り当てられます。従来の `FIRECRAWL_API_KEY` と `FIRECRAWL_BASE_URL` 変数はこのプロバイダーを設定します。`webFetch` をこのプロバイダーに割り当てるまで、Webページ取得は `builtin` のままです。
+
 ホスト型サービスに URL を送る前に、セッションの URL 許可、厳密な URL 正規化、ローカル DNS の全アドレス検査を行います。返された最終 URL も、内容を受け入れる前に同じ検査を受けます。ホスト型サービス自身の DNS と中間リダイレクトはサービス側が制御するため、ローカルの検査ではそのネットワーク接続を固定できません。返されたテキストは信頼できないデータのままであり、認証チャレンジページの検出、バイト数制限、切り詰め表示、既存の Web 素材保存と `{trusted, untrusted}` の結果形式を適用します。
+
+## インタラクティブシーンのライブラリ
+
+インタラクティブシーンは、KaTeX、Three.js（addons を含む）、Chart.js、Tailwind v4 ブラウザランタイムを公開 CDN ではなくデプロイ自身から読み込みます。`pnpm install`、`pnpm dev`、`pnpm build` は、インストール済みパッケージから固定バージョンを `public/vendor/interactive` にコピーし、`/vendor/interactive` で配信します。KaTeX は数式を含むページでのみ読み込まれます。
+
+`INTERACTIVE_ASSET_BASE_URL` は公開されるビルド時の設定です。独自の CDN やオブジェクトストレージからこれらのファイルを配信する場合は、パッケージ/バージョンのパスを保ったまま `public/vendor/interactive` をコピーし、この変数を新しいベース URL（例：`https://assets.example.com/interactive`）に設定して再ビルドしてください。Docker では `--build-arg` で渡します。インタラクティブシーンはサンドボックス化された iframe で動作するため、配信先は JavaScript、CSS、フォントを正しい MIME タイプで返し、`Access-Control-Allow-Origin: *` を送信する必要があります。
+
+保存済みのインタラクティブ HTML は、教室で開くときと、スタンドアロン HTML または動画をエクスポートする前に再処理されます。そのため、これらのライブラリを指す互換性のある公開 CDN 参照は、コースを再生成しなくても書き換えられます。その他のライブラリ、互換性のないバージョン、旧 Tailwind v3 Play CDN（`cdn.tailwindcss.com`）、Google Fonts への参照は変更されず、引き続きそれらのホストへのネットワークアクセスが必要です。

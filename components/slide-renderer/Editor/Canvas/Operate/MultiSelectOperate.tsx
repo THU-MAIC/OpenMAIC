@@ -6,6 +6,8 @@ import type { OperateResizeHandlers, MultiSelectRange } from '@/lib/types/edit';
 import { useCommonOperate } from '../hooks/useCommonOperate';
 import { ResizeHandler } from './ResizeHandler';
 import { BorderLine } from './BorderLine';
+import { validateShapeGeometry } from '@openmaic/geometry';
+import { projectInteractionElements } from '../interaction-elements';
 
 interface MultiSelectOperateProps {
   readonly elementList: PPTElement[];
@@ -21,7 +23,8 @@ export function MultiSelectOperate({ elementList, scaleMultiElement }: MultiSele
   const canvasScale = useCanvasStore.use.canvasScale();
 
   const localActiveElementList = useMemo(
-    () => elementList.filter((el) => activeElementIdList.includes(el.id)),
+    () =>
+      projectInteractionElements(elementList.filter((el) => activeElementIdList.includes(el.id))),
     [elementList, activeElementIdList],
   );
 
@@ -46,12 +49,16 @@ export function MultiSelectOperate({ elementList, scaleMultiElement }: MultiSele
 
   // Disable resize in multi-select: only non-rotated images and shapes can be resized
   const disableResize = useMemo(() => {
-    return localActiveElementList.some((item) => {
-      if ((item.type === 'image' || item.type === 'shape') && !item.rotate) return false;
-      return true;
-    });
-  }, [localActiveElementList]);
+    return elementList
+      .filter((item) => activeElementIdList.includes(item.id))
+      .some((item) => {
+        if (item.type === 'shape' && !validateShapeGeometry(item).ok) return true;
+        if ((item.type === 'image' || item.type === 'shape') && !item.rotate) return false;
+        return true;
+      });
+  }, [elementList, activeElementIdList]);
 
+  if (localActiveElementList.length < 2) return null;
   return (
     <div
       className="multi-select-operate absolute top-0 left-0 z-44"

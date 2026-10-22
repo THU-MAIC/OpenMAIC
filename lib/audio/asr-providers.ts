@@ -538,6 +538,39 @@ async function transcribeQwenASR(
 }
 
 /**
+ * The URL an Azure base URL is sent to: the regional API host, the
+ * transcribe path, and the default `api-version` when none is set.
+ */
+function azureTranscriptionUrl(rawBaseUrl: string): URL {
+  let endpoint = rawBaseUrl.replace(/\/+$/, '');
+  if (/\.stt\.speech\.microsoft\.com$/i.test(endpoint)) {
+    endpoint = endpoint.replace(/\.stt\.speech\.microsoft\.com$/i, '.api.cognitive.microsoft.com');
+  }
+  if (!/\/speechtotext\/transcriptions:transcribe/i.test(endpoint)) {
+    endpoint = `${endpoint}/speechtotext/transcriptions:transcribe`;
+  }
+  const url = new URL(endpoint);
+  if (!url.searchParams.get('api-version')) {
+    url.searchParams.set('api-version', '2025-10-15');
+  }
+  return url;
+}
+
+/**
+ * The URL a provider's requests are sent to, where that differs from its
+ * configured base URL (today only Azure's). A base URL a request could not
+ * be sent to is returned unchanged.
+ */
+export function asrRequestUrl(providerId: string, baseUrl: string | undefined): string | undefined {
+  if (providerId !== 'azure-asr' || !baseUrl || baseUrl.includes('{region}')) return baseUrl;
+  try {
+    return azureTranscriptionUrl(baseUrl).toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+/**
  * Azure STT implementation (Fast Transcription REST API)
  * https://learn.microsoft.com/azure/ai-services/speech-service/fast-transcription-create
  */
@@ -551,17 +584,7 @@ async function transcribeAzureASR(
     throw new Error('Azure STT base URL must include a real region');
   }
 
-  let endpoint = rawBaseUrl.replace(/\/+$/, '');
-  if (/\.stt\.speech\.microsoft\.com$/i.test(endpoint)) {
-    endpoint = endpoint.replace(/\.stt\.speech\.microsoft\.com$/i, '.api.cognitive.microsoft.com');
-  }
-  if (!/\/speechtotext\/transcriptions:transcribe/i.test(endpoint)) {
-    endpoint = `${endpoint}/speechtotext/transcriptions:transcribe`;
-  }
-  const url = new URL(endpoint);
-  if (!url.searchParams.get('api-version')) {
-    url.searchParams.set('api-version', '2025-10-15');
-  }
+  const url = azureTranscriptionUrl(rawBaseUrl);
 
   let audioBlob: Blob;
   if (audioBuffer instanceof Blob) {

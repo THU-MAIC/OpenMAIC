@@ -68,7 +68,7 @@ async function workspaceWithOwnPicks(): Promise<ModelConfigFile> {
   });
   config = await applyModelSettingsChange(config, {
     kind: 'slots',
-    set: { llm: 'ds:deepseek-v4-pro', 'course.content.slide': 'ds:deepseek-v4-flash' },
+    set: { llm: 'ds:deepseek-v4-pro', 'course.content.slide': 'ds:deepseek-flash' },
   });
   return config;
 }
@@ -196,7 +196,7 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
     });
     expect(panel.config()?.slots).toMatchObject({
       llm: 'ds:deepseek-v4-pro',
-      'course.content.slide': 'ds:deepseek-v4-flash',
+      'course.content.slide': 'ds:deepseek-flash',
     });
   });
 

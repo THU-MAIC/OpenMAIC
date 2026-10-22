@@ -101,6 +101,8 @@ allowUserKeys: false               # 使用者只能在這些供應商中選擇�
 | `proxy` | 否 | 該供應商請求使用的 HTTP 代理位址。 |
 | `credentials` | 部分範本需要 | 不使用單一 key 的服務所需的金鑰對。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
 | `options` | 否 | 非機密、供應商特有的設定，例如 `voxcpm-tts` 的 `backend`。名稱由字母、數字、`_` 和 `-` 組成；值為字串、數字或布林值（不能巢狀對應或清單），可以使用 `${VAR}`。模型設定會顯示 options，因此絕對不要在其中放 key。僅限部署：模型設定無法設定它們。 |
+| `voices` | 否 | 僅適用於 TTS 範本。以非空清單取代內建音色目錄：每項必填 `id`、`name`，可選 `language`、`gender`（`male`、`female`、`neutral`）；ID 不可重複，也不可包含保留的綁定分隔符 `::`。使用者音色仍會保留，Qwen 複製音色繼續使用複製模型。未設定時保留內建目錄。 |
+| `options.defaultVoice` | 否 | 此供應商的預設音色 ID，必須是非空白字串。設定此項時必須同時提供包含該 ID 的非空 `voices` 清單。僅設定 `voices` 時使用第一項；有效的明確選擇優先。兩個覆寫項目均未設定時維持原有預設邏輯。 |
 
 大多數範本只涵蓋一種能力，與內建 registry 一一對應：`openai` 範本只有對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper` 範本。每種能力宣告一個供應商；同一把 key 涵蓋多種能力時，引用同一個 `${VAR}` 即可。**Token Plan 範本**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。供應商上的 `baseUrl` 會取代它涵蓋的所有能力的端點，因此只有當 Token Plan 的全部能力都一起搬移時，才為它設定 `baseUrl`。
 
@@ -659,7 +661,7 @@ slots:
 
 影片生成供應商使用 `VIDEO_<PROVIDER>_API_KEY`，可選 `VIDEO_<PROVIDER>_BASE_URL`。支援的字首包括：
 
-`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_VEO_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
+`VIDEO_SEEDANCE_`、`VIDEO_KLING_`、`VIDEO_SORA_`、`VIDEO_MINIMAX_`、`VIDEO_GROK_` 和 `VIDEO_HAPPYHORSE_`。
 
 ### 文件和媒體解析
 
@@ -688,7 +690,7 @@ AliDocMind 的文件解析支援 PDF、DOCX、PPTX、XLSX，以及 PNG、JPG/JPE
 
 ### 聯網搜尋
 
-設定 Tavily、Exa、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
+設定 Tavily、Exa、Firecrawl、Bocha、Brave、Baidu、SearXNG 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
@@ -696,6 +698,9 @@ TAVILY_BASE_URL=           # 選填覆寫值
 
 EXA_API_KEY=
 EXA_BASE_URL=https://api.exa.ai  # 選填覆寫值
+
+FIRECRAWL_API_KEY=
+FIRECRAWL_BASE_URL=https://api.firecrawl.dev  # 選填覆寫值
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 選填覆寫值
@@ -756,6 +761,8 @@ web-search:
     apiKey: tvly-...
   exa:
     apiKey: ...
+  firecrawl:
+    apiKey: fc-...
   searxng:
     baseUrl: http://localhost:8080
 ```
@@ -781,6 +788,25 @@ slots:
 ```
 
 舊版等價寫法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒體能力使用能力字首，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
+
+### DeepSeek 網路搜尋與網頁擷取
+
+`deepseek` 預設在對話、網路搜尋和託管 Markdown 擷取之間共用 `DEEPSEEK_API_KEY` 與 API 基底位址。搜尋使用 `POST /v1/tools/search`，最多傳回 50 筆結果，查詢依 Unicode code point 截斷至 128 個字元，優先使用 `summary`，空白時改用 `snippet`。擷取使用 `POST /v1/tools/fetch`，讀取 `content` 與非空的選填 `title`。
+
+舊版設定需使用 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 明確加入 `web-search.deepseek`。僅設定對話憑證不會啟用搜尋或取代現有預設搜尋。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 會強制停用搜尋。有 `openmaic.yml` 時，舊版變數無法指定插槽，必須明確宣告提供者並指定 `webSearch` 和／或 `webFetch`。
+
+The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
+
+```yaml
+providers:
+  deepseek:
+    preset: deepseek
+    apiKey: ${DEEPSEEK_API_KEY}
+    baseUrl: https://api.deepseek.com/v1
+slots:
+  webSearch: deepseek
+  webFetch: deepseek
+```
 
 ### Kimi 對話與網路搜尋
 
@@ -813,6 +839,8 @@ slots:
 | --- | --- | --- |
 | `builtin` | 無需憑證 | 本機 Readability/Turndown 讀取服務；PDF 使用 `document` 插槽 |
 | `kimi` | 既有 Kimi 供應商的金鑰和基底網址 | 託管 Markdown 擷取服務，也接收 PDF 網址 |
+| `deepseek` | 既有 DeepSeek 對話金鑰與 API 基底位址 | 託管 Markdown 擷取 |
+| `firecrawl` | Firecrawl API 金鑰（`preset: firecrawl`） | 託管 Markdown 擷取服務，回傳頁面主要內容，也接收 PDF 網址 |
 
 ```yaml
 providers:
@@ -826,6 +854,20 @@ slots:
 
 `kimi` 和 `kimi-coding-plan` 預設都提供 `webFetch`。使用 Coding Plan 憑證時，請指定 `preset: kimi-coding-plan`，其預設基底網址為 `https://api.kimi.com/coding/v1`；明確設定的基底網址會保留。Moonshot 開放平台網址（`https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1`）使用 `/tools/fetch`，Coding Plan 使用 `/fetch`。兩者都傳送帶有 `{ "url": ... }` 的 `POST` 請求，並使用 Bearer 驗證。介接器接受 `markdown` 或 `content`。維護者使用真實金鑰測試了 `POST https://api.kimi.com/coding/v1/fetch`，確認回應包含 `{ markdown, title, url }`；國際端點的可用性仍未驗證。請求遵循供應商的 `proxy` 設定及標準代理環境變數。
 
+DeepSeek 也透過 `deepseek` 預設提供託管 Markdown 擷取，共用對話金鑰與 API 基底位址。依上述範例明確指定 `webFetch`，呼叫 `/v1/tools/fetch`，並保留部署中的閘道位址。逾時與僅對傳輸錯誤重試一次的行為與 Kimi 相同，不重試 HTTP 錯誤或無效回應。
+
 在 **設定 → 模型服務 → 網頁擷取** 中使用既有供應商憑證。此金鑰與同一供應商的對話服務共用，修改或移除金鑰也會影響對話。在 **課程模型設定 → 網頁擷取** 中選擇讀取服務。管理員鎖定後，卡片為唯讀。首次設定會保留內建預設值，直到明確選擇其他讀取服務。工作區憑證可使用官方 API 基底網址；自訂擷取網址與代理必須由管理員在 `openmaic.yml` 中宣告。
 
+與 `kimi` 不同，`firecrawl` 使用獨立的金鑰：在 `openmaic.yml` 中宣告 `preset: firecrawl` 的供應商並設定 `apiKey`（例如 `${FIRECRAWL_API_KEY}`），或在 **設定 → 模型服務 → 網頁擷取** 中填寫金鑰。它以 Bearer 驗證傳送 `POST /v2/scrape`，以 Markdown 回傳頁面主要內容。預設基底網址為 `https://api.firecrawl.dev`；自行託管 Firecrawl 的基底網址須由管理員在 `openmaic.yml` 中宣告。
+
+同一個 `firecrawl` 供應商也提供網路搜尋（`POST /v2/search`）：一把金鑰和一個基底網址同時用於兩者，因此可以把同一個供應商同時指定給 `slots.webSearch` 和 `slots.webFetch`。舊版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 變數設定的就是這個供應商；在把 `webFetch` 指定給它之前，網頁擷取仍使用 `builtin`。
+
 網址轉送至託管服務之前，必須通過工作階段網址授權、嚴格網址正規化及全部本機 DNS 位址檢查。接收內容前，也會對服務回傳的最終網址執行相同檢查。託管服務控制其自身的 DNS 和中間重新導向，本機檢查無法固定其網路連線。回傳的文字仍是不可信資料，經過驗證頁面偵測、位元組限制和截斷標記處理，並沿用網頁素材持久化及 `{trusted, untrusted}` 結果結構。
+
+## 互動場景依賴函式庫
+
+互動場景從部署本身載入 KaTeX、Three.js（含 addons）、Chart.js 和 Tailwind v4 瀏覽器執行環境，而不是從公開 CDN 載入。`pnpm install`、`pnpm dev` 和 `pnpm build` 會把已安裝套件中的固定版本複製到 `public/vendor/interactive`，並透過 `/vendor/interactive` 提供。只有包含數學公式的頁面才會載入 KaTeX。
+
+`INTERACTIVE_ASSET_BASE_URL` 是公開的建置時設定。如需從自己的 CDN 或物件儲存提供這些檔案，請複製 `public/vendor/interactive` 並保留其中的套件名稱/版本路徑，把此變數設為新的基礎位址（例如 `https://assets.example.com/interactive`）後重新建置；Docker 建置透過 `--build-arg` 傳入。互動場景在沙箱 iframe 中執行，因此該主機必須以正確的 MIME 類型提供 JavaScript、CSS 和字型檔案，並回傳 `Access-Control-Allow-Origin: *`。
+
+已儲存的互動 HTML 會在課堂中開啟時，以及匯出獨立 HTML 或影片之前重新處理，因此指向這些函式庫的相容公開 CDN 參照會被改寫，無需重新生成課程。指向其他函式庫、不相容版本、舊版 Tailwind v3 Play CDN（`cdn.tailwindcss.com`）和 Google Fonts 的參照保持不變，仍需要能存取對應主機。

@@ -1,3 +1,4 @@
+import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 /**
  * Slot resolution (RFC #1701, tracked in #1725).
  *
@@ -39,6 +40,7 @@ import {
   type SlotRequirement,
 } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { retiredPresetReason } from '@/lib/config/preset-ids';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import {
   parseModelRef,
@@ -80,6 +82,7 @@ export interface ResolvedModelTarget {
   proxy?: string;
   /** The provider's non-secret, provider-specific settings (openmaic.yml `options`). */
   options?: Record<string, string | number | boolean>;
+  voices?: ConfiguredTTSVoice[];
   /** The base URL is the provider's own, not the preset's or registry's. */
   customBaseUrl?: true;
   /** Absent: the provider's default model (never for chat). */
@@ -207,7 +210,14 @@ function resolveTarget(
   if (!found) throw new SlotResolutionError(`${at}: the provider is not declared`);
   const { provider } = found;
   const preset = getProviderPreset(provider.preset);
-  if (!preset) throw new SlotResolutionError(`${at}: the provider has an unknown preset`);
+  if (!preset) {
+    const retired = retiredPresetReason(provider.preset);
+    throw new SlotResolutionError(
+      retired
+        ? `${at}: the provider can no longer be used: ${retired}`
+        : `${at}: the provider has an unknown preset`,
+    );
+  }
   const target = preset.capabilities[capability];
   if (!target) {
     throw new SlotResolutionError(
@@ -248,6 +258,9 @@ function resolveTarget(
     ...(provider.apiKey !== undefined ? { apiKey: provider.apiKey } : {}),
     ...(provider.credentials !== undefined ? { credentials: provider.credentials } : {}),
     ...(provider.proxy !== undefined ? { proxy: provider.proxy } : {}),
+    ...(provider.voices !== undefined
+      ? { voices: provider.voices.map((voice) => ({ ...voice })) }
+      : {}),
     ...(provider.options !== undefined ? { options: { ...provider.options } } : {}),
     // A provider-only reference means the preset's own default (a token
     // plan's), else the registry's, which the adapter applies.
@@ -275,6 +288,61 @@ export function checkRequirement(
 }
 
 type ModelLike = { id: string; capabilities?: { tools?: boolean } };
+
+/**
+ * The providers whose preset this build retired (RETIRED_PRESETS), as the
+ * layers resolve them: an id the deployment declares is the deployment's.
+ */
+export function retiredProviderIds(layers: readonly (ModelConfigLayer | null)[]): Set<string> {
+  const seen = new Set<string>();
+  const retired = new Set<string>();
+  for (const layer of inPrecedence(layers.filter((entry): entry is ModelConfigLayer => !!entry))) {
+    for (const [id, provider] of Object.entries(layer.config.providers ?? {})) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (retiredPresetReason(provider.preset)) retired.add(id);
+    }
+  }
+  return retired;
+}
+
+/**
+ * Slot assignments without the ones that name a provider in `ids`, so those
+ * slots follow their parents again. An assignment whose fallback alone names
+ * one keeps its model.
+ */
+export function withoutAssignmentsNaming(
+  slots: ModelConfigFile['slots'],
+  ids: ReadonlySet<string>,
+): Record<string, SlotAssignment> {
+  const names = (ref: string | undefined) => {
+    if (!ref) return false;
+    try {
+      return ids.has(parseModelRef(ref).providerId);
+    } catch {
+      return false;
+    }
+  };
+  const kept: Record<string, SlotAssignment> = {};
+  for (const [slot, assignment] of Object.entries(slots ?? {})) {
+    if (assignment === null || assignment === undefined) {
+      if (assignment === null) kept[slot] = null;
+      continue;
+    }
+    if (typeof assignment === 'string') {
+      if (!names(assignment)) kept[slot] = assignment;
+      continue;
+    }
+    if (names(assignment.model)) continue;
+    if (names(assignment.fallback)) {
+      const { fallback: _fallback, ...rest } = assignment;
+      kept[slot] = rest as SlotAssignment;
+    } else {
+      kept[slot] = assignment;
+    }
+  }
+  return kept;
+}
 
 const SOURCE_RANK: Record<ConfigSource, number> = { deployment: 0, workspace: 1 };
 

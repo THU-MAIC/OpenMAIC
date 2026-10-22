@@ -377,7 +377,7 @@ describe('OpenAI SDK integration', () => {
         const { model } = getModel(
           providerId === 'deepseek'
             ? { providerId: 'deepseek', modelId: 'deepseek-v4-pro', apiKey: 'sk-test' }
-            : { providerId: 'qwen', modelId: 'qwen3-max', apiKey: 'sk-test' },
+            : { providerId: 'qwen', modelId: 'qwen3.7-max', apiKey: 'sk-test' },
         );
         const result = streamText({
           model,

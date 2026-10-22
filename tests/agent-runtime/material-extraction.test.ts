@@ -14,11 +14,14 @@ import {
 import { buildMaterialTools } from '@/lib/server/agent-runtime/material-tools';
 import {
   decodeMediaAssetData,
+  planSourceExtraction,
+  runSourceExtraction,
   extractClaimedSessionMaterial,
 } from '@/lib/server/material-extraction/extract';
 import { runNextMaterialExtraction } from '@/lib/server/material-extraction/runner';
 import { LocalMediaExtractionError } from '@/lib/document/extractors/local-media';
-import type { MediaExtractorProvider } from '@/lib/document';
+import type { DocumentExtractorProvider, MediaExtractorProvider } from '@/lib/document';
+import { getDocumentExtractorManifestEntry } from '@/lib/document/extractors/manifest';
 
 function mediaProvider(
   extract: MediaExtractorProvider['extract'],
@@ -326,10 +329,134 @@ describe('uploaded material extraction lifecycle', () => {
       }),
     );
 
+    // The classification extraction made is stored with the settlement (#1880).
     expect((await materials.getMaterial('session-1', 'mat_unavailable'))?.extraction).toEqual({
       status: 'failed',
       attempts: 0,
       error: expect.stringMatching(/Configure AliDocMind credentials.*install ffmpeg.*server ASR/i),
+      reasonCode: 'service_unavailable',
     });
+
+    // The model reads that code back in the page's words for the run's
+    // language, with the configuration guidance, and none of the diagnostic.
+    for (const [locale, guidance] of [
+      ['zh-CN', '请联系管理员完成配置'],
+      ['en-US', 'Ask your administrator to configure one'],
+    ] as const) {
+      const listing = buildMaterialTools({
+        sessionId: 'session-1',
+        listMaterials: (sessionId) => materials.listMaterials(sessionId),
+        locale: () => locale,
+      }).find((candidate) => candidate.name === 'list_materials')!;
+      const wire = JSON.stringify(await listing.execute('list', {} as never));
+      expect(wire).toContain('"reasonCode":"service_unavailable"');
+      expect(wire).toContain(guidance);
+      expect(wire).not.toMatch(/AliDocMind|ffmpeg|server ASR/i);
+    }
+  });
+});
+
+it('preserves a local duration reason through the real media plan without changing retryability', async () => {
+  const { createLocalMediaExtractorProvider } =
+    await import('@/lib/document/extractors/local-media');
+  const local = createLocalMediaExtractorProvider({
+    commands: {
+      resolve: async (name) => name,
+      run: async () => ({
+        stdout: JSON.stringify({ format: { duration: 5401 }, streams: [{ codec_type: 'audio' }] }),
+        stderr: '',
+      }),
+    },
+  });
+  // Selection availability depends on deployment ASR settings; supply only that check.
+  const plan = await planSourceExtraction(
+    { bytes: Buffer.from('fixture'), mime: 'video/mp4' },
+    'long.mp4',
+    {
+      mediaProviders: () => [{ ...local, availability: async () => ({ available: true }) }],
+    },
+  );
+  await expect(runSourceExtraction(plan, 'long.mp4')).rejects.toMatchObject({
+    reasonCode: 'media_too_long',
+    retryable: false,
+  });
+});
+
+describe('document parsing service unavailable (session chain)', () => {
+  const documentService = (
+    id: string,
+    mimes: string[],
+    message = `API key required for PDF provider: ${id}`,
+  ): DocumentExtractorProvider => ({
+    id: id as never,
+    displayName: id,
+    version: '1',
+    supportedMimeTypes: mimes,
+    requiresServiceConfig: getDocumentExtractorManifestEntry(id)?.requiresServiceConfig ?? false,
+    capabilities: {
+      text: true,
+      images: false,
+      tables: false,
+      formulas: false,
+      layout: false,
+      ocr: false,
+      async: false,
+    },
+    extract: vi.fn(async () => {
+      throw new Error(message);
+    }) as never,
+  });
+
+  it('names it when every candidate is an unconfigured service', async () => {
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('png'), mime: 'image/png' },
+      'board.png',
+      {
+        providers: () => [
+          documentService('mineru', ['image/png']),
+          documentService('alidocmind', ['image/png']),
+        ],
+        configuredProviderIds: () => [],
+      },
+    );
+    await expect(runSourceExtraction(plan, 'board.png')).rejects.toMatchObject({
+      reasonCode: 'service_unavailable',
+      retryable: false,
+    });
+  });
+
+  it('does not name it when the local unpdf took a PDF and failed', async () => {
+    const plan = await planSourceExtraction(
+      { bytes: Buffer.from('%PDF'), mime: 'application/pdf' },
+      'broken.pdf',
+      {
+        providers: () => [
+          documentService('mineru', ['application/pdf']),
+          documentService('unpdf', ['application/pdf'], 'Invalid PDF structure'),
+        ],
+        configuredProviderIds: () => [],
+      },
+    );
+    const failure = await runSourceExtraction(plan, 'broken.pdf').catch((error) => error);
+    expect(failure.reasonCode).toBeUndefined();
+  });
+
+  it('reads whether a candidate is a service from its metadata, not its id', async () => {
+    const reasonFor = async (requiresServiceConfig: boolean) => {
+      const plan = await planSourceExtraction(
+        { bytes: Buffer.from('png'), mime: 'image/png' },
+        'board.png',
+        {
+          providers: () => [
+            { ...documentService('another-parser', ['image/png']), requiresServiceConfig },
+          ],
+          configuredProviderIds: () => [],
+        },
+      );
+      const failure = await runSourceExtraction(plan, 'board.png').catch((error) => error);
+      return failure.reasonCode;
+    };
+    expect(await reasonFor(true)).toBe('service_unavailable');
+    expect(await reasonFor(false)).toBeUndefined();
   });
 });

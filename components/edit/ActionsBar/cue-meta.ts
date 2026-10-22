@@ -121,7 +121,7 @@ export function cueLabel(type: string, t: TFn): string {
 }
 
 /** Cue types that target a canvas element (so canvas pick mode applies). */
-export const ELEMENT_BOUND = new Set(['spotlight', 'laser', 'play_video']);
+export { ELEMENT_BOUND_CUE_TYPES as ELEMENT_BOUND } from '@openmaic/dsl';
 
 /** Human label for a slide element (localized type + a short content snippet). */
 export function elementLabel(el: { type: string; content?: string }, t: TFn): string {
