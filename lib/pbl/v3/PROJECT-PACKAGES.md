@@ -137,16 +137,20 @@ separate checksum and never replaces a
 previous course. Transfer between authors uses export/import. Learning instances
 pin the full reference; changing a scene's content does not silently migrate
 its existing learning journey. Existing study reads use that saved pin rather
-than requiring the original scene to retain it. The owning classroom must remain
-live and still reference the template, and owner checks still apply. Use a new
-scene for a new journey.
+than requiring the original scene to retain it. Study creation retains the template
+in the same transaction as the study pin. These references survive scene edits,
+scene removal and full classroom saves; the owning classroom must remain live and
+owner checks still apply. Use a new scene for a new journey. The upgrade migration
+backfills existing study pins while their template bytes still exist; already
+collected bytes require re-import or restore.
 
 Every reload resolves durable bytes without an extraction directory or a
 process-local catalog. New workspaces seed missing starter files; existing source
 and restored checkpoints retain the existing recovery behavior. The DSL counts
 project assets as document references. Same-owner classroom copies add references;
 scene/classroom deletion withdraws only their references. Collection preserves
-resources referenced by valid classrooms. Failed/unpublished import allocations
+resources referenced by valid classrooms, including retained study pins. Deleting
+or retiring the owning classroom withdraws its study references as well. Failed/unpublished import allocations
 expire through the existing pending TTL and collector, with installation index
 rows deleted alongside assets. Back up the database/registry and configured byte
 store together. Restore missing bytes or re-import the archive after a partial

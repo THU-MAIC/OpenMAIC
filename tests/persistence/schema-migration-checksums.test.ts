@@ -103,6 +103,13 @@ const SHIPPED: readonly (readonly [
     'd440298e2262b7ce4688848c2a8e23ca7d26b29e2b75cfc7011c0e60308178c5',
   ],
   [
+    'asset',
+    2,
+    'retained-document-assets',
+    true,
+    '69c2f4cfe961b9f95f745e7cd412426d5d42a365ee57aebd8d56209c6739b6d1',
+  ],
+  [
     'legacy-classroom-imports',
     1,
     'baseline',

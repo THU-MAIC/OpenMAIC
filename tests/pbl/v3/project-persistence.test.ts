@@ -64,6 +64,155 @@ describe('persisted project templates and classroom lifecycle', () => {
     await database?.close();
     if (root) await rm(root, { recursive: true, force: true });
   });
+  it('keeps a study pin alive after its last scene changes or disappears, until the classroom is deleted', async () => {
+    vi.stubEnv('ASSET_S3_BUCKET', '');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    const db = new PGlite();
+    await db.waitReady;
+    const pool = new DiskPool(db),
+      url = 'postgres://last-scene-study-pin';
+    vi.stubEnv('DATABASE_URL', url);
+    try {
+      const persistence = await getServerPersistenceProvider(url, () => pool as never);
+      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
+      const studies = new LearningStore(persistence.pool);
+      const bundle = packageBuiltin(
+        installedProject({ id: 'greeting-python-lab', version: '1.0.0' }),
+      );
+      const ref = await installProjectPackage('pin-owner', bundle);
+      const courses = await getOwnerScopedDocumentStore('pin-owner');
+      await courses.createDocument(document('only-classroom', ref));
+      const study = await studies.create(
+        {
+          ownerId: 'pin-owner',
+          stageId: 'only-classroom',
+          sceneId: 'only-classroom-scene',
+          projectId: ref.id,
+          version: ref.version,
+          projectRef: ref,
+        },
+        startOrchestration(JSON.parse(bundle.files['project.json']).definition),
+      );
+      const replacement = await installProjectPackage(
+        'pin-owner',
+        indexProjectFiles(ref.id, ref.version, {
+          ...bundle.files,
+          'docs/0.md': 'A replacement course introduction.',
+        }),
+      );
+      await courses.putScene('only-classroom', document('only-classroom', replacement).scenes[0]);
+      await expect(
+        studies.create(
+          {
+            ownerId: 'pin-owner',
+            stageId: 'only-classroom',
+            sceneId: 'missing-scene',
+            projectId: ref.id,
+            version: ref.version,
+            projectRef: ref,
+          },
+          startOrchestration(JSON.parse(bundle.files['project.json']).definition),
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect((await db.query('SELECT 1 FROM pbl_v3_studies')).rows).toHaveLength(1);
+      expect((await studies.get(study.id, 'pin-owner')).project?.coursePackage?.bundle).toEqual(
+        bundle,
+      );
+      await courses.deleteScene('only-classroom', 'only-classroom-scene');
+      await courses.putScene('only-classroom', {
+        ...document('only-classroom', replacement).scenes[0],
+        id: study.id,
+      });
+      await courses.deleteScene('only-classroom', study.id);
+      await courses.saveDocument({ ...document('only-classroom', replacement), scenes: [] });
+      const collector = new AssetCollector(
+        persistence.pool,
+        new PgAssetByteStore(persistence.pool),
+        {
+          withTransaction: persistence.withTransaction,
+          graceMs: 0,
+          documentReferences: true,
+          assetReferencePrincipals: assetReferencePrincipalsForOwner,
+          documentOwnership: STAGE_META_OWNERSHIP,
+          now: () => new Date(Date.now() + 7 * 86400000),
+        },
+      );
+      await collector.collectPass();
+      expect(
+        (await new LearningStore(persistence.pool).get(study.id, 'pin-owner')).project
+          ?.coursePackage?.bundle,
+      ).toEqual(bundle);
+      expect(
+        (await db.query('SELECT unreferenced_at FROM asset_entries WHERE id=$1', [ref.assetId]))
+          .rows,
+      ).toEqual([{ unreferenced_at: null }]);
+      await expect(studies.get(study.id, 'other-owner')).rejects.toMatchObject({ status: 404 });
+      await courses.deleteDocument('only-classroom');
+      await expect(studies.get(study.id, 'pin-owner')).rejects.toMatchObject({ status: 404 });
+      await collector.collectPass();
+      expect(
+        (await db.query('SELECT 1 FROM asset_entries WHERE id=$1', [ref.assetId])).rows,
+      ).toHaveLength(0);
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
+  it('backfills pre-fix study pins even when their scene reference is already gone', async () => {
+    vi.stubEnv('ASSET_S3_BUCKET', '');
+    vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
+    const db = new PGlite();
+    await db.waitReady;
+    const pool = new DiskPool(db),
+      url = 'postgres://upgrade-study-pins';
+    vi.stubEnv('DATABASE_URL', url);
+    try {
+      const persistence = await getServerPersistenceProvider(url, () => pool as never);
+      await applySchemaMigrations(persistence.pool, {
+        ...PBL_MIGRATIONS,
+        migrations: PBL_MIGRATIONS.migrations.slice(0, 3),
+      });
+      const bundle = packageBuiltin(
+        installedProject({ id: 'greeting-python-lab', version: '1.0.0' }),
+      );
+      const ref = await installProjectPackage('upgrade-owner', bundle);
+      const courses = await getOwnerScopedDocumentStore('upgrade-owner');
+      await courses.createDocument(document('upgrade-classroom', ref));
+      const state = startOrchestration(JSON.parse(bundle.files['project.json']).definition).state;
+      for (const [id, owner] of [
+        ['legacy-study', 'upgrade-owner'],
+        ['foreign-study', 'other-owner'],
+      ])
+        await db.query(
+          `INSERT INTO pbl_v3_studies(id,owner_id,stage_id,scene_id,project_id,project_version,state,project_reference)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [
+            id,
+            owner,
+            'upgrade-classroom',
+            'upgrade-classroom-scene',
+            ref.id,
+            ref.version,
+            JSON.stringify(state),
+            JSON.stringify(ref),
+          ],
+        );
+      await courses.saveDocument({ ...document('upgrade-classroom', ref), scenes: [] });
+      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
+      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
+      expect(
+        (await new LearningStore(persistence.pool).get('legacy-study', 'upgrade-owner')).project
+          ?.coursePackage?.bundle,
+      ).toEqual(bundle);
+      expect(
+        (await db.query("SELECT scene_id FROM document_asset_refs WHERE scope='retained'")).rows,
+      ).toEqual([{ scene_id: 'legacy-study' }]);
+      await expect(
+        new LearningStore(persistence.pool).get('foreign-study', 'other-owner'),
+      ).rejects.toMatchObject({ status: 404 });
+    } finally {
+      await db.close();
+    }
+  }, 30_000);
   it('survives a database reopen, round-trips between owners, rejects foreign references and collects only unused templates', async () => {
     root = await mkdtemp(join(tmpdir(), 'pbl-installed-projects-'));
     vi.stubEnv('ASSET_S3_BUCKET', '');
@@ -110,7 +259,7 @@ describe('persisted project templates and classroom lifecycle', () => {
           ref.assetId,
         ])
       ).rows,
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     const conflicting = {
       ...files,
       'docs/0.md': 'Revised teaching content under the same declared version.',

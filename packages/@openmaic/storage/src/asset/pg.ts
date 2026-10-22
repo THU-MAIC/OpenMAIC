@@ -197,6 +197,14 @@ export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
   store: 'asset',
   migrations: [
     { version: 1, name: 'baseline', up: ASSET_PG_SCHEMA.join(';\n'), transaction: false },
+    {
+      version: 2,
+      name: 'retained-document-assets',
+      transaction: true,
+      up: `ALTER TABLE document_asset_refs DROP CONSTRAINT document_asset_refs_scope_check;
+ALTER TABLE document_asset_refs ADD CONSTRAINT document_asset_refs_scope_check
+ CHECK (scope IN ('stage', 'scene', 'retained'));`,
+    },
   ],
 };
 
@@ -208,6 +216,8 @@ export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
 export async function ensureAssetSchema(queryable: Queryable): Promise<void> {
   await applySchemaMigrations(queryable, ASSET_PG_MIGRATIONS);
 }
+
+export { retainDocumentAssets } from './references.js';
 
 interface UsageRow extends Record<string, unknown> {
   logical_bytes: number | string;

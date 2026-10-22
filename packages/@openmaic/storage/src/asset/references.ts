@@ -1,7 +1,7 @@
 /**
  * Document -> asset reference maintenance.
  *
- * **Internal to the package.** These are transaction-scoped maintenance
+ * These are transaction-scoped maintenance
  * primitives, not API: called outside a document write they would replace or
  * delete reference rows nothing else knows about. The supported switches are
  * `PgDocumentStoreOptions.trackAssetReferences` and
@@ -17,7 +17,9 @@
  * transaction the caller already owns -- the document store's write
  * transactions and the collector's backfill -- so a reference row and the
  * document write that implies it commit or roll back together. There is no
- * HTTP route and no scheduled walk over documents.
+ * HTTP route and no scheduled walk over documents. The supported
+ * `retainDocumentAssets` helper is re-exported by `asset/pg` for host records
+ * that must keep assets within a document's lifetime independently of scenes.
  *
  * Two halves, deliberately separated:
  *
@@ -30,7 +32,8 @@
  *
  * A scope is `(stage_id, scope, scene_id)`: `scope = 'stage'` is the
  * stage-level slot -- stage whiteboards and the stage video manifest, which no
- * scene owns -- and `scope = 'scene'` is one scene's own slots. The
+ * scene owns -- and `scope = 'scene'` is one scene's own slots. A `retained`
+ * scope belongs to a server-owned record and survives ordinary document saves. The
  * distinction is a column rather than a reserved `scene_id` value because
  * scene ids are opaque: a scene whose id matched the sentinel would share a
  * key with the stage-level rows, and whichever scope was written second would
@@ -63,8 +66,8 @@ import type { Queryable } from '../runtime/pg.js';
 
 export type { Queryable } from '../runtime/pg.js';
 
-/** Which half of a document a reference row belongs to. */
-export type DocumentAssetScopeKind = 'stage' | 'scene';
+/** Which document slot or server-owned record a reference row belongs to. */
+export type DocumentAssetScopeKind = 'stage' | 'scene' | 'retained';
 
 /**
  * The `scene_id` stage-level rows carry. Empty rather than NULL so the primary
@@ -77,7 +80,7 @@ const STAGE_SCOPE_SCENE_ID = '';
 /** One reference scope of one stage: which rows to replace, and with what. */
 export interface DocumentAssetScope {
   readonly scope: DocumentAssetScopeKind;
-  /** The scene these candidates belong to; `''` on a stage-level scope. */
+  /** Scene/retained-record id, or `''` on a stage-level scope. */
   readonly sceneId: string;
   /** References the document holds in this scope, exactly as it holds them. */
   readonly candidates: readonly string[];
@@ -586,7 +589,8 @@ export interface SyncStageAssetReferencesInput {
 }
 
 /**
- * Replace every reference row of one stage: the full-save counterpart of
+ * Replace document-derived reference rows of one stage, preserving retained
+ * records: the full-save counterpart of
  * {@link syncDocumentAssetReferences}.
  *
  * Deleting the stage's rows and re-inserting from the scopes is what makes a
@@ -612,12 +616,44 @@ export async function syncStageAssetReferences(
   await lockWriteEntries(queryable, next, previous);
   await recordAssetReferenceTracking(queryable);
   await forgetDocumentAssetWithdrawal(queryable, stageId);
-  await queryable.query('DELETE FROM document_asset_refs WHERE stage_id = $1', [stageId]);
+  await queryable.query(
+    "DELETE FROM document_asset_refs WHERE stage_id = $1 AND scope <> 'retained'",
+    [stageId],
+  );
   for (const scope of scopes) {
     await insertScopeRows(queryable, stageId, scope, principals);
   }
   await commitReferencedEntries(queryable, next, principals);
   await stampUnreferencedEntries(queryable, previous);
+}
+
+/**
+ * Retain assets for a server-owned record within a document's lifetime.
+ * Run inside the record's creation transaction. Full saves and scene changes
+ * preserve these references; document deletion/withdrawal releases them.
+ * Callers authorize the document owner and pass only its allowed principals.
+ */
+export async function retainDocumentAssets(
+  queryable: Queryable,
+  input: {
+    readonly stageId: string;
+    readonly referenceId: string;
+    readonly assetIds: readonly string[];
+    readonly principals: readonly string[];
+  },
+): Promise<void> {
+  if (!input.referenceId || !isLosslessJsonString(input.referenceId))
+    throw new Error('A lossless retained-reference id is required.');
+  const stage = await queryable.query('SELECT id FROM document_stages WHERE id=$1 FOR UPDATE', [
+    input.stageId,
+  ]);
+  if (!stage.rows.length || (await documentAssetReferencesWithdrawn(queryable, input.stageId)))
+    throw new Error('Cannot retain assets for an unavailable document.');
+  await syncDocumentAssetReferences(queryable, {
+    stageId: input.stageId,
+    scope: { scope: 'retained', sceneId: input.referenceId, candidates: input.assetIds },
+    principals: input.principals,
+  });
 }
 
 /** Which rows to drop: one scene's, or every row of the stage. */

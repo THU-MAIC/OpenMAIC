@@ -87,6 +87,27 @@ export async function resolveProject(
   persistence?: ServerPersistenceProvider,
   sceneId?: string,
 ): Promise<InstalledProject> {
+  return resolveAuthorizedProject(ownerId, stageId, ref, persistence, { sceneId });
+}
+
+/** Only a persisted study's own retained reference authorizes this resolution path. */
+export async function resolveStudyProject(
+  ownerId: string,
+  stageId: string,
+  ref: PBLV3Reference,
+  studyId: string,
+  persistence?: ServerPersistenceProvider,
+): Promise<InstalledProject> {
+  return resolveAuthorizedProject(ownerId, stageId, ref, persistence, { studyId });
+}
+
+async function resolveAuthorizedProject(
+  ownerId: string,
+  stageId: string,
+  ref: PBLV3Reference,
+  persistence: ServerPersistenceProvider | undefined,
+  access: { sceneId?: string; studyId?: string },
+): Promise<InstalledProject> {
   if (!isPBLV3Reference(ref) || ref.packageId) throw unavailable();
   // Reads of public courses elsewhere are intentionally broader than project execution.
   const store = persistence ?? (await provider());
@@ -101,11 +122,15 @@ export async function resolveProject(
      JOIN document_asset_refs r ON r.asset_id=e.id
      WHERE r.stage_id=$1 AND p.asset_id=$2 AND p.checksum=$3 AND p.project_id=$4 AND p.project_version=$5
        AND e.principal=$6 AND e.content_hash=p.content_hash AND e.revision=1
-       AND ($7::text IS NULL OR EXISTS (
+       AND ${
+         access.studyId
+           ? "r.scope='retained' AND r.scene_id=$7"
+           : `r.scope IN ('stage','scene') AND ($7::text IS NULL OR EXISTS (
          SELECT 1 FROM document_scenes s WHERE s.stage_id=$1 AND s.id=$7
            AND s.data->'content'->'projectV3'->>'assetId'=p.asset_id
            AND s.data->'content'->'projectV3'->>'checksum'=p.checksum
-       ))`,
+       ))`
+       }`,
     [
       stageId,
       ref.assetId,
@@ -113,7 +138,7 @@ export async function resolveProject(
       ref.id,
       ref.version,
       assetPrincipalForOwner(ownerId).key,
-      sceneId ?? null,
+      access.studyId ?? access.sceneId ?? null,
     ],
   );
   if (!valid.rows.length) throw unavailable();

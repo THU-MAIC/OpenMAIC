@@ -2,6 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { applySchemaMigrations } from '@openmaic/storage/pg-migrations';
+import { retainDocumentAssets } from '@openmaic/storage/asset/pg';
 import { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
@@ -13,7 +14,9 @@ import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import type { PBLV3Reference } from '@openmaic/dsl';
 import type { InstalledProject } from './catalog';
-import { resolveProject } from './project-resolver';
+import { resolveStudyProject } from './project-resolver';
+import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
+import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
 
 export interface Study extends Record<string, unknown> {
   id: string;
@@ -101,6 +104,34 @@ CREATE TABLE pbl_v3_events (
       transaction: true,
       up: 'ALTER TABLE pbl_v3_studies ADD COLUMN project_reference JSONB;',
     },
+    {
+      version: 4,
+      name: 'retain-study-project-assets',
+      transaction: true,
+      up: `
+SELECT d.id FROM document_stages d
+ WHERE EXISTS (SELECT 1 FROM pbl_v3_studies s JOIN stage_meta m ON m.stage_id=s.stage_id
+   WHERE s.stage_id=d.id AND m.owner_id=s.owner_id AND m.deleted_at IS NULL
+     AND s.project_reference->>'assetId' IS NOT NULL)
+ ORDER BY d.id FOR UPDATE;
+SELECT e.id FROM asset_entries e
+ WHERE EXISTS (SELECT 1 FROM pbl_v3_studies s JOIN stage_meta m ON m.stage_id=s.stage_id
+   WHERE e.id=s.project_reference->>'assetId' AND e.principal='owner:' || s.owner_id
+     AND m.owner_id=s.owner_id AND m.deleted_at IS NULL)
+ ORDER BY e.id FOR UPDATE;
+INSERT INTO document_asset_refs(stage_id,scope,scene_id,asset_id)
+ SELECT s.stage_id,'retained',s.id,e.id FROM pbl_v3_studies s
+ JOIN document_stages d ON d.id=s.stage_id
+ JOIN stage_meta m ON m.stage_id=s.stage_id AND m.owner_id=s.owner_id AND m.deleted_at IS NULL
+ JOIN pbl_project_installations p ON p.asset_id=s.project_reference->>'assetId'
+ JOIN asset_entries e ON e.id=p.asset_id AND e.principal='owner:' || s.owner_id
+ WHERE p.checksum=s.project_reference->>'checksum' AND e.content_hash=p.content_hash AND e.revision=1
+   AND p.project_id=s.project_id AND p.project_version=s.project_version
+   AND p.project_id=s.project_reference->>'id' AND p.project_version=s.project_reference->>'version'
+ ON CONFLICT DO NOTHING;
+UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_at=NULL,unreferenced_at=NULL
+ WHERE EXISTS (SELECT 1 FROM document_asset_refs r WHERE r.asset_id=e.id AND r.scope='retained');`,
+    },
   ],
 };
 
@@ -123,8 +154,7 @@ export class LearningStore {
       throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
     const row = result.rows[0];
     if (row.project_reference?.assetId)
-      // Scene bindings admit new studies; an existing journey uses its persisted pin.
-      row.project = await resolveProject(ownerId, row.stage_id, row.project_reference);
+      row.project = await resolveStudyProject(ownerId, row.stage_id, row.project_reference, row.id);
     return row;
   }
   async binding(sessionId: string): Promise<RoleBinding | null> {
@@ -151,6 +181,21 @@ export class LearningStore {
     initial: EngineTransition,
   ) {
     return this.transaction(async (db) => {
+      const ref = input.projectRef;
+      if (ref?.assetId) {
+        await fenceOwnerWrite(db, input.ownerId);
+        const classroom = await db.query(
+          `SELECT d.id FROM document_stages d JOIN stage_meta m ON m.stage_id=d.id
+           WHERE d.id=$1 AND m.owner_id=$2 AND m.deleted_at IS NULL FOR UPDATE OF d`,
+          [input.stageId, input.ownerId],
+        );
+        if (!classroom.rows.length)
+          throw new SandboxError(
+            'PBL_PROJECT_UNAVAILABLE',
+            404,
+            'The owning classroom is unavailable.',
+          );
+      }
       const inserted = await db.query<Study>(
         `INSERT INTO pbl_v3_studies(id,owner_id,stage_id,scene_id,project_id,project_version,state,project_reference)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(owner_id,stage_id,scene_id) DO NOTHING RETURNING *`,
@@ -177,6 +222,41 @@ export class LearningStore {
         throw sandboxConflict('This learning instance is pinned to a different project version.');
       if ((row.project_reference?.checksum ?? null) !== (input.projectRef?.checksum ?? null))
         throw sandboxConflict('This learning instance is pinned to different project content.');
+      if (ref?.assetId) {
+        const pinned = row.project_reference!;
+        const installed = await db.query(
+          `SELECT 1 FROM pbl_project_installations p JOIN asset_entries e ON e.id=p.asset_id
+           WHERE p.asset_id=$3 AND e.principal=$4 AND e.content_hash=p.content_hash AND e.revision=1
+             AND p.checksum=$5 AND p.project_id=$6 AND p.project_version=$7
+             AND (NOT $8::boolean OR EXISTS (SELECT 1 FROM document_scenes s
+               WHERE s.stage_id=$1 AND s.id=$2
+                 AND s.data->'content'->'projectV3'->>'assetId'=p.asset_id
+                 AND s.data->'content'->'projectV3'->>'checksum'=p.checksum))
+           FOR UPDATE OF e`,
+          [
+            input.stageId,
+            input.sceneId,
+            pinned.assetId,
+            assetPrincipalForOwner(input.ownerId).key,
+            pinned.checksum,
+            pinned.id,
+            pinned.version,
+            inserted.rows.length > 0,
+          ],
+        );
+        if (!installed.rows.length)
+          throw new SandboxError(
+            'PBL_PROJECT_UNAVAILABLE',
+            404,
+            'The pinned project is unavailable or the scene changed before admission.',
+          );
+        await retainDocumentAssets(db, {
+          stageId: row.stage_id,
+          referenceId: row.id,
+          assetIds: [pinned.assetId!],
+          principals: [assetPrincipalForOwner(input.ownerId).key],
+        });
+      }
       if (inserted.rows.length) await this.events(db, row.id, initial);
       return row;
     });
