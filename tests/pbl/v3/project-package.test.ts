@@ -88,6 +88,70 @@ describe('self-contained PBL project packages', () => {
     expect(JSON.stringify(skill)).not.toContain('FUTURE REFERENCE');
     expect(() => packagedStageSkill(project, stage, 'greeting:0', 'coder')).toThrow('unavailable');
   });
+  it('rejects a stage whose bound documents overflow the teaching prompt budget', () => {
+    expect(() =>
+      validateProjectPackage(
+        revised((files) => {
+          files['docs/1.md'] = 'large course reference\n'.repeat(8000);
+        }),
+      ),
+    ).toThrow('Teaching resources exceed');
+  });
+  it.each(['combined documents', 'repeated root Skill', 'JSON escapes', 'UTF-8'])(
+    'counts %s in the per-stage teaching budget',
+    (kind) => {
+      const bundle = revised((files) => {
+        const spec = JSON.parse(files['project.json']);
+        const binding = spec.teaching[1];
+        if (kind === 'combined documents') {
+          files['docs/1.md'] = 'x'.repeat(20_000);
+          files['docs/extra.md'] = 'y'.repeat(20_000);
+          binding.documents.push('docs/extra.md');
+        } else if (kind === 'repeated root Skill') {
+          files[binding.entrypoint] = 'x'.repeat(3000);
+          binding.sections = Array.from({ length: 16 }, (_, i) => {
+            const name = `${String.fromCharCode(65 + i)}-teach.md`;
+            const path = `skills/1/${name}`;
+            files[path] = '';
+            return { name, path };
+          });
+        } else files['docs/1.md'] = kind === 'UTF-8' ? '课'.repeat(11_000) : '"\n'.repeat(9000);
+        files['project.json'] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow('Teaching resources exceed');
+    },
+  );
+  it('accepts the exact teaching budget without truncation and rejects one extra byte', () => {
+    const bundle = revised((files) => {
+      files['docs/1.md'] = '';
+      // Unbound resources remain portable without consuming this stage's prompt budget.
+      files['docs/unbound.md'] = 'x'.repeat(512 * 1024);
+    });
+    const payloadBytes = (project: ReturnType<typeof validateProjectPackage>['project']) => {
+      const skill = packagedStageSkill(
+        project,
+        project.definition.milestones[0].stages[0],
+        'greeting:0',
+        'discussion',
+      );
+      return Buffer.byteLength(
+        JSON.stringify({
+          referenceMaterials: skill.documents,
+          teachingInstructions: skill.content,
+        }),
+      );
+    };
+    const padding = 32 * 1024 - payloadBytes(validateProjectPackage(bundle).project);
+    const padded = (size: number) =>
+      indexProjectFiles(bundle.entry.id, bundle.entry.version, {
+        ...bundle.files,
+        'docs/1.md': 'x'.repeat(size),
+      });
+    const accepted = validateProjectPackage(padded(padding));
+    expect(payloadBytes(accepted.project)).toBe(32 * 1024);
+    expect(accepted.bundle.files['docs/1.md']).toBe('x'.repeat(padding));
+    expect(() => validateProjectPackage(padded(padding + 1))).toThrow('Teaching resources exceed');
+  });
   it('rejects corrupt, missing, unsafe, excessive and unsupported resources before installation', () => {
     const bundle = packageBuiltin(source());
     const corrupt = structuredClone(bundle);

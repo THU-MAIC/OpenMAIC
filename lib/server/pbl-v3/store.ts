@@ -117,13 +117,8 @@ export class LearningStore {
       throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
     const row = result.rows[0];
     if (row.project_reference?.assetId)
-      row.project = await resolveProject(
-        ownerId,
-        row.stage_id,
-        row.project_reference,
-        undefined,
-        row.scene_id,
-      );
+      // Scene bindings admit new studies; an existing journey uses its persisted pin.
+      row.project = await resolveProject(ownerId, row.stage_id, row.project_reference);
     return row;
   }
   async binding(sessionId: string): Promise<RoleBinding | null> {

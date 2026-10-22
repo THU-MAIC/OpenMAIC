@@ -17,6 +17,9 @@ import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import { AssetCollector } from '@openmaic/storage/asset/collector';
 import type { PBLV3Reference } from '@openmaic/dsl';
 import { STAGE_META_OWNERSHIP } from '@/lib/persistence/stage-meta-ownership';
+import { applySchemaMigrations } from '@openmaic/storage/pg-migrations';
+import { LearningStore, PBL_MIGRATIONS } from '@/lib/server/pbl-v3/store';
+import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import {
   assetReferencePrincipalsForOwner,
   assetPrincipalForOwner,
@@ -88,6 +91,19 @@ describe('persisted project templates and classroom lifecycle', () => {
     let courses = await getOwnerScopedDocumentStore('author-a');
     await courses.createDocument(document('original', ref));
     await courses.createDocument(document('copy', ref));
+    await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
+    let studies = new LearningStore(persistence.pool);
+    const study = await studies.create(
+      {
+        ownerId: 'author-a',
+        stageId: 'original',
+        sceneId: 'original-scene',
+        projectId: ref.id,
+        version: ref.version,
+        projectRef: ref,
+      },
+      startOrchestration(descriptor.definition),
+    );
     expect(
       (
         await persistence.pool.query('SELECT * FROM document_asset_refs WHERE asset_id=$1', [
@@ -113,7 +129,11 @@ describe('persisted project templates and classroom lifecycle', () => {
     await expect(
       resolveProject('author-a', 'original', ref, persistence, 'original-scene'),
     ).rejects.toMatchObject({ status: 404 });
-    await courses.putScene('original', document('original', ref).scenes[0]);
+    // An admitted study keeps its own pin even after its original scene changes.
+    expect((await studies.get(study.id, 'author-a')).project?.coursePackage?.bundle).toEqual(
+      bundle,
+    );
+    await expect(studies.get(study.id, 'author-b')).rejects.toMatchObject({ status: 404 });
     expect((await resolveProject('author-a', 'original', ref)).coursePackage?.bundle).toEqual(
       bundle,
     );
@@ -154,6 +174,7 @@ describe('persisted project templates and classroom lifecycle', () => {
     await database!.close();
     database = undefined;
     persistence = await boot(2);
+    studies = new LearningStore(persistence.pool);
     courses = await getOwnerScopedDocumentStore('author-a');
     foreignCourses = await getOwnerScopedDocumentStore('author-b');
     const resolved = await resolveProject('author-a', 'original', ref);
@@ -161,6 +182,9 @@ describe('persisted project templates and classroom lifecycle', () => {
       installedProject({ id: 'greeting-python-lab', version: '1.0.0' }).files,
     );
     expect(resolved.coursePackage?.bundle).toEqual(bundle);
+    const resumed = await studies.get(study.id, 'author-a');
+    expect(resumed.project_reference).toEqual(ref);
+    expect(resumed.project?.coursePackage?.bundle).toEqual(bundle);
     const exported = await exportProjectPackage('author-a', 'original', ref);
     const receiving = await installProjectPackage('author-b', exported);
     expect(receiving.assetId).not.toBe(ref.assetId);
@@ -168,6 +192,7 @@ describe('persisted project templates and classroom lifecycle', () => {
     await foreignCourses.createDocument(document('receiving', receiving));
     expect(await exportProjectPackage('author-b', 'receiving', receiving)).toEqual(exported);
     await courses.deleteDocument('original');
+    await expect(studies.get(study.id, 'author-a')).rejects.toMatchObject({ status: 404 });
     const collector = new AssetCollector(persistence.pool, new PgAssetByteStore(persistence.pool), {
       withTransaction: persistence.withTransaction,
       graceMs: 0,

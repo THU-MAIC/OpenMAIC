@@ -128,7 +128,13 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
       404,
       'The classroom does not contain this learning project.',
     );
-  const project = await resolveProject(principal.ownerId, stageId, content.projectV3);
+  const project = await resolveProject(
+    principal.ownerId,
+    stageId,
+    content.projectV3,
+    undefined,
+    sceneId,
+  );
   return (await LearningStore.open()).create(
     {
       ownerId: principal.ownerId,

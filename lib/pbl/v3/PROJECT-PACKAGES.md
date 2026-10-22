@@ -134,7 +134,10 @@ get separate entries. Different content claiming the same ID/version gets a
 separate checksum and never replaces a
 previous course. Transfer between authors uses export/import. Learning instances
 pin the full reference; changing a scene's content does not silently migrate
-its existing learning journey. Use a new scene for that new journey.
+its existing learning journey. Existing study reads use that saved pin rather
+than requiring the original scene to retain it. The owning classroom must remain
+live and still reference the template, and owner checks still apply. Use a new
+scene for a new journey.
 
 Every reload resolves durable bytes without an extraction directory or a
 process-local catalog. New workspaces seed missing starter files; existing source
@@ -149,7 +152,12 @@ restore reports unavailable resources.
 
 Version 1 supports UTF-8 text resources only: at most 256 PBL scenes, 16 projects,
 512 files and 8 MiB per classroom; 512 KiB per file. Export applies the same
-aggregate limits as import, counting each content checksum once. Tests/rubric files
+aggregate limits as import, counting each content checksum once. Each stage's combined
+bound documents and Skill sections must fit 32 KiB after JSON serialization to
+UTF-8, including repeated root-Skill text and JSON escapes. Oversized teaching
+bindings are rejected before installation; resources are never silently truncated.
+This budget covers course teaching resources, not conversation history or learner
+artifacts. Tests/rubric files
 total at most 24 KiB;
 starter source snapshots fit the runtime's 256-file / 1 MiB limit;
 each evaluation payload is at most 48 KiB. Generated build/evaluation commands must

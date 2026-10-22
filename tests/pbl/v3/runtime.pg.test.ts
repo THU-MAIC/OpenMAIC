@@ -1647,7 +1647,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it.each(['greeting-python-lab', 'greeting-java'])(
-    'runs an unregistered imported %s course from pinned teaching, starter and private evaluation resources',
+    'runs an unregistered imported %s course from pinned resources after its scene changes',
     async (projectId) => {
       const selected = installedProject({ id: projectId, version: '1.0.0' });
       const bundle = packageBuiltin(selected);
@@ -1720,6 +1720,20 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         },
         startOrchestration(descriptor.definition),
       );
+      const originalScene = (await documents.getScene(stageId, 'scene'))!;
+      await documents.putScene(stageId, { ...originalScene, id: 'retained-template' });
+      const replacementRef = await installProjectPackage(
+        principal.ownerId,
+        indexProjectFiles(importedId, selected.ref.version, {
+          ...bundle.files,
+          'docs/0.md': 'Replacement course introduction; existing learners must keep their pin.',
+        }),
+      );
+      await documents.putScene(stageId, {
+        ...originalScene,
+        type: 'pbl',
+        content: { type: 'pbl', projectV3: replacementRef },
+      });
       const lookup = vi.spyOn(catalog, 'installedProject');
       onTestFinished(() => lookup.mockRestore());
       const reloaded = await new LearningStore(pool).get(created.id, principal.ownerId);

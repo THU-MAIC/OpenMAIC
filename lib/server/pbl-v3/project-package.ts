@@ -58,6 +58,21 @@ const descriptorSchema = z
   })
   .strict();
 export type ProjectDescriptor = z.infer<typeof descriptorSchema>;
+
+function teachingResources(
+  bundle: PBLProjectPackage,
+  active: ProjectDescriptor['teaching'][number],
+) {
+  const root = bundle.files[active.entrypoint];
+  return {
+    content: Object.fromEntries(
+      active.sections.map((s) => [s.name, `${root}\n\n${bundle.files[s.path]}`]),
+    ),
+    progression: ['SKILL.md', ...active.sections.map((s) => s.name)],
+    documents: active.documents.map((path) => ({ path, text: bundle.files[path] })),
+  };
+}
+
 const evaluationSchema = z
   .object({
     prepare: z.array(z.string().max(16_384)).min(1).max(128).optional(),
@@ -332,6 +347,18 @@ export function validateProjectPackage(input: unknown): {
       return invalid(`Duplicate teaching section: ${item.stage}`);
     for (const s of item.sections) resource(s.path, 'skills');
     for (const doc of item.documents) resource(doc, 'docs');
+    const skill = teachingResources(bundle, item);
+    // Count the serialized prompt representation, including escapes and root-Skill repetition.
+    // Guided stages use a subset; nonguided stages include every section in their prompt.
+    if (
+      Buffer.byteLength(
+        JSON.stringify({
+          referenceMaterials: skill.documents,
+          teachingInstructions: skill.content,
+        }),
+      ) > PROJECT_LIMITS.teachingBytes
+    )
+      return invalid(`Teaching resources exceed the per-stage 32 KiB prompt budget: ${item.stage}`);
   }
   for (const { key, stage } of projectStages(config)) {
     if (stage.kind === 'course')
@@ -460,12 +487,5 @@ export function packagedStageSkill(
       documents: [] as { path: string; text: string }[],
     };
   if (!active) return invalid(`Teaching resources are unavailable for ${key}/${role}`);
-  const root = bundle.files[active.entrypoint];
-  return {
-    content: Object.fromEntries(
-      active.sections.map((s) => [s.name, `${root}\n\n${bundle.files[s.path]}`]),
-    ),
-    progression: ['SKILL.md', ...active.sections.map((s) => s.name)],
-    documents: active.documents.map((path) => ({ path, text: bundle.files[path] })),
-  };
+  return teachingResources(bundle, active);
 }
