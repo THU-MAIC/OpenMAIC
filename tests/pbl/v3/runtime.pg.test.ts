@@ -1747,6 +1747,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           type,
           ...payload,
         });
+      let oversizedPlanChecked = false;
       const turn = async (
         text: string,
         run: (config: Awaited<ReturnType<typeof teachingRunnerConfig>>) => Promise<void>,
@@ -1757,13 +1758,31 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           leaseTtlMs: 10000,
           maxAttempts: 5,
         });
-        const config = await teachingRunnerConfig({
+        const request = {
           sessionId: queued.sessionId,
           ownerId: principal.ownerId,
           workerId: 'package-worker',
           attempt: claimed!.attempt,
           signal: new AbortController().signal,
-        });
+        };
+        const current = await store.get(created.id, principal.ownerId);
+        const active = stageFor(current);
+        if (!oversizedPlanChecked && 'reads' in active && active.reads.includes('plan')) {
+          const path = join(mocked.root, current.environment_id!, 'PLAN.md');
+          const original = await readFile(path, 'utf8');
+          const calls = mocked.modelCalls;
+          try {
+            await writeFile(path, 'Learner plan '.repeat(4000));
+            await expect(teachingRunnerConfig(request)).rejects.toMatchObject({
+              code: 'PBL_PROMPT_SIZE',
+            });
+            expect(mocked.modelCalls).toBe(calls);
+            oversizedPlanChecked = true;
+          } finally {
+            await writeFile(path, original);
+          }
+        }
+        const config = await teachingRunnerConfig(request);
         await run(config);
         await agents.finishSession(queued.sessionId, 'package-worker', {
           status: 'succeeded',
@@ -1849,6 +1868,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         } else throw new Error(`Unexpected packaged stage: ${stage.kind}`);
       }
       expect(evaluations).toBe(2);
+      expect(oversizedPlanChecked).toBe(true);
       const finished = await new LearningStore(pool).get(created.id, principal.ownerId);
       expect(finished.project_reference).toEqual(projectRef);
       expect(finished.project?.coursePackage?.bundle.files['tests/private.py']).toBe(

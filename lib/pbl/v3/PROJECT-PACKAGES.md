@@ -152,12 +152,16 @@ restore reports unavailable resources.
 
 Version 1 supports UTF-8 text resources only: at most 256 PBL scenes, 16 projects,
 512 files and 8 MiB per classroom; 512 KiB per file. Export applies the same
-aggregate limits as import, counting each content checksum once. Each stage's combined
-bound documents and Skill sections must fit 32 KiB after JSON serialization to
-UTF-8, including repeated root-Skill text and JSON escapes. Oversized teaching
-bindings are rejected before installation; resources are never silently truncated.
-This budget covers course teaching resources, not conversation history or learner
-artifacts. Tests/rubric files
+aggregate limits as import, counting each content checksum once. Each stage's complete
+rendered system prompt plus its guided Skill replies must fit 32 KiB of UTF-8.
+Validation uses the runtime prompt builder, counting role templates, common rules,
+goals, contracts, projected decisions, all intro variants, bound documents/Skills,
+starter plans, package-derived evaluation feedback, server instructions and JSON
+escapes. It includes test-failure tutoring even without a teaching binding.
+Oversized prompts are rejected before installation; resources are never silently
+truncated. Runtime checks the same budget again before model invocation, including
+later learner plan edits. Conversation history has a separate teaching context
+window. Tests/rubric files
 total at most 24 KiB;
 starter source snapshots fit the runtime's 256-file / 1 MiB limit;
 each evaluation payload is at most 48 KiB. Generated build/evaluation commands must

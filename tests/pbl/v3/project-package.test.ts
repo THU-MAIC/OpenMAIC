@@ -95,7 +95,74 @@ describe('self-contained PBL project packages', () => {
           files['docs/1.md'] = 'large course reference\n'.repeat(8000);
         }),
       ),
-    ).toThrow('Teaching resources exceed');
+    ).toThrow('Teaching prompt exceeds');
+  });
+  it.each([
+    'systemPrompt',
+    'commonRules',
+    'goal',
+    'title',
+    'contract',
+    'intro',
+    'onboarding',
+    'decision',
+    'remediation',
+    'starter plan',
+    'combined fields',
+  ])('rejects oversized package-controlled %s in the complete teaching prompt', (field) => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      const large = 'course-controlled text '.repeat(2000);
+      const milestone = spec.definition.milestones[0];
+      if (field === 'starter plan') files['skeleton/PLAN.md'] = large;
+      else if (field === 'combined fields') {
+        spec.definition.agents.mentor.systemPrompt = 'x'.repeat(8000);
+        spec.definition.agents.commonRules = 'x'.repeat(8000);
+        spec.definition.intro.say = 'x'.repeat(8000);
+        milestone.goal = 'x'.repeat(8000);
+      } else if (field === 'systemPrompt') spec.definition.agents.mentor.systemPrompt = large;
+      else if (field === 'commonRules') spec.definition.agents.commonRules = large;
+      else if (field === 'goal' || field === 'title' || field === 'contract')
+        milestone[field] = large;
+      else if (field === 'intro') spec.definition.intro.say = large;
+      else if (field === 'onboarding') {
+        spec.definition.releaseOnboardings = [
+          { id: 'large-onboarding', intro: { ...spec.definition.intro, say: large } },
+        ];
+        spec.definition.defaultReleaseOnboardingId = 'large-onboarding';
+      } else if (field === 'decision') spec.definition.decisions[0].options[0].summary = large;
+      else {
+        // Only the failed-test teaching path reads this contract.
+        for (const stage of milestone.stages)
+          if ('reads' in stage)
+            stage.reads = stage.reads.filter((read: string) => read !== 'contract');
+        milestone.contract = large;
+      }
+      files['project.json'] = JSON.stringify(spec);
+    });
+    expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
+  });
+  it('counts package-derived evaluation feedback duplicated in failure tutoring', () => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      spec.definition.agents.coder.systemPrompt = 'x'.repeat(17_000);
+      const name = spec.runtime.evaluations.greeting;
+      const evaluation = JSON.parse(files[name]);
+      evaluation.cases[0].id = 'y'.repeat(7900);
+      files[name] = JSON.stringify(evaluation);
+      files['project.json'] = JSON.stringify(spec);
+    });
+    expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
+  });
+  it('preserves large metadata that never enters a teaching prompt', () => {
+    const bundle = revised((files) => {
+      const spec = JSON.parse(files['project.json']);
+      spec.definition.title = 'x'.repeat(40_000);
+      spec.definition.agents.mentor.teachingSystemPrompt = 'x'.repeat(40_000);
+      spec.definition.milestones[0].quiz[0].explain = 'x'.repeat(40_000);
+      files['project.json'] = JSON.stringify(spec);
+    });
+    expect(validateProjectPackage(bundle).bundle).toEqual(bundle);
   });
   it.each(['combined documents', 'repeated root Skill', 'JSON escapes', 'UTF-8'])(
     'counts %s in the per-stage teaching budget',
@@ -118,7 +185,7 @@ describe('self-contained PBL project packages', () => {
         } else files['docs/1.md'] = kind === 'UTF-8' ? '课'.repeat(11_000) : '"\n'.repeat(9000);
         files['project.json'] = JSON.stringify(spec);
       });
-      expect(() => validateProjectPackage(bundle)).toThrow('Teaching resources exceed');
+      expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
     },
   );
   it('accepts the exact teaching budget without truncation and rejects one extra byte', () => {
@@ -127,30 +194,26 @@ describe('self-contained PBL project packages', () => {
       // Unbound resources remain portable without consuming this stage's prompt budget.
       files['docs/unbound.md'] = 'x'.repeat(512 * 1024);
     });
-    const payloadBytes = (project: ReturnType<typeof validateProjectPackage>['project']) => {
-      const skill = packagedStageSkill(
-        project,
-        project.definition.milestones[0].stages[0],
-        'greeting:0',
-        'discussion',
-      );
-      return Buffer.byteLength(
-        JSON.stringify({
-          referenceMaterials: skill.documents,
-          teachingInstructions: skill.content,
-        }),
-      );
-    };
-    const padding = 32 * 1024 - payloadBytes(validateProjectPackage(bundle).project);
     const padded = (size: number) =>
       indexProjectFiles(bundle.entry.id, bundle.entry.version, {
         ...bundle.files,
         'docs/1.md': 'x'.repeat(size),
       });
-    const accepted = validateProjectPackage(padded(padding));
-    expect(payloadBytes(accepted.project)).toBe(32 * 1024);
-    expect(accepted.bundle.files['docs/1.md']).toBe('x'.repeat(padding));
-    expect(() => validateProjectPackage(padded(padding + 1))).toThrow('Teaching resources exceed');
+    let acceptedBytes = 0,
+      rejectedBytes = 32 * 1024;
+    expect(() => validateProjectPackage(padded(rejectedBytes))).toThrow('Teaching prompt exceeds');
+    while (rejectedBytes - acceptedBytes > 1) {
+      const candidate = Math.floor((acceptedBytes + rejectedBytes) / 2);
+      try {
+        validateProjectPackage(padded(candidate));
+        acceptedBytes = candidate;
+      } catch {
+        rejectedBytes = candidate;
+      }
+    }
+    const accepted = validateProjectPackage(padded(acceptedBytes));
+    expect(accepted.bundle.files['docs/1.md']).toBe('x'.repeat(acceptedBytes));
+    expect(() => validateProjectPackage(padded(rejectedBytes))).toThrow('Teaching prompt exceeds');
   });
   it('rejects corrupt, missing, unsafe, excessive and unsupported resources before installation', () => {
     const bundle = packageBuiltin(source());

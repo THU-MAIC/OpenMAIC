@@ -11,7 +11,10 @@ import { SandboxError } from '@/lib/sandbox/errors';
 import { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
 import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
-import { evaluationCommand } from './evaluation';
+import { evaluationCommand, evaluationFeedback } from './evaluation';
+import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
+import { createRemediationHint } from '@/lib/pbl/v3/domain/orchestration/remediation';
+import { renderTeachingPrompt } from './teaching-prompt';
 import { stageSkill } from './skills';
 import { validSourcePath } from './workspace-files';
 
@@ -342,23 +345,16 @@ export function validateProjectPackage(input: unknown): {
       return invalid(`Invalid teaching role/stage binding: ${item.stage}`);
     if (keys.has(item.stage)) return invalid(`Duplicate teaching binding: ${item.stage}`);
     keys.add(item.stage);
-    resource(item.entrypoint, 'skills');
+    const root = resource(item.entrypoint, 'skills');
     if (new Set(item.sections.map((s) => s.name)).size !== item.sections.length)
       return invalid(`Duplicate teaching section: ${item.stage}`);
-    for (const s of item.sections) resource(s.path, 'skills');
-    for (const doc of item.documents) resource(doc, 'docs');
-    const skill = teachingResources(bundle, item);
-    // Count the serialized prompt representation, including escapes and root-Skill repetition.
-    // Guided stages use a subset; nonguided stages include every section in their prompt.
-    if (
-      Buffer.byteLength(
-        JSON.stringify({
-          referenceMaterials: skill.documents,
-          teachingInstructions: skill.content,
-        }),
-      ) > PROJECT_LIMITS.teachingBytes
-    )
-      return invalid(`Teaching resources exceed the per-stage 32 KiB prompt budget: ${item.stage}`);
+    let teachingBytes = 0;
+    for (const s of item.sections)
+      teachingBytes += Buffer.byteLength(root) + 2 + Buffer.byteLength(resource(s.path, 'skills'));
+    for (const doc of item.documents) teachingBytes += Buffer.byteLength(resource(doc, 'docs'));
+    // Avoid expanding large repeated resources before the complete rendered-prompt check below.
+    if (teachingBytes > PROJECT_LIMITS.teachingBytes)
+      return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${item.stage}`);
   }
   for (const { key, stage } of projectStages(config)) {
     if (stage.kind === 'course')
@@ -391,18 +387,118 @@ export function validateProjectPackage(input: unknown): {
   for (const ref of config.definition.visibility.testSupport) resource(ref, 'tests');
   for (const refs of Object.values(config.definition.visibility.roleViews))
     for (const ref of refs) resource(ref, 'docs');
-  return {
-    bundle,
-    project: {
-      ref: { id: config.id, version: config.version },
-      definition: config.definition,
-      files,
-      sourceRoots: config.runtime.sourceRoots,
-      evaluations,
-      buildCommand,
-      coursePackage: { bundle, descriptor: config },
-    },
+  const project: InstalledProject = {
+    ref: { id: config.id, version: config.version },
+    definition: config.definition,
+    files,
+    sourceRoots: config.runtime.sourceRoots,
+    evaluations,
+    buildCommand,
+    coursePackage: { bundle, descriptor: config },
   };
+  validateTeachingPrompts(project);
+  return { bundle, project };
+}
+
+/** Render all executable teaching contexts, including paths without a teaching binding. */
+function validateTeachingPrompts(project: InstalledProject) {
+  const definition = project.definition;
+  for (const [index, milestone] of definition.milestones.entries()) {
+    const contexts = milestone.stages.map((stage, i) => ({ key: `${milestone.id}:${i}`, stage }));
+    if (index === 0)
+      contexts.push(
+        { key: 'intro:-1', stage: definition.intro },
+        ...definition.releaseOnboardings.map(({ intro }) => ({ key: 'intro:-1', stage: intro })),
+      );
+    const collected = createCollectedMilestoneState();
+    collected.decisions = milestone.decisions.map((id) => {
+      const options = definition.decisions.find((decision) => decision.id === id)!.options;
+      const chosen = options.reduce(
+        (longest, option) =>
+          Buffer.byteLength(JSON.stringify(option.id)) > Buffer.byteLength(JSON.stringify(longest))
+            ? option.id
+            : longest,
+        '',
+      );
+      return { id, chosen, revision: 0 };
+    });
+    const spec = project.evaluations[milestone.id];
+    if (spec) {
+      // These case IDs are authored by the package and reach recap/repair prompts through feedback.
+      const feedback = evaluationFeedback(
+        `${spec.cases.length} / ${spec.cases.length} checks passed\nBuild failed or could not complete. Run the build check for diagnostics.\n` +
+          spec.cases.map((item) => `${item.id}: did not satisfy the project contract`).join('\n'),
+      );
+      collected.tests = {
+        id: '00000000-0000-0000-0000-000000000000',
+        status: 'failed',
+        evaluator: 'exit-code',
+        milestoneId: milestone.id,
+        stageIndex: 0,
+        revision: { id: '0'.repeat(64), provider: 'local-snapshot', createdAt: '' },
+        decisionRecordIds: [],
+        codeArtifactId: '00000000-0000-0000-0000-000000000000',
+        startedAt: '',
+        completedAt: '',
+        publicFeedback: feedback,
+      };
+    }
+    collected.code = {
+      id: '',
+      kind: 'code',
+      milestoneId: milestone.id,
+      revision: 0,
+      value: 'Reviewed sandbox files',
+    };
+    collected.quiz = {
+      id: '',
+      attempt: Number.MAX_SAFE_INTEGER,
+      passed: false,
+      score: 0,
+      total: milestone.quiz.length,
+      wrong: milestone.quiz.map((_, i) => i),
+    };
+    for (const { key, stage } of contexts) {
+      const role =
+        'agent' in stage
+          ? stage.agent
+          : stage.kind === 'check' && stage.checker === 'tests'
+            ? 'coder'
+            : null;
+      if (!role) continue;
+      collected.remediation =
+        stage.kind === 'check' && collected.tests
+          ? createRemediationHint(collected.tests, {
+              id: '00000000-0000-0000-0000-000000000000',
+              attempt: Number.MAX_SAFE_INTEGER,
+            })
+          : null;
+      const skill = packagedStageSkill(project, stage, key, role);
+      const activeSection = skill.progression
+        .slice(1)
+        .reduce(
+          (longest, name) =>
+            Buffer.byteLength(JSON.stringify(name)) > Buffer.byteLength(JSON.stringify(longest))
+              ? name
+              : longest,
+          '',
+        );
+      const { bytes } = renderTeachingPrompt({
+        definition,
+        stage,
+        milestone,
+        role,
+        stageKey: key,
+        skill,
+        packaged: true,
+        collected,
+        planText: project.files['PLAN.md'],
+        activeSection,
+      });
+      if (bytes > PROJECT_LIMITS.teachingBytes)
+        return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${key}/${role}`);
+    }
+  }
 }
 
 /** Convert public built-ins through the same contract used by imported projects. */
