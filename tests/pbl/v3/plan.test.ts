@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-import { assertIncrementalPlan } from '@/lib/server/pbl-v3/plan';
+import { assertLearningPlan } from '@/lib/server/pbl-v3/plan';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { digest } from '@/lib/server/pbl-v3/runtime';
@@ -23,11 +23,11 @@ it('preserves a full approved plan even when report evidence is clipped', async 
   const row = { state, project_id: project.ref.id, project_version: project.ref.version } as Study;
   const store = { pool: { query: vi.fn() } } as unknown as LearningStore;
   await expect(
-    assertIncrementalPlan(store, row, text + '\nNew milestone', true),
+    assertLearningPlan(store, row, text + '\nNew milestone', true),
   ).resolves.toBeUndefined();
-  await expect(assertIncrementalPlan(store, row, text, true)).rejects.toThrow('append');
+  await expect(assertLearningPlan(store, row, text, true)).rejects.toThrow('append');
   await expect(
-    assertIncrementalPlan(store, row, text.replace('Earlier', 'Changed') + '\nNew', true),
+    assertLearningPlan(store, row, text.replace('Earlier', 'Changed') + '\nNew', true),
   ).rejects.toThrow('Preserve');
   expect(store.pool.query).not.toHaveBeenCalled();
 });

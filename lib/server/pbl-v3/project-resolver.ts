@@ -1,6 +1,7 @@
 import 'server-only';
 import type { PBLProjectPackage, PBLV3Reference } from '@openmaic/dsl';
 import { isPBLV3Reference } from '@openmaic/dsl';
+import { AssetQuotaExceededError } from '@openmaic/storage';
 import {
   getServerPersistenceProvider,
   type ServerPersistenceProvider,
@@ -60,11 +61,27 @@ export async function installProjectPackage(
       }
     }
     if (!assetId) {
-      assetId = await store
-        .assetStoreIn(db)
-        .put(assetPrincipalForOwner(ownerId), new Blob([bytes], { type: MIME }), {
-          contentType: MIME,
-        });
+      try {
+        assetId = await store
+          .assetStoreIn(db)
+          .put(assetPrincipalForOwner(ownerId), new Blob([bytes], { type: MIME }), {
+            contentType: MIME,
+          });
+      } catch (error) {
+        if (
+          error instanceof AssetQuotaExceededError ||
+          (error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            error.code === 'ASSET_QUOTA_EXCEEDED')
+        )
+          throw new SandboxError(
+            'ASSET_QUOTA_EXCEEDED',
+            507,
+            'Storage is full. Free storage space before importing this project.',
+          );
+        throw error;
+      }
       await db.query(
         'INSERT INTO pbl_project_installations(asset_id,project_id,project_version,checksum,content_hash) VALUES($1,$2,$3,$4,$5)',
         [assetId, bundle.entry.id, bundle.entry.version, bundle.entry.checksum, hash],

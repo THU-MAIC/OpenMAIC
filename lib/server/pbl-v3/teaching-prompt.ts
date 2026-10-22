@@ -133,10 +133,7 @@ function buildTeachingPrompt({
           : {}),
         ...(guided && pendingReview
           ? {
-              currentReview: {
-                question: pendingReview.question,
-                studentResponses: pendingReview.studentResponses,
-              },
+              currentReview: teachingReview(pendingReview),
             }
           : {}),
         ...(stage.kind === 'check'
@@ -211,7 +208,7 @@ function buildTeachingPrompt({
         ? '\nPlanning permits changes to PLAN.md only. Source editing, commands and terminals are unavailable. Review the plan and the learner’s reasoning; do not require code implementation or execution for plan approval.'
         : '') +
     (guided
-      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening completed sections and point to the task-bar Continue action. Otherwise, when activeSection is null, begin with read_next_skill. Never tell the learner to Continue before complete_stage succeeds for the current stage and evidence. Use read_next_skill to open one section at a time. After delivering a section use request_skill_review and wait for a NEW student reply. Assess the actual studentResponses bound to currentReview, combining replies when needed. Supply studentFeedback as an explanation of how those replies answer the question; quoting or summarizing is allowed, but never invent a reply. If understanding is missing, clarify rather than advance. A short confirmation is sufficient only when the question asks for confirmation. Once final feedback is sufficient, use complete_stage as the last action instead of adding more questions. A completed tool is only a completion signal; the learner separately confirms progression.'
+      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening completed sections and point to the task-bar Continue action. Otherwise, when activeSection is null, begin with read_next_skill. Never tell the learner to Continue before complete_stage succeeds for the current stage and evidence. Use read_next_skill to open one section at a time. After delivering a section use request_skill_review and wait for a NEW student reply. currentReview records the question and count of eligible replies; their full text remains in the current-stage learner messages. Assess those actual replies, combining them when needed. Supply studentFeedback as an explanation of how those replies answer the question; quoting or summarizing is allowed, but never invent a reply. If understanding is missing, clarify rather than advance. A short confirmation is sufficient only when the question asks for confirmation. Once final feedback is sufficient, use complete_stage as the last action instead of adding more questions. A completed tool is only a completion signal; the learner separately confirms progression.'
       : exploring
         ? '\nThis is optional, ongoing exploration. Discuss the learner’s goal, inspect current files, make focused changes and explain how to verify them. There is no fixed review sequence or completion signal. Preserve existing work; viewing the report never ends exploration.'
         : repairing
@@ -220,6 +217,13 @@ function buildTeachingPrompt({
             ? '\nBriefly introduce the current test or quiz and point to its task drawer above the composer. Do not give answers, run checks, or claim results. Wait for the learner to use the controls.'
             : '\nDiscuss only the current decisions. The learner records choices using the project controls.')
   );
+}
+
+/** Learner text belongs to durable conversation history, outside the course-resource budget. */
+function teachingReview(review: TeachingPromptInput['pendingReview']) {
+  return review
+    ? { question: review.question, studentResponseCount: review.studentResponses.length }
+    : null;
 }
 
 /** The runner refreshes this state at every model-call boundary after tool mutations. */
@@ -236,8 +240,7 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
       input.skill.progression[(input.reviewedSectionCount ?? 0) + (input.activeSection ? 2 : 1)] ??
       null,
     finalSection: input.skill.progression.at(-1)!,
-    currentQuestion: input.pendingReview?.question ?? null,
-    studentResponses: input.pendingReview?.studentResponses ?? [],
+    currentReview: teachingReview(input.pendingReview),
   });
 }
 

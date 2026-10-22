@@ -22,12 +22,28 @@ export async function POST(request: Request) {
       )
         throw sandboxInvalid('A classroom and valid project references are required.');
       const projects = [];
+      const projectIndexes = [];
+      const byReference = new Map<string, number>();
+      const byChecksum = new Map<string, number>();
       for (const ref of body.refs as PBLV3Reference[]) {
-        projects.push(await exportProjectPackage(ownerId, body.stageId, ref));
+        const key = JSON.stringify([ref.id, ref.version, ref.assetId, ref.checksum, ref.packageId]);
+        let index = byReference.get(key);
+        if (index === undefined) {
+          // Authorize every distinct pin, but serialize shared content only once.
+          const project = await exportProjectPackage(ownerId, body.stageId, ref);
+          index = byChecksum.get(project.entry.checksum);
+          if (index === undefined) {
+            index = projects.length;
+            projects.push(project);
+            byChecksum.set(project.entry.checksum, index);
+          }
+          byReference.set(key, index);
+        }
+        projectIndexes.push(index);
         if (!projectResourcesWithinLimits(projects.map(({ entry }) => entry)))
           throw sandboxInvalid('Classroom project resource limit exceeded.');
       }
-      return Response.json({ projects });
+      return Response.json({ projects, projectIndexes });
     }
     if (
       body.action !== 'install' ||

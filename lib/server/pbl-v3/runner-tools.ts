@@ -27,7 +27,7 @@ import {
   invalidateWorkspace,
 } from './runtime';
 import { touchEnvironment, assertEnvironmentReady } from './environment';
-import { assertIncrementalPlan } from './plan';
+import { assertLearningPlan } from './plan';
 import { startBuild, collectBuild, assertBuilt } from './compilation';
 import { packagedStageSkill } from './project-package';
 import {
@@ -233,7 +233,7 @@ export async function teachingRunnerConfig(input: {
             throw sandboxConflict('This role cannot write that file.');
           assertProjectSource(project, p.path);
           if (guided) review.assertWritable();
-          if (p.path === 'PLAN.md') await assertIncrementalPlan(store, current, p.text);
+          if (p.path === 'PLAN.md') await assertLearningPlan(store, current, p.text);
           const changed = await (
             await service(signal)
           ).compareAndWriteText(
@@ -368,6 +368,16 @@ export async function teachingRunnerConfig(input: {
         async (current, p, _callId, signal) => {
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
+          // Refuse an oversized question before persisting a receipt that would block the next turn.
+          const prospective = {
+            ...currentPromptInput(),
+            pendingReview: { question: p.question, studentResponses: [] },
+          };
+          assertPromptBudget(renderTeachingPrompt(prospective).bytes);
+          assertPromptBudget(
+            Buffer.byteLength(systemPrompt + teachingLiveSuffix(teachingLiveContext(prospective))) +
+              sectionBytes,
+          );
           review.checkpoint(p.question, hash);
           return { value: { question: p.question, waitForStudent: true } };
         },
@@ -403,7 +413,7 @@ export async function teachingRunnerConfig(input: {
             if (stage.writes === 'plan' && !files['PLAN.md']?.trim())
               throw sandboxConflict('PLAN.md must contain the learner’s plan.');
             if (stage.writes === 'plan')
-              await assertIncrementalPlan(store, current, files['PLAN.md']!, true);
+              await assertLearningPlan(store, current, files['PLAN.md']!, true);
             if (
               stage.writes === 'code' &&
               !Object.entries(files).some(([path, text]) => path !== 'PLAN.md' && text.trim())

@@ -397,12 +397,26 @@ export function validateProjectPackage(input: unknown): {
     buildCommand,
     coursePackage: { bundle, descriptor: config },
   };
-  validateTeachingPrompts(project);
+  const oversized = oversizedTeachingPrompt(project, project.files['PLAN.md']);
+  if (oversized)
+    return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${oversized}`);
   return { bundle, project };
 }
 
+/** Check future plan consumers before learners leave the stage where PLAN.md is editable. */
+export function assertProjectPlanPromptBudget(project: InstalledProject, planText: string) {
+  if (!project.coursePackage) return;
+  const oversized = oversizedTeachingPrompt(project, planText);
+  if (oversized)
+    throw new SandboxError(
+      'PBL_PROMPT_SIZE',
+      400,
+      `Plan exceeds the 32 KiB teaching budget for ${oversized}. Shorten PLAN.md before continuing.`,
+    );
+}
+
 /** Render all executable teaching contexts, including paths without a teaching binding. */
-function validateTeachingPrompts(project: InstalledProject) {
+function oversizedTeachingPrompt(project: InstalledProject, planText: string) {
   const definition = project.definition;
   for (const [index, milestone] of definition.milestones.entries()) {
     const contexts = milestone.stages.map((stage, i) => ({ key: `${milestone.id}:${i}`, stage }));
@@ -518,11 +532,10 @@ function validateTeachingPrompts(project: InstalledProject) {
             skill,
             packaged: true,
             collected,
-            planText: project.files['PLAN.md'],
+            planText,
             activeSection,
           });
-          if (bytes > PROJECT_LIMITS.teachingBytes)
-            return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${key}/${role}`);
+          if (bytes > PROJECT_LIMITS.teachingBytes) return `${key}/${role}`;
         }
     }
   }

@@ -16,6 +16,7 @@ import { installProjectPackage } from '@/lib/server/pbl-v3/project-resolver';
 import {
   packageBuiltin,
   indexProjectFiles,
+  validateProjectPackage,
   type ProjectDescriptor,
 } from '@/lib/server/pbl-v3/project-package';
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
@@ -282,7 +283,8 @@ vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
     reservedOutputTokens: 8192,
   }),
 }));
-vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', () => ({
+vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/server/agent-runtime/owner-scoped-documents')>()),
   getBackgroundDocumentStore: async () => ({}),
 }));
 vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
@@ -312,6 +314,7 @@ import { SandboxError } from '@/lib/sandbox/errors';
 import { LearningStore } from '@/lib/server/pbl-v3/store';
 import {
   commandStudy,
+  openStudy,
   learningView,
   digest,
   stageFor,
@@ -954,7 +957,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         await invoke(config, 'request_skill_review', { question: 'Compare return and print.' });
       });
       await runTools(answer, async (config) => {
-        expect(config.systemPrompt).toContain(answer);
+        expect(config.systemPrompt).toContain('"studentResponseCount":1');
+        expect(config.systemPrompt).not.toContain(answer);
         await invoke(config, 'read_next_skill', { studentFeedback: `Student reply: "${answer}"` });
         await invoke(config, 'request_skill_review', {
           question: 'Explain how the caller uses it.',
@@ -964,15 +968,21 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         ).rejects.toThrow();
       });
       await runTools(first, async (config) => {
-        expect(config.systemPrompt).toContain(first);
+        expect(config.systemPrompt).toContain('"studentResponseCount":1');
+        expect(config.systemPrompt).not.toContain(first);
         expect(config.systemPrompt).not.toContain(answer);
         // A clarification turn does not replace the pending review or discard its first reply.
         await invoke(config, 'read_next_skill');
       });
       await runTools(second, async (config) => {
-        expect(config.systemPrompt).toContain(first);
-        expect(config.systemPrompt).toContain(second);
+        expect(config.systemPrompt).toContain('"studentResponseCount":2');
+        expect(config.systemPrompt).not.toContain(first);
+        expect(config.systemPrompt).not.toContain(second);
         expect(config.systemPrompt).not.toContain(answer);
+        const sessionId = (await store.roles(studyId))[0]!.session_id;
+        expect((await agents.listUserMessages(sessionId)).map(({ text }) => text)).toEqual(
+          expect.arrayContaining([answer, first, second]),
+        );
         await invoke(config, 'read_next_skill', {
           studentFeedback:
             'Across both replies, the learner distinguishes returning from displaying.',
@@ -1100,8 +1110,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       signal: new AbortController().signal,
     });
     expect(replyConfig.systemPrompt).toContain('"automatic":false');
-    expect(replyConfig.systemPrompt).toContain('"studentResponses":[{');
-    expect(replyConfig.systemPrompt).not.toContain('"studentResponses":[{"seq":0');
+    expect(replyConfig.systemPrompt).toContain('"studentResponseCount":1');
     await agents.finishSession(started.sessionId, 'reply-worker', {
       status: 'succeeded',
       expectedAttempt: reply!.attempt,
@@ -2445,6 +2454,24 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       for (const milestone of descriptor.definition.milestones)
         descriptor.runtime.evaluations[milestone.id] = 'tests/private.json';
       bundle.files['project.json'] = JSON.stringify(descriptor);
+      // Build a valid course close to the actual 32 KiB budget, with room for a short question.
+      const introDoc = descriptor.teaching.find((binding) => binding.stage !== 'intro:-1')!
+          .documents[0]!,
+        introText = bundle.files[introDoc];
+      validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
+      let low = 0,
+        high = 4500;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        bundle.files[introDoc] = introText + 'x'.repeat(middle);
+        try {
+          validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
+          low = middle;
+        } catch {
+          high = middle - 1;
+        }
+      }
+      bundle.files[introDoc] = introText + 'x'.repeat(Math.max(0, low - 256));
       const projectRef = await installProjectPackage(
         principal.ownerId,
         indexProjectFiles(importedId, selected.ref.version, bundle.files),
@@ -2494,7 +2521,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         type: 'pbl',
         content: { type: 'pbl', projectV3: replacementRef },
       });
+      // The browser reopens by classroom/scene after every refresh, without a study id.
+      const reopened = await openStudy(principal, stageId, 'scene');
+      expect(reopened.id).toBe(created.id);
+      expect(reopened.project_reference).toEqual(projectRef);
+      expect(reopened.project?.coursePackage?.descriptor.id).toBe(importedId);
+      await expect(
+        openStudy({ ...principal, ownerId: 'foreign-owner' }, stageId, 'scene'),
+      ).rejects.toMatchObject({ status: 404 });
       await documents.deleteScene(stageId, 'scene');
+      expect((await openStudy(principal, stageId, 'scene')).id).toBe(created.id);
       const lookup = vi.spyOn(catalog, 'installedProject');
       onTestFinished(() => lookup.mockRestore());
       const reloaded = await new LearningStore(pool).get(created.id, principal.ownerId);
@@ -2509,6 +2545,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           ...payload,
         });
       let oversizedPlanChecked = false;
+      let longReplyChecked = false;
+      let oversizedQuestionChecked = false;
+      let oversizedPlanWriteChecked = false;
+      let oversizedPlanSaveChecked = false;
       const turn = async (
         text: string,
         run: (config: Awaited<ReturnType<typeof teachingRunnerConfig>>) => Promise<void>,
@@ -2597,8 +2637,28 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           expect((await learningReport(principal, created.id)).requiredComplete).toBe(true);
           break;
         } else if (stage.kind === 'mentor_say' || stage.kind === 'produce') {
+          if (stage.kind === 'produce' && stage.writes === 'plan' && !oversizedPlanSaveChecked) {
+            const original = await service.readText(environmentId, 'PLAN.md');
+            await expect(
+              send('save', {
+                path: 'PLAN.md',
+                text: original + '\n' + 'Learner plan '.repeat(4000),
+                expectedHash: digest(original),
+              }),
+            ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
+            expect(await service.readText(environmentId, 'PLAN.md')).toBe(original);
+            oversizedPlanSaveChecked = true;
+          }
           const teaching = descriptor.teaching.find((binding) => binding.stage === key)!;
-          for (let part = 0; part < teaching.sections.length; part++)
+          for (let part = 0; part < teaching.sections.length; part++) {
+            if (part === 1 && !longReplyChecked) {
+              const longReply = 'My explanation of this course section. '.repeat(1500);
+              await turn(longReply, async (config) => {
+                expect(config.systemPrompt).not.toContain(longReply);
+                expect(config.liveContext()).toContain('"studentResponseCount":1');
+              });
+              longReplyChecked = true;
+            }
             await turn(part ? 'I reviewed this section.' : 'Please start.', async (config) => {
               const section = await invoke(config, 'read_next_skill', {
                 ...(part ? { studentFeedback: 'I reviewed this section.' } : {}),
@@ -2613,6 +2673,18 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                       ? 'src/Greeting.java'
                       : 'src/greeting.py';
                 const original = await service.readText(environmentId, path);
+                if (stage.writes === 'plan' && !oversizedPlanWriteChecked) {
+                  const oversized = original + '\n' + 'Learner plan '.repeat(4000);
+                  await expect(
+                    invoke(config, 'write_file', {
+                      path,
+                      text: oversized,
+                      expectedHash: digest(original),
+                    }),
+                  ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
+                  expect(await service.readText(environmentId, path)).toBe(original);
+                  oversizedPlanWriteChecked = true;
+                }
                 await invoke(config, 'write_file', {
                   path,
                   text:
@@ -2629,8 +2701,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                   await invoke(config, 'collect_build');
                 }
               }
+              if (!oversizedQuestionChecked) {
+                await expect(
+                  invoke(config, 'request_skill_review', { question: '请'.repeat(2000) }),
+                ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
+                expect(config.isTurnComplete()).toBe(false);
+                oversizedQuestionChecked = true;
+              }
               await invoke(config, 'request_skill_review', { question: 'Explain this section.' });
             });
+          }
           await turn('I reviewed this section.', async (config) => {
             await invoke(config, 'complete_stage', { studentFeedback: 'I reviewed this section.' });
           });
@@ -2664,6 +2744,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }
       expect(evaluations).toBe(2);
       expect(oversizedPlanChecked).toBe(true);
+      expect(longReplyChecked).toBe(true);
+      expect(oversizedQuestionChecked).toBe(true);
+      expect(oversizedPlanWriteChecked).toBe(true);
+      expect(oversizedPlanSaveChecked).toBe(true);
       const finished = await new LearningStore(pool).get(created.id, principal.ownerId);
       expect(finished.project_reference).toEqual(projectRef);
       expect(finished.project?.coursePackage?.bundle.files['tests/private.py']).toBe(

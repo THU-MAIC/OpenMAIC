@@ -18,7 +18,8 @@ import { AssetCollector } from '@openmaic/storage/asset/collector';
 import type { PBLV3Reference } from '@openmaic/dsl';
 import { STAGE_META_OWNERSHIP } from '@/lib/persistence/stage-meta-ownership';
 import { applySchemaMigrations } from '@openmaic/storage/pg-migrations';
-import { LearningStore, PBL_MIGRATIONS } from '@/lib/server/pbl-v3/store';
+import { LearningStore } from '@/lib/server/pbl-v3/store';
+import { PBL_MIGRATIONS } from '@/lib/persistence/pbl-studies';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import {
   assetReferencePrincipalsForOwner,
@@ -167,10 +168,8 @@ describe('persisted project templates and classroom lifecycle', () => {
     vi.stubEnv('DATABASE_URL', url);
     try {
       const persistence = await getServerPersistenceProvider(url, () => pool as never);
-      await applySchemaMigrations(persistence.pool, {
-        ...PBL_MIGRATIONS,
-        migrations: PBL_MIGRATIONS.migrations.slice(0, 3),
-      });
+      // Seed a pre-v4 database, then exercise the same provider bootstrap used by the collector.
+      await db.query("DELETE FROM openmaic_schema_migrations WHERE store='pbl-v3' AND version=4");
       const bundle = packageBuiltin(
         installedProject({ id: 'greeting-python-lab', version: '1.0.0' }),
       );
@@ -197,8 +196,24 @@ describe('persisted project templates and classroom lifecycle', () => {
           ],
         );
       await courses.saveDocument({ ...document('upgrade-classroom', ref), scenes: [] });
-      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
-      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
+      await db.query(
+        "UPDATE asset_entries SET unreferenced_at=now()-interval '2 hours' WHERE id=$1",
+        [ref.assetId],
+      );
+      vi.stubEnv('DATABASE_URL', url + '-after-upgrade');
+      await getServerPersistenceProvider(process.env.DATABASE_URL!, () => pool as never);
+      const collector = new AssetCollector(
+        persistence.pool,
+        new PgAssetByteStore(persistence.pool),
+        {
+          withTransaction: persistence.withTransaction,
+          graceMs: 0,
+          documentReferences: true,
+          assetReferencePrincipals: assetReferencePrincipalsForOwner,
+          documentOwnership: STAGE_META_OWNERSHIP,
+        },
+      );
+      expect((await collector.collectPass()).entriesCollected).toBe(0);
       expect(
         (await new LearningStore(persistence.pool).get('legacy-study', 'upgrade-owner')).project
           ?.coursePackage?.bundle,
@@ -209,6 +224,7 @@ describe('persisted project templates and classroom lifecycle', () => {
       await expect(
         new LearningStore(persistence.pool).get('foreign-study', 'other-owner'),
       ).rejects.toMatchObject({ status: 404 });
+      await applySchemaMigrations(persistence.pool, PBL_MIGRATIONS);
     } finally {
       await db.close();
     }

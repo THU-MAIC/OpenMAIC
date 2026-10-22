@@ -2364,6 +2364,7 @@
       "sourcePath": "This file is outside the project source files.",
       "sourceCount": "Learning projects support at most 256 source files.",
       "sourceSize": "Project source content must not exceed 1 MiB.",
+      "teachingContextSize": "The teaching context is too large. Shorten PLAN.md or the review question and try again.",
       "commandActive": "Stop running commands and collect their results before reading or saving a workspace snapshot.",
       "terminalActive": "Close terminals before reading or saving a workspace snapshot.",
       "environmentBusy": "Another operation is changing this environment. Retry after it finishes.",

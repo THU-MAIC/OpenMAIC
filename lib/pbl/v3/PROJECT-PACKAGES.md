@@ -137,11 +137,14 @@ separate checksum and never replaces a
 previous course. Transfer between authors uses export/import. Learning instances
 pin the full reference; changing a scene's content does not silently migrate
 its existing learning journey. Existing study reads use that saved pin rather
-than requiring the original scene to retain it. Study creation retains the template
+than requiring the original scene to retain it. Reopening by classroom/scene
+returns the existing journey and its saved pin before admitting a new project.
+Study creation retains the template
 in the same transaction as the study pin. These references survive scene edits,
 scene removal and full classroom saves; the owning classroom must remain live and
 owner checks still apply. Use a new scene for a new journey. The upgrade migration
-backfills existing study pins while their template bytes still exist; already
+backfills existing study pins during persistence bootstrap, before the startup
+collector can reclaim their templates. It restores pins while template bytes still exist; already
 collected bytes require re-import or restore.
 
 Every reload resolves durable bytes without an extraction directory or a
@@ -158,7 +161,9 @@ restore reports unavailable resources.
 
 Version 1 supports UTF-8 text resources only: at most 256 PBL scenes, 16 projects,
 512 files and 8 MiB per classroom; 512 KiB per file. Export applies the same
-aggregate limits as import, counting each content checksum once. Each stage's complete
+aggregate limits as import, counting each content checksum once. The export
+response also serializes shared bundles once and maps scene references to them.
+Each stage's complete
 rendered system prompt plus its guided Skill replies must fit 32 KiB of UTF-8.
 Validation uses the runtime prompt builder, counting role templates, common rules,
 goals, contracts, projected decisions, all intro variants, bound documents/Skills,
@@ -167,8 +172,13 @@ server instructions, live teaching-state suffixes and JSON escapes. It includes
 normal assessment introductions and test-failure tutoring even without a teaching binding.
 Oversized prompts are rejected before installation; resources are never silently
 truncated. Runtime checks the same budget again before model invocation, including
-later learner plan edits. Conversation history has a separate teaching context
-window. Tests/rubric files
+later learner plan edits. Plan saves, approvals and progression also check downstream
+plan-reading contexts while the learner can still shorten the plan.
+Review questions are checked before their receipts are
+persisted, so an oversized question can be shortened without blocking the next turn.
+Conversation history has a separate teaching context window; learner replies remain
+there in full, while entry/live review metadata records only the eligible response count.
+Tests/rubric files
 total at most 24 KiB;
 starter source snapshots fit the runtime's 256-file / 1 MiB limit;
 each evaluation payload is at most 48 KiB. Generated build/evaluation commands must
@@ -177,6 +187,8 @@ resources and the runner itself; import validates this tighter bound.
 Unsafe paths, symlinks, extra files,
 invalid UTF-8, missing references, checksum/size failures and unsupported profiles
 produce errors before publication. No external resource URLs are downloaded.
+Owner storage quota refusals retain HTTP 507 / `ASSET_QUOTA_EXCEEDED` through the
+browser importer so a valid archive receives the storage-full message.
 Correct the archive and retry. If later media/course writes fail, installed
 templates remain pending until retry or expiry.
 

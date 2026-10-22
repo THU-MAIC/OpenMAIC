@@ -42,6 +42,10 @@ describe('embedded persistence route', () => {
       ...(await importOriginal<object>()),
       ensurePBLProjectSchema: vi.fn().mockResolvedValue(undefined),
     }));
+    vi.doMock('@/lib/persistence/pbl-studies', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      ensurePBLStudySchema: vi.fn().mockResolvedValue(undefined),
+    }));
     vi.doMock('@/lib/persistence/legacy-classroom-imports', async (importOriginal) => ({
       ...(await importOriginal<object>()),
       ensureLegacyClassroomImportSchema: vi.fn().mockResolvedValue(undefined),
@@ -524,6 +528,8 @@ describe('embedded persistence route', () => {
     expect(ensureAssetSchema).toHaveBeenCalledWith(pool);
     const { ensurePBLProjectSchema } = await import('@/lib/persistence/pbl-projects');
     expect(ensurePBLProjectSchema).toHaveBeenCalledWith(pool);
+    const { ensurePBLStudySchema } = await import('@/lib/persistence/pbl-studies');
+    expect(ensurePBLStudySchema).toHaveBeenCalledWith(pool);
     expect(nodePostgresTransaction).toHaveBeenCalledWith(pool);
     expect(runtimeConstructions[0]?.queryable).toBe(pool);
     expect(documentConstructions[0]?.queryable).toBe(pool);

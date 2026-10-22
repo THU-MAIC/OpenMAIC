@@ -16,7 +16,11 @@ async function call(body: unknown) {
     body: JSON.stringify(body),
   });
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error?.message ?? 'Project resource operation failed.');
+  if (!response.ok)
+    throw Object.assign(new Error(result.error?.message ?? 'Project resource operation failed.'), {
+      code: result.error?.code,
+      status: response.status,
+    });
   return result;
 }
 function projectScenes(manifest: ClassroomManifest) {
@@ -70,16 +74,25 @@ export async function attachClassroomProjects(
   ];
   if (refs.length > PROJECT_LIMITS.scenes || !refs.every(isPBLV3Reference))
     throw new Error('Invalid or excessive PBL project references.');
-  const { projects }: { projects: PBLProjectPackage[] } = await call({
-    action: 'export',
-    stageId,
-    refs,
-  });
-  if (!Array.isArray(projects) || projects.length !== refs.length)
+  const { projects, projectIndexes }: { projects: PBLProjectPackage[]; projectIndexes?: number[] } =
+    await call({
+      action: 'export',
+      stageId,
+      refs,
+    });
+  // Older servers return one project per reference; current servers deduplicate the payload.
+  const indexes = projectIndexes ?? refs.map((_, index) => index);
+  if (
+    !Array.isArray(projects) ||
+    !Array.isArray(indexes) ||
+    indexes.length !== refs.length ||
+    (projectIndexes === undefined && projects.length !== refs.length) ||
+    indexes.some((index) => !Number.isInteger(index) || index < 0 || index >= projects.length)
+  )
     throw new Error('Incomplete project export.');
   if (!projectResourcesWithinLimits(projects.map(({ entry }) => entry)))
     throw new Error('Classroom project resource limit exceeded.');
-  const byRef = new Map(refs.map((ref, i) => [JSON.stringify(ref), projects[i]]));
+  const byRef = new Map(refs.map((ref, i) => [JSON.stringify(ref), projects[indexes[i]]]));
   manifest.pblProjects = [...new Map(projects.map((p) => [p.entry.checksum, p.entry])).values()];
   manifest.formatVersion = 2;
   manifest.requiredCapabilities = [PBL_PROJECT_PACKAGE_CAPABILITY];

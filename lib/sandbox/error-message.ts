@@ -24,6 +24,8 @@ export function sandboxErrorMessage(error?: {
 }): string {
   if (error?.code === 'PBL_WORKSPACE_MANAGED')
     return getClientTranslation('sandbox.errors.learningManaged');
+  if (error?.code === 'PBL_PROMPT_SIZE')
+    return getClientTranslation('sandbox.errors.teachingContextSize');
   if (error?.reason) {
     const key = Object.hasOwn(reasonKeys, error.reason)
       ? reasonKeys[error.reason as SandboxErrorReason]

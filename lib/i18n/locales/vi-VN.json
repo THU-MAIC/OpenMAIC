@@ -2364,6 +2364,7 @@
       "sourcePath": "Tệp này nằm ngoài phạm vi mã nguồn của dự án.",
       "sourceCount": "Dự án học tập hỗ trợ tối đa 256 tệp mã nguồn.",
       "sourceSize": "Tổng nội dung mã nguồn của dự án không được vượt quá 1 MiB.",
+      "teachingContextSize": "Ngữ cảnh học tập quá dài. Hãy rút ngắn PLAN.md hoặc câu hỏi kiểm tra rồi thử lại.",
       "commandActive": "Hãy dừng các lệnh đang chạy và lấy kết quả trước khi đọc hoặc lưu ảnh chụp trạng thái không gian làm việc.",
       "terminalActive": "Hãy đóng các cửa sổ terminal trước khi đọc hoặc lưu ảnh chụp trạng thái không gian làm việc.",
       "environmentBusy": "Một thao tác khác đang thay đổi môi trường này. Hãy thử lại sau khi thao tác đó hoàn tất.",

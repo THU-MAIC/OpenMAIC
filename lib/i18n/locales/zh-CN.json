@@ -2364,6 +2364,7 @@
       "sourcePath": "此文件不在项目源码范围内。",
       "sourceCount": "学习项目最多支持 256 个源文件。",
       "sourceSize": "项目源码内容总量不能超过 1 MiB。",
+      "teachingContextSize": "教学上下文过长，请缩短 PLAN.md 或审查问题后重试。",
       "commandActive": "请先停止运行中的命令并获取结果，再读取或保存工作区快照。",
       "terminalActive": "请先关闭终端，再读取或保存工作区快照。",
       "environmentBusy": "另一个操作正在修改此环境，请在其完成后重试。",

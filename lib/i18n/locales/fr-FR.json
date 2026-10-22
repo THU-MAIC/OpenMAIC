@@ -2364,6 +2364,7 @@
       "sourcePath": "Ce fichier ne fait pas partie des fichiers sources du projet.",
       "sourceCount": "Les projets pédagogiques acceptent au maximum 256 fichiers sources.",
       "sourceSize": "Le contenu source du projet ne doit pas dépasser 1 MiB au total.",
+      "teachingContextSize": "Le contexte pédagogique est trop long. Raccourcissez PLAN.md ou la question de révision, puis réessayez.",
       "commandActive": "Arrêtez les commandes en cours et récupérez leurs résultats avant de lire ou d’enregistrer un instantané de l’espace de travail.",
       "terminalActive": "Fermez les terminaux avant de lire ou d’enregistrer un instantané de l’espace de travail.",
       "environmentBusy": "Une autre opération modifie cet environnement. Réessayez une fois terminée.",

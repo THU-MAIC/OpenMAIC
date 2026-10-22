@@ -128,12 +128,14 @@ describe('classroom export resource limits', () => {
     resolver.exportProjectPackage.mockResolvedValue(bundle);
     const response = await exportRequest([builtin, installed]);
     expect(response.status).toBe(200);
-    expect((await response.json()).projects).toHaveLength(2);
+    const result = await response.json();
+    expect(result.projects).toHaveLength(1);
+    expect(result.projectIndexes).toEqual([0, 0]);
 
     const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       const body = JSON.parse(init!.body as string);
       expect(body.refs).toEqual([builtin, installed]);
-      return Response.json({ projects: [bundle, bundle] });
+      return Response.json(result);
     });
     const classroom = manifest([builtin, installed, builtin]),
       files = new Map<string, Blob>();
@@ -161,5 +163,20 @@ describe('classroom export resource limits', () => {
     );
     expect(fetcher).not.toHaveBeenCalled();
     expect(classroom).toEqual(before);
+  });
+
+  it('serializes a shared large package once for all 256 references, ignoring unrelated ref fields', async () => {
+    const bundle = project('shared-large-course', 0, 9);
+    resolver.exportProjectPackage.mockResolvedValue(bundle);
+    const refs = Array.from({ length: PROJECT_LIMITS.scenes }, (_, index) => ({
+      ...reference(bundle),
+      extra: index,
+    }));
+    const response = await exportRequest(refs);
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.projects).toEqual([bundle]);
+    expect(result.projectIndexes).toEqual(Array(PROJECT_LIMITS.scenes).fill(0));
+    expect(resolver.exportProjectPackage).toHaveBeenCalledOnce();
   });
 });

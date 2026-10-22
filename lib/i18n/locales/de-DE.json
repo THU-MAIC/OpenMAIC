@@ -2364,6 +2364,7 @@
       "sourcePath": "Diese Datei gehört nicht zu den Quelldateien des Projekts.",
       "sourceCount": "Lernprojekte unterstützen höchstens 256 Quelldateien.",
       "sourceSize": "Der Quellinhalt des Projekts darf insgesamt 1 MiB nicht überschreiten.",
+      "teachingContextSize": "Der Lernkontext ist zu lang. Kürzen Sie PLAN.md oder die Überprüfungsfrage und versuchen Sie es erneut.",
       "commandActive": "Beenden Sie laufende Befehle und rufen Sie deren Ergebnisse ab, bevor Sie einen Arbeitsbereich-Snapshot lesen oder speichern.",
       "terminalActive": "Schließen Sie die Terminals, bevor Sie einen Arbeitsbereich-Snapshot lesen oder speichern.",
       "environmentBusy": "Ein anderer Vorgang ändert diese Umgebung. Versuche es danach erneut.",

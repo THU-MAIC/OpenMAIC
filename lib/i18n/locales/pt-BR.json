@@ -2364,6 +2364,7 @@
       "sourcePath": "Este arquivo não faz parte dos arquivos-fonte do projeto.",
       "sourceCount": "Os projetos de aprendizagem aceitam no máximo 256 arquivos-fonte.",
       "sourceSize": "O conteúdo-fonte do projeto não pode ultrapassar 1 MiB no total.",
+      "teachingContextSize": "O contexto de aprendizagem é muito longo. Reduza PLAN.md ou a pergunta de revisão e tente novamente.",
       "commandActive": "Pare os comandos em execução e obtenha os resultados antes de ler ou salvar um instantâneo do espaço de trabalho.",
       "terminalActive": "Feche os terminais antes de ler ou salvar um instantâneo do espaço de trabalho.",
       "environmentBusy": "Outra operação está alterando este ambiente. Tente novamente quando ela terminar.",
