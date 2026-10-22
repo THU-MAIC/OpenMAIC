@@ -41,7 +41,9 @@ describe('browser narration locale', () => {
           stageId: 'stage',
           type: 'slide',
           order: 1,
-          actions: [{ id: 'speech', type: 'speech', text: 'Guten Morgen. Noch einmal.' }],
+          actions: [
+            { id: 'speech', type: 'speech', text: 'Guten Morgen. 你好，這是一段測試語音。' },
+          ],
         } as Scene,
       ],
       {

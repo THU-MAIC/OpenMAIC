@@ -118,80 +118,103 @@ describe('speech consumers follow the current locale', () => {
     act(() => hook.current.stopRecording());
   });
 
-  it('sends the latest provider-mapped locale when the UI changes during recording', async () => {
-    modelSettingsClient.adopt(modelSettingsViewFor({ asr: { registryId: 'openai-whisper' } }));
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ text: 'Hallo' }) }));
-    vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
-    });
-    const recorders: Array<{
-      onstop?: () => Promise<void>;
-      ondataavailable?: (event: { data: Blob }) => void;
-    }> = [];
-    vi.stubGlobal(
-      'MediaRecorder',
-      class {
+  it.each([
+    { asrLanguage: '', expected: 'auto' },
+    { asrLanguage: 'de', expected: 'de' },
+  ])(
+    'transcribes classroom recordings with the latest preference ($expected)',
+    async ({ asrLanguage, expected }) => {
+      modelSettingsClient.adopt(modelSettingsViewFor({ asr: { registryId: 'openai-whisper' } }));
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ text: 'Hallo' }) }));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('navigator', {
+        mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+      });
+      const recorders: Array<{
         onstop?: () => Promise<void>;
         ondataavailable?: (event: { data: Blob }) => void;
-        constructor() {
-          recorders.push(this);
-        }
-        start() {}
-        stop() {}
-      },
-    );
-    const hook = mountHook(() => useAudioRecorder());
-    await act(async () => hook.current.startRecording());
-    ui.locale = 'zh-TW';
-    hook.rerender();
-    recorders[0].ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
-    await act(async () => recorders[0].onstop?.());
-    expect(
-      (fetchMock.mock.calls[0] as unknown as [string, { body: FormData }])[1].body.get('language'),
-    ).toBe('zh');
-    act(() => hook.current.stopRecording());
-  });
+      }> = [];
+      vi.stubGlobal(
+        'MediaRecorder',
+        class {
+          onstop?: () => Promise<void>;
+          ondataavailable?: (event: { data: Blob }) => void;
+          constructor() {
+            recorders.push(this);
+          }
+          start() {}
+          stop() {}
+        },
+      );
+      const hook = mountHook(() => useAudioRecorder());
+      await act(async () => hook.current.startRecording());
+      ui.locale = 'zh-TW';
+      await act(async () => {
+        useSettingsStore.setState({ asrLanguage });
+      });
+      hook.rerender();
+      recorders[0].ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/webm' }) });
+      await act(async () => recorders[0].onstop?.());
+      expect(
+        (fetchMock.mock.calls[0] as unknown as [string, { body: FormData }])[1].body.get(
+          'language',
+        ),
+      ).toBe(expected);
+      act(() => hook.current.stopRecording());
+    },
+  );
 
-  it('uses the latest language when a settings recording is transcribed', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ text: '你好' }) }));
-    vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
-    });
-    const recorders: Array<{ onstop?: () => Promise<void> }> = [];
-    vi.stubGlobal(
-      'MediaRecorder',
-      class {
-        onstop?: () => Promise<void>;
-        constructor() {
-          recorders.push(this);
-        }
-        start() {}
-      },
-    );
-    const props = {
-      view: modelSettingsViewFor({ asr: { registryId: 'openai-whisper' } }),
-      entry: {
-        id: 'openai-whisper',
-        registryId: 'openai-whisper',
-        state: 'deployment' as const,
-        provider: workspaceProvider('openai-whisper'),
-      },
-      apply: vi.fn(),
-    };
-    const { host, render } = mount(createElement(ASRSettings, props));
-    const recordingButton = [...host.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('settings.startRecording'),
-    )!;
-    await act(async () => recordingButton.click());
-    ui.locale = 'zh-TW';
-    render(createElement(ASRSettings, props));
-    await act(async () => recorders[0].onstop?.());
-    expect(
-      (fetchMock.mock.calls[0] as unknown as [string, { body: FormData }])[1].body.get('language'),
-    ).toBe('zh');
-  });
+  it.each([
+    { asrLanguage: '', expected: 'auto' },
+    { asrLanguage: 'zh', expected: 'zh' },
+  ])(
+    'transcribes settings recordings with the latest preference ($expected)',
+    async ({ asrLanguage, expected }) => {
+      const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ text: '你好' }) }));
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('navigator', {
+        mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+      });
+      const recorders: Array<{ onstop?: () => Promise<void> }> = [];
+      vi.stubGlobal(
+        'MediaRecorder',
+        class {
+          onstop?: () => Promise<void>;
+          constructor() {
+            recorders.push(this);
+          }
+          start() {}
+        },
+      );
+      const props = {
+        view: modelSettingsViewFor({ asr: { registryId: 'openai-whisper' } }),
+        entry: {
+          id: 'openai-whisper',
+          registryId: 'openai-whisper',
+          state: 'deployment' as const,
+          provider: workspaceProvider('openai-whisper'),
+        },
+        apply: vi.fn(),
+      };
+      const { host, render } = mount(createElement(ASRSettings, props));
+      expect([...host.querySelectorAll('select')].at(-1)?.value).toBe('auto');
+      const recordingButton = [...host.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes('settings.startRecording'),
+      )!;
+      await act(async () => recordingButton.click());
+      ui.locale = 'zh-TW';
+      await act(async () => {
+        useSettingsStore.setState({ asrLanguage });
+      });
+      render(createElement(ASRSettings, props));
+      await act(async () => recorders[0].onstop?.());
+      expect(
+        (fetchMock.mock.calls[0] as unknown as [string, { body: FormData }])[1].body.get(
+          'language',
+        ),
+      ).toBe(expected);
+    },
+  );
 
   it('shows and tests the same language in ASR settings', async () => {
     const { host } = mount(
@@ -240,9 +263,10 @@ describe('speech consumers follow the current locale', () => {
     expect(utterances.at(-1)?.lang).toBe('de-DE');
     ui.locale = 'zh-TW';
     hook.rerender();
-    await act(async () => hook.current.startPreview(options));
+    const chineseOptions = { ...options, text: '你好，這是一段測試語音。' };
+    await act(async () => hook.current.startPreview(chineseOptions));
     expect(utterances.at(-1)?.lang).toBe('zh-TW');
-    await act(async () => hook.current.startPreview({ ...options, voice: 'english' }));
+    await act(async () => hook.current.startPreview({ ...chineseOptions, voice: 'english' }));
     expect(utterances.at(-1)?.lang).toBe('en-GB');
   });
 });

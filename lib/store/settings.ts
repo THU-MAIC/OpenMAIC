@@ -64,7 +64,7 @@ export function getValidASRLanguage(providerId: ASRProviderId, currentLanguage?:
   return isLanguageValid && currentLanguage ? currentLanguage : supportedLanguages[0] || 'auto';
 }
 
-/** Resolve an unset speech preference from the current UI locale at the point of use. */
+/** Prefer provider auto-detection for an unset preference, otherwise resolve the UI locale. */
 export function resolveASRLanguage(
   providerId: ASRProviderId,
   currentLanguage: string | undefined,
@@ -75,6 +75,8 @@ export function resolveASRLanguage(
   const languages = isCustomASRProvider(providerId)
     ? CUSTOM_ASR_DEFAULT_LANGUAGES
     : ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
+  // 语言课程中的发言可能不同于界面语言；提供商支持时优先自动识别。
+  if (languages.includes('auto')) return 'auto';
   const normalizedLocale = locale.toLowerCase().replaceAll('_', '-');
   const baseLanguage = normalizedLocale.split('-')[0];
   const exact = languages.find((language) => language.toLowerCase() === normalizedLocale);
@@ -82,9 +84,7 @@ export function resolveASRLanguage(
   const regional = languages.find((language) =>
     language.toLowerCase().startsWith(`${baseLanguage}-`),
   );
-  return (
-    exact || base || regional || (languages.includes('auto') ? 'auto' : languages[0]) || 'auto'
-  );
+  return exact || base || regional || languages[0] || 'auto';
 }
 
 export interface SettingsState {
@@ -97,7 +97,7 @@ export interface SettingsState {
   ttsVoice: string;
   ttsVoiceProviderId: string;
   ttsSpeed: number;
-  /** Speech input language; empty follows the current UI locale and the provider's supported list. */
+  /** Speech input language; empty uses auto-detection when supported, otherwise the UI locale. */
   asrLanguage: string;
 
   /** Always open the outline review before generating scenes. */

@@ -9,7 +9,7 @@ type PlayBrowserTTSPreviewOptions = {
   voice?: string;
   rate?: number;
   voices?: SpeechSynthesisVoice[];
-  /** UI language for text without a strong language signal. */
+  /** UI language for the Chinese region or text without a strong language signal. */
   locale?: string;
 };
 
@@ -29,11 +29,14 @@ const VI_DECIDER_RE = /[đĐơƠưƯ\u1EA0-\u1EF9]/;
 const VI_BROAD_RE = /[ăâêôĂÂÊÔ]/g;
 const VI_BROAD_THRESHOLD = 0.02;
 
-/** Detect Chinese/Vietnamese text, otherwise use the caller's current UI language. */
+/** Detect Chinese/Vietnamese text, retaining the UI's Chinese region when available. */
 export function detectSpeechLang(text: string, fallbackLang = 'en-US'): string {
   if (!text) return fallbackLang || 'en-US';
   const cjkRatio = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / text.length;
-  if (cjkRatio > CJK_LANG_THRESHOLD) return 'zh-CN';
+  if (cjkRatio > CJK_LANG_THRESHOLD) {
+    // 汉字比例只能识别语言，不能区分地区；中文界面继续使用用户所在地区的音色。
+    return fallbackLang.toLowerCase().startsWith('zh-') ? fallbackLang : 'zh-CN';
+  }
   if (VI_DECIDER_RE.test(text)) return 'vi-VN';
   if ((text.match(VI_BROAD_RE) || []).length / text.length > VI_BROAD_THRESHOLD) return 'vi-VN';
   return fallbackLang || 'en-US';

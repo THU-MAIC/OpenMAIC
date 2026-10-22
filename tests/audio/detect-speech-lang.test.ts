@@ -7,6 +7,17 @@ describe('detectSpeechLang', () => {
     expect(detectSpeechLang('光合作用是植物生长的基础')).toBe('zh-CN');
   });
 
+  it.each(['zh-TW', 'zh-CN', 'zh-HK', 'zh-Hant-TW'])(
+    'preserves the Chinese interface locale %s for Chinese text',
+    (locale) => {
+      expect(detectSpeechLang('你好，這是一段測試語音。', locale)).toBe(locale);
+    },
+  );
+
+  it('still detects Vietnamese ahead of a Chinese interface locale', () => {
+    expect(detectSpeechLang('Xin chào cả lớp!', 'zh-TW')).toBe('vi-VN');
+  });
+
   it('detects Vietnamese by decisive letters (đ/ơ/ư/ê/ô)', () => {
     expect(detectSpeechLang('Xin chào cả lớp!')).toBe('vi-VN');
     expect(detectSpeechLang('Quang hợp ở thực vật diễn ra như thế nào?')).toBe('vi-VN');
@@ -28,7 +39,7 @@ describe('detectSpeechLang', () => {
     expect(detectSpeechLang('café au lait')).toBe('en-US');
   });
 
-  it('uses the runtime locale only when the text has no strong language signal', () => {
+  it('uses the runtime locale when the text has no strong language signal', () => {
     expect(detectSpeechLang('Guten Morgen', 'de-DE')).toBe('de-DE');
     expect(detectSpeechLang('OK.', 'zh-TW')).toBe('zh-TW');
     expect(detectSpeechLang('', 'de-DE')).toBe('de-DE');
@@ -44,6 +55,13 @@ describe('detectSpeechLang', () => {
     expect(resolveBrowserVoice([voice], 'default', 'Guten Morgen', 'de-DE')).toEqual({
       voice: null,
       lang: 'de-DE',
+    });
+    expect(
+      resolveBrowserVoice([voice], voice.voiceURI, '你好，這是一段測試語音。', 'zh-TW'),
+    ).toEqual({ voice, lang: 'en-GB' });
+    expect(resolveBrowserVoice([voice], 'default', '你好，這是一段測試語音。', 'zh-TW')).toEqual({
+      voice: null,
+      lang: 'zh-TW',
     });
   });
 });
