@@ -1120,30 +1120,39 @@ export async function heartbeatLossScenario(h: ExtractionHarness): Promise<void>
     h.deps({ persistence: persistence as never, now: () => claimedAt }),
     { heartbeatIntervalMs: 10 },
   );
-  await started;
-  expire(h);
-  // The claim skips a row a heartbeat has locked at that instant; the lease
-  // stays expired, so trying again takes it over.
   let takeover: OwnerExtractionClaim | null = null;
-  for (let attempt = 0; attempt < 300 && !takeover; attempt += 1) {
-    takeover = await claim(h);
-    if (!takeover) await new Promise((resolve) => setTimeout(resolve, 10));
+  let entries: number;
+  try {
+    await started;
+    expire(h);
+    // The claim skips a row a heartbeat has locked at that instant; the lease
+    // stays expired, so trying again takes it over.
+    for (let attempt = 0; attempt < 300 && !takeover; attempt += 1) {
+      takeover = await claim(h);
+      if (!takeover) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(takeover).not.toBeNull();
+    takenOver = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      lossSeen,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('no heartbeat after the takeover saw the loss within 3 s')),
+          3_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
+    // One more macrotask: the run's own `.then` on that heartbeat has marked the loss.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    entries = await entryCount(h);
+  } catch (error) {
+    // Let the gated run finish, so its heartbeat timer stops before teardown
+    // closes the database, then report the original failure.
+    release();
+    await run.catch(() => undefined);
+    throw error;
   }
-  expect(takeover).not.toBeNull();
-  takenOver = true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
-    lossSeen,
-    new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error('no heartbeat after the takeover saw the loss within 3 s')),
-        3_000,
-      );
-    }),
-  ]).finally(() => clearTimeout(timer));
-  // One more macrotask: the run's own `.then` on that heartbeat has marked the loss.
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const entries = await entryCount(h);
   release();
   expect(await run).toBe(true);
   expect(transactions).toBe(0);
