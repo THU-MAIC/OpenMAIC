@@ -28,7 +28,6 @@
     "exampleFourier": "직관적인 예제로 푸리에 변환 배우기",
     "desktopOnly": "편집기와 Pro 모드는 컴퓨터에서 이용하세요.",
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
-    "openWorkspace": "워크스페이스",
     "greetingWithName": "안녕하세요, {{name}}!"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "새 코스",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

@@ -539,12 +539,10 @@ Its durable sessions can be resumed after a worker restart, accept follow-up
 instructions while running, and stream a replayable event history to the chat
 surface.
 
-Open it from the Workspace link on the home page, or with Edit in workspace
-from a classroom. The workspace combines a transient, collapsible
-folders/conversations rail with a chat pane and a classroom pane whose open
-courses stay in tabs. Its New course link returns to the home page, and every
-entry remains gated by the public workbench flag plus the configured server
-runtime.
+Open it at `/workspace`, or with Edit in workspace from a classroom. The
+workspace combines a transient, collapsible folders/conversations rail with a
+chat pane and a classroom pane whose open courses stay in tabs. Every entry
+remains gated by the public workbench flag plus the configured server runtime.
 
 The agent works through explicit, validated tools rather than editing opaque
 blobs:

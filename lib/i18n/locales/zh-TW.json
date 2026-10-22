@@ -28,7 +28,6 @@
     "exampleFourier": "用直觀的例子講解傅立葉轉換",
     "desktopOnly": "編輯器和專業模式請在電腦上使用。",
     "slogan": "多智能體互動課室中的生成式學習",
-    "openWorkspace": "工作台",
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
@@ -2391,7 +2390,6 @@
     "retry": "重試",
     "untitledSession": "未命名對話",
     "pagePosition": "第 {{index}} / {{total}} 頁",
-    "newCourse": "新增課程",
     "navAria": "工作區導覽",
     "homeAria": "返回首頁",
     "currentSession": "目前對話",

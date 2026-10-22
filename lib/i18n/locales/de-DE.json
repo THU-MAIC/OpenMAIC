@@ -28,7 +28,6 @@
     "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
     "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
-    "openWorkspace": "Arbeitsbereich",
     "greetingWithName": "Hallo, {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "Neuer Kurs",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

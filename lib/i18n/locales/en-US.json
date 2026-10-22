@@ -28,7 +28,6 @@
     "exampleFourier": "Explain the Fourier transform with intuitive examples",
     "desktopOnly": "Please use a computer for the editor and Pro mode.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "openWorkspace": "Workspace",
     "greetingWithName": "Hi, {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "New course",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

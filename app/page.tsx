@@ -118,17 +118,9 @@ import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
-import {
-  isWorkbenchEnabled,
-  isPptxImportEnabled,
-  shouldShowVocationalTestUi,
-} from '@/lib/config/feature-flags';
+import { isPptxImportEnabled, shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
-import {
-  readLastWorkspaceSessionId,
-  workspaceResumeHref,
-} from '@/lib/workbench/workspace-session-memory';
 
 const log = createLogger('Home');
 
@@ -139,9 +131,6 @@ const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
 // flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
 const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
-
-/** The configured runtime probe result, retained across client navigations. */
-let workbenchRuntimeCache: boolean | null = null;
 
 interface FormState {
   requirement: string;
@@ -205,38 +194,6 @@ function HomePage() {
   const heroEnter = (classes: string) =>
     `animate-in fill-mode-both ease-out motion-reduce:animate-none ${classes}`;
   const showVocationalTestUi = shouldShowVocationalTestUi();
-  const workbenchBuildEnabled = isWorkbenchEnabled();
-  const [workbenchRuntimeEnabled, setWorkbenchRuntimeEnabled] = useState(
-    workbenchRuntimeCache === true,
-  );
-  useEffect(() => {
-    if (!workbenchBuildEnabled || workbenchRuntimeCache !== null) return;
-    let cancelled = false;
-    fetch('/api/agent/runtime')
-      .then((response) => {
-        // Not cached: a 401 before the access code is accepted is not an answer.
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((body) => {
-        workbenchRuntimeCache = body?.enabled === true;
-        if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
-      })
-      .catch(() => {
-        // A failed probe keeps the entry hidden and allows a later visit to retry.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workbenchBuildEnabled]);
-  const workbenchEntryEnabled = workbenchBuildEnabled && workbenchRuntimeEnabled;
-  const enterWorkbench = () => {
-    const href = workspaceResumeHref(readLastWorkspaceSessionId());
-    router.push(href);
-  };
-  useEffect(() => {
-    if (workbenchEntryEnabled) router.prefetch('/workspace');
-  }, [router, workbenchEntryEnabled]);
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -786,22 +743,6 @@ function HomePage() {
         ref={toolbarRef}
         className="home-top-tools fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
       >
-        {/* A plain way into the workspace, shown only where the deployment has one. */}
-        {workbenchEntryEnabled ? (
-          <>
-            <button
-              type="button"
-              data-testid="home-workspace-link"
-              onClick={enterWorkbench}
-              className="px-3 py-1.5 rounded-full text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
-            >
-              {t('home.openWorkspace')}
-            </button>
-
-            <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
-          </>
-        ) : null}
-
         {/* Language Selector */}
         <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
 

@@ -28,7 +28,6 @@
     "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
     "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
-    "openWorkspace": "Khu làm việc",
     "greetingWithName": "Chào {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "Bài học mới",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

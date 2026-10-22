@@ -28,7 +28,6 @@
     "exampleFourier": "Преобразование Фурье на простых примерах",
     "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "openWorkspace": "Рабочая область",
     "greetingWithName": "Привет, {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "Новый курс",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

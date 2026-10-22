@@ -11,9 +11,7 @@
  * `NEXT_PUBLIC_WORKBENCH_ENABLED` (build-time, client-visible) and
  * the server-only configured runtime truth. A workspace whose
  * every submit 404s is worse than no workspace, so either flag off redirects
- * to `/` rather than rendering. `/` hides its Workspace link behind the same pair,
- * learned through the `/api/agent/runtime` probe (the client cannot read the
- * server flag), so the entry and the destination agree.
+ * to `/` rather than rendering.
  *
  * `force-dynamic` keeps the flags request-scoped instead of baking them into a
  * prerender.

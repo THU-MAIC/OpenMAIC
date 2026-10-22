@@ -35,8 +35,6 @@
  */
 
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
@@ -76,17 +74,9 @@ export function WorkspaceHome({
       aria-label={t('workspace.homeAria')}
       className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      {/* Below `md` the sidebar is gone, so its link to `/` needs a home. */}
-      <div className="flex h-12 shrink-0 items-center justify-between px-4 md:hidden">
+      {/* Below `md` the sidebar is gone, so the brand needs a home. */}
+      <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
         <img src={brand.logoSrc} alt={brand.productName} className="h-5 w-auto" />
-        <Link
-          href="/"
-          data-testid="pro-workspace-exit-compact"
-          className="ws-quiet inline-flex items-center gap-1.5 text-[12px]"
-        >
-          <ArrowLeft className="size-3.5" aria-hidden="true" />
-          {t('workspace.newCourse')}
-        </Link>
       </div>
 
       {/* One column, not two. The discover feed used to run to 1180px under a

@@ -28,7 +28,6 @@
     "exampleFourier": "Transformada de Fourier con ejemplos intuitivos",
     "desktopOnly": "Usa una computadora para el editor y el modo Pro.",
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
-    "openWorkspace": "Espacio de trabajo",
     "greetingWithName": "Hola, {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "Nuevo curso",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",

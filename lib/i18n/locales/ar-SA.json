@@ -28,7 +28,6 @@
     "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
     "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
-    "openWorkspace": "مساحة العمل",
     "greetingWithName": "مرحبًا، {{name}}"
   },
   "toolbar": {
@@ -2406,7 +2405,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "newCourse": "دورة جديدة",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
