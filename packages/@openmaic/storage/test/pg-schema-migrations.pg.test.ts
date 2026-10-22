@@ -10,7 +10,7 @@ import { Client, Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { ensureAgentSessionSchema } from '../src/agent-session/pg.js';
-import { ensureAssetSchema } from '../src/asset/pg.js';
+import { ASSET_PG_MIGRATIONS, ensureAssetSchema } from '../src/asset/pg.js';
 import { ensureDocumentSchema } from '../src/document/pg.js';
 import { ensureAgentSessionMaterialSchema } from '../src/material/pg.js';
 import {
@@ -148,7 +148,7 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
       expect(recorded.rows).toEqual([
         { store: 'agent-session', versions: [1, 2] },
         { store: 'agent-session-material', versions: [1] },
-        { store: 'asset', versions: [1] },
+        { store: 'asset', versions: [1, 2] },
         { store: 'document', versions: [1, 2] },
         { store: 'runtime', versions: [1] },
         { store: 'user-skill', versions: [1] },
@@ -255,12 +255,14 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
   });
 
   it('every instance refuses a database a newer release upgraded', async () => {
+    const newerVersion = ASSET_PG_MIGRATIONS.migrations.at(-1)!.version + 1;
     const pool = instancePool();
     try {
       await ensureAll(pool);
       await pool.query(
         `INSERT INTO openmaic_schema_migrations (store, version, name, checksum)
-         VALUES ('asset', 2, 'from_a_newer_release', 'x')`,
+         VALUES ('asset', $1, 'from_a_newer_release', 'x')`,
+        [newerVersion],
       );
     } finally {
       await pool.end();
@@ -271,6 +273,11 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
     expect(results.every((result) => result.status === 'rejected')).toBe(true);
     for (const result of results) {
       expect((result as PromiseRejectedResult).reason).toBeInstanceOf(SchemaVersionAheadError);
+      expect((result as PromiseRejectedResult).reason).toMatchObject({
+        store: 'asset',
+        recordedVersion: newerVersion,
+        knownVersion: newerVersion - 1,
+      });
     }
   }, 60_000);
 });
