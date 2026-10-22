@@ -2,14 +2,14 @@ import type { Context } from '@earendil-works/pi-ai';
 
 export interface TeachingHistoryWindow {
   stageKey: string;
-  /** Durable learning feedback count; retries do not add a student turn. */
+  /** Current-stage input count, including a marked opening wakeup. Only slices model history; never establishes student feedback. */
   studentTurns: number;
 }
 
 /** Keep project memory while giving each stage its own live conversational workflow. */
 export function currentTeachingContext(context: Context, window: TeachingHistoryWindow): Context {
   if (!Number.isSafeInteger(window.studentTurns) || window.studentTurns < 1)
-    throw new Error('A current teaching stage requires real student feedback.');
+    throw new Error('A current teaching stage requires a queued input turn.');
   let remaining = window.studentTurns;
   let start = -1;
   for (let index = context.messages.length - 1; index >= 0; index--)

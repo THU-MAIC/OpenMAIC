@@ -1,3 +1,4 @@
+import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 import { sandboxBody, sandboxPrincipalResponse } from '@/lib/server/sandbox/http';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { sandboxInvalid, SandboxError } from '@/lib/sandbox/errors';
@@ -16,7 +17,6 @@ import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-sc
 import { touchEnvironment, assertEnvironmentReady } from '@/lib/server/pbl-v3/environment';
 import { assertProjectSource } from '@/lib/server/pbl-v3/workspace-files';
 import { installedProject, publicProjects } from '@/lib/server/pbl-v3/catalog';
-import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 
 export const runtime = 'nodejs';
 export async function GET(request: Request) {

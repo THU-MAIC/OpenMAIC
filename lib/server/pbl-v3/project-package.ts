@@ -11,7 +11,7 @@ import { SandboxError } from '@/lib/sandbox/errors';
 import { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
 import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
-import { evaluationCommand, evaluationFeedback } from './evaluation';
+import { evaluationCommand, evaluationOutcome } from './evaluation';
 import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
 import { createRemediationHint } from '@/lib/pbl/v3/domain/orchestration/remediation';
 import { renderTeachingPrompt } from './teaching-prompt';
@@ -84,6 +84,7 @@ const evaluationSchema = z
         z
           .object({
             id: z.string().min(1),
+            label: z.string().min(1).max(160).optional(),
             argv: z.array(z.string().max(16_384)).min(1).max(128),
             stdout: z.string().max(65_536),
             stdin: z.string().max(65_536).optional(),
@@ -423,26 +424,32 @@ function validateTeachingPrompts(project: InstalledProject) {
       return { id, chosen, revision: 0 };
     });
     const spec = project.evaluations[milestone.id];
-    if (spec) {
-      // These case IDs are authored by the package and reach recap/repair prompts through feedback.
-      const feedback = evaluationFeedback(
-        `${spec.cases.length} / ${spec.cases.length} checks passed\nBuild failed or could not complete. Run the build check for diagnostics.\n` +
-          spec.cases.map((item) => `${item.id}: did not satisfy the project contract`).join('\n'),
-      );
-      collected.tests = {
-        id: '00000000-0000-0000-0000-000000000000',
-        status: 'failed',
-        evaluator: 'exit-code',
-        milestoneId: milestone.id,
-        stageIndex: 0,
-        revision: { id: '0'.repeat(64), provider: 'local-snapshot', createdAt: '' },
-        decisionRecordIds: [],
-        codeArtifactId: '00000000-0000-0000-0000-000000000000',
-        startedAt: '',
-        completedAt: '',
-        publicFeedback: feedback,
-      };
-    }
+    const requestId = '00000000-0000-0000-0000-000000000000';
+    // Use the real public-feedback adapter for pass, assertion and build-failure variants.
+    const outcomes = spec
+      ? [
+          { build: true, passed: true },
+          { build: true, passed: false },
+          { build: false, passed: false },
+        ].map(({ build, passed }) =>
+          evaluationOutcome(spec, requestId, {
+            state: 'exited',
+            exitCode: 0,
+            stderr: '',
+            stdout:
+              `PBL_RESULT:${requestId}:` +
+              JSON.stringify({
+                build,
+                ...(!build ? { buildReason: 'build' } : {}),
+                checks: spec.cases.map(({ id }) => ({
+                  id,
+                  passed,
+                  ...(!passed ? { reason: build ? 'execution' : 'not_run' } : {}),
+                })),
+              }),
+          }),
+        )
+      : [null];
     collected.code = {
       id: '',
       kind: 'code',
@@ -459,44 +466,64 @@ function validateTeachingPrompts(project: InstalledProject) {
       wrong: milestone.quiz.map((_, i) => i),
     };
     for (const { key, stage } of contexts) {
-      const role =
+      const roles: AgentRole[] =
         'agent' in stage
-          ? stage.agent
-          : stage.kind === 'check' && stage.checker === 'tests'
-            ? 'coder'
+          ? [stage.agent]
+          : stage.kind === 'check'
+            ? stage.checker === 'tests'
+              ? ['mentor', 'coder']
+              : ['mentor']
+            : [];
+      for (const role of roles)
+        for (const outcome of outcomes) {
+          collected.tests = outcome
+            ? {
+                id: requestId,
+                ...outcome,
+                evaluator: 'sandbox-command',
+                milestoneId: milestone.id,
+                stageIndex: 0,
+                revision: { id: '0'.repeat(64), provider: 'sandbox', createdAt: '' },
+                decisionRecordIds: [],
+                codeArtifactId: requestId,
+                startedAt: '',
+                completedAt: '',
+              }
             : null;
-      if (!role) continue;
-      collected.remediation =
-        stage.kind === 'check' && collected.tests
-          ? createRemediationHint(collected.tests, {
-              id: '00000000-0000-0000-0000-000000000000',
-              attempt: Number.MAX_SAFE_INTEGER,
-            })
-          : null;
-      const skill = packagedStageSkill(project, stage, key, role);
-      const activeSection = skill.progression
-        .slice(1)
-        .reduce(
-          (longest, name) =>
-            Buffer.byteLength(JSON.stringify(name)) > Buffer.byteLength(JSON.stringify(longest))
-              ? name
-              : longest,
-          '',
-        );
-      const { bytes } = renderTeachingPrompt({
-        definition,
-        stage,
-        milestone,
-        role,
-        stageKey: key,
-        skill,
-        packaged: true,
-        collected,
-        planText: project.files['PLAN.md'],
-        activeSection,
-      });
-      if (bytes > PROJECT_LIMITS.teachingBytes)
-        return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${key}/${role}`);
+          const repairing = stage.kind === 'check' && role === 'coder';
+          if (repairing && collected.tests?.status !== 'failed') continue;
+          collected.remediation =
+            repairing && collected.tests
+              ? createRemediationHint(collected.tests, {
+                  id: requestId,
+                  attempt: Number.MAX_SAFE_INTEGER,
+                })
+              : null;
+          const skill = packagedStageSkill(project, stage, key, role);
+          const activeSection = skill.progression
+            .slice(1)
+            .reduce(
+              (longest, name) =>
+                Buffer.byteLength(JSON.stringify(name)) > Buffer.byteLength(JSON.stringify(longest))
+                  ? name
+                  : longest,
+              '',
+            );
+          const { bytes } = renderTeachingPrompt({
+            definition,
+            stage,
+            milestone,
+            role,
+            stageKey: key,
+            skill,
+            packaged: true,
+            collected,
+            planText: project.files['PLAN.md'],
+            activeSection,
+          });
+          if (bytes > PROJECT_LIMITS.teachingBytes)
+            return invalid(`Teaching prompt exceeds the per-stage 32 KiB budget: ${key}/${role}`);
+        }
     }
   }
 }

@@ -33,6 +33,12 @@ export interface Study extends Record<string, unknown> {
     requestId: string;
     checkpointRevision?: number;
     progressReset?: boolean;
+    savedPosition?: {
+      revision: number;
+      milestoneIndex: number;
+      stageIndex: number;
+      fingerprint: string;
+    };
   } | null;
   evaluation: {
     id: string;

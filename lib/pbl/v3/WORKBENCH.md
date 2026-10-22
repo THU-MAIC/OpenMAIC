@@ -4,6 +4,20 @@ The classroom workbench reuses the existing SandboxService, owner identity, Post
 receipts, command supervisor, PTY and isolated preview gateway. There is no additional
 runtime, queue, scheduler or SSH provider.
 
+## Layout
+
+The IDE occupies the left workbench panel; the teaching conversation, current-step
+controls and composer occupy the right. Resize the divider or expand the scene for
+more room. The file tree supports nested source paths and the editor keeps separate
+open-file drafts. Use **Run & output** for commands and build results, **Terminal**
+for the connected shell, and **Preview port** to open the application beside code
+as an editor tab. Hiding these panes retains their state; Stop explicitly ends the
+managed execution. Save files before checkpointing, running or handing work back
+to the teaching assistant. Save before navigating away from the scene.
+
+Test and quiz actions appear in the current-task drawer above the conversation composer.
+Teaching and reflection show a non-expandable status strip.
+
 ## Controls and boundaries
 
 - Read and edit project text files. Create, rename/move and delete files only under

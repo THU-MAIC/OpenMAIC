@@ -21,7 +21,8 @@
     "stop": "Diesen Aufbau stoppen",
     "waiting": "In Arbeit",
     "emptyTitle": "Neues Gespräch beginnen",
-    "emptyHint": "Beschreibe die gewünschte Änderung oder nenne mit @ einen Klassenraum"
+    "emptyHint": "Beschreibe die gewünschte Änderung oder nenne mit @ einen Klassenraum",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Wartet auf deine Antwort",
@@ -188,7 +189,15 @@
       "listFolderCourses": "Klassenbibliothek ansehen",
       "createStage": "Klasse erstellen",
       "renameStage": "Klasse umbenennen",
-      "readStageOutline": "Klassengliederung lesen"
+      "readStageOutline": "Klassengliederung lesen",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} Sek.",
@@ -263,7 +272,8 @@
       "createStage": "Die Klasse konnte nicht erstellt werden",
       "renameStage": "Die Klasse konnte nicht umbenannt werden",
       "readStageOutline": "Die Klassengliederung konnte nicht gelesen werden",
-      "generic": "Tool-Aufruf fehlgeschlagen"
+      "generic": "Tool-Aufruf fehlgeschlagen",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

@@ -72,10 +72,9 @@ export function startOrchestration(
       events: [{ type: 'session.completed' }],
     };
   const stage = milestone.stages[0];
-  const courseFirst = project.entry.mode === 'course-first';
   const events: OrchestrationEvent[] = [
     { type: 'session.started', projectId: project.id },
-    ...(courseFirst ? [{ type: 'intro.completed' } as const] : []),
+    { type: 'intro.completed' },
     {
       type: 'milestone.entered',
       milestoneId: milestone.id,
@@ -95,7 +94,9 @@ export function startOrchestration(
   ];
   let state: PblSessionState = {
     ...initial,
-    introCompleted: courseFirst,
+    // Introduction is delivered inside the first teaching step; retain this legacy flag
+    // for persisted-session compatibility, without a separate confirmation gate.
+    introCompleted: true,
     status:
       stage?.kind === 'dialogue' || stage?.kind === 'produce' ? 'waiting_for_student' : 'running',
     position: { milestoneIndex: 0, milestoneId: milestone.id, stageIndex: stage ? 0 : -1 },
@@ -892,6 +893,13 @@ export function allowedStudentActions(
     state.position.stageIndex === (project.milestones.at(-1)?.stages.length ?? 0) - 1;
   if (stage.kind === 'mentor_say' || stage.kind === 'dialogue' || stage.kind === 'produce') {
     const collected = state.collected[state.position.milestoneId ?? ''];
+    if (
+      stage.kind === 'dialogue' &&
+      !currentMilestone(project, state)!.decisions.every((id) =>
+        collected?.decisions.some((decision) => decision.id === id),
+      )
+    )
+      return stage.studentActions.filter((action) => action !== 'next');
     if (
       stage.kind === 'mentor_say' &&
       stage.agent === 'discussion' &&

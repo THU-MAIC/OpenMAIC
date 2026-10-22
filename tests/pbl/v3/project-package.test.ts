@@ -109,12 +109,25 @@ describe('self-contained PBL project packages', () => {
     'remediation',
     'starter plan',
     'combined fields',
+    'project title',
+    'language',
+    'milestone teaching',
+    'exploration',
   ])('rejects oversized package-controlled %s in the complete teaching prompt', (field) => {
     const bundle = revised((files) => {
       const spec = JSON.parse(files['project.json']);
       const large = 'course-controlled text '.repeat(2000);
       const milestone = spec.definition.milestones[0];
-      if (field === 'starter plan') files['skeleton/PLAN.md'] = large;
+      if (field === 'project title') spec.definition.title = large;
+      else if (field === 'language') spec.definition.language = large;
+      else if (field === 'milestone teaching')
+        milestone.teaching = { purpose: large, concepts: ['concept'] };
+      else if (field === 'exploration') {
+        const exploration = spec.definition.milestones.find(
+          (item: { optional?: boolean }) => item.optional,
+        );
+        exploration.stages[0].exploration.introduction = large;
+      } else if (field === 'starter plan') files['skeleton/PLAN.md'] = large;
       else if (field === 'combined fields') {
         spec.definition.agents.mentor.systemPrompt = 'x'.repeat(8000);
         spec.definition.agents.commonRules = 'x'.repeat(8000);
@@ -148,7 +161,12 @@ describe('self-contained PBL project packages', () => {
       spec.definition.agents.coder.systemPrompt = 'x'.repeat(17_000);
       const name = spec.runtime.evaluations.greeting;
       const evaluation = JSON.parse(files[name]);
-      evaluation.cases[0].id = 'y'.repeat(7900);
+      evaluation.cases = Array.from({ length: 40 }, (_, i) => ({
+        id: `case-${i}`,
+        label: 'y'.repeat(160),
+        argv: ['python3'],
+        stdout: '',
+      }));
       files[name] = JSON.stringify(evaluation);
       files['project.json'] = JSON.stringify(spec);
     });
@@ -157,7 +175,6 @@ describe('self-contained PBL project packages', () => {
   it('preserves large metadata that never enters a teaching prompt', () => {
     const bundle = revised((files) => {
       const spec = JSON.parse(files['project.json']);
-      spec.definition.title = 'x'.repeat(40_000);
       spec.definition.agents.mentor.teachingSystemPrompt = 'x'.repeat(40_000);
       spec.definition.milestones[0].quiz[0].explain = 'x'.repeat(40_000);
       files['project.json'] = JSON.stringify(spec);

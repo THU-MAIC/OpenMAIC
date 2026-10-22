@@ -107,6 +107,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
 });
 
 import { runSession } from '@/lib/server/agent-runtime/runner';
+import { planResume } from '@/lib/server/agent-runtime/resume';
 import { AGENT_TOOL_TIMEOUT_ENV } from '@/lib/agent/runtime/tool-timeout';
 
 const SESSION_ID = 'session-1';
@@ -375,6 +376,7 @@ describe('runner: teaching turn deadline', () => {
         allowedToolNames: new Set([TOOL_NAME]),
         // A review receipt can be committed before the tool finishes. The
         // real teaching boundary then exits locally without a model error.
+        needsTurnReceipt: () => false,
         isTurnComplete: () => outcome === 'timeout-at-review' && captured.length > 0,
       });
       useResponses([[toolCallPart(), finish('tool-calls')]]);
@@ -410,7 +412,8 @@ describe('runner: teaching turn deadline', () => {
         const expected = timedOut
           ? {
               status: 'failed',
-              error: 'Teaching turn timed out after 120 seconds.',
+              error:
+                'Teaching turn timed out after 120 seconds without progress (tool:read_stage).',
               resetAttempt: false,
             }
           : { status: 'cancelled', resetAttempt: true, consumeCancelRequestedAt: 123 };
@@ -435,6 +438,95 @@ describe('runner: teaching turn deadline', () => {
     },
   );
 
+  it('fails a genuinely stalled partial reply and resumes from the real student message', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta({ id: 'pbl-role-partial' });
+    const session = await makeEntryTree();
+    const store = makeStore(meta);
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [],
+      systemPrompt: 'Teaching test',
+      allowedToolNames: new Set(),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+    });
+    mocks.streamLLM.mockImplementation(() => ({
+      fullStream: (async function* () {
+        yield { type: 'text-delta', text: 'Partial explanation' };
+        started();
+        await new Promise(() => {});
+      })(),
+      usage: new Promise(() => {}),
+    }));
+    const run = runSession({ running: new Map(), shuttingDown: false }, meta);
+    await gate;
+    await vi.advanceTimersByTimeAsync(120_000);
+    await run;
+    expect(store.finishSession).toHaveBeenCalledExactlyOnceWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({
+        status: 'failed',
+        error: 'Teaching turn timed out after 120 seconds without progress (model).',
+      }),
+    );
+    const messages = (await session.buildContext()).messages;
+    expect(JSON.stringify(messages)).toContain('Partial explanation');
+    const recovery = planResume(messages);
+    expect(recovery.kind).toBe('continue');
+    if (recovery.kind === 'continue') {
+      expect(recovery.messages.at(-1)?.role).toBe('user');
+      expect(JSON.stringify(recovery.messages)).not.toContain('Partial explanation');
+    }
+  });
+
+  it('keeps a slowly progressing real Pi stream alive beyond two minutes', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta({ id: 'pbl-role-progress' });
+    const session = await makeEntryTree();
+    const store = makeStore(meta);
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      tools: [],
+      systemPrompt: 'Teaching test',
+      allowedToolNames: new Set(),
+      needsTurnReceipt: () => false,
+      isTurnComplete: () => false,
+    });
+    mocks.streamLLM.mockImplementation(() => ({
+      fullStream: (async function* () {
+        started();
+        for (let i = 0; i < 4; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 60_000));
+          yield { type: 'text-delta', text: 'Still explaining. ' };
+        }
+        yield finish('stop');
+      })(),
+      usage: new Promise(() => {}),
+    }));
+    const run = runSession({ running: new Map(), shuttingDown: false }, meta);
+    await gate;
+    await vi.advanceTimersByTimeAsync(240_000);
+    await run;
+    expect(store.finishSession).toHaveBeenCalledExactlyOnceWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    expect(JSON.stringify((await session.buildContext()).messages)).toContain('Still explaining.');
+  });
+
   it.each(['rejects', 'resolves'] as const)(
     'settles as timed out without calling the model when late setup %s',
     async (settlement) => {
@@ -458,6 +550,7 @@ describe('runner: teaching turn deadline', () => {
                   tools: [],
                   systemPrompt: 'Teaching test',
                   allowedToolNames: new Set(),
+                  needsTurnReceipt: () => false,
                   isTurnComplete: () => false,
                 });
             });
@@ -473,7 +566,7 @@ describe('runner: teaching turn deadline', () => {
         WORKER_ID,
         expect.objectContaining({
           status: 'failed',
-          error: 'Teaching turn timed out after 120 seconds.',
+          error: 'Teaching turn timed out after 120 seconds without progress (setup).',
         }),
       );
       expect(mocks.streamLLM).not.toHaveBeenCalled();

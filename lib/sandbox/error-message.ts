@@ -2,6 +2,7 @@ import { getClientTranslation } from '@/lib/i18n';
 import type { SandboxErrorReason } from './errors';
 
 const reasonKeys: Record<SandboxErrorReason, string> = {
+  ENVIRONMENT_UNAVAILABLE: 'sandbox.errors.environmentUnavailable',
   ENVIRONMENT_BUSY: 'sandbox.errors.environmentBusy',
   ENVIRONMENT_CHANGED: 'sandbox.errors.environmentChanged',
   PROGRESS_CHANGED: 'sandbox.errors.progressChanged',
@@ -29,6 +30,8 @@ export function sandboxErrorMessage(error?: {
       : 'sandbox.requestFailed';
     return getClientTranslation(key);
   }
+  if (error?.code === 'SANDBOX_UNAVAILABLE')
+    return getClientTranslation('sandbox.errors.unavailable');
   if (error?.code === 'SANDBOX_INVALID_REQUEST')
     return getClientTranslation('sandbox.errors.invalidRequest');
   if (error?.code === 'SANDBOX_UNSUPPORTED')

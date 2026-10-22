@@ -44,6 +44,8 @@ const eslintConfig = defineConfig([
     'packages/@openmaic/importer/src1/**',
     // Generated importer bundle copied into public/ by the sync script (postinstall):
     'public/vendor/**',
+    // Monaco's installed browser distribution, copied by prepare-code-editor.mjs.
+    'public/code-editor/**',
     // Claude Code local files:
     '.claude/**',
     '.superpowers/**',

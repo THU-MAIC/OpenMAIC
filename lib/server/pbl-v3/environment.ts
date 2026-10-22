@@ -5,6 +5,7 @@ import type { SandboxService } from '@/lib/server/sandbox/service';
 import type { SandboxEnvironment } from '@/lib/sandbox/types';
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import type { Study, LearningStore } from './store';
+import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
 import type { InstalledProject } from './catalog';
 
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
@@ -62,16 +63,57 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
 }
 export function assertEnvironmentReady(env: SandboxEnvironment | null) {
   if (!env || env.state !== 'running' || !env.workspaceReady)
-    throw sandboxConflict('Prepare or recover the project environment before continuing.');
+    throw sandboxConflict(
+      'Prepare or recover the project environment before continuing.',
+      'ENVIRONMENT_UNAVAILABLE',
+    );
 }
 
-/** Revalidate only the active milestone; this PR installs a single-milestone project. */
+/** Revalidate artifact evidence and rewind across milestones if the restored checkpoint predates current work. */
 export function recoveredProgress(
   row: Study,
   project: InstalledProject,
   files: Record<string, string>,
+  checkpointRevision?: number,
 ) {
   const state = structuredClone(row.state);
+  const saved = row.environment_recovery?.savedPosition;
+  let crossedBoundary = false;
+  let rewind = -1;
+  if (checkpointRevision === 0 && state.position.milestoneIndex > 0) rewind = 0;
+  else if (
+    saved &&
+    saved.revision === checkpointRevision &&
+    saved.milestoneIndex < state.position.milestoneIndex
+  )
+    rewind = saved.milestoneIndex;
+  if (rewind >= 0) {
+    crossedBoundary = true;
+    for (let i = rewind + 1; i < state.milestones.length; i++) {
+      const progress = state.milestones[i]!;
+      state.collected[progress.milestoneId] = createCollectedMilestoneState();
+      Object.assign(progress, {
+        status: 'pending',
+        stageIndex: -1,
+        completedStageIndexes: [],
+        evaluationIds: [],
+      });
+    }
+    const target = project.definition.milestones[rewind]!;
+    const stageIndex =
+      checkpointRevision === 0
+        ? Math.max(
+            0,
+            target.stages.findIndex((s) => s.kind === 'produce'),
+          )
+        : saved!.stageIndex;
+    state.status = 'waiting_for_student';
+    state.position = { milestoneIndex: rewind, milestoneId: target.id, stageIndex };
+    Object.assign(state.milestones[rewind]!, { status: 'active', stageIndex });
+    state.milestones[rewind]!.completedStageIndexes = state.milestones[
+      rewind
+    ]!.completedStageIndexes.filter((i) => i < stageIndex);
+  }
   const milestone = project.definition.milestones[state.position.milestoneIndex];
   const collected = milestone && state.collected[milestone.id];
   if (!collected || !state.introCompleted) return { state, reset: false };
@@ -106,7 +148,7 @@ export function recoveredProgress(
     if (restart < 0)
       restart = milestone.stages.findIndex((s) => s.kind === 'check' && s.checker === 'tests');
   }
-  if (restart < 0) return { state, reset: false };
+  if (restart < 0) return { state, reset: crossedBoundary };
   // Never skip unfinished teaching on the way back to the first invalidated artifact.
   restart = Math.min(restart, state.position.stageIndex);
   state.status = 'waiting_for_student';

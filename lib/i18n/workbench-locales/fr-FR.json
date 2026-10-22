@@ -21,7 +21,8 @@
     "stop": "Arrêter cette création",
     "waiting": "Traitement en cours",
     "emptyTitle": "Commencez une conversation",
-    "emptyHint": "Décrivez la modification voulue, ou utilisez @ pour désigner une classe"
+    "emptyHint": "Décrivez la modification voulue, ou utilisez @ pour désigner une classe",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "En attente de votre réponse",
@@ -188,7 +189,15 @@
       "listFolderCourses": "Voir la bibliothèque de classes",
       "createStage": "Créer la classe",
       "renameStage": "Renommer la classe",
-      "readStageOutline": "Lire le plan de la classe"
+      "readStageOutline": "Lire le plan de la classe",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} s",
@@ -263,7 +272,8 @@
       "createStage": "Impossible de créer la classe",
       "renameStage": "Impossible de renommer la classe",
       "readStageOutline": "Impossible de lire le plan de la classe",
-      "generic": "L'appel du tool a échoué"
+      "generic": "L'appel du tool a échoué",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

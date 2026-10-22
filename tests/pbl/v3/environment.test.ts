@@ -88,3 +88,27 @@ describe('restored workspace evidence', () => {
     expect(result.state.collected.greeting?.tests).toBeNull();
   });
 });
+
+it('rewinds later milestones to the saved position and drops only their current gates', () => {
+  const lab = installedProject({ id: 'greeting-python-lab', version: '1.0.0' });
+  const state = startOrchestration(lab.definition).state;
+  state.introCompleted = true;
+  state.position = { milestoneIndex: 1, milestoneId: 'normalize', stageIndex: 3 };
+  state.milestones[0]!.status = 'completed';
+  state.milestones[1]!.status = 'active';
+  state.collected.normalize!.codeReviewCompleted = true;
+  const study = {
+    state,
+    evaluation: null,
+    environment_recovery: {
+      requestId: 'old',
+      savedPosition: { revision: 2, milestoneIndex: 0, stageIndex: 3, fingerprint },
+    },
+  } as Study;
+  const result = recoveredProgress(study, lab, files, 2);
+  expect(result.reset).toBe(true);
+  expect(result.state.position).toMatchObject({ milestoneIndex: 0, stageIndex: 3 });
+  expect(result.state.collected.normalize!.codeReviewCompleted).toBe(false);
+  expect(result.state.milestones[1]!.status).toBe('pending');
+  expect(study.state.position.milestoneIndex).toBe(1);
+});

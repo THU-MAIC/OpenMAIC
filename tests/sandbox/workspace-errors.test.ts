@@ -35,6 +35,8 @@ beforeAll(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 const cases = [
+  [sandboxConflict('server diagnostic', 'ENVIRONMENT_UNAVAILABLE'), 'environmentUnavailable'],
+  [new SandboxError('SANDBOX_UNAVAILABLE', 503, 'server diagnostic'), 'unavailable'],
   [sandboxConflict('server diagnostic', 'ENVIRONMENT_BUSY'), 'environmentBusy'],
   [sandboxConflict('server diagnostic', 'ENVIRONMENT_CHANGED'), 'environmentChanged'],
   [sandboxConflict('server diagnostic', 'PROGRESS_CHANGED'), 'progressChanged'],

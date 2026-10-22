@@ -21,7 +21,8 @@
     "stop": "Parar esta construção",
     "waiting": "Processando",
     "emptyTitle": "Comece uma conversa",
-    "emptyHint": "Descreva a mudança que você quer, ou use @ para indicar uma turma"
+    "emptyHint": "Descreva a mudança que você quer, ou use @ para indicar uma turma",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Aguardando sua resposta",
@@ -188,7 +189,15 @@
       "listFolderCourses": "Ver a biblioteca de salas",
       "createStage": "Criar sala",
       "renameStage": "Renomear sala",
-      "readStageOutline": "Ler a estrutura da sala"
+      "readStageOutline": "Ler a estrutura da sala",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} s",
@@ -263,7 +272,8 @@
       "createStage": "Não foi possível criar a sala",
       "renameStage": "Não foi possível renomear a sala",
       "readStageOutline": "Não foi possível ler a estrutura da sala",
-      "generic": "A chamada do tool falhou"
+      "generic": "A chamada do tool falhou",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

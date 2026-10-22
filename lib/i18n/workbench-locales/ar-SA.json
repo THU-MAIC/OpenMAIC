@@ -21,7 +21,8 @@
     "stop": "إيقاف هذا البناء",
     "waiting": "جارٍ المعالجة",
     "emptyTitle": "ابدأ محادثة جديدة",
-    "emptyHint": "اشرح التغيير الذي تريده، أو حدّد فصلاً باستخدام @"
+    "emptyHint": "اشرح التغيير الذي تريده، أو حدّد فصلاً باستخدام @",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "في انتظار إجابتك",
@@ -188,7 +189,15 @@
       "listFolderCourses": "عرض مكتبة الدروس",
       "createStage": "إنشاء درس",
       "renameStage": "إعادة تسمية الدرس",
-      "readStageOutline": "قراءة مخطط الدرس"
+      "readStageOutline": "قراءة مخطط الدرس",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} ثانية",
@@ -263,7 +272,8 @@
       "createStage": "تعذّر إنشاء الدرس",
       "renameStage": "تعذّرت إعادة تسمية الدرس",
       "readStageOutline": "تعذّرت قراءة مخطط الدرس",
-      "generic": "فشل نداء الأداة"
+      "generic": "فشل نداء الأداة",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

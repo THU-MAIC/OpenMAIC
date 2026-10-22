@@ -52,6 +52,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     questions: [] as LearningView['questions'],
     evaluation: null,
   };
+  let failPreparation = false;
   let file = 'Write your plan here.';
   const workCalls: { action: string; path?: string }[] = [];
   let previewOpen = false;
@@ -61,7 +62,46 @@ test('installed sample opens in the normal classroom and preserves progress afte
     const req = route.request(),
       url = new URL(req.url());
     const body = req.method() === 'POST' ? req.postDataJSON() : null;
+    if (url.searchParams.has('samples')) return route.continue();
     if (body?.action === 'sample') return route.continue(); // actual course creation and persistence
+    if (url.pathname === '/api/pbl/v3/report')
+      return route.fulfill({
+        json: {
+          studyId: view.id,
+          project: { id: 'greeting-python-lab', version: '1.0.0', title: 'Greeting' },
+          revision: view.revision,
+          requiredComplete: false,
+          milestones: [
+            {
+              id: 'greeting',
+              title: 'Greeting',
+              optional: false,
+              status: 'active',
+              stages: ['plan'],
+            },
+          ],
+          evidence: [
+            {
+              sequence: 7,
+              kind: 'artifact.recorded',
+              milestoneId: 'greeting',
+              detail: 'Saved plan evidence',
+              version: 'saved-version',
+            },
+          ],
+          outcomes: [
+            {
+              milestoneId: 'greeting',
+              tests: 'passed',
+              quiz: { score: 1, total: 1, attempt: 1 },
+              reflected: false,
+            },
+          ],
+          counts: { 'artifact.recorded': 1 },
+          conversations: [],
+          truncated: false,
+        },
+      });
     if (url.pathname === '/api/pbl/v3/workspace') {
       if (body?.command) {
         const command = body.command;
@@ -104,8 +144,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
     if (body?.command) {
       expect(body.command.revision).toBe(view.revision);
       calls.push(body.command);
-      view.revision++;
       const command = body.command;
+      if (command.type === 'prepare' && failPreparation) {
+        failPreparation = false;
+        return route.fulfill({
+          status: 503,
+          json: { error: { code: 'SANDBOX_UNAVAILABLE', message: 'Private provider diagnostic' } },
+        });
+      }
+      view.revision++;
       if (command.type === 'prepare') {
         if (view.environmentId) view.recovery = { checkpointRevision: 1, progressReset: true };
         view.environmentId = '12345678-1234-1234-1234-123456789012';
@@ -137,9 +184,21 @@ test('installed sample opens in the normal classroom and preserves progress afte
     return route.fulfill({ json: view });
   });
   await page.goto('/pbl-v3');
-  await page.getByRole('button', { name: 'Open Python sample' }).click();
+  await page.getByRole('button', { name: 'Open selected sample' }).click();
   await expect(page).toHaveURL(/\/classroom\/pbl-/, { timeout: 60000 });
   await expect(page.getByTestId('pbl-v3-workspace')).toBeVisible({ timeout: 60000 });
+  const beforeReport = calls.length;
+  await page.getByRole('button', { name: 'Learning report', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Learning report' })).toContainText(
+    'Learning is still in progress.',
+  );
+  await page.getByRole('region', { name: 'Learning report' }).locator('summary').click();
+  await expect(page.getByText('Saved plan evidence')).toBeVisible();
+  await page
+    .getByRole('region', { name: 'Learning report' })
+    .screenshot({ path: 'test-results/pbl-v3-report.png' });
+  expect(calls.length).toBe(beforeReport);
+  await page.getByRole('button', { name: 'Return to learning' }).click();
   await page.getByRole('button', { name: 'Prepare project environment' }).click();
   // Hold an old progress GET until after a teaching command installs a newer revision.
   let releaseView!: () => void, viewStarted!: () => void;
@@ -197,9 +256,33 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.environment = { state: 'destroyed', ready: false };
   await page.getByRole('button', { name: 'Refresh progress' }).click();
   await expect(page.getByText('The environment is unavailable.', { exact: false })).toBeVisible();
+  const blocked = page.getByTestId('pbl-input-blocked');
+  await expect(blocked).toContainText('Restore it to send; your draft is kept.');
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Prepare project environment' }).click();
+  const submitted = calls.filter((c) => c.type === 'chat').length;
+  await page.getByLabel('Your message').press('Enter');
+  expect(calls.filter((c) => c.type === 'chat')).toHaveLength(submitted);
+  failPreparation = true;
+  await blocked.getByRole('button', { name: 'Restore learning environment', exact: true }).click();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'The environment service is temporarily unavailable.' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Your message')).toHaveValue(
+    'Continue after restoring my environment.',
+  );
+  await expect(
+    blocked.getByRole('button', { name: 'Restore learning environment', exact: true }),
+  ).toBeEnabled();
+  await blocked.getByRole('button', { name: 'Restore learning environment', exact: true }).click();
+  await expect(blocked).toHaveCount(0);
+  await expect(page.getByLabel('Your message')).toHaveValue(
+    'Continue after restoring my environment.',
+  );
+  await page.getByLabel('Environment details', { exact: true }).click();
   await expect(page.getByText('The workspace was restored', { exact: false })).toBeVisible();
+  await page.getByLabel('Environment details', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
   // A late read from PLAN.md must not populate or become savable as greeting.py.
   view.actions = ['chat', 'edit'];
@@ -227,16 +310,19 @@ test('installed sample opens in the normal classroom and preserves progress afte
   });
   await page.getByRole('button', { name: 'Reload file' }).click();
   await planSeen;
-  await page.getByRole('combobox', { name: 'Project files' }).selectOption('greeting.py');
-  const editor = page.getByRole('textbox', { name: 'File contents' });
-  await expect(editor).toHaveValue('print("Current code")');
+  await page.getByRole('button', { name: 'greeting.py', exact: true }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
   const lateResponse = page.waitForResponse(
     (response) => new URL(response.url()).searchParams.get('file') === 'PLAN.md',
   );
   releasePlan();
   await lateResponse;
-  await expect(editor).toHaveValue('print("Current code")');
-  await editor.fill('print("Saved code")');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
+  await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeEnabled();
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('print("Saved code")');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Saved code")');
   await page.getByRole('button', { name: 'Save file', exact: true }).click();
   expect(calls.at(-1)).toMatchObject({
     type: 'save',
@@ -244,25 +330,62 @@ test('installed sample opens in the normal classroom and preserves progress afte
     text: 'print("Saved code")',
     expectedHash: 'c'.repeat(64),
   });
+  await page.getByRole('button', { name: 'Manage source files' }).click();
   await page.getByLabel('Project-relative file path').fill('src/new.py');
   await page.getByRole('button', { name: 'Create file', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Project files' })).toHaveValue('src/new.py');
-  await expect(editor).toHaveValue('print("Current code")');
-  await editor.fill('Unsaved learner work');
+  await expect(page.getByRole('tab', { name: 'new.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
+  await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeEnabled();
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.type('Unsaved learner work');
+  await page.getByRole('button', { name: 'Run & output', exact: true }).click();
+  await page.getByLabel('Project command', { exact: true }).fill('python3 src/new.py');
   await expect(page.getByRole('button', { name: 'Run command', exact: true })).toBeDisabled();
+  await page.getByRole('tab', { name: 'greeting.py', exact: true }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
+  await page.getByRole('tab', { name: 'new.py ●', exact: true }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
+  await page.getByRole('button', { name: 'Expand project workspace' }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
+  const ideBox = (await page.getByTestId('pbl-ide').boundingBox())!;
+  const agentBox = (await page.getByTestId('pbl-assistant').boundingBox())!;
+  expect(ideBox.x + ideBox.width).toBeLessThanOrEqual(agentBox.x + 1);
+  const divider = page.getByRole('separator', { name: 'Resize workspace and assistant' });
+  await divider.focus();
+  await divider.press('ArrowLeft');
+  await expect
+    .poll(async () => (await page.getByTestId('pbl-ide').boundingBox())!.width)
+    .toBeLessThan(ideBox.width);
+  await page.getByRole('button', { name: 'Return to classroom layout' }).click();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   view.environmentId = '22345678-1234-1234-1234-123456789012';
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await expect(editor).toHaveValue('Unsaved learner work');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   await expect(page.getByRole('button', { name: 'Save file', exact: true })).toBeDisabled();
   await expect(page.getByText('The environment or file changed.', { exact: false })).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Discard changes and reload' }).click();
-  await expect(editor).toHaveValue('print("Current code")');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
   await page.getByLabel('Project-relative file path').fill('src/moved.py');
   await page.getByRole('button', { name: 'Rename / move file' }).click();
-  await expect(page.getByRole('combobox', { name: 'Project files' })).toHaveValue('src/moved.py');
+  await expect(page.getByRole('tab', { name: 'moved.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   await page.getByLabel('Project command', { exact: true }).fill('python3 src/moved.py');
   await page.getByRole('button', { name: 'Run command', exact: true }).click();
   await expect.poll(() => workCalls.some((c) => c.action === 'run')).toBe(true);
+  await page.getByRole('tab', { name: 'Project application', exact: true }).click();
+  await expect(
+    page.getByText(
+      'Start the project web server in the terminal or Run panel, then connect to a configured port below.',
+    ),
+  ).toBeVisible();
+  await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
   await page.route('https://preview.example.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
@@ -275,9 +398,14 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await frame.getByRole('button', { name: 'Try' }).click();
   await expect(frame.getByRole('button', { name: 'Clicked' })).toBeVisible();
   expect(previewOpen).toBe(true);
+  await page.getByRole('button', { name: 'Expand project workspace' }).click();
+  await page.getByTestId('pbl-workbench-split').evaluate((el) => {
+    el.scrollTop = 0;
+  });
   await page
     .getByTestId('pbl-v3-workspace')
     .screenshot({ path: 'test-results/pbl-v3-workbench.png' });
+  await page.getByRole('button', { name: 'Return to classroom layout' }).click();
   await page.getByRole('button', { name: 'Stop commands and close terminals' }).click();
   await expect(page.locator('iframe[title="Project application"]')).toHaveCount(0);
   expect(previewOpen).toBe(false);
@@ -309,13 +437,25 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect.poll(() => calls.some((c) => c.type === 'checkpoint')).toBe(true);
   view.questions = [{ q: 'What does return do?', options: ['Returns a value', 'Prints a value'] }];
   view.actions = ['quiz'];
+  view.stage = {
+    kind: 'check',
+    checker: 'quiz',
+    studentActions: ['quiz', 'next'],
+  } as LearningView['stage'];
+  view.state.position.stageIndex = 5;
   await page.getByRole('button', { name: 'Refresh progress' }).click();
+  await page.getByRole('button', { name: /Current task details/ }).click();
   await page.getByRole('radio', { name: 'Prints a value' }).check();
   await page.getByRole('button', { name: 'Submit answers' }).click();
   await expect(
     page.getByText('0/1 correct. Review your answers and try again.', { exact: true }),
   ).toBeVisible();
   await page.reload();
+  // The drawer closes on reload; its recorded quiz result remains available on reopening.
+  await page.getByRole('button', { name: /Current task details/ }).click();
+  await expect(page.getByRole('region', { name: 'Current task details', exact: true })).toBeVisible(
+    { timeout: 15000 },
+  );
   await expect(
     page.getByText('0/1 correct. Review your answers and try again.', { exact: true }),
   ).toBeVisible();

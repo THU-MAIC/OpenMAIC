@@ -1,10 +1,29 @@
 'use client';
+import {
+  ArrowUp,
+  Square,
+  MessageSquareText,
+  RefreshCw,
+  ChevronDown,
+  Moon,
+  Sun,
+  PanelLeft,
+  PanelRight,
+  LoaderCircle,
+} from 'lucide-react';
+import { useTheme } from '@/lib/hooks/use-theme';
+import { WorkbenchSplit } from './workbench-split';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { LearningWorkbenchPanel } from './workbench-panel';
-import { MarkdownText } from '../v2/markdown-text';
+import { LearningPanels } from './learning-panels';
+import { LearningConversation } from './conversation';
+import { WorkspaceFrame } from './workspace-frame';
+import { TestEvaluation } from './test-evaluation';
+import { TaskDock } from './task-dock';
+import { ProductionContext } from './production-context';
 import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
@@ -23,14 +42,24 @@ export async function pblRequest<T>(url: string, body?: unknown): Promise<T> {
     );
   return data as T;
 }
-export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
+function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
+  const { resolvedTheme, setTheme } = useTheme();
   const { t } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const [view, setView] = useState<LearningView | null>(null),
     [error, setError] = useState(''),
     [pending, setPending] = useState(false);
+  const [showWorkspace, setShowWorkspace] = useState(true),
+    [showAssistant, setShowAssistant] = useState(true);
+  const [sent, setSent] = useState(0);
   const [text, setText] = useState('');
-  const [answers, setAnswers] = useState<number[]>([]);
+  const [dirtyFiles, setDirtyFiles] = useState(false);
+  const [quizAnswers, setQuizAnswers] = useState<{ key: string; values: number[] }>({
+    key: '',
+    values: [],
+  });
+  const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
+  const answers = quizAnswers.key === answerKey ? quizAnswers.values : [];
   const retry = useRef<{
     type: string;
     payload: Record<string, unknown>;
@@ -40,7 +69,12 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
   const updateView = useCallback((next: LearningView) => {
     // A delayed poll or command response cannot undo newer progress or replace another study.
     setView((current) =>
-      current?.id === next.id && current.revision <= next.revision ? next : current,
+      current?.id === next.id &&
+      (current.revision < next.revision ||
+        (current.revision === next.revision &&
+          (current.activitySequence ?? 0) <= (next.activitySequence ?? 0)))
+        ? next
+        : current,
     );
   }, []);
   const studyId = view?.id;
@@ -77,73 +111,193 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
     }, 15_000);
     return () => clearInterval(timer);
   }, [view?.environmentId, view?.state.status, refresh]);
-  const command = async (type: string, payload: Record<string, unknown> = {}, repeat = false) => {
-    if (!view) return false;
-    setPending(true);
-    setError('');
-    const request =
-      repeat && retry.current
-        ? retry.current
-        : { type, payload, id: crypto.randomUUID(), revision: view.revision };
-    retry.current = request;
-    try {
-      const result = await pblRequest<{ view: LearningView }>('/api/pbl/v3', {
-        studyId: view.id,
-        command: {
-          id: request.id,
-          revision: request.revision,
-          type: request.type,
-          ...request.payload,
-        },
-      });
-      updateView(result.view);
-      retry.current = null;
-      if (request.type === 'chat') setText('');
-      return true;
-    } catch (e) {
-      setError((e as Error).message);
-      await refresh().catch(() => {});
-      return false;
-    } finally {
-      setPending(false);
-    }
-  };
+  const command = useCallback(
+    async (type: string, payload: Record<string, unknown> = {}, repeat = false) => {
+      if (!view) return false;
+      setPending(true);
+      setError('');
+      const request =
+        repeat && retry.current
+          ? retry.current
+          : { type, payload, id: crypto.randomUUID(), revision: view.revision };
+      retry.current = request;
+      if (type === 'chat' && !repeat) setSent((n) => n + 1);
+      try {
+        const result = await pblRequest<{ view: LearningView; result?: { stale?: boolean } }>(
+          '/api/pbl/v3',
+          {
+            studyId: view.id,
+            command: {
+              id: request.id,
+              revision: request.revision,
+              type: request.type,
+              ...request.payload,
+            },
+          },
+        );
+        updateView(result.view);
+        if (result.result?.stale) setError(t('pblV3.testResult.stale'));
+        retry.current = null;
+        if (request.type === 'chat')
+          setText((current) => (current === request.payload.text ? '' : current));
+        return true;
+      } catch (e) {
+        setError((e as Error).message);
+        await refresh().catch(() => {});
+        return false;
+      } finally {
+        setPending(false);
+      }
+    },
+    [view, updateView, refresh, t],
+  );
+  // Polling observes execution; a separate, idempotent command commits the verdict.
+  // Collect terminal test runs automatically, including after refresh. A failed
+  // collection offers a manual retry instead of an unbounded request loop.
+  const collectionAttempt = useRef('');
+  const [collectionFailed, setCollectionFailed] = useState('');
+  const testStage = view?.stage.kind === 'check' && view.stage.checker === 'tests';
+  const evaluationKey = view?.evaluation ? `${view.id}:${view.evaluation.id}` : '';
+  useEffect(() => {
+    if (
+      !testStage ||
+      !view?.evaluation ||
+      pending ||
+      view.busy ||
+      dirtyFiles ||
+      !view.environment?.ready ||
+      !['exited', 'cancelled', 'timed_out', 'failed'].includes(view.evaluation.state) ||
+      collectionAttempt.current === evaluationKey
+    )
+      return;
+    collectionAttempt.current = evaluationKey;
+    void command('collect', { evaluationId: view.evaluation.id }).then((ok) => {
+      if (!ok) setCollectionFailed(evaluationKey);
+    });
+  }, [testStage, view, pending, dirtyFiles, evaluationKey, command]);
+  const resultUnavailable =
+    testStage &&
+    !!view?.evaluation &&
+    (collectionFailed === evaluationKey ||
+      ['unknown', 'unavailable'].includes(view.evaluation.state));
+  const opening = useRef('');
+  useEffect(() => {
+    if (!view?.needsOpening || !view.environment?.ready || view.busy || pending || dirtyFiles)
+      return;
+    const key = `${view.id}:${view.environmentId}:${view.state.position.milestoneId}:${view.state.position.stageIndex}:${view.role}`;
+    if (opening.current === key) return;
+    opening.current = key;
+    void command('begin');
+  }, [view, pending, dirtyFiles, command]);
   const quiz = view?.state.collected[view.state.position.milestoneId ?? '']?.quiz;
-  const disabled = pending || view?.busy || !view?.environment?.ready;
-  const button = 'rounded-md border px-3 py-2 text-sm disabled:opacity-40 hover:bg-muted';
+  // All teaching actions share their prerequisites, with an explicit path out
+  // of each blocked state. Draft input stays editable during recovery.
+  const blockedReason = pending
+    ? 'pending'
+    : view?.busy
+      ? 'busy'
+      : !view?.environment?.ready
+        ? 'environment'
+        : dirtyFiles
+          ? 'unsaved'
+          : view?.needsOpening
+            ? 'opening'
+            : null;
+  const disabled = blockedReason !== null;
+  const blockedId = `pbl-input-blocked-${sceneId}`;
+  const button =
+    'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
     <section
-      className="h-full overflow-auto bg-background p-4 text-foreground"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
       data-testid="pbl-v3-workspace"
+      // Editor, terminal and teaching inputs own their keys, not the host's slide/chat shortcuts.
+      onKeyDown={(event) => event.stopPropagation()}
     >
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">{view?.title ?? t('pblV3.title')}</h2>
-          {view && (
-            <p className="text-sm text-muted-foreground">
-              {view.state.position.milestoneId} ·{' '}
-              {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
-            </p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            className={button}
-            disabled={pending}
-            onClick={() => void (view ? refresh() : open()).catch((e) => setError(e.message))}
-          >
-            {t('pblV3.refresh')}
-          </button>
-          {view?.busy && (
-            <button className={button} onClick={() => void command('cancel')}>
-              {t('pblV3.cancel')}
-            </button>
-          )}
-        </div>
+      <header className="pbl-topbar flex shrink-0 items-center gap-2 border-b pbl-chrome py-2 pl-3 pr-12">
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
+          {view?.title ?? t('pblV3.title')}
+        </h2>
+        {view && (
+          <>
+            <LearningPanels key={view.id} view={view} />
+            <details className="relative text-xs">
+              <summary
+                aria-label={t('pblV3.ide.environmentDetails')}
+                className="flex cursor-pointer list-none items-center gap-2 rounded bg-muted px-2 py-1"
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${view.environment?.ready ? 'bg-primary' : 'bg-amber-500'}`}
+                />
+                <span className="pbl-environment-label">
+                  {t(view.environment?.ready ? 'pblV3.ide.connected' : 'pblV3.ide.disconnected')}
+                </span>
+                <ChevronDown size={12} />
+              </summary>
+              <div className="absolute right-0 top-8 z-30 w-72 space-y-3 rounded border bg-popover p-3 shadow-lg">
+                <p>
+                  {t(view.environment?.ready ? 'pblV3.ide.connected' : 'pblV3.environmentNotice')}
+                </p>
+                {view.recovery && (
+                  <p>
+                    {t(
+                      view.recovery.checkpointRevision
+                        ? 'pblV3.restoredCheckpoint'
+                        : 'pblV3.restartedWorkspace',
+                    )}
+                    {view.recovery.progressReset && ` ${t('pblV3.restoredProgress')}`}
+                  </p>
+                )}
+              </div>
+            </details>
+          </>
+        )}
+        <button
+          className={button}
+          disabled={pending}
+          aria-label={t('pblV3.refresh')}
+          title={t('pblV3.refresh')}
+          onClick={() => void (view ? refresh() : open()).catch((e) => setError(e.message))}
+        >
+          <RefreshCw size={14} />
+        </button>
+        <button
+          className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+          aria-label={t('pblV3.ide.toggleWorkspace')}
+          aria-pressed={showWorkspace}
+          onClick={() => {
+            if (showWorkspace) setShowAssistant(true);
+            setShowWorkspace(!showWorkspace);
+          }}
+        >
+          <PanelLeft size={14} />
+        </button>
+        <button
+          className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+          aria-label={t('pblV3.ide.toggleAssistant')}
+          aria-pressed={showAssistant}
+          onClick={() => {
+            if (showAssistant) setShowWorkspace(true);
+            setShowAssistant(!showAssistant);
+          }}
+        >
+          <PanelRight size={14} />
+        </button>
+        <button
+          type="button"
+          className="rounded border p-1.5 hover:bg-muted"
+          aria-label={t('pblV3.ide.theme')}
+          onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
+        >
+          {resolvedTheme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
+        </button>
       </header>
       {error && (
-        <div role="alert" className="mb-4 rounded border border-destructive p-3">
-          <p>{error}</p>
+        <div
+          role="alert"
+          className="flex shrink-0 items-center gap-2 border-b bg-destructive/10 p-2 text-xs"
+        >
+          <p className="flex-1">{error}</p>
           {retry.current && (
             <button
               className={button}
@@ -155,12 +309,12 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
           )}
         </div>
       )}
-      {!view && <p>{t('pblV3.loading')}</p>}
+      {!view && <p className="p-4">{t('pblV3.loading')}</p>}
       {view && (
         <>
           {!view.environment?.ready && (
-            <div className="mb-4 rounded-lg border p-4">
-              <p className="mb-3">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 text-xs">
+              <p className="flex-1">
                 {t(view.environmentId ? 'pblV3.environmentUnavailable' : 'pblV3.environmentNotice')}
               </p>
               <button
@@ -172,22 +326,66 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
               </button>
             </div>
           )}
-          {view.recovery && (
-            <p role="status" className="mb-4 rounded border p-3">
-              {t(
-                view.recovery.checkpointRevision
-                  ? 'pblV3.restoredCheckpoint'
-                  : 'pblV3.restartedWorkspace',
-              )}
-              {view.recovery.progressReset && ` ${t('pblV3.restoredProgress')}`}
+          {view.recovery?.progressReset && (
+            <p
+              role="alert"
+              className="border-b px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+            >
+              {t('pblV3.restoredProgress')}
             </p>
           )}
-          {view.state.status === 'completed' ? (
-            <p role="status">{t('pblV3.completed')}</p>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="space-y-3 rounded-lg border p-4">
-                <h3 className="font-semibold">{t('pblV3.learning')}</h3>
+          <WorkbenchSplit
+            showWorkspace={showWorkspace}
+            showAssistant={showAssistant}
+            workspace={
+              <LearningWorkbenchPanel
+                key={view.id}
+                view={view}
+                pending={pending}
+                onDirtyChange={setDirtyFiles}
+                onRefresh={refresh}
+                onSave={(path, text, hash) => command('save', { path, text, expectedHash: hash })}
+                onCheckpoint={() => command('checkpoint')}
+              >
+                {view.actions.includes('compile') && (
+                  <button
+                    className={button}
+                    disabled={disabled || !!view.evaluation}
+                    onClick={() => void command('compile')}
+                  >
+                    {t('pblV3.build')}
+                  </button>
+                )}
+                {view.evaluation && view.stage.kind !== 'check' && (
+                  <>
+                    <button
+                      className={button}
+                      disabled={disabled}
+                      onClick={() => void command('collect')}
+                    >
+                      {t('pblV3.collect')}
+                    </button>
+                    <pre className="whitespace-pre-wrap text-xs">
+                      {view.evaluation.stdout}
+                      {view.evaluation.stderr}
+                    </pre>
+                  </>
+                )}
+              </LearningWorkbenchPanel>
+            }
+            assistant={
+              <section
+                aria-label={t('pblV3.learning')}
+                data-testid="pbl-assistant"
+                className="flex h-full min-h-0 flex-col bg-muted/10"
+              >
+                <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+                  <MessageSquareText size={15} />
+                  <h3 className="font-semibold">{t('pblV3.learning')}</h3>
+                  <span className="ml-auto text-muted-foreground">
+                    {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
+                  </span>
+                </header>
                 {view.roleRun &&
                   ['failed', 'cancelled', 'missing'].includes(view.roleRun.status) && (
                     <div role="alert" className="rounded border p-3">
@@ -196,6 +394,9 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
                         <button
                           className={button}
                           disabled={disabled}
+                          title={
+                            blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
+                          }
                           onClick={() => void command('retry')}
                         >
                           {t('pblV3.retryResponse')}
@@ -203,158 +404,271 @@ export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
                       )}
                     </div>
                   )}
-                <div className="max-h-96 space-y-3 overflow-auto" aria-live="polite">
-                  {view.messages.map((message, index) => (
-                    <article
-                      key={index}
-                      className={message.role === 'user' ? 'rounded-md bg-muted p-3' : 'p-2'}
+
+                <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
+                  <LearningConversation view={view} sent={sent} />
+                  {dirtyFiles && (
+                    <p
+                      role="status"
+                      className="border-t px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
                     >
-                      <MarkdownText content={message.text} />
-                    </article>
-                  ))}
-                  {view.busy && <p role="status">{t('pblV3.thinking')}</p>}
+                      {t('pblV3.workbench.unsaved')}
+                    </p>
+                  )}
+                  <TaskDock
+                    key={`${view.id}:${view.state.introCompleted}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
+                    view={view}
+                    working={testStage && !!view.evaluation && !resultUnavailable}
+                    summary={
+                      testStage ? (
+                        <TestEvaluation
+                          view={view}
+                          mode="summary"
+                          collectionFailed={resultUnavailable}
+                        />
+                      ) : undefined
+                    }
+                    action={
+                      testStage && !view.actions.includes('next') ? (
+                        <button
+                          className="pbl-stage-action inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold"
+                          disabled={
+                            disabled ||
+                            (!!view.evaluation && !resultUnavailable) ||
+                            (!view.evaluation && !view.actions.includes('evaluate'))
+                          }
+                          data-state={
+                            disabled ||
+                            (!!view.evaluation && !resultUnavailable) ||
+                            (!view.evaluation && !view.actions.includes('evaluate'))
+                              ? 'pending'
+                              : 'ready'
+                          }
+                          onClick={() => {
+                            if (view.evaluation) {
+                              collectionAttempt.current = '';
+                              setCollectionFailed('');
+                              void command('collect', { evaluationId: view.evaluation.id }).then(
+                                (ok) => {
+                                  if (!ok) setCollectionFailed(evaluationKey);
+                                },
+                              );
+                            } else void command('evaluate');
+                          }}
+                        >
+                          {view.evaluation && !resultUnavailable && (
+                            <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+                          )}
+                          {t(
+                            resultUnavailable
+                              ? 'pblV3.testResult.retryCollect'
+                              : view.evaluation
+                                ? 'pblV3.testResult.running'
+                                : 'pblV3.runTests',
+                          )}
+                        </button>
+                      ) : (
+                        view.actions.includes('next') && (
+                          <button
+                            className="pbl-stage-action inline-flex h-7 min-w-0 max-w-[220px] shrink-0 items-center justify-center truncate rounded-md border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+                            data-state={disabled ? 'disabled' : 'ready'}
+                            disabled={disabled}
+                            onClick={() => void command('next')}
+                          >
+                            {view.milestones?.[view.state.position.milestoneIndex]?.stages[
+                              view.state.position.stageIndex + 1
+                            ]
+                              ? t('pblV3.journey.enterStep', {
+                                  step: t(
+                                    `pblV3.journey.steps.${view.milestones[view.state.position.milestoneIndex]!.stages[view.state.position.stageIndex + 1]}`,
+                                  ),
+                                })
+                              : t('pblV3.next')}
+                          </button>
+                        )
+                      )
+                    }
+                  >
+                    {view.stage.kind === 'produce' && <ProductionContext view={view} />}
+                    {view.stage.kind === 'produce' && view.stage.exploration && (
+                      <p className="mb-2 rounded border p-2">
+                        {view.stage.exploration.introduction}
+                      </p>
+                    )}
+                    {testStage && (
+                      <TestEvaluation
+                        view={view}
+                        mode="details"
+                        collectionFailed={resultUnavailable}
+                      />
+                    )}
+                    {view.decisions.map((decision) => (
+                      <fieldset key={decision.id}>
+                        <legend>{decision.prompt}</legend>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {decision.options.map((option) => (
+                            <button
+                              key={option.id}
+                              className={button}
+                              aria-pressed={view.state.collected[
+                                view.state.position.milestoneId ?? ''
+                              ]?.decisions.some(
+                                (d) => d.id === decision.id && d.chosen === option.id,
+                              )}
+                              disabled={disabled}
+                              onClick={() =>
+                                void command('decide', {
+                                  decisionId: decision.id,
+                                  chosen: option.id,
+                                })
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ))}
+                    {view.questions.map((question, index) => (
+                      <fieldset key={index}>
+                        <legend>{question.q}</legend>
+                        {question.options.map((option, i) => (
+                          <label className="block" key={i}>
+                            <input
+                              type="radio"
+                              name={`quiz-${index}`}
+                              checked={answers[index] === i}
+                              onChange={() =>
+                                setQuizAnswers((previous) => {
+                                  const next =
+                                    previous.key === answerKey ? [...previous.values] : [];
+                                  next[index] = i;
+                                  return { key: answerKey, values: next };
+                                })
+                              }
+                            />{' '}
+                            {option}
+                          </label>
+                        ))}
+                      </fieldset>
+                    ))}
+                    {view.questions.length > 0 && quiz && (
+                      <p role="status">
+                        {t(quiz.passed ? 'pblV3.quizPassed' : 'pblV3.quizRetry', {
+                          score: quiz.score,
+                          total: quiz.total,
+                        })}
+                      </p>
+                    )}
+                    {view.actions.includes('quiz') && (
+                      <button
+                        className={button}
+                        disabled={disabled || answers.length !== view.questions.length}
+                        onClick={() => void command('quiz', { answers })}
+                      >
+                        {t('pblV3.submitQuiz')}
+                      </button>
+                    )}
+                  </TaskDock>
                 </div>
                 {view.actions.includes('chat') && (
                   <form
+                    className="shrink-0 border-t bg-background p-3"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      void command('chat', { text });
+                      if (!disabled && text.trim()) void command('chat', { text });
                     }}
                   >
-                    <label className="block text-sm" htmlFor={`pbl-chat-${sceneId}`}>
+                    {blockedReason && (
+                      <div
+                        id={blockedId}
+                        role="status"
+                        data-testid="pbl-input-blocked"
+                        className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+                      >
+                        <p className="min-w-0 flex-1">{t(`pblV3.inputBlocked.${blockedReason}`)}</p>
+                        {blockedReason === 'environment' && (
+                          <button
+                            type="button"
+                            className={button}
+                            onClick={() => void command('prepare')}
+                          >
+                            {t('pblV3.recoverEnvironment')}
+                          </button>
+                        )}
+                        {blockedReason === 'opening' && (
+                          <button
+                            type="button"
+                            className={button}
+                            onClick={() => void command('begin')}
+                          >
+                            {t('pblV3.retryOpening')}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <label className="sr-only" htmlFor={`pbl-chat-${sceneId}`}>
                       {t('pblV3.message')}
                     </label>
-                    <textarea
-                      id={`pbl-chat-${sceneId}`}
-                      className="my-2 min-h-20 w-full rounded border p-2"
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                    />
-                    <button
-                      className={button}
-                      disabled={disabled || !view.environmentId || !text.trim()}
-                    >
-                      {t('pblV3.send')}
-                    </button>
+                    <div className="rounded-xl border bg-muted/20 p-2 focus-within:ring-1 focus-within:ring-primary">
+                      <textarea
+                        id={`pbl-chat-${sceneId}`}
+                        className="h-20 w-full resize-none bg-transparent p-1 text-sm outline-none"
+                        placeholder={t('pblV3.ide.messagePlaceholder')}
+                        value={text}
+                        aria-describedby={blockedReason ? blockedId : undefined}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                            e.preventDefault();
+                            if (!disabled && text.trim()) void command('chat', { text });
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-muted-foreground">
+                          {t('pblV3.ide.sendHint')}
+                        </span>
+                        {view.busy ? (
+                          <button
+                            type="button"
+                            className="rounded-full bg-primary p-2 text-primary-foreground"
+                            aria-label={t('pblV3.cancel')}
+                            disabled={pending}
+                            onClick={() => void command('cancel')}
+                          >
+                            <Square size={15} />
+                          </button>
+                        ) : (
+                          <button
+                            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
+                            aria-label={t('pblV3.send')}
+                            disabled={disabled || !text.trim()}
+                            title={
+                              blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
+                            }
+                            aria-describedby={blockedReason ? blockedId : undefined}
+                          >
+                            <ArrowUp size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </form>
                 )}
-                {view.decisions.map((decision) => (
-                  <fieldset key={decision.id}>
-                    <legend>{decision.prompt}</legend>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {decision.options.map((option) => (
-                        <button
-                          key={option.id}
-                          className={button}
-                          disabled={disabled}
-                          onClick={() =>
-                            void command('decide', { decisionId: decision.id, chosen: option.id })
-                          }
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
-                ))}
-                {view.questions.map((question, index) => (
-                  <fieldset key={index}>
-                    <legend>{question.q}</legend>
-                    {question.options.map((option, i) => (
-                      <label className="block" key={i}>
-                        <input
-                          type="radio"
-                          name={`quiz-${index}`}
-                          checked={answers[index] === i}
-                          onChange={() =>
-                            setAnswers((previous) => {
-                              const next = [...previous];
-                              next[index] = i;
-                              return next;
-                            })
-                          }
-                        />{' '}
-                        {option}
-                      </label>
-                    ))}
-                  </fieldset>
-                ))}
-                {view.questions.length > 0 && quiz && (
-                  <p role="status">
-                    {t(quiz.passed ? 'pblV3.quizPassed' : 'pblV3.quizRetry', {
-                      score: quiz.score,
-                      total: quiz.total,
-                    })}
-                  </p>
-                )}
-                {view.actions.includes('quiz') && (
-                  <button
-                    className={button}
-                    disabled={disabled || answers.length !== view.questions.length}
-                    onClick={() => void command('quiz', { answers })}
-                  >
-                    {t('pblV3.submitQuiz')}
-                  </button>
-                )}
-                {view.actions.includes('next') && (
-                  <button
-                    className={button}
-                    disabled={disabled}
-                    onClick={() => void command('next')}
-                  >
-                    {t('pblV3.next')}
-                  </button>
-                )}
-              </div>
-              <LearningWorkbenchPanel
-                key={view.id}
-                view={view}
-                pending={pending}
-                onRefresh={refresh}
-                onSave={(path, text, expectedHash) => command('save', { path, text, expectedHash })}
-                onCheckpoint={() => command('checkpoint')}
-              >
-                <div className="flex flex-wrap gap-2">
-                  {view.actions.includes('evaluate') && (
-                    <button
-                      className={button}
-                      disabled={disabled || !!view.evaluation}
-                      onClick={() => void command('evaluate')}
-                    >
-                      {t('pblV3.runTests')}
-                    </button>
-                  )}
-                  {view.evaluation && (
-                    <button
-                      className={button}
-                      disabled={disabled}
-                      onClick={() => void command('collect')}
-                    >
-                      {t('pblV3.collect')}
-                    </button>
-                  )}
-                </div>
-                {view.evaluation && (
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-sm">
-                    {view.evaluation.state}
-                    {'\n'}
-                    {view.evaluation.stdout}
-                    {'\n'}
-                    {view.evaluation.stderr}
-                  </pre>
-                )}
-                {view.state.collected[view.state.position.milestoneId ?? '']?.tests && (
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-sm">
-                    {view.state.collected[view.state.position.milestoneId!]!.tests!.status}
-                    {'\n'}
-                    {view.state.collected[view.state.position.milestoneId!]!.tests!.publicFeedback}
-                  </pre>
-                )}
-              </LearningWorkbenchPanel>
-            </div>
-          )}
+              </section>
+            }
+          />
         </>
       )}
     </section>
+  );
+}
+
+export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
+  return (
+    <WorkspaceFrame>
+      <PBLV3WorkspaceContent sceneId={sceneId} />
+    </WorkspaceFrame>
   );
 }

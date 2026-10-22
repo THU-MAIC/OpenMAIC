@@ -21,7 +21,8 @@
     "stop": "Dừng lượt dựng này",
     "waiting": "Đang xử lý",
     "emptyTitle": "Bắt đầu một cuộc trò chuyện",
-    "emptyHint": "Hãy mô tả thay đổi bạn muốn, hoặc dùng @ để chỉ một lớp học"
+    "emptyHint": "Hãy mô tả thay đổi bạn muốn, hoặc dùng @ để chỉ một lớp học",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Đang chờ bạn trả lời",
@@ -188,7 +189,15 @@
       "listFolderCourses": "Xem thư viện lớp học",
       "createStage": "Tạo lớp học",
       "renameStage": "Đổi tên lớp học",
-      "readStageOutline": "Đọc dàn ý lớp học"
+      "readStageOutline": "Đọc dàn ý lớp học",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} giây",
@@ -263,7 +272,8 @@
       "createStage": "Không tạo được lớp học",
       "renameStage": "Không đổi được tên lớp học",
       "readStageOutline": "Không đọc được dàn ý lớp học",
-      "generic": "Lần gọi tool thất bại"
+      "generic": "Lần gọi tool thất bại",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

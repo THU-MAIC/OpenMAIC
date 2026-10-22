@@ -21,7 +21,8 @@
     "stop": "この生成を停止",
     "waiting": "処理中",
     "emptyTitle": "新しい会話を始めましょう",
-    "emptyHint": "変更したい内容を書くか、@ でクラスを指定してください"
+    "emptyHint": "変更したい内容を書くか、@ でクラスを指定してください",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "回答をお待ちしています",
@@ -188,7 +189,15 @@
       "listFolderCourses": "授業一覧を見る",
       "createStage": "授業を作成",
       "renameStage": "授業名を変更",
-      "readStageOutline": "授業のアウトラインを読む"
+      "readStageOutline": "授業のアウトラインを読む",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} 秒",
@@ -263,7 +272,8 @@
       "createStage": "授業を作成できませんでした",
       "renameStage": "授業名を変更できませんでした",
       "readStageOutline": "授業のアウトラインを読めませんでした",
-      "generic": "ツール呼び出しに失敗しました"
+      "generic": "ツール呼び出しに失敗しました",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

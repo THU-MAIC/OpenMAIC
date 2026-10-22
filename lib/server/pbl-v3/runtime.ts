@@ -1,4 +1,6 @@
+import { projectConversation, learningRunFailure } from './conversation';
 import 'server-only';
+import { reviewQuestion } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
@@ -11,27 +13,22 @@ import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages'
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
+import { stageStep } from '@/lib/pbl/v3/presentation';
 import { isPBLV3Reference, type LearningView } from '@/lib/pbl/v3/types';
+import { isExplorationStage } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
-import {
-  currentStage,
-  currentMilestone,
-  projectIntroForSession,
-} from '@/lib/pbl/v3/domain/orchestration/state';
+import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
+import { assertIncrementalPlan } from './plan';
+import { startBuild, collectBuild } from './compilation';
+import { evaluationCommand, evaluationFor, evaluationOutcome } from './evaluation';
 import { installedProject } from './catalog';
 import { resolveProject } from './project-resolver';
-import { startBuild, collectBuild } from './compilation';
-import {
-  evaluationCommand,
-  evaluationFor,
-  evaluationPassed,
-  evaluationFeedback,
-} from './evaluation';
 import { LearningStore, type Study, type RoleBinding } from './store';
+import { hasStageCompletion, succeededWithoutTeachingReceipt } from './stage-progress';
 import {
   learningWorkspaceId,
   withLearningWorkspaceAccess,
@@ -43,7 +40,7 @@ export function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 export function stageKey(row: Study) {
-  return `${row.state.introCompleted ? row.state.position.milestoneId : 'intro'}:${row.state.introCompleted ? row.state.position.stageIndex : -1}`;
+  return `${row.state.position.milestoneId}:${row.state.position.stageIndex}`;
 }
 export function projectFor(row: Study) {
   if (row.project) return row.project;
@@ -55,9 +52,7 @@ export function projectFor(row: Study) {
 }
 export function stageFor(row: Study) {
   const project = projectFor(row).definition;
-  return row.state.introCompleted
-    ? currentStage(project, row.state)!
-    : projectIntroForSession(project, row.state);
+  return currentStage(project, row.state)!;
 }
 export function roleFor(row: Study): AgentRole | null {
   const stage = stageFor(row);
@@ -68,7 +63,7 @@ export function roleFor(row: Study): AgentRole | null {
     row.state.collected[row.state.position.milestoneId!]?.remediation
   )
     return 'coder';
-  return null;
+  return stage.kind === 'check' ? 'mentor' : null;
 }
 export async function busy(store: LearningStore, row: Study) {
   const agents = await getAgentSessionStore();
@@ -82,14 +77,24 @@ export function requireEnvironment(row: Study): string {
   if (!row.environment_id) throw sandboxConflict('Prepare the project environment first.');
   return row.environment_id;
 }
-export async function readFiles(service: SandboxService, row: Study, project = projectFor(row)) {
+export async function readFiles(
+  service: SandboxService,
+  row: Study,
+  project = projectFor(row),
+  signal?: AbortSignal,
+  onProgress?: () => void,
+) {
+  signal?.throwIfAborted();
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
   // A process can modify files without using our file API. Refuse evidence until managed writers stop.
   await service.assertWorkspaceIdle(environmentId);
   let bytes = 0;
   for (const path of await projectFiles(service, environmentId, project)) {
+    signal?.throwIfAborted();
     const text = await service.readText(environmentId, path);
+    signal?.throwIfAborted();
+    onProgress?.();
     bytes += Buffer.byteLength(text);
     if (bytes > 1_048_576)
       throw sandboxInvalid('Project source snapshots are limited to 1 MiB.', 'PBL_SOURCE_SIZE');
@@ -103,6 +108,21 @@ export function filesFingerprint(files: Record<string, string>) {
 export async function fileSnapshot(service: SandboxService, row: Study) {
   const files = await readFiles(service, row);
   return { files, fingerprint: filesFingerprint(files) };
+}
+async function saveStudyCheckpoint(service: SandboxService, row: Study) {
+  const snapshot = await fileSnapshot(service, row);
+  const previous = await service.checkpoint(requireEnvironment(row));
+  const saved = await service.saveWorkspace(requireEnvironment(row), previous?.revision ?? 0);
+  row.environment_recovery = {
+    ...row.environment_recovery,
+    requestId: row.environment_id!,
+    savedPosition: {
+      revision: saved.checkpoint.revision,
+      milestoneIndex: row.state.position.milestoneIndex,
+      stageIndex: row.state.position.stageIndex,
+      fingerprint: snapshot.fingerprint,
+    },
+  };
 }
 export function invalidateWorkspace(row: Study, changedPath?: string): EngineTransition {
   const state = structuredClone(row.state);
@@ -147,7 +167,13 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
     transitions.startOrchestration(project.definition),
   );
 }
-export async function queueRole(store: LearningStore, db: PoolClient, row: Study, text: string) {
+export async function queueRole(
+  store: LearningStore,
+  db: PoolClient,
+  row: Study,
+  text: string,
+  opening = false,
+) {
   await fenceOwnerWrite(db, row.owner_id);
   const role = roleFor(row);
   if (!role) throw sandboxConflict('This stage does not accept a teaching message.');
@@ -195,7 +221,32 @@ export async function queueRole(store: LearningStore, db: PoolClient, row: Study
       role === 'planner' || role === 'coder',
       false,
     );
-  await agents.postUserMessage(binding.session_id, { text }, { expectedOwnerId: row.owner_id });
+  if (binding.stage_key !== stageKey(row) || binding.feedback_seq === 0) {
+    const milestone = currentMilestone(projectFor(row).definition, row.state)!;
+    await agents.appendControlEvent(binding.session_id, {
+      ts: Date.now(),
+      type: 'pbl_stage_entered',
+      data: {
+        milestoneId: milestone.id,
+        milestoneTitle: milestone.title,
+        milestoneIndex: row.state.position.milestoneIndex,
+        stageIndex: row.state.position.stageIndex,
+        step: stageStep(stageFor(row)),
+        total: milestone.stages.length,
+      },
+    });
+  }
+  if (opening) {
+    // A transport wakeup explicitly marked as system-originated. PBL never treats it as feedback.
+    await agents.appendControlEvent(binding.session_id, {
+      ts: Date.now(),
+      type: 'user_message',
+      data: { text, delivery: 'queued', pblOpening: true },
+    });
+    await agents.requeueSession(binding.session_id);
+  } else {
+    await agents.postUserMessage(binding.session_id, { text }, { expectedOwnerId: row.owner_id });
+  }
   return binding.session_id;
 }
 export interface LearningCommand {
@@ -208,6 +259,7 @@ export interface LearningCommand {
   decisionId?: string;
   chosen?: string;
   answers?: number[];
+  evaluationId?: string;
 }
 function validateCommand(command: LearningCommand) {
   if (
@@ -224,6 +276,11 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (
+    command.evaluationId !== undefined &&
+    (typeof command.evaluationId !== 'string' || !/^[a-f0-9-]{36}$/.test(command.evaluationId))
+  )
+    throw sandboxInvalid('A valid evaluation ID is required.');
 }
 export async function commandStudy(
   principal: OwnerPrincipal,
@@ -254,6 +311,23 @@ export async function commandStudy(
     row = await store.get(id, principal.ownerId);
     const project = projectFor(row),
       definition = project.definition;
+    const agents = await getAgentSessionStore();
+    let alreadyStarted = false;
+    if (command.type === 'begin') {
+      const bound = (await store.roles(id)).find(
+        (b) => b.role === roleFor(row) && b.stage_key === stageKey(row),
+      );
+      alreadyStarted = !!bound && !!(await agents.getSession(bound.session_id));
+    }
+    // Refreshes and multiple tabs may observe the same terminal run. Its durable
+    // result is the idempotence receipt; never collect a newer run by accident.
+    const collecting = command.type === 'collect' && !!command.evaluationId;
+    if (collecting) {
+      const saved = row.state.collected[row.state.position.milestoneId ?? '']?.tests;
+      if (!row.evaluation && saved?.id === command.evaluationId) return { collected: true };
+      if (row.evaluation?.id !== command.evaluationId)
+        throw sandboxConflict('The pending evaluation changed. Refresh before collecting.');
+    }
     const hash = digest(JSON.stringify(command));
     const receipt = (
       await store.pool.query<{ hash: string; result: unknown; stage_key: string }>(
@@ -269,10 +343,10 @@ export async function commandStudy(
         throw sandboxConflict('This unfinished request belongs to an earlier learning stage.');
       // Remote operation retries below reuse the original environment / command ID.
     } else {
-      if (row.revision !== command.revision)
+      if (row.revision !== command.revision && !alreadyStarted && !collecting)
         throw sandboxConflict('Progress changed. Refresh before submitting.');
     }
-    const agents = await getAgentSessionStore();
+    if (alreadyStarted) return { alreadyStarted: true };
     if (await busy(store, row))
       throw sandboxConflict('Wait for the teaching response, or cancel it first.');
     const service = await SandboxService.forOwner(principal);
@@ -294,14 +368,14 @@ export async function commandStudy(
         JSON.stringify(result),
       ]);
     };
-    if (command.type === 'chat' || command.type === 'retry') {
+    if (command.type === 'chat' || command.type === 'retry' || command.type === 'begin') {
       if (!isAgentRuntimeConfigured())
         throw new SandboxError(
           'PBL_RUNNER_DISABLED',
           503,
           'Enable the existing Agent runtime to use project teaching.',
         );
-      check('chat');
+      if (command.type === 'chat') check('chat');
       requireEnvironment(row);
       if (command.type === 'chat' && !command.text?.trim())
         throw sandboxInvalid('A learning message is required.');
@@ -319,7 +393,17 @@ export async function commandStudy(
           );
           const sessionStore = store.agentStore(db);
           const meta = binding ? await sessionStore.getSession(binding.session_id) : null;
-          if (!binding || !meta || !['failed', 'cancelled'].includes(meta.status))
+          const unclosed =
+            binding &&
+            meta &&
+            succeededWithoutTeachingReceipt(
+              row,
+              stage,
+              binding,
+              meta.status,
+              (await listAgentUserMessages(sessionStore, binding.session_id)).at(-1)?.seq,
+            );
+          if (!binding || !meta || (!['failed', 'cancelled'].includes(meta.status) && !unclosed))
             throw sandboxConflict('Only a failed or cancelled teaching turn can be retried.');
           await writeSessionGrant(
             db,
@@ -334,7 +418,22 @@ export async function commandStudy(
           // Reuse the actual student turn: retrying is not new feedback or approval.
           result = { sessionId: binding.session_id };
         } else {
-          result = { sessionId: await queueRole(store, db, row, command.text!) };
+          if (!row.state.introCompleted) {
+            transition = transitions.completeIntro(row.state);
+            row = await store.commit(db, row, transition);
+            transition = { state: row.state, events: [] };
+          }
+          result = {
+            sessionId: await queueRole(
+              store,
+              db,
+              row,
+              command.type === 'begin'
+                ? 'System stage entry: open the current learning step using its teaching protocol. This is not learner feedback. Introduce the project when entering its first step, and wait for the learner.'
+                : command.text!,
+              command.type === 'begin',
+            ),
+          };
         }
         await persist(db);
         return result;
@@ -358,7 +457,10 @@ export async function commandStudy(
           );
         // Store allocation identity before network I/O. Reloads and lost acknowledgements reuse it.
         if (!row.environment_recovery || row.environment_recovery.requestId === previousId) {
-          row.environment_recovery = { requestId: previousId ? randomUUID() : row.id };
+          row.environment_recovery = {
+            ...row.environment_recovery,
+            requestId: previousId ? randomUUID() : row.id,
+          };
           row = await store.transaction((db) =>
             store.commit(db, row, { state: row.state, events: [] }),
           );
@@ -369,7 +471,7 @@ export async function commandStudy(
         );
         env = await service.reconcile(env.id);
         if (env.state === 'destroyed') {
-          row.environment_recovery = { requestId: randomUUID() };
+          row.environment_recovery = { ...row.environment_recovery, requestId: randomUUID() };
           await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
           throw sandboxConflict(
             'The replacement expired before preparation completed. Retry preparation.',
@@ -384,10 +486,16 @@ export async function commandStudy(
             if (!existing.has(path)) await service.writeText(env.id, path, text);
         }
         row.environment_id = env.id;
-        const restored = recoveredProgress(row, project, await readFiles(service, row));
+        const restored = recoveredProgress(
+          row,
+          project,
+          await readFiles(service, row),
+          checkpoint?.revision ?? 0,
+        );
         transition = { state: restored.state, events: [] };
         row.evaluation = null;
         row.environment_recovery = {
+          ...row.environment_recovery,
           requestId: env.id,
           checkpointRevision: checkpoint?.revision ?? 0,
           progressReset: restored.reset,
@@ -416,6 +524,7 @@ export async function commandStudy(
         throw sandboxConflict('Only PLAN.md can be edited during planning.');
       if (command.path === 'PLAN.md' && !(stage.kind === 'produce' && stage.writes === 'plan'))
         throw sandboxConflict('The approved plan is read-only during coding.');
+      if (command.path === 'PLAN.md') await assertIncrementalPlan(store, row, command.text);
       await service.compareAndWriteText(
         requireEnvironment(row),
         command.path,
@@ -429,8 +538,7 @@ export async function commandStudy(
       );
       transition = { state: row.state, events: [] };
     } else if (command.type === 'checkpoint') {
-      const checkpoint = await service.checkpoint(requireEnvironment(row));
-      await service.saveWorkspace(requireEnvironment(row), checkpoint?.revision ?? 0);
+      await saveStudyCheckpoint(service, row);
     } else if (command.type === 'decide') {
       check('decide');
       const decision = definition.decisions.find((d) => d.id === command.decisionId);
@@ -479,9 +587,10 @@ export async function commandStudy(
       );
       result = await service.startCommand(requireEnvironment(row), {
         requestId: command.id,
-        command:
-          project.testCommand ??
-          evaluationCommand(evaluationFor(project, row.state.position.milestoneId!), command.id),
+        command: evaluationCommand(
+          evaluationFor(project, row.state.position.milestoneId!),
+          command.id,
+        ),
         timeoutMs: 60_000,
       });
       transition = { state: row.state, events: [] };
@@ -517,18 +626,7 @@ export async function commandStudy(
           row.state,
           {
             id: evaluation.id,
-            status:
-              observed.state === 'exited'
-                ? observed.exitCode === 0 &&
-                  (project.testCommand !== undefined ||
-                    evaluationPassed(
-                      evaluationFor(project, milestone.id),
-                      evaluation.id,
-                      observed.stdout,
-                    ))
-                  ? 'passed'
-                  : 'failed'
-                : 'error',
+            ...evaluationOutcome(evaluationFor(project, milestone.id), evaluation.id, observed),
             evaluator: 'sandbox-command',
             milestoneId: milestone.id,
             stageIndex: row.state.position.stageIndex,
@@ -542,10 +640,6 @@ export async function commandStudy(
             codeArtifactId: collected.code?.id,
             startedAt: evaluation.startedAt,
             completedAt: new Date().toISOString(),
-            publicFeedback: project.testCommand
-              ? (observed.stdout + '\n' + observed.stderr).slice(0, 8000)
-              : evaluationFeedback(observed.stdout, observed.stderr),
-            failureKind: observed.state === 'exited' ? 'assertion' : 'infrastructure',
           },
           { remediationId: randomUUID() },
         );
@@ -556,20 +650,10 @@ export async function commandStudy(
         throw sandboxConflict('Collect the pending test result before continuing.');
       check('next');
       const role = roleFor(row);
-      if (role && stage.kind !== 'dialogue') {
+      if (role && (stage.kind === 'mentor_say' || stage.kind === 'produce')) {
         const bindings = await store.roles(id);
         const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
-        const meta = binding ? await agents.getSession(binding.session_id) : null;
-        const latestUser = binding
-          ? (await listAgentUserMessages(agents, binding.session_id)).at(-1)
-          : null;
-        if (
-          meta?.status !== 'succeeded' ||
-          ((stage.kind === 'mentor_say' || stage.kind === 'produce') &&
-            (binding?.completion?.stageKey !== stageKey(row) ||
-              binding.completion.feedbackSeq !== binding.feedback_seq ||
-              binding.completion.userMessageSeq !== latestUser?.seq))
-        )
+        if (!hasStageCompletion(row, stage, binding))
           throw sandboxConflict('Complete the current teaching interaction first.');
       }
       if (stage.kind === 'produce' || (stage.kind === 'check' && stage.checker === 'tests')) {
@@ -584,10 +668,13 @@ export async function commandStudy(
             'Files changed after review or testing. Review and test the current files first.',
           );
       }
-      if (stage.kind === 'produce') {
+      const endingMilestone =
+        row.state.introCompleted &&
+        row.state.position.stageIndex ===
+          currentMilestone(definition, row.state)!.stages.length - 1;
+      if (stage.kind === 'produce' || endingMilestone) {
         // Establish a durable artifact before acknowledging the student's stage confirmation.
-        const checkpoint = await service.checkpoint(requireEnvironment(row));
-        await service.saveWorkspace(requireEnvironment(row), checkpoint?.revision ?? 0);
+        await saveStudyCheckpoint(service, row);
       }
       transition = row.state.introCompleted
         ? transitions.completeCurrentStage(definition, row.state)
@@ -618,33 +705,45 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     stage = stageFor(row),
     role = roleFor(row),
     milestone = currentMilestone(project.definition, row.state)!;
-  const binding = (await store.roles(id)).find(
-    (b) => b.role === role && b.stage_key === stageKey(row),
-  );
+  const bindings = await store.roles(id);
+  const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
   const messages: LearningView['messages'] = [];
+  let conversation: LearningView['conversation'] = [];
+  let activitySequence = 0;
   let roleRun: LearningView['roleRun'] = null;
   let latestUserSeq: number | undefined;
   let currentQuestionShown = false;
   if (binding) {
     const agents = await getAgentSessionStore();
     const meta = await agents.getSession(binding.session_id);
+    latestUserSeq = (await listAgentUserMessages(agents, binding.session_id)).at(-1)?.seq;
+    const unclosed = succeededWithoutTeachingReceipt(
+      row,
+      stage,
+      binding,
+      meta?.status,
+      latestUserSeq,
+    );
     roleRun = {
-      status: meta?.status ?? 'missing',
-      canRetry: !!meta && ['failed', 'cancelled'].includes(meta.status),
+      status: unclosed ? 'failed' : (meta?.status ?? 'missing'),
+      canRetry: !!meta && (unclosed || ['failed', 'cancelled'].includes(meta.status)),
       // Never expose raw provider errors, URLs, or credentials to the browser.
-      failure:
-        meta?.status === 'failed'
-          ? /\b(401|403)\b|unauthori[sz]ed|authentication|api.?key/i.test(meta.error ?? '')
-            ? 'authentication'
-            : /timed?\s*out|timeout|deadline/i.test(meta.error ?? '')
-              ? 'timeout'
-              : 'unavailable'
+      failure: unclosed
+        ? 'incomplete'
+        : meta?.status === 'failed'
+          ? learningRunFailure(meta.error)
           : null,
     };
-    latestUserSeq = (await listAgentUserMessages(agents, binding.session_id)).at(-1)?.seq;
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
     const last = await agents.lastEventSeq(binding.session_id);
+    activitySequence = last;
     const events = await agents.readEventsAfter(binding.session_id, Math.max(0, last - 1000), 1000);
+    conversation = projectConversation(
+      events,
+      binding.role,
+      meta?.status === 'running' || meta?.status === 'queued',
+      roleRun.status,
+    );
     for (const event of events) {
       const data = event.data as {
         text?: string;
@@ -653,30 +752,17 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
         result?: { content?: { type: string; text?: string }[] };
         message?: { role?: string; content?: unknown };
       };
-      if (
-        event.type === 'tool_execution_end' &&
-        data.toolName === 'request_skill_review' &&
-        !data.isError
-      ) {
-        for (const block of data.result?.content ?? []) {
-          if (block.type === 'text' && block.text) {
-            try {
-              const task = JSON.parse(block.text);
-              if (typeof task.question === 'string') {
-                messages.push({ role: 'assistant', text: task.question });
-                if (
-                  event.id > (latestUserSeq ?? 0) &&
-                  task.question === binding.guided?.pending?.question
-                )
-                  currentQuestionShown = true;
-              }
-            } catch {
-              /* Only the structured review receipt is a student-facing question. */
-            }
-          }
-        }
+      const question = reviewQuestion(event);
+      if (question !== null) {
+        messages.push({ role: 'assistant', text: question });
+        if (event.id > (latestUserSeq ?? 0) && question === binding.guided?.pending?.question)
+          currentQuestionShown = true;
       }
-      if (event.type === 'user_message' && typeof data.text === 'string') {
+      if (
+        event.type === 'user_message' &&
+        !(event.data as { pblOpening?: boolean }).pblOpening &&
+        typeof data.text === 'string'
+      ) {
         messages.push({ role: 'user', text: data.text });
       }
       if (
@@ -695,10 +781,40 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
       }
     }
   }
+  // At most the current milestone's three roles and the project mentor. Keep the
+  // host event log authoritative; no second chat store or subscription protocol.
+  const agents = await getAgentSessionStore();
+  conversation = conversation.map((entry) => ({
+    ...entry,
+    id: `${binding?.session_id}:${entry.id}`,
+  }));
+  for (const previous of bindings.filter(
+    (item) =>
+      item.session_id !== binding?.session_id &&
+      (item.context_key === milestone.id || item.context_key === 'project'),
+  )) {
+    const last = await agents.lastEventSeq(previous.session_id);
+    activitySequence += last;
+    const events = await agents.readEventsAfter(previous.session_id, Math.max(0, last - 500), 500);
+    conversation.push(
+      ...projectConversation(events, previous.role, false).map((entry) => ({
+        ...entry,
+        id: `${previous.session_id}:${entry.id}`,
+      })),
+    );
+  }
+  conversation.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  conversation = conversation.slice(-60);
   // The review transaction can commit before the runner persists its display event.
   const pendingReview = binding?.guided?.pending;
-  if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown)
+  if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
     messages.push({ role: 'assistant', text: pendingReview.question });
+    conversation.push({
+      id: `pending-${pendingReview.runId}`,
+      speaker: binding!.role,
+      parts: [{ kind: 'text', id: 'pending-question', text: pendingReview.question }],
+    });
+  }
   let environment: LearningView['environment'] = null;
   let environmentService: SandboxService | undefined;
   let files = Object.keys(project.files);
@@ -729,14 +845,8 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
         evaluation = {
           id: observed.id,
           state: observed.state,
-          stdout:
-            row.evaluation.purpose === 'compile' || project.testCommand
-              ? observed.stdout.slice(0, 8000)
-              : evaluationFeedback(observed.stdout, observed.stderr),
-          stderr:
-            row.evaluation.purpose === 'compile' || project.testCommand
-              ? observed.stderr.slice(0, 8000)
-              : '',
+          stdout: row.evaluation.purpose === 'compile' ? observed.stdout.slice(0, 8000) : '',
+          stderr: row.evaluation.purpose === 'compile' ? observed.stderr.slice(0, 8000) : '',
         };
     } catch {
       evaluation = { id: row.evaluation.id, state: 'unavailable', stdout: '', stderr: '' };
@@ -755,12 +865,9 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     project.buildCommand
   )
     actions.push('compile');
-  const guided = stage.kind === 'mentor_say' || stage.kind === 'produce';
-  const approvalCurrent =
-    roleRun?.status === 'succeeded' &&
-    binding?.completion?.stageKey === stageKey(row) &&
-    binding.completion.feedbackSeq === binding.feedback_seq &&
-    binding.completion.userMessageSeq === latestUserSeq;
+  const guided =
+    stage.kind === 'mentor_say' || (stage.kind === 'produce' && !isExplorationStage(stage));
+  const approvalCurrent = hasStageCompletion(row, stage, binding);
   return {
     id,
     revision: row.revision,
@@ -777,15 +884,38 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     state: row.state,
     stage,
     role,
+    milestones: project.definition.milestones.map((m) => ({
+      id: m.id,
+      title: m.title,
+      optional: !!m.optional,
+      stages: m.stages.map(stageStep),
+    })),
     actions:
       row.evaluation || (guided && !approvalCurrent)
         ? actions.filter((action) => action !== 'next')
         : actions,
     files,
-    busy: await busy(store, row),
+    busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
     messages: messages.slice(-60),
+    conversation,
+    activitySequence,
+    task: { title: milestone.title, goal: milestone.goal ?? milestone.title },
     roleRun,
+    needsOpening: !!role && !binding && row.state.status !== 'completed',
     evaluation,
+    decisionSummary:
+      stage.kind === 'produce'
+        ? (row.state.collected[milestone.id]?.decisions ?? []).map((selected) => {
+            const definition = project.definition.decisions.find((d) => d.id === selected.id);
+            return {
+              id: selected.id,
+              prompt: definition?.desc ?? selected.id,
+              choice:
+                definition?.options.find((option) => option.id === selected.chosen)?.label ??
+                selected.chosen,
+            };
+          })
+        : [],
     decisions:
       stage.kind === 'dialogue'
         ? project.definition.decisions

@@ -4,6 +4,8 @@ import { HOST_AGENT_LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 
 export interface AgentUserMessageWithElementRefs extends AgentSessionUserMessage {
   elementRefs?: unknown[];
+  /** Server-created PBL stage entry, never learner feedback. */
+  pblOpening?: boolean;
 }
 
 /**
@@ -34,6 +36,9 @@ export async function listAgentUserMessages(
         seq: event.id,
         ts: event.ts,
         text: String(data.text ?? ''),
+        ...(sessionId.startsWith('pbl-role-') && data.pblOpening === true
+          ? { pblOpening: true }
+          : {}),
         delivery: String(data.delivery ?? ''),
         materials: Array.isArray(data.materials) ? data.materials : [],
         ...(Array.isArray(data.elementRefs) ? { elementRefs: data.elementRefs } : {}),

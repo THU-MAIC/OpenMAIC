@@ -21,7 +21,8 @@
     "stop": "停止本輪建構",
     "waiting": "正在處理",
     "emptyTitle": "開始一個新對話",
-    "emptyHint": "描述你想做的變更，或用 @ 指一堂課"
+    "emptyHint": "描述你想做的變更，或用 @ 指一堂課",
+    "copyReply": "複製 Agent 回覆"
   },
   "question": {
     "waiting": "等你回答",
@@ -188,7 +189,15 @@
       "listFolderCourses": "檢視課堂目錄",
       "createStage": "新增課堂",
       "renameStage": "重新命名課堂",
-      "readStageOutline": "讀取課堂大綱"
+      "readStageOutline": "讀取課堂大綱",
+      "writeFile": "寫入檔案",
+      "listFiles": "查看專案檔案",
+      "manageFile": "管理專案檔案",
+      "runBuild": "執行建置",
+      "collectBuild": "收集建置結果",
+      "readTeachingSkill": "閱讀教學步驟",
+      "requestReview": "提出審閱問題",
+      "completeTeachingStage": "完成當前教學環節"
     },
     "chip": {
       "seconds": "{{count}} 秒",
@@ -263,7 +272,8 @@
       "createStage": "課堂沒能建好",
       "renameStage": "課堂沒能改名",
       "readStageOutline": "課堂大綱沒能讀出來",
-      "generic": "呼叫失敗"
+      "generic": "呼叫失敗",
+      "interrupted": "工具呼叫已中斷"
     },
     "progress": {
       "scene": {

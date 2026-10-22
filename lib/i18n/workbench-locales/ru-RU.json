@@ -21,7 +21,8 @@
     "stop": "Остановить эту сборку",
     "waiting": "Обработка",
     "emptyTitle": "Начните новый разговор",
-    "emptyHint": "Опишите нужное изменение или укажите класс через @"
+    "emptyHint": "Опишите нужное изменение или укажите класс через @",
+    "copyReply": "Copy Agent reply"
   },
   "question": {
     "waiting": "Ожидает вашего ответа",
@@ -188,7 +189,15 @@
       "listFolderCourses": "Посмотреть библиотеку классов",
       "createStage": "Создать класс",
       "renameStage": "Переименовать класс",
-      "readStageOutline": "Прочитать план класса"
+      "readStageOutline": "Прочитать план класса",
+      "writeFile": "Write file",
+      "listFiles": "List project files",
+      "manageFile": "Manage project file",
+      "runBuild": "Run build",
+      "collectBuild": "Collect build result",
+      "readTeachingSkill": "Read teaching section",
+      "requestReview": "Ask for review",
+      "completeTeachingStage": "Complete teaching step"
     },
     "chip": {
       "seconds": "{{count}} с",
@@ -263,7 +272,8 @@
       "createStage": "Не удалось создать класс",
       "renameStage": "Не удалось переименовать класс",
       "readStageOutline": "Не удалось прочитать план класса",
-      "generic": "Вызов инструмента не удался"
+      "generic": "Вызов инструмента не удался",
+      "interrupted": "Tool call interrupted"
     },
     "progress": {
       "scene": {

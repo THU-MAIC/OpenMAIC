@@ -1,0 +1,93 @@
+/* OpenPBL workspace palette, scoped to the scene so the surrounding classroom is unchanged. */
+.pbl-workbench {
+  --background: #ffffff;
+  --foreground: #243248;
+  --card: #ffffff;
+  --card-foreground: #243248;
+  --popover: #ffffff;
+  --popover-foreground: #243248;
+  --muted: #edf2f7;
+  --muted-foreground: #607087;
+  --border: #dce3ec;
+  --input: #dce3ec;
+  --primary: #0b7a52;
+  --primary-foreground: #ffffff;
+  --accent: #e5f3ed;
+  --accent-foreground: #135d43;
+  --ring: #0b7a52;
+  --pbl-assistant-bubble: #f0f4f8;
+  --pbl-chrome: #f8fafc;
+  container-type: size;
+}
+.dark .pbl-workbench {
+  color-scheme: dark;
+  --background: #111827;
+  --foreground: #dce4ef;
+  --card: #151d2b;
+  --card-foreground: #dce4ef;
+  --popover: #1a2332;
+  --popover-foreground: #dce4ef;
+  --muted: #223046;
+  --muted-foreground: #a4b0c2;
+  --border: #2b384c;
+  --input: #2b384c;
+  --primary: #3bf0a4;
+  --primary-foreground: #012417;
+  --accent: #153b30;
+  --accent-foreground: #63f5ba;
+  --ring: #3bf0a4;
+  --pbl-assistant-bubble: #202b3d;
+  --pbl-chrome: #151d2b;
+}
+.pbl-workbench .pbl-chrome {
+  background: var(--pbl-chrome);
+}
+.pbl-workbench .pbl-assistant-bubble {
+  background: var(--pbl-assistant-bubble);
+}
+.pbl-workbench .pbl-task-area {
+  /* This flex area excludes the actual toolbar, notices and composer height. */
+  container-type: size;
+}
+.pbl-workbench .pbl-task-drawer {
+  /* Keep its close control inside the chat area, even in a short scene. */
+  max-height: min(560px, max(0px, calc(100cqh - 64px)));
+}
+/* OpenPBL's filled ready action, with a neutral unavailable state. */
+.pbl-workbench .pbl-stage-action {
+  cursor: pointer;
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.pbl-workbench .pbl-stage-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 85%, transparent);
+}
+.pbl-workbench .pbl-stage-action:disabled {
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted-foreground);
+  box-shadow: none;
+}
+.pbl-workbench button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@container (max-width: 850px) {
+  .pbl-workbench .pbl-environment-label {
+    display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .pbl-workbench .pbl-topbar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .pbl-workbench .pbl-topbar h2 {
+    flex-basis: 100%;
+  }
+}

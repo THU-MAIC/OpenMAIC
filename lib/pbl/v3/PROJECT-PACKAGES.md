@@ -1,8 +1,9 @@
 # Self-contained PBL v3 project packages
 
 This feature targets `integration/shared-sandbox` and extends its shared
-sandbox/workbench (#1964). Package resolution, teaching resources, and registered
-evaluation profiles use that branch's existing PBL v3 runner and state machine.
+sandbox/workbench (#1964) and guided-learning flow (#1963). Package resolution,
+teaching resources, and registered evaluation profiles use that branch's existing
+PBL v3 runner and state machine.
 
 ## Archive and compatibility
 
@@ -75,7 +76,8 @@ Definition paths select `docs`, `skills`, `skeleton`, `tests`, and `rubric` for
 requirements, pedagogy, starters, tests, and rubric. Starters include
 `skeleton/PLAN.md`. Every agent stage requires a teaching binding keyed by
 `<milestone-id>:<stage-index>` and its role; `intro:-1` binds the retained project
-introduction. Section names follow `A-teach.md` style and array order controls
+introduction resources for older readers; the current runtime includes the project
+introduction in the first teaching step. Section names follow `A-teach.md` style and array order controls
 progression. The teaching runner reads the root Skill and active section through
 `read_next_skill` with its existing review/new-learner-turn gates. Only bound
 documents for that role/stage enter context. Non-guided stages receive their
@@ -156,8 +158,9 @@ aggregate limits as import, counting each content checksum once. Each stage's co
 rendered system prompt plus its guided Skill replies must fit 32 KiB of UTF-8.
 Validation uses the runtime prompt builder, counting role templates, common rules,
 goals, contracts, projected decisions, all intro variants, bound documents/Skills,
-starter plans, package-derived evaluation feedback, server instructions and JSON
-escapes. It includes test-failure tutoring even without a teaching binding.
+starter plans, package-derived evaluation feedback, exploration/teaching metadata,
+server instructions, live teaching-state suffixes and JSON escapes. It includes
+normal assessment introductions and test-failure tutoring even without a teaching binding.
 Oversized prompts are rejected before installation; resources are never silently
 truncated. Runtime checks the same budget again before model invocation, including
 later learner plan edits. Conversation history has a separate teaching context

@@ -43,6 +43,13 @@ export interface PublicEvaluationDiagnostics {
   reportGenerated: boolean;
   locations?: PublicEvaluationDiagnosticLocation[];
   checks?: string[];
+  /** Safe public case metadata only; never expected values, scripts or raw tracebacks. */
+  caseResults?: {
+    id: string;
+    label: string;
+    passed: boolean;
+    reason?: 'output' | 'execution' | 'timeout' | 'environment' | 'not_run';
+  }[];
 }
 
 export interface WorkspaceRevision {
@@ -94,6 +101,8 @@ export type PlanArtifactRecord = ArtifactRecordBase & {
   kind: 'plan';
   /** Hash of the canonical PLAN.md. The plan body lives only in the workspace file. */
   contentHash: string;
+  /** Length of the complete approved plan, independent of clipped report evidence. */
+  contentLength?: number;
 };
 
 export type CodeArtifactRecord = ArtifactRecordBase & {

@@ -1,4 +1,5 @@
 export type SandboxErrorReason =
+  | 'ENVIRONMENT_UNAVAILABLE'
   | 'ENVIRONMENT_BUSY'
   | 'ENVIRONMENT_CHANGED'
   | 'PROGRESS_CHANGED'
