@@ -113,3 +113,13 @@ export type {
 } from './outline-types.js';
 
 export * from './prompts/index.js';
+
+export {
+  rewriteInteractiveLibraries,
+  mapInteractiveLibraryUrl,
+} from './interactive-library-mapper.js';
+export {
+  INTERACTIVE_LIBRARIES,
+  interactiveLibraryPrompt,
+  interactiveLibraryUrl,
+} from './interactive-libraries.js';

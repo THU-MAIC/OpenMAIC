@@ -536,7 +536,7 @@ export function perOwnerExtractionLimit(): number {
   return positiveIntegerEnv('OPENMAIC_MATERIAL_EXTRACTION_PER_OWNER', 2);
 }
 
-/** How long an upload no run or session uses is kept. */
+/** How long an unfinished upload reservation is kept before reclamation. */
 export function unusedMaterialTtlMs(): number {
   return positiveIntegerEnv('OPENMAIC_UNUSED_MATERIAL_TTL_HOURS', 24) * 60 * 60 * 1000;
 }
@@ -554,7 +554,7 @@ export function startOwnerMaterialExtractor(
     limits?: Partial<ExtractorLimits>;
     heartbeatIntervalMs?: number;
     scanIntervalMs?: number;
-    /** How often unused uploads are swept (default hourly); 0 turns the sweep off. */
+    /** How often unfinished reservations are swept (default hourly); 0 turns the sweep off. */
     sweepIntervalMs?: number;
   } & MaterialExtractionDependencies = {},
 ): OwnerMaterialExtractorHandle {
@@ -681,7 +681,7 @@ export async function sweepOrphanExtractionResults(
   return deleted;
 }
 
-/** One pass of the unused-upload sweep, with this deployment's TTL. */
+/** One pass of reservation and deleted-object cleanup, with this deployment's TTL. */
 export async function sweepUnusedOwnerMaterialsNow(
   byteStore: MaterialByteStore = getMaterialByteStore(),
 ): Promise<{ marked: number; removed: number; orphans: number }> {

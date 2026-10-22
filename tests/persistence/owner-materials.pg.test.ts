@@ -11,6 +11,8 @@ import {
   type RegisterOwnerMaterialInput,
 } from '@/lib/persistence/owner-materials';
 
+import { UPGRADE_SCENARIOS } from './_owner-material-upgrade-scenarios';
+
 const contractUrl = process.env.PG_CONTRACT_URL;
 
 /** Wait until some backend in this database is blocked on a lock. */
@@ -131,4 +133,38 @@ describe.skipIf(!contractUrl)('owner material quota reservations on PostgreSQL',
       second.release();
     }
   });
+});
+
+describe.skipIf(!contractUrl)('owner material schema upgrades on PostgreSQL', () => {
+  // Each scenario rebuilds a historical owner_material shape (and one installs
+  // a failing trigger), while CI runs other app suites against the same
+  // database -- so each gets a schema of its own, reached through
+  // search_path, and dropped afterwards. The bootstrap resolves every table
+  // through search_path too (current_schema(), ::regclass), so it behaves
+  // exactly as it does in a deployment's own schema.
+  let serial = 0;
+  for (const [name, scenario] of Object.entries(UPGRADE_SCENARIOS)) {
+    it(name, async () => {
+      serial += 1;
+      const schema = `openmaic_owner_material_upgrade_${process.pid}_${serial}`;
+      const admin = new Pool({ connectionString: contractUrl });
+      await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      await admin.query(`CREATE SCHEMA ${schema}`);
+      const scoped = new Pool({
+        connectionString: contractUrl,
+        options: `-c search_path=${schema}`,
+        max: 4,
+      });
+      try {
+        await scenario({
+          db: scoped as unknown as Parameters<typeof scenario>[0]['db'],
+          pool: scoped as unknown as ConnectableQueryable,
+        });
+      } finally {
+        await scoped.end();
+        await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+        await admin.end();
+      }
+    });
+  }
 });

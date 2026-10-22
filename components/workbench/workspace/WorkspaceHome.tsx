@@ -43,13 +43,17 @@ import { cn } from '@/lib/utils/cn';
 import { ProBadge } from '@/components/workbench/ProBadge';
 import { ProLaunchPanel } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
+import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
 export function WorkspaceHome({
   composerReset,
   discoveryContent,
   courseOptions,
   onOpenSession,
+  onOpenSessionAfterLeaving,
   onExitPro,
+  materialSeed,
+  onMaterialSeedConsumed,
 }: {
   readonly composerReset: number;
   readonly discoveryContent: ReactNode;
@@ -59,7 +63,12 @@ export function WorkspaceHome({
    */
   readonly courseOptions: readonly CourseMentionSource[];
   readonly onOpenSession: (sessionId: string) => void;
+  /** The composer's conversation exists, but home was left meanwhile. */
+  readonly onOpenSessionAfterLeaving: (sessionId: string) => void;
   readonly onExitPro: () => void;
+  /** A knowledge base hand-over, passed through to the composer. */
+  readonly materialSeed?: MaterialSeed | null;
+  readonly onMaterialSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const brand = useBrand();
@@ -173,6 +182,9 @@ export function WorkspaceHome({
               variant="workspace"
               courseOptions={courseOptions}
               onSessionCreated={onOpenSession}
+              onSessionCreatedAfterLeaving={onOpenSessionAfterLeaving}
+              materialSeed={materialSeed}
+              onMaterialSeedConsumed={onMaterialSeedConsumed}
             />
           </div>
         </section>

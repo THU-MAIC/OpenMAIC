@@ -453,6 +453,55 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       expect(await principalOf(id)).toBeUndefined();
     });
 
+    it('refuses every generic path to replace or delete the owner’s own entry while a root holds it', async () => {
+      const { changeAssetRoots, AssetRootedError } = await import('@openmaic/storage/asset/pg');
+      const { getServerPersistenceProvider } = await import('@/lib/persistence/server-provider');
+      const { assetPrincipalForOwner, createOwnerAssetStore } =
+        await import('@/lib/persistence/owner-assets');
+      const provider = await getServerPersistenceProvider(process.env.DATABASE_URL!);
+      const id = await allocate('alice');
+      const principal = assetPrincipalForOwner(ALICE);
+      await pool.query('BEGIN');
+      await changeAssetRoots(pool as never, {
+        add: [{ rootKind: 'material', rootId: 'mat-alice', assetIds: [id] }],
+        principals: [principal.key],
+      });
+      await pool.query('COMMIT');
+
+      // The app route: the owner wrapper in front of the storage handler.
+      const put = await call('alice', `/assets/${id}/content`, {
+        method: 'PUT',
+        body: assetForm([9]),
+      });
+      expect(put.status).toBe(409);
+      expect(await put.json()).toMatchObject({ error: { code: 'ASSET_ROOTED' } });
+      const deleted = await call('alice', `/assets/${id}`, { method: 'DELETE' });
+      expect(deleted.status).toBe(409);
+
+      // Server code calling the registry directly, pinned to a transaction or not.
+      await expect(
+        provider.withTransaction((tx) => provider.assetStoreIn(tx).remove(principal, id)),
+      ).rejects.toBeInstanceOf(AssetRootedError);
+      await expect(provider.assetStore.remove(principal, id)).rejects.toBeInstanceOf(
+        AssetRootedError,
+      );
+      const wrapped = createOwnerAssetStore(provider.assetStore, {
+        ownerId: ALICE,
+        queryable: pool as never,
+        transactions: { withTransaction: provider.withTransaction, storeIn: provider.assetStoreIn },
+      });
+      await expect(
+        wrapped.replace(principal, id as never, new Blob([new Uint8Array([8])])),
+      ).rejects.toBeInstanceOf(AssetRootedError);
+
+      const intact = await call('alice', `/assets/${id}/content`);
+      expect(new Uint8Array(await intact.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
+      const roots = await pool.query('SELECT root_id FROM asset_root_refs WHERE asset_id = $1', [
+        id,
+      ]);
+      expect(roots.rows).toEqual([{ root_id: 'mat-alice' }]);
+    });
+
     it('accounts quota per owner', async () => {
       vi.stubEnv('ASSET_QUOTA_BYTES', '4');
       // The provider reads the quota when it is built; build a fresh one.
@@ -547,6 +596,28 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
     });
 
+    it('keeps a rooted entry private: a reference root keeps it alive, not readable', async () => {
+      const { changeAssetRoots } = await import('@openmaic/storage/asset/pg');
+      const id = await allocate('alice');
+      // Alice's own partition, as the route allocated it.
+      const holder = await pool.query('SELECT principal FROM asset_entries WHERE id = $1', [id]);
+      const { principal } = holder.rows[0] as { principal: string };
+      await pool.query('BEGIN');
+      await changeAssetRoots(pool as never, {
+        add: [{ rootKind: 'material', rootId: 'mat-alice', assetIds: [id] }],
+        principals: [principal],
+      });
+      await pool.query('COMMIT');
+      // Committed by the root, as a course would commit it...
+      expect((await lifecycle(id))?.committed_at).not.toBeNull();
+
+      // ...but no live course of Alice names it, so Bob still cannot read it,
+      // while Alice reads her own entry as ever.
+      expect((await call('bob', `/assets/${id}/content`)).status).toBe(404);
+      expect((await call('bob', `/assets/${id}/content`, { method: 'HEAD' })).status).toBe(404);
+      expect((await call('alice', `/assets/${id}/content`)).status).toBe(200);
+    });
+
     it('ignores a reference row from a course that is not the entry owner’s', async () => {
       const id = await allocate('alice');
       await saveCourse('alice', 'stage-alice-gone', [id]);
@@ -618,6 +689,49 @@ describe('runtime and assets are keyed by the resolved owner', () => {
       }
       const intact = await call('alice', `/assets/${id}/content`);
       expect(await intact.text()).toBe('legacy-shared-by-two');
+    });
+
+    it('cannot be mutated by anyone while a reference root holds it', async () => {
+      const { changeAssetRoots } = await import('@openmaic/storage/asset/pg');
+      const { LEGACY_SHARED_ASSET_PRINCIPAL } = await import('@/lib/persistence/owner-assets');
+      const id = await legacyEntry('legacy-rooted');
+      await saveCourse('alice', 'stage-legacy-rooted', [id]);
+      // A root on a shared entry, as a caller that passed the shared partition
+      // among its principals would write it.
+      const root = { rootKind: 'material', rootId: 'mat-other-owner', assetIds: [id] };
+      await pool.query('BEGIN');
+      await changeAssetRoots(pool as never, {
+        add: [root],
+        principals: [LEGACY_SHARED_ASSET_PRINCIPAL],
+      });
+      await pool.query('COMMIT');
+
+      // Alice owns every course naming it, which used to be enough.
+      const put = await call('alice', `/assets/${id}/content`, {
+        method: 'PUT',
+        body: assetForm([9]),
+      });
+      expect(put.status).toBe(404);
+      await call('alice', `/assets/${id}`, { method: 'DELETE' });
+      const intact = await call('alice', `/assets/${id}/content`);
+      expect(await intact.text()).toBe('legacy-rooted');
+      const roots = await pool.query('SELECT root_id FROM asset_root_refs WHERE asset_id = $1', [
+        id,
+      ]);
+      expect(roots.rows).toEqual([{ root_id: 'mat-other-owner' }]);
+
+      // Once nothing roots it, the course rule applies again.
+      await pool.query('BEGIN');
+      await changeAssetRoots(pool as never, {
+        remove: [root],
+        principals: [LEGACY_SHARED_ASSET_PRINCIPAL],
+      });
+      await pool.query('COMMIT');
+      const unrootedPut = await call('alice', `/assets/${id}/content`, {
+        method: 'PUT',
+        body: assetForm([4, 2]),
+      });
+      expect(unrootedPut.status).toBe(204);
     });
 
     it('cannot be mutated when no course names it', async () => {

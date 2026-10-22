@@ -35,7 +35,7 @@ describe('Legacy Pi chat flag build check', () => {
       const config = await loadConfig(PHASE_PRODUCTION_BUILD, flagValue);
 
       expect(config.output).toBe('standalone');
-      expect(config.env).toBeUndefined();
+      expect(config.env).not.toHaveProperty(FLAG);
     },
   );
 

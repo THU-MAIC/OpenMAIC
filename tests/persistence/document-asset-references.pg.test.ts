@@ -87,7 +87,7 @@ describe.skipIf(!contractUrl)('document asset references through the app stores'
     // `document_asset_withdrawals` is keyed by stage id and carries no foreign
     // key, so nothing cascades it away and it has to be named outright.
     await pool.query(
-      'TRUNCATE document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
+      'TRUNCATE asset_root_refs, document_asset_refs, document_asset_withdrawals, asset_entries, asset_blobs, ' +
         'stage_meta, document_stages CASCADE',
     );
   });

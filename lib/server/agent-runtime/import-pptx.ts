@@ -32,6 +32,11 @@ import type { CourseDocument, CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
 import { isPptxMaterial } from './pptx-mime';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
+import {
+  resolveRawMaterial,
+  sessionRowRawLookup,
+  type RawMaterialHandle,
+} from './material-resolver';
 import { getSessionMaterial, resolveSessionMaterialRawAsset } from './session-materials';
 
 export { isPptxMaterial, PPTX_MIME } from './pptx-mime';
@@ -74,6 +79,9 @@ export interface ParsePptxOptions {
 }
 
 export interface ImportPptxToolDeps extends CourseToolDeps {
+  /** Resolve a material id of the session; defaults to the shared resolver. */
+  resolveMaterial?: (sessionId: string, materialId: string) => Promise<RawMaterialHandle | null>;
+  /** Session-row seams, kept for the tests written against them. */
   getMaterial?: (sessionId: string, materialId: string) => Promise<AgentSessionMaterial | null>;
   readMaterialBytes?: (
     record: AgentSessionMaterial,
@@ -343,13 +351,19 @@ function throwIfAborted(signal?: AbortSignal) {
 export function buildImportPptxTool(
   deps: ImportPptxToolDeps,
 ): AgentTool<typeof ImportParams, unknown> {
-  const getMaterial = deps.getMaterial ?? getSessionMaterial;
-  const readMaterialBytes =
-    deps.readMaterialBytes ??
-    (async (record: AgentSessionMaterial) => {
-      if (!record.rawAssetId) return null;
-      return resolveSessionMaterialRawAsset(record.sessionId, record.rawAssetId);
-    });
+  // A linked library source or a session copy, read the same way (RFC #1716 §4).
+  const getMaterial =
+    deps.resolveMaterial ??
+    (deps.getMaterial || deps.readMaterialBytes
+      ? sessionRowRawLookup(
+          deps.getMaterial ?? getSessionMaterial,
+          deps.readMaterialBytes ??
+            (async (record: AgentSessionMaterial) => {
+              if (!record.rawAssetId) return null;
+              return resolveSessionMaterialRawAsset(record.sessionId, record.rawAssetId);
+            }),
+        )
+      : resolveRawMaterial);
   const parsePptx = deps.parsePptx ?? parsePptxIsolated;
   const upload = deps.uploadImportedMedia ?? defaultUploadImportedMedia;
 
@@ -392,11 +406,21 @@ export function buildImportPptxTool(
       // The session material row carries no mime or content digest: both come
       // from the registry bytes, so the pptx gate and the idempotency key are
       // resolved from the raw asset in one read.
-      const raw = await readMaterialBytes(record);
-      if (!raw || !isPptxMaterial({ mime: raw.mime, originalName: record.title })) {
+      const raw = await record.read();
+      // Bytes that cannot be read (gone, or no longer matching their recorded
+      // digest) say nothing about the file's type: report them as such, so the
+      // model does not tell the user their PowerPoint is not one.
+      if (!raw) {
         return toolResult(
-          `Material "${record.title ?? record.id}" is not a .pptx (mime ${raw?.mime ?? 'unknown'}). import_pptx only accepts PowerPoint files.`,
-          { status: 'unsupported_type', materialId: record.id, mime: raw?.mime ?? null },
+          `The bytes of "${record.title ?? record.id}" are unavailable right now, so it cannot be imported. Ask the user to upload the file again if this persists.`,
+          { status: 'unavailable', materialId: record.id },
+          true,
+        );
+      }
+      if (!isPptxMaterial({ mime: raw.mime, originalName: record.title })) {
+        return toolResult(
+          `Material "${record.title ?? record.id}" is not a .pptx (mime ${raw.mime}). import_pptx only accepts PowerPoint files.`,
+          { status: 'unsupported_type', materialId: record.id, mime: raw.mime },
           true,
         );
       }

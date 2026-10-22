@@ -6,6 +6,7 @@ import {
   ASSET_DESCRIPTOR_MEDIA_TYPE,
   AssetNotFoundError,
   AssetQuotaExceededError,
+  AssetRootedError,
   DEFAULT_RENDERABLE_TYPES,
   EXCLUDED_RENDERABLE_TYPES,
   type AssetIndirectRead,
@@ -472,8 +473,8 @@ function servedLabel(
 /**
  * The contract code an error declares, if it declares one.
  *
- * {@link AssetNotFoundError} and {@link AssetQuotaExceededError} each carry a
- * literal `code` field, and this is what it is for: a store may reach this
+ * {@link AssetNotFoundError}, {@link AssetQuotaExceededError} and
+ * {@link AssetRootedError} each carry a literal `code` field, and this is what it is for: a store may reach this
  * handler from another module realm -- a host that bundles the package more
  * than once, an application whose store is constructed in a different bundle
  * from its handler -- and `instanceof` is false across such a boundary while
@@ -482,7 +483,7 @@ function servedLabel(
  * degrading into a 500 in those hosts, which is the difference between a
  * client that stops and a client that retries a paid operation forever.
  *
- * Only these two codes are recognised, and only as a fallback after the class
+ * Only these three codes are recognised, and only as a fallback after the class
  * check, so nothing else can dress itself up as a contract error by accident:
  * a PostgreSQL error's `code` is a SQLSTATE, and no SQLSTATE spells
  * `ASSET_NOT_FOUND`.
@@ -501,6 +502,13 @@ function classifyStoreError(error: unknown): never {
       507,
       'ASSET_QUOTA_EXCEEDED',
       '@openmaic/storage: asset quota exceeded for this principal',
+    );
+  }
+  if (error instanceof AssetRootedError || code === 'ASSET_ROOTED') {
+    throw new AssetHttpError(
+      409,
+      'ASSET_ROOTED',
+      '@openmaic/storage: asset is held by a reference root',
     );
   }
   throw error;

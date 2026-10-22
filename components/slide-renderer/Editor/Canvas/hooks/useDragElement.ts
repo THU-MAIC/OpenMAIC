@@ -11,6 +11,7 @@ import {
 } from '@/lib/utils/element';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 import { isTouchEvent } from './touch-event';
+import { projectInteractionElement, projectInteractionElements } from '../interaction-elements';
 
 /**
  * Drag element hook
@@ -42,6 +43,8 @@ export function useDragElement(
       if (isTouch && !native.changedTouches?.length) return;
 
       if (!activeElementIdList.includes(element.id)) return;
+      const interactionElement = projectInteractionElement(element);
+      if (!interactionElement) return;
 
       let isMouseDown = true;
       const edgeWidth = viewportSize;
@@ -50,13 +53,15 @@ export function useDragElement(
       const sorptionRange = 5;
 
       // Save original element list for computing multi-select offsets
-      const originElementList: PPTElement[] = JSON.parse(JSON.stringify(elementListRef.current));
-      const originActiveElementList = originElementList.filter((el) =>
+      const originElementList = structuredClone(elementListRef.current);
+      const interactionElements = projectInteractionElements(originElementList);
+      const interactionById = new Map(interactionElements.map((item) => [item.id, item]));
+      const originActiveElementList = interactionElements.filter((el) =>
         activeElementIdList.includes(el.id),
       );
 
-      const elOriginLeft = element.left;
-      const elOriginTop = element.top;
+      const elOriginLeft = interactionElement.left;
+      const elOriginTop = interactionElement.top;
 
       const startPageX = isTouch ? native.changedTouches[0].pageX : native.pageX;
       const startPageY = isTouch ? native.changedTouches[0].pageY : native.pageY;
@@ -66,7 +71,7 @@ export function useDragElement(
       const isActiveGroupElement = element.id === activeGroupElementId;
       const originRange =
         activeElementIdList.length === 1 || isActiveGroupElement
-          ? getElementRange(element)
+          ? getElementRange(interactionElement)
           : getElementListRange(originActiveElementList);
 
       // Collect alignment snap lines
@@ -75,7 +80,7 @@ export function useDragElement(
       let horizontalLines: AlignLine[] = [];
       let verticalLines: AlignLine[] = [];
 
-      for (const el of elementListRef.current) {
+      for (const el of interactionElements) {
         if (el.type === 'line') continue;
         if (isActiveGroupElement && el.id === element.id) continue;
         if (!isActiveGroupElement && activeElementIdList.includes(el.id)) continue;
@@ -255,18 +260,16 @@ export function useDragElement(
         // In multi-select mode, also update positions of other selected elements
         // Their positions are calculated from the movement offset of the handle element
         else {
-          const handleElement = elementListRef.current.find((el) => el.id === element.id);
-          if (!handleElement) return;
-
-          newElements = elementListRef.current.map((el) => {
-            if (activeElementIdList.includes(el.id)) {
+          newElements = originElementList.map((el) => {
+            const projected = interactionById.get(el.id);
+            if (projected && activeElementIdList.includes(el.id)) {
               if (el.id === element.id) {
                 return { ...el, left: targetLeft, top: targetTop };
               }
               return {
                 ...el,
-                left: el.left + (targetLeft - handleElement.left),
-                top: el.top + (targetTop - handleElement.top),
+                left: projected.left + (targetLeft - elOriginLeft),
+                top: projected.top + (targetTop - elOriginTop),
               };
             }
             return el;

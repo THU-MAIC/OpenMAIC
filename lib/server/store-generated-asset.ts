@@ -24,7 +24,10 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
  * remains for the flows that still serve legacy `/api/classroom-media` paths.
  */
 
-/** Which slot of a generated element these bytes are for. Recorded on the entry. */
+/**
+ * Which slot of a media element these bytes are for. Recorded on the entry.
+ * `audio` is a material's audio copied into a course (`use_material_media`).
+ */
 export type GeneratedAssetKind = 'image' | 'video' | 'poster' | 'audio';
 
 export interface StoreGeneratedAssetInput {

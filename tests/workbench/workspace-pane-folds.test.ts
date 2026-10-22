@@ -235,7 +235,14 @@ describe('fold placement', () => {
     expect(shell).toContain('collapse.collapseChat');
     expect(shell).toContain('collapse.collapseClassroom');
     expect(pane).toContain('<WorkbenchPanelProvider visible={!hidden} playback={playback}>');
-    expect(chatPane).toContain('<WorkbenchChat hosted adjacentPanelOpen={!fill} />');
+    // The chat learns only whether a pane sits beside it, never the
+    // classroom's own visibility (it also carries the knowledge base hand-over).
+    const chatElement = chatPane.slice(
+      chatPane.indexOf('<WorkbenchChat'),
+      chatPane.indexOf('/>', chatPane.indexOf('<WorkbenchChat')),
+    );
+    expect(chatElement).toContain('adjacentPanelOpen={!fill}');
+    expect(chatElement).not.toMatch(/\b(panelOpen|visible|hidden)=|classroom/i);
     expect(shell).not.toContain('panelOpen !== classroomVisible');
   });
 

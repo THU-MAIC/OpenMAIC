@@ -1,3 +1,4 @@
+import { postProcessInteractiveHtml } from '@openmaic/generation/browser';
 import { injectIntoDocumentHead } from './html-document';
 import {
   withObservationResponder,
@@ -387,7 +388,12 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
  * Omitted by consumers that produce standalone documents (video export), where
  * no parent ever asks and the bytes count against an export size cap.
  */
-export function patchHtmlForIframe(html: string, observation?: ObservationIdentity): string {
+export function patchHtmlForIframe(
+  html: string,
+  observation?: ObservationIdentity,
+  options?: { processed?: boolean },
+): string {
+  if (!options?.processed) html = postProcessInteractiveHtml(html);
   const iframeCss = `<style data-iframe-patch>
   html, body {
     width: 100%;

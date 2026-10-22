@@ -101,6 +101,8 @@ allowUserKeys: false               # 用户只能在这些服务商中选择，�
 | `proxy` | 否 | 该服务商请求使用的 HTTP 代理地址。 |
 | `credentials` | 部分预设需要 | 不使用单个 key 的服务所需的密钥对。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
 | `options` | 否 | 非机密的、服务商特有的设置，例如 `voxcpm-tts` 的 `backend`。名称由字母、数字、`_` 和 `-` 组成；值为字符串、数字或布尔值（不能嵌套映射或列表），可以使用 `${VAR}`。模型设置会显示 options，因此绝不要在其中放 key。仅限部署：模型设置无法设置它们。 |
+| `voices` | 否 | 仅用于 TTS 预设。用非空列表替换内置音色目录：每项必填 `id`、`name`，可选 `language`、`gender`（`male`、`female`、`neutral`）；ID 不可重复，也不可包含保留的绑定分隔符 `::`。用户音色仍会保留，Qwen 克隆音色继续使用克隆模型。不配置时保留内置目录。 |
+| `options.defaultVoice` | 否 | 当前服务商的默认音色 ID，必须是非空白字符串。配置此项时必须同时提供包含该 ID 的非空 `voices` 列表。仅配置 `voices` 时使用第一项；有效的显式选择优先。两个覆盖项均未配置时保持原默认逻辑。 |
 
 大多数预设只覆盖一种能力，与内置 registry 一一对应：`openai` 预设只有对话，OpenAI 的图像、语音合成和语音识别分别是 `openai-image`、`openai-tts` 和 `openai-whisper` 预设。每种能力声明一个服务商；同一个 key 覆盖多种能力时，引用同一个 `${VAR}` 即可。**Token Plan 预设**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一个 key 覆盖多种能力，每种能力使用该套餐自己的端点。服务商上的 `baseUrl` 会替换它覆盖的所有能力的端点，因此只有当 Token Plan 的全部能力都一起迁移时，才给它设置 `baseUrl`。
 
@@ -861,3 +863,11 @@ DeepSeek 也通过 `deepseek` 预设提供托管 Markdown 提取，复用对话�
 同一个 `firecrawl` 服务商也提供联网搜索（`POST /v2/search`）：一把密钥和一个基础地址同时用于两者，因此可以把同一个服务商同时指定给 `slots.webSearch` 和 `slots.webFetch`。旧版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 变量配置的就是这个服务商；在把 `webFetch` 指定给它之前，网页抓取仍使用 `builtin`。
 
 网址转发给托管服务之前，必须通过会话网址授权、严格网址规范化和全部本地 DNS 地址检查。接收内容前，也会对服务返回的最终网址执行相同检查。托管服务控制其自身的 DNS 和中间重定向，本地检查无法固定其网络连接。返回的文本仍是不可信数据，经过验证页面检测、字节限制和截断标记处理，并沿用网页素材持久化及 `{trusted, untrusted}` 结果结构。
+
+## 交互场景依赖库
+
+交互场景从部署自身加载 KaTeX、Three.js（含 addons）、Chart.js 和 Tailwind v4 浏览器运行时，而不是从公共 CDN 加载。`pnpm install`、`pnpm dev` 和 `pnpm build` 会把已安装包中的固定版本复制到 `public/vendor/interactive`，并通过 `/vendor/interactive` 提供。只有包含数学公式的页面才会加载 KaTeX。
+
+`INTERACTIVE_ASSET_BASE_URL` 是公开的构建时配置。如需从自己的 CDN 或对象存储提供这些文件，请复制 `public/vendor/interactive` 并保留其中的包名/版本路径，把该变量设为新的基础地址（例如 `https://assets.example.com/interactive`）后重新构建；Docker 构建通过 `--build-arg` 传入。交互场景运行在沙箱 iframe 中，因此该主机必须以正确的 MIME 类型提供 JavaScript、CSS 和字体文件，并返回 `Access-Control-Allow-Origin: *`。
+
+已保存的交互 HTML 会在课堂中打开时，以及导出独立 HTML 或视频之前重新处理，因此指向这些库的兼容公共 CDN 引用会被改写，无需重新生成课程。指向其他库、不兼容版本、旧版 Tailwind v3 Play CDN（`cdn.tailwindcss.com`）和 Google Fonts 的引用保持不变，仍需要能访问对应主机。

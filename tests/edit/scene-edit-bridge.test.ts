@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultImageElement,
+  createDefaultShapeElement,
   createDefaultSlide,
   createDefaultTextElement,
 } from '@/lib/edit/slide-edit-elements';
@@ -145,6 +146,40 @@ describe('deriveSlideEditOperations', () => {
 });
 
 describe('commitSlideEdit', () => {
+  it('rejects an invalid multi-shape gesture without recording any part of it', () => {
+    const base = makeContent();
+    base.canvas.elements.push(
+      createDefaultShapeElement('shape-a'),
+      createDefaultShapeElement('shape-b'),
+    );
+    const history = createSlideEditHistory(base);
+    const next = clone(history.present);
+    for (const element of next.canvas.elements) if (element.type === 'shape') element.width = 0;
+    expect(deriveSlideEditOperations(history.present, next)).toHaveLength(2);
+    expect(() => commitSlideEdit(history, next)).toThrow(/width.*positive/);
+    expect(history.past).toEqual([]);
+    expect(history.present).toEqual(base);
+  });
+
+  it('rejects bad geometry combined with a metadata change but permits historical style edits', () => {
+    const base = makeContent();
+    base.canvas.elements.push(createDefaultShapeElement('shape'));
+    const history = createSlideEditHistory(base);
+    const next = clone(history.present);
+    const shape = next.canvas.elements.find((element) => element.type === 'shape')!;
+    if (shape.type !== 'shape') throw new Error('expected shape');
+    shape.path = 'M0 0 Z1 1';
+    next.canvas.background = { type: 'solid', color: '#123456' };
+    expect(() => commitSlideEdit(history, next)).toThrow(/path/);
+
+    const historical = createSlideEditHistory(next);
+    const restyled = clone(historical.present);
+    const oldShape = restyled.canvas.elements.find((element) => element.type === 'shape')!;
+    if (oldShape.type !== 'shape') throw new Error('expected shape');
+    oldShape.fill = '#abcdef';
+    restyled.canvas.background = { type: 'solid', color: '#ffffff' };
+    expect(commitSlideEdit(historical, restyled).present).toEqual(restyled);
+  });
   it('records a single-element commit as one undo step', () => {
     const history = createSlideEditHistory(makeContent());
     const next = clone(history.present);
@@ -168,10 +203,21 @@ describe('commitSlideEdit', () => {
     const next = clone(history.present);
     next.canvas.elements[0].left += 30;
     next.canvas.elements[1].top += 30;
+    next.canvas.animations = [
+      {
+        id: 'animation',
+        elId: 'text-1',
+        effect: 'fade',
+        type: 'in',
+        duration: 1000,
+        trigger: 'click',
+      },
+    ];
 
     const after = commitSlideEdit(history, next);
 
     expect(after.past).toHaveLength(1);
+    expect(after.present.canvas.animations).toEqual(next.canvas.animations);
     const undone = undoSlideEditOperation(after);
     expect(undone.present.canvas.elements[0].left).toBe(base.canvas.elements[0].left);
     expect(undone.present.canvas.elements[1].top).toBe(base.canvas.elements[1].top);

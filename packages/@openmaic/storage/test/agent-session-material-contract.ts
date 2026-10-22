@@ -172,6 +172,79 @@ export function runAgentSessionMaterialContract(
       expect(await store.listMaterials('session-2')).toEqual([]);
     });
 
+    test('keeps only a terminal failure’s own reason code, cleared on retry, takeover and success', async () => {
+      const store = makeStore();
+      await store.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });
+      await store.createMaterial('session-1', { id: 'mat_source', kind: 'source' });
+      const reasonCode = async () =>
+        (await store.getMaterial('session-1', 'mat_source'))?.extraction.reasonCode;
+
+      // A terminal failure stores the host's code with its status, in one update.
+      await store.enqueueExtraction('session-1', 'mat_source');
+      await store.claimNextExtraction('worker-a', { leaseTtlMs: 60_000 });
+      expect(
+        await store.settleExtractionFailure(
+          'mat_source',
+          'worker-a',
+          'no parser',
+          false,
+          'service_unavailable',
+        ),
+      ).toEqual({ status: 'failed', attempts: 0 });
+      expect(await reasonCode()).toBe('service_unavailable');
+
+      // A worker that no longer holds the lease cannot overwrite it.
+      expect(
+        await store.settleExtractionFailure(
+          'mat_source',
+          'worker-x',
+          'late',
+          false,
+          'storage_full',
+        ),
+      ).toBeNull();
+      expect(await reasonCode()).toBe('service_unavailable');
+
+      // A manual retry clears it; an automatic retry back to pending keeps none.
+      expect(await store.enqueueExtraction('session-1', 'mat_source')).toBe(true);
+      expect(await reasonCode()).toBeUndefined();
+      await store.claimNextExtraction('worker-b', { leaseTtlMs: 60_000 });
+      expect(
+        await store.settleExtractionFailure(
+          'mat_source',
+          'worker-b',
+          'busy',
+          true,
+          'service_unavailable',
+        ),
+      ).toEqual({ status: 'pending', attempts: 1 });
+      expect(await reasonCode()).toBeUndefined();
+
+      // A later failure without a code never keeps an earlier attempt's code.
+      await store.claimNextExtraction('worker-b', { leaseTtlMs: 60_000 });
+      await store.settleExtractionFailure('mat_source', 'worker-b', 'x', false, 'storage_full');
+      expect(await reasonCode()).toBe('storage_full');
+      await store.enqueueExtraction('session-1', 'mat_source');
+      await store.claimNextExtraction('worker-c', { leaseTtlMs: 60_000 });
+      expect(await reasonCode()).toBeUndefined();
+      await store.settleExtractionFailure('mat_source', 'worker-c', 'unclassified', false);
+      expect(await reasonCode()).toBeUndefined();
+
+      // Success leaves no code behind either.
+      await store.enqueueExtraction('session-1', 'mat_source');
+      await store.claimNextExtraction('worker-d', { leaseTtlMs: 60_000 });
+      await store.completeExtraction({
+        sourceId: 'mat_source',
+        workerId: 'worker-d',
+        extractorVersion: 'plain-text@1',
+        stats: { chars: 1, pages: 0, imageCount: 0 },
+        derived: { id: 'mat_extracted', kind: 'extraction', textAssetId: 'ast_text', textChars: 1 },
+      });
+      const done = await store.getMaterial('session-1', 'mat_source');
+      expect(done?.extraction.status).toBe('done');
+      expect(done?.extraction.reasonCode).toBeUndefined();
+    });
+
     test('enforces the kind vocabulary at the store boundary', async () => {
       const store = makeStore();
       await store.createSession({ id: 'session-1', ownerId: 'owner-a', prompt: 'p' });

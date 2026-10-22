@@ -22,6 +22,8 @@
  *    `lastEventId` instead of replaying the whole run.
  */
 import { create } from 'zustand';
+import i18n from 'i18next';
+import { supportedLocaleOf } from '@/lib/i18n/types';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -291,6 +293,15 @@ export interface WorkbenchFold {
    */
   libraryRevision: number;
   /**
+   * The same counter for the owner's MATERIAL library: bumped by a
+   * `library_changed` whose `library` is `materials` (a folder created or
+   * renamed, materials moved or renamed, an extraction started or settled).
+   * What lists materials -- the composer's picker and `@` -- refetches on an
+   * increase. Course writes never bump it, and material writes never bump
+   * `libraryRevision`, so neither list refetches for the other's changes.
+   */
+  materialLibraryRevision: number;
+  /**
    * Stage ids seen in `stage_link` events (legacy `course_link` accepted on
    * replay), in first-seen order. The workspace records how many came from the
    * attach backlog and may open only later live arrivals. Repeated links stay
@@ -551,6 +562,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     pages: {},
     chat: [],
     libraryRevision: 0,
+    materialLibraryRevision: 0,
     stageLinkStageIds: [],
     touchedStageIds: [],
     runCourseStageIds: [],
@@ -1610,6 +1622,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       break;
     }
     case 'library_changed': {
+      // A material-library write is not a course-library write: it bumps its
+      // own counter and stops here (it names no stage to sight).
+      if (data.library === 'materials') {
+        next.materialLibraryRevision = state.materialLibraryRevision + 1;
+        break;
+      }
       // A stage or folder write landed. The workspace's tree cannot know from
       // here WHAT it should look like — only that what it is showing predates a
       // write — so the fold counts the write and the shell refetches the
@@ -1965,6 +1983,7 @@ export async function createWorkbenchSession(input: {
       ...(input.materials?.length
         ? { materialIds: input.materials.map((material) => material.materialId) }
         : {}),
+      ...interfaceLocale(),
     }),
   });
   const body = (await res.json().catch(() => ({}))) as {
@@ -2077,6 +2096,16 @@ export function recoverTerminalCancelStatus(sessionId: string, error: unknown): 
 }
 
 /**
+ * The interface language a request is sent from, for the run's material
+ * wording (#1880): the shared i18next instance's current language when it is
+ * a supported one; otherwise nothing is sent and the server falls back.
+ */
+function interfaceLocale(): { locale?: string } {
+  const locale = supportedLocaleOf(i18n.language);
+  return locale ? { locale } : {};
+}
+
+/**
  * Send a follow-up into a live conversation. The server decides the delivery
  * shape (steer into a live run, or queue a new run on an idle session); the
  * event stream carries the bubble and whatever the agent does next, so there
@@ -2106,6 +2135,7 @@ export async function postWorkbenchMessage(
         : {}),
       ...(elementRefs.length ? { elementRefs } : {}),
       ...(courseRefs.length ? { courseRefs } : {}),
+      ...interfaceLocale(),
     }),
   });
   if (!res.ok) {
@@ -2173,6 +2203,9 @@ export class WorkbenchMaterialUploadError extends Error {
   userMessage(t: WorkbenchTranslator, locale: string): string {
     if (this.status === 415) return t('workbench.material.unsupportedType');
     if (this.status === 429) return t('workbench.material.quotaExceeded');
+    // The owner's asset pool is full (`ASSET_QUOTA_EXCEEDED`): not the
+    // per-owner material limits of a 429.
+    if (this.status === 507) return t('workbench.material.storageFull');
     if (this.status !== 413) return this.message;
     const limit = formatMaterialUploadLimit(this.maxBytes, locale);
     return limit === undefined
@@ -2254,7 +2287,7 @@ export async function uploadWorkbenchMaterial(file: File): Promise<WorkbenchMate
   }
   // A session extracts what it binds itself: the library's own extraction
   // (for classic generation) is not started for it.
-  const res = await fetch('/api/materials?extract=false', {
+  const res = await fetch('/api/materials?scope=library', {
     method: 'POST',
     headers: {
       'content-type': mimeType || 'application/octet-stream',

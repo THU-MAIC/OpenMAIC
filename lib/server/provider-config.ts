@@ -798,8 +798,9 @@ export function slotTTSModel(
   providerId: string,
   modelId: string | undefined,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  return ttsModelFor(providerId, [], modelId, voiceId);
+  return ttsModelFor(providerId, [], modelId, voiceId, configuredVoices);
 }
 
 /** Resolve a TTS model authorized by the deployment, or the BYOK client's choice. */
@@ -807,9 +808,10 @@ export function resolveTTSModel(
   providerId: string,
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   const requested = resolveManagedMediaModel('tts', providerId, clientModel);
-  const model = ttsModelFor(providerId, [], requested, voiceId);
+  const model = ttsModelFor(providerId, [], requested, voiceId, configuredVoices);
   // Voice compatibility may change the wire model; it still needs authorization.
   return resolveManagedMediaModel('tts', providerId, model);
 }
@@ -819,6 +821,7 @@ function ttsModelFor(
   pinnedModels: string[],
   clientModel?: string,
   voiceId?: string,
+  configuredVoices?: readonly { id: string }[],
 ): string | undefined {
   if (providerId === 'qwen-tts') {
     const vcModel = resolveQwenVoiceCloneModel();
@@ -835,7 +838,7 @@ function ttsModelFor(
     }
 
     if (voiceId) {
-      if (!isQwenCatalogVoice(voiceId)) return vcModel;
+      if (!isQwenCatalogVoice(voiceId, configuredVoices)) return vcModel;
       const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
       if (pinnedModels.length > 0 && !pinnedCatalogModel) {
         throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);

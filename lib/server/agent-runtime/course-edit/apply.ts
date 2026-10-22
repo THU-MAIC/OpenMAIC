@@ -404,7 +404,7 @@ function applyJsonPointerPatch(
   if (!applied.ok) return applied;
   const identityIssue = elementIdentityIssue(content, next);
   if (identityIssue) return fail(`patch rejected: ${identityIssue}`);
-  const schemaIssues = validateSlideCanvas(next.canvas);
+  const schemaIssues = validateSlideCanvas(next.canvas, content.canvas);
   if (schemaIssues.length > 0) return fail(`patch rejected: ${schemaIssues.join('; ')}`);
   const beforeLatex = new Map(
     content.canvas.elements

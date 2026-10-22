@@ -81,7 +81,7 @@ function normalizeShell(script: string | undefined): string {
 function assertMainPushVersionGate(workflow: Workflow): void {
   const mainPush = step(workflow, 'check', 'Package version bumps (main push)');
 
-  expect(mainPush.if).toBe("github.event_name == 'push'");
+  expect(mainPush.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
   expect(mainPush.env).toEqual({ BEFORE_SHA: '${{ github.event.before }}' });
   expect(normalizeShell(mainPush.run)).toBe(EXPECTED_MAIN_PUSH_GATE);
 }
@@ -181,7 +181,7 @@ describe('CI video-export workflow contract', () => {
     const guard = step(parseWorkflow(), 'e2e', 'Interactive static HTML Chromium smoke');
 
     expect(guard.run).toBe(
-      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts',
+      'pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts tests/video-export/interactive-self-hosted.browser.test.ts',
     );
     expect(guard.env).toEqual({ INTERACTIVE_STATIC_BROWSER: '1' });
     expect(guard.if).toBeUndefined();
