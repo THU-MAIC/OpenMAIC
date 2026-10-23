@@ -17,6 +17,8 @@ import { resolveModel } from '@/lib/server/resolve-model';
 import {
   areBasicShapes,
   assessComposition,
+  hasVisibleFill,
+  isCurveScenarioShape,
   isPentagon,
   isRightTriangle,
   squareOnHypotenuse,
@@ -70,24 +72,22 @@ const cases: Scenario[] = [
     request:
       'Draw exactly two shapes: a filled 3–4–5 right triangle with vertices A=(100,100), B=(340,100), C=(100,280), then an outward square of side 300 on its hypotenuse BC. Use a custom triangle path and a rotated rectangle for the square. Keep both inside the board.',
     check: (s: PPTShapeElement[]) =>
-      s.length === 2 && s.some((v) => isRightTriangle(v)) && s.some(squareOnHypotenuse),
+      s.length === 2 &&
+      s.every(hasVisibleFill) &&
+      s.some((v) => isRightTriangle(v)) &&
+      s.some(squareOnHypotenuse),
   },
   {
     id: 'polygon',
     request:
       'Draw one filled irregular pentagon using a custom SVG path with 5 vertices. Place it in x=100,y=100,width=240,height=180. No other elements.',
-    check: (s: PPTShapeElement[]) => s.length === 1 && isPentagon(s[0]),
+    check: (s: PPTShapeElement[]) => s.length === 1 && hasVisibleFill(s[0]) && isPentagon(s[0]),
   },
   {
     id: 'curve',
     request:
-      'Draw one open cubic Bezier curve, transparent fill, dark 2px stroke, rotated 12.5 degrees, within x=100,y=300,width=240,height=80. No other elements.',
-    check: (s: PPTShapeElement[]) =>
-      s.length === 1 &&
-      /[Cc]/.test(s[0].path) &&
-      s[0].fill === 'transparent' &&
-      s[0].outline?.width === 2 &&
-      s[0].rotate === 12.5,
+      'Draw one open cubic Bezier curve, transparent fill, dark 2px stroke, with an unrotated box at x=100,y=300,width=240,height=80 and rotation 12.5 degrees around its center. Keep the path within that unrotated box. No other elements.',
+    check: (s: PPTShapeElement[]) => s.length === 1 && isCurveScenarioShape(s[0]),
   },
   {
     id: 'basic-paths',
@@ -100,7 +100,8 @@ const cases: Scenario[] = [
     request:
       'Draw a single filled custom 3–4–5 triangle at x=100,y=100,width=240,height=180. If the drawing tool returns a path error, fix the input and retry.',
     injectError: true,
-    check: (s: PPTShapeElement[]) => s.length === 1 && isRightTriangle(s[0]),
+    check: (s: PPTShapeElement[]) =>
+      s.length === 1 && hasVisibleFill(s[0]) && isRightTriangle(s[0]),
   },
 ];
 

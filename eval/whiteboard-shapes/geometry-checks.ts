@@ -1,11 +1,59 @@
 import type { PPTShapeElement } from '@openmaic/dsl';
 import { validateSvgPath } from '@openmaic/geometry';
 import { SVGPathData } from 'svg-pathdata';
+import tinycolor from 'tinycolor2';
 
 const EPSILON = 1e-6;
 const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const cross = (a: number[], b: number[], c: number[]) =>
   (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+
+export function hasVisibleFill(s: PPTShapeElement): boolean {
+  const color = tinycolor(s.fill);
+  return color.isValid() && color.getAlpha() > 0 && (s.opacity ?? 1) > 0;
+}
+
+export function isCurveScenarioShape(s: PPTShapeElement): boolean {
+  const fill = tinycolor(s.fill);
+  const stroke = tinycolor(s.outline?.color ?? '');
+  const unfilled =
+    s.fill.trim().toLowerCase() === 'none' || (fill.isValid() && fill.getAlpha() === 0);
+  const angleDifference = Math.abs((s.rotate - 12.5) % 360);
+  if (
+    !unfilled ||
+    !stroke.isValid() ||
+    stroke.getAlpha() <= 0 ||
+    !stroke.isDark() ||
+    s.outline?.width !== 2 ||
+    !((s.opacity ?? 1) > 0) ||
+    ![s.left - 100, s.top - 300, s.width - 240, s.height - 80].every(
+      (difference) => Math.abs(difference) < EPSILON,
+    ) ||
+    !(angleDifference < EPSILON || 360 - angleDifference < EPSILON) ||
+    !s.viewBox.every((v) => Number.isFinite(v) && v > 0)
+  )
+    return false;
+  const parsed = validateSvgPath(s.path);
+  if (!parsed.ok || !parsed.bounds) return false;
+  const commands = new SVGPathData(parsed.commands).toAbs().normalizeHVZ().normalizeST().commands;
+  const first = commands[0];
+  const last = commands[commands.length - 1];
+  if (
+    first?.type !== SVGPathData.MOVE_TO ||
+    last?.type !== SVGPathData.CURVE_TO ||
+    !commands.slice(1).every((c) => c.type === SVGPathData.CURVE_TO) ||
+    distance([first.x, first.y], [last.x, last.y]) < EPSILON
+  )
+    return false;
+  const sx = s.width / s.viewBox[0];
+  const sy = s.height / s.viewBox[1];
+  return (
+    parsed.bounds.minX * sx >= -1 &&
+    parsed.bounds.minY * sy >= -1 &&
+    parsed.bounds.maxX * sx <= s.width + 1 &&
+    parsed.bounds.maxY * sy <= s.height + 1
+  );
+}
 
 function polygonContours(s: PPTShapeElement): number[][][] {
   const result = validateSvgPath(s.path);
@@ -113,8 +161,7 @@ export function assessComposition(shapes: PPTShapeElement[], vertices: TriangleV
     p.every(([x, y]) => x >= -1 && y >= -1 && x <= 1001 && y <= 563.5),
   );
   const validElements =
-    shapes.length > 0 &&
-    shapes.every((s, i) => s.fill !== 'transparent' && elementContours[i].length > 0);
+    shapes.length > 0 && shapes.every((s, i) => hasVisibleFill(s) && elementContours[i].length > 0);
   const matchedContours = [...new Set(matches.filter((i) => i >= 0))];
   return {
     passed: validElements && withinCanvas && contours.length === 4 && matchedContours.length === 4,
@@ -230,8 +277,7 @@ export function isCircle(s: PPTShapeElement, cx: number, cy: number, radius: num
 }
 
 export function areBasicShapes(shapes: PPTShapeElement[]): boolean {
-  if (shapes.length !== 3 || shapes.some((s) => s.rotate !== 0 || s.fill === 'transparent'))
-    return false;
+  if (shapes.length !== 3 || shapes.some((s) => s.rotate !== 0 || !hasVisibleFill(s))) return false;
   return [80, 340, 600].every((x, i) => {
     const s = shapes.find(
       (v) => v.left === x && v.top === 100 && v.width === 120 && v.height === 120,

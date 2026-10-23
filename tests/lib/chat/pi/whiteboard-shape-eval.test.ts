@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   areBasicShapes,
   assessComposition,
+  hasVisibleFill,
   isCircle,
+  isCurveScenarioShape,
   isPentagon,
   isRightTriangle,
   squareOnHypotenuse,
@@ -53,8 +55,67 @@ const circle = shape({
   viewBox: [2, 2],
   left: 340,
 });
+const curve = shape({
+  path: 'M0 1 C1 0 2 0 3 1',
+  viewBox: [3, 1],
+  left: 100,
+  top: 300,
+  width: 240,
+  height: 80,
+  rotate: 12.5,
+  fill: 'transparent',
+  outline: { color: '#333333', width: 2, style: 'solid' },
+});
 
 describe('whiteboard shape evaluation geometry', () => {
+  it.each([
+    'none',
+    'transparent',
+    '#0000',
+    '#00000000',
+    'rgba(12, 34, 56, 0)',
+    'hsla(0, 0%, 0%, 0)',
+  ])('rejects an invisible SVG fill: %s', (fill) => {
+    expect(hasVisibleFill(shape({ fill }))).toBe(false);
+    const shapes = [shape({ fill }), circle, shape({ left: 600, path: 'M0.5 0 L1 1 L0 1 Z' })];
+    expect(areBasicShapes(shapes)).toBe(false);
+  });
+
+  it.each(['red', '#123', '#123456', '#12345680', 'rgba(12, 34, 56, 0.5)'])(
+    'accepts visible static SVG colors: %s',
+    (fill) => expect(hasVisibleFill(shape({ fill }))).toBe(true),
+  );
+
+  it('rejects invalid colors and fully transparent elements', () => {
+    expect(hasVisibleFill(shape({ fill: 'not-a-color' }))).toBe(false);
+    expect(hasVisibleFill(shape({ opacity: 0 }))).toBe(false);
+  });
+
+  it('accepts the requested open cubic geometry with transparent fill and visible dark stroke', () => {
+    expect(isCurveScenarioShape(curve)).toBe(true);
+    expect(isCurveScenarioShape({ ...curve, fill: 'none' })).toBe(true);
+    expect(isCurveScenarioShape({ ...curve, rotate: 372.5 })).toBe(true);
+  });
+
+  it.each([
+    { path: 'M0 0 C1 1 2 1 3 0 Z' },
+    { path: 'M0 0 C1 1 2 1 0 0' },
+    { path: 'M0 1 L3 1' },
+    { path: 'M0 1 C1 0 2 0 3 1 M0 0 C1 0 2 0 3 0' },
+    { path: 'M0 1 C1 5 2 5 3 1' },
+    { left: 10000, top: 10000 },
+    { width: 1, height: 1 },
+    { rotate: -12.5 },
+    { fill: '#333333' },
+    { opacity: 0 },
+    { outline: { color: 'transparent', width: 2, style: 'solid' as const } },
+    { outline: { color: '#00000000', width: 2, style: 'solid' as const } },
+    { outline: { color: '#ffffff', width: 2, style: 'solid' as const } },
+    { outline: { color: '#333333', width: 1, style: 'solid' as const } },
+  ])('rejects a curve that violates the requested geometry or style: %j', (overrides) => {
+    expect(isCurveScenarioShape({ ...curve, ...overrides })).toBe(false);
+  });
+
   it('scores the actual triangle after applying element rotation', () => {
     expect(isRightTriangle(triangle)).toBe(true);
     expect(isRightTriangle({ ...triangle, rotate: 90 })).toBe(false);
@@ -181,6 +242,30 @@ describe('unseen 5–12–13 composition evaluation', () => {
     const shiftedVertices = vertices.map(([x, y]) => [x + 1000, y]) as TriangleVertices;
     expect(assessComposition(shifted, shiftedVertices).withinCanvas).toBe(false);
     expect(assessComposition(shifted, shiftedVertices).passed).toBe(false);
+  });
+
+  it.each(['none', '#0000', '#00000000', 'rgba(12, 34, 56, 0)', 'hsla(0, 0%, 0%, 0)'])(
+    'rejects geometrically correct compositions with invisible fill %s',
+    (fill) => {
+      expect(
+        assessComposition(
+          shapes.map((s) => ({ ...s, fill })),
+          vertices,
+        ).passed,
+      ).toBe(false);
+      expect(assessComposition([{ ...fromPath(paths.join(' ')), fill }], vertices).passed).toBe(
+        false,
+      );
+    },
+  );
+
+  it('rejects geometrically correct but fully transparent elements', () => {
+    expect(
+      assessComposition(
+        shapes.map((s) => ({ ...s, opacity: 0 })),
+        vertices,
+      ).passed,
+    ).toBe(false);
   });
 
   it.each([0, 1, 2, 3])(

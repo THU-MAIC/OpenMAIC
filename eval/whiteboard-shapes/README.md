@@ -112,6 +112,10 @@ vertex tolerance and correct edge order, exterior placement and canvas bounds.
 Separate elements and compound paths are both accepted. Missing, duplicate, extra,
 invisible or malformed contours fail. Hand-computed fixtures cover known correct
 and incorrect compositions independently of the reference-square generator.
+Filled scenarios require a valid static color with nonzero alpha and element
+opacity; SVG `none` and zero-alpha colors do not count as visible fills. The curve
+case checks one open cubic contour, its unrotated box and rotation, and a visible
+dark 2px stroke, rather than treating the presence of `C` in a path as sufficient.
 
 For a small composition batch:
 
