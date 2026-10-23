@@ -4,6 +4,7 @@
  * The timeline editor's per-line regeneration calls it; a generation run
  * narrates its scenes on the server.
  */
+import { voiceCloneRecoveryReason } from '@/lib/audio/voice-clone-recovery';
 import { db } from '@/lib/device-storage/database';
 import { loadModelCapabilities } from '@/lib/model-settings/capabilities';
 import { ttsSelection } from '@/lib/audio/tts-selection';
@@ -15,11 +16,13 @@ import {
   narratorBindingDiffers,
   narratorVoiceAfterMissingClone,
   resolveNarratorVoiceBinding,
+  voiceAfterUnavailableBinding,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
 import {
   isVoiceBindingUnavailable,
+  voiceBindingRecoveryReason,
   markVoiceBindingNoticeShown,
   markVoiceBindingUnavailable,
   voiceBindingKey,
@@ -127,10 +130,18 @@ export async function generateAndStoreTTS(
 
   let resolvedVoice =
     overrideVoice ??
-    resolveNarratorVoiceBinding(
-      boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
-      globalVoice,
-      providersConfig,
+    (boundVoice && isVoiceBindingUnavailable(boundVoice)
+      ? voiceAfterUnavailableBinding(
+          boundVoice,
+          globalVoice,
+          providersConfig,
+          voiceBindingRecoveryReason(boundVoice),
+        )
+      : resolveNarratorVoiceBinding(boundVoice, globalVoice, providersConfig));
+
+  if (!resolvedVoice)
+    throw new Error(
+      'No enabled fallback voice is available; re-upload the reference audio to re-clone this voice.',
     );
 
   // Pinned narrator (bound == global) whose provider became disabled:
@@ -200,11 +211,8 @@ export async function generateAndStoreTTS(
       },
     );
   } catch (error) {
-    const errorCode =
-      error && typeof error === 'object' && 'errorCode' in error
-        ? (error as { errorCode?: unknown }).errorCode
-        : undefined;
-    // Recover from a missing clone only when the attempt that just failed used
+    const recoveryReason = voiceCloneRecoveryReason(error);
+    // Recover from an unavailable clone only when the attempt that just failed used
     // the bound binding itself: marking it unavailable makes the resolver fall
     // back to the global voice, a DIFFERENT voice. When the failure is already
     // on the global voice (or on the deterministic pick), retrying would hit
@@ -212,16 +220,13 @@ export async function generateAndStoreTTS(
     // hot-looping /api/generate/tts (bound-dead → global-dead → …). The
     // fallbackHops bound keeps even pathological chains at a single hop.
     if (
-      errorCode === 'QWEN_VC_VOICE_NOT_FOUND' &&
+      recoveryReason &&
       boundKey &&
       boundVoice &&
       fallbackHops < MAX_NARRATOR_VOICE_FALLBACK_HOPS
     ) {
       if (voiceBindingKey(resolvedVoice) === boundKey) {
-        markVoiceBindingUnavailable(boundVoice);
-        if (markVoiceBindingNoticeShown(boundKey)) {
-          toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
-        }
+        markVoiceBindingUnavailable(boundVoice, recoveryReason);
         // One retry with a different voice: the global one when the binding
         // differs from it (the resolver now skips the marked binding), else the
         // deterministic enabled-provider pick for a pinned narrator.
@@ -231,8 +236,18 @@ export async function generateAndStoreTTS(
           failed: resolvedVoice,
           providerConfigs: providersConfig,
           usedFallbackVoice: !!overrideVoice,
+          recoveryReason,
         });
         if (retryVoice) {
+          if (markVoiceBindingNoticeShown(boundKey)) {
+            toast.warning(
+              getClientTranslation(
+                recoveryReason === 'reclone-required'
+                  ? 'settings.qwenCloneRecloneFallback'
+                  : 'settings.qwenCloneNarrationUnavailable',
+              ),
+            );
+          }
           return generateAndStoreTTS(
             requestId,
             text,

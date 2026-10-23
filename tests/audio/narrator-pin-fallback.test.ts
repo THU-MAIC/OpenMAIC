@@ -130,54 +130,64 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
     clearUnavailableVoiceBindingsForTests();
   });
 
-  it('falls back with a notice when the pinned ghost clone is missing (bound == global)', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
-    mocks.settingsState.mockReturnValue({
-      ttsVoiceProviderId: 'qwen-tts',
-      ttsProvidersConfig: {
-        'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
-      },
-      ttsVoice: 'clone-ghost',
-      ttsSpeed: 1,
-    });
-    // The workspace's tts slot resolves to this provider.
-    setModelSettingsViewForTests({
-      tts: { registryId: 'qwen-tts', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
-    });
-    // Everything enabled → the deterministic pick is the first enabled provider
-    // in canonical order: openai-tts / 'marin'.
-    mocks.isTTSProviderEnabled.mockReturnValue(true);
-    mocks.pickNarratorAgent.mockReturnValue({
-      id: 'teacher-pinned',
-      role: 'teacher',
-      voiceConfig: { providerId: 'qwen-tts', voiceId: 'clone-ghost' },
-    });
-    mockFetch
-      .mockResolvedValueOnce(
-        jsonResponse(400, {
-          errorCode: 'QWEN_VC_VOICE_NOT_FOUND',
-          error: 'The cloned Qwen voice no longer exists.',
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(200, { success: true, base64: btoa('fallback-audio'), format: 'wav' }),
+  it.each(['QWEN_VC_VOICE_NOT_FOUND', 'QWEN_VC_RECLONE_REQUIRED'])(
+    'falls back once for a pinned ghost clone (%s)',
+    async (errorCode) => {
+      const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
+      mocks.settingsState.mockReturnValue({
+        ttsVoiceProviderId: 'qwen-tts',
+        ttsProvidersConfig: {
+          'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+        },
+        ttsVoice: 'clone-ghost',
+        ttsSpeed: 1,
+      });
+      // The workspace's tts slot resolves to this provider.
+      setModelSettingsViewForTests({
+        tts: { registryId: 'qwen-tts', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+      });
+      // Everything enabled → the deterministic pick is the first enabled provider
+      // in canonical order: openai-tts / 'marin'.
+      mocks.isTTSProviderEnabled.mockReturnValue(true);
+      mocks.pickNarratorAgent.mockReturnValue({
+        id: 'teacher-pinned',
+        role: 'teacher',
+        voiceConfig: { providerId: 'qwen-tts', voiceId: 'clone-ghost' },
+      });
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse(400, {
+            errorCode,
+            error: 'The cloned Qwen voice no longer exists.',
+          }),
+        )
+        .mockResolvedValueOnce(
+          jsonResponse(200, { success: true, base64: btoa('fallback-audio'), format: 'wav' }),
+        );
+
+      await expect(generateAndStoreTTS('request-pinned-ghost', 'Hello class')).resolves.toBe(
+        'ast_audio_allocated',
       );
 
-    await expect(generateAndStoreTTS('request-pinned-ghost', 'Hello class')).resolves.toBe(
-      'ast_audio_allocated',
-    );
-
-    // The broken clone was attempted, then the deterministic enabled pick was
-    // used instead of throwing or silently skipping.
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
-    const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
-    expect(firstBody).toMatchObject({
-      ttsVoice: 'clone-ghost',
-    });
-    expect(secondBody).toMatchObject({ ttsVoice: 'marin' });
-    expect(mocks.toastWarning).toHaveBeenCalledOnce();
-  });
+      // The broken clone was attempted, then the deterministic enabled pick was
+      // used instead of throwing or silently skipping.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+      const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+      expect(firstBody).toMatchObject({
+        ttsVoice: 'clone-ghost',
+      });
+      expect(secondBody).toMatchObject({ ttsVoice: 'marin' });
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse(200, { success: true, base64: btoa('next-audio'), format: 'wav' }),
+      );
+      await generateAndStoreTTS('request-next', 'Next paragraph');
+      expect(
+        mockFetch.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).ttsVoice),
+      ).toEqual(['clone-ghost', 'marin', 'marin']);
+      expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    },
+  );
 
   it('falls back to the enabled provider instead of silently skipping when the pinned provider is disabled', async () => {
     const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');

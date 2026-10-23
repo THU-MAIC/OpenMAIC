@@ -106,8 +106,10 @@ describe('ensureRegisteredVoice memoization', () => {
     await registerVoiceFromReference('qwen-tts', {
       name: 'My voice',
       referenceAudio: new Blob(['wav'], { type: 'audio/wav' }),
-      refText: 'Hello',
     });
+    expect(
+      JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)),
+    ).not.toHaveProperty('refText');
     await deleteRegisteredVoice('qwen-tts', 'x');
     for (const call of f.mock.calls as unknown as [string, RequestInit][]) {
       const body = JSON.parse(String(call[1].body));

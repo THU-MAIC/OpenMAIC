@@ -1,3 +1,4 @@
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 /**
  * Narration: synthesize one speech line through the tts slot's provider.
@@ -7,7 +8,12 @@ import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
  */
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { generateTTS, type TTSGenerationResult } from '@/lib/audio/tts-providers';
-import { TTS_PROVIDERS, DEFAULT_TTS_VOICES, isQwenCloneVoice } from '@/lib/audio/constants';
+import {
+  TTS_PROVIDERS,
+  DEFAULT_TTS_VOICES,
+  isQwenCloneVoice,
+  isTTSVoiceCloneGroupingModel,
+} from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
@@ -117,6 +123,23 @@ export async function synthesizeNarration(
   // Build TTS config (managed providers may pin the model server-side)
   const qwenCloneVoice =
     ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice, connection.voices);
+  try {
+    getVoiceRegistrationAdapter(ttsProviderId)?.assertVoiceCompatible?.(
+      ttsVoice,
+      connection.voices,
+    );
+  } catch (error) {
+    // A saved grouping ID is not an upstream request. Explicit models still
+    // require authorization even when the voice itself needs migration.
+    const requested = input.requestedModelId?.trim();
+    if (
+      connection.origin === 'request' &&
+      requested &&
+      !isTTSVoiceCloneGroupingModel(ttsProviderId, requested)
+    )
+      authorizeMediaModel(connection, 'tts', requested);
+    throw error;
+  }
   const requestedSpeed = input.speed ?? 1.0;
   // A configured slot's own model; on the deprecated and default paths the
   // client's (or default) model under the legacy server pins. Qwen

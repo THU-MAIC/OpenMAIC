@@ -1,9 +1,47 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { audioBufferToMonoWav, preserveRecordedVoiceName } from '@/lib/audio/voxcpm-voices';
+import {
+  audioBufferToMonoWav,
+  normalizeQwenReferenceAudio,
+  preserveRecordedVoiceName,
+} from '@/lib/audio/voxcpm-voices';
 import { validateReferenceAudio } from '@/lib/audio/wav-validate';
 
 describe('Qwen reference audio normalization', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([4.999, 5, 60])(
+    'validates a %s-second upload against the CosyVoice duration range',
+    async (duration) => {
+      const sampleRate = 24_000;
+      const samples = Math.round(duration * sampleRate);
+      vi.stubGlobal('window', {
+        AudioContext: class {
+          async decodeAudioData() {
+            return {
+              duration,
+              sampleRate,
+              numberOfChannels: 1,
+              length: samples,
+              getChannelData: () => new Float32Array(samples),
+            };
+          }
+          async close() {}
+        },
+      });
+      const result = normalizeQwenReferenceAudio(new Blob(['input audio']), 'sample.wav');
+      if (duration < 5) {
+        await expect(result).rejects.toThrow('between 5 and 60 seconds');
+      } else {
+        const normalized = await result;
+        expect(
+          validateReferenceAudio(new Uint8Array(await normalized.blob.arrayBuffer()))
+            .durationSeconds,
+        ).toBe(duration);
+      }
+    },
+  );
+
   it('truncates decoder padding at the 60-second boundary', () => {
     const sampleRate = 24_000;
     const samples = Math.ceil(60.01 * sampleRate);

@@ -139,6 +139,7 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
       // Name the voice the new lines used, and that kept lines keep their old
       // audio: a count alone cannot show whether a roster voice change landed.
       const notes = [
+        summary.recovery?.message ?? '',
         summary.voice && summary.generated > 0 ? describeNarrationVoice(summary.voice) : '',
         summary.skipped > 0 && !params.force
           ? `${summary.skipped} line(s) kept their existing audio and voice; pass force to re-synthesize them.`

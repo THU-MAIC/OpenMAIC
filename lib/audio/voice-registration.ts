@@ -31,6 +31,10 @@ export interface VoiceRegistrationConfig {
 }
 
 export interface VoiceRegistrationAdapter {
+  /** Provider wire name used for enrollment identity; omitted adapters send the name unchanged. */
+  normalizeRegistrationName?(name: string): string;
+  /** Minimum reference duration in seconds; omitted adapters use the shared minimum. */
+  minReferenceDurationSeconds?: number;
   /** Whether registration is available for this provider given its options (e.g. backend kind). */
   supportsRegistration(options?: Record<string, unknown>): boolean;
   /** Whether the adapter can synthesize its own reference clip from a voice design. */
@@ -42,6 +46,8 @@ export interface VoiceRegistrationAdapter {
    * whether (and how) to honor it. `undefined` when registration is model-less.
    */
   resolveRegistrationModel(clientModel?: string): string | undefined;
+  /** Local saved-voice preflight only: no network work or model authorization. */
+  assertVoiceCompatible?(voiceId: string, configuredVoices?: readonly { id: string }[]): void;
   /** Whether `voiceId` is registered, or `unknown` when the lookup is inconclusive. */
   voiceExists(
     cfg: VoiceRegistrationConfig,

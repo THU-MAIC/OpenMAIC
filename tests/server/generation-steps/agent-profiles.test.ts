@@ -122,7 +122,7 @@ it('preserves a catalogue-backed provider default through profile generation and
       bound: teacher?.voiceConfig
         ? { ...teacher.voiceConfig, providerId: 'openai-tts' }
         : undefined,
-      unavailable: new Set(),
+      unavailable: new Map(),
     })?.voice.voiceId,
   ).toBe('vivian');
   expect(advertisedVoices(target).map((voice) => voice.voiceId)).toEqual(['vivian']);

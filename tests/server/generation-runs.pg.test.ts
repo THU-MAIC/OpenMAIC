@@ -1490,66 +1490,107 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(document!.scenes.map((scene) => scene.id)).toEqual(['scene-o1', 'scene-o2', 'scene-o3']);
   });
 
-  it("narrates with the teacher's voice options, and retries a missing clone with another voice", async () => {
-    const clone = 'qwen-tts-vc-clone-1';
-    const base = fakeServices({ research: async () => null });
-    const voxcpm = fakeServices({
-      research: async () => null,
-      narrationTarget: async () => ({
-        connection: {
+  it.each([
+    ['QWEN_VC_VOICE_NOT_FOUND', false, false],
+    ['QWEN_VC_VOICE_NOT_FOUND', false, true],
+    ['QWEN_VC_RECLONE_REQUIRED', false, false],
+    ['QWEN_VC_RECLONE_REQUIRED', false, true],
+    ['QWEN_VC_RECLONE_REQUIRED', false, 'other'],
+    ['QWEN_VC_VOICE_NOT_FOUND', true, false],
+    ['QWEN_VC_RECLONE_REQUIRED', true, false],
+  ] as const)(
+    "narrates with the teacher's voice options, and retries an unavailable clone (%s, fallback fails: %s, pinned: %s)",
+    async (cloneErrorCode, fallbackFails, pinned) => {
+      const clone = 'qwen-tts-vc-clone-1';
+      const base = fakeServices({ research: async () => null });
+      const voxcpm = fakeServices({
+        research: async () => null,
+        narrationTarget: async () => ({
+          connection: {
+            providerId: 'voxcpm-tts',
+            managed: true,
+            userEndpoint: false,
+            origin: 'configuration',
+          } as MediaConnection,
           providerId: 'voxcpm-tts',
-          managed: true,
-          userEndpoint: false,
-          origin: 'configuration',
-        } as MediaConnection,
-        providerId: 'voxcpm-tts',
-      }),
-    });
-    const auto = await start(runInput({ outlineReview: 'auto' }));
-    expect(await drive(auto.id, voxcpm.services)).toBe('completed');
-    // The narrator is the registry's first teacher with nothing bound (the
-    // built-in teacher, as in the browser), voiced from its persona.
-    expect(voxcpm.calls.narrateClip[0]).toMatchObject({
-      voice: 'voxcpm:auto',
-      providerOptions: { voiceMode: 'auto', voicePrompt: expect.stringContaining('lead teacher') },
-    });
-
-    const voices: string[] = [];
-    const qwen = fakeServices({
-      research: async () => null,
-      agentProfiles: async () => [
-        {
-          ...GENERATED_AGENTS[0]!,
-          voiceConfig: { providerId: 'qwen-tts', modelId: 'qwen3-tts-vc-realtime', voiceId: clone },
+        }),
+      });
+      const auto = await start(runInput({ outlineReview: 'auto' }));
+      expect(await drive(auto.id, voxcpm.services)).toBe('completed');
+      // The narrator is the registry's first teacher with nothing bound (the
+      // built-in teacher, as in the browser), voiced from its persona.
+      expect(voxcpm.calls.narrateClip[0]).toMatchObject({
+        voice: 'voxcpm:auto',
+        providerOptions: {
+          voiceMode: 'auto',
+          voicePrompt: expect.stringContaining('lead teacher'),
         },
-        GENERATED_AGENTS[1]!,
-      ],
-      narrationTarget: async () => ({
-        connection: {
+      });
+
+      const voices: string[] = [];
+      const warnings = vi.spyOn(console, 'warn').mockClear();
+      const qwen = fakeServices({
+        research: async () => null,
+        agentProfiles: async () => [
+          {
+            ...GENERATED_AGENTS[0]!,
+            voiceConfig: {
+              providerId: 'qwen-tts',
+              modelId: 'qwen3-tts-vc-realtime',
+              voiceId: clone,
+            },
+          },
+          GENERATED_AGENTS[1]!,
+        ],
+        narrationTarget: async () => ({
+          connection: {
+            providerId: 'qwen-tts',
+            managed: true,
+            userEndpoint: false,
+            origin: 'configuration',
+          } as MediaConnection,
           providerId: 'qwen-tts',
-          managed: true,
-          userEndpoint: false,
-          origin: 'configuration',
-        } as MediaConnection,
-        providerId: 'qwen-tts',
-        modelId: 'qwen3-tts-flash',
-      }),
-      narrateClip: async (owner, input, ctx) => {
-        voices.push(input.voice);
-        if (input.voice === clone) {
-          throw Object.assign(new Error('missing clone'), {
-            code: 'QWEN_VC_VOICE_NOT_FOUND',
-            httpStatus: 404,
-          });
-        }
-        return base.services.narrateClip(owner, input, ctx);
-      },
-    });
-    const bound = await start(runInput({ outlineReview: 'auto' }));
-    expect(await drive(bound.id, qwen.services)).toBe('completed');
-    // The clone failed once; that clip and every later one used the slot voice.
-    expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
-  });
+          modelId: 'qwen3-tts-flash',
+        }),
+        narrateClip: async (owner, input, ctx) => {
+          voices.push(input.voice);
+          if (input.voice === clone || input.voice === 'another-retired-clone' || fallbackFails) {
+            throw Object.assign(new Error('missing clone'), {
+              code: cloneErrorCode,
+              httpStatus: 400,
+            });
+          }
+          return base.services.narrateClip(owner, input, ctx);
+        },
+      });
+      const bound = await start(
+        runInput({
+          outlineReview: 'auto',
+          ...(pinned
+            ? {
+                voice: {
+                  providerId: 'qwen-tts',
+                  voiceId: pinned === 'other' ? 'another-retired-clone' : clone,
+                },
+              }
+            : {}),
+        }),
+      );
+      expect(await drive(bound.id, qwen.services)).toBe(fallbackFails ? 'paused' : 'completed');
+      // One fallback at most; later clips skip the unavailable binding.
+      expect(voices).toEqual(
+        fallbackFails ? [clone, 'Cherry'] : [clone, 'Cherry', 'Cherry', 'Cherry'],
+      );
+      const recoveryWarnings = warnings.mock.calls.filter(([message]) =>
+        String(message).includes('temporarily using another voice'),
+      );
+      expect(recoveryWarnings).toHaveLength(1);
+      expect(recoveryWarnings[0][0]).toContain(
+        cloneErrorCode === 'QWEN_VC_RECLONE_REQUIRED' ? 'reclone-required' : 'missing',
+      );
+      warnings.mockRestore();
+    },
+  );
 
   it('releases the clips of a narration attempt that failed', async () => {
     const base = fakeServices({ research: async () => null });

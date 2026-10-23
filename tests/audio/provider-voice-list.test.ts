@@ -142,7 +142,7 @@ it('retains a configured restricted id through user selection and generated narr
       target,
       preference: undefined,
       bound: { providerId: 'openai-tts', voiceId: 'marin' },
-      unavailable: new Set(),
+      unavailable: new Map(),
     })?.voice.voiceId,
   ).toBe('marin');
 });
@@ -215,7 +215,7 @@ it('keeps configured Qwen catalogue voices on the ordinary model through selecti
       target,
       preference: undefined,
       bound: { providerId: 'qwen-tts', voiceId: 'vivian' },
-      unavailable: new Set(),
+      unavailable: new Map(),
     })?.voice.modelId,
   ).toBe('qwen3-tts');
   const groups = getEnabledProvidersWithVoices({
@@ -286,7 +286,7 @@ it('drops stale global preferences outside a replacement catalogue but retains c
       target,
       preference: undefined,
       bound: { providerId: 'openai-tts', voiceId: 'alloy' },
-      unavailable: new Set(),
+      unavailable: new Map(),
     })?.voice.voiceId,
   ).toBe('alloy');
 });
