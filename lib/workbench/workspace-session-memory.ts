@@ -21,8 +21,9 @@ function availableStorage(storage?: SessionMemoryStorage): SessionMemoryStorage 
   return window.localStorage;
 }
 
-function normalizeSessionId(value: string | null | undefined): string | null {
-  const sessionId = value?.trim();
+function normalizeSessionId(value: string | null | undefined | unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const sessionId = value.trim();
   return sessionId || null;
 }
 
@@ -72,12 +73,14 @@ export function forgetWorkspaceSession(sessionId: string, storage?: SessionMemor
 /** Forget a remembered conversation when the workspace's existing list no longer contains it. */
 export function validateRememberedWorkspaceSession(
   sessionId: string,
-  existingSessionIds: readonly string[],
+  existingSessionIds: readonly string[] | null | undefined,
   storage?: SessionMemoryStorage,
 ): boolean {
   const normalized = normalizeSessionId(sessionId);
   if (!normalized) return false;
-  const exists = existingSessionIds.some((existing) => normalizeSessionId(existing) === normalized);
+  const exists = Array.isArray(existingSessionIds)
+    ? existingSessionIds.some((existing) => normalizeSessionId(existing) === normalized)
+    : false;
   if (!exists) forgetWorkspaceSession(normalized, storage);
   return exists;
 }
