@@ -22,7 +22,7 @@ const probe = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock('@/lib/config/feature-flags', () => ({
   isMaicEditorEnabled: () => true,
-  isProWorkbenchEnabled: () => true,
+  isWorkbenchEnabled: () => true,
 }));
 vi.mock('@/lib/edit/preload-editor', () => ({
   preloadEditor: () => probe.preload(),
