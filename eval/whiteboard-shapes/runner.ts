@@ -4,9 +4,9 @@ import { parseArgs } from 'node:util';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type { PPTShapeElement } from '@openmaic/dsl';
 import { BrowserRuntimeStore } from '@openmaic/storage';
-import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
-import { buildNativeChildPrompt } from '@/lib/chat/pi/prompts';
+import { runNativeChild } from '@/lib/agent/runtime/run-native-child';
+import { buildNativeChildPrompt, buildNativeChildTurnPrompt } from '@/lib/chat/pi/prompts';
 import { buildNativeWhiteboardTools } from '@/lib/chat/pi/tools/native-whiteboard';
 import { settleWhiteboardVisibility } from '@/lib/chat/pi/whiteboard-visibility';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -14,7 +14,30 @@ import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { createWhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import { resolveModel } from '@/lib/server/resolve-model';
-import { areBasicShapes, isPentagon, isRightTriangle, squareOnHypotenuse } from './geometry-checks';
+import {
+  areBasicShapes,
+  assessComposition,
+  isPentagon,
+  isRightTriangle,
+  squareOnHypotenuse,
+  type TriangleVertices,
+} from './geometry-checks';
+import { compositionScenario } from './composition-scenarios';
+
+interface Scenario {
+  id: string;
+  request: string;
+  check: (shapes: PPTShapeElement[]) => boolean;
+  injectError?: boolean;
+  variant?: number;
+  vertices?: TriangleVertices;
+}
+
+interface RunOptions {
+  thinking: 'enabled' | 'disabled';
+  timeoutMs: number;
+  maxProviderTransports: number;
+}
 
 const teacher: AgentConfig = {
   id: 'shape-eval',
@@ -41,7 +64,7 @@ const body: StatelessChatRequest = {
   },
   config: { agentIds: [teacher.id] },
 };
-const cases = [
+const cases: Scenario[] = [
   {
     id: 'pythagoras',
     request:
@@ -81,7 +104,8 @@ const cases = [
   },
 ];
 
-async function runCase(modelString: string, scenario: (typeof cases)[number]) {
+async function runCase(modelString: string, scenario: Scenario, options: RunOptions) {
+  const started = Date.now();
   const resolved = await resolveModel({ modelString });
   const store = new BrowserRuntimeStore({
     indexedDB: new IDBFactory(),
@@ -134,51 +158,55 @@ async function runCase(modelString: string, scenario: (typeof cases)[number]) {
       return result;
     },
   }));
-  const agent = buildAgent({
-    systemPrompt: buildNativeChildPrompt(
-      body,
-      teacher,
-      [],
-      tools.map((t) => t.name),
-    ),
+  const systemPrompt = buildNativeChildPrompt(
+    body,
+    teacher,
+    [],
+    tools.map((t) => t.name),
+  );
+  const native = await runNativeChild({
+    systemPrompt,
+    prompt: buildNativeChildTurnPrompt(scenario.request, teacher.role),
     streamFn: createCallLlmStreamFn({
       languageModel: resolved.model,
-      thinkingConfig: { mode: 'disabled', enabled: false },
+      source: 'pi-chat-native-child',
+      thinkingConfig: { mode: options.thinking, enabled: options.thinking === 'enabled' },
       maxOutputTokens: 4096,
     }),
     tools,
     allowedToolNames: new Set(tools.map((t) => t.name)),
-    afterToolCall: () => (calls.length >= 24 ? { terminate: true } : undefined),
+    timeoutMs: options.timeoutMs,
+    maxProviderTransports: options.maxProviderTransports,
   });
-  const timer = setTimeout(() => agent.abort(), 120_000);
-  let error: string | undefined;
-  try {
-    await agent.prompt(scenario.request);
-  } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
-  } finally {
-    clearTimeout(timer);
-  }
-  const shapes =
-    (await service.read('shape-eval')).whiteboard?.elements.filter(
-      (s): s is PPTShapeElement => s.type === 'shape',
-    ) ?? [];
+  const elements = (await service.read('shape-eval')).whiteboard?.elements ?? [];
+  const shapes = elements.filter((s): s is PPTShapeElement => s.type === 'shape');
   const failures = calls.filter((c) => c.error || (c.result as { isError?: boolean })?.isError);
-  const terminalError = agent.state.messages.findLast(
-    (m) => m.role === 'assistant' && m.stopReason === 'error',
-  );
-  if (terminalError?.role === 'assistant') error ??= terminalError.errorMessage;
+  const geometryPassed = elements.length === shapes.length && scenario.check(shapes);
   return {
     model: modelString,
     scenario: scenario.id,
-    passed: !error && scenario.check(shapes),
+    variant: scenario.variant,
+    vertices: scenario.vertices,
+    request: scenario.request,
+    systemPrompt,
+    options,
+    elapsedMs: Date.now() - started,
+    passed: native.status === 'completed' && geometryPassed,
+    geometryPassed,
+    assessment: scenario.vertices ? assessComposition(shapes, scenario.vertices) : undefined,
+    native,
     injected,
-    error,
     failedCalls: failures.length,
-    corrected: failures.length > 0 && scenario.check(shapes),
+    corrected: failures.length > 0 && geometryPassed,
     calls,
     shapes,
   };
+}
+
+function positiveInteger(value: string, option: string): number {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n <= 0) throw new Error(`${option} must be a positive integer`);
+  return n;
 }
 
 async function main() {
@@ -186,33 +214,82 @@ async function main() {
     options: {
       models: { type: 'string' },
       output: { type: 'string', default: 'eval/whiteboard-shapes/results' },
+      cases: { type: 'string', default: 'all' },
+      repetitions: { type: 'string', default: '1' },
+      thinking: { type: 'string', default: 'enabled' },
+      'timeout-ms': { type: 'string', default: '60000' },
+      'max-provider-transports': { type: 'string', default: '5' },
     },
   });
   const models = (values.models || process.env.EVAL_SHAPE_MODELS || '').split(',').filter(Boolean);
   if (!models.length)
     throw new Error('Pass --models provider:model,provider:model or set EVAL_SHAPE_MODELS');
+  if (values.thinking !== 'enabled' && values.thinking !== 'disabled')
+    throw new Error('--thinking must be enabled or disabled');
+  const options: RunOptions = {
+    thinking: values.thinking,
+    timeoutMs: positiveInteger(values['timeout-ms']!, '--timeout-ms'),
+    maxProviderTransports: positiveInteger(
+      values['max-provider-transports']!,
+      '--max-provider-transports',
+    ),
+  };
+  const repetitions = positiveInteger(values.repetitions!, '--repetitions');
+  const selected =
+    values.cases === 'all' ? [...cases.map((c) => c.id), 'composition'] : values.cases!.split(',');
+  if (selected.some((id) => id !== 'composition' && !cases.some((c) => c.id === id)))
+    throw new Error(`Unknown case in --cases ${values.cases}`);
   Object.defineProperty(globalThis, 'IDBKeyRange', { value: IDBKeyRange, configurable: true });
   const results = [];
+  mkdirSync(values.output!, { recursive: true });
   for (const model of models)
-    for (const scenario of cases) {
-      const result = await runCase(model, scenario);
-      results.push(result);
-      console.log(
-        JSON.stringify({
-          model,
-          scenario: scenario.id,
-          passed: result.passed,
-          failedCalls: result.failedCalls,
-          corrected: result.corrected,
-          error: result.error,
-        }),
-      );
-      mkdirSync(values.output!, { recursive: true });
-      writeFileSync(
-        `${values.output}/report.json`,
-        JSON.stringify({ date: new Date().toISOString(), results }, null, 2),
-      );
-    }
+    for (let repetition = 0; repetition < repetitions; repetition++)
+      for (const id of selected) {
+        const composition = compositionScenario(repetition);
+        const scenario =
+          id === 'composition'
+            ? {
+                id,
+                ...composition,
+                check: (shapes: PPTShapeElement[]) =>
+                  assessComposition(shapes, composition.vertices).passed,
+              }
+            : cases.find((c) => c.id === id)!;
+        const result = await runCase(model, scenario, options);
+        const trial = { ...result, repetition };
+        results.push(trial);
+        console.log(
+          JSON.stringify({
+            model,
+            scenario: scenario.id,
+            repetition,
+            variant: scenario.variant,
+            passed: result.passed,
+            geometryPassed: result.geometryPassed,
+            assessment: result.assessment,
+            status: result.native.status,
+            stopReason: result.native.stopReason,
+            providerTransports: result.native.providerTransportCount,
+            failedCalls: result.failedCalls,
+            corrected: result.corrected,
+            elapsedMs: result.elapsedMs,
+          }),
+        );
+        writeFileSync(
+          `${values.output}/${model.replace(/[^a-z0-9-]/gi, '_')}-${id}-${repetition}.json`,
+          JSON.stringify(trial, null, 2),
+        );
+        writeFileSync(
+          `${values.output}/report.json`,
+          JSON.stringify(
+            { date: new Date().toISOString(), options, models, selected, repetitions, results },
+            null,
+            2,
+          ),
+        );
+        if (result.native.status === 'failed' && result.calls.length === 0)
+          throw new Error(`Provider failed before any tool call: ${result.native.stopReason}`);
+      }
   if (results.some((r) => !r.passed)) process.exitCode = 1;
 }
 main().catch((error) => {

@@ -12,7 +12,9 @@ Every call requires both a nonblank SVG `path` **d attribute** and positive
 `viewBox: [width, height]`. It never accepts a complete SVG document. Position
 `x`/`y` is the upper-left corner of the **unrotated** box; element dimensions
 scale viewBox coordinates independently. Use a matching aspect ratio to
-preserve mathematical lengths. Close filled polygons with `Z`; for open curves,
+preserve mathematical lengths. Plan a rotated shape's center first, then set
+`x = centerX - width / 2`, `y = centerY - height / 2`. Arc radii are expressed
+in viewBox units and scale with the element dimensions. Close filled shapes with `Z`; for open curves,
 request transparent fill and an explicit stroke.
 
 Path coordinates are local: `(0,0)` is the unrotated element's upper-left.
@@ -32,9 +34,7 @@ of its box. With equal width/height, its radius equals the element width,
 not half the width. Use transparent fill and an explicit stroke for this arc.
 
 For a 3–4–5 triangle, use `path: "M0 0 L4 0 L0 3 Z"`, `viewBox: [4, 3]`,
-`width: 240`, `height: 180`. At `x: 100, y: 100`, its hypotenuse endpoints are
-`(340,100)` and `(100,280)`. An outward square on that edge uses
-`x: 160, y: 160, width: 300, height: 300, rotate: -36.86989765`.
+and `width:height = 4:3` to preserve its proportions.
 For a curve, use `path: "M0 1 C1 0 2 0 3 1"`, `viewBox: [3, 1]`,
 `fillColor: "transparent"`, `stroke: { color: "#333333", width: 2 }`.
 In **every actual call**, copy `nextMutation.expectedLastSeq` exactly from the
@@ -99,10 +99,40 @@ node --env-file=.env.local --conditions=import --import tsx \
 The runner uses the production Native prompt, Pi agent and tool executors with
 an isolated BrowserRuntimeStore. Browser visibility is settled in-process;
 this is a tool/geometry eval, not an HTTP-route or full classroom UI test.
-The five cases cover a 3–4–5 triangle and hypotenuse square, a pentagon, an open
+The cases cover a 3–4–5 triangle and hypotenuse square, a pentagon, an open
 stroked curve, ordinary shapes drawn through paths, and error recovery. Recovery injects
 `M0 0 Z1 1` into the first otherwise valid custom call; the model receives the
 real error and must retry. This is an intentional fault, not a generation error.
-Runs stop after 24 recorded calls or 120 seconds. Results and raw traces go to the ignored `results/report.json`.
+The additional `composition` case requests a 5–12–13 triangle and outward squares
+on all three sides. Its task gives only the triangle vertices, not square
+coordinates, paths, rotation angles or a construction recipe. Four fixed variants
+change scale, position and orientation; repetitions cycle through them. Scoring
+checks all four closed contours after viewBox scaling and rotation, with a 1 px
+vertex tolerance and correct edge order, exterior placement and canvas bounds.
+Separate elements and compound paths are both accepted. Missing, duplicate, extra,
+invisible or malformed contours fail. Hand-computed fixtures cover known correct
+and incorrect compositions independently of the reference-square generator.
+
+For a small composition batch:
+
+```sh
+node --env-file=.env.local --conditions=import --import tsx \
+  eval/whiteboard-shapes/runner.ts --models deepseek:deepseek-flash \
+  --cases composition --repetitions 12 --output /tmp/whiteboard-composition
+```
+
+The runner uses production `runNativeChild`, with thinking enabled, a 4,096 output
+token limit, 5 provider transports and a 60-second timeout by default. Options
+`--thinking enabled|disabled`, `--max-provider-transports N` and `--timeout-ms N`
+make the budget explicit. A diagnostic run with `--max-provider-transports 12`
+can separate geometry failures from insufficient requests for several sequential
+read/mutation pairs; it is not a production-budget completion score. No production
+runtime limits are changed. `--cases all` runs every case (the default); comma-separated
+case IDs and `--repetitions N` select a subset and repeat it.
+
+Results include the exact system/task prompts, Native stop reason, geometry
+assessment, persisted shapes and tool traces. A run passes only if the Native child
+completes and the persisted geometry is correct. Reports go to `results/report.json`
+and one JSON file per trial by default, all ignored by Git.
 Publish observed results, logs and screenshots in PR comments; do not commit
 run artifacts.

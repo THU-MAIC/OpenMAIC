@@ -261,15 +261,16 @@ export function buildNativeChildPrompt(
     ...(availableTools.includes('wb_draw_shape')
       ? [
           '# Native whiteboard shapes',
-          '- rotate is a finite angle in degrees around the box center, positive clockwise; omitted means 0. x/y is the upper-left corner BEFORE rotation. Keep the rotated shape inside the canvas too.',
-          '- Geometry: every shape requires SVG path d data and viewBox:[w,h] with positive dimensions. Path coordinates use viewBox units; element width/height scale them independently. Never supply complete SVG markup. Close filled polygons with Z. For open curves use fillColor:"transparent" and stroke:{color,width,style?}; style defaults to solid (also dashed/dotted).',
+          '- Geometry: every shape requires SVG path d data and viewBox:[w,h] with positive dimensions, never complete SVG markup. Element width/height scale the viewBox independently per axis; keep the viewBox ratio equal to width:height when proportions matter.',
           '- Path/viewBox coordinates are local: origin (0,0) is the unrotated element upper-left. Never put absolute whiteboard x/y into path data or center a path around zero without offsetting it into the viewBox.',
+          '- x/y is the upper-left BEFORE rotation; rotate is a finite angle in degrees around the box center, positive clockwise (default 0). Work out the intended center first, then x=centerX-width/2 and y=centerY-height/2. Keep the rotated shape inside the canvas too.',
+          '- Arc radii are in viewBox units and scale with element width/height; unequal axis scales turn circular arcs into elliptical arcs.',
+          '- Close filled shapes with Z. Open curves use fillColor:"transparent" and stroke:{color,width,style?}; style defaults to solid (also dashed/dotted).',
           '- Examples below omit expectedLastSeq only for readability: in EVERY actual call copy it exactly from the latest wb_read; read again between successful mutations. Never copy a placeholder sequence.',
-          '- Rotated square on the hypotenuse of the triangle example below: {path:"M0 0 H1 V1 H0 Z",viewBox:[1,1],x:160,y:160,width:300,height:300,rotate:-36.86989765,fillColor:"#ed7d31"}. Its center is (310,310); after rotation one edge joins (340,100) to (100,280), and the square extends outward to (520,340) and (280,520). For other endpoints, compute the midpoint plus half the outward perpendicular as the square center, then x/y=center minus half its side. Never treat an endpoint as the unrotated upper-left corner.',
-          '- 3–4–5 right triangle: {path:"M 0 0 L 4 0 L 0 3 Z",viewBox:[4,3],x:100,y:100,width:240,height:180,fillColor:"#5b9bd5"}. This preserves the 4:3 ratio.',
-          '- Open curve: {path:"M 0 1 C 1 0 2 0 3 1",viewBox:[3,1],x:100,y:340,width:240,height:80,rotate:12.5,fillColor:"transparent",stroke:{color:"#333333",width:2}}.',
+          '- Right triangle: path:"M0 0 L4 0 L0 3 Z", viewBox:[4,3]; use width:height=4:3 to preserve its proportions.',
+          '- Open cubic curve: path:"M0 1 C1 0 2 0 3 1", viewBox:[3,1], fillColor:"transparent", stroke:{color:"#333333",width:2}.',
           '- Complete circle/ellipse: path:"M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z", viewBox:[2,2]. Equal element width/height gives a circle; different dimensions give an ellipse.',
-          '- Clockwise upper-right quarter circle from top-left to bottom-right: path:"M0 0 A1 1 0 0 1 1 1", viewBox:[1,1]. When width=height, its radius equals width, not width/2. Element x/y is the upper-left, not the circle center.',
+          '- Clockwise upper-right quarter circle, top-left to bottom-right: path:"M0 0 A1 1 0 0 1 1 1", viewBox:[1,1]; for width=height its radius equals width.',
           '- On an invalid shape error, correct the reported field/path position or reduce path complexity and retry. Do not claim success until the mutation succeeds. Native shapes persist as PPTShapeElement records, never Legacy JSON actions.',
         ]
       : []),

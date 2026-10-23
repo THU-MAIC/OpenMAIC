@@ -7,12 +7,11 @@ const distance = (a: number[], b: number[]) => Math.hypot(a[0] - b[0], a[1] - b[
 const cross = (a: number[], b: number[], c: number[]) =>
   (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 
-function polygonVertices(s: PPTShapeElement): number[][] {
+function polygonContours(s: PPTShapeElement): number[][][] {
   const result = validateSvgPath(s.path);
   if (!result.ok) return [];
   const commands = new SVGPathData(result.commands).toAbs().normalizeHVZ().commands;
   if (
-    commands.filter((c) => c.type === SVGPathData.MOVE_TO).length !== 1 ||
     commands.some(
       (c) =>
         c.type !== SVGPathData.MOVE_TO &&
@@ -24,26 +23,38 @@ function polygonVertices(s: PPTShapeElement): number[][] {
   const angle = (s.rotate * Math.PI) / 180;
   const cx = s.left + s.width / 2,
     cy = s.top + s.height / 2;
-  const points = commands
-    .flatMap((c) =>
-      'x' in c && 'y' in c
-        ? [
-            [
-              (c.x * s.width) / s.viewBox[0] - s.width / 2,
-              (c.y * s.height) / s.viewBox[1] - s.height / 2,
-            ],
-          ]
-        : [],
-    )
-    .map(([x, y]) => [
-      cx + x * Math.cos(angle) - y * Math.sin(angle),
-      cy + x * Math.sin(angle) + y * Math.cos(angle),
-    ]);
+  const contours: number[][][] = [];
+  let points: number[][] = [];
+  for (const c of commands) {
+    if (c.type === SVGPathData.MOVE_TO && points.length) {
+      const vertices = closedPolygonVertices(points);
+      if (!vertices.length) return [];
+      contours.push(vertices);
+      points = [];
+    }
+    if ('x' in c && 'y' in c) {
+      const x = (c.x * s.width) / s.viewBox[0] - s.width / 2;
+      const y = (c.y * s.height) / s.viewBox[1] - s.height / 2;
+      points.push([
+        cx + x * Math.cos(angle) - y * Math.sin(angle),
+        cy + x * Math.sin(angle) + y * Math.cos(angle),
+      ]);
+    } else if (c.type === SVGPathData.CLOSE_PATH && points.length) {
+      points.push(points[0]);
+    }
+  }
+  const vertices = closedPolygonVertices(points);
+  if (!vertices.length) return [];
+  contours.push(vertices);
+  return contours;
+}
+
+function closedPolygonVertices(points: number[][]): number[][] {
   const vertices = points.filter((p, i) => i === 0 || distance(p, points[i - 1]) > EPSILON);
-  if (vertices.length < 3) return [];
+  if (vertices.length < 4 || vertices.some((p) => p.some((v) => !Number.isFinite(v)))) return [];
   const closed = distance(vertices[0], vertices[vertices.length - 1]) < EPSILON;
-  if (!closed && !/[zZ]/.test(s.path)) return [];
-  if (closed) vertices.pop();
+  if (!closed) return [];
+  vertices.pop();
   // Collinear intermediate points do not add polygon corners. Keep reversals:
   // they must not hide a backtracking edge from the checks below.
   return vertices.filter((p, i) => {
@@ -54,8 +65,12 @@ function polygonVertices(s: PPTShapeElement): number[][] {
   });
 }
 
-function matchesPolygon(s: PPTShapeElement, expected: number[][]): boolean {
-  const actual = polygonVertices(s);
+function polygonVertices(s: PPTShapeElement): number[][] {
+  const contours = polygonContours(s);
+  return contours.length === 1 ? contours[0] : [];
+}
+
+function matchesVertices(actual: number[][], expected: number[][]): boolean {
   if (actual.length !== expected.length) return false;
   const indices = actual.map((p) => expected.findIndex((e) => distance(p, e) < 1));
   if (indices.includes(-1) || new Set(indices).size !== expected.length) return false;
@@ -66,6 +81,50 @@ function matchesPolygon(s: PPTShapeElement, expected: number[][]): boolean {
       (n, i) => (indices[(i + 1) % indices.length] - n + indices.length) % indices.length === step,
     )
   );
+}
+
+function matchesPolygon(s: PPTShapeElement, expected: number[][]): boolean {
+  return matchesVertices(polygonVertices(s), expected);
+}
+
+export type TriangleVertices = [[number, number], [number, number], [number, number]];
+
+/** Independent expected vertices; never include these square coordinates in the model prompt. */
+export function expectedComposition(vertices: TriangleVertices): number[][][] {
+  return [
+    vertices,
+    ...vertices.map((a, i) => {
+      const b = vertices[(i + 1) % 3];
+      const opposite = vertices[(i + 2) % 3];
+      const sign = cross(a, b, opposite) > 0 ? 1 : -1;
+      const nx = sign * (b[1] - a[1]);
+      const ny = sign * (a[0] - b[0]);
+      return [a, b, [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]];
+    }),
+  ];
+}
+
+export function assessComposition(shapes: PPTShapeElement[], vertices: TriangleVertices) {
+  const expected = expectedComposition(vertices);
+  const elementContours = shapes.map(polygonContours);
+  const contours = elementContours.flat();
+  const matches = contours.map((p) => expected.findIndex((e) => matchesVertices(p, e)));
+  const withinCanvas = contours.every((p) =>
+    p.every(([x, y]) => x >= -1 && y >= -1 && x <= 1001 && y <= 563.5),
+  );
+  const validElements =
+    shapes.length > 0 &&
+    shapes.every((s, i) => s.fill !== 'transparent' && elementContours[i].length > 0);
+  const matchedContours = [...new Set(matches.filter((i) => i >= 0))];
+  return {
+    passed: validElements && withinCanvas && contours.length === 4 && matchedContours.length === 4,
+    elementCount: shapes.length,
+    contourCount: contours.length,
+    matchedContours,
+    unmatchedContours: matches.filter((i) => i < 0).length,
+    validElements,
+    withinCanvas,
+  };
 }
 
 export function isRightTriangle(s: PPTShapeElement): boolean {

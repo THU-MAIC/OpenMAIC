@@ -2,11 +2,14 @@ import type { PPTShapeElement } from '@openmaic/dsl';
 import { describe, expect, it } from 'vitest';
 import {
   areBasicShapes,
+  assessComposition,
   isCircle,
   isPentagon,
   isRightTriangle,
   squareOnHypotenuse,
+  type TriangleVertices,
 } from '@/eval/whiteboard-shapes/geometry-checks';
+import { compositionScenario } from '@/eval/whiteboard-shapes/composition-scenarios';
 
 function shape(overrides: Partial<PPTShapeElement> = {}): PPTShapeElement {
   return {
@@ -102,4 +105,93 @@ describe('whiteboard shape evaluation geometry', () => {
       areBasicShapes([{ ...shapes[0], path: 'M0 0 L1 1 L1 0 L0 1 Z' }, ...shapes.slice(1)]),
     ).toBe(false);
   });
+});
+
+describe('unseen 5–12–13 composition evaluation', () => {
+  const vertices: TriangleVertices = [
+    [300, 220],
+    [492, 220],
+    [300, 300],
+  ];
+  // Hand-computed reference contours, independent of the expected-square generator.
+  const paths = [
+    'M300 220 L492 220 L300 300 Z',
+    'M300 220 L492 220 L492 28 L300 28 Z',
+    'M492 220 L300 300 L380 492 L572 412 Z',
+    'M300 300 L300 220 L220 220 L220 300 Z',
+  ];
+  const fromPath = (path: string) =>
+    shape({
+      path,
+      viewBox: [1000, 562.5],
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 562.5,
+    });
+  const shapes = paths.map(fromPath);
+
+  it('accepts correct geometry as separate elements or one compound path, in either winding', () => {
+    expect(assessComposition(shapes, vertices).passed).toBe(true);
+    expect(assessComposition([fromPath(paths.join(' '))], vertices).passed).toBe(true);
+    expect(assessComposition(shapes, [vertices[0], vertices[2], vertices[1]]).passed).toBe(true);
+  });
+
+  it('scores actual transformed vertices rather than element boxes', () => {
+    const rotated = shapes.map((s) => ({ ...s, rotate: 90 }));
+    const rotatedVertices = vertices.map(([x, y]) => [
+      500 - (y - 281.25),
+      281.25 + x - 500,
+    ]) as TriangleVertices;
+    expect(assessComposition(rotated, rotatedVertices).passed).toBe(true);
+    expect(assessComposition(rotated, vertices).passed).toBe(false);
+  });
+
+  it('rejects an inward square, crossed edges, and an unclosed contour', () => {
+    for (const wrong of [
+      'M300 220 L492 220 L492 412 L300 412 Z',
+      'M492 220 L380 492 L300 300 L572 412 Z',
+      'M492 220 L300 300 L380 492 L572 412',
+    ]) {
+      const invalid = [shapes[0], shapes[1], fromPath(wrong), shapes[3]];
+      expect(assessComposition(invalid, vertices).passed).toBe(false);
+      expect(
+        assessComposition([fromPath(invalid.map((s) => s.path).join(' '))], vertices).passed,
+      ).toBe(false);
+    }
+  });
+
+  it('rejects missing, duplicate, extra, or invisible geometry', () => {
+    expect(assessComposition(shapes.slice(0, 3), vertices).passed).toBe(false);
+    expect(assessComposition([shapes[0], shapes[1], shapes[2], shapes[2]], vertices).passed).toBe(
+      false,
+    );
+    expect(assessComposition([...shapes, shape()], vertices).passed).toBe(false);
+    expect(assessComposition([...shapes, fromPath('M0 0 L1 1')], vertices).passed).toBe(false);
+    expect(
+      assessComposition(
+        shapes.map((s) => ({ ...s, fill: 'transparent' })),
+        vertices,
+      ).passed,
+    ).toBe(false);
+  });
+
+  it('rejects an otherwise correct composition outside the canvas', () => {
+    const shifted = shapes.map((s) => ({ ...s, left: 1000 }));
+    const shiftedVertices = vertices.map(([x, y]) => [x + 1000, y]) as TriangleVertices;
+    expect(assessComposition(shifted, shiftedVertices).withinCanvas).toBe(false);
+    expect(assessComposition(shifted, shiftedVertices).passed).toBe(false);
+  });
+
+  it.each([0, 1, 2, 3])(
+    'keeps the 5–12–13 ratio in variant %i without disclosing square placements',
+    (variant) => {
+      const scenario = compositionScenario(variant);
+      const [a, b, c] = scenario.vertices;
+      const length = (p: number[], q: number[]) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+      expect(length(a, b) / length(a, c)).toBeCloseTo(12 / 5, 3);
+      expect(length(b, c) / length(a, c)).toBeCloseTo(13 / 5, 3);
+      expect(scenario.request).not.toMatch(/viewBox|path:|rotate:|正方形.*\d/);
+    },
+  );
 });
