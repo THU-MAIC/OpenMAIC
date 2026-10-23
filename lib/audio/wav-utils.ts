@@ -77,7 +77,9 @@ export async function normalizeASRUploadAudio(
   providerId: string,
   audioBlob: Blob,
 ): Promise<{ blob: Blob; fileName: string }> {
-  if (providerId !== 'lemonade-asr' && providerId !== 'funasr-asr') {
+  // Providers whose APIs reject WebM/Opus recordings get a client-side WAV
+  // transcode; everyone else receives the recording as-is.
+  if (providerId !== 'lemonade-asr' && providerId !== 'funasr-asr' && providerId !== 'xiaomi-asr') {
     return { blob: audioBlob, fileName: 'recording.webm' };
   }
   return { blob: await audioBlobToWav(audioBlob), fileName: 'recording.wav' };

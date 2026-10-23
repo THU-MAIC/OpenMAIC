@@ -150,6 +150,7 @@ import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
+import { asrFetchSignal } from '@/lib/audio/asr-fetch-signal';
 import {
   audioEndpointPolicy,
   audioProviderFetch,
@@ -200,6 +201,9 @@ export async function transcribeAudio(
         'lemonade-asr',
         'Lemonade',
       );
+
+    case 'xiaomi-asr':
+      return await transcribeXiaomiASR(config, audioBuffer);
 
     default:
       if (isCustomASRProvider(config.providerId)) {
@@ -646,6 +650,131 @@ async function transcribeAzureASR(
     .join(' ');
 
   return { text: combinedText || phraseText || '' };
+}
+
+/**
+ * Xiaomi MiMo ASR transcription.
+ *
+ * MiMo ASR reuses the chat/completions protocol rather than OpenAI's
+ * /audio/transcriptions: the audio sample rides inside a user message as an
+ * `input_audio` data-URL part (wav/mp3/flac/m4a/ogg, base64, <= 10 MB
+ * encoded), the language hint goes in `asr_options`, and the transcript comes
+ * back as the assistant message's plain text content.
+ */
+/** MiMo documents a 10 MB cap on the base64-encoded input_audio payload. */
+const MAX_XIAOMI_ASR_ENCODED_BYTES = 10 * 1024 * 1024;
+
+async function transcribeXiaomiASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS['xiaomi-asr'].defaultBaseUrl || '').replace(
+    /\/+$/,
+    '',
+  );
+
+  const audioBlob = await toAudioBlob(audioBuffer);
+  const bytes = new Uint8Array(await audioBlob.arrayBuffer());
+  // The bytes decide, never the client-declared Content-Type: a WebM or
+  // corrupt upload claiming to be WAV must be refused here, not forwarded.
+  const mimeType = resolveXiaomiASRAudioMime(bytes);
+  if (!mimeType) {
+    throw new Error(
+      'Xiaomi MiMo ASR supports wav/mp3 audio only (browser recordings are transcoded to WAV client-side before upload).',
+    );
+  }
+  const base64 = Buffer.from(bytes).toString('base64');
+  // MiMo documents a 10 MB cap on the base64-encoded input_audio payload.
+  // Browser recordings expand into uncompressed WAV, so long dictations hit
+  // this here with a clear message instead of an opaque provider error.
+  if (base64.length > MAX_XIAOMI_ASR_ENCODED_BYTES) {
+    // 48 kHz mono WAV grows ~5.6 KB/s, so a minute of speech is already near
+    // the documented 10 MB input_audio ceiling.
+    throw new Error(
+      `Xiaomi MiMo ASR audio exceeds the documented 10 MB input_audio limit ` +
+        `(${Math.round(base64.length / 1024 / 1024)} MB encoded). Shorten the audio.`,
+    );
+  }
+
+  const response = await audioProviderFetch(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        ...getOptionalBearerAuthHeaders(config.apiKey),
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        model: config.modelId || ASR_PROVIDERS['xiaomi-asr'].defaultModelId,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_audio',
+                input_audio: { data: `data:${mimeType};base64,${base64}` },
+              },
+            ],
+          },
+        ],
+        ...(config.language && config.language !== 'auto'
+          ? { asr_options: { language: config.language } }
+          : {}),
+      }),
+      // Extraction wraps the call in an abort scope (timeout/cancel); the
+      // pinned transport bypasses the globalThis.fetch patch, so the context
+      // signal is passed explicitly here.
+      ...(asrFetchSignal.getStore() ? { signal: asrFetchSignal.getStore() } : {}),
+    },
+    audioEndpointPolicy(config),
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Xiaomi MiMo ASR API error: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const text = data?.choices?.[0]?.message?.content;
+  return { text: typeof text === 'string' ? text : '' };
+}
+
+/**
+ * The mime types MiMo ASR accepts, detected from the bytes rather than trusted
+ * from the recording's declared type.
+ */
+function resolveXiaomiASRAudioMime(bytes: Uint8Array): string | null {
+  // RIFF....WAVE
+  if (
+    bytes.length > 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x41 &&
+    bytes[10] === 0x56 &&
+    bytes[11] === 0x45
+  ) {
+    return 'audio/wav';
+  }
+  if (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) return 'audio/mp3';
+  if (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mp3';
+  if (bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43)
+    return 'audio/flac';
+  if (
+    bytes.length > 11 &&
+    bytes[4] === 0x66 &&
+    bytes[5] === 0x74 &&
+    bytes[6] === 0x79 &&
+    bytes[7] === 0x70
+  ) {
+    return 'audio/mp4';
+  }
+  if (bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) {
+    return 'audio/ogg';
+  }
+  return null;
 }
 
 // Re-export from constants for convenience
