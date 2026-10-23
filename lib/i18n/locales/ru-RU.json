@@ -10,6 +10,17 @@
     "close": "Закрыть"
   },
   "home": {
+    "emptyLibraryTitle": "Ваши уроки появятся здесь",
+    "emptyLibraryBody": "Создайте курс на главной странице и возвращайтесь сюда, чтобы продолжить.",
+    "mobileTitle": "Что хотите изучить?",
+    "mobileSubtitle": "Расскажите о теме, и ИИ создаст интерактивный урок.",
+    "mobilePlaceholder": "Введите тему или загрузите материалы",
+    "courseOptions": "Параметры урока",
+    "allSettings": "Все настройки",
+    "examplesLabel": "Примеры тем",
+    "examplePython": "Python с нуля",
+    "exampleFourier": "Преобразование Фурье на простых примерах",
+    "desktopOnly": "Для редактора и режима Pro используйте компьютер.",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "Привет, {{name}}"
   },

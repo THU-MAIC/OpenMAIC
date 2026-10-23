@@ -10,6 +10,17 @@
     "close": "Cerrar"
   },
   "home": {
+    "emptyLibraryTitle": "Tus clases empiezan aquí",
+    "emptyLibraryBody": "Crea un curso en el inicio y vuelve aquí para continuar.",
+    "mobileTitle": "¿Qué quieres aprender?",
+    "mobileSubtitle": "Cuéntanos el tema y la IA creará una clase interactiva.",
+    "mobilePlaceholder": "Escribe un tema o sube materiales",
+    "courseOptions": "Opciones de clase",
+    "allSettings": "Todos los ajustes",
+    "examplesLabel": "Prueba un tema",
+    "examplePython": "Aprender Python desde cero",
+    "exampleFourier": "Transformada de Fourier con ejemplos intuitivos",
+    "desktopOnly": "Usa una computadora para el editor y el modo Pro.",
     "slogan": "Aprendizaje generativo en un aula interactiva multiagente",
     "greetingWithName": "Hola, {{name}}"
   },

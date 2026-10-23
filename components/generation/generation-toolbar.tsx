@@ -333,7 +333,8 @@ export function GenerationToolbar({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="max-h-[calc(var(--radix-popover-content-available-height)-8px)] w-72 overflow-y-auto p-0"
+          collisionPadding={12}
+          className="max-w-[calc(100vw-24px)] max-h-[calc(var(--radix-popover-content-available-height)-8px)] w-72 overflow-y-auto p-0"
         >
           {/* Extractor selector: the workspace's document slot, shown only
               where the user may change it (not when the deployment locks it). */}

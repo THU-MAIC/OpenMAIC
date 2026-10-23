@@ -1,5 +1,8 @@
 'use client';
 
+import { useMediaQuery } from '@/lib/hooks/use-media-query';
+import { WORKSPACE_NARROW_QUERY } from '@/lib/adaptive/media-queries';
+
 /**
  * The Pro workspace — `/workspace`, and the only Pro surface there is.
  *
@@ -127,14 +130,6 @@ import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/co
 
 const EMPTY_SESSIONS: ProHomeSessionItem[] = [];
 
-/**
- * Below this width the conversation and the classroom no longer both fit at
- * their minimums, so they become mutually exclusive: one is shown, the other
- * leaves its reopen tab. Deliberately not an overlay — a modal chat over a
- * classroom is a third layout to reason about, and this surface already has
- * three panes.
- */
-const BOTH_PANES_MIN_PX = 1024;
 const SESSION_LIST_TIMEOUT_MS = 15_000;
 // A shell is replaceable navigation UI, not a persistence boundary. Keeping the
 // queue in this client module preserves one writer per session across remounts.
@@ -344,7 +339,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useLayoutEffect(() => {
     courseTabsRef.current = courseTabs;
   }, [courseTabs]);
-  const narrow = useNarrowViewport();
+  const narrow = useMediaQuery(WORKSPACE_NARROW_QUERY);
   // Which of the two content panes has the column, on a window too narrow for
   // both. Not persisted: it is a consequence of the window, not a preference.
   const [narrowFocus, setNarrowFocus] = useState<'chat' | 'classroom'>('classroom');
@@ -414,7 +409,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * The viewport override, applied on top of the resolved render so the pure
    * rules stay free of measurement.
    *
-   * Below `BOTH_PANES_MIN_PX` the conversation and the classroom are mutually
+   * Below 1024px the conversation and the classroom are mutually
    * EXCLUSIVE — but exclusive is not "one of them is gone": whichever is not
    * showing leaves its tab, and clicking a tab moves the focus to it. (An
    * earlier cut simply forced the chat closed at this width, which made its
@@ -1465,19 +1460,6 @@ function writeFlag(key: string, collapsed: boolean): void {
     // Storage can be denied (private mode, blocked cookies). An unwritable
     // store costs the preference, not the session.
   }
-}
-
-/** True while the window is too narrow for the conversation AND the classroom. */
-function useNarrowViewport(): boolean {
-  const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia(`(max-width: ${BOTH_PANES_MIN_PX - 1}px)`);
-    const apply = () => setNarrow(query.matches);
-    apply();
-    query.addEventListener('change', apply);
-    return () => query.removeEventListener('change', apply);
-  }, []);
-  return narrow;
 }
 
 /* ── Widths ───────────────────────────────────────────────────────────────
