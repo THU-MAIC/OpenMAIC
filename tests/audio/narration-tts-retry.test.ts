@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
+import { clearUnavailableVoiceBindingsForTests } from '@/lib/audio/unavailable-voice-bindings';
+
 import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 
 const mocks = vi.hoisted(() => ({
@@ -76,6 +78,7 @@ function jsonResponse(status: number, body: unknown) {
 
 describe('narration TTS retries', () => {
   beforeEach(() => {
+    clearUnavailableVoiceBindingsForTests();
     mockFetch.mockReset();
     mocks.audioPut.mockReset();
     mocks.audioDelete.mockReset().mockResolvedValue(undefined);
@@ -167,51 +170,86 @@ describe('narration TTS retries', () => {
     expect(JSON.parse(String(mockFetch.mock.calls[1][1]?.body)).ttsVoice).toBe('marin');
   });
 
-  it('falls back once from a missing narrator clone to the global voice', async () => {
-    const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
-    mocks.settingsState.mockReturnValue({
-      ...mocks.settingsState(),
-      ttsVoiceProviderId: 'qwen-tts',
-      ttsVoice: 'Cherry',
-      ttsProvidersConfig: {
-        'qwen-tts': { apiKey: 'tts-key', modelId: 'qwen3-tts-vc-2026-01-22' },
-      },
-    });
-    // The workspace's tts slot resolves to this provider.
-    setModelSettingsViewForTests({
-      tts: { registryId: 'qwen-tts', modelId: 'qwen3-tts-vc-2026-01-22' },
-    });
-    mocks.pickNarratorAgent.mockReturnValue({
-      id: 'teacher-missing-clone',
-      role: 'teacher',
-      voiceConfig: { providerId: 'qwen-tts', voiceId: 'deleted-clone-id' },
-    });
-    mockFetch
-      .mockResolvedValueOnce(
-        jsonResponse(400, {
-          errorCode: 'QWEN_VC_VOICE_NOT_FOUND',
-          error: 'The cloned Qwen voice no longer exists.',
-        }),
-      )
-      .mockResolvedValueOnce(
-        jsonResponse(200, { success: true, base64: btoa('fallback-audio'), format: 'wav' }),
-      );
+  it.each([
+    ['QWEN_VC_VOICE_NOT_FOUND', false, false],
+    ['QWEN_VC_RECLONE_REQUIRED', false, false],
+    ['QWEN_VC_RECLONE_REQUIRED', false, true],
+    ['QWEN_VC_RECLONE_REQUIRED', false, 'new'],
+    ['QWEN_VC_VOICE_NOT_FOUND', true, false],
+    ['QWEN_VC_RECLONE_REQUIRED', true, false],
+  ] as const)(
+    'falls back once from a missing narrator clone to the global voice (%s, fallback fails: %s)',
+    async (errorCode, fallbackFails, retiredGlobal) => {
+      if (retiredGlobal)
+        mocks.isTTSProviderEnabled.mockImplementation((id: string) => id === 'qwen-tts');
+      const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');
+      mocks.settingsState.mockReturnValue({
+        ...mocks.settingsState(),
+        ttsVoiceProviderId: 'qwen-tts',
+        ttsVoice:
+          retiredGlobal === 'new'
+            ? 'cosyvoice-v3.5-plus-new-global-id'
+            : retiredGlobal
+              ? 'another-retired-clone'
+              : 'Cherry',
+        ttsProvidersConfig: {
+          'qwen-tts': { apiKey: 'tts-key', modelId: 'qwen3-tts-vc-2026-01-22' },
+        },
+      });
+      // The workspace's tts slot resolves to this provider.
+      setModelSettingsViewForTests({
+        tts: { registryId: 'qwen-tts', modelId: 'qwen3-tts-vc-2026-01-22' },
+      });
+      mocks.pickNarratorAgent.mockReturnValue({
+        id: 'teacher-missing-clone',
+        role: 'teacher',
+        voiceConfig: { providerId: 'qwen-tts', voiceId: 'deleted-clone-id' },
+      });
+      mockFetch
+        .mockResolvedValueOnce(
+          jsonResponse(400, {
+            errorCode,
+            error: 'The cloned Qwen voice no longer exists.',
+          }),
+        )
+        .mockResolvedValueOnce(
+          fallbackFails
+            ? jsonResponse(400, { errorCode, error: 'Fallback unavailable' })
+            : jsonResponse(200, { success: true, base64: btoa('fallback-audio'), format: 'wav' }),
+        );
 
-    await expect(
-      generateAndStoreTTS('request-fallback', 'Hello class', undefined, undefined, {
+      const attempt = generateAndStoreTTS('request-fallback', 'Hello class', undefined, undefined, {
         ...retryOptions,
         maxRetries: 0,
-      }),
-    ).resolves.toBe('ast_audio_allocated');
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-    const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
-    const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
-    expect(firstBody).toMatchObject({
-      ttsVoice: 'deleted-clone-id',
-    });
-    expect(secondBody).toMatchObject({ ttsVoice: 'Cherry' });
-    expect(mocks.toastWarning).toHaveBeenCalledOnce();
-  });
+      });
+      if (fallbackFails) await expect(attempt).rejects.toMatchObject({ errorCode });
+      else await expect(attempt).resolves.toBe('ast_audio_allocated');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const firstBody = JSON.parse(String(mockFetch.mock.calls[0][1]?.body));
+      const secondBody = JSON.parse(String(mockFetch.mock.calls[1][1]?.body));
+      expect(firstBody).toMatchObject({
+        ttsVoice: 'deleted-clone-id',
+      });
+      const expectedFallback =
+        retiredGlobal === 'new' ? 'cosyvoice-v3.5-plus-new-global-id' : 'Cherry';
+      expect(secondBody).toMatchObject({ ttsVoice: expectedFallback });
+      expect(mocks.toastWarning).toHaveBeenCalledOnce();
+      if (errorCode === 'QWEN_VC_RECLONE_REQUIRED') {
+        expect(mocks.toastWarning.mock.calls[0][0]).toMatch(/re-clone|重新克隆/i);
+      }
+      mockFetch.mockResolvedValueOnce(
+        jsonResponse(200, { success: true, base64: btoa('next'), format: 'wav' }),
+      );
+      await generateAndStoreTTS('request-next', 'Next paragraph', undefined, undefined, {
+        ...retryOptions,
+        maxRetries: 0,
+      });
+      expect(
+        mockFetch.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).ttsVoice),
+      ).toEqual(['deleted-clone-id', expectedFallback, expectedFallback]);
+      expect(mocks.toastWarning).toHaveBeenCalledOnce();
+    },
+  );
 
   it('reports the allocated id even when the local cache write fails', async () => {
     const { generateAndStoreTTS } = await import('@/lib/audio/narration-tts');

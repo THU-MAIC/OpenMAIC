@@ -617,11 +617,14 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         audio?.voice && audio.generated > 0
           ? ` Narration audio: ${audio.generated} generated, ${audio.failed.length} failed. ${describeNarrationVoice(audio.voice)}`
           : '';
-      return result(`Persisted ${actions.length} known actions for "${scene.title}".${voiced}`, {
-        sceneId: scene.id,
-        actions,
-        ...(audio ? { audio } : {}),
-      });
+      return result(
+        `Persisted ${actions.length} known actions for "${scene.title}".${voiced}${audio?.recovery ? ` ${audio.recovery.message}` : ''}`,
+        {
+          sceneId: scene.id,
+          actions,
+          ...(audio ? { audio } : {}),
+        },
+      );
     },
   };
 

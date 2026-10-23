@@ -22,8 +22,10 @@ import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
 import {
   DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+  QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
+  isTTSVoiceCloneGroupingModel,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 
@@ -775,17 +777,11 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
 
 /** Resolve the server-only Qwen VC model override without exposing env values to clients. */
 export function resolveQwenVoiceCloneModel(): string {
-  return process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim() || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
-}
-
-export class TTSModelNotAllowedError extends Error {
-  readonly code = 'INVALID_REQUEST';
-  readonly httpStatus = 400;
-
-  constructor(providerId: string, modelId: string) {
-    super(`Model "${modelId}" is not allowed for provider "${providerId}"`);
-    this.name = 'TTSModelNotAllowedError';
-  }
+  const configured = process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim();
+  // The retired model ID is retained only as the saved-voice grouping sentinel.
+  return !configured || configured === QWEN_TTS_VOICE_CLONE_MODEL
+    ? DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL
+    : configured;
 }
 
 /**
@@ -800,7 +796,7 @@ export function slotTTSModel(
   voiceId?: string,
   configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  return ttsModelFor(providerId, [], modelId, voiceId, configuredVoices);
+  return ttsModelFor(providerId, modelId, voiceId, configuredVoices);
 }
 
 /** Resolve a TTS model authorized by the deployment, or the BYOK client's choice. */
@@ -810,53 +806,32 @@ export function resolveTTSModel(
   voiceId?: string,
   configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  const requested = resolveManagedMediaModel('tts', providerId, clientModel);
-  const model = ttsModelFor(providerId, [], requested, voiceId, configuredVoices);
+  // Saved clone profiles carry a grouping ID, not an upstream model to authorize.
+  const requestedModel = isTTSVoiceCloneGroupingModel(providerId, clientModel?.trim())
+    ? ttsModelFor(providerId, clientModel?.trim(), voiceId, configuredVoices)
+    : clientModel;
+  const requested = resolveManagedMediaModel('tts', providerId, requestedModel);
+  const model = ttsModelFor(providerId, requested, voiceId, configuredVoices);
   // Voice compatibility may change the wire model; it still needs authorization.
   return resolveManagedMediaModel('tts', providerId, model);
 }
 
 function ttsModelFor(
   providerId: string,
-  pinnedModels: string[],
   clientModel?: string,
   voiceId?: string,
   configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  if (providerId === 'qwen-tts') {
-    const vcModel = resolveQwenVoiceCloneModel();
-    const requestedIsVCSentinel = !!clientModel && isQwenVoiceCloneModel(clientModel, vcModel);
-    const normalizedClientModel = requestedIsVCSentinel ? vcModel : clientModel;
-    const allowedModels = new Set([...pinnedModels, vcModel]);
-
-    if (
-      pinnedModels.length > 0 &&
-      normalizedClientModel &&
-      !allowedModels.has(normalizedClientModel)
-    ) {
-      throw new TTSModelNotAllowedError(providerId, normalizedClientModel);
-    }
-
-    if (voiceId) {
-      if (!isQwenCatalogVoice(voiceId, configuredVoices)) return vcModel;
-      const pinnedCatalogModel = pinnedModels.find((model) => model !== vcModel);
-      if (pinnedModels.length > 0 && !pinnedCatalogModel) {
-        throw new TTSModelNotAllowedError(providerId, TTS_PROVIDERS['qwen-tts'].defaultModelId);
-      }
-      // Self-heal persisted VC-model + catalog-voice wedges. Prefer the first
-      // operator-pinned non-VC model, otherwise the catalog default.
-      if (normalizedClientModel === vcModel) {
-        return pinnedCatalogModel || TTS_PROVIDERS['qwen-tts'].defaultModelId;
-      }
-    }
-
-    if (normalizedClientModel) return normalizedClientModel;
-    if (pinnedModels.length > 0) return pinnedModels[0];
-    return undefined;
+  if (providerId !== 'qwen-tts') return clientModel;
+  const vcModel = resolveQwenVoiceCloneModel();
+  const normalizedClientModel =
+    clientModel && isQwenVoiceCloneModel(clientModel, vcModel) ? vcModel : clientModel;
+  if (voiceId) {
+    if (!isQwenCatalogVoice(voiceId, configuredVoices)) return vcModel;
+    // Self-heal saved clone-model + catalog-voice combinations before authorization.
+    if (normalizedClientModel === vcModel) return TTS_PROVIDERS['qwen-tts'].defaultModelId;
   }
-
-  if (pinnedModels.length > 0) return pinnedModels[0];
-  return clientModel;
+  return normalizedClientModel || undefined;
 }
 
 // ---------------------------------------------------------------------------

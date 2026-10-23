@@ -1,4 +1,6 @@
-const unavailableBindings = new Set<string>();
+import type { VoiceCloneRecoveryReason } from './voice-clone-recovery';
+
+const unavailableBindings = new Map<string, VoiceCloneRecoveryReason>();
 const noticedBindings = new Set<string>();
 
 export function voiceBindingKey(binding: { providerId: string; voiceId: string }): string {
@@ -12,12 +14,22 @@ export function isVoiceBindingUnavailable(binding: {
   return unavailableBindings.has(voiceBindingKey(binding));
 }
 
-export function markVoiceBindingUnavailable(binding: {
+export function voiceBindingRecoveryReason(binding: {
   providerId: string;
   voiceId: string;
-}): string {
+}): VoiceCloneRecoveryReason | undefined {
+  return unavailableBindings.get(voiceBindingKey(binding));
+}
+
+export function markVoiceBindingUnavailable(
+  binding: {
+    providerId: string;
+    voiceId: string;
+  },
+  reason: VoiceCloneRecoveryReason = 'missing',
+): string {
   const key = voiceBindingKey(binding);
-  unavailableBindings.add(key);
+  unavailableBindings.set(key, reason);
   return key;
 }
 

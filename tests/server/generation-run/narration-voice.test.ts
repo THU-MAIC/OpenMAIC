@@ -35,7 +35,7 @@ describe('run narration voices', () => {
         target: qwen,
         preference: { providerId: 'qwen-tts', voiceId: 'Ethan' },
         bound: undefined,
-        unavailable: new Set(),
+        unavailable: new Map(),
       })?.voice.voiceId,
     ).toBe('Ethan');
     expect(
@@ -43,7 +43,7 @@ describe('run narration voices', () => {
         target: qwen,
         preference: { providerId: 'openai-tts', voiceId: 'alloy' },
         bound: undefined,
-        unavailable: new Set(),
+        unavailable: new Map(),
       })?.voice.voiceId,
     ).toBe('Cherry');
   });
@@ -53,14 +53,14 @@ describe('run narration voices', () => {
       target: qwen,
       preference: undefined,
       bound: clone,
-      unavailable: new Set(),
+      unavailable: new Map(),
     });
     expect(bound?.voice.voiceId).toBe(clone.voiceId);
     const skipped = clipVoice({
       target: qwen,
       preference: undefined,
       bound: clone,
-      unavailable: new Set([voiceBindingKey(clone)]),
+      unavailable: new Map([[voiceBindingKey(clone), 'missing']]),
     });
     expect(skipped?.voice.voiceId).toBe('Cherry');
   });
@@ -70,7 +70,7 @@ describe('run narration voices', () => {
       target: qwen,
       preference: undefined,
       bound: clone,
-      unavailable: new Set(),
+      unavailable: new Map(),
     })!;
     expect(
       clipVoiceAfterMissingClone({
@@ -98,7 +98,7 @@ describe('run narration voices', () => {
       target: qwen,
       preference: { providerId: 'qwen-tts', voiceId: clone.voiceId },
       bound: clone,
-      unavailable: new Set(),
+      unavailable: new Map(),
     })!;
     const retry = clipVoiceAfterMissingClone({
       target: qwen,

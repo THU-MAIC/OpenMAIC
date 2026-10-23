@@ -80,17 +80,27 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
 ] as const;
 
-// Legacy sentinel for saved clone voices, excluded from manual model pickers.
-// Keep voice-driven dispatch compatible until the replacement protocol is supported.
-export const DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL = 'qwen3-tts-vc-2026-01-22';
-/** Client-visible VC model. Server-only overrides are resolved in provider-config. */
-export const QWEN_TTS_VOICE_CLONE_MODEL = DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+export const DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL = 'cosyvoice-v3.5-plus';
+/** Keep the persisted grouping ID; provider-config resolves the actual wire model. */
+export const QWEN_TTS_VOICE_CLONE_MODEL = 'qwen3-tts-vc-2026-01-22';
+
+/** Persisted clone groups name a server-resolved model, not an upstream model ID. */
+export function isTTSVoiceCloneGroupingModel(providerId: string, modelId?: string): boolean {
+  return providerId === 'qwen-tts' && modelId === QWEN_TTS_VOICE_CLONE_MODEL;
+}
 
 export function isQwenVoiceCloneModel(modelId?: string, configuredModelId?: string): boolean {
   return (
     !!modelId &&
-    (/-tts-vc(?:-|$)/iu.test(modelId) || (!!configuredModelId && modelId === configuredModelId))
+    (/-tts-vc(?:-|$)/iu.test(modelId) ||
+      modelId.startsWith('cosyvoice-') ||
+      (!!configuredModelId && modelId === configuredModelId))
   );
+}
+
+/** Provider-issued clone IDs carry the enrollment target as their prefix. */
+export function qwenVoiceMatchesTargetModel(voiceId: string, targetModel: string): boolean {
+  return voiceId.trim().startsWith(`${targetModel}-`);
 }
 
 /** Built-in and explicitly configured Qwen catalogue voices never use the clone model. */
@@ -397,7 +407,7 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     excludeFromAgentVoiceCatalog: true,
     models: [
       { id: 'qwen3-tts-flash', name: 'Qwen3 TTS Flash' },
-      { id: QWEN_TTS_VOICE_CLONE_MODEL, name: 'Qwen3 TTS Voice Clone' },
+      { id: QWEN_TTS_VOICE_CLONE_MODEL, name: 'CosyVoice Voice Clone' },
     ],
     defaultModelId: 'qwen3-tts-flash',
     voices: [

@@ -96,6 +96,7 @@
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
 import {
+  DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
   isQwenCloneVoice,
   resolveTTSModelForVoice,
   TTS_PROVIDERS,
@@ -957,7 +958,7 @@ async function generateQwenTTS(
     const targetModel =
       config.providerOptions?.qwenVoiceClone === true
         ? config.modelId
-        : resolveTTSModelForVoice('qwen-tts', config.voice, config.modelId, config.voices);
+        : DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
     try {
       return await synthesizeQwenVoiceClone(
         {
