@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
+
 ## [1.3.0-rc.1] - 2026-10-22
 
 1.3.0-rc.1 is the first release candidate for 1.3.0. Its main theme is the **knowledge base**: every upload is kept in its owner's knowledge base until it is deleted, organized in folders and parsed once, with the result reused by every conversation. A new library page lists and organizes the materials, the composer offers them through `@` and a picker, and the agent gets tools to read, search and organize them. Interactive scenes also load their libraries from the deployment instead of a public CDN, the editor marks pages that have current problems, and malformed slide shapes no longer hang the renderer. This release contains breaking changes and upgrade conditions: the built-in Veo provider is removed, and the knowledge base adds schema changes that cannot run beside older instances or be rolled back. Read **Breaking Changes** before upgrading from 1.2.x.
