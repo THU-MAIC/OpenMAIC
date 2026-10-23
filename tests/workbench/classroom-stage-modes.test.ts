@@ -198,6 +198,82 @@ describe('hosted Stage mode enforcement and playback lifecycle', () => {
     expect(has('edit')).toBe(false);
   });
 
+  it('remounts learning after a cancelled entry finishes tearing down', async () => {
+    let finish!: () => void;
+    probe.teardown.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render(true);
+    await render(false);
+    await render(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    expect(has('learning')).toBe(true);
+    expect(has('edit')).toBe(false);
+  });
+
+  it('waits for teardown before remounting learning after preload fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let finish!: () => void;
+    probe.teardown.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    probe.preload.mockRejectedValue(new Error('chunk failed'));
+    await render(true);
+    await render(false);
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await act(async () => finish());
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    expect(has('learning')).toBe(true);
+    expect(has('edit')).toBe(false);
+  });
+
+  it('returns from a completed entry with a single fresh learning mount', async () => {
+    await render(true);
+    await render(false);
+    expect(has('edit')).toBe(true);
+    await render(true);
+    await act(async () => {});
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    expect(has('learning')).toBe(true);
+  });
+
+  it('drops the restore of an entry superseded by a new editing choice', async () => {
+    const finishTeardowns: Array<() => void> = [];
+    probe.teardown.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTeardowns.push(resolve);
+        }),
+    );
+    const finishPreloads: Array<() => void> = [];
+    probe.preload.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPreloads.push(resolve);
+        }),
+    );
+    await render(true);
+    await render(false);
+    await render(true);
+    await render(false);
+    await act(async () => finishTeardowns[0]());
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishTeardowns.forEach((finish) => finish());
+      finishPreloads.forEach((finish) => finish());
+    });
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    expect(has('edit')).toBe(true);
+  });
+
   it('does not mount either chrome against another course document', async () => {
     await render(true, 'stage-2');
     expect(has('learning')).toBe(false);

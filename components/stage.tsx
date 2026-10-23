@@ -152,6 +152,8 @@ export function Stage({
     'idle' | 'loading' | 'playback' | 'ready' | 'failed'
   >(() => (isEditorPreloaded() ? 'ready' : 'idle'));
   const playbackRef = useRef<PlaybackChromeRootHandle>(null);
+  const [playbackRevision, setPlaybackRevision] = useState(0);
+  const playbackEntryRef = useRef(0);
 
   useEffect(() => {
     const mountedPlayback = playbackRef.current;
@@ -168,17 +170,45 @@ export function Stage({
       return;
     }
     let cancelled = false;
+    let activated = false;
+    const entry = ++playbackEntryRef.current;
     setEditorPreloadState((previous) =>
       mountedPlayback && previous === 'playback' ? 'playback' : 'loading',
     );
+    // Remount the retained learning root only when this same entry was
+    // cancelled or failed, and only after its teardown has settled. Preload can
+    // fail first; remounting earlier would race the old cleanup. A completed
+    // entry already unmounted that root, and a newer entry owns it now.
+    const teardown = Promise.resolve().then(() => mountedPlayback?.teardown());
+    let restored = false;
+    const restorePlayback = () => {
+      void teardown
+        .catch(() => {})
+        .then(() => {
+          if (
+            !restored &&
+            !activated &&
+            playbackEntryRef.current === entry &&
+            mountedPlayback &&
+            playbackRef.current &&
+            useStageStore.getState().stage?.id === classroomId
+          ) {
+            restored = true;
+            setPlaybackRevision((revision) => revision + 1);
+          }
+        });
+    };
     void enterEditMode({
-      teardown: () => mountedPlayback?.teardown(),
+      teardown: () => teardown,
       preload: preloadEditor,
       activate: () => {
-        if (!cancelled) setEditorPreloadState('ready');
+        if (cancelled) return;
+        activated = true;
+        setEditorPreloadState('ready');
       },
       onError: (error) => {
         console.error('[Stage] hosted editor entry failed', error);
+        restorePlayback();
         if (!cancelled) {
           setEditorPreloadState((previous) => (previous === 'playback' ? 'playback' : 'failed'));
         }
@@ -186,6 +216,7 @@ export function Stage({
     });
     return () => {
       cancelled = true;
+      restorePlayback();
     };
   }, [
     hosted,
@@ -366,6 +397,7 @@ export function Stage({
           className="absolute inset-0 flex"
         >
           <PlaybackChromeRoot
+            key={playbackRevision}
             ref={playbackRef}
             onInteractivePickerChange={setPlaybackInteractivePicker}
             onRetryOutline={onRetryOutline}
