@@ -52,22 +52,25 @@ export const deepseek: Extract<WebFetchProvider, { hosted: true }> = {
       throw new Error('Invalid DeepSeek fetch URL');
     const credentials = deepseek.resolveCredentials(options.credentials);
     if (!credentials.apiKey) throw new Error('Web fetch provider requires an API key');
+    // DeepSeek sends response headers only after it has fetched the whole page, so
+    // the header wait shares the request deadline instead of a shorter one.
+    const deadlineMs = options.bodyTimeoutMs ?? 30_000;
     const signal = options.signal
-      ? AbortSignal.any([options.signal, AbortSignal.timeout(options.bodyTimeoutMs ?? 30_000)])
-      : AbortSignal.timeout(options.bodyTimeoutMs ?? 30_000);
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(deadlineMs)])
+      : AbortSignal.timeout(deadlineMs);
     signal.throwIfAborted();
     const { Agent } = await import('undici');
     const { proxyFetch } = await import('@/lib/server/proxy-fetch');
     const agent = new Agent({
       connect: { timeout: 5_000 },
-      headersTimeout: 10_000,
-      bodyTimeout: options.bodyTimeoutMs ?? 30_000,
+      headersTimeout: deadlineMs,
+      bodyTimeout: deadlineMs,
     });
     const headersDeadline = new AbortController();
     const requestSignal = AbortSignal.any([signal, headersDeadline.signal]);
     const headerTimer = setTimeout(
       () => headersDeadline.abort(new Error('Web fetch headers timed out')),
-      10_000,
+      deadlineMs,
     );
     headerTimer.unref?.();
     try {
@@ -94,8 +97,8 @@ export const deepseek: Extract<WebFetchProvider, { hosted: true }> = {
                 proxy: credentials.proxy,
                 timeouts: {
                   connectTimeout: 5_000,
-                  headersTimeout: 10_000,
-                  bodyTimeout: options.bodyTimeoutMs ?? 30_000,
+                  headersTimeout: deadlineMs,
+                  bodyTimeout: deadlineMs,
                 },
               },
             ),

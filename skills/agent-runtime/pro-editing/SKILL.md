@@ -119,10 +119,10 @@ Rules of the matrix:
 For layout-sensitive changes (positioning, density, new elements, alignment),
 verify with `render_scene_preview` when it is available: look at the render,
 edit, look once more. Budget **at most two preview rounds per page** — each
-render costs a tool call and the whole run has a hard call cap. Do not preview
+render costs a tool call and time the user waits through. Do not preview
 pages you did not touch, and do not loop past the budget: if two rounds have
-not converged, stop and tell the user what remains instead of burning the rest
-of the run on one page.
+not converged, leave that page, carry on with the rest of the request, and note
+what remains on it in the final report instead of burning the run on one page.
 
 ## Narration audio follows text
 
@@ -172,5 +172,6 @@ There is no hard tool-call cap, but every extra call is latency the user
 watches. Spend calls on edits, not ceremony: one `list_scenes` at entry, one `read_stage` per
 page before its edits, the edits themselves, `generate_tts`
 where wording changed, a preview round only where layout is genuinely at
-risk. If the request is large, do the highest-value edits first and tell the
-user what remains.
+risk. If the request is large, do the highest-value edits first, then keep
+going until the whole request is done; do not hand the remaining work back to
+the user.

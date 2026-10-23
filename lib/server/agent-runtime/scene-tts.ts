@@ -11,12 +11,29 @@ import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
+/**
+ * The one voice every line of this synthesis used. Narration is voiced by the
+ * roster teacher's binding when it belongs to the tts slot's provider, and by
+ * the provider default otherwise; saying which is what lets the agent see that
+ * a roster change did (or did not) reach the audio.
+ */
+export interface SceneTtsVoice {
+  /** `providerId::voiceId`; the voice part is empty when the provider has no default. */
+  binding: string;
+  source: 'roster-teacher' | 'provider-default';
+  /** The teacher whose binding applied, or who was passed over for the default. */
+  teacher?: string;
+  /** Why a teacher binding did not apply. */
+  fallbackReason?: 'no-teacher' | 'teacher-unbound' | 'teacher-bound-to-other-provider';
+}
+
 export interface SceneTtsSummary {
   available: boolean;
   changed: boolean;
   generated: number;
   skipped: number;
   failed: string[];
+  voice?: SceneTtsVoice;
 }
 
 export interface SceneTtsInput {
@@ -30,6 +47,46 @@ export interface SceneTtsInput {
 
 function narratorVoice(roster: SceneTtsInput['roster']) {
   return roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig)?.voiceConfig;
+}
+
+function voiceReport(
+  roster: SceneTtsInput['roster'],
+  providerId: string,
+  voice: string,
+): SceneTtsVoice {
+  // The same teacher narratorVoice picks: the first bound one, else the first.
+  const teacher =
+    roster?.find((agent) => agent.role === 'teacher' && agent.voiceConfig) ??
+    roster?.find((agent) => agent.role === 'teacher');
+  const bound = teacher?.voiceConfig;
+  const binding = `${providerId}::${voice}`;
+  if (bound?.providerId === providerId && bound.voiceId) {
+    return { binding, source: 'roster-teacher', teacher: teacher!.name };
+  }
+  return {
+    binding,
+    source: 'provider-default',
+    ...(teacher?.name ? { teacher: teacher.name } : {}),
+    fallbackReason: !teacher
+      ? 'no-teacher'
+      : bound?.providerId && bound.voiceId
+        ? 'teacher-bound-to-other-provider'
+        : 'teacher-unbound',
+  };
+}
+
+/** One line for a tool result: which voice the synthesized lines used, and why. */
+export function describeNarrationVoice(voice: SceneTtsVoice): string {
+  if (voice.source === 'roster-teacher') {
+    return `Voice: ${voice.binding} (teacher "${voice.teacher}"'s roster binding).`;
+  }
+  const why =
+    voice.fallbackReason === 'no-teacher'
+      ? 'the roster has no teacher'
+      : voice.fallbackReason === 'teacher-bound-to-other-provider'
+        ? `teacher "${voice.teacher}" is bound to a voice of another provider`
+        : `teacher "${voice.teacher}" has no voice bound`;
+  return `Voice: ${voice.binding} (provider default; ${why}).`;
 }
 
 function audioMime(format: string) {
@@ -132,5 +189,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     generated,
     skipped,
     failed,
+    voice: voiceReport(input.roster, providerId, voice),
   };
 }

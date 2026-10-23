@@ -581,6 +581,35 @@ describe('generation and deck tools', () => {
     }
   });
 
+  it('names the narration voice and the kept lines in the generate_tts result', async () => {
+    const current = state(document([slide('a', 1)]));
+    const synthesizeTts = vi.fn(async () => ({
+      available: true,
+      changed: true,
+      generated: 1,
+      skipped: 2,
+      failed: [],
+      voice: {
+        binding: 'tts-x::voice-default',
+        source: 'provider-default' as const,
+        teacher: 'Ms. Lin',
+        fallbackReason: 'teacher-unbound' as const,
+      },
+    }));
+    const tools = buildDslCourseToolset(deps(current.store, { synthesizeTts }));
+    const response = await find(tools, 'generate_tts').execute('tts', {
+      stageId: 'stage-test',
+      order: 1,
+    } as never);
+    const text = (response.content[0] as { text: string }).text;
+    expect(text).toContain('1 generated, 2 skipped, 0 failed.');
+    expect(text).toContain(
+      'Voice: tts-x::voice-default (provider default; teacher "Ms. Lin" has no voice bound).',
+    );
+    expect(text).toContain('2 line(s) kept their existing audio and voice; pass force');
+    expect(response.details).toMatchObject({ voice: { binding: 'tts-x::voice-default' } });
+  });
+
   it('fails closed through an owner-bound store for every new write tool', async () => {
     const foreign = state(null);
     const tools = buildDslCourseToolset(deps(foreign.store));

@@ -1078,29 +1078,88 @@ export async function heartbeatLossScenario(h: ExtractionHarness): Promise<void>
     };
   });
   let transactions = 0;
+  // Watch the stale run's heartbeats, so the test waits for one that started
+  // after the takeover to come back empty instead of guessing how long that takes.
+  let takenOver = false;
+  let sawLoss!: () => void;
+  const lossSeen = new Promise<void>((resolve) => (sawLoss = resolve));
+  const pool = h.provider.pool;
+  const watchedPool = new Proxy(pool, {
+    get(target, property, receiver) {
+      if (property !== 'query') {
+        const value: unknown = Reflect.get(target, property, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      return async (...args: unknown[]) => {
+        const [text] = args;
+        const heartbeat =
+          typeof text === 'string' &&
+          /^\s*UPDATE owner_material SET extraction_lease_at\b/.test(text);
+        const afterTakeover = takenOver;
+        const result = await (target.query as (...a: unknown[]) => Promise<{ rows: unknown[] }>)(
+          ...args,
+        );
+        if (heartbeat && afterTakeover && result.rows.length === 0) sawLoss();
+        return result;
+      };
+    },
+  });
   const persistence = {
     ...h.provider,
+    pool: watchedPool,
     withTransaction: <T>(body: (tx: never) => Promise<T>): Promise<T> => {
       transactions += 1;
       return h.provider.withTransaction(body as never) as Promise<T>;
     },
   };
-  const run = runNextOwnerExtraction(h.deps({ persistence: persistence as never }), {
-    heartbeatIntervalMs: 10,
-  });
-  await started;
-  expire(h);
-  const takeover = (await claim(h))!;
-  // Several heartbeat intervals: the stale run's heartbeat has seen the loss.
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  const entries = await entryCount(h);
+  // The stale run keeps the time it claimed at: `expire` moves the shared
+  // clock, and a heartbeat reading it would renew the lease past the expiry
+  // before the takeover claims.
+  const claimedAt = h.clock.now;
+  const run = runNextOwnerExtraction(
+    h.deps({ persistence: persistence as never, now: () => claimedAt }),
+    { heartbeatIntervalMs: 10 },
+  );
+  let takeover: OwnerExtractionClaim | null = null;
+  let entries: number;
+  try {
+    await started;
+    expire(h);
+    // The claim skips a row a heartbeat has locked at that instant; the lease
+    // stays expired, so trying again takes it over.
+    for (let attempt = 0; attempt < 300 && !takeover; attempt += 1) {
+      takeover = await claim(h);
+      if (!takeover) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(takeover).not.toBeNull();
+    takenOver = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      lossSeen,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('no heartbeat after the takeover saw the loss within 3 s')),
+          3_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timer));
+    // One more macrotask: the run's own `.then` on that heartbeat has marked the loss.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    entries = await entryCount(h);
+  } catch (error) {
+    // Let the gated run finish, so its heartbeat timer stops before teardown
+    // closes the database, then report the original failure.
+    release();
+    await run.catch(() => undefined);
+    throw error;
+  }
   release();
   expect(await run).toBe(true);
   expect(transactions).toBe(0);
   expect(await entryCount(h)).toBe(entries);
   expect(await stateOf(h, 'src-slow')).toMatchObject({
     status: 'running',
-    extraction_token: takeover.token,
+    extraction_token: takeover!.token,
     extraction_error: null,
   });
 }

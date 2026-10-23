@@ -43,6 +43,7 @@
 
 ## 🗞️ 动态
 
+- **2026-10-22** — [v1.3.0-rc.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.3.0-rc.1)：**知识库**（候选版本）。上传的文件都会保存在知识库里，直到手动删除；支持文件夹，每个文件只解析一次、所有会话共用；新增知识库页面统一管理，输入框可以用 `@` 引用，agent 也能读取、搜索和整理资料。升级有发布条件（先停掉所有旧实例，不能回滚到此版本之前），升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-18** — [v1.2.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.1)：**联网调研。** 新增 Kimi、DeepSeek、Firecrawl 联网搜索；新增 `webFetch` 网页抓取槽位，agent 可以通过托管的阅读服务（DeepSeek、Kimi 或 Firecrawl）读取网页，不再只能用内置读取，均需手动开启。课堂聊天支持建议回复；内置模型目录移除了已下线的模型。课堂聊天现在固定走 Pi，Classroom 模型需要支持工具调用，升级前请先阅读该版本的 **Breaking Changes**。
 - **2026-10-16** — [v1.2.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.2.0)：**服务端优先正式发布。** 生成在服务端运行，关页面、重启都不中断；模型在 `openmaic.yml` 里统一配置（默认值、锁定、可禁止用户自带密钥）；资料添加即解析；网页端和 API 共用同一条流水线。新增[课堂导出](packages/docs/content/docs/getting-started.zh-cn.mdx#导出课堂)：导出保留全部场景的 PPTX，或一个能离线播放整堂课的 HTML 文件。需要 PostgreSQL 和常驻的 Node 服务，Vercel 部署请继续使用 1.1.x。升级前请先阅读[从 1.1.x 升级](packages/docs/content/docs/deployment.zh-cn.mdx#从-11x-升级)。
 - **2026-09-28** — [v1.1.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.1.2)：安全更新——provider 请求只连接已校验地址并拒绝重定向（[GHSA-g87c-cm4q-cw5x](https://github.com/THU-MAIC/OpenMAIC/security/advisories/GHSA-g87c-cm4q-cw5x)）。

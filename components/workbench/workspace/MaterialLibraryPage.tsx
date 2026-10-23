@@ -25,15 +25,21 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
+  Database,
   File,
   FileAudio,
   FileImage,
+  FileSpreadsheet,
   FileText,
   FileVideo,
   Folder,
+  FolderOpen,
   FolderPlus,
+  HardDrive,
   Info,
+  Library,
   LoaderCircle,
+  Presentation,
   Search,
   Upload,
   X,
@@ -122,25 +128,71 @@ const parsing = (status: MaterialExtractionStatus) => status === 'pending' || st
  * share a size, a stroke and a colour, so a row's slots line up.
  */
 const ROW_ICON = {
-  className: 'size-4 shrink-0 text-[color:var(--ws-ink-mute)]',
+  // One 20 px line: the icon sits on the name's first line, however it wraps.
+  className: 'mt-0.5 size-4 shrink-0 text-[color:var(--ws-ink-mute)]',
   strokeWidth: 1.75,
   'aria-hidden': true,
 } as const;
 
 /** The chevron slot every row keeps: a folder's chevron, empty on a file. */
 function RowChevron({ open }: { readonly open?: boolean }) {
-  if (open === undefined) return <span className="size-4 shrink-0" aria-hidden="true" />;
+  if (open === undefined) return <span className="mt-0.5 size-4 shrink-0" aria-hidden="true" />;
   return open ? <ChevronDown {...ROW_ICON} /> : <ChevronRight {...ROW_ICON} />;
 }
 
-function MaterialIcon({ mime }: { readonly mime?: string }) {
-  if (mime?.startsWith('image/')) return <FileImage {...ROW_ICON} />;
-  if (mime?.startsWith('audio/')) return <FileAudio {...ROW_ICON} />;
-  if (mime?.startsWith('video/')) return <FileVideo {...ROW_ICON} />;
-  if (mime?.startsWith('text/') || mime === 'application/pdf' || mime?.includes('document')) {
-    return <FileText {...ROW_ICON} />;
+/**
+ * A file's kind, from its type (or, without one, its extension): each kind
+ * keeps the list's one icon size and stroke, and is told apart by its tint,
+ * the colours people already know these formats by.
+ */
+const MATERIAL_KINDS = {
+  pdf: { Icon: FileText, tint: 'text-rose-500 dark:text-rose-400' },
+  document: { Icon: FileText, tint: 'text-blue-600 dark:text-blue-400' },
+  slides: { Icon: Presentation, tint: 'text-orange-500 dark:text-orange-400' },
+  sheet: { Icon: FileSpreadsheet, tint: 'text-emerald-600 dark:text-emerald-400' },
+  image: { Icon: FileImage, tint: 'text-sky-600 dark:text-sky-400' },
+  audio: { Icon: FileAudio, tint: 'text-fuchsia-600 dark:text-fuchsia-400' },
+  video: { Icon: FileVideo, tint: 'text-indigo-600 dark:text-indigo-400' },
+  text: { Icon: FileText, tint: 'text-[color:var(--ws-ink-mute)]' },
+  other: { Icon: File, tint: 'text-[color:var(--ws-ink-mute)]' },
+} as const;
+
+function materialKind(mime?: string, name?: string): keyof typeof MATERIAL_KINDS {
+  const type = mime?.toLowerCase() ?? '';
+  const extension = name?.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
+  if (type === 'application/pdf' || extension === 'pdf') return 'pdf';
+  if (type.includes('presentation') || extension === 'pptx' || extension === 'ppt') return 'slides';
+  if (
+    type.includes('spreadsheet') ||
+    type === 'text/csv' ||
+    ['xlsx', 'xls', 'csv'].includes(extension)
+  ) {
+    return 'sheet';
   }
-  return <File {...ROW_ICON} />;
+  if (type.includes('wordprocessing') || type === 'application/msword' || extension === 'docx') {
+    return 'document';
+  }
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('audio/')) return 'audio';
+  if (type.startsWith('video/')) return 'video';
+  if (type.startsWith('text/') || ['md', 'markdown', 'txt'].includes(extension)) return 'text';
+  return 'other';
+}
+
+function MaterialIcon({ mime, name }: { readonly mime?: string; readonly name?: string }) {
+  const { Icon, tint } = MATERIAL_KINDS[materialKind(mime, name)];
+  return <Icon {...ROW_ICON} className={cn(ROW_ICON.className, tint)} />;
+}
+
+/** A folder: the product's accent, filled lightly, open while its files show. */
+function FolderIcon({ open }: { readonly open?: boolean }) {
+  const Icon = open ? FolderOpen : Folder;
+  return (
+    <Icon
+      {...ROW_ICON}
+      className="mt-0.5 size-4 shrink-0 fill-[color:var(--ws-accent-wash)] text-[color:var(--ws-accent)]"
+    />
+  );
 }
 
 const failureCopy: Record<
@@ -176,28 +228,59 @@ const failureCopy: Record<
 };
 
 /** Only known reasons get a user explanation; diagnostic text never enters the row. */
+const STATUS_TONE = {
+  done: {
+    chip: 'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300',
+    dot: 'bg-[color:var(--ws-live)]',
+  },
+  parsing: {
+    chip: 'bg-[color:var(--ws-accent-wash)] text-[color:var(--ws-accent)]',
+    dot: '',
+  },
+  failed: {
+    chip: 'bg-rose-500/10 text-rose-600 dark:bg-rose-400/10 dark:text-rose-300',
+    dot: 'bg-[color:var(--ws-fail)]',
+  },
+  idle: {
+    chip: 'bg-[color:var(--ws-tint)] text-[color:var(--ws-ink-soft)]',
+    dot: 'bg-[color:var(--ws-ink-faint)]',
+  },
+} as const;
+
 function StatusLabel({
   material,
   t,
   testId,
+  compact = false,
 }: {
   readonly material: LibraryMaterial;
   readonly t: Translate;
   readonly testId?: string;
+  /** The smaller chip of a narrow row's details line. */
+  readonly compact?: boolean;
 }) {
   const { status, reasonCode } = material.extraction;
   const failure = status === 'failed' && reasonCode ? failureCopy[reasonCode] : undefined;
+  const tone =
+    STATUS_TONE[
+      parsing(status)
+        ? 'parsing'
+        : status === 'failed'
+          ? 'failed'
+          : status === 'done'
+            ? 'done'
+            : 'idle'
+    ];
   return (
     <span
       data-testid={testId}
       data-status={status}
       className={cn(
-        'inline-flex items-center gap-1 text-[12px]',
-        status === 'failed'
-          ? 'text-[color:var(--ws-fail)]'
-          : status === 'done'
-            ? 'text-[color:var(--ws-ink-soft)]'
-            : 'text-[color:var(--ws-ink-mute)]',
+        // A chip: its colour says the state at a glance, its words say which.
+        'inline-flex max-w-full items-center gap-1.5 rounded-full font-medium leading-none',
+        compact ? 'h-5 px-1.5 text-[11px]' : 'h-6 px-2 text-[12px]',
+        failure && (compact ? 'pr-0' : 'pr-0.5'),
+        tone.chip,
       )}
     >
       {parsing(status) ? (
@@ -206,8 +289,10 @@ function StatusLabel({
           className="size-3 shrink-0 animate-spin"
           aria-hidden="true"
         />
-      ) : null}
-      {t(extractionLabelKey(status, reasonCode))}
+      ) : (
+        <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', tone.dot)} />
+      )}
+      <span className="truncate">{t(extractionLabelKey(status, reasonCode))}</span>
       {failure ? (
         <Popover>
           <PopoverTrigger asChild>
@@ -215,7 +300,10 @@ function StatusLabel({
               type="button"
               data-ws-no-drag=""
               aria-label={t('workspace.knowledgeBase.failure.more', { reason: t(failure.label) })}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-2"
+              className={cn(
+                'inline-flex shrink-0 items-center justify-center rounded-full opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1',
+                compact ? 'size-5' : 'size-6',
+              )}
             >
               <Info className="size-3.5" aria-hidden="true" />
             </button>
@@ -257,11 +345,16 @@ function Usage({
     maxCount: limits.maxCount,
   });
   return (
-    <div
-      data-testid="kb-usage"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-[color:var(--ws-ink-soft)]"
-    >
-      <span data-testid="kb-usage-summary">{summary}</span>
+    <div data-testid="kb-usage" className={USAGE_CELL}>
+      <span className="flex min-w-0 items-start gap-2.5">
+        <HardDrive className={USAGE_ICON} strokeWidth={1.75} aria-hidden="true" />
+        <span
+          data-testid="kb-usage-summary"
+          className="min-w-0 text-[13px] font-medium leading-5 text-[color:var(--ws-ink)]"
+        >
+          {summary}
+        </span>
+      </span>
       <div
         role="progressbar"
         aria-label={summary}
@@ -269,14 +362,32 @@ function Usage({
         aria-valuemax={limits.maxTotalBytes}
         aria-valuenow={limits.usedBytes}
         data-testid="kb-usage-bar"
-        className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-[color:var(--ws-tint-strong)]"
+        className={USAGE_TRACK}
       >
-        <div
-          className="h-full rounded-full bg-[color:var(--ws-accent)]"
-          style={{ width: `${share * 100}%` }}
-        />
+        <UsageFill share={share} used={limits.usedBytes} />
       </div>
     </div>
+  );
+}
+
+/** One cell of the usage panel: its line, and its bar under it, full width. */
+const USAGE_CELL = 'flex min-w-0 flex-col justify-center gap-2.5 px-4 py-3.5';
+const USAGE_ICON = 'mt-0.5 size-4 shrink-0 text-[color:var(--ws-ink-mute)]';
+const USAGE_TRACK = 'ml-[26px] h-1.5 overflow-hidden rounded-full bg-[color:var(--ws-tint-strong)]';
+
+/**
+ * A bar's fill. Anything stored shows at least a sliver, so a small library
+ * does not read as an empty one; a nearly full one turns to the failure colour.
+ */
+function UsageFill({ share, used }: { readonly share: number; readonly used: number }) {
+  return (
+    <div
+      className={cn(
+        'h-full rounded-full transition-[width] duration-300',
+        share >= 0.9 ? 'bg-[color:var(--ws-fail)]' : 'bg-[color:var(--ws-accent)]',
+      )}
+      style={{ width: used > 0 ? `max(${share * 100}%, 6px)` : '0%' }}
+    />
   );
 }
 
@@ -297,15 +408,46 @@ function FileStorage({
 }) {
   if (!Number.isFinite(limits.assetUsedBytes)) return null;
   const used = formatMaterialBytes(limits.assetUsedBytes, locale);
+  const quota = limits.assetQuotaBytes;
+  const text = quota
+    ? t('workspace.knowledgeBase.usage.fileStorage', {
+        used,
+        max: formatMaterialBytes(quota, locale),
+      })
+    : t('workspace.knowledgeBase.usage.fileStorageUnlimited', { used });
+  const share = quota ? Math.min(1, Math.max(0, limits.assetUsedBytes / quota)) : 0;
   return (
-    <p data-testid="kb-file-storage" className="mt-1.5 text-[12px] text-[color:var(--ws-ink-mute)]">
-      {limits.assetQuotaBytes
-        ? t('workspace.knowledgeBase.usage.fileStorage', {
-            used,
-            max: formatMaterialBytes(limits.assetQuotaBytes, locale),
-          })
-        : t('workspace.knowledgeBase.usage.fileStorageUnlimited', { used })}
-    </p>
+    <div
+      className={cn(
+        USAGE_CELL,
+        'border-t border-[color:var(--ws-line-soft)] sm:border-l sm:border-t-0',
+      )}
+    >
+      <span className="flex min-w-0 items-start gap-2.5">
+        <Database className={USAGE_ICON} strokeWidth={1.75} aria-hidden="true" />
+        <span
+          data-testid="kb-file-storage"
+          className="min-w-0 text-[12px] leading-5 text-[color:var(--ws-ink-mute)]"
+        >
+          {text}
+        </span>
+      </span>
+      {/* Without a quota there is nothing to fill; the room stays, so the cells line up. */}
+      {quota ? (
+        <div
+          role="progressbar"
+          aria-label={text}
+          aria-valuemin={0}
+          aria-valuemax={quota}
+          aria-valuenow={limits.assetUsedBytes}
+          className={USAGE_TRACK}
+        >
+          <UsageFill share={share} used={limits.assetUsedBytes} />
+        </div>
+      ) : (
+        <div className="h-1.5" aria-hidden="true" />
+      )}
+    </div>
   );
 }
 
@@ -567,26 +709,33 @@ function InlineName({
  * it each row says what it is, and nothing sticks.
  */
 const STICKY_HEADER =
-  'sticky top-0 z-10 hidden border-b border-[color:var(--ws-line)] [background:linear-gradient(var(--ws-surface),var(--ws-surface)),var(--ws-canvas-top)] px-3 py-2 text-[11px] text-[color:var(--ws-ink-mute)]';
+  'sticky top-0 z-10 hidden border-b border-[color:var(--ws-line)] [background:linear-gradient(var(--ws-tint),var(--ws-tint)),linear-gradient(var(--ws-surface),var(--ws-surface)),var(--ws-canvas-top)] px-4 py-2.5 text-[12px] font-medium text-[color:var(--ws-ink-mute)]';
+
+/** Hairlines between rows, lighter than the card's own edge. */
+const LIST_RULES = 'divide-y divide-[color:var(--ws-line-soft)]';
+
+/** Every row: room to breathe, and the pointer's row lit (the rail's hover tint). */
+const ROW =
+  'flex min-w-0 items-start gap-2.5 px-4 py-2.5 transition-colors duration-100 hover:bg-[color:var(--ws-tint)]';
 
 const LAYOUT = {
   tree: {
-    row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @2xl:grid @2xl:items-center @2xl:gap-3',
+    row: `${ROW} @2xl:grid @2xl:items-center @2xl:gap-3`,
     columns: '@2xl:grid-cols-[minmax(0,1fr)_14rem_5.5rem_5.5rem_2rem]',
-    cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @2xl:block',
+    cell: 'hidden truncate text-[12px] tabular-nums text-[color:var(--ws-ink-mute)] @2xl:block',
     narrowOnly: '@2xl:hidden',
-    wideOnly: 'hidden @2xl:block',
+    wideOnly: 'hidden min-w-0 items-center @2xl:flex',
     menu: 'ws-kb-row-menu shrink-0 @2xl:flex @2xl:justify-end',
     /** A folder's name takes the status column too; its count is in Size. */
     nameSpan: '@2xl:col-span-2',
     header: `${STICKY_HEADER} @2xl:grid @2xl:gap-3`,
   },
   search: {
-    row: 'flex min-w-0 items-start gap-2 px-3 py-1.5 @3xl:grid @3xl:items-center @3xl:gap-3',
+    row: `${ROW} @3xl:grid @3xl:items-center @3xl:gap-3`,
     columns: '@3xl:grid-cols-[minmax(0,1fr)_9rem_14rem_5.5rem_5.5rem_2rem]',
-    cell: 'hidden truncate text-[12px] text-[color:var(--ws-ink-soft)] @3xl:block',
+    cell: 'hidden truncate text-[12px] tabular-nums text-[color:var(--ws-ink-mute)] @3xl:block',
     narrowOnly: '@3xl:hidden',
-    wideOnly: 'hidden @3xl:block',
+    wideOnly: 'hidden min-w-0 items-center @3xl:flex',
     menu: 'ws-kb-row-menu shrink-0 @3xl:flex @3xl:justify-end',
     header: `${STICKY_HEADER} @3xl:grid @3xl:gap-3`,
   },
@@ -1178,16 +1327,16 @@ export function MaterialLibraryPage({
           drag.dragId === material.materialId && 'ws-row-dragging bg-[color:var(--ws-tint)]',
         )}
       >
-        <div className={cn('flex min-w-0 flex-1 items-start gap-2', options.nested && 'pl-6')}>
+        <div className={cn('flex min-w-0 flex-1 items-start gap-2.5', options.nested && 'pl-6')}>
           <RowChevron />
-          <MaterialIcon mime={material.mime} />
+          <MaterialIcon mime={material.mime} name={material.name} />
           <div className="min-w-0 flex-1">
             {edit ? (
               renameField(edit, t('workspace.knowledgeBase.actions.rename'), nameStemEnd(edit.name))
             ) : (
               // Double-click the name to rename it; touch screens use the ⋯.
               <span
-                className="block break-words text-[13px]"
+                className="block break-words text-[13px] leading-5 text-[color:var(--ws-ink)]"
                 title={material.name}
                 onDoubleClick={() => startRenaming('material', material.materialId, material.name)}
               >
@@ -1196,11 +1345,11 @@ export function MaterialLibraryPage({
             )}
             <span
               className={cn(
-                'mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[color:var(--ws-ink-mute)]',
+                'mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] tabular-nums text-[color:var(--ws-ink-mute)]',
                 layout.narrowOnly,
               )}
             >
-              <StatusLabel material={material} t={t} />
+              <StatusLabel material={material} t={t} compact />
               <span>{size}</span>
               {date ? <span>{date}</span> : null}
               {options.search && folderName(material) ? <span>{folderName(material)}</span> : null}
@@ -1225,7 +1374,7 @@ export function MaterialLibraryPage({
     nested = false,
   ) =>
     node.hasMore ? (
-      <li className={cn('py-2 pl-9 pr-3', nested && 'pl-15')}>
+      <li className={cn('py-2.5 pl-[4.25rem] pr-4', nested && 'pl-[5.75rem]')}>
         <button
           type="button"
           data-testid={testId}
@@ -1251,7 +1400,7 @@ export function MaterialLibraryPage({
     const narrowMeta = (
       <span
         className={cn(
-          'mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] font-normal text-[color:var(--ws-ink-mute)]',
+          'mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] font-normal tabular-nums text-[color:var(--ws-ink-mute)]',
           LAYOUT.tree.narrowOnly,
         )}
       >
@@ -1276,12 +1425,12 @@ export function MaterialLibraryPage({
           {edit ? (
             <div
               className={cn(
-                'flex min-w-0 flex-1 items-start gap-2 text-[13px] font-medium',
+                'flex min-w-0 flex-1 items-start gap-2.5 text-[13px] font-medium',
                 LAYOUT.tree.nameSpan,
               )}
             >
               <RowChevron open={open} />
-              <Folder {...ROW_ICON} />
+              <FolderIcon open={open} />
               {renameField(edit, t('workspace.knowledgeBase.actions.rename'))}
             </div>
           ) : (
@@ -1296,15 +1445,15 @@ export function MaterialLibraryPage({
                 else tree.expand(folder.id);
               }}
               className={cn(
-                'flex min-w-0 flex-1 items-start gap-2 rounded-md text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)]',
+                'flex min-w-0 flex-1 items-start gap-2.5 rounded-md text-left text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ws-accent)]',
                 LAYOUT.tree.nameSpan,
               )}
             >
               <RowChevron open={open} />
-              <Folder {...ROW_ICON} />
+              <FolderIcon open={open} />
               <span className="min-w-0 flex-1">
                 <span
-                  className="block break-words font-medium"
+                  className="block break-words font-semibold leading-5 text-[color:var(--ws-ink)]"
                   onDoubleClick={() => startRenaming('folder', folder.id, folder.name)}
                 >
                   {folder.name}
@@ -1320,13 +1469,20 @@ export function MaterialLibraryPage({
           <span className={LAYOUT.tree.menu}>{folderMenu(folder)}</span>
         </div>
         {node ? (
-          <ul data-testid={`kb-folder-files-${folder.id}`}>
+          // The folder's files, one step in, on a faintly sunken ground.
+          <ul
+            data-testid={`kb-folder-files-${folder.id}`}
+            className={cn(
+              LIST_RULES,
+              'border-t border-[color:var(--ws-line-soft)] [background:color-mix(in_srgb,var(--ws-tint)_40%,transparent)]',
+            )}
+          >
             {node.status === 'loading' ? (
-              <li className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]">
+              <li className="py-2.5 pl-[5.75rem] text-[12px] text-[color:var(--ws-ink-mute)]">
                 {t('workspace.knowledgeBase.loading')}
               </li>
             ) : node.status === 'error' ? (
-              <li className="flex items-center gap-2 py-2 pl-15 text-[12px]" role="alert">
+              <li className="flex items-center gap-2 py-2.5 pl-[5.75rem] text-[12px]" role="alert">
                 <span>{t(materialLibraryErrorKey(node.error))}</span>
                 <button type="button" onClick={() => tree.reload()} className="ws-quiet underline">
                   {t('workspace.knowledgeBase.retry')}
@@ -1335,7 +1491,7 @@ export function MaterialLibraryPage({
             ) : node.files.length === 0 ? (
               <li
                 data-testid={`kb-folder-empty-${folder.id}`}
-                className="py-2 pl-15 text-[12px] text-[color:var(--ws-ink-mute)]"
+                className="py-2.5 pl-[5.75rem] text-[12px] text-[color:var(--ws-ink-mute)]"
               >
                 {t('workspace.knowledgeBase.empty.folder')}
               </li>
@@ -1388,13 +1544,13 @@ export function MaterialLibraryPage({
         <li
           key={entry.id}
           data-testid={`kb-${entry.id}`}
-          className="flex min-w-0 items-start gap-2 px-3 py-2 text-[13px]"
+          className="flex min-w-0 items-start gap-2.5 px-4 py-2.5 text-[13px] leading-5"
         >
           <RowChevron />
           {entry.error === undefined ? (
             <LoaderCircle {...ROW_ICON} className={cn(ROW_ICON.className, 'animate-spin')} />
           ) : (
-            <X {...ROW_ICON} className="size-4 shrink-0 text-[color:var(--ws-fail)]" />
+            <X {...ROW_ICON} className="mt-0.5 size-4 shrink-0 text-[color:var(--ws-fail)]" />
           )}
           <span className="min-w-0 flex-1 break-words">
             {entry.name}
@@ -1427,12 +1583,12 @@ export function MaterialLibraryPage({
       <div data-kb-row="" className={cn(LAYOUT.tree.row, LAYOUT.tree.columns)}>
         <div
           className={cn(
-            'flex min-w-0 flex-1 items-start gap-2 text-[13px] font-medium',
+            'flex min-w-0 flex-1 items-start gap-2.5 text-[13px] font-medium',
             LAYOUT.tree.nameSpan,
           )}
         >
           <RowChevron open={false} />
-          <Folder {...ROW_ICON} />
+          <FolderIcon />
           <InlineName
             key={creating.id}
             testId="kb-new-folder-input"
@@ -1480,7 +1636,10 @@ export function MaterialLibraryPage({
   let body: ReactNode;
   if (primary.status === 'loading' && primary.files.length === 0) {
     body = (
-      <p data-testid="kb-loading" className="px-3 py-3 text-[13px] text-[color:var(--ws-ink-mute)]">
+      <p
+        data-testid="kb-loading"
+        className="px-4 py-6 text-center text-[13px] text-[color:var(--ws-ink-mute)]"
+      >
         {t('workspace.knowledgeBase.loading')}
       </p>
     );
@@ -1489,7 +1648,7 @@ export function MaterialLibraryPage({
       <div
         data-testid="kb-error"
         role="alert"
-        className="flex flex-col items-start gap-2 px-3 py-3"
+        className="flex flex-col items-start gap-2 px-4 py-4"
       >
         <p className="text-[13px]">{t(materialLibraryErrorKey(primary.error))}</p>
         <button
@@ -1504,23 +1663,38 @@ export function MaterialLibraryPage({
     );
   } else if (nothingAtAll) {
     body = (
-      <div data-testid="kb-onboarding" className="flex max-w-[520px] flex-col gap-2 px-3 py-4">
-        <h2 className="text-[15px] font-medium">{t('workspace.knowledgeBase.empty.title')}</h2>
-        <p className="text-[13px] leading-6 text-[color:var(--ws-ink-soft)]">
+      <div
+        data-testid="kb-onboarding"
+        className="mx-auto flex max-w-[440px] flex-col items-center px-6 py-14 text-center"
+      >
+        <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-[color:var(--ws-accent-wash)] text-[color:var(--ws-accent)] ring-1 ring-[color:var(--ws-accent-thread)] ring-inset">
+          <Library className="size-6" strokeWidth={1.75} aria-hidden="true" />
+        </span>
+        <h2 className="text-[16px] font-semibold">{t('workspace.knowledgeBase.empty.title')}</h2>
+        <p className="mt-1.5 text-[13px] leading-6 text-[color:var(--ws-ink-soft)]">
           {t('workspace.knowledgeBase.empty.body')}
         </p>
+        <button
+          type="button"
+          data-testid="kb-onboarding-upload"
+          onClick={() => fileInput.current?.click()}
+          className="ws-new mt-5 flex h-9 items-center gap-2 rounded-lg px-3.5 text-[13px] font-medium"
+        >
+          <Upload className="size-4 shrink-0 opacity-70" aria-hidden="true" />
+          {t('workspace.knowledgeBase.upload.button')}
+        </button>
       </div>
     );
   } else if (searching) {
     body = (
       <>
         <ListHeader search t={t} />
-        <ul data-testid="kb-results">
+        <ul data-testid="kb-results" className={LIST_RULES}>
           {uploadRows}
           {tree.results.files.length === 0 ? (
             <li
               data-testid="kb-empty"
-              className="px-3 py-3 text-[13px] text-[color:var(--ws-ink-mute)]"
+              className="px-4 py-6 text-center text-[13px] text-[color:var(--ws-ink-mute)]"
             >
               {t('workspace.knowledgeBase.empty.query', { query })}
             </li>
@@ -1535,7 +1709,7 @@ export function MaterialLibraryPage({
     body = (
       <>
         <ListHeader t={t} />
-        <ul data-testid="kb-tree">
+        <ul data-testid="kb-tree" className={LIST_RULES}>
           {creatingRow}
           {tree.folders.map(folderRow)}
           {uploadRows}
@@ -1588,14 +1762,14 @@ export function MaterialLibraryPage({
       </div>
 
       {/* Three regions told apart by space, not rules (#1835 review §2). */}
-      <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 px-4 pb-16 pt-2 sm:px-8 md:pt-8">
+      <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-4 px-4 pb-12 pt-2 sm:px-8 md:pt-8">
         <header data-testid="kb-header" className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <h1
               ref={heading}
               id="pro-workspace-library-title"
               tabIndex={-1}
-              className="mr-auto text-[20px] font-semibold outline-none"
+              className="mr-auto text-[22px] font-semibold tracking-tight outline-none"
             >
               {t('workspace.knowledgeBase.title')}
             </h1>
@@ -1662,7 +1836,14 @@ export function MaterialLibraryPage({
         </header>
 
         {tree.limits ? (
-          <section>
+          // One panel, two measures side by side: the knowledge base's own
+          // allowance, and the file storage counted apart from it.
+          <section
+            className={cn(
+              'grid overflow-hidden rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)] shadow-[var(--ws-lift-sm)]',
+              Number.isFinite(tree.limits.assetUsedBytes) && 'sm:grid-cols-2',
+            )}
+          >
             <Usage limits={tree.limits} locale={locale} t={t} />
             <FileStorage limits={tree.limits} locale={locale} t={t} />
           </section>
@@ -1690,7 +1871,7 @@ export function MaterialLibraryPage({
             data-testid="kb-list"
             // `clip`, not `hidden`: the rounded corners still clip, but the
             // list is no scroll container, so its column names can stick.
-            className="@container overflow-clip rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)]"
+            className="@container overflow-clip rounded-xl border border-[color:var(--ws-line)] bg-[color:var(--ws-surface)] shadow-[var(--ws-lift-sm)]"
           >
             {body}
             {!searching && primary.status === 'ready' ? (
@@ -1702,7 +1883,9 @@ export function MaterialLibraryPage({
                 data-testid="kb-drop-top-level"
                 data-armed={carriedFromFolder ? 'true' : 'false'}
                 className={cn(
-                  'ws-ground-drop',
+                  // Folded away at rest (no blank foot under the last row),
+                  // opened while a file in a folder is carried.
+                  'ws-ground-drop ws-kb-ground-drop',
                   carriedFromFolder && 'ws-ground-drop-armed',
                   drag.folderTarget === '' && 'ws-drop-into',
                 )}
