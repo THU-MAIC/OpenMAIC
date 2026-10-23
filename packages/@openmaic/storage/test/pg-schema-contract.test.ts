@@ -472,7 +472,7 @@ BEGIN
   END IF;
 END
 $agent_session_owner_event_type_validation$;
-`;
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS locale TEXT;`;
 
 const EXPECTED_USER_SKILL_PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS agent_user_skill (
@@ -543,7 +543,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS agent_session_materials_session_owner_material
 CREATE INDEX IF NOT EXISTS agent_session_materials_extraction_queue_idx
   ON agent_session_materials (created_at)
   WHERE kind = 'source' AND extraction_status IN ('pending','running');
-`;
+
+ALTER TABLE agent_session_materials ADD COLUMN IF NOT EXISTS extraction_reason_code TEXT;`;
 
 /** Records the statements an ensure function actually issues. */
 function recordingQueryable(): { statements: string[]; queryable: Queryable } {
@@ -697,6 +698,16 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      stage_id TEXT NOT NULL PRIMARY KEY,
      withdrawn_at TIMESTAMPTZ NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS asset_root_refs (
+     root_kind TEXT NOT NULL,
+     root_id TEXT NOT NULL,
+     asset_id TEXT NOT NULL REFERENCES asset_entries(id) ON DELETE CASCADE,
+     PRIMARY KEY (root_kind, root_id, asset_id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS asset_root_refs_asset_idx
+     ON asset_root_refs (asset_id)`,
+  `ALTER TABLE asset_reference_tracking
+     ADD COLUMN IF NOT EXISTS rule_version INTEGER NOT NULL DEFAULT 1`,
 ];
 
 describe('ASSET_PG_SCHEMA is a pinned contract', () => {

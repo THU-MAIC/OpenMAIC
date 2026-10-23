@@ -101,6 +101,8 @@ allowUserKeys: false               # 使用者只能在這些供應商中選擇�
 | `proxy` | 否 | 該供應商請求使用的 HTTP 代理位址。 |
 | `credentials` | 部分範本需要 | 不使用單一 key 的服務所需的金鑰對。AliDocMind 使用 `accessKeyId` 和 `accessKeySecret`。 |
 | `options` | 否 | 非機密、供應商特有的設定，例如 `voxcpm-tts` 的 `backend`。名稱由字母、數字、`_` 和 `-` 組成；值為字串、數字或布林值（不能巢狀對應或清單），可以使用 `${VAR}`。模型設定會顯示 options，因此絕對不要在其中放 key。僅限部署：模型設定無法設定它們。 |
+| `voices` | 否 | 僅適用於 TTS 範本。以非空清單取代內建音色目錄：每項必填 `id`、`name`，可選 `language`、`gender`（`male`、`female`、`neutral`）；ID 不可重複，也不可包含保留的綁定分隔符 `::`。使用者音色仍會保留，Qwen 複製音色繼續使用複製模型。未設定時保留內建目錄。 |
+| `options.defaultVoice` | 否 | 此供應商的預設音色 ID，必須是非空白字串。設定此項時必須同時提供包含該 ID 的非空 `voices` 清單。僅設定 `voices` 時使用第一項；有效的明確選擇優先。兩個覆寫項目均未設定時維持原有預設邏輯。 |
 
 大多數範本只涵蓋一種能力，與內建 registry 一一對應：`openai` 範本只有對話，OpenAI 的圖像、語音合成和語音辨識分別是 `openai-image`、`openai-tts` 和 `openai-whisper` 範本。每種能力宣告一個供應商；同一把 key 涵蓋多種能力時，引用同一個 `${VAR}` 即可。**Token Plan 範本**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一把 key 涵蓋多種能力，每種能力使用該方案自己的端點。供應商上的 `baseUrl` 會取代它涵蓋的所有能力的端點，因此只有當 Token Plan 的全部能力都一起搬移時，才為它設定 `baseUrl`。
 
@@ -861,3 +863,11 @@ DeepSeek 也透過 `deepseek` 預設提供託管 Markdown 擷取，共用對話�
 同一個 `firecrawl` 供應商也提供網路搜尋（`POST /v2/search`）：一把金鑰和一個基底網址同時用於兩者，因此可以把同一個供應商同時指定給 `slots.webSearch` 和 `slots.webFetch`。舊版的 `FIRECRAWL_API_KEY` 和 `FIRECRAWL_BASE_URL` 變數設定的就是這個供應商；在把 `webFetch` 指定給它之前，網頁擷取仍使用 `builtin`。
 
 網址轉送至託管服務之前，必須通過工作階段網址授權、嚴格網址正規化及全部本機 DNS 位址檢查。接收內容前，也會對服務回傳的最終網址執行相同檢查。託管服務控制其自身的 DNS 和中間重新導向，本機檢查無法固定其網路連線。回傳的文字仍是不可信資料，經過驗證頁面偵測、位元組限制和截斷標記處理，並沿用網頁素材持久化及 `{trusted, untrusted}` 結果結構。
+
+## 互動場景依賴函式庫
+
+互動場景從部署本身載入 KaTeX、Three.js（含 addons）、Chart.js 和 Tailwind v4 瀏覽器執行環境，而不是從公開 CDN 載入。`pnpm install`、`pnpm dev` 和 `pnpm build` 會把已安裝套件中的固定版本複製到 `public/vendor/interactive`，並透過 `/vendor/interactive` 提供。只有包含數學公式的頁面才會載入 KaTeX。
+
+`INTERACTIVE_ASSET_BASE_URL` 是公開的建置時設定。如需從自己的 CDN 或物件儲存提供這些檔案，請複製 `public/vendor/interactive` 並保留其中的套件名稱/版本路徑，把此變數設為新的基礎位址（例如 `https://assets.example.com/interactive`）後重新建置；Docker 建置透過 `--build-arg` 傳入。互動場景在沙箱 iframe 中執行，因此該主機必須以正確的 MIME 類型提供 JavaScript、CSS 和字型檔案，並回傳 `Access-Control-Allow-Origin: *`。
+
+已儲存的互動 HTML 會在課堂中開啟時，以及匯出獨立 HTML 或影片之前重新處理，因此指向這些函式庫的相容公開 CDN 參照會被改寫，無需重新生成課程。指向其他函式庫、不相容版本、舊版 Tailwind v3 Play CDN（`cdn.tailwindcss.com`）和 Google Fonts 的參照保持不變，仍需要能存取對應主機。

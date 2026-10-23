@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
 import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
-import type { PPTElement, Whiteboard } from '@openmaic/dsl';
+import { ElementTypes, type PPTElement, type Whiteboard } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createTextProseStyles } from '@openmaic/renderer';
 
@@ -52,6 +52,7 @@ function AnimatedElementBase({
 }) {
   const clearDelay = isClearing ? (totalElements - 1 - index) * 0.055 : 0;
   const clearRotate = isClearing ? (index % 2 === 0 ? 1 : -1) * (2 + index * 0.4) : 0;
+  const isSelectable = element.type === ElementTypes.TEXT || element.type === ElementTypes.CODE;
 
   return (
     <motion.div
@@ -89,11 +90,21 @@ function AnimatedElementBase({
         scale: 0.85,
         transition: { duration: 0.2 },
       }}
-      className="absolute inset-0"
-      style={{ pointerEvents: isClearing ? 'none' : undefined }}
+      className="absolute inset-0 pointer-events-none"
+      style={{ pointerEvents: 'none' }}
     >
-      <div style={{ pointerEvents: 'auto' }}>
-        <ScreenElement elementInfo={element} elementIndex={index} animate />
+      <div
+        className={isSelectable ? 'select-text cursor-text' : undefined}
+        style={{ pointerEvents: isClearing ? 'none' : 'auto' }}
+        onPointerDown={isSelectable ? (e) => e.stopPropagation() : undefined}
+        onDoubleClick={isSelectable ? (e) => e.stopPropagation() : undefined}
+      >
+        <ScreenElement
+          elementInfo={element}
+          elementIndex={index}
+          animate
+          selectable={isSelectable}
+        />
       </div>
     </motion.div>
   );

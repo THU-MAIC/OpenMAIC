@@ -25,7 +25,7 @@ import {
   type ParsePptxOptions,
 } from '@/lib/server/agent-runtime/import-pptx';
 import { installNodeXmlHttpRequest, NodeXMLHttpRequest } from '@/lib/server/agent-runtime/node-xhr';
-import { sessionMaterialsPromptBlock } from '@/lib/server/agent-runtime/session-materials';
+import { materialsPromptBlock } from '@/lib/server/agent-runtime/material-prompt';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
 import type { PPTTextElement } from '@openmaic/dsl';
@@ -575,40 +575,88 @@ describe('import_pptx tool', () => {
     expect(text).toMatch(/too large/i);
     expect(text).toMatch(/compress or split/i);
   });
+
+  it('points a parse failure on a non-ZIP file at a legacy .ppt and asks for a .pptx save', async () => {
+    // An OLE2 compound file header: what a PowerPoint 97-2003 .ppt starts with.
+    const legacy = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0]);
+    const parsePptx = vi.fn(async () => {
+      throw new Error('End of data reached (data length = 12, asked index = 30)');
+    });
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: legacy,
+      parsePptx,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details).toMatchObject({
+      status: 'parse_failed',
+      reason: 'not_zip_package',
+      materialId: 'mat_ppt',
+    });
+    const text = String(
+      result.content[0] && 'text' in result.content[0] ? result.content[0].text : '',
+    );
+    expect(text).toContain('legacy .ppt');
+    expect(text).toMatch(/save it as \.pptx/);
+  });
+
+  it('keeps the plain parse failure for a ZIP package that fails to parse', async () => {
+    const zipLike = Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
+    const { result } = await runImport(stageStore(), {
+      params: { materialId: 'mat_ppt' },
+      record: sourceRecord(),
+      bytes: zipLike,
+      parsePptx: async () => {
+        throw new Error('corrupt slide xml');
+      },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.details).toEqual({ status: 'parse_failed', materialId: 'mat_ppt' });
+    expect(result.content[0]).toMatchObject({
+      text: 'Failed to parse the PowerPoint: corrupt slide xml',
+    });
+  });
 });
 
 describe('session material prompt', () => {
   it('mentions import_pptx only when a pptx is attached', () => {
-    const pdf = sessionMaterialsPromptBlock([
+    const pdf = materialsPromptBlock([
       {
-        id: 'mat_1',
-        sessionId: 'ses_1',
-        kind: 'source',
-        title: 'lecture.pdf',
-        sourceUrl: null,
-        textAssetId: null,
-        rawAssetId: null,
-        textChars: 0,
-        derivedFrom: null,
-        extraction: { status: 'idle' as const, attempts: 0 },
-        createdAt: new Date(0).toISOString(),
+        origin: 'session',
+        record: {
+          id: 'mat_1',
+          sessionId: 'ses_1',
+          kind: 'source',
+          title: 'lecture.pdf',
+          sourceUrl: null,
+          textAssetId: null,
+          rawAssetId: null,
+          textChars: 0,
+          derivedFrom: null,
+          extraction: { status: 'idle' as const, attempts: 0 },
+          createdAt: new Date(0).toISOString(),
+        },
       },
     ]);
     expect(pdf).not.toContain('import_pptx');
 
-    const pptx = sessionMaterialsPromptBlock([
+    const pptx = materialsPromptBlock([
       {
-        id: 'mat_ppt',
-        sessionId: 'ses_1',
-        kind: 'source',
-        title: 'deck.pptx',
-        sourceUrl: null,
-        textAssetId: null,
-        rawAssetId: 'ast_raw_ppt',
-        textChars: 0,
-        derivedFrom: null,
-        extraction: { status: 'idle' as const, attempts: 0 },
-        createdAt: new Date(0).toISOString(),
+        origin: 'session',
+        record: {
+          id: 'mat_ppt',
+          sessionId: 'ses_1',
+          kind: 'source',
+          title: 'deck.pptx',
+          sourceUrl: null,
+          textAssetId: null,
+          rawAssetId: 'ast_raw_ppt',
+          textChars: 0,
+          derivedFrom: null,
+          extraction: { status: 'idle' as const, attempts: 0 },
+          createdAt: new Date(0).toISOString(),
+        },
       },
     ]);
     expect(pptx).toContain('import_pptx');

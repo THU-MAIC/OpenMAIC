@@ -3,20 +3,30 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { resolveRenderServiceUrl } from '@/lib/server/render-service';
+import type { Scene } from '@/lib/types/stage';
 import type { CourseStore } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 
 const Params = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
-  sceneId: Type.String(),
+  sceneId: Type.String({
+    description:
+      'The page to render: its scene id or its 1-based page order, the same selectors read_stage and patch_stage address under /scenes/.',
+  }),
   viewport: Type.Optional(
     Type.Object({
       width: Type.Integer({ minimum: 64, maximum: 4096 }),
       height: Type.Integer({ minimum: 64, maximum: 4096 }),
-      deviceScaleFactor: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 2 })),
     }),
   ),
 });
+
+/**
+ * The preview renders at device scale 1. The image is for the agent's own
+ * visual check, where 1 is enough, and render services on a low-memory profile
+ * refuse anything higher.
+ */
+const PREVIEW_DEVICE_SCALE_FACTOR = 1;
 
 export interface ScenePreviewDeps {
   store: CourseStore;
@@ -38,6 +48,25 @@ function failure(sceneId: string, message: string) {
   };
 }
 
+/**
+ * The scene a selector names: an exact scene id, a 1-based page order, or
+ * either written as a read_stage path (`/scenes/<selector>`).
+ */
+export function resolvePreviewScene(scenes: readonly Scene[], selector: string): Scene | undefined {
+  const token = selector.trim().replace(/^\/?scenes\//, '');
+  const byId = scenes.find((scene) => scene.id === token);
+  if (byId) return byId;
+  if (/^[1-9]\d*$/.test(token)) return scenes.find((scene) => scene.order === Number(token));
+  return undefined;
+}
+
+function pageList(scenes: readonly Scene[]): string {
+  return [...scenes]
+    .sort((a, b) => a.order - b.order)
+    .map((scene) => `${scene.order}=${scene.id}`)
+    .join(', ');
+}
+
 export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never, never>[] {
   const service = deps.renderService ?? resolveRenderServiceUrl();
   if ('error' in service) return [];
@@ -55,12 +84,20 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
           return failure(params.sceneId, 'course not found or not owned by this session user');
         }
         const doc = await deps.store.loadDocument(params.stageId);
-        const scene = doc?.scenes.find((item) => item.id === params.sceneId);
-        if (!doc || !scene) return failure(params.sceneId, 'page not found in this session course');
+        if (!doc) return failure(params.sceneId, 'course has no persisted pages yet');
+        const scene = resolvePreviewScene(doc.scenes, params.sceneId);
+        if (!scene) {
+          return failure(
+            params.sceneId,
+            doc.scenes.length
+              ? `no page matches ${JSON.stringify(params.sceneId)}. Pass a scene id or a 1-based page order; pages (order=id): ${pageList(doc.scenes)}.`
+              : 'the course has no pages yet',
+          );
+        }
         const viewport = {
           width: params.viewport?.width ?? 1280,
           height: params.viewport?.height ?? 720,
-          deviceScaleFactor: params.viewport?.deviceScaleFactor ?? 1,
+          deviceScaleFactor: PREVIEW_DEVICE_SCALE_FACTOR,
         };
         try {
           const response = await (deps.fetchPreview ?? proxyFetch)(`${service.url}/preview`, {
@@ -87,7 +124,7 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
             content: [
               { type: 'image' as const, data: bytes.toString('base64'), mimeType: 'image/png' },
             ],
-            details: { sceneId: scene.id, viewport, bytes: bytes.length },
+            details: { sceneId: scene.id, order: scene.order, viewport, bytes: bytes.length },
           };
         } catch (error) {
           if (signal?.aborted) return failure(scene.id, 'operation aborted');

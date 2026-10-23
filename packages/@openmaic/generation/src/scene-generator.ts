@@ -548,13 +548,19 @@ function fixElementDefaults(
           const curW = normalized.width || 400;
           const curH = normalized.height || 300;
           if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
-            // Keep width, correct height
-            const newH = Math.round(curW / knownRatio);
-            if (newH > 462) {
-              // canvas 562.5 - margins 50×2
-              return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
-            }
-            return { ...normalized, height: newH };
+            // Contain-fit (like `object-fit: contain`): the largest box with the
+            // real ratio inside the model's box, centered in it. Never grows past
+            // the model's box, so it cannot cover the elements laid out around it.
+            const fitByWidth = curW / curH < knownRatio;
+            const newW = fitByWidth ? curW : Math.round(curH * knownRatio);
+            const newH = fitByWidth ? Math.round(curW / knownRatio) : curH;
+            return {
+              ...normalized,
+              left: Math.round((normalized.left ?? 0) + (curW - newW) / 2),
+              top: Math.round((normalized.top ?? 0) + (curH - newH) / 2),
+              width: newW,
+              height: newH,
+            };
           }
         }
       }

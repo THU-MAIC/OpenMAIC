@@ -67,7 +67,10 @@ import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { generateOutlines } from '@/lib/server/generation/steps/outline';
 import { generateSceneContent } from '@/lib/server/generation/steps/scene-content';
 import { generateSceneActions } from '@/lib/server/generation/steps/scene-actions';
-import type { ConnectableQueryable } from '@openmaic/storage/server/reference';
+import {
+  nodePostgresTransaction,
+  type ConnectableQueryable,
+} from '@openmaic/storage/server/reference';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene } from '@/lib/types/stage';
 
@@ -805,7 +808,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       ).rows[0]?.deleted_at ?? null;
     const { services } = fakeServices({ research: async () => null });
 
-    // Completed: its own uploads go; another owner's material it named stays.
+    // Even persisted releaseMaterials=true cannot delete any successful upload.
     const mine = [await material(OWNER), await material(OWNER)];
     const theirs = await material(OTHER);
     const unrelated = await material(OWNER);
@@ -817,11 +820,11 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       }),
     );
     expect(await drive(completed.id, services)).toBe('completed');
-    for (const id of mine) expect(await deletedAt(id)).not.toBeNull();
+    for (const id of mine) expect(await deletedAt(id)).toBeNull();
     expect(await deletedAt(theirs)).toBeNull();
     expect(await deletedAt(unrelated)).toBeNull();
 
-    // Waiting for its outline (Retry and confirmation need them): kept; discarded: released.
+    // Waiting and discarded runs both retain their uploaded sources.
     const waitingMaterial = await material(OWNER);
     const waiting = await start(
       runInput({ materialIds: [waitingMaterial], releaseMaterials: true }),
@@ -829,7 +832,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(await drive(waiting.id, services)).toBe('waiting');
     expect(await deletedAt(waitingMaterial)).toBeNull();
     await discardGenerationRun(waiting.id, OWNER);
-    expect(await deletedAt(waitingMaterial)).not.toBeNull();
+    expect(await deletedAt(waitingMaterial)).toBeNull();
 
     // A material another run still works from is kept until that run is over.
     const shared = await material(OWNER);
@@ -2894,7 +2897,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       return built;
     }
 
-    it('generates from materials extracted at upload without an analysis, and a released material leaves the course image', async () => {
+    it('generates from materials extracted at upload without an analysis, and retains both the source and the course image', async () => {
       const materials = await uploadedMaterials();
       try {
         const material = await materials.upload('notes.txt');
@@ -2923,14 +2926,18 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
           elementsOf(document.scenes[0]).find((element) => element.id === 'el-material')!.src,
         ).toBe(assetId);
 
-        // The run released its material; its objects go with the next reclaim,
-        // and the course keeps the image it copied.
-        await materials.owner.reclaimStaleOwnerMaterialUploads(pool, OWNER, (key) =>
-          materials.bytesModule.deleteMaterialObjects(materials.byteStore, key),
+        // The run retains its source; cleanup also keeps it and the course image.
+        await materials.owner.reclaimStaleOwnerMaterialUploads(
+          {
+            pool,
+            withTransaction: nodePostgresTransaction(pool as unknown as ConnectableQueryable),
+          },
+          OWNER,
+          (key) => materials.bytesModule.deleteMaterialObjects(materials.byteStore, key),
         );
-        expect([...materials.objects.keys()].filter((key) => key.includes(material.id))).toEqual(
-          [],
-        );
+        expect(
+          [...materials.objects.keys()].filter((key) => key.includes(material.id)).length,
+        ).toBeGreaterThan(0);
         expect(await committedAt(assetId)).not.toBeNull();
       } finally {
         materials.bytesModule.setMaterialByteStoreForTests(null);

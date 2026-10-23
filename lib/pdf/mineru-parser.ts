@@ -41,12 +41,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     );
     pageCount = pages.size;
 
+    // Tables and display equations are cropped into images too and referenced by img_path
+    const imageTypes = new Set(['image', 'table', 'equation']);
     for (const item of contentList) {
-      if (item.type === 'image' && item.img_path) {
+      if (imageTypes.has(item.type) && item.img_path) {
+        const captions = item.type === 'table' ? item.table_caption : item.image_caption;
         const metaEntry = {
           pageIdx: item.page_idx ?? 0,
           bbox: item.bbox || [0, 0, 1000, 1000],
-          caption: Array.isArray(item.image_caption) ? item.image_caption[0] : undefined,
+          caption: Array.isArray(captions) ? captions[0] : undefined,
         };
         // Store under both the full path and basename so lookup works
         // regardless of whether images dict uses "abc.jpg" or "images/abc.jpg"
@@ -68,6 +71,7 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     description?: string;
     width?: number;
     height?: number;
+    path?: string;
   }> = [];
 
   Object.entries(imageData).forEach(([key, base64Url], index) => {
@@ -82,6 +86,8 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
       description: meta?.caption,
       width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
       height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+      // The file the markdown names this image by; the id above replaces it.
+      path: key,
     });
   });
 

@@ -43,6 +43,7 @@ import {
   emitToolCallProviderOptions,
   type ToolCallProviderMetadata,
 } from './provider-metadata';
+import { replayToolCallArguments, toolCallArguments } from './tool-call-arguments';
 
 /**
  * Local re-implementation of pi-ai's `AssistantMessageEventStream` queue. pi
@@ -225,7 +226,8 @@ export function createPartMapper(
         type: 'toolCall',
         id: (part.toolCallId ?? part.id) as string,
         name: (part.toolName ?? part.name) as string,
-        arguments: (part.input ?? part.args ?? {}) as Record<string, unknown>,
+        // Malformed JSON arrives as a raw string; never store it (see helper).
+        arguments: toolCallArguments(part.input ?? part.args),
       };
       // Capture provider-specific metadata (e.g. Gemini thought_signature) via
       // the typed seam so it can be re-emitted on the next turn.
@@ -518,7 +520,7 @@ export function toModelMessages(
             type: 'tool-call',
             toolCallId: c.id,
             toolName: c.name,
-            input: c.arguments,
+            input: replayToolCallArguments(c.arguments),
           };
           const meta = emitToolCallProviderOptions(
             (c as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata,

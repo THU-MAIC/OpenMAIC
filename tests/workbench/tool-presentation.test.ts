@@ -11,6 +11,7 @@ import { COURSE_AUDIO_DECK_TOOL_NAMES } from '@/lib/server/agent-runtime/course-
 import { MATERIAL_MEDIA_TOOL_NAME } from '@/lib/server/agent-runtime/material-media';
 import { CURRICULUM_ALLOWLIST } from '@/lib/server/agent-runtime/curriculum-tools';
 import { MATERIAL_TOOL_NAMES } from '@/lib/server/agent-runtime/material-tools';
+import { MATERIAL_LIBRARY_TOOL_NAMES } from '@/lib/server/agent-runtime/material-library-tools';
 import { ROSTER_TOOL_NAMES } from '@/lib/server/agent-runtime/roster-tools';
 import { VOICE_CLONE_TOOL_NAMES } from '@/lib/server/agent-runtime/voice-clone-tools';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from '@/lib/server/agent-runtime/scene-preview';
@@ -128,20 +129,49 @@ describe('material tool presentation', () => {
     expect(JSON.stringify(presentation)).not.toContain('mat_private_wire_id');
   });
 
-  it('treats a settled material result containing a failed extraction as an error', () => {
+  // #1880: only the call itself failing is an error; a file that failed to
+  // parse is part of a successful result.
+  it('keeps a successful listing with a failed file a success, with no error text', () => {
     const node = toolNode({
       toolName: 'list_materials',
       toolState: 'done',
       toolDetails: {
-        materials: [{ materialId: 'mat_private_wire_id', status: 'failed' }],
+        materials: [{ materialId: 'mat_private_wire_id', extraction: { status: 'failed' } }],
       },
     });
-    expect(isWorkbenchToolFailed(node)).toBe(true);
-    expect(presentTool(node)).toMatchObject({
-      label: '检查材料',
-      errorText: '材料解析失败',
-      hidePayload: true,
+    expect(isWorkbenchToolFailed(node)).toBe(false);
+    const presentation = presentTool(node);
+    expect(presentation).toMatchObject({ label: '检查材料', hidePayload: true });
+    expect(presentation.errorText).toBeUndefined();
+  });
+
+  it('says a failed parse as a quiet chip on a successful extract or wait', () => {
+    const extract = toolNode({
+      toolName: 'extract_material',
+      toolState: 'done',
+      toolDetails: { materialId: 'mat_x', status: 'failed', started: false },
     });
+    const wait = toolNode({
+      toolName: 'wait_for_materials',
+      toolState: 'done',
+      toolDetails: { complete: true, materials: [{ materialId: 'mat_x', status: 'failed' }] },
+    });
+    for (const node of [extract, wait]) {
+      expect(isWorkbenchToolFailed(node)).toBe(false);
+      const presentation = presentTool(node);
+      expect(presentation.errorText).toBeUndefined();
+      expect(presentation.chips).toEqual([{ label: '解析失败', tone: 'neutral' }]);
+    }
+  });
+
+  it('still shows an error when the material call itself failed', () => {
+    const node = toolNode({
+      toolName: 'list_materials',
+      toolState: 'failed',
+      toolDetails: { materials: [{ materialId: 'mat_x', extraction: { status: 'failed' } }] },
+    });
+    expect(isWorkbenchToolFailed(node)).toBe(true);
+    expect(presentTool(node).errorText).toBe('检查材料失败');
   });
 });
 
@@ -339,12 +369,46 @@ describe('DSL stage tools', () => {
         toolDetails: { path: '/outline', detail: 'source', totalChars: 1024 },
       }),
     );
-    expect(presentation).toMatchObject({ label: '读取课堂', subject: '/outline' });
+    expect(presentation).toMatchObject({ label: '读取课堂', subject: '大纲' });
     // The whole stage (path "") reads as the verb alone, never the wire id.
     expect(
       presentTool(toolNode({ toolName: 'read_stage', toolArgs: { stageId: 'stage-x', path: '' } }))
         .subject,
     ).toBeUndefined();
+  });
+
+  it('shows a page read as its page number and planned title, never the JSON path', () => {
+    const plan = [{ order: 3, title: '光的折射', type: 'slide' }];
+    const page = presentTool(
+      toolNode({
+        toolName: 'read_stage',
+        toolArgs: { stageId: 'stage-x', path: '/scenes/3/actions', detail: 'source' },
+      }),
+      plan,
+    );
+    expect(page).toMatchObject({ subject: '光的折射', chips: [{ label: '第 3 页' }] });
+    // A scene-id selector has no human name to show: the verb stands alone.
+    const byId = presentTool(
+      toolNode({
+        toolName: 'read_stage',
+        toolArgs: { stageId: 'stage-x', path: '/scenes/scene-a' },
+      }),
+      plan,
+    );
+    expect(byId.subject).toBeUndefined();
+    expect(byId.chips).toEqual([]);
+  });
+
+  it('labels a page preview with the page order the result reports', () => {
+    const presentation = presentTool(
+      toolNode({
+        toolName: 'render_scene_preview',
+        toolArgs: { stageId: 'stage-x', sceneId: '2' },
+        toolDetails: { sceneId: 'scene-b', order: 2 },
+      }),
+      [{ order: 2, title: '折射定律', type: 'slide' }],
+    );
+    expect(presentation).toMatchObject({ subject: '折射定律', chips: [{ label: '第 2 页' }] });
   });
 
   it('summarises a patch by its intent and the page it landed on', () => {
@@ -431,6 +495,103 @@ describe('untrusted content stays labelled data', () => {
  * builds its capability gate from, so a tool cannot enter the product without
  * passing through here.
  */
+describe('material library rows', () => {
+  const en = createWorkbenchTranslator('en-US');
+  const chipsOf = (toolName: string, toolDetails: unknown, toolArgs = {}) =>
+    presentTool(toolNode({ toolName, toolDetails, toolArgs }), [], en).chips.map(
+      (chip) => chip.label,
+    );
+
+  it('says whether extract_material started the extraction, or found it going or done', () => {
+    expect(chipsOf('extract_material', { status: 'pending', started: true })).toEqual(['Started']);
+    expect(chipsOf('extract_material', { status: 'running', started: false })).toEqual([
+      'Already in progress',
+    ]);
+    expect(chipsOf('extract_material', { status: 'done', started: false })).toEqual([
+      'Already extracted',
+    ]);
+  });
+
+  it('says whether a wait finished or ran out of time', () => {
+    expect(chipsOf('wait_for_materials', { complete: true, timedOut: false })).toEqual([
+      'Finished',
+    ]);
+    expect(chipsOf('wait_for_materials', { complete: false, timedOut: true })).toEqual([
+      'Still extracting',
+    ]);
+  });
+
+  it('shows what an organizing call changed, and when it changed nothing', () => {
+    expect(chipsOf('list_material_folders', { folders: [{}, {}] })).toEqual(['2 folders']);
+    expect(
+      chipsOf('create_material_folder', { status: 'exists', created: false, name: 'Unit' }),
+    ).toEqual(['Folder already existed']);
+    expect(
+      presentTool(
+        toolNode({
+          toolName: 'create_material_folder',
+          toolDetails: { created: true, name: 'Unit 1' },
+        }),
+        [],
+        en,
+      ).subject,
+    ).toBe('Unit 1');
+    expect(chipsOf('rename_material_folder', { status: 'unchanged', name: 'Unit' })).toEqual([
+      'No change',
+    ]);
+    expect(
+      chipsOf('move_materials', { status: 'moved', materialIds: ['a', 'b'], folderId: 'f' }),
+    ).toEqual(['2 materials']);
+    // Named two, moved one: the row counts what moved.
+    expect(
+      chipsOf('move_materials', {
+        status: 'moved',
+        materialIds: ['a', 'b'],
+        folderId: 'f',
+        movedCount: 1,
+      }),
+    ).toEqual(['1 materials']);
+    expect(
+      chipsOf('move_materials', { status: 'moved', materialIds: ['a'], folderId: null }),
+    ).toEqual(['1 materials', 'Moved out of folder']);
+    // Nothing moved: no "moved out" (the result names no source folder either way).
+    expect(
+      chipsOf('move_materials', { status: 'unchanged', materialIds: ['a'], folderId: null }),
+    ).toEqual(['No change']);
+    expect(
+      presentTool(
+        toolNode({
+          toolName: 'move_materials',
+          toolState: 'failed',
+          toolDetails: { status: 'not_movable', folderId: null },
+        }),
+        [],
+        en,
+      ).chips,
+    ).toEqual([]);
+    expect(chipsOf('rename_material', { status: 'unchanged', name: 'Lesson' })).toEqual([
+      'No change',
+    ]);
+  });
+
+  it('names the knowledge base in Chinese and hides the payload', () => {
+    const zh = presentTool(toolNode({ toolName: 'create_material_folder', toolDetails: {} }));
+    expect(zh.label).toBe('新建知识库文件夹');
+    expect(zh.hidePayload).toBe(true);
+    const refused = presentTool(
+      toolNode({
+        toolName: 'move_materials',
+        toolState: 'failed',
+        toolDetails: { status: 'not_movable' },
+      }),
+      [],
+      en,
+    );
+    expect(refused.errorText).toBe('Could not move the materials');
+    expect(refused.chips).toEqual([]);
+  });
+});
+
 describe('allowlist ↔ presentation reconciliation', () => {
   const runnerTools = [
     ...DSL_COURSE_TOOL_NAMES,
@@ -440,6 +601,7 @@ describe('allowlist ↔ presentation reconciliation', () => {
     RENDER_SCENE_PREVIEW_TOOL_NAME,
     ...CURRICULUM_ALLOWLIST,
     ...MATERIAL_TOOL_NAMES,
+    ...MATERIAL_LIBRARY_TOOL_NAMES,
     ...ROSTER_TOOL_NAMES,
     ...VOICE_CLONE_TOOL_NAMES,
     ...SKILL_EDIT_TOOL_NAMES,

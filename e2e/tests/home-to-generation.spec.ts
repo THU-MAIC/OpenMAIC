@@ -123,14 +123,14 @@ test.describe('Course materials in the composer', () => {
     await home.submit();
     await page.waitForURL(/\/generation-preview/);
     expect(run.input.materialIds).toEqual([...library.materials.keys()]);
-    expect(run.input.releaseMaterials).toBe(true);
+    expect(run.input).not.toHaveProperty('releaseMaterials');
     // Nothing was left to parse: the preview shows no analysis step.
     await expect(page.getByText('Analyzing documents')).toHaveCount(0);
-    // The material is the run's now: leaving the composer did not delete it.
+    // The upload remains in the library after leaving the composer.
     expect(library.deleted).toEqual([]);
   });
 
-  test('shows a failed parse with its reason, and removing it deletes it', async ({
+  test('shows a failed parse with its reason, and removing it preserves the library file', async ({
     page,
     mockApi,
   }) => {
@@ -152,8 +152,17 @@ test.describe('Course materials in the composer', () => {
     const [id] = [...library.materials.keys()];
     await chip.getByRole('button', { name: 'Remove file' }).click();
     await expect(chip).toHaveCount(0);
-    await expect.poll(() => library.deleted).toEqual([id]);
     await page.keyboard.press('Escape');
     await expect(home.enterButton).toBeEnabled();
+    // Check the stored upload after removal and a completed browser request,
+    // rather than merely checking that its chip disappeared.
+    const retained = await page.evaluate(async (materialId) => {
+      const response = await fetch(`/api/materials/${materialId}`);
+      return { status: response.status, body: await response.json() };
+    }, id);
+    expect(retained.status).toBe(200);
+    expect(retained.body.material.materialId).toBe(id);
+    expect(library.materials.has(id)).toBe(true);
+    expect(library.deleted).toEqual([]);
   });
 });

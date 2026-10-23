@@ -105,3 +105,23 @@ describe('postWorkbenchMessage course refs', () => {
     expect(useCourseRefsStore.getState().refs).toEqual([]);
   });
 });
+
+describe('the interface language on a sent message (#1880)', () => {
+  it('carries a supported current language, and nothing for an unsupported one', async () => {
+    const i18n = (await import('i18next')).default;
+    const before = i18n.language;
+    try {
+      i18n.language = 'en-US';
+      let calls = captureFetch();
+      await postWorkbenchMessage('sess-1', 'hi');
+      expect(calls[0].init.body).toBe(JSON.stringify({ text: 'hi', locale: 'en-US' }));
+
+      i18n.language = 'xx-YY';
+      calls = captureFetch();
+      await postWorkbenchMessage('sess-1', 'hi');
+      expect(calls[0].init.body).toBe(JSON.stringify({ text: 'hi' }));
+    } finally {
+      i18n.language = before;
+    }
+  });
+});

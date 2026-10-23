@@ -830,3 +830,62 @@ describe('importModelSettings', () => {
     ]);
   });
 });
+
+it('exposes non-secret voice defaults for previewing an inactive deployment provider', async () => {
+  deployment({
+    providers: {
+      active: { preset: 'openai-tts', apiKey: 'active-secret', models: ['tts-1'] },
+      inactive: {
+        preset: 'openai-tts',
+        apiKey: 'inactive-secret',
+        models: ['custom-tts'],
+        options: { defaultVoice: 'vivian' },
+      },
+    },
+    slots: { tts: 'active:tts-1' },
+  });
+  const view = modelSettingsView(null);
+  const inactive = view.providers.find((p) => p.id === 'inactive')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', 'custom-tts', inactive.options)).toBe('vivian');
+  expect(JSON.stringify(inactive)).not.toContain('inactive-secret');
+  expect(view.providers.find((p) => p.id === 'active')?.options).toBeUndefined();
+});
+
+it('also exposes imported workspace defaults for inactive provider previews', async () => {
+  const view = modelSettingsView({
+    config: {
+      providers: {
+        own: {
+          preset: 'openai-tts',
+          apiKey: 'workspace-secret',
+          options: { defaultVoice: 'serena' },
+        },
+      },
+    },
+    revision: 1,
+    unreadableSecrets: [],
+  });
+  const provider = view.providers.find((p) => p.id === 'own')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', undefined, provider.options)).toBe('serena');
+  expect(JSON.stringify(provider)).not.toContain('workspace-secret');
+});
+
+it('passes an inactive provider catalogue to previews when no default is configured', async () => {
+  deployment({
+    providers: {
+      inactive: {
+        preset: 'openai-tts',
+        apiKey: 'secret',
+        models: ['custom-tts'],
+        voices: [{ id: 'vivian', name: 'Vivian' }],
+      },
+    },
+  });
+  const provider = modelSettingsView(null).providers.find((p) => p.id === 'inactive')!;
+  const { defaultVoiceFor } = await import('@/lib/audio/tts-selection');
+  expect(defaultVoiceFor('openai-tts', 'custom-tts', provider.options, provider.voices)).toBe(
+    'vivian',
+  );
+});

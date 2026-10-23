@@ -117,6 +117,12 @@ export function agentVoiceCatalog(
       continue;
     }
     if (config.requiresApiKey && !hasKey()) continue;
+    // An explicit deployment catalogue replaces presets for both listing and binding.
+    if (slot?.voices?.length) {
+      providers.push({ ...config, voices: slot.voices.map((voice) => ({ ...voice })) });
+      continue;
+    }
+
     providers.push(config);
   }
   // A registration backend means clone-kind registered voices are
@@ -378,7 +384,11 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
         content: [
           {
             type: 'text',
-            text: `Classroom roster set: ${roster.length} agents, teacher "${teacher?.name}". ${summary}.`,
+            text:
+              `Classroom roster set: ${roster.length} agents, teacher "${teacher?.name}". ${summary}. ` +
+              // Synthesis reads the roster at call time, but only for lines it
+              // voices: audio already on a page is not redone by this write.
+              'Narration audio already on pages keeps its old voice until generate_tts runs on them with force; generate_tts reports the voice it actually used.',
           },
         ],
         details: { roster },

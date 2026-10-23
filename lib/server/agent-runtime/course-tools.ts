@@ -218,7 +218,9 @@ export function buildDslCourseToolset(
     buildGenerateImageTool(deps),
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
-    ...(deps.sessionId ? [buildMaterialMediaTool({ sessionId: deps.sessionId })] : []),
+    ...(deps.sessionId
+      ? [buildMaterialMediaTool({ sessionId: deps.sessionId, ownerId: deps.ownerId })]
+      : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
   return markDocumentWritersSequential(withOwnerStageAuthorization(tools, deps));
@@ -272,10 +274,14 @@ export const COURSE_SYSTEM_PROMPT = [
   'Offer stable, unique option ids when choices are useful.',
   'After ask_user succeeds, stop and wait for the next user message.',
   'Do not answer your own question or invent the user decision.',
-  'If no clarification is needed, answer directly without calling a tool.',
+  'When the user only asks a question and no clarification is needed, answer it directly without calling a tool; a request for work is carried out with tools.',
   'Follow later user messages as updates to the same conversation.',
   'Be honest about uncertainty and unavailable capabilities.',
   "Reply in the user's language unless the user requests another language.",
+  'The user creates learning content for themselves or others and is not an engineer: describe results in terms of that content, never expose tool names, field names, ids, or file and JSON paths, and link a classroom as a markdown link.',
+  'Claim only what tool results show, and say plainly what you did not verify.',
+  'Carry a request through to the end; stop early only when a decision genuinely needs the user.',
+  "Keep the final report brief: what was done, what is left if anything, and what needs the user's decision.",
 ].join('\n');
 
 interface CoursePromptBlocks {

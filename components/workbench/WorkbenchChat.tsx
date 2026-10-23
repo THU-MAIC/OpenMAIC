@@ -56,6 +56,7 @@ import { ComposerPillRow } from './composer-pill';
 import { ElementRefPills } from './element-ref-pills';
 import { CourseRefPills } from './course-ref-pills';
 import { CourseMentionMenu } from './course-mention-menu';
+import { stagedMaterialOf, type MaterialMentionCandidate } from '@/lib/workbench/material-mention';
 import {
   composerImagesFromClipboard,
   composerImagesFromDrop,
@@ -78,7 +79,10 @@ import {
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
+  useMaterialMentions,
+  useMaterialSeed,
   type AgentSkillInfo,
+  type MaterialSeed,
 } from './compose-extras';
 import { insertSkillHandle, seedSlashQuery } from '@/lib/workbench/composer-skills';
 import { useSkillHandleBackspace } from './use-skill-handle-backspace';
@@ -111,6 +115,9 @@ const NO_COURSE_REFS: CourseRef[] = [];
 export function WorkbenchChat({
   hosted = false,
   adjacentPanelOpen = false,
+  covered = false,
+  materialSeed,
+  onMaterialSeedConsumed,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -125,6 +132,15 @@ export function WorkbenchChat({
    * changes, so a hosted chat must not use that value to size its transcript.
    */
   adjacentPanelOpen?: boolean;
+  /**
+   * Another page covers this conversation (the knowledge base). Its Escapes
+   * close that page's own search, menus and dialogs; none of them is the
+   * teacher asking to stop a run they cannot see.
+   */
+  covered?: boolean;
+  /** A knowledge base hand-over; this composer takes the ones for its own owner key. */
+  materialSeed?: MaterialSeed | null;
+  onMaterialSeedConsumed?: (key: number) => void;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -234,6 +250,14 @@ export function WorkbenchChat({
   const [pendingSend, setPendingSend] = useState(false);
   const sendStartedStatus = useRef<SessionStatus | null>(null);
   /**
+   * Which draft a send belongs to. A knowledge base hand-over starts a new
+   * draft in this same composer (often under the same `draft:<course>` key)
+   * while the previous draft's first message may still be on its way; that
+   * send's completion must then leave the new draft alone -- no restored text,
+   * no settling of its picks, no busy or STOP state of its own.
+   */
+  const sendDraft = useRef(0);
+  /**
    * The one question whose form the user waved off, by node key. Local and
    * deliberately shallow: it is a "not now", not an answer, so nothing about it
    * is persisted and nothing about the question changes. Keying it by node means
@@ -249,6 +273,43 @@ export function WorkbenchChat({
   const [pendingStop, setPendingStop] = useState(false);
   // Durable material assets can be attached mid-conversation too.
   const materials = useComposerMaterials();
+  const seedTargeted =
+    materialSeed?.target.kind === 'chat' && materialSeed.target.ownerKey === composerOwnerId;
+  // A hand-over from the knowledge base starts a new conversation: what was
+  // typed or staged for the one before stays behind. This composer is not
+  // remounted for it -- the same draft key, or a session it showed before --
+  // so it is cleared here, once per hand-over. Declared before
+  // `useMaterialSeed`: in the same commit it clears, then the source is staged.
+  const handOverKey = seedTargeted ? materialSeed.key : null;
+  useEffect(() => {
+    if (handOverKey === null) return;
+    // A send still on its way belongs to the draft before this one: its
+    // completion is fenced off (see `submit`), and the new draft is free to
+    // send at once rather than waiting behind it.
+    sendDraft.current += 1;
+    setBusy(false);
+    sendStartedStatus.current = null;
+    setPendingSend(false);
+    replaceDraft('');
+    setSlashDismissed(null);
+    setMentionDismissed(null);
+    materials.startOver();
+    const elementRefs = useElementRefsStore.getState();
+    if (elementRefs.ownerSessionId === composerOwnerId) elementRefs.clear();
+    const courseRefs = useCourseRefsStore.getState();
+    if (courseRefs.ownerSessionId === composerOwnerId) courseRefs.clear();
+    // Once per hand-over key; `materials.startOver` and the owner are read as
+    // they are then (the same event-like reset as the home composer's).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handOverKey]);
+  // While the material handed over is waiting for the gate, a send would
+  // leave without it: the button and Enter (via `send`) both wait.
+  const awaitingMaterial = useMaterialSeed({
+    seed: materialSeed,
+    targeted: seedTargeted,
+    materials,
+    onConsumed: onMaterialSeedConsumed,
+  });
   // Slide elements the user pointed at on the canvas (the edit dock's lasso).
   // The staging lives in its own store because the picker is on the other side
   // of the workspace; this surface only reads it and clears it on send.
@@ -321,6 +382,7 @@ export function WorkbenchChat({
    * and typing anything else brings it back.
    */
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
   const {
     menu: openMenu,
     slash,
@@ -333,9 +395,10 @@ export function WorkbenchChat({
     courseMenuRequested: mentionOpen,
     // The `@` keystroke and the `@` button hold the same bar: no courses to
     // name means no menu at all, not an empty one.
-    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0,
+    // Classrooms, or the knowledge base when materials are enabled.
+    courseMenuAvailable: (navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled,
   });
-  const mentionQuery = mention?.query ?? null;
+  const mentionQuery = mentionOpen ? pickerQuery : (mention?.query ?? '');
   const mentionMenuOpen = openMenu === 'course';
   const mentionMenuId = useId();
   const untitledCourse = t('workspace.untitledCourse');
@@ -369,13 +432,12 @@ export function WorkbenchChat({
     composerRef.current?.focus();
   }, [draft]);
   /**
-   * The `@` button's way in. Focus FIRST: the picker's keyboard contract
-   * (↑/↓/Enter) lives on the textarea, so the button has to hand the keys over
-   * to it.
+   * The toolbar opens the shared picker; its search field takes focus on mount.
    */
   const openMention = useCallback(() => {
     composerRef.current?.focus();
     setMentionDismissed(null);
+    setPickerQuery('');
     setMentionOpen(true);
   }, []);
   /**
@@ -383,26 +445,49 @@ export function WorkbenchChat({
    * text is not part of the sentence, so it goes; a menu opened from the button
    * has no trigger to remove and leaves the draft alone.
    */
+  /** What every pick leaves behind: the token out of the draft, the menu shut. */
+  const finishMentionPick = useCallback(() => {
+    // The splice can land mid-sentence now, so the caret goes back where the
+    // token was rather than wherever a shrinking controlled value leaves it.
+    const removal = !mentionOpen && mention ? replaceCourseMention(draft, mention) : null;
+    const next = removal?.draft ?? draft;
+    if (removal) {
+      pendingCaret.current = removal.caret;
+      setCaret(removal.caret);
+      setDraft(removal.draft);
+    }
+    setMentionDismissed(mentionOpen ? draft : null);
+    setMentionOpen(false);
+    // The other direction of the same rule: what the splice leaves behind may
+    // be a live `/handle`, and finishing with one menu must not open another.
+    setSlashDismissed(next);
+    composerRef.current?.focus();
+  }, [draft, mention, mentionOpen]);
   const pickMention = useCallback(
     (candidate: CourseMentionCandidate) => {
       const ref = makeCourseRef(candidate.stageId, candidate.title);
       if (ref) useCourseRefsStore.getState().add(ref);
-      // The splice can land mid-sentence now, so the caret goes back where the
-      // token was rather than wherever a shrinking controlled value leaves it.
-      const removal = mention ? replaceCourseMention(draft, mention) : null;
-      const next = removal?.draft ?? draft;
-      if (removal) {
-        pendingCaret.current = removal.caret;
-        setCaret(removal.caret);
-        setDraft(removal.draft);
-      }
-      setMentionDismissed(null);
-      setMentionOpen(false);
-      // The other direction of the same rule: what the splice leaves behind may
-      // be a live `/handle`, and finishing with one menu must not open another.
-      setSlashDismissed(next);
+      finishMentionPick();
     },
-    [draft, mention],
+    [finishMentionPick],
+  );
+  /**
+   * A knowledge-base pick stages the material as one more pill, exactly like a
+   * finished upload: nothing is attached until the message is sent.
+   */
+  const materialMentions = useMaterialMentions({
+    open: mentionMenuOpen,
+    enabled: materials.enabled,
+    query: mentionQuery ?? '',
+    sessionId: draftConversation ? null : sessionId,
+    staged: materials.materials,
+  });
+  const pickMaterialMention = useCallback(
+    (candidate: MaterialMentionCandidate) => {
+      materials.addExisting(stagedMaterialOf(candidate));
+      finishMentionPick();
+    },
+    [finishMentionPick, materials],
   );
 
   /**
@@ -590,7 +675,7 @@ export function WorkbenchChat({
   }, [busy, pendingStop, sessionId, t]);
 
   useDoubleEscapeStop({
-    generating: live && !busy && !pendingStop && !!sessionId,
+    generating: live && !busy && !pendingStop && !!sessionId && !covered,
     onStop: () => {
       void stop();
     },
@@ -614,6 +699,8 @@ export function WorkbenchChat({
       accepted: boolean;
       elementRefsAccepted: boolean;
       courseRefsAccepted: boolean;
+      /** A hand-over started a new draft while this was on its way: leave that draft alone. */
+      superseded?: true;
     }> => {
       if (!sessionId && !draftConversation) {
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
@@ -621,6 +708,8 @@ export function WorkbenchChat({
       if (busy) {
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       }
+      const draftAtSend = sendDraft.current;
+      const superseded = () => draftAtSend !== sendDraft.current;
       setBusy(true);
       // Optimistic: flip the composer to STOP right now. The fold's status only
       // moves once the runner claims the requeued row (`session_resumed`) — up
@@ -645,6 +734,16 @@ export function WorkbenchChat({
               elementRefs: refs,
               courseRefs: courses,
             });
+        // The busy and STOP state now belong to the new draft (the hand-over
+        // reset them); the message itself went where it went.
+        if (superseded()) {
+          return {
+            accepted: result.accepted,
+            elementRefsAccepted: false,
+            courseRefsAccepted: false,
+            superseded: true,
+          };
+        }
         if (!result.accepted) {
           sendStartedStatus.current = null;
           setPendingSend(false);
@@ -656,12 +755,23 @@ export function WorkbenchChat({
           courseRefsAccepted: result.courseRefsAccepted,
         };
       } catch (err) {
+        // Still said: the teacher typed that message and should know it did
+        // not go. Its text is not put back into the new draft.
+        toast.error(err instanceof Error ? err.message : t('workbench.chat.sendFailed'));
+        if (superseded()) {
+          return {
+            accepted: false,
+            elementRefsAccepted: false,
+            courseRefsAccepted: false,
+            superseded: true,
+          };
+        }
         sendStartedStatus.current = null;
         setPendingSend(false);
-        toast.error(err instanceof Error ? err.message : t('workbench.chat.sendFailed'));
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       } finally {
-        setBusy(false);
+        // A send the new draft started meanwhile owns `busy` now.
+        if (!superseded()) setBusy(false);
       }
     },
     [busy, draftConversation, sessionId, status, t],
@@ -691,6 +801,7 @@ export function WorkbenchChat({
       busy ||
       !canSend ||
       materials.busy ||
+      awaitingMaterial ||
       // A click on the send button must respect an open menu exactly as Enter
       // does (onKeyDown returns early) — sending a half-typed `/query` is the
       // alternative.
@@ -715,8 +826,15 @@ export function WorkbenchChat({
     setMentionDismissed(null);
     setMentionOpen(false);
     const result = await submit(text, selectedMaterials, selectedRefs, selectedCourses);
+    // A hand-over started a new draft meanwhile and already cleared this one's
+    // text, picks and references: nothing here is the new draft's to settle
+    // or restore.
+    if (result.superseded) return;
     if (result.accepted) {
-      materials.clear();
+      // One staging list serves every conversation this pane shows, so the
+      // sent picks leave it even when the conversation changed meanwhile;
+      // removeSent matches the sent objects, so later picks stay.
+      materials.removeSent(selectedMaterials);
       // Remove only this request's snapshot. Picks added while POST was pending
       // belong to the next message and must survive; an owner change meanwhile
       // also fences this completion from session B's draft. On the draft path the
@@ -931,9 +1049,14 @@ export function WorkbenchChat({
                 {mentionMenuOpen ? (
                   <CourseMentionMenu
                     id={mentionMenuId}
+                    search={
+                      mentionOpen ? { query: pickerQuery, onChange: setPickerQuery } : undefined
+                    }
                     candidates={mentionCandidates}
                     onClose={closeMention}
                     onPick={pickMention}
+                    materials={materialMentions}
+                    onPickMaterial={pickMaterialMention}
                   />
                 ) : null}
                 {/* Two layers, one metric class: the mirror behind it draws the
@@ -989,11 +1112,17 @@ export function WorkbenchChat({
                     label={t('proMode.attach')}
                     onFiles={materials.addFiles}
                   />
-                  {(navigation?.courseOptions?.length ?? 0) > 0 ? (
+                  {/* Shown exactly when the menu can open: classrooms to name,
+                      or the knowledge base to pick from. */}
+                  {(navigation?.courseOptions?.length ?? 0) > 0 || materials.enabled ? (
                     <AtSignButton
                       testId="workbench-mention-button"
                       disabled={busy || !canSend}
-                      label={t('proMode.mentionCourse')}
+                      label={t(
+                        materials.enabled
+                          ? 'proMode.mentionCourseOrMaterial'
+                          : 'proMode.mentionCourse',
+                      )}
                       onClick={openMention}
                     />
                   ) : null}
@@ -1042,7 +1171,10 @@ export function WorkbenchChat({
                       data-mention-keep-open=""
                       onClick={() => void send()}
                       disabled={
-                        busy || (!draft.trim() && materials.materials.length === 0) || !canSend
+                        busy ||
+                        (!draft.trim() && materials.materials.length === 0) ||
+                        !canSend ||
+                        awaitingMaterial
                       }
                       title={t('workbench.common.send')}
                       aria-label={t('workbench.common.send')}

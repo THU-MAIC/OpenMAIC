@@ -12,6 +12,7 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
+        integration/workbench-home,
       ]
   pull_request:
     branches:
@@ -21,6 +22,7 @@ on:
         integration/kv-asset-server-backend,
         integration/agent-workbench,
         integration/material-library,
+        integration/workbench-home,
       ]
 
 concurrency:
@@ -87,7 +89,7 @@ jobs:
       # once, so the previous commit is not the range that needs checking, and
       # publishing requires this run to be green.
       - name: Package version bumps (main push)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           base="$BEFORE_SHA"
@@ -330,7 +332,10 @@ jobs:
           COVER_LAYOUT_BROWSER: '1'
 
       - name: Interactive static HTML Chromium smoke
-        run: pnpm exec vitest run tests/video-export/interactive-static-html.browser.test.ts
+        run: >-
+          pnpm exec vitest run
+          tests/video-export/interactive-static-html.browser.test.ts
+          tests/video-export/interactive-self-hosted.browser.test.ts
         env:
           INTERACTIVE_STATIC_BROWSER: '1'
 

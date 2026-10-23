@@ -142,6 +142,8 @@ async function renderRail(courseRuns: ReadonlyMap<string, RunSnapshot>, initial:
           onOpenSession: vi.fn(),
           onNewSession: vi.fn(),
           onGoHome: vi.fn(),
+          libraryOpen: false,
+          onOpenLibrary: vi.fn(),
           onExitPro: vi.fn(),
           onSessionDeleted: vi.fn(),
           onRenameSession: vi.fn(async () => null),
