@@ -6,6 +6,7 @@ import { ToolCard } from '../chat/tool-card';
 import { ThinkingBlock } from '../chat/thinking-block';
 import { WaitingBar } from '../chat/waiting-bar';
 import { TextBlock } from '../chat/text-block';
+import { QuestionCard } from '../chat/question-card';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { requestActivity } from '@/lib/workbench/request-activity';
 
@@ -25,7 +26,10 @@ export function WorkspaceRequestActivity() {
     >
       {stepId ? <StepVisualizer stepId={stepId} /> : null}
       <div className="w-full max-w-lg">
-        {node.kind === 'tool' ? (
+        {node.kind === 'question' ? (
+          // Read-only: the answer is given in the conversation's own form.
+          <QuestionCard node={node} t={t} />
+        ) : node.kind === 'tool' ? (
           <ToolCard node={node} t={t} />
         ) : node.kind === 'thinking' ? (
           <ThinkingBlock

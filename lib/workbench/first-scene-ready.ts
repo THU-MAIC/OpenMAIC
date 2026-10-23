@@ -14,6 +14,15 @@ export async function hasReadableFirstScene(stageId: string): Promise<boolean> {
   }
 }
 
+/** Whether any of these courses is listed with a persisted scene. */
+export function anyCourseHasScene(
+  courseIds: readonly string[],
+  courses: readonly { readonly id: string; readonly sceneCount: number }[],
+): boolean {
+  const ids = new Set(courseIds);
+  return courses.some((course) => ids.has(course.id) && course.sceneCount > 0);
+}
+
 /** Read-only readiness probe, owned and cancelled by the shell's current navigation. */
 export function watchFirstScene(
   courseIds: readonly string[],

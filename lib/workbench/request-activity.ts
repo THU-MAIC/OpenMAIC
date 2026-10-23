@@ -24,13 +24,20 @@ export function requestActivity(
   status: SessionStatus,
   replaying: boolean,
 ) {
-  if (replaying || !['running', 'queued', 'connecting'].includes(status)) return null;
+  if (replaying) return null;
   // Never borrow the preceding answer's activity while the next request starts.
   const start = requestStartIndex(chat);
   const node = chat
     .slice(start + 1)
-    .findLast((item) => ['waiting', 'thinking', 'assistant', 'tool'].includes(item.kind));
+    .findLast((item) =>
+      ['waiting', 'thinking', 'assistant', 'tool', 'question'].includes(item.kind),
+    );
   if (!node) return null;
+  // `ask_user` ends the run, but its open question is still the request's
+  // current state: the user is the one to move next. The fold's answered flag
+  // retires it.
+  if (node.kind === 'question') return node.questionAnswered ? null : { node, stepId: undefined };
+  if (!['running', 'queued', 'connecting'].includes(status)) return null;
   return {
     node,
     stepId:

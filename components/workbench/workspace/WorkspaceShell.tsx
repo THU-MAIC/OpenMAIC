@@ -122,7 +122,7 @@ import { WorkspaceChatPane } from './WorkspaceChatPane';
 import { WorkspaceClassroomPane } from './WorkspaceClassroomPane';
 import { WorkspaceRequestActivity } from './WorkspaceRequestActivity';
 import { requestStartIndex } from '@/lib/workbench/request-activity';
-import { watchFirstScene } from '@/lib/workbench/first-scene-ready';
+import { anyCourseHasScene, watchFirstScene } from '@/lib/workbench/first-scene-ready';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
@@ -940,6 +940,42 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     ),
   );
   const pageCount = useWorkbenchStore((s) => Object.keys(s.pages).length);
+  const touchedStageIds = useWorkbenchStore((s) => s.touchedStageIds);
+  // The request panel and the first-scene handoff cover only the time before
+  // this conversation's course has a scene; after that the workbench behaves
+  // as it did. An earlier request counts once one of its tool calls persisted
+  // a page (the fold stamps the card's sceneId at its checkpoint), or once a
+  // course it linked, touched or is bound to is listed with scenes. This
+  // request's own course counts once it has been handed off: it is in the tab
+  // set, open or closed, or — after a session-only refresh, which restores no
+  // tabs — in the remembered tab set the handoff recovery already consults.
+  const earlierRequestMadeScene = useWorkbenchStore((s) =>
+    s.chat
+      .slice(0, requestStartIndex(s.chat) + 1)
+      .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
+  );
+  const createdThisRequest = useMemo(
+    () => JSON.parse(requestCreatedCourseIds) as string[],
+    [requestCreatedCourseIds],
+  );
+  const earlierCourseHasScene =
+    earlierRequestMadeScene ||
+    anyCourseHasScene(
+      [
+        ...stageLinkStageIds,
+        ...touchedStageIds,
+        ...(sessionStageId ? [sessionStageId] : []),
+      ].filter((id) => !createdThisRequest.includes(id)),
+      courses.state === 'ready' ? courses.classrooms : [],
+    );
+  // Only a course this request created can be in it; the reader is SSR-safe.
+  const rememberedTabs = createdThisRequest.length > 0 ? readCourseTabsMemory() : null;
+  const requestCourseHandedOff = createdThisRequest.some((id) =>
+    [courseTabs, rememberedTabs].some(
+      (tabs) => tabs?.courseIds.includes(id) || (tabs?.closedCourseIds ?? []).includes(id),
+    ),
+  );
+  const beforeFirstScene = !earlierCourseHasScene && !requestCourseHandedOff;
   const paneSessionStageId = useMemo(
     () => sessions.find((session) => session.id === panes.sessionId)?.stageId ?? null,
     [panes.sessionId, sessions],
@@ -970,10 +1006,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     const activeRequestCreates =
       !panes.courseId &&
       !panes.library &&
+      !earlierCourseHasScene &&
       ['running', 'queued', 'connecting'].includes(attachedSessionStatus)
-        ? (JSON.parse(requestCreatedCourseIds) as string[]).filter(
-            (id) => !rememberedCourseIds.includes(id),
-          )
+        ? createdThisRequest.filter((id) => !rememberedCourseIds.includes(id))
         : [];
     const eligibleLinks = stageLinkStageIds.filter(
       (id, index) => index >= replayedStageLinkCount || activeRequestCreates.includes(id),
@@ -989,8 +1024,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       replaying: attachedSessionReplaying,
     });
     if (open.length === 0) return;
-    // Existing classroom and library background navigation retain their contract.
-    if (panes.courseId || panes.library) {
+    // Existing classroom and library background navigation retain their
+    // contract, and so does a conversation that already has a course.
+    if (panes.courseId || panes.library || earlierCourseHasScene) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize the existing live course-link behavior
       openCourses(open);
       return;
@@ -999,7 +1035,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }, [
     attachedSessionId,
     attachedSessionReplaying,
-    requestCreatedCourseIds,
+    createdThisRequest,
+    earlierCourseHasScene,
     courseTabs,
     courses.classrooms,
     courses.state,
@@ -1383,7 +1420,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         />
       ) : null}
 
-      {!panes.courseId && !render.library && !narrow && panes.sessionId === attachedSessionId ? (
+      {!panes.courseId &&
+      !render.library &&
+      !narrow &&
+      beforeFirstScene &&
+      panes.sessionId === attachedSessionId ? (
         <WorkspaceRequestActivity />
       ) : null}
 

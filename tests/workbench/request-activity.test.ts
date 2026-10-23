@@ -41,6 +41,7 @@ import {
   createInitialSessionState,
   foldEvent,
   type WorkbenchEvent,
+  type WorkbenchFold,
 } from '@/lib/workbench/session-store';
 it('follows real lifecycle frames: internal turn_end is not answer completion', () => {
   let id = 0;
@@ -91,4 +92,62 @@ it('keeps a real running tool through steer but separates a queued new request',
   state = foldEvent(state, frame('session_end', { status: 'succeeded' }));
   state = foldEvent(state, frame('user_message', { text: 'Next question', delivery: 'queued' }));
   expect(requestActivity(state.chat, 'queued', false)?.node.kind).toBe('waiting');
+});
+
+describe('waiting for the user to confirm a plan (ask_user)', () => {
+  const run = () => {
+    let id = 0;
+    let state: WorkbenchFold = createInitialSessionState();
+    const fold = (type: string, data: unknown = {}) => {
+      state = foldEvent(state, { id: ++id, ts: id, attempt: 1, type, data });
+      return state;
+    };
+    fold('session_start', { prompt: 'Make a course on photosynthesis' });
+    fold('message_start', { message: { role: 'assistant', content: [] } });
+    fold('message_end', {
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Plan: 1. Light 2. Quiz' }] },
+    });
+    fold('tool_execution_start', { toolCallId: 'ask', toolName: 'ask_user', args: {} });
+    fold('user_question', {
+      question: 'Shall I build this plan?',
+      options: [
+        { id: 'yes', label: 'Go ahead' },
+        { id: 'change', label: 'Change it' },
+      ],
+    });
+    fold('tool_execution_end', { toolCallId: 'ask', toolName: 'ask_user', result: {} });
+    fold('agent_end');
+    fold('session_end', { status: 'succeeded' });
+    return { fold, state: () => state };
+  };
+
+  it('keeps the open question as the activity after ask_user ends the run', () => {
+    const { state } = run();
+    const activity = requestActivity(state().chat, state().status, false);
+    expect(state().status).toBe('succeeded');
+    expect(activity?.node.kind).toBe('question');
+    expect(activity?.node.text).toBe('Shall I build this plan?');
+    expect(activity?.stepId).toBeUndefined();
+  });
+
+  it('drops the waiting state once the user answers, and follows the next run', () => {
+    const { fold } = run();
+    let state = fold('user_message', { text: 'Go ahead', delivery: 'queued' });
+    expect(requestActivity(state.chat, state.status, false)).toBeNull();
+    state = fold('session_resumed', {});
+    expect(requestActivity(state.chat, 'running', false)?.node.kind).not.toBe('question');
+  });
+
+  it('never revives an answered question from history or replay', () => {
+    const { fold, state } = run();
+    expect(requestActivity(state().chat, state().status, true)).toBeNull();
+    fold('user_message', { text: 'Go ahead', delivery: 'queued' });
+    fold('session_resumed', {});
+    fold('agent_end');
+    const settled = fold('session_end', { status: 'succeeded' });
+    expect(settled.chat.some((node) => node.kind === 'question' && node.questionAnswered)).toBe(
+      true,
+    );
+    expect(requestActivity(settled.chat, settled.status, false)).toBeNull();
+  });
 });

@@ -1667,6 +1667,183 @@ describe('the knowledge base page', () => {
       expect(mocks.chatPaneProps?.fill).toBe(true);
     });
 
+    it('waits on the open plan question before any scene exists, until it is answered', async () => {
+      const question: ChatNode = {
+        key: 'q',
+        kind: 'question',
+        text: 'Shall I build this plan?',
+        questionOptions: [{ id: 'yes', label: 'Go ahead' }],
+      };
+      mocks.store.status = 'succeeded';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a course' },
+        { key: 'a', kind: 'assistant', text: 'Plan: 1. Light 2. Quiz' },
+        question,
+      ];
+      await render();
+      const pane = container?.querySelector('[data-testid="workspace-request-activity"]');
+      expect(pane).not.toBeNull();
+      const card = pane?.querySelector('[data-testid="workbench-question-card"]');
+      expect(card?.getAttribute('data-answered')).toBe('false');
+      expect(card?.textContent).toContain('workbench.question.waiting');
+      expect(card?.textContent).toContain('Shall I build this plan?');
+
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a course' },
+        { key: 'a', kind: 'assistant', text: 'Plan: 1. Light 2. Quiz' },
+        { ...question, questionAnswered: true },
+        { key: 'u2', kind: 'user', text: 'Go ahead' },
+      ];
+      await render();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+    });
+
+    it.each(['linked', 'touched', 'bound', 'generated'] as const)(
+      'adds no panel once this conversation has a course with scenes (%s)',
+      async (how) => {
+        if (how === 'linked') {
+          mocks.store.stageLinkStageIds = ['stage-1'];
+          mocks.store.replayedStageLinkCount = 1;
+        }
+        if (how === 'touched') mocks.store.touchedStageIds = ['stage-1'];
+        if (how === 'bound') mocks.store.stageId = 'stage-1';
+        // An unbound home session's list row is not refreshed per page, so it
+        // can still say 0 scenes; the stream's checkpointed card is the fact.
+        if (how === 'generated') {
+          mocks.courses = {
+            ...mocks.courses!,
+            classrooms: [{ ...classroom('stage-1'), sceneCount: 0 }],
+          };
+          mocks.store.stageLinkStageIds = ['stage-1'];
+          mocks.store.replayedStageLinkCount = 1;
+        }
+        mocks.store.status = 'running';
+        mocks.store.chat = [
+          ...(how === 'generated'
+            ? ([
+                { key: 'u0', kind: 'user', text: 'Make a course' },
+                {
+                  key: 'scene',
+                  kind: 'tool',
+                  text: '',
+                  toolName: 'generate_scene',
+                  toolState: 'done',
+                  sceneId: 'first',
+                },
+              ] as ChatNode[])
+            : []),
+          { key: 'u', kind: 'user', text: 'A follow-up question' },
+          { key: 'w', kind: 'waiting', text: '' },
+        ];
+        await render();
+        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+        expect(mocks.chatPaneProps?.fill).toBe(true);
+        expect(window.location.search).toBe('?session=session-1');
+      },
+    );
+
+    it("does not bring the panel back after this request's course was handed off and closed", async () => {
+      vi.mocked(fetch).mockImplementation(
+        async (input) =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () =>
+              String(input).includes('/manifest')
+                ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
+                : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
+          }) as Response,
+      );
+      mocks.store.status = 'running';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a course' },
+        {
+          key: 'created',
+          kind: 'tool',
+          text: '',
+          toolName: 'create_stage',
+          toolState: 'done',
+          toolDetails: { stageId: 'stage-1' },
+        },
+        { key: 'scene', kind: 'tool', text: '', toolName: 'generate_scene', toolState: 'running' },
+      ];
+      await render();
+      mocks.store.stageLinkStageIds = ['stage-1'];
+      await render();
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+      const browser = mocks.classroomProps?.browser as { onCloseCourse: (id: string) => void };
+      await act(async () => browser.onCloseCourse('stage-1'));
+      await render();
+      expect(window.location.search).toBe('?session=session-1');
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+    });
+
+    it('does not revive the panel after a refresh once the handed-off course was closed', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      let id = 0;
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a course' });
+      event('tool_execution_start', { toolCallId: 'create', toolName: 'create_stage', args: {} });
+      event('stage_link', { stageId: 'stage-1' });
+      event('tool_execution_end', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        result: { content: [], details: { stageId: 'stage-1' } },
+      });
+      event('tool_execution_start', { toolCallId: 'page', toolName: 'generate_scene', args: {} });
+      event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
+      Object.assign(mocks.store, folded, {
+        sessionId: 'session-1',
+        replaying: false,
+        replayedStageLinkCount: 1,
+      });
+      // The tab was opened by the handoff and closed by the user before the
+      // refresh; a session-only URL restores no tabs, only this memory.
+      localStorage.setItem(
+        COURSE_TABS_STORAGE_KEY,
+        JSON.stringify({ courseIds: [], activeCourseId: null, closedCourseIds: ['stage-1'] }),
+      );
+      await render();
+      expect(window.location.search).toBe('?session=session-1');
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+    });
+
+    it('opens a later course on its link, as before, once the conversation has one', async () => {
+      mocks.courses = {
+        ...mocks.courses!,
+        classrooms: [classroom('stage-1'), { ...classroom('stage-2'), sceneCount: 0 }],
+      };
+      mocks.store.status = 'running';
+      mocks.store.stageLinkStageIds = ['stage-1'];
+      mocks.store.replayedStageLinkCount = 1;
+      await render();
+      vi.mocked(fetch).mockClear();
+      mocks.store.stageLinkStageIds = ['stage-1', 'stage-2'];
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a second course' },
+        {
+          key: 'created',
+          kind: 'tool',
+          text: '',
+          toolName: 'create_stage',
+          toolState: 'done',
+          toolDetails: { stageId: 'stage-2' },
+        },
+      ];
+      await render();
+      expect(window.location.search).toBe('?session=session-1&course=stage-2');
+      expect(
+        vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/manifest')),
+      ).toHaveLength(0);
+    });
+
     it('does not reopen an agent-created course after Back without the page either', async () => {
       vi.mocked(fetch).mockImplementation(
         async (input) =>
