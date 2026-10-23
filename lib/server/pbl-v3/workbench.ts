@@ -1,4 +1,5 @@
 import 'server-only';
+import { notifyDurableAgentEvent } from '@/lib/server/agent-runtime/event-notify-bus';
 import { recordLearningEvidence } from './evidence';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
@@ -50,11 +51,16 @@ async function permissions(store: LearningStore, row: Study) {
 export async function workbenchView(
   principal: OwnerPrincipal,
   id: string,
+  options: { passive?: boolean } = {},
 ): Promise<LearningWorkbench> {
   const store = await LearningStore.open(),
     row = await store.get(id, principal.ownerId),
     service = await SandboxService.forOwner(principal);
-  assertEnvironmentReady(await touchEnvironment(store, row, service));
+  assertEnvironmentReady(
+    options.passive
+      ? await service.get(requireEnvironment(row))
+      : await touchEnvironment(store, row, service),
+  );
   const environmentId = requireEnvironment(row),
     policy = await permissions(store, row);
   const commands = [];
@@ -120,6 +126,7 @@ export async function workbenchCommand(
     for (const terminal of await service.listTerminals(command.environmentId))
       if (terminal.state !== 'closed')
         await service.closeTerminal(command.environmentId, terminal.id);
+    await notifyDurableAgentEvent(store.pool, { kind: 'session', sessionId: id });
     return { stopped: true };
   }
   if (command.action === 'input') {
@@ -305,6 +312,7 @@ export async function workbenchCommand(
       receiptId,
       JSON.stringify(result),
     ]);
+    await notifyDurableAgentEvent(store.pool, { kind: 'session', sessionId: id });
     return result;
   });
 }

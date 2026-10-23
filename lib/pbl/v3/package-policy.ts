@@ -4,7 +4,6 @@ export const PROJECT_LIMITS = {
   files: 512,
   fileBytes: 512 * 1024,
   bytes: 8 * 1024 * 1024,
-  teachingBytes: 32 * 1024,
   projects: 16,
   scenes: 256,
 };

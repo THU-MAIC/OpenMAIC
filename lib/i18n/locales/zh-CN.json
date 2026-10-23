@@ -2539,6 +2539,8 @@
     "inputBusy": "工作区持续忙碌，本批输入尚未发送。请重新连接终端后再输入。"
   },
   "pblV3": {
+    "connectingUpdates": "正在连接实时更新…",
+    "updatesUnavailable": "实时更新暂不可用，请刷新重连。",
     "title": "编程项目 · Preview",
     "refresh": "刷新进度",
     "cancel": "取消回答",

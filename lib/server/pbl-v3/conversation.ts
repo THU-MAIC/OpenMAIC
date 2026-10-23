@@ -243,7 +243,12 @@ export function projectConversation(
         }
       }
       const question = reviewQuestion(event);
-      if (question)
+      if (
+        question &&
+        !getAssistant(event).parts.some(
+          (part) => part.kind === 'text' && part.text.includes(question),
+        )
+      )
         getAssistant(event).parts.push({
           kind: 'text',
           id: `question-${event.id}`,
@@ -270,8 +275,9 @@ export function projectConversation(
           e.boundary ||
           e.omitted ||
           e.parts.length ||
+          // Empty failures belong in the run banner, not in fabricated replies.
+          // Retain partial replies, active waiters and cancellation history.
           e.status === 'running' ||
-          e.status === 'failed' ||
           e.status === 'cancelled' ||
           e.status === 'interrupted',
       )
@@ -289,7 +295,9 @@ export function boundConversation(
     const kept: Part[] = [];
     for (const part of entry.parts.toReversed()) {
       const size = Buffer.byteLength(JSON.stringify(part));
-      if (size <= remaining) {
+      if (entry === entries.at(-1) && (part.kind === 'text' || part.kind === 'thinking')) {
+        kept.push(part);
+      } else if (size <= remaining) {
         kept.push(part);
         remaining -= size;
       } else {

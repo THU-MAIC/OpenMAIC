@@ -60,7 +60,9 @@ export function openRunStreamsOf(ownerId: string): number {
 
 export interface PolledStreamOptions {
   wakeup: AgentEventWakeupRoute;
-  pollIntervalMs: number;
+  pollIntervalMs: number | (() => number);
+  /** Optional subscriptions for a projection spanning several durable logs. */
+  subscribe?: (wake: () => void) => () => void;
   heartbeatIntervalMs?: number;
   /**
    * Read what is new and write it. Called once at attach (the backlog) and on
@@ -173,7 +175,13 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
         requestRead = read;
         const tick = () => {
           if (closed) return;
-          pollTimer = setTimeout(() => void read().then(tick, tick), options.pollIntervalMs);
+          if (pollTimer) clearTimeout(pollTimer);
+          pollTimer = setTimeout(
+            () => void read().then(tick, tick),
+            typeof options.pollIntervalMs === 'function'
+              ? options.pollIntervalMs()
+              : options.pollIntervalMs,
+          );
         };
 
         heartbeatTimer = setInterval(
@@ -182,7 +190,21 @@ export function polledEventStream(options: PolledStreamOptions): ReadableStream<
         );
         // Subscribe before the first read so a commit racing the backlog is
         // not left to the fallback poll.
-        unsubscribe = subscribeAgentEventWakeup(options.wakeup, () => void read());
+        const wake = () => {
+          if (typeof options.pollIntervalMs !== 'function') {
+            void read();
+            return;
+          }
+          // An execution-start notification shortens an idle observation timer
+          // immediately; it must not wait for the previous idle deadline.
+          if (pollTimer) clearTimeout(pollTimer);
+          void read().then(() => {
+            if (!initializing) tick();
+          });
+        };
+        unsubscribe = options.subscribe
+          ? options.subscribe(wake)
+          : subscribeAgentEventWakeup(options.wakeup, wake);
         try {
           await options.read(write, 'backlog');
         } catch {

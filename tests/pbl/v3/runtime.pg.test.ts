@@ -16,7 +16,6 @@ import { installProjectPackage } from '@/lib/server/pbl-v3/project-resolver';
 import {
   packageBuiltin,
   indexProjectFiles,
-  validateProjectPackage,
   type ProjectDescriptor,
 } from '@/lib/server/pbl-v3/project-package';
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
@@ -24,6 +23,7 @@ import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
 import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
+import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -42,6 +42,7 @@ const mocked = vi.hoisted(() => ({
   objects: new Map<string, Uint8Array>(),
   responses: [] as Array<Array<Record<string, unknown>>>,
   reportAnalysis: vi.fn(),
+  liveNotifications: false,
   modelCalls: 0,
   modelRequests: [] as ModelMessage[][],
   modelSystems: [] as (string | undefined)[],
@@ -291,10 +292,17 @@ vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', async (importOrigin
   ...(await importOriginal<typeof import('@/lib/server/agent-runtime/owner-scoped-documents')>()),
   getBackgroundDocumentStore: async () => ({}),
 }));
-vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
-  notifyDurableAgentEvent: async () => {},
-  subscribeAgentEventWakeup: () => () => {},
-}));
+vi.mock('@/lib/server/agent-runtime/event-notify-bus', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/server/agent-runtime/event-notify-bus')>();
+  return {
+    ...actual,
+    notifyDurableAgentEvent: (...args: Parameters<typeof actual.notifyDurableAgentEvent>) =>
+      mocked.liveNotifications ? actual.notifyDurableAgentEvent(...args) : Promise.resolve(),
+    subscribeAgentEventWakeup: (...args: Parameters<typeof actual.subscribeAgentEventWakeup>) =>
+      mocked.liveNotifications ? actual.subscribeAgentEventWakeup(...args) : () => {},
+  };
+});
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: (options: { messages: ModelMessage[]; system?: string }) => {
     mocked.modelSystems.push(options.system);
@@ -378,6 +386,22 @@ async function freshStudy() {
     });
   await send('prepare');
   return { id: row.id, send };
+}
+async function freshTeachingStudy() {
+  const original = studyId;
+  const study = await freshStudy();
+  studyId = study.id;
+  try {
+    await runTools('Introduce the project.', async (config) => {
+      await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
+    });
+    await runTools('Ready, please begin teaching.', async (config) => {
+      await invoke(config, 'read_next_skill', { studentFeedback: 'The learner is ready.' });
+    });
+  } finally {
+    studyId = original;
+  }
+  return study;
 }
 function modelFinish(finishReason: string) {
   return {
@@ -470,6 +494,7 @@ async function guided(role: 'teaching' | 'plan' | 'code') {
               ? { studentFeedback: 'The learner explicitly asks to begin teaching.' }
               : {}),
         });
+        expect(config.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
         if (index === 0 && role !== 'teaching') {
           const path = role === 'plan' ? 'PLAN.md' : 'greeting.py';
           const service = await SandboxService.forOwner(principal),
@@ -751,6 +776,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 await invoke(config, 'run_build');
                 await invoke(config, 'collect_build');
               }
+              if (stage.kind === 'produce' && part === parts - 1) {
+                await expect(
+                  invoke(config, 'complete_stage', {
+                    studentFeedback: 'Earlier understanding is not final approval.',
+                    reuseFeedback: true,
+                  }),
+                ).rejects.toThrow('understanding feedback');
+                expect(config.isTurnComplete()).toBe(false);
+              }
               await invoke(config, 'request_skill_review', {
                 question: 'Explain the current work and confirm what to change.',
               });
@@ -978,94 +1012,105 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ).rejects.toThrow();
     });
   });
-  it('persists a welcome inside the first step, waits through process questions, then credits anticipated understanding', async () => {
-    const original = studyId;
-    const study = await freshStudy();
-    studyId = study.id;
-    try {
-      const opening = (await study.send('begin')) as { sessionId: string };
-      const claimed = await agents.claimNextSession('welcome-worker', process.pid, {
-        sessionId: opening.sessionId,
-        leaseTtlMs: 10000,
-        maxAttempts: 5,
-      });
-      const config = await teachingRunnerConfig({
-        sessionId: opening.sessionId,
-        ownerId: principal.ownerId,
-        workerId: 'welcome-worker',
-        attempt: claimed!.attempt,
-        signal: new AbortController().signal,
-      });
-      const result = await invoke(config, 'read_next_skill');
-      const welcome = JSON.stringify(result);
-      expect(welcome).toContain('Welcome only');
-      expect(welcome).toContain('how learning works');
-      expect(config.systemPrompt).not.toContain('"teaching":{');
-      await expect(
-        invoke(config, 'read_next_skill', {
-          studentFeedback: 'An automatic entry is not readiness.',
-        }),
-      ).rejects.toThrow();
-      await invoke(config, 'request_skill_review', {
-        question: 'Any process questions? Ready to begin?',
-      });
-      await agents.finishSession(opening.sessionId, 'welcome-worker', {
-        status: 'succeeded',
-        expectedAttempt: claimed!.attempt,
-      });
-      expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
-      await runTools('Will an Agent help with the implementation?', async (next) => {
-        expect(next.liveContext()).toContain('"welcomePresented":true');
-        expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
-        await invoke(next, 'request_skill_review', {
-          question: 'Yes, you work together and review it. Ready to start?',
+  it.each([true, false])(
+    'persists welcome and waits for readiness (read first: %s)',
+    async (readFirst) => {
+      const original = studyId;
+      const study = await freshStudy();
+      studyId = study.id;
+      try {
+        const opening = (await study.send('begin')) as { sessionId: string };
+        const claimed = await agents.claimNextSession('welcome-worker', process.pid, {
+          sessionId: opening.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
         });
-      });
-      const before = await learningView(principal, study.id);
-      expect(before.state.position.stageIndex).toBe(0);
-      expect(before.actions).not.toContain('next');
-      expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
-      await runTools('Ready, please begin the lesson.', async (next) => {
-        const lesson = JSON.stringify(
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The learner explicitly asks to begin.',
-          }),
-        );
-        expect(lesson).not.toContain('Welcome only');
-        expect(next.liveContext()).toContain('"welcome":"ready"');
-        expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+        const config = await teachingRunnerConfig({
+          sessionId: opening.sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'welcome-worker',
+          attempt: claimed!.attempt,
+          signal: new AbortController().signal,
+        });
+        expect(config.thinkingConfig()).toEqual({ mode: 'disabled' });
+        if (readFirst) {
+          const welcome = JSON.stringify(await invoke(config, 'read_next_skill'));
+          expect(welcome).toContain('Welcome only');
+          expect(welcome).toContain('how learning works');
+        }
+        expect(config.systemPrompt).not.toContain('"teaching":{');
+        await invoke(config, 'request_skill_review', {
+          question: 'Any process questions? Ready to begin?',
+        });
         await expect(
-          invoke(next, 'read_next_skill', {
-            studentFeedback: 'Readiness is not understanding.',
-            reuseFeedback: true,
+          invoke(config, 'read_next_skill', {
+            studentFeedback: 'An automatic entry is not readiness.',
           }),
         ).rejects.toThrow();
-        await invoke(next, 'request_skill_review', { question: 'Explain returning a value.' });
-      });
-      await runTools(
-        'Return sends the value to the caller; printing does not. I also understand the consequences and am ready to continue.',
-        async (next) => {
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The reply explains the concept and its consequences.',
+        expect(config.isTurnComplete()).toBe(true);
+        expect(config.needsTurnReceipt()).toBe(false);
+        await agents.finishSession(opening.sessionId, 'welcome-worker', {
+          status: 'succeeded',
+          expectedAttempt: claimed!.attempt,
+        });
+        expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
+        await runTools('Will an Agent help with the implementation?', async (next) => {
+          expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
+          expect(next.liveContext()).toContain('"welcomePresented":true');
+          expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
+          await invoke(next, 'request_skill_review', {
+            question: 'Yes, you work together and review it. Ready to start?',
           });
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The same correct answer already covers the reflection goal.',
-            reuseFeedback: true,
-          });
-          await invoke(next, 'complete_stage', {
-            studentFeedback:
-              'The learner already explained the goal and confirms understanding without unresolved errors.',
-            reuseFeedback: true,
-          });
-        },
-      );
-      const finished = await learningView(principal, study.id);
-      expect(finished.state.position.stageIndex).toBe(0);
-      expect(finished.actions).toContain('next');
-    } finally {
-      studyId = original;
-    }
-  });
+        });
+        const before = await learningView(principal, study.id);
+        expect(before.state.position.stageIndex).toBe(0);
+        expect(before.actions).not.toContain('next');
+        expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
+        await runTools('Ready, please begin the lesson.', async (next) => {
+          expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
+          const lesson = JSON.stringify(
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The learner explicitly asks to begin.',
+            }),
+          );
+          expect(lesson).not.toContain('Welcome only');
+          expect(next.liveContext()).toContain('"welcome":"ready"');
+          expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
+          expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+          await expect(
+            invoke(next, 'read_next_skill', {
+              studentFeedback: 'Readiness is not understanding.',
+              reuseFeedback: true,
+            }),
+          ).rejects.toThrow();
+          await invoke(next, 'request_skill_review', { question: 'Explain returning a value.' });
+        });
+        await runTools(
+          'Return sends the value to the caller; printing does not. I also understand the consequences and am ready to continue.',
+          async (next) => {
+            expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The reply explains the concept and its consequences.',
+            });
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The same correct answer already covers the reflection goal.',
+              reuseFeedback: true,
+            });
+            await invoke(next, 'complete_stage', {
+              studentFeedback:
+                'The learner already explained the goal and confirms understanding without unresolved errors.',
+              reuseFeedback: true,
+            });
+          },
+        );
+        const finished = await learningView(principal, study.id);
+        expect(finished.state.position.stageIndex).toBe(0);
+        expect(finished.actions).toContain('next');
+      } finally {
+        studyId = original;
+      }
+    },
+  );
 
   it('accepts wrapped and multi-message review feedback from durable student turns', async () => {
     const original = studyId;
@@ -1612,6 +1657,45 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(stored.result.content[0].text.length).toBeGreaterThan(1000000);
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
   });
+  it('shows long current text and thinking whole while compacting repeated stream snapshots', async () => {
+    const study = await freshStudy();
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const text = 'Detailed explanation. '.repeat(40_000),
+      thinking = 'Reasoning. '.repeat(60_000);
+    for (let i = 0; i < 4; i++)
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'message_update',
+        data: {
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking },
+              { type: 'text', text: text + ' ' + i },
+            ],
+          },
+        },
+      });
+    const { readConversationHistory } = await import('@/lib/server/pbl-v3/conversation-history');
+    const events = await readConversationHistory(
+      pool,
+      queued.sessionId,
+      await agents.lastEventSeq(queued.sessionId),
+      1000,
+    );
+    expect(events.filter((event) => event.type === 'message_update')).toHaveLength(1);
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(view.conversation?.at(-1)?.parts.find((p) => p.kind === 'text')).toMatchObject({
+      text: text + ' 3',
+    });
+    expect(view.conversation?.at(-1)?.parts.find((p) => p.kind === 'thinking')).toMatchObject({
+      text: thinking,
+    });
+    const row = await store.get(study.id, principal.ownerId);
+    await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+      row.environment_id,
+    ]);
+  });
   it('bounds long evidence histories and oversized records while retaining complete quantitative totals', async () => {
     const study = await freshStudy();
     const started = (await study.send('begin')) as { sessionId: string };
@@ -1952,7 +2036,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       canRetry: true,
     });
   });
-  it('repairs a prose-only guided turn once, fails explicitly if still unclosed, and retries without a new learner reply', async () => {
+  it('continues prose-only guided turns until a receipt or genuine empty model result, preserving retry evidence', async () => {
     const original = studyId;
     const study = await freshStudy();
     studyId = study.id;
@@ -1977,9 +2061,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await command('chat', { text: reply });
     const inputs = await agents.listUserMessages(queued.sessionId);
     const before = mocked.modelCalls;
-    mocked.responses = [textResponse('You can continue now.'), textResponse('Click Continue.')];
+    mocked.responses = [
+      textResponse('You can continue now.'),
+      textResponse('Click Continue.'),
+      textResponse(''),
+    ];
     await runSession({ running: new Map(), shuttingDown: false }, (await claim(queued.sessionId))!);
-    expect(mocked.modelCalls - before).toBe(2); // bounded, not an autonomous retry loop
+    expect(mocked.modelCalls - before).toBe(3); // Empty model output is a protocol failure, not a retry quota.
     expect((await agents.getSession(queued.sessionId))?.status).toBe('failed');
     expect((await agents.getSession(queued.sessionId))?.error).toContain('without recording');
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
@@ -2018,6 +2106,86 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
+  it('repairs a prose-only lesson by recording its already delivered question without restarting teaching', async () => {
+    const study = await freshTeachingStudy();
+    const handle = startAgentRunner();
+    await handle.stop();
+    const queued = (await study.send('chat')) as { sessionId: string };
+    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const inputs = await agents.listUserMessages(queued.sessionId);
+    await agents.markUserMessageDelivered(
+      queued.sessionId,
+      handle.workerId,
+      meta!.attempt,
+      inputs.at(-2)!.seq,
+    );
+    const question = 'What does the caller receive after adding a task?';
+    const delivered = `This milestone adds a task. A list keeps order; append modifies it. ${question}`;
+    mocked.responses = [
+      toolResponse([{ name: 'read_next_skill', input: {} }]),
+      textResponse(delivered),
+      textResponse('I will record the question already asked.'),
+      toolResponse([{ name: 'request_skill_review', input: { question } }]),
+    ];
+    const callsBefore = mocked.modelCalls;
+    await runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...meta!, ...(await agents.getSession(queued.sessionId))! },
+    );
+    expect(mocked.modelCalls - callsBefore).toBe(4);
+    expect(mocked.modelSystems.at(-1)).toContain(delivered);
+    expect(mocked.modelSystems.at(-1)).toContain('record that SAME question');
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+    expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
+    expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
+    const view = await learningView(principal, study.id);
+    const parts = view.conversation!.flatMap((entry) => entry.parts);
+    expect(
+      parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
+    ).toHaveLength(1);
+    expect(
+      parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
+    ).toHaveLength(1);
+    expect(view.actions).not.toContain('next');
+    expect(view.state.position.stageIndex).toBe(0);
+  });
+  it('settles the automatic welcome when requesting readiness is the first tool call', async () => {
+    const study = await freshStudy();
+    const handle = startAgentRunner();
+    await handle.stop();
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    mocked.responses = [
+      toolResponse([
+        { name: 'request_skill_review', input: { question: 'Any process questions? Ready?' } },
+      ]),
+    ];
+    const callsBefore = mocked.modelCalls;
+    await runSession({ running: new Map(), shuttingDown: false }, meta!);
+    expect(mocked.modelCalls - callsBefore).toBe(1);
+    expect(await agents.getSession(queued.sessionId)).toMatchObject({ status: 'succeeded' });
+    expect((await store.binding(queued.sessionId))?.guided).toMatchObject({
+      welcome: 'pending',
+      activeFile: 'A-teach.md',
+      reviewedFiles: [],
+      pending: { question: 'Any process questions? Ready?' },
+    });
+    const view = await learningView(principal, study.id);
+    expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false, failure: null });
+    expect(view.state.position.stageIndex).toBe(0);
+    expect(view.actions).not.toContain('next');
+    const messages = await listAgentUserMessages(agents, queued.sessionId);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.pblOpening).toBe(true);
+  });
   it.each(['mixed', 'invalid-tail', 'failed-review'] as const)(
     'stops teaching at a saved review in a %s batch through the real Pi loop',
     async (batch) => {
@@ -2083,7 +2251,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'early-review',
             toolName: 'request_skill_review',
-            input: { question: 'No section opened yet' },
+            input: { question: '' },
           },
           finish,
         ]);
@@ -2409,7 +2577,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }),
     ).rejects.toThrow('changed');
   });
-  it('renews on learner activity without changing progress and throttles repeated polls', async () => {
+  it('renews on learner activity without changing progress and throttles repeated active reads', async () => {
     const study = await freshStudy();
     const before = await store.get(study.id, principal.ownerId);
     const count = mocked.renewals.length;
@@ -2419,6 +2587,97 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(mocked.renewals.slice(count)).toEqual([before.environment_id]);
     expect((await store.get(study.id, principal.ownerId)).revision).toBe(before.revision);
   });
+  it('passively streams progress and workspace state without renewing or changing learner progress', async () => {
+    const study = await freshStudy();
+    const before = await store.get(study.id, principal.ownerId);
+    const count = mocked.renewals.length;
+    const observation = await learningView(principal, study.id, { passive: true });
+    expect(observation.environment?.ready).toBe(true);
+    const inspect = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect');
+    const read = vi.spyOn(SandboxService.prototype, 'readText');
+    try {
+      await learningView(principal, study.id, { passive: true, observation });
+      const work = await workbenchView(principal, study.id, { passive: true });
+      expect(work.environmentId).toBe(before.environment_id);
+      expect(inspect).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(mocked.renewals.length).toBe(count);
+      const after = await store.get(study.id, principal.ownerId);
+      expect(after.revision).toBe(before.revision);
+      expect(after.state).toEqual(before.state);
+    } finally {
+      inspect.mockRestore();
+      read.mockRestore();
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        before.environment_id,
+      ]);
+    }
+  });
+
+  it('pushes a new role opening and runner text through real PG notifications without a browser poll', async () => {
+    const { learningEventResponse } = await import('@/lib/server/pbl-v3/event-stream');
+    const { startAgentEventNotifyBus } =
+      await import('@/lib/server/agent-runtime/event-notify-bus');
+    mocked.liveNotifications = true;
+    const bus = startAgentEventNotifyBus();
+    await bus.connecting;
+    const study = await freshStudy();
+    const response = await learningEventResponse(principal, study.id, new AbortController().signal);
+    const reader = response.body!.getReader();
+    const readUntil = async (marker: string) => {
+      let text = '';
+      const reading = (async () => {
+        while (!text.includes(marker)) {
+          const chunk = await reader.read();
+          if (chunk.done) throw new Error('Learning stream ended early');
+          text += new TextDecoder().decode(chunk.value);
+        }
+        return text;
+      })();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          reading,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('PG push missed its deadline')), 3_000);
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+    };
+    try {
+      await readUntil('event: learning');
+      const renewals = mocked.renewals.length;
+      const queued = (await study.send('begin')) as { sessionId: string };
+      await readUntil('"busy":true');
+      const count = mocked.renewals.length;
+      await store.transaction(async (db) => {
+        await store.agentStore(db).appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'message_update',
+          data: {
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Live lesson notification proof.' }],
+            },
+          },
+        });
+      });
+      expect(await readUntil('Live lesson notification proof.')).toContain('event: learning');
+      expect(mocked.renewals.length).toBe(count);
+      expect(count).toBeGreaterThanOrEqual(renewals);
+    } finally {
+      await reader.cancel();
+      await bus.stop();
+      mocked.liveNotifications = false;
+      const final = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        final.environment_id,
+      ]);
+    }
+  }, 15_000);
+
   it('rejects teaching submissions to an expired environment without posting or allocating', async () => {
     const study = await freshStudy();
     const original = await store.get(study.id, principal.ownerId);
@@ -2441,7 +2700,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it('opens and rereads local protocol without cloud calls, while review still checks live evidence', async () => {
-    const study = await freshStudy();
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('protocol-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2487,7 +2746,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it('stops an aborted evidence read before another file or teaching receipt is written', async () => {
-    const study = await freshStudy();
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('abort-evidence-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2544,8 +2803,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it('keeps teaching tools available while a background poll renews the same environment', async () => {
-    const study = await freshStudy();
+  it('keeps teaching tools available while a concurrent active refresh renews the same environment', async () => {
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('renewal-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2591,7 +2850,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         entered();
         await gate;
       });
-    const polling = learningView(principal, study.id);
+    const refreshing = learningView(principal, study.id);
     try {
       await ready;
       const teaching = invoke(config, 'request_skill_review', {
@@ -2607,7 +2866,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect((await store.binding(queued.sessionId))?.guided).toBeTruthy();
     } finally {
       release();
-      await polling;
+      await refreshing;
       renew.mockRestore();
       attempt.mockRestore();
       await agents.finishSession(queued.sessionId, 'renewal-worker', {
@@ -3232,23 +3491,6 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       for (const milestone of descriptor.definition.milestones)
         descriptor.runtime.evaluations[milestone.id] = 'tests/private.json';
       bundle.files['project.json'] = JSON.stringify(descriptor);
-      // Build a valid course close to the actual 32 KiB budget, with room for a short question.
-      const introDoc = descriptor.teaching[0]!.documents[0]!,
-        introText = bundle.files[introDoc];
-      validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
-      let low = 0,
-        high = 4500;
-      while (low < high) {
-        const middle = Math.ceil((low + high) / 2);
-        bundle.files[introDoc] = introText + 'x'.repeat(middle);
-        try {
-          validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
-          low = middle;
-        } catch {
-          high = middle - 1;
-        }
-      }
-      bundle.files[introDoc] = introText + 'x'.repeat(Math.max(0, low - 256));
       const projectRef = await installProjectPackage(
         principal.ownerId,
         indexProjectFiles(importedId, selected.ref.version, bundle.files),
@@ -3352,9 +3594,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           const calls = mocked.modelCalls;
           try {
             await writeFile(path, 'Learner plan '.repeat(4000));
-            await expect(teachingRunnerConfig(request)).rejects.toMatchObject({
-              code: 'PBL_PROMPT_SIZE',
-            });
+            const expanded = await teachingRunnerConfig(request);
+            expect(expanded.systemPrompt).toContain('Learner plan '.repeat(4000));
             expect(mocked.modelCalls).toBe(calls);
             oversizedPlanChecked = true;
           } finally {
@@ -3398,8 +3639,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 text: original + '\n' + 'Learner plan '.repeat(4000),
                 expectedHash: digest(original),
               }),
-            ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-            expect(await service.readText(environmentId, 'PLAN.md')).toBe(original);
+            ).resolves.toBeDefined();
+            const expanded = await service.readText(environmentId, 'PLAN.md');
+            expect(expanded).toContain('Learner plan '.repeat(4000));
+            await send('save', { path: 'PLAN.md', text: original, expectedHash: digest(expanded) });
             oversizedPlanSaveChecked = true;
           }
           const teaching = descriptor.teaching.find((binding) => binding.stage === key)!;
@@ -3455,8 +3698,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                         text: oversized,
                         expectedHash: digest(original),
                       }),
-                    ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-                    expect(await service.readText(environmentId, path)).toBe(original);
+                    ).resolves.toBeDefined();
+                    expect(await service.readText(environmentId, path)).toBe(oversized);
+                    await invoke(config, 'write_file', {
+                      path,
+                      text: original,
+                      expectedHash: digest(oversized),
+                    });
                     oversizedPlanWriteChecked = true;
                   }
                   await invoke(config, 'write_file', {
@@ -3475,14 +3723,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                     await invoke(config, 'collect_build');
                   }
                 }
-                if (!oversizedQuestionChecked) {
-                  await expect(
-                    invoke(config, 'request_skill_review', { question: '请'.repeat(2000) }),
-                  ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-                  expect(config.isTurnComplete()).toBe(false);
-                  oversizedQuestionChecked = true;
-                }
-                await invoke(config, 'request_skill_review', { question: 'Explain this section.' });
+                const question = !oversizedQuestionChecked
+                  ? 'Explain this section. '.repeat(250)
+                  : 'Explain this section.';
+                await invoke(config, 'request_skill_review', { question });
+                expect(config.isTurnComplete()).toBe(true);
+                oversizedQuestionChecked = true;
               },
             );
           }

@@ -88,7 +88,7 @@ after successful Stop, the old code executed a command, left a PTY running and
 issued a valid preview grant. All three cases now fail with `WORKSPACE_STOPPED`.
 The observed epoch travels from the workbench view to atomic command/PTY reservation;
 Stop updates that same durable epoch. Delayed preview/terminal responses cannot
-reopen the browser view, and stale epochs cannot replace newer poll results.
+reopen the browser view, and stale epochs cannot replace newer observations.
 
 The actual Aliyun installation was then rechecked: all three stale requests were
 refused; a refreshed generation ran an exit-0 cloud command, created/resized a PTY

@@ -2539,6 +2539,8 @@
     "inputBusy": "The workspace remained busy; this input was not sent. Reconnect the terminal before typing again."
   },
   "pblV3": {
+    "connectingUpdates": "Connecting live updates…",
+    "updatesUnavailable": "Live updates unavailable. Refresh to reconnect.",
     "title": "Programming projects · Preview",
     "refresh": "Refresh progress",
     "cancel": "Cancel response",

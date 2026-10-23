@@ -263,6 +263,7 @@ export class LearningStore {
     return { ...result.rows[0], ...(row.project ? { project: row.project } : {}) };
   }
   private async events(db: PoolClient, id: string, transition: EngineTransition) {
+    await notifyDurableAgentEvent(db, { kind: 'session', sessionId: id });
     const first = transition.state.lastSequence - transition.events.length + 1;
     for (const [i, event] of transition.events.entries())
       await db.query('INSERT INTO pbl_v3_events(study_id,sequence,event) VALUES($1,$2,$3)', [

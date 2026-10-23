@@ -52,6 +52,60 @@ it.each([false, true])(
   },
 );
 
+it
+  .runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')
+  .each([
+    'String value = null; System.out.println(value.length());',
+    'int[] values = {}; System.out.println(values[0]);',
+  ])(
+  'classifies Java runtime exceptions as execution failures and permits repair: %s',
+  async (body) => {
+    const root = await mkdtemp(join(tmpdir(), 'pbl-java-runtime-'));
+    const installed = {
+      prepare: ['javac', '-d', '{build}', 'Greeting.java'],
+      cases: [{ id: 'runtime', argv: ['java', '-cp', '{build}', 'Greeting'], stdout: 'hello\n' }],
+    };
+    const run = async () => {
+      const observed = await promisify(execFile)(
+        '/bin/sh',
+        ['-c', evaluationCommand(installed, 'runtime')],
+        { cwd: root },
+      );
+      return evaluationOutcome(
+        installed,
+        'runtime',
+        { state: 'exited', exitCode: 0, ...observed },
+        ['Greeting.java'],
+      );
+    };
+    try {
+      await writeFile(
+        join(root, 'Greeting.java'),
+        `public class Greeting { public static void main(String[] args) { ${body} } }`,
+      );
+      expect(await run()).toMatchObject({
+        status: 'failed',
+        failureKind: 'assertion',
+        publicDiagnostics: {
+          reportGenerated: true,
+          caseResults: [{ id: 'runtime', passed: false, reason: 'execution' }],
+        },
+      });
+      expect(JSON.stringify(await run())).not.toMatch(
+        /infrastructure|NullPointerException|IndexOutOfBoundsException|at Greeting|locations/,
+      );
+      await writeFile(
+        join(root, 'Greeting.java'),
+        'public class Greeting { public static void main(String[] args) { System.out.println("hello"); } }',
+      );
+      expect((await run()).status).toBe('passed');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+  15000,
+);
+
 it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
   'locates a real javac error and passes after repair',
   async () => {

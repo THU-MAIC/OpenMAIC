@@ -4,6 +4,14 @@ The hosted classroom reuses SandboxService, owner identity, PostgreSQL command
 receipts, the command supervisor and PTY. Entry prepares the installed project's
 environment automatically and reuses an existing ready sandbox. Failed preparation
 has an explicit retry; completed projects can reopen reports without a sandbox.
+A passive health update after entry shows recovery rather than automatically
+allocating a replacement environment for an idle learner.
+
+One SSE subscription carries learning, workspace and execution state. The browser
+uses HTTP only for learner commands, file access and explicit refresh; no periodic
+learning/workbench/environment JSON requests remain. The stream reconnects with a
+current snapshot and closes when hidden or unmounted. Reconnect and passive server
+observation neither submit a learner turn nor renew the sandbox.
 
 ## Layout and feedback
 

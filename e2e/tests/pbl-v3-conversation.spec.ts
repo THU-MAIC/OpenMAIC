@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/pbl-learning-events';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/slide-theme';
@@ -6,6 +7,7 @@ import type { LearningView } from '@/lib/pbl/v3/types';
 
 test('PBL conversation stays in the host classroom through expansion, scene navigation and refresh', async ({
   page,
+  learningEvents,
 }) => {
   test.setTimeout(120000);
   await page.addInitScript(
@@ -145,6 +147,22 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   let collectGate: Promise<void> | null = null;
   let collectEntered = () => {};
   await page.route('**/api/pbl/v3**', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('project') === '1') {
+      expect(route.request().headers()['x-openmaic-sandbox']).toBe('1');
+      return route.fulfill({
+        json: {
+          hero: {
+            title: view.title,
+            description: 'Build a greeting application with your project tutor.',
+            gains: ['Review plans and code', 'Run tests'],
+            instructorName: 'Project tutor',
+            milestoneCount: 2,
+            taskCount: 14,
+          },
+          started: true,
+        },
+      });
+    }
     const command =
       route.request().method() === 'POST' ? route.request().postDataJSON()?.command : undefined;
     if (command?.type === 'save')
@@ -311,8 +329,23 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       });
     return route.fulfill({ json: view });
   });
+  await learningEvents(() => ({
+    view,
+    workbench: {
+      environmentId: view.environmentId!,
+      revision: view.revision,
+      epoch: 0,
+      canEdit: view.actions.includes('edit'),
+      canManageFiles: false,
+      canRun: false,
+      planning: view.stage.kind === 'produce' && view.stage.writes === 'plan',
+      commands: [],
+      terminals: [],
+    },
+  }));
   await page.goto(`/classroom/${stageId}`);
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByTestId('pbl-v3-workspace')).toBeVisible();
   await page.getByRole('button', { name: 'Learning path', exact: true }).click();
   const milestoneMenu = page.getByRole('navigation', { name: 'Learning path' });
@@ -478,8 +511,13 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).toBeVisible();
   const beforeDraftReturn = openings;
   view.needsOpening = true;
+  if (
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByTestId('scene-title').filter({ hasText: 'Course overview' }).click();
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText(draftText!);
   expect(openings).toBe(beforeDraftReturn);
   view.needsOpening = false;
@@ -681,18 +719,27 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
 
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await page.getByLabel('Your message', { exact: true }).fill('My draft answer');
-  await page.getByRole('button', { name: 'Expand project workspace' }).click();
-  await expect(page.getByRole('button', { name: 'Return to classroom layout' })).toBeVisible();
+  if (
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Exit fullscreen workspace' })).toBeVisible();
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('My draft answer');
   await page.getByTestId('pbl-v3-frame').evaluate((el) => {
     el.scrollTop = 0;
   });
   await page.screenshot({ path: 'test-results/pbl-v3-conversation.png' });
-  await page.getByRole('button', { name: 'Return to classroom layout' }).click();
+  await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await page.getByRole('button', { name: 'Toggle code workspace', exact: true }).click();
+  if (
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
   await page.getByTestId('scene-title').filter({ hasText: 'Course overview' }).click();
   await expect(page.getByTestId('pbl-v3-workspace')).toHaveCount(0);
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByText('Return sends a value to the caller.')).toBeVisible();
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('My draft answer');
   await expect(
@@ -701,6 +748,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.reload();
   // The host may select its first scene on reload; select the same installed PBL again.
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByText('Return sends a value to the caller.')).toBeVisible();
   await expect(page.getByTestId('workbench-thinking-bar').getByRole('button')).toHaveAttribute(
     'aria-expanded',
@@ -824,6 +872,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.revision++;
   await page.reload();
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(summary).toHaveAttribute('data-state', 'passed');
   await expect(summary).toContainText('2/2 passed');
   await expect(details).toHaveCount(0);
@@ -847,16 +896,24 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(summary).toHaveCount(0);
 
   await page.setViewportSize({ width: 850, height: 480 });
-  await page.getByRole('button', { name: 'Expand project workspace' }).click();
+  if (
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
   await expect(page.getByLabel('Your message', { exact: true })).toBeInViewport();
   await task.getByRole('button', { name: /Current task details/ }).click();
   await expect(details.getByRole('button', { name: 'Close task details' })).toBeInViewport();
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(task.getByRole('button', { name: /Current task details/ })).toBeFocused();
-  await page.getByRole('button', { name: 'Return to classroom layout' }).click();
+  await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Expand project workspace' }).click();
+  if (
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
+  )
+    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+  await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
   await expect(page.getByLabel('Your message', { exact: true })).toBeInViewport();
   const splitSize = await page.getByTestId('pbl-workbench-split').evaluate((el) => ({
     height: el.clientHeight,

@@ -88,7 +88,6 @@ export async function readFiles(
   row: Study,
   project = projectFor(row),
   signal?: AbortSignal,
-  onProgress?: () => void,
 ) {
   signal?.throwIfAborted();
   const result: Record<string, string> = {};
@@ -100,7 +99,6 @@ export async function readFiles(
     signal?.throwIfAborted();
     const text = await service.readText(environmentId, path);
     signal?.throwIfAborted();
-    onProgress?.();
     bytes += Buffer.byteLength(text);
     if (bytes > 1_048_576)
       throw sandboxInvalid('Project source snapshots are limited to 1 MiB.', 'PBL_SOURCE_SIZE');
@@ -722,7 +720,15 @@ export async function commandStudy(
   );
 }
 
-export async function learningView(principal: OwnerPrincipal, id: string): Promise<LearningView> {
+export type LearningObservation = Pick<LearningView, 'environment' | 'files' | 'evaluation'> & {
+  revision: number;
+  environmentId: string | null;
+};
+export async function learningView(
+  principal: OwnerPrincipal,
+  id: string,
+  options: { passive?: boolean; checkHealth?: boolean; observation?: LearningObservation } = {},
+): Promise<LearningView> {
   const store = await LearningStore.open(),
     row = await store.get(id, principal.ownerId);
   const project = projectFor(row),
@@ -846,13 +852,22 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     });
   }
   conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES);
-  let environment: LearningView['environment'] = null;
+  const cached =
+    options.observation?.revision === row.revision &&
+    options.observation.environmentId === row.environment_id
+      ? options.observation
+      : undefined;
+  let environment: LearningView['environment'] = cached?.environment ?? null;
   let environmentService: SandboxService | undefined;
-  let files = Object.keys(project.files);
-  if (row.environment_id) {
+  let files = cached?.files ?? Object.keys(project.files);
+  if (row.environment_id && !cached) {
     try {
       environmentService = await SandboxService.forOwner(principal);
-      const observed = await touchEnvironment(store, row, environmentService);
+      const observed = options.passive
+        ? options.checkHealth === false
+          ? await environmentService.get(row.environment_id)
+          : await environmentService.reconcile(row.environment_id, false)
+        : await touchEnvironment(store, row, environmentService);
       environment = observed
         ? { state: observed.state, ready: observed.state === 'running' && observed.workspaceReady }
         : null;
@@ -868,8 +883,8 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
       environment = { state: 'unknown', ready: false };
     }
   }
-  let evaluation: LearningView['evaluation'] = null;
-  if (row.evaluation && row.environment_id) {
+  let evaluation: LearningView['evaluation'] = cached?.evaluation ?? null;
+  if (row.evaluation && row.environment_id && !cached) {
     try {
       const observed = await environmentService?.command(row.environment_id, row.evaluation.id);
       if (observed)

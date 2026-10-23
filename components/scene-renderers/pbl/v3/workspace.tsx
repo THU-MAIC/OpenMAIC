@@ -1,6 +1,7 @@
 'use client';
 import {
   ArrowUp,
+  ArrowLeft,
   Square,
   MessageSquareText,
   RefreshCw,
@@ -11,6 +12,8 @@ import {
   PanelRight,
   LoaderCircle,
 } from 'lucide-react';
+import { useLearningStream } from './use-learning-stream';
+import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
@@ -31,9 +34,10 @@ import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
 const headers = { 'content-type': 'application/json', 'x-openmaic-sandbox': '1' };
-export async function pblRequest<T>(url: string, body?: unknown): Promise<T> {
+export async function pblRequest<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     headers,
+    ...(signal ? { signal } : {}),
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }),
   });
   const data = await response.json();
@@ -46,7 +50,13 @@ export async function pblRequest<T>(url: string, body?: unknown): Promise<T> {
     );
   return data as T;
 }
-function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
+function PBLV3WorkspaceContent({
+  sceneId,
+  onReturnToHero,
+}: {
+  sceneId: string;
+  onReturnToHero?: () => void;
+}) {
   const { resolvedTheme, setTheme } = useTheme();
   const { t } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
@@ -91,7 +101,7 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
           (prior.activitySequence ?? 0) <= (next.activitySequence ?? 0)))
     )
       latestView.current = next;
-    // A delayed poll or command response cannot undo newer progress or replace another study.
+    // A delayed stream snapshot or command response cannot undo newer progress or replace another study.
     setView((current) =>
       current?.id === next.id &&
       (current.revision < next.revision ||
@@ -101,7 +111,12 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
         : current,
     );
   }, []);
+  const [workbench, setWorkbench] = useState<LearningWorkbench | null>(null);
   const studyId = view?.id;
+  const stream = useLearningStream(studyId, (snapshot) => {
+    updateView(snapshot.view);
+    setWorkbench(snapshot.workbench);
+  });
   const refresh = useCallback(async () => {
     if (studyId)
       updateView(await pblRequest<LearningView>(`/api/pbl/v3?id=${encodeURIComponent(studyId)}`));
@@ -129,20 +144,6 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
   useEffect(() => {
     void open();
   }, [open]);
-  useEffect(() => {
-    if (!view?.busy && !view?.evaluation) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh().catch((e) => setError(e.message));
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [view?.busy, view?.evaluation, refresh]);
-  useEffect(() => {
-    if (!view?.environmentId || view.state.status === 'completed') return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh().catch((e) => setError(e.message));
-    }, 15_000);
-    return () => clearInterval(timer);
-  }, [view?.environmentId, view?.state.status, refresh]);
   const command = useCallback(
     async (type: string, payload: Record<string, unknown> = {}, repeat = false) => {
       if (!view || commandInFlight.current) return false;
@@ -205,22 +206,22 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
     [command],
   );
   useEffect(() => {
-    if (
-      !view ||
-      pending ||
-      view.busy ||
-      view.environment?.ready ||
-      view.state.status === 'completed'
-    )
-      return;
+    if (!view || pending || view.busy || view.state.status === 'completed') return;
     const key = `${view.id}:${view.environmentId ?? 'new'}`;
-    if (preparationAttempt.current === key) return;
-    // One automatic attempt per observed environment on entry. Failed/uncertain
-    // preparation needs an explicit retry; the server retains allocation identity.
+    if (view.environment?.ready) {
+      preparationAttempt.current = key;
+      return;
+    }
+    if (preparationAttempt.current === key) {
+      setPreparationFailed(true);
+      return;
+    }
+    // Entry prepares once. A later passive health notification must not keep
+    // allocating replacement environments for an idle learner.
     preparationAttempt.current = key;
     void prepare();
   }, [view, pending, prepare]);
-  // Polling observes execution; a separate, idempotent command commits the verdict.
+  // The event stream observes execution; a separate, idempotent command commits the verdict.
   // Collect terminal test runs automatically, including after refresh. A failed
   // collection offers a manual retry instead of an unbounded request loop.
   const collectionAttempt = useRef('');
@@ -261,17 +262,18 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
   const quiz = view?.state.collected[view.state.position.milestoneId ?? '']?.quiz;
   // All teaching actions share their prerequisites, with an explicit path out
   // of each blocked state. Draft input stays editable during recovery.
-  const blockedReason = pending
-    ? 'pending'
-    : view?.busy
-      ? 'busy'
-      : !view?.environment?.ready
-        ? 'environment'
-        : dirtyFiles
-          ? 'unsaved'
-          : view?.needsOpening
-            ? 'opening'
-            : null;
+  const blockedReason =
+    pending || stream.status !== 'connected'
+      ? 'pending'
+      : view?.busy
+        ? 'busy'
+        : !view?.environment?.ready
+          ? 'environment'
+          : dirtyFiles
+            ? 'unsaved'
+            : view?.needsOpening
+              ? 'opening'
+              : null;
   const disabled = blockedReason !== null;
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
@@ -284,10 +286,33 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
       onKeyDown={(event) => event.stopPropagation()}
     >
       <header className="pbl-topbar flex shrink-0 items-center gap-2 border-b pbl-chrome py-2 pl-3 pr-12">
+        {onReturnToHero && (
+          <button
+            type="button"
+            onClick={onReturnToHero}
+            className={button}
+            aria-label={t('pbl.v2.workspace.returnToHero')}
+            title={t('pbl.v2.workspace.returnToHero')}
+          >
+            <ArrowLeft size={14} />
+          </button>
+        )}
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {view?.title ?? t('pblV3.title')}
         </h2>
         <PendingAction action={pendingAction ?? (refreshing ? 'refresh' : null)} />
+        {view && stream.status !== 'connected' && (
+          <span role="status" className="flex items-center gap-1 text-xs text-muted-foreground">
+            {stream.status === 'connecting' && (
+              <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+            )}
+            {t(
+              stream.status === 'unavailable'
+                ? 'pblV3.updatesUnavailable'
+                : 'pblV3.connectingUpdates',
+            )}
+          </span>
+        )}
         {view && (
           <>
             <LearningPanels key={view.id} view={view} />
@@ -329,6 +354,7 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
           aria-label={t('pblV3.refresh')}
           title={t('pblV3.refresh')}
           onClick={() => {
+            stream.reconnect();
             setRefreshing(true);
             void (view ? refresh() : open())
               .catch((e) => setError(e.message))
@@ -426,7 +452,8 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
               <LearningWorkbenchPanel
                 key={view.id}
                 view={view}
-                pending={pending}
+                workbench={workbench}
+                pending={pending || stream.status !== 'connected'}
                 pendingAction={pendingAction}
                 onDirtyChange={setDirtyFiles}
                 onRefresh={refresh}
@@ -849,10 +876,16 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
   );
 }
 
-export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
+export function PBLV3Workspace({
+  sceneId,
+  onReturnToHero,
+}: {
+  sceneId: string;
+  onReturnToHero?: () => void;
+}) {
   return (
     <WorkspaceFrame>
-      <PBLV3WorkspaceContent sceneId={sceneId} />
+      <PBLV3WorkspaceContent sceneId={sceneId} onReturnToHero={onReturnToHero} />
     </WorkspaceFrame>
   );
 }

@@ -16,6 +16,8 @@ import { InvalidEngineTransitionError } from '@/lib/pbl/v3/domain/orchestration/
 import { getOwnerScopedDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
 import { touchEnvironment, assertEnvironmentReady } from '@/lib/server/pbl-v3/environment';
 import { assertProjectSource } from '@/lib/server/pbl-v3/workspace-files';
+import { resolveProject } from '@/lib/server/pbl-v3/project-resolver';
+import { projectHeroDetails } from '@/lib/server/pbl-v3/project-hero';
 import { installedProject, publicProjects } from '@/lib/server/pbl-v3/catalog';
 
 export const runtime = 'nodejs';
@@ -25,6 +27,34 @@ export async function GET(request: Request) {
       return Response.json(publicProjects());
     const params = new URL(request.url).searchParams,
       id = params.get('id');
+    if (params.get('project') === '1') {
+      const stageId = params.get('stageId'),
+        sceneId = params.get('sceneId');
+      if (!stageId || !sceneId) throw sandboxInvalid('A classroom and scene are required.');
+      const studies = await LearningStore.open();
+      const existing = await studies.findForScene(principal.ownerId, stageId, sceneId);
+      let project;
+      if (existing) project = projectFor(existing);
+      else {
+        const documents = await getOwnerScopedDocumentStore(principal);
+        const scene = await documents.getScene(stageId, sceneId);
+        const content = scene?.content as { type?: string; projectV3?: unknown } | undefined;
+        if (content?.type !== 'pbl' || !isPBLV3Reference(content.projectV3))
+          throw new SandboxError(
+            'PBL_NOT_FOUND',
+            404,
+            'The classroom does not contain this learning project.',
+          );
+        project = await resolveProject(
+          principal.ownerId,
+          stageId,
+          content.projectV3,
+          undefined,
+          sceneId,
+        );
+      }
+      return Response.json({ hero: projectHeroDetails(project.definition), started: !!existing });
+    }
     if (!id) throw sandboxInvalid('A learning session is required.');
     const path = params.get('file');
     if (path !== null) {

@@ -13,7 +13,7 @@ import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 import { SandboxStore } from '@/lib/server/sandbox/store';
 import { SandboxService } from '@/lib/server/sandbox/service';
-import { SandboxError, sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
+import { sandboxConflict, sandboxInvalid } from '@/lib/sandbox/errors';
 import { currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
@@ -39,10 +39,10 @@ import {
   teachingLiveSuffix,
   type TeachingPromptInput,
 } from './teaching-prompt';
-import { PROJECT_LIMITS } from '@/lib/pbl/v3/package-policy';
 import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
 import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
+import type { ThinkingConfig } from '@/lib/types/provider';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -51,7 +51,6 @@ export async function teachingRunnerConfig(input: {
   workerId: string;
   attempt: number;
   signal: AbortSignal;
-  onActivity?: () => void;
 }) {
   const store = await LearningStore.open(),
     foundBinding = await store.binding(input.sessionId);
@@ -80,6 +79,7 @@ export async function teachingRunnerConfig(input: {
       row.state.position.stageIndex === 0 &&
       stage.kind === 'mentor_say' &&
       stage.skill !== 'recap',
+    stage.kind === 'produce' && stage.reviewRequired,
   );
   const runId = `${bound.stage_key}:${latest?.seq ?? 0}`;
   review.beginRun(
@@ -115,15 +115,16 @@ export async function teachingRunnerConfig(input: {
     assertActive(signal);
     assertEnvironmentReady(await touchEnvironment(store, current, sandbox));
     assertActive(signal);
-    input.onActivity?.();
     return sandbox;
   };
   const fingerprint = async (current: Study, signal: AbortSignal) =>
-    current.environment_id
-      ? filesFingerprint(
-          await readFiles(await service(signal), current, project, signal, input.onActivity),
-        )
-      : digest('no-workspace');
+    // Readiness concerns the project introduction, not a file version. Avoid
+    // remote file reads here; real teaching/artifact reviews still bind files.
+    review.state.welcome === 'pending'
+      ? digest(`project-welcome:${protocol.digest}`)
+      : current.environment_id
+        ? filesFingerprint(await readFiles(await service(signal), current, project, signal))
+        : digest('no-workspace');
   function tool<T extends TSchema>(
     name: string,
     description: string,
@@ -367,7 +368,7 @@ export async function teachingRunnerConfig(input: {
         'read_next_skill',
         'Read the current or next teaching section. Omit studentFeedback to reread; to advance, explain how the actual student responses answer the pending review. Quotes and summaries are allowed. While welcome is pending, actual later readiness feedback starts A without advancing sections. Set reuseFeedback only when earlier verified learner replies already satisfy the current section; explain the coverage and do not ask again.',
         Type.Object({
-          studentFeedback: Type.Optional(Type.String({ maxLength: 2000 })),
+          studentFeedback: Type.Optional(Type.String()),
           reuseFeedback: Type.Optional(Type.Boolean()),
         }),
         async (current, p, _callId, signal) => {
@@ -415,22 +416,23 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'request_skill_review',
-        'Record a concrete student review question for this section. End your turn and wait for a new student reply.',
-        Type.Object({ question: Type.String({ minLength: 1, maxLength: 2000 }) }),
+        'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
+        Type.Object({
+          question: Type.String({
+            minLength: 1,
+            description:
+              'Only the learner-facing question or invitation. Exclude the lesson explanation, introduction and examples. If already asked in prose, copy that question verbatim.',
+          }),
+          approval: Type.Optional(Type.Boolean()),
+        }),
         async (current, p, _callId, signal) => {
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
-          // Refuse an oversized question before persisting a receipt that would block the next turn.
-          const prospective = {
-            ...currentPromptInput(),
-            pendingReview: { question: p.question, studentResponses: [] },
-          };
-          assertPromptBudget(renderTeachingPrompt(prospective).bytes);
-          assertPromptBudget(
-            Buffer.byteLength(systemPrompt + teachingLiveSuffix(teachingLiveContext(prospective))) +
-              sectionBytes,
-          );
-          review.checkpoint(p.question, hash);
+          const approval =
+            stage.kind === 'produce' &&
+            stage.reviewRequired &&
+            (p.approval === true || review.state.activeFile === protocol.final);
+          review.checkpoint(p.question, hash, approval);
           return { value: { question: p.question, waitForStudent: true } };
         },
       ),
@@ -440,7 +442,7 @@ export async function teachingRunnerConfig(input: {
         'complete_stage',
         'Call only when teachingContext.activeSection equals finalSection and the learner has answered its recorded question. Otherwise use read_next_skill, deliver that section and request_skill_review first. When goals and any required current-version approval are already satisfied by verified learner replies, use reuseFeedback rather than repeat a question. Signal completion after the final student review. In studentFeedback, explain how the actual student responses answer the pending review; quotes and summaries are allowed. The server validates the current artifact. The final project recap finishes the project immediately; other stages wait for the student to click Continue.',
         Type.Object({
-          studentFeedback: Type.String({ minLength: 1, maxLength: 2000 }),
+          studentFeedback: Type.String({ minLength: 1 }),
           reuseFeedback: Type.Optional(Type.Boolean()),
         }),
         async (current, p, _callId, signal) => {
@@ -457,13 +459,7 @@ export async function teachingRunnerConfig(input: {
             else if (stage.skill)
               transition = transitions.completeRecap(project.definition, current.state);
           } else if (stage.kind === 'produce') {
-            const files = await readFiles(
-              await service(signal),
-              current,
-              project,
-              signal,
-              input.onActivity,
-            );
+            const files = await readFiles(await service(signal), current, project, signal);
             if (stage.writes === 'plan' && !files['PLAN.md']?.trim())
               throw sandboxConflict('PLAN.md must contain the learner’s plan.');
             if (stage.writes === 'plan')
@@ -531,13 +527,7 @@ export async function teachingRunnerConfig(input: {
           const finalRecap = isFinalProjectRecap(project.definition, current.state.position, stage);
           if (finalRecap) {
             evidence = {
-              files: await readFiles(
-                await service(signal),
-                current,
-                project,
-                signal,
-                input.onActivity,
-              ),
+              files: await readFiles(await service(signal), current, project, signal),
               fingerprint: hash,
               artifactKind: 'final',
             };
@@ -586,34 +576,25 @@ export async function teachingRunnerConfig(input: {
     activeSection: review.state.activeFile,
     reviewedSectionCount: review.state.reviewedFiles.length,
     pendingReview: review.state.pending
-      ? { question: review.state.pending.question, studentResponses: review.studentResponses() }
+      ? {
+          question: review.state.pending.question,
+          approval: review.state.pending.approval,
+          studentResponses: review.studentResponses(),
+        }
       : null,
   });
-  const {
-    systemPrompt,
-    bytes: promptBytes,
-    sectionBytes,
-  } = renderTeachingPrompt(currentPromptInput());
-  const assertPromptBudget = (bytes: number) => {
-    if (project.coursePackage && bytes > PROJECT_LIMITS.teachingBytes)
-      throw new SandboxError(
-        'PBL_PROMPT_SIZE',
-        400,
-        'Teaching prompt exceeds the 32 KiB budget. Shorten the current plan or teaching context.',
-      );
-  };
-  assertPromptBudget(promptBytes);
+  const { systemPrompt } = renderTeachingPrompt(currentPromptInput());
   return {
     tools,
     systemPrompt,
+    thinkingConfig: (): ThinkingConfig =>
+      review.state.welcome === 'pending'
+        ? { mode: 'disabled' }
+        : { mode: 'enabled', effort: 'low', level: 'low' },
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
-    liveContext: (entryPrompt = systemPrompt) => {
-      const live = teachingLiveContext(currentPromptInput());
-      assertPromptBudget(Buffer.byteLength(entryPrompt + teachingLiveSuffix(live)) + sectionBytes);
-      return live;
-    },
+    liveContext: () => teachingLiveContext(currentPromptInput()),
     historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
   };
 }
@@ -684,13 +665,14 @@ export function withTeachingTurnBoundary(
   };
 }
 
-/** A normal text stop is not a teaching receipt. Retry its unfinished work once
+/** A normal text stop is not a teaching receipt. Continue its unfinished work
  * against real learner input and current protocol state, without inventing a
  * user message or deleting the durable reply. Only the next request view loses
  * the terminal prose suffix, which Pi cannot continue from.
  */
-export function prepareTeachingContinuation(agent: Agent): boolean {
+export function prepareTeachingContinuation(agent: Agent, window: TeachingHistoryWindow): boolean {
   const messages = [...agent.state.messages];
+  const delivered: string[] = [];
   let removed = false;
   while (messages.at(-1)?.role === 'assistant') {
     const last = messages.at(-1)!;
@@ -700,12 +682,22 @@ export function prepareTeachingContinuation(agent: Agent): boolean {
       last.content.some((part) => part.type === 'toolCall')
     )
       return false;
+    delivered.unshift(
+      last.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n'),
+    );
     messages.pop();
     removed = true;
   }
   if (!removed || !messages.length) return false;
+  const reply = delivered.join('\n\n');
+  if (!reply.trim()) return false;
+  window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
-  agent.state.systemPrompt +=
-    '\nRuntime continuation: your preceding text reply ended without a committed teaching receipt. Complete the unfinished work for the SAME real learner input using the authoritative live state. If the reply answers the current question, open the next section with read_next_skill; read it before speaking and check whether earlier verified same-version learner replies already cover its goal. Use reuseFeedback to continue covered sections without another question; otherwise record its necessary question using request_skill_review and wait. While welcome is pending, only a real readiness reply may start the A lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Do not claim a Continue button exists before that succeeds. Never invent a student response or repeat already demonstrated reasoning as a new quiz.';
+  const instruction =
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. If it contains a question, copy that question verbatim into request_skill_review and output only the tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
+  if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }
