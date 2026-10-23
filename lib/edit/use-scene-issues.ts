@@ -25,7 +25,8 @@ export function useSceneIssues(scene: Scene) {
     return observeLegacySpeechAudio(
       scene,
       (audio) => setLegacy({ key: legacyKey, audio }),
-      () => setLegacy(null),
+      // A failed lookup must not leave thumbnail warnings pending indefinitely.
+      () => setLegacy({ key: legacyKey, audio: new Set() }),
     );
   }, [scene, legacyKey]);
   return collectCourseIssues(

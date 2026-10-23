@@ -66,6 +66,31 @@ function makeBody(overrides: Partial<StatelessChatRequest> = {}): StatelessChatR
 }
 
 describe('Pi director prompt closure routing', () => {
+  it('describes Native shape geometry only when its tool is available', () => {
+    const withShapes = buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_draw_shape']);
+    expect(withShapes).toContain('viewBox:[w,h]');
+    expect(withShapes).toContain('viewBox:[4,3]');
+    expect(withShapes).toContain('M0 1 C1 0 2 0 3 1');
+    expect(withShapes).toContain('fillColor:"transparent"');
+    expect(withShapes).toContain('origin (0,0) is the unrotated element upper-left');
+    expect(withShapes).toContain('M1 0 A1 1 0 1 1 1 2 A1 1 0 1 1 1 0 Z');
+    expect(withShapes).toContain('M0 0 A1 1 0 0 1 1 1');
+    expect(withShapes).toContain('keep the viewBox ratio equal to width:height');
+    expect(withShapes).toContain('x=centerX-width/2 and y=centerY-height/2');
+    expect(withShapes).toContain('Arc radii are in viewBox units');
+    expect(withShapes).toContain('Close filled shapes with Z');
+    expect(withShapes).not.toContain('hypotenuse');
+    expect(withShapes).not.toContain('-36.86989765');
+    expect(withShapes).not.toContain('shape:"');
+    expect(withShapes).not.toContain('Presets:');
+    expect(buildNativeChildPrompt(makeBody(), agents[0], [], ['wb_read'])).not.toContain(
+      '# Native whiteboard shapes',
+    );
+    expect(buildChildPrompt(makeBody(), agents[0], [], [], ['wb_draw_shape'])).not.toContain(
+      'Rotated square on the hypotenuse',
+    );
+  });
+
   it('keeps a navigable outline and requires scene evidence before delegation', () => {
     const body = makeBody({
       storeState: {

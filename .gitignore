@@ -76,6 +76,7 @@ next-env.d.ts
 # docs
 /docs
 # Eval results
+eval/whiteboard-shapes/results/
 eval/whiteboard-layout/results/
 eval/outline-language/results/
 eval/orchestration/results/
