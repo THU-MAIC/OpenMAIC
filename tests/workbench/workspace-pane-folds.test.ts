@@ -267,9 +267,7 @@ describe('fold placement', () => {
     expect(row![1]).toContain('testId="pro-nav-home"');
     expect(row![1]).toContain('testId="pro-nav-collapse"');
     expect(row![1]).toContain('className="ml-auto"');
-    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(
-      row![1].indexOf('pro-nav-home'),
-    );
+    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(row![1].indexOf('pro-nav-home'));
 
     // And it is the same button the other two panes fold with — one fold
     // language, not a rail-specific grip.
