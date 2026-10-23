@@ -10,6 +10,17 @@
     "close": "Schließen"
   },
   "home": {
+    "emptyLibraryTitle": "Hier beginnen deine Kurse",
+    "emptyLibraryBody": "Erstelle einen Kurs auf der Startseite und lerne hier weiter.",
+    "mobileTitle": "Was möchtest du lernen?",
+    "mobileSubtitle": "Nenne dein Thema und die KI erstellt einen interaktiven Kurs.",
+    "mobilePlaceholder": "Lernthema eingeben oder Materialien hochladen",
+    "courseOptions": "Kursoptionen",
+    "allSettings": "Alle Einstellungen",
+    "examplesLabel": "Beispielthemen",
+    "examplePython": "Python von Grund auf lernen",
+    "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
+    "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"
   },

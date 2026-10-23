@@ -10,6 +10,17 @@
     "close": "Đóng"
   },
   "home": {
+    "emptyLibraryTitle": "Lớp học của bạn bắt đầu ở đây",
+    "emptyLibraryBody": "Tạo khóa học ở trang chủ và quay lại đây để học tiếp.",
+    "mobileTitle": "Bạn muốn học gì?",
+    "mobileSubtitle": "Cho biết chủ đề, AI sẽ tạo một lớp học tương tác.",
+    "mobilePlaceholder": "Nhập chủ đề hoặc tải tài liệu lên",
+    "courseOptions": "Tùy chọn lớp học",
+    "allSettings": "Tất cả cài đặt",
+    "examplesLabel": "Thử một chủ đề",
+    "examplePython": "Học Python từ đầu",
+    "exampleFourier": "Hiểu biến đổi Fourier qua ví dụ trực quan",
+    "desktopOnly": "Hãy dùng máy tính cho trình biên tập và chế độ Pro.",
     "slogan": "Học tập sinh tạo trong lớp học tương tác đa tác nhân",
     "greetingWithName": "Chào {{name}}"
   },

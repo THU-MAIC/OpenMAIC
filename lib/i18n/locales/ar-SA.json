@@ -10,6 +10,17 @@
     "close": "إغلاق"
   },
   "home": {
+    "emptyLibraryTitle": "تبدأ دروسك هنا",
+    "emptyLibraryBody": "أنشئ درسًا من الصفحة الرئيسية، ثم عُد إلى هنا لمتابعة التعلم.",
+    "mobileTitle": "ماذا تريد أن تتعلم؟",
+    "mobileSubtitle": "أخبرنا بموضوعك ليُنشئ الذكاء الاصطناعي درسًا تفاعليًا.",
+    "mobilePlaceholder": "أدخل موضوعًا أو ارفع مواد تعليمية",
+    "courseOptions": "خيارات الدرس",
+    "allSettings": "كل الإعدادات",
+    "examplesLabel": "جرّب موضوعًا",
+    "examplePython": "تعلم Python من الصفر",
+    "exampleFourier": "شرح تحويل فورييه بأمثلة مبسطة",
+    "desktopOnly": "استخدم الكمبيوتر للمحرر ووضع Pro.",
     "slogan": "التعلّم التوليدي في فصل تفاعلي متعدد الوكلاء",
     "greetingWithName": "مرحبًا، {{name}}"
   },

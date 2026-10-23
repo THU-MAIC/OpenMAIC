@@ -89,6 +89,14 @@ export function SpeechButton({
       <TooltipTrigger asChild>
         <button
           type="button"
+          data-state={active ? 'active' : 'idle'}
+          aria-label={
+            isProcessing
+              ? t('roundtable.processing')
+              : isRecording
+                ? t('voice.stopListening')
+                : t('voice.startListening')
+          }
           disabled={isDisabled || isProcessing}
           onClick={handleClick}
           className={cn(
