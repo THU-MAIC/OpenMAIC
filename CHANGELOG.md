@@ -179,8 +179,8 @@ The full list of storage, schema and API changes behind the knowledge base, for 
 
 ### Changed
 
-- **The workbench is no longer a separate "Pro mode".** The PRO badge, the home ↔ workspace transition and the Exit Pro control are removed. Where the workbench is available, the home page links to it from the top-right toolbar (**Workspace**), the workspace links back with **New course**, and the classroom header offers **Edit in workspace** instead of the Pro switch. Deployments without the workbench behave as before; where only the classroom editor is enabled, its toggle is labelled **Edit** instead of **Pro**.
-- **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, and will be removed in a future release. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names.
+- **The workbench is no longer a separate "Pro mode".** The PRO badge, the home ↔ workspace transition and the Exit Pro control are removed. Where the workbench is available, the classroom header offers **Edit in workspace** instead of the Pro switch. Deployments without the workbench behave as before; where only the classroom editor is enabled, its toggle is labelled **Edit** instead of **Pro**.
+- **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, until its removal in 1.4.0, and the server logs a deprecation warning at startup when it is used. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names.
 
 ## [1.2.1] - 2026-10-18
 
