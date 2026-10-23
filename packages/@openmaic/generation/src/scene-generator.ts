@@ -43,6 +43,7 @@ import {
 } from './prompt-formatters.js';
 import type { PromptId } from './prompts/types.js';
 import { buildPrompt, PROMPT_IDS } from './prompts/index.js';
+import { buildSlideContentPrompt } from './scene-prompts.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -702,7 +703,6 @@ async function generateSlideContent(
   const generatedImageEnabled = generatedImageEntries.length > 0;
   const generatedVideoEnabled = generatedVideoEntries.length > 0;
   const imageElementEnabled = hasAssignedImages || generatedImageEnabled;
-  const mediaElementEnabled = imageElementEnabled || generatedVideoEnabled;
 
   // Add generated media placeholders info (images + videos)
   if (outline.mediaGenerations && outline.mediaGenerations.length > 0) {
@@ -733,27 +733,20 @@ async function generateSlideContent(
     }
   }
 
-  // Canvas dimensions (matching viewportSize and viewportRatio)
-  const canvasWidth = 1000;
-  const canvasHeight = 562.5;
-
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
-  const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
-    title: outline.title,
-    description: outline.description,
-    keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-    elements: '（根据要点自动生成）',
-    assignedImages: assignedImagesText,
-    canvas_width: canvasWidth,
-    canvas_height: canvasHeight,
-    teacherContext,
-    languageDirective: languageDirective || '',
-    imageElementEnabled,
-    generatedImageEnabled,
-    generatedVideoEnabled,
-    mediaElementEnabled,
-  });
+  const prompts = buildSlideContentPrompt(
+    { imageElementEnabled, generatedImageEnabled, generatedVideoEnabled },
+    {
+      title: outline.title,
+      description: outline.description,
+      keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
+      elements: '（根据要点自动生成）',
+      assignedImages: assignedImagesText,
+      teacherContext,
+      languageDirective: languageDirective || '',
+    },
+  );
 
   if (!prompts) {
     onFailure?.({ code: 'prompt-unavailable' });

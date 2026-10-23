@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Features
+
+- `@openmaic/generation` exports `renderScenePrompt('slide-content', { imageElementEnabled, generatedImageEnabled, generatedVideoEnabled })`, which returns the slide content system prompt without running generation. Slide generation builds its system prompt through the same code, so the two cannot drift. `@openmaic/generation` 0.3.26.
+
 ### Bug Fixes
 
 - A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
