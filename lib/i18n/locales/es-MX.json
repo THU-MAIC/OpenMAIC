@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "El entorno del proyecto está inactivo. Continúa trabajando o restaura los archivos con el botón de abajo.",
+    "recoverWorkspace": "Restaurar archivos del proyecto",
+    "checkpointUnavailable": "No se pudieron archivar los últimos cambios. Intenta guardar de nuevo. Si permanece inactivo, el entorno puede liberarse y los cambios sin archivar pueden perderse.",
+    "checkpointSkipped": "El archivado ha fallado repetidamente. Al recuperar, pueden perderse los cambios posteriores al respaldo.",
+    "lastDurableCheckpoint": "Respaldo recuperable para esta liberación: {{time}}.",
+    "noDurableCheckpoint": "No hay respaldo disponible; los archivos del proyecto volverán a la versión inicial.",
+    "checkpointReasons": {
+      "source-limit": "El proyecto supera el límite de archivos o tamaño.",
+      "archive-limit": "El proyecto supera el límite de archivos o tamaño.",
+      "unsupported-files": "Algunos archivos no se pueden archivar.",
+      "workspace-permission": "No se pueden leer los archivos del proyecto.",
+      "workspace-full": "El disco del espacio de trabajo está lleno.",
+      "storage-quota": "La cuota de almacenamiento de respaldos está llena.",
+      "storage-config": "Revisa la configuración y los permisos del almacenamiento.",
+      "storage-permission": "Revisa la configuración y los permisos del almacenamiento.",
+      "timeout": "El almacenamiento o el entorno no está disponible, o la solicitud agotó el tiempo de espera.",
+      "unavailable": "El almacenamiento o el entorno no está disponible, o la solicitud agotó el tiempo de espera.",
+      "workspace-changed": "Los archivos cambiaron durante el archivado.",
+      "execution-unsettled": "No se pudo confirmar que la tarea se detuvo."
     }
   }
 }

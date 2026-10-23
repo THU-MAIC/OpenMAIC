@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "Die Projektumgebung ist inaktiv. Arbeiten Sie weiter oder stellen Sie die Dateien unten wieder her.",
+    "recoverWorkspace": "Projektdateien wiederherstellen",
+    "checkpointUnavailable": "Die letzten Änderungen konnten nicht archiviert werden. Versuchen Sie erneut zu speichern. Bei Inaktivität kann die Umgebung freigegeben werden und nicht archivierte Arbeit verloren gehen.",
+    "checkpointSkipped": "Die Archivierung schlägt wiederholt fehl. Bei der Wiederherstellung können Änderungen seit der Sicherung verloren gehen.",
+    "lastDurableCheckpoint": "Für diese Freigabe wiederherstellbare Sicherung: {{time}}.",
+    "noDurableCheckpoint": "Kein Archiv verfügbar; die Projektdateien werden aus der Ausgangsversion wiederhergestellt.",
+    "checkpointReasons": {
+      "source-limit": "Das Projekt überschreitet die Datei- oder Größenbegrenzung.",
+      "archive-limit": "Das Projekt überschreitet die Datei- oder Größenbegrenzung.",
+      "unsupported-files": "Einige Dateien können nicht archiviert werden.",
+      "workspace-permission": "Projektdateien sind nicht lesbar.",
+      "workspace-full": "Der Arbeitsbereich hat keinen freien Speicherplatz.",
+      "storage-quota": "Das Speicherkontingent für Archive ist voll.",
+      "storage-config": "Prüfen Sie Speicherkonfiguration und Berechtigungen.",
+      "storage-permission": "Prüfen Sie Speicherkonfiguration und Berechtigungen.",
+      "timeout": "Speicher oder Arbeitsumgebung ist nicht verfügbar oder hat das Zeitlimit überschritten.",
+      "unavailable": "Speicher oder Arbeitsumgebung ist nicht verfügbar oder hat das Zeitlimit überschritten.",
+      "workspace-changed": "Dateien wurden während der Archivierung geändert.",
+      "execution-unsettled": "Das Ende der Aufgabe konnte nicht bestätigt werden."
     }
   }
 }

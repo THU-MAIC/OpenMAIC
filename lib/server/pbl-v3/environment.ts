@@ -9,9 +9,16 @@ import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration
 import type { InstalledProject } from './catalog';
 
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
-export async function touchEnvironment(store: LearningStore, row: Study, service: SandboxService) {
+export async function touchEnvironment(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+  renew = true,
+) {
   if (!row.environment_id) return null;
   let env = await service.get(row.environment_id);
+  if (row.archive_discard?.environmentId === row.environment_id)
+    return { ...env, workspaceReady: false };
   const deadline = Date.now() + 5_000;
   let reconciled = false;
   for (;;) {
@@ -33,6 +40,7 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
       reconciled = true;
     }
     if (env.state !== 'running' || !env.workspaceReady) return env;
+    if (!renew) return env;
     try {
       await service.renew(env.id);
     } catch (error) {

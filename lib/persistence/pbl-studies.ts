@@ -89,6 +89,31 @@ UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_a
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );`,
     },
+    {
+      version: 6,
+      name: 'workspace-lifecycle',
+      transaction: true,
+      up: `ALTER TABLE pbl_v3_studies
+        ADD COLUMN last_used_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        ADD COLUMN workspace_dirty_at TIMESTAMPTZ,
+        ADD COLUMN lifecycle_error TEXT;
+      CREATE INDEX pbl_v3_studies_lifecycle ON pbl_v3_studies(last_used_at)
+        WHERE environment_id IS NOT NULL;`,
+    },
+    {
+      version: 7,
+      name: 'teaching-turn-deadline',
+      transaction: true,
+      up: 'ALTER TABLE pbl_v3_roles ADD COLUMN turn_started_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();',
+    },
+    {
+      version: 8,
+      name: 'bounded-checkpoint-failure',
+      transaction: true,
+      up: `ALTER TABLE pbl_v3_studies
+        ADD COLUMN checkpoint_failure JSONB,
+        ADD COLUMN archive_discard JSONB;`,
+    },
   ],
 };
 

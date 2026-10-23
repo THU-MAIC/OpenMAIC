@@ -2,14 +2,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { usePblActivityInput } from './activity-provider';
 import './workbench.css';
 
 /** Native fullscreen keeps a single scene/workspace instance and restores the host classroom on exit. */
-export function WorkspaceFrame({ children }: { children: ReactNode }) {
+export function WorkspaceFrame({ sceneId, children }: { sceneId: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState(false);
   const { t } = useI18n();
+  const input = usePblActivityInput(sceneId);
   useEffect(() => {
     const change = () => setExpanded(document.fullscreenElement === ref.current);
     document.addEventListener('fullscreenchange', change);
@@ -19,6 +21,10 @@ export function WorkspaceFrame({ children }: { children: ReactNode }) {
     <div
       ref={ref}
       data-testid="pbl-v3-frame"
+      // Capture project interactions (including React portals), never classroom navigation.
+      onPointerDownCapture={input}
+      onKeyDownCapture={input}
+      onWheelCapture={input}
       className="wbchat pbl-workbench relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
     >
       <div className="absolute right-2 top-2 z-10">

@@ -147,74 +147,78 @@ export async function teachingRunnerConfig(input: {
       async execute(_id: string, params: Static<T>, toolSignal?: AbortSignal) {
         const signal = toolSignal ? AbortSignal.any([input.signal, toolSignal]) : input.signal;
         assertActive(signal);
-        return store.exclusive(row.id, async () => {
-          assertActive(signal);
-          const current = await store.get(row.id, input.ownerId);
-          if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
-            throw sandboxConflict('The teaching stage changed.');
-          await agents.assertActiveLease(
-            input.sessionId,
-            input.workerId,
-            input.attempt,
-            store.pool,
-          );
-          const result = await withLearningWorkspaceAccess(
-            {
-              ownerId: current.owner_id,
-              workspaceId: learningWorkspaceId(current.id),
-              environmentIds: () => [current.environment_id],
-              operations:
-                name === 'write_file' || name === 'manage_file'
-                  ? ['write']
-                  : name === 'run_build'
-                    ? ['command']
-                    : name === 'complete_stage'
-                      ? ['checkpoint']
-                      : [],
-            },
-            () => execute(current, params, _id, signal),
-          );
-          assertActive(signal);
-          await store.transaction(async (db) => {
-            await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+        return store.waitForExclusive(
+          row.id,
+          async () => {
             assertActive(signal);
-            if (result.evidence)
-              await recordLearningEvidence(
-                db,
-                current,
-                bound.role,
-                name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
-                result.evidence,
-              );
-            if (result.transition) await store.commit(db, current, result.transition);
-            await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+            const current = await store.get(row.id, input.ownerId);
+            if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+              throw sandboxConflict('The teaching stage changed.');
+            await agents.assertActiveLease(
               input.sessionId,
-              JSON.stringify(review.state),
-            ]);
-            if (name === 'complete_stage')
-              await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
-                input.sessionId,
-                JSON.stringify({
-                  stageKey: bound.stage_key,
-                  feedbackSeq: bound.feedback_seq,
-                  userMessageSeq: latest?.seq ?? 0,
-                }),
-              ]);
-          });
-          completionRecorded =
-            name === 'complete_stage' ||
-            hasStageCompletion(
-              { ...current, state: result.transition?.state ?? current.state },
-              stage,
-              bound,
+              input.workerId,
+              input.attempt,
+              store.pool,
             );
-          if (name === 'complete_stage') review.finishRun();
-          if (name === 'request_skill_review' || name === 'complete_stage') turnComplete = true;
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
-            details: {},
-          };
-        });
+            const result = await withLearningWorkspaceAccess(
+              {
+                ownerId: current.owner_id,
+                workspaceId: learningWorkspaceId(current.id),
+                environmentIds: () => [current.environment_id],
+                operations:
+                  name === 'write_file' || name === 'manage_file'
+                    ? ['write']
+                    : name === 'run_build'
+                      ? ['command']
+                      : name === 'complete_stage'
+                        ? ['checkpoint']
+                        : [],
+              },
+              () => execute(current, params, _id, signal),
+            );
+            assertActive(signal);
+            await store.transaction(async (db) => {
+              await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+              assertActive(signal);
+              if (result.evidence)
+                await recordLearningEvidence(
+                  db,
+                  current,
+                  bound.role,
+                  name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
+                  result.evidence,
+                );
+              if (result.transition) await store.commit(db, current, result.transition);
+              await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+                input.sessionId,
+                JSON.stringify(review.state),
+              ]);
+              if (name === 'complete_stage')
+                await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
+                  input.sessionId,
+                  JSON.stringify({
+                    stageKey: bound.stage_key,
+                    feedbackSeq: bound.feedback_seq,
+                    userMessageSeq: latest?.seq ?? 0,
+                  }),
+                ]);
+            });
+            completionRecorded =
+              name === 'complete_stage' ||
+              hasStageCompletion(
+                { ...current, state: result.transition?.state ?? current.state },
+                stage,
+                bound,
+              );
+            if (name === 'complete_stage') review.finishRun();
+            if (name === 'request_skill_review' || name === 'complete_stage') turnComplete = true;
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
+              details: {},
+            };
+          },
+          signal,
+        );
       },
     } as unknown as AgentTool;
   }

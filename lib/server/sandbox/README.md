@@ -34,6 +34,122 @@ A `workspaceId` is an opaque owner-scoped key. It does not convey teaching seman
 allow attachment of an arbitrary provider resource. Templates contain language tools:
 Java/Maven projects, Python exercises and other course content remain consumers.
 
+## PBL workspace lifecycle
+
+PBL uses one inactivity interval: `OPENMAIC_PBL_IDLE_TIMEOUT_MS` (default **300000**, allowed
+60000–86400000). This is independent of the provider's renewable `sandbox.lifetimeMs` lease;
+keep the cloud lease at least five minutes for normal hosted use. The application runs a
+30-second reconciliation schedule from `instrumentation.ts`. Replicas share the existing
+study/environment locks, and application restart does not reset durable usage timestamps.
+
+Short configured leases remain valid. Before a PBL source snapshot and before a generic
+workspace archive, the service renews for at least **180000 ms**: the shared 120-second
+checkpoint deadline plus 60 seconds of margin, or the configured lease if longer. Ordinary
+provider renewals preserve any longer remaining lease, so a concurrent short renewal cannot
+remove that protection. Renewal honors the checkpoint signal; an expired or failed renewal
+starts no snapshot/export or checkpoint commit. The existing failure-grace/discard paths
+still release without requesting a new checkpoint lease.
+
+Study-lock admission is shared by all stores using the same PostgreSQL pool. Maintenance
+leaves one admission slot for interactive work when the pool supports multiple slots: the
+default ten-connection pool admits two study operations, of which maintenance may occupy
+one. The two scan workers still traverse other studies while an archive is slow. Deferred
+studies with recent learner use, a command within its execution deadline, or a recent
+command/Agent completion receive only a lightweight lease renewal; checkpoint, collection
+and release still require admission. Idle/overdue-only studies, expired failure grace and
+durable discard intent do not gain extra retention through this path. A deferred archive
+is retried on a later scan. Injected pools with only one study slot retain single-operation
+behavior.
+
+The active PBL scene reports coalesced trusted pointer, keyboard and wheel input inside
+the project frame at most once every 30 seconds. Entry and visibility return also mark
+activity. The provider stays above scene rendering, while input capture belongs to the project frame
+(including its React portals). Classroom navigation controls do not restore idle compute.
+The first input after a reporting gap sends immediately; later input is coalesced within
+the 30-second interval. The existing heartbeat flushes pending input and retries failed
+batches, but never sends an empty batch. No additional activity timer is required.
+Ordinary view polling and automatic scrolling do not count. Switching scenes or leaving
+a course stops that scene's activity reports; another tab can still update the same study.
+No unload callback or tab counter is required. A long static reading period can reach
+inactivity; subsequent input restores the
+workspace automatically. Returning to a completed project's report does not allocate compute;
+its explicit restore control opens the project files when wanted.
+After a preparation failure, further typing/scrolling does not automatically retry it;
+the learner uses the explicit setup retry control, preserving any draft input.
+
+The server renews while the study is recently used or an Agent/execution is active. Task
+completion starts a fresh inactivity interval. Builds and assessments are collected through
+the same verdict path as browser collection, even with no browser open. An Agent turn older
+than 15 minutes is requested to cancel; queued/orphaned cancellation uses the existing Agent
+lease fence. Commands still active/unknown after 330 seconds are requested to cancel through
+their existing operation ID. An unknown outcome is never assumed to have stopped writing.
+If all unresolved commands remain overdue after cancellation, idle maintenance uses the
+same finite failure grace. On expiry it records an interrupted-work loss notice and
+destroys the environment without taking a potentially inconsistent archive. Confirmation
+that commands have stopped clears this failure and starts normal post-task inactivity.
+
+Idle reclamation closes leftover workbench terminals through the existing terminal cleanup
+path before archiving, including ordinary background processes in the terminal session.
+Recent learner activity and active Agent/build/assessment work still prevent reclamation.
+Uncertain terminal discovery or failed closure records an execution-unsettled failure at
+the terminal stage, using the same idle failure grace; retries never restart that deadline.
+If closure cannot be confirmed before expiry, release without a new archive under the
+existing durable discard/loss policy. Terminal closure itself does not count as activity.
+
+File invalidation marks the workspace dirty before the remote write. In addition to teaching
+checkpoints, dirty work is checkpointed after 60 seconds when no managed writer is active.
+This limits the normal between-stage recovery window; a long running writer or unavailable
+storage can extend it. Unexpected provider expiry or application/storage failure can lose
+changes since the last successful checkpoint. Local browser drafts are not durable backups.
+
+Intentional reclamation collects outcomes, quiesces writers, commits a checkpoint and its
+study recovery position, then destroys the resource. It preserves the logical study and
+recovers into a new physical environment through the existing allocation identity path.
+Interrupted allocations/restores and uncertain deletes are reconciled under their original
+IDs. Passive polling never recreates an idle environment. Once reclamation holds the study
+lock, new operations retry after it finishes rather than attempting to reverse deletion.
+
+Checkpoint failures record a safe reason, stage and first idle failure timestamp. Transient
+failures retry on the next pass; deterministic size/file/quota/configuration failures wait
+for user activity or an explicit retry instead of repeatedly exporting unchanged files.
+`OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS` is optional, read at runtime, defaults to **300000**
+and accepts 60000–86400000. It starts on the first failed **idle reclamation**, not a
+periodic dirty checkpoint. Retries and polling never extend it. Real learner activity
+clears the pending failure cycle; task completion starts a fresh inactivity interval.
+Both the idle timeout and archive failure grace are validated during fatal boot checks,
+before background workers start; malformed settings refuse startup.
+
+After that grace, maintenance stops renewing and records release-without-archive intent
+before deletion. The previous successful checkpoint remains intact; the UI shows its
+timestamp and warns that newer work may be lost. With no checkpoint, recovery uses starter
+files. Existing recovery invalidates approvals/tests for unavailable versions. A durable
+discard intent fences old-environment writes even if deletion fails; return/retry completes
+deletion under the original ID before preparing a replacement. If metadata cannot be
+persisted, no intentional destructive release occurs; the remaining provider lease is the
+compute bound. Maintenance checks database writability before renewing.
+
+Checkpoint I/O shares a 120-second total deadline, including source enumeration, source
+copy/download, provider connections, archive generation/download and chunk upload. Source
+reads and enumeration pass cancellation through the service/provider boundary; read-only
+I/O races also bound callers of adapters that ignore it. A late source result cannot start
+another read, archive or checkpoint commit. Source downloads keep their local 30-second
+bound even with a longer Agent-turn signal. A pre-expired deadline starts no source or
+archive I/O. Temporary transfer
+cleanup is best effort with its own short I/O bound and cannot extend the caller's lock
+beyond the shared deadline. Cancellation bounds caller waiting; it does not confirm that
+a remote archive process has stopped. Built-in S3 uploads receive its cancellation signal;
+custom byte adapters should honor the optional write signal. Even an adapter ignoring
+cancellation cannot commit a late checkpoint head; uncertain chunks remain pending for the
+existing collector.
+Logs contain safe reason/stage and study/environment IDs, never raw provider errors.
+Do not disable/change provider or storage configuration until outstanding environments are
+drained. The provider lease remains the final compute bound if application workers disappear;
+it cannot itself guarantee archival before expiry.
+
+The pre-change sequential baseline is recorded in `eval/sandbox-lifecycle/baseline-2026-10-23.json`.
+It uses a small two-milestone Python project, real cloud compute and local S3-compatible
+checkpoint storage; it is not a production object-storage or concurrency capacity result.
+
 ## Server configuration
 
 Configure the installation's `sandbox` section in `openmaic.yml` (see

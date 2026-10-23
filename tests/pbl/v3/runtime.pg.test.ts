@@ -32,11 +32,13 @@ const mocked = vi.hoisted(() => ({
   missing: new Set<string>(),
   failInspect: false,
   failImport: false,
+  failExport: false,
   loseWriteAck: false,
   loseCreateAck: false,
   hideDiscovery: false,
   creates: [] as string[],
   renewals: [] as string[],
+  lifetimeMs: 300_000,
   terminals: new Map<string, number>(),
   inputs: [] as string[],
   objects: new Map<string, Uint8Array>(),
@@ -117,9 +119,9 @@ vi.mock('@/lib/server/sandbox/settings', () => ({
   resolvedSandboxConfig: async () => ({
     fingerprint: 'test',
     settingsRevision: 0,
-    lifetimeMs: 300000,
-    maxActive: 50,
-    maxActivePerOwner: 50,
+    lifetimeMs: mocked.lifetimeMs,
+    maxActive: 100,
+    maxActivePerOwner: 100,
   }),
 }));
 vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
@@ -142,6 +144,7 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
       mocked.renewals.push(id);
     }
     async *exportWorkspace(id: string) {
+      if (mocked.failExport) throw new Error('Checkpoint export unavailable');
       const files: Record<string, string> = {};
       const walk = async (dir: string, prefix = '') => {
         for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a, b) =>
@@ -159,6 +162,9 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
       };
       await walk(join(mocked.root, id));
       yield Buffer.from(JSON.stringify(files));
+    }
+    async destroy(id: string) {
+      mocked.missing.add(id);
     }
     async importWorkspace(id: string, _operation: string, source: AsyncIterable<Uint8Array>) {
       if (mocked.failImport) throw new Error('Interrupted restore');
@@ -277,6 +283,7 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
     async readCommand(id: string, _operation: string, commandId: string) {
       return JSON.parse(await readFile(join(mocked.root, id, `.command-${commandId}`), 'utf8'));
     }
+    async cancelCommand() {}
   },
 }));
 vi.mock('@/lib/server/agent-runtime/agent-driver-model', () => ({
@@ -320,6 +327,7 @@ import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import * as catalog from '@/lib/server/pbl-v3/catalog';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { LearningStore } from '@/lib/server/pbl-v3/store';
+import { maintainLearningEnvironments, maintainStudy } from '@/lib/server/pbl-v3/lifecycle';
 import {
   commandStudy,
   openStudy,
@@ -327,6 +335,7 @@ import {
   digest,
   stageFor,
   stageKey,
+  saveStudyCheckpoint,
 } from '@/lib/server/pbl-v3/runtime';
 import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
@@ -358,16 +367,16 @@ async function command(type: string, payload: Record<string, unknown> = {}) {
     ...payload,
   });
 }
-async function freshStudy() {
+async function freshStudy(definition = project) {
   const row = await store.create(
     {
       ownerId: principal.ownerId,
       stageId: randomUUID(),
       sceneId: 'scene',
-      projectId: project.ref.id,
-      version: project.ref.version,
+      projectId: definition.ref.id,
+      version: definition.ref.version,
     },
-    startOrchestration(project.definition),
+    startOrchestration(definition.definition),
   );
   const send = async (type: string) =>
     commandStudy(principal, row.id, {
@@ -651,6 +660,149 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await admin.end();
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
+  });
+  it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
+    const previousMax = pool.options.max;
+    pool.options.max = 10; // The production pool's default admits two study operations.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Set<string>();
+    let scanning: Promise<void> | undefined;
+    const originalExport = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
+    const archive = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
+    try {
+      const first = await freshStudy(),
+        second = await freshStudy(),
+        interactive = await freshStudy();
+      const interactiveEnvironment = (await store.get(interactive.id, principal.ownerId))
+        .environment_id!;
+      const environments = new Set([
+        (await store.get(first.id, principal.ownerId)).environment_id!,
+        (await store.get(second.id, principal.ownerId)).environment_id!,
+      ]);
+      await ageStudy(first.id);
+      await ageStudy(second.id);
+      archive.mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+        if (environments.has(args[0])) {
+          started.add(args[0]);
+          await gate;
+        }
+        yield* originalExport.apply(this, args);
+      });
+      const renewals = mocked.renewals.length;
+      scanning = maintainLearningEnvironments();
+      await vi.waitFor(() => expect(started.size).toBeGreaterThan(0));
+      // Leave the archives blocked long enough for all scan workers to seek admission.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
+      await expect(
+        store.waitForExclusive(interactive.id, () =>
+          store.recordActivity(interactive.id, principal.ownerId),
+        ),
+      ).resolves.toBeUndefined();
+      await expect(interactive.send('checkpoint')).resolves.toBeDefined();
+      expect(started.size).toBe(1);
+      release();
+      await scanning;
+      // A short renewal can win admission first; later scans still reclaim the deferred candidate.
+      await vi.waitFor(async () => {
+        await maintainLearningEnvironments();
+        expect(started.size).toBe(2);
+      });
+    } finally {
+      release();
+      try {
+        await scanning;
+      } finally {
+        archive.mockRestore();
+        pool.options.max = previousMax;
+      }
+    }
+  }, 15000);
+
+  it.each([
+    ['reading', true],
+    ['agent', true],
+    ['completed-agent', true],
+    ['running-command', true],
+    ['completed-command', true],
+    ['overdue-command', false],
+    ['idle', false],
+    ['expired-failure', false],
+    ['discard-intent', false],
+  ] as const)('keeps deferred %s work leased only while protected', async (kind, renewed) => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    if (kind === 'agent' || kind === 'completed-agent') {
+      const queued = (await fresh.send('chat')) as { sessionId: string };
+      if (kind === 'completed-agent')
+        await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+          queued.sessionId,
+        ]);
+    }
+    if (kind.endsWith('command'))
+      await pool.query(
+        `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json,created_at)
+         VALUES($1,$2,'fixture',$3,$4)`,
+        [
+          row.environment_id,
+          randomUUID(),
+          JSON.stringify({ state: kind === 'completed-command' ? 'exited' : 'running' }),
+          new Date(Date.now() - (kind === 'overdue-command' ? 20 * 60_000 : 60_000)),
+        ],
+      );
+    if (!['reading', 'discard-intent'].includes(kind)) await ageStudy(fresh.id);
+    if (kind === 'expired-failure')
+      await store.recordCheckpointFailure(row, {
+        environmentId: row.environment_id!,
+        reason: 'unavailable',
+        stage: 'archive',
+        retryable: true,
+        dirtyAt: null,
+        firstIdleFailureAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+      });
+    if (kind === 'discard-intent')
+      await store.recordArchiveDiscard(row, {
+        environmentId: row.environment_id!,
+        at: new Date().toISOString(),
+        checkpointRevision: 0,
+        checkpointAt: null,
+        reason: 'unavailable',
+      });
+    const previousMax = pool.options.max;
+    pool.options.max = 10;
+    let release!: () => void, entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = store.exclusive(
+      randomUUID(),
+      async () => {
+        entered();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+      'maintenance',
+    );
+    try {
+      await ready;
+      const renewals = mocked.renewals.length;
+      const before = await store.get(fresh.id, principal.ownerId);
+      const maintenance = maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+      if (kind === 'agent') await maintenance;
+      else await expect(maintenance).rejects.toMatchObject({ code: 'PBL_BUSY' });
+      expect(mocked.renewals.slice(renewals).includes(row.environment_id!)).toBe(renewed);
+      const after = await store.get(fresh.id, principal.ownerId);
+      expect(after.revision).toBe(before.revision);
+      expect(after.last_used_at).toEqual(before.last_used_at);
+    } finally {
+      release();
+      await held;
+      pool.options.max = previousMax;
+    }
   });
   it.each(['greeting-python-lab', 'greeting-java'])(
     'completes both seven-step milestones with a tool-completed final recap and no appended exploration for %s',
@@ -2544,7 +2696,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it('keeps teaching tools available while a background poll renews the same environment', async () => {
+  it('keeps teaching tools available while lifecycle maintenance renews the same environment', async () => {
     const study = await freshStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('renewal-worker', process.pid, {
@@ -2591,7 +2743,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         entered();
         await gate;
       });
-    const polling = learningView(principal, study.id);
+    const polling = maintainStudy(store, study.id, principal.ownerId);
     try {
       await ready;
       const teaching = invoke(config, 'request_skill_review', {
@@ -3197,7 +3349,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await held;
     }
     await expect(first.send('checkpoint')).resolves.toBeDefined();
-  });
+  }, 10000);
 
   it.each(['greeting-python-lab', 'greeting-java'])(
     'runs an unregistered imported %s course from pinned resources after its scene changes',
@@ -3533,4 +3685,778 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
     120000,
   );
+  async function ageStudy(id: string) {
+    await pool.query(
+      "UPDATE pbl_v3_studies SET last_used_at=now()-interval '20 minutes' WHERE id=$1",
+      [id],
+    );
+  }
+
+  it.each(['command', 'maintenance'] as const)(
+    'protects a slow %s checkpoint when the configured lease is only sixty seconds',
+    async (mode) => {
+      mocked.lifetimeMs = 60_000;
+      let reading: ReturnType<typeof vi.spyOn> | undefined;
+      let renewing: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        const fresh = await freshStudy();
+        const row = await store.get(fresh.id, principal.ownerId);
+        const environmentId = row.environment_id!;
+        await writeFile(join(mocked.root, environmentId, 'PLAN.md'), 'Protected short-lease plan');
+        let elapsed = 0,
+          expiresAt = 60_000;
+        const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+        renewing = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+          .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+            await originalRenew.apply(this, args);
+            if (args[0] === environmentId) expiresAt = Math.max(expiresAt, elapsed + args[2]);
+          });
+        const originalRead = E2BCompatibleSandboxProvider.prototype.readText;
+        reading = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'readText')
+          .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+            if (args[0] === environmentId) {
+              elapsed = 75_000; // Model remote elapsed time without a wall-clock wait.
+              if (elapsed >= expiresAt) throw new Error('Provider lease expired during snapshot');
+            }
+            return originalRead.apply(this, args);
+          });
+        if (mode === 'maintenance') {
+          await ageStudy(fresh.id);
+          await maintainStudy(store, fresh.id, principal.ownerId);
+        } else await fresh.send('checkpoint');
+        const service = await SandboxService.forOwner(principal);
+        expect(await service.checkpoint(environmentId)).toMatchObject({ revision: 1 });
+        if (mode === 'maintenance') {
+          expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+          await fresh.send('prepare');
+          const restored = await store.get(fresh.id, principal.ownerId);
+          expect(await service.readText(restored.environment_id!, 'PLAN.md')).toBe(
+            'Protected short-lease plan',
+          );
+        }
+      } finally {
+        reading?.mockRestore();
+        renewing?.mockRestore();
+        mocked.lifetimeMs = 300_000;
+      }
+    },
+  );
+
+  it.each(['file', 'listing'] as const)(
+    'releases source snapshot %s admission at the shared deadline and fences late reads',
+    async (kind) => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const row = await store.get(fresh.id, principal.ownerId);
+      const service = await SandboxService.forOwner(principal);
+      let finish!: () => void;
+      const reading = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+      const originalRead = reading.getMockImplementation()!;
+      const listing = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'listWorkspace');
+      const originalList = listing.getMockImplementation()!;
+      const block = () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      if (kind === 'file')
+        reading.mockImplementationOnce(async function (
+          this: E2BCompatibleSandboxProvider,
+          ...args
+        ) {
+          await block();
+          return originalRead.apply(this, args);
+        });
+      else {
+        row.project = { ...project, sourceRoots: ['src'] };
+        listing.mockImplementationOnce(async function (
+          this: E2BCompatibleSandboxProvider,
+          ...args
+        ) {
+          await block();
+          return originalList.apply(this, args);
+        });
+      }
+      const controller = new AbortController();
+      const timeout = AbortSignal.timeout.bind(AbortSignal);
+      const deadline = vi
+        .spyOn(AbortSignal, 'timeout')
+        .mockImplementation((ms) => (ms === 120_000 ? controller.signal : timeout(ms)));
+      const saving = store.exclusive(fresh.id, () => saveStudyCheckpoint(service, row));
+      const outcome = saving.then(
+        () => ({ saved: true }),
+        (error: unknown) => ({ error }),
+      );
+      try {
+        await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+        controller.abort(new DOMException('checkpoint deadline', 'TimeoutError'));
+        const result = await Promise.race([
+          outcome,
+          new Promise((resolve) => setTimeout(() => resolve({ stillWaiting: true }), 1000)),
+        ]);
+        expect(result).toMatchObject({
+          error: { stage: 'snapshot', failure: { reason: 'timeout' } },
+        });
+        expect(kind === 'file' ? reading.mock.calls[0]?.[3] : listing.mock.calls[0]?.[2]).toBe(
+          controller.signal,
+        );
+        expect((await service.checkpoint(row.environment_id!))?.revision).toBe(1);
+        await expect(store.exclusive(fresh.id, async () => 'available')).resolves.toBe('available');
+        reading.mockRestore();
+        listing.mockRestore();
+        deadline.mockRestore();
+        await fresh.send('checkpoint');
+        finish();
+        await new Promise((resolve) => setImmediate(resolve));
+        expect((await service.checkpoint(row.environment_id!))?.revision).toBe(2);
+        expect(row.environment_recovery?.savedPosition?.revision).toBe(1);
+      } finally {
+        finish?.();
+        await outcome;
+        reading.mockRestore();
+        listing.mockRestore();
+        deadline.mockRestore();
+      }
+    },
+  );
+
+  it('archives between-stage file edits before idle release and restores the same study', async () => {
+    const fresh = await freshStudy();
+    let row = await store.get(fresh.id, principal.ownerId);
+    const source = Object.keys(project.files).find((name) => name !== 'PLAN.md')!;
+    const code = 'def greet(name):\n    return f"Hello, {name}!"\n';
+    await writeFile(join(mocked.root, row.environment_id!, source), code);
+    row.workspace_dirty_at = new Date();
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const before = await store.get(fresh.id, principal.ownerId);
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await expect(
+      (await SandboxService.forOwner(principal)).get(before.environment_id!),
+    ).resolves.toMatchObject({ state: 'destroyed' });
+    row = await store.get(fresh.id, principal.ownerId);
+    expect(row.workspace_dirty_at).toBeNull();
+    expect(row.revision).toBe(before.revision);
+    expect(row.environment_recovery?.savedPosition?.revision).toBe(1);
+    await fresh.send('prepare');
+    row = await store.get(fresh.id, principal.ownerId);
+    expect(row.id).toBe(fresh.id);
+    expect(row.environment_id).not.toBe(before.environment_id);
+    expect(
+      await (await SandboxService.forOwner(principal)).readText(row.environment_id!, source),
+    ).toBe(code);
+    expect(row.state).toEqual(before.state);
+  });
+
+  it('bounds the dirty-work loss window without changing teaching revisions or releasing active use', async () => {
+    const fresh = await freshStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+      [fresh.id],
+    );
+    const before = await store.get(fresh.id, principal.ownerId);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const after = await store.get(fresh.id, principal.ownerId);
+    expect(after.revision).toBe(before.revision);
+    expect(after.workspace_dirty_at).toBeNull();
+    expect(after.environment_recovery?.savedPosition?.revision).toBe(1);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(after.environment_id!),
+    ).toMatchObject({ state: 'running' });
+  });
+
+  it('does not count visible-page polling as learner activity or keepalive', async () => {
+    const fresh = await freshStudy();
+    await ageStudy(fresh.id);
+    const before = await store.get(fresh.id, principal.ownerId);
+    const renewals = mocked.renewals.length;
+    await learningView(principal, fresh.id);
+    await workbenchView(principal, fresh.id);
+    const after = await store.get(fresh.id, principal.ownerId);
+    expect(after.last_used_at).toEqual(before.last_used_at);
+    expect(mocked.renewals).toHaveLength(renewals);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(after.environment_id!),
+    ).toMatchObject({ state: 'destroyed' });
+  });
+
+  it('retains an active turn after departure and starts inactivity after the durable task completion', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await ageStudy(fresh.id);
+    const before = await store.get(fresh.id, principal.ownerId);
+    const renewals = mocked.renewals.length;
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(mocked.renewals.slice(renewals)).toContain(before.environment_id);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(before.environment_id!),
+    ).toMatchObject({ state: 'running' });
+    const turn = await agents.claimNextSession('lifecycle-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await agents.finishSession(queued.sessionId, 'lifecycle-worker', {
+      status: 'succeeded',
+      expectedAttempt: turn!.attempt,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const after = await store.get(fresh.id, principal.ownerId);
+    expect(after.last_used_at.getTime()).toBeGreaterThan(Date.now() - 10000);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(after.environment_id!),
+    ).toMatchObject({ state: 'running' });
+  });
+
+  it('retains the current environment and exposes retryable failure when checkpoint export fails', async () => {
+    const fresh = await freshStudy();
+    await ageStudy(fresh.id);
+    mocked.failExport = true;
+    onTestFinished(() => {
+      mocked.failExport = false;
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const failed = await store.get(fresh.id, principal.ownerId);
+    expect(failed.lifecycle_error).toBe('checkpoint-unavailable');
+    expect(
+      await (await SandboxService.forOwner(principal)).get(failed.environment_id!),
+    ).toMatchObject({ state: 'running' });
+    expect((await learningView(principal, fresh.id)).lifecycleError).toBe('checkpoint-unavailable');
+    mocked.failExport = false;
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).lifecycle_error).toBeNull();
+    expect(
+      await (await SandboxService.forOwner(principal)).get(failed.environment_id!),
+    ).toMatchObject({ state: 'destroyed' });
+  });
+
+  it('shares activity across tabs and serializes competing reclaimers without duplicate checkpoints', async () => {
+    const fresh = await freshStudy();
+    await ageStudy(fresh.id);
+    await store.exclusive(fresh.id, () => store.recordActivity(fresh.id, principal.ownerId));
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const row = await store.get(fresh.id, principal.ownerId);
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'running' });
+    await ageStudy(fresh.id);
+    await Promise.allSettled([
+      maintainStudy(store, fresh.id, principal.ownerId),
+      maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId),
+    ]);
+    expect(await service.checkpoint(row.environment_id!)).toMatchObject({ revision: 1 });
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+  });
+
+  async function expireArchiveGrace(id: string) {
+    await pool.query(
+      `UPDATE pbl_v3_studies SET checkpoint_failure=checkpoint_failure ||
+       jsonb_build_object('firstIdleFailureAt',to_char(now()-interval '10 minutes','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) WHERE id=$1`,
+      [id],
+    );
+  }
+
+  async function studyWithTerminal() {
+    const fresh = await freshStudy();
+    await fresh.send('checkpoint');
+    const row = await store.get(fresh.id, principal.ownerId);
+    row.state.position.stageIndex = 3;
+    row.state.milestones[0]!.stageIndex = 3;
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const service = await SandboxService.forOwner(principal);
+    const terminal = (await workbenchCommand(principal, fresh.id, {
+      id: randomUUID(),
+      revision: (await store.get(fresh.id, principal.ownerId)).revision,
+      environmentId: row.environment_id!,
+      epoch: await service.workspaceEpoch(row.environment_id!),
+      action: 'terminal',
+    })) as { id: string; state: string };
+    expect(terminal.state).toBe('running');
+    onTestFinished(() => {
+      mocked.terminals.delete(terminal.id);
+    });
+    return { fresh, service, terminal, environmentId: row.environment_id! };
+  }
+
+  it('closes an abandoned terminal before archiving its final writes and releasing the idle environment', async () => {
+    const { fresh, service, terminal, environmentId } = await studyWithTerminal();
+    const source = Object.keys(project.files).find((path) => path !== 'PLAN.md')!;
+    const code =
+      'def greet(name):\n    return f"Hello, {name}!"\n# terminal cleanup flushed this edit\n';
+    const close = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal')
+      .mockImplementation(async () => {
+        await writeFile(join(mocked.root, environmentId, source), code);
+        mocked.terminals.delete(terminal.id);
+      });
+    onTestFinished(() => close.mockRestore());
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+    expect(await service.checkpoint(environmentId)).toMatchObject({ revision: 2 });
+    const saved = await store.get(fresh.id, principal.ownerId);
+    expect(saved.archive_discard).toBeNull();
+    expect(saved.checkpoint_failure).toBeNull();
+    await fresh.send('prepare');
+    const restored = await store.get(fresh.id, principal.ownerId);
+    expect(await service.readText(restored.environment_id!, source)).toBe(code);
+  });
+
+  it('keeps a terminal open for activity in another tab and for a running Agent turn', async () => {
+    const { fresh, service, environmentId } = await studyWithTerminal();
+    const close = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal');
+    onTestFinished(() => close.mockRestore());
+    await ageStudy(fresh.id);
+    await store.recordActivity(fresh.id, principal.ownerId);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).not.toHaveBeenCalled();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).not.toHaveBeenCalled();
+    expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+    const turn = await agents.claimNextSession('terminal-lifecycle-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await agents.finishSession(queued.sessionId, 'terminal-lifecycle-worker', {
+      status: 'succeeded',
+      expectedAttempt: turn!.attempt,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).not.toHaveBeenCalled();
+    await ageStudy(fresh.id);
+    // A stable task completion must also precede the simulated next inactivity window.
+    await pool.query(
+      "UPDATE agent_sessions SET updated_at=now()-interval '20 minutes' WHERE id=$1",
+      [queued.sessionId],
+    );
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+  });
+
+  it.each(['close', 'lookup'] as const)(
+    'bounds abandoned terminal %s failures without archiving a possible writer',
+    async (operation) => {
+      const { fresh, service, environmentId } = await studyWithTerminal();
+      const failure = vi
+        .spyOn(
+          E2BCompatibleSandboxProvider.prototype,
+          operation === 'close' ? 'closeTerminal' : 'findTerminal',
+        )
+        .mockRejectedValue(new Error('Provider unavailable'));
+      const archive = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
+      onTestFinished(() => {
+        failure.mockRestore();
+        archive.mockRestore();
+      });
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const first = await store.get(fresh.id, principal.ownerId);
+      expect(first.checkpoint_failure).toMatchObject({
+        reason: 'execution-unsettled',
+        stage: 'terminal',
+      });
+      expect(first.checkpoint_failure?.firstIdleFailureAt).toBeTruthy();
+      expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+      await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+      ).toBe(first.checkpoint_failure?.firstIdleFailureAt);
+      expect(archive).not.toHaveBeenCalled();
+      await expireArchiveGrace(fresh.id);
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect(archive).not.toHaveBeenCalled();
+      expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+      expect(await service.checkpoint(environmentId)).toMatchObject({ revision: 1 });
+      expect((await learningView(principal, fresh.id)).archiveDiscard).toMatchObject({
+        checkpointRevision: 1,
+        reason: 'execution-unsettled',
+      });
+    },
+  );
+
+  it('retries a transient terminal cleanup failure and archives without extending idle time', async () => {
+    const { fresh, service, environmentId } = await studyWithTerminal();
+    const close = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal')
+      .mockRejectedValueOnce(new Error('Close acknowledgement lost'));
+    onTestFinished(() => close.mockRestore());
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const failed = await store.get(fresh.id, principal.ownerId);
+    expect(failed.checkpoint_failure?.stage).toBe('terminal');
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const saved = await store.get(fresh.id, principal.ownerId);
+    expect(saved.last_used_at).toEqual(failed.last_used_at);
+    expect(saved.checkpoint_failure).toBeNull();
+    expect(saved.lifecycle_error).toBeNull();
+    expect(saved.archive_discard).toBeNull();
+    expect(await service.checkpoint(environmentId)).toMatchObject({ revision: 2 });
+    expect(await service.get(environmentId)).toMatchObject({ state: 'destroyed' });
+  });
+
+  it('cancels pending terminal cleanup when the learner returns', async () => {
+    const { fresh, service, environmentId } = await studyWithTerminal();
+    const close = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal')
+      .mockRejectedValue(new Error('Close unavailable'));
+    onTestFinished(() => close.mockRestore());
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await expireArchiveGrace(fresh.id);
+    await store.recordActivity(fresh.id, principal.ownerId);
+    const calls = close.mock.calls.length;
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(close).toHaveBeenCalledTimes(calls);
+    expect((await store.get(fresh.id, principal.ownerId)).checkpoint_failure).toBeNull();
+    expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+  });
+
+  it('bounds repeated idle archive failures and restores only the previous durable version with a loss notice', async () => {
+    const fresh = await freshStudy();
+    let row = await store.get(fresh.id, principal.ownerId);
+    await writeFile(join(mocked.root, row.environment_id!, 'PLAN.md'), 'durable plan');
+    await fresh.send('checkpoint');
+    await writeFile(join(mocked.root, row.environment_id!, 'PLAN.md'), 'unarchived plan');
+    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=now() WHERE id=$1', [fresh.id]);
+    await ageStudy(fresh.id);
+    mocked.failExport = true;
+    onTestFinished(() => {
+      mocked.failExport = false;
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    row = await store.get(fresh.id, principal.ownerId);
+    const first = row.checkpoint_failure?.firstIdleFailureAt;
+    expect(row.checkpoint_failure).toMatchObject({
+      reason: 'unavailable',
+      stage: 'archive',
+      retryable: true,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(
+      (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+    ).toBe(first);
+    await expireArchiveGrace(fresh.id);
+    const exportSpy = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
+    onTestFinished(() => exportSpy.mockRestore());
+    await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+    expect(exportSpy).not.toHaveBeenCalled();
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    expect(await service.checkpoint(row.environment_id!)).toMatchObject({ revision: 1 });
+    expect((await learningView(principal, fresh.id)).archiveDiscard).toMatchObject({
+      checkpointRevision: 1,
+      reason: 'unavailable',
+    });
+    expect((await learningView(principal, fresh.id)).environment?.state).toBe('destroyed');
+    mocked.failExport = false;
+    await fresh.send('prepare');
+    row = await store.get(fresh.id, principal.ownerId);
+    expect(await service.readText(row.environment_id!, 'PLAN.md')).toBe('durable plan');
+    expect(row.workspace_dirty_at).toBeNull();
+    expect((await learningView(principal, fresh.id)).archiveDiscard?.checkpointAt).toBeTruthy();
+  });
+
+  it('does not retry deterministic failures until real activity, and never starts the release grace during active use', async () => {
+    const fresh = await freshStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+      [fresh.id],
+    );
+    const exportSpy = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+      .mockImplementation(async function* () {
+        yield* [];
+        throw Object.assign(new Error('PRIVATE SIGNED URL'), { code: 'ASSET_STORAGE_PERMISSION' });
+      });
+    onTestFinished(() => exportSpy.mockRestore());
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const failed = await store.get(fresh.id, principal.ownerId);
+    expect(failed.checkpoint_failure).toMatchObject({
+      reason: 'storage-permission',
+      retryable: false,
+      firstIdleFailureAt: null,
+    });
+    expect(JSON.stringify(failed.checkpoint_failure)).not.toContain('PRIVATE');
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(exportSpy).toHaveBeenCalledTimes(1);
+    expect(
+      (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+    ).toBeTruthy();
+    await store.recordActivity(fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).checkpoint_failure).toBeNull();
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(exportSpy).toHaveBeenCalledTimes(2);
+    expect(
+      (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+    ).toBeNull();
+    expect(
+      await (await SandboxService.forOwner(principal)).get(failed.environment_id!),
+    ).toMatchObject({ state: 'running' });
+  });
+
+  it('persists discard intent before uncertain deletion, fences old writes and retries the same environment on return', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    await ageStudy(fresh.id);
+    mocked.failExport = true;
+    onTestFinished(() => {
+      mocked.failExport = false;
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await expireArchiveGrace(fresh.id);
+    const destroy = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'destroy')
+      .mockRejectedValueOnce(new Error('delete ack lost'));
+    onTestFinished(() => destroy.mockRestore());
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toMatchObject({
+      environmentId: row.environment_id,
+      checkpointRevision: 0,
+      checkpointAt: null,
+    });
+    await expect(fresh.send('chat')).rejects.toThrow('Prepare or recover');
+    expect((await learningView(principal, fresh.id)).archiveDiscard?.checkpointRevision).toBe(0);
+    mocked.failExport = false;
+    await fresh.send('prepare');
+    expect(destroy.mock.calls.map((call) => call[0])).toEqual([
+      row.environment_id,
+      row.environment_id,
+    ]);
+    const restored = await store.get(fresh.id, principal.ownerId);
+    expect(restored.environment_id).not.toBe(row.environment_id);
+    expect(restored.archive_discard?.checkpointRevision).toBe(0);
+  });
+
+  it('does not destroy a workspace if the durable discard record cannot be saved', async () => {
+    const fresh = await freshStudy();
+    await ageStudy(fresh.id);
+    mocked.failExport = true;
+    onTestFinished(() => {
+      mocked.failExport = false;
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await expireArchiveGrace(fresh.id);
+    const save = vi
+      .spyOn(store, 'recordArchiveDiscard')
+      .mockRejectedValueOnce(new Error('DB unavailable'));
+    onTestFinished(() => save.mockRestore());
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const row = await store.get(fresh.id, principal.ownerId);
+    expect(row.archive_discard).toBeNull();
+    expect(await (await SandboxService.forOwner(principal)).get(row.environment_id!)).toMatchObject(
+      { state: 'running' },
+    );
+  });
+
+  it('collects a completed build without an open browser and makes collection idempotent', async () => {
+    const lab = installedProject({ id: 'greeting-python-lab', version: '1.1.0' });
+    const fresh = await freshStudy(lab);
+    const row = await store.get(fresh.id, principal.ownerId);
+    const stageIndex = lab.definition.milestones[0]!.stages.findIndex(
+      (stage) => stage.kind === 'produce' && stage.writes === 'code',
+    );
+    row.state.position.stageIndex = stageIndex;
+    row.state.milestones[0]!.stageIndex = stageIndex;
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    await fresh.send('compile');
+    const pending = await store.get(fresh.id, principal.ownerId);
+    const executionId = pending.evaluation!.id;
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).evaluation).toBeNull();
+    expect(
+      (
+        await pool.query('SELECT result FROM pbl_v3_commands WHERE study_id=$1 AND id=$2', [
+          fresh.id,
+          `build:${executionId}`,
+        ])
+      ).rows[0].result.passed,
+    ).toBe(true);
+    await expect(
+      commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        type: 'collect',
+        revision: pending.revision,
+        evaluationId: executionId,
+      }),
+    ).resolves.toEqual({ collected: true });
+  });
+  it('settles an overdue unleased turn through the existing cancellation fence', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await pool.query(
+      "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
+      [queued.sessionId],
+    );
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('cancelled');
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).last_used_at.getTime()).toBeGreaterThan(
+      Date.now() - 10000,
+    );
+  });
+
+  it.each([false, true])(
+    'bounds a permanently unknown command even when cancellation fails: %s',
+    async (cancelFails) => {
+      const fresh = await freshStudy();
+      const row = await store.get(fresh.id, principal.ownerId);
+      const id = randomUUID();
+      const unknown = {
+        id,
+        state: 'unknown',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      };
+      await pool.query(
+        "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json,created_at) VALUES($1,$2,'fixture',$3,now()-interval '20 minutes')",
+        [row.environment_id, id, JSON.stringify(unknown)],
+      );
+      await writeFile(
+        join(mocked.root, row.environment_id!, `.command-${id}`),
+        JSON.stringify(unknown),
+      );
+      const cancel = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'cancelCommand');
+      if (cancelFails) cancel.mockRejectedValue(new Error('Provider unavailable'));
+      const exportSpy = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
+      onTestFinished(() => {
+        cancel.mockRestore();
+        exportSpy.mockRestore();
+      });
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const failure = (await store.get(fresh.id, principal.ownerId)).checkpoint_failure;
+      expect(failure).toMatchObject({ reason: 'execution-unsettled', stage: 'execution' });
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+      ).toBe(failure?.firstIdleFailureAt);
+      await expireArchiveGrace(fresh.id);
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect(exportSpy).not.toHaveBeenCalled();
+      expect(cancel).toHaveBeenCalled();
+      const view = await learningView(principal, fresh.id);
+      expect(view.environment?.state).toBe('destroyed');
+      expect(view.archiveDiscard?.reason).toBe('execution-unsettled');
+      await fresh.send('prepare');
+      expect((await store.get(fresh.id, principal.ownerId)).environment_id).not.toBe(
+        row.environment_id,
+      );
+    },
+  );
+
+  it('reclaims an uncertain replacement even while the study still references its expired predecessor', async () => {
+    const fresh = await freshStudy();
+    const original = await store.get(fresh.id, principal.ownerId);
+    mocked.missing.add(original.environment_id!);
+    mocked.loseCreateAck = mocked.hideDiscovery = true;
+    onTestFinished(() => {
+      mocked.loseCreateAck = mocked.hideDiscovery = false;
+    });
+    await expect(fresh.send('prepare')).rejects.toThrow();
+    mocked.loseCreateAck = mocked.hideDiscovery = false;
+    const pending = await store.get(fresh.id, principal.ownerId);
+    const replacement = pending.environment_recovery!.requestId;
+    expect(replacement).not.toBe(original.environment_id);
+    expect(pending.environment_id).toBe(original.environment_id);
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId, replacement);
+    expect(await (await SandboxService.forOwner(principal)).get(replacement)).toMatchObject({
+      state: 'destroyed',
+    });
+  });
+  it('restores completed project files without reopening teaching or allocating for a report read', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    row.state.status = 'completed';
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const allocations = mocked.creates.length;
+    expect((await learningView(principal, fresh.id)).reportAvailable).toBe(true);
+    expect(mocked.creates).toHaveLength(allocations);
+    await fresh.send('prepare');
+    const restored = await store.get(fresh.id, principal.ownerId);
+    expect(restored.state.status).toBe('completed');
+    expect(restored.environment_id).not.toBe(row.environment_id);
+    await expect(fresh.send('chat')).rejects.toThrow('completed');
+  });
+
+  it('does not authorize maintenance against another owner or an unrelated environment', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    await expect(
+      SandboxService.forLearningMaintenance(fresh.id, 'another-owner', row.environment_id!),
+    ).rejects.toMatchObject({ code: 'SANDBOX_NOT_FOUND' });
+    await expect(
+      SandboxService.forLearningMaintenance(randomUUID(), principal.ownerId, row.environment_id!),
+    ).rejects.toMatchObject({ code: 'SANDBOX_NOT_FOUND' });
+  });
+
+  it('aborts lock waiting promptly and never retains a PG connection between retries', async () => {
+    const fresh = await freshStudy();
+    let release!: () => void, entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const held = store.exclusive(fresh.id, async () => {
+      entered();
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    await ready;
+    const controller = new AbortController();
+    const waiting = store.waitForExclusive(
+      fresh.id,
+      async () => {
+        throw new Error('must not enter');
+      },
+      controller.signal,
+    );
+    const outcome = expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await pool.query('SELECT 1 AS ok')).rows[0].ok).toBe(1);
+    controller.abort();
+    await outcome;
+    release();
+    await held;
+  });
+  it('gives a retried turn a new deadline without inventing learner feedback', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const turn = await agents.claimNextSession('retry-deadline', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await agents.finishSession(queued.sessionId, 'retry-deadline', {
+      status: 'failed',
+      error: 'fixture',
+      expectedAttempt: turn!.attempt,
+    });
+    const before = await store.binding(queued.sessionId);
+    await pool.query(
+      "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
+      [queued.sessionId],
+    );
+    await fresh.send('retry');
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const after = await store.binding(queued.sessionId);
+    expect(after!.feedback_seq).toBe(before!.feedback_seq);
+    expect(after!.turn_started_at.getTime()).toBeGreaterThan(Date.now() - 10000);
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
+  });
 });

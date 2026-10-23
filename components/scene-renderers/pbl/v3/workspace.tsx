@@ -1,4 +1,5 @@
 'use client';
+import { usePblActivityGeneration } from './activity-provider';
 import {
   ArrowUp,
   Square,
@@ -47,6 +48,7 @@ export async function pblRequest<T>(url: string, body?: unknown): Promise<T> {
   return data as T;
 }
 function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
+  const activityGeneration = usePblActivityGeneration(sceneId);
   const { resolvedTheme, setTheme } = useTheme();
   const { t } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
@@ -199,27 +201,26 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
   const preparationAttempt = useRef('');
   const prepare = useCallback(
     async (repeat = false) => {
+      if (commandInFlight.current) return;
       setPreparationFailed(false);
       if (!(await command('prepare', {}, repeat))) setPreparationFailed(true);
     },
     [command],
   );
   useEffect(() => {
-    if (
-      !view ||
-      pending ||
-      view.busy ||
-      view.environment?.ready ||
-      view.state.status === 'completed'
-    )
+    if (!view || pending || preparationFailed || view.busy || view.state.status === 'completed')
       return;
-    const key = `${view.id}:${view.environmentId ?? 'new'}`;
+    const key = `${view.id}:${activityGeneration}`;
+    if (view.environment?.ready) {
+      preparationAttempt.current = key;
+      return;
+    }
     if (preparationAttempt.current === key) return;
     // One automatic attempt per observed environment on entry. Failed/uncertain
     // preparation needs an explicit retry; the server retains allocation identity.
     preparationAttempt.current = key;
     void prepare();
-  }, [view, pending, prepare]);
+  }, [view, pending, preparationFailed, prepare, activityGeneration]);
   // Polling observes execution; a separate, idempotent command commits the verdict.
   // Collect terminal test runs automatically, including after refresh. A failed
   // collection offers a manual retry instead of an unbounded request loop.
@@ -388,28 +389,66 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
       {!view && <p className="p-4">{t('pblV3.loading')}</p>}
       {view && (
         <>
-          {!view.environment?.ready && view.state.status !== 'completed' && (
+          {!view.environment?.ready && (
             <div
               role="status"
               data-testid="pbl-environment-setup"
               className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-2 text-xs"
             >
-              {!preparationFailed && (
+              {!preparationFailed && pending && (
                 <LoaderCircle size={14} className="animate-spin" aria-hidden="true" />
               )}
               <p className="flex-1">
-                {t(preparationFailed ? 'pblV3.environmentUnavailable' : 'pblV3.environmentNotice')}
+                {t(
+                  preparationFailed
+                    ? 'pblV3.environmentUnavailable'
+                    : pending
+                      ? 'pblV3.environmentNotice'
+                      : 'pblV3.environmentSleeping',
+                )}
               </p>
-              {preparationFailed && (
+              {!pending && (
                 <button
                   className={button}
                   disabled={pending || view.busy}
                   onClick={() => void prepare(retry.current?.type === 'prepare')}
                 >
-                  {t('pblV3.prepare')}
+                  {t(preparationFailed ? 'pblV3.prepare' : 'pblV3.recoverWorkspace')}
                 </button>
               )}
             </div>
+          )}
+          {view.lifecycleError && view.environment?.ready && (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+            >
+              <p className="flex-1">
+                {t('pblV3.checkpointUnavailable')}
+                {view.checkpointFailure &&
+                  ` ${t(`pblV3.checkpointReasons.${view.checkpointFailure.reason}`)}`}
+              </p>
+              <button
+                className={button}
+                disabled={pending || view.busy || !!view.evaluation}
+                onClick={() => void command('checkpoint')}
+              >
+                {t('pblV3.retry')}
+              </button>
+            </div>
+          )}
+          {view.archiveDiscard && (
+            <p
+              role="alert"
+              className="border-b px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+            >
+              {t('pblV3.checkpointSkipped')}{' '}
+              {view.archiveDiscard.checkpointAt
+                ? t('pblV3.lastDurableCheckpoint', {
+                    time: new Date(view.archiveDiscard.checkpointAt).toLocaleString(),
+                  })
+                : t('pblV3.noDurableCheckpoint')}
+            </p>
           )}
           {view.recovery?.progressReset && (
             <p
@@ -851,7 +890,7 @@ function PBLV3WorkspaceContent({ sceneId }: { sceneId: string }) {
 
 export function PBLV3Workspace({ sceneId }: { sceneId: string }) {
   return (
-    <WorkspaceFrame>
+    <WorkspaceFrame sceneId={sceneId}>
       <PBLV3WorkspaceContent sceneId={sceneId} />
     </WorkspaceFrame>
   );

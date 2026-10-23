@@ -16,7 +16,12 @@ import {
 import { assertWorkspaceMutation, type WorkspaceMutation } from './managed-workspace';
 import { issuePreviewGrant, previewConfig, verifyPreviewGrant } from './preview';
 import { WORKSPACE_ROOT, workspacePath } from './workspace-archive';
-import { checkpointPolicy } from './checkpoint-policy';
+import {
+  checkpointPolicy,
+  CHECKPOINT_TIMEOUT_MS,
+  CHECKPOINT_MIN_LIFETIME_MS,
+} from './checkpoint-policy';
+import { checkpointIO } from './checkpoint-errors';
 import type { SandboxConfig } from './config';
 import { resolvedSandboxConfig } from './settings';
 import { publicEnvironment, SandboxStore, type SandboxRow } from './store';
@@ -74,6 +79,17 @@ export class SandboxService {
       await SandboxStore.open(),
       new E2BCompatibleSandboxProvider(config),
     );
+  }
+
+  /** Host maintenance of an existing study binding, without inventing a verified user identity.
+   * The caller holds the study lock and grants only checkpoint/destroy workspace operations.
+   */
+  static async forLearningMaintenance(studyId: string, ownerId: string, environmentId: string) {
+    const store = await SandboxStore.open();
+    await store.assertLearningBinding(studyId, ownerId, environmentId);
+    const config = await resolvedSandboxConfig();
+    const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
+    return new SandboxService(ownerId, config, store, new E2BCompatibleSandboxProvider(config));
   }
 
   /** An explicit, expiring delegation created by an authenticated sandbox owner. */
@@ -370,11 +386,13 @@ export class SandboxService {
     return row as SandboxRow & { resource_id: string };
   }
 
-  async readText(id: string, path: unknown) {
+  async readText(id: string, path: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     path = `${WORKSPACE_ROOT}/${workspacePath(path)}`;
     assertPath(path);
     const row = await this.running(id);
-    return this.provider.readText(row.resource_id, row.id, path);
+    signal?.throwIfAborted();
+    return this.provider.readText(row.resource_id, row.id, path, signal);
   }
 
   async writeText(id: string, path: unknown, text: unknown) {
@@ -729,14 +747,40 @@ export class SandboxService {
     await this.binding(id);
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
-      await this.provider.renew(row.resource_id, row.id, this.config.lifetimeMs);
-      return { renewed: true, lifetimeMs: this.config.lifetimeMs };
+      return this.renewUnlocked(row, this.config.lifetimeMs);
     });
   }
 
-  async listFiles(id: string) {
+  /** Protect source snapshot I/O before the archive path acquires its own environment lock. */
+  async renewForCheckpoint(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    await this.binding(id);
+    return this.store.exclusive(id, async () =>
+      this.renewUnlocked(
+        await this.running(id),
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+        signal,
+      ),
+    );
+  }
+
+  private async renewUnlocked(
+    row: SandboxRow & { resource_id: string },
+    lifetimeMs: number,
+    signal?: AbortSignal,
+  ) {
+    await checkpointIO(
+      () => this.provider.renew(row.resource_id, row.id, lifetimeMs, signal),
+      signal,
+    );
+    return { renewed: true, lifetimeMs };
+  }
+
+  async listFiles(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const row = await this.running(id);
-    return this.provider.listWorkspace(row.resource_id, row.id);
+    signal?.throwIfAborted();
+    return this.provider.listWorkspace(row.resource_id, row.id, signal);
   }
 
   async checkpoint(id: string) {
@@ -780,17 +824,29 @@ export class SandboxService {
     }
   }
 
-  async saveWorkspace(id: string, expectedRevision: unknown, release = false) {
+  async saveWorkspace(
+    id: string,
+    expectedRevision: unknown,
+    release = false,
+    signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS),
+  ) {
+    signal.throwIfAborted();
     if (!Number.isSafeInteger(expectedRevision) || (expectedRevision as number) < 0)
       throw sandboxInvalid('An expected checkpoint revision is required (0 for the first save).');
     await this.mutation(id, 'checkpoint');
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
+      await this.renewUnlocked(
+        row,
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+        signal,
+      );
       await this.assertWorkspaceIdleUnlocked(row);
       const checkpoint = await this.store.saveCheckpoint(
         row,
         expectedRevision as number,
-        this.provider.exportWorkspace(row.resource_id, row.id),
+        this.provider.exportWorkspace(row.resource_id, row.id, signal),
+        signal,
       );
       // Durability is established BEFORE resource deletion. Delete uncertainty retains the checkpoint.
       if (release) await this.destroyUnlocked(id);

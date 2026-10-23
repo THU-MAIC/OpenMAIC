@@ -5,6 +5,8 @@ import 'server-only';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { reviewQuestion } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
+import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
+import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
 import type { PoolClient } from 'pg';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { writeSessionGrant } from '@/lib/server/sandbox/store';
@@ -96,9 +98,13 @@ export async function readFiles(
   // A process can modify files without using our file API. Refuse evidence until managed writers stop.
   await service.assertWorkspaceIdle(environmentId);
   let bytes = 0;
-  for (const path of await projectFiles(service, environmentId, project)) {
+  const paths = await checkpointIO(
+    () => projectFiles(service, environmentId, project, signal),
+    signal,
+  );
+  for (const path of paths) {
     signal?.throwIfAborted();
-    const text = await service.readText(environmentId, path);
+    const text = await checkpointIO(() => service.readText(environmentId, path, signal), signal);
     signal?.throwIfAborted();
     onProgress?.();
     bytes += Buffer.byteLength(text);
@@ -111,14 +117,20 @@ export async function readFiles(
 export function filesFingerprint(files: Record<string, string>) {
   return digest(JSON.stringify(Object.entries(files).sort(([a], [b]) => a.localeCompare(b))));
 }
-export async function fileSnapshot(service: SandboxService, row: Study) {
-  const files = await readFiles(service, row);
+export async function fileSnapshot(service: SandboxService, row: Study, signal?: AbortSignal) {
+  const files = await readFiles(service, row, projectFor(row), signal);
   return { files, fingerprint: filesFingerprint(files) };
 }
 export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
-  const snapshot = await fileSnapshot(service, row);
+  const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
+  const snapshot = await checkpointStep('snapshot', async () => {
+    await service.renewForCheckpoint(requireEnvironment(row), signal);
+    return fileSnapshot(service, row, signal);
+  });
   const previous = await service.checkpoint(requireEnvironment(row));
-  const saved = await service.saveWorkspace(requireEnvironment(row), previous?.revision ?? 0);
+  const saved = await checkpointStep('archive', () =>
+    service.saveWorkspace(requireEnvironment(row), previous?.revision ?? 0, false, signal),
+  );
   row.environment_recovery = {
     ...row.environment_recovery,
     requestId: row.environment_id!,
@@ -129,8 +141,11 @@ export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
       fingerprint: snapshot.fingerprint,
     },
   };
+  row.workspace_dirty_at = null;
+  row.lifecycle_error = null;
 }
 export function invalidateWorkspace(row: Study, changedPath?: string): EngineTransition {
+  row.workspace_dirty_at ??= new Date();
   const state = structuredClone(row.state);
   const collected = state.collected[state.position.milestoneId ?? ''];
   if (collected) {
@@ -218,7 +233,7 @@ export async function queueRole(
     ).rows[0]!;
   }
   await db.query(
-    'UPDATE pbl_v3_roles SET guided=CASE WHEN stage_key=$2 THEN guided ELSE NULL END,feedback_seq=CASE WHEN stage_key=$2 THEN feedback_seq+1 ELSE 1 END,stage_key=$2 WHERE session_id=$1',
+    'UPDATE pbl_v3_roles SET guided=CASE WHEN stage_key=$2 THEN guided ELSE NULL END,feedback_seq=CASE WHEN stage_key=$2 THEN feedback_seq+1 ELSE 1 END,stage_key=$2,turn_started_at=clock_timestamp() WHERE session_id=$1',
     [binding.session_id, stageKey(row)],
   );
   if (row.environment_id)
@@ -291,6 +306,65 @@ function validateCommand(command: LearningCommand) {
   )
     throw sandboxInvalid('A valid evaluation ID is required.');
 }
+/** Caller holds the study lock. The browser and lifecycle worker commit the same verdict. */
+export async function collectStudyExecution(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+): Promise<{ result: Record<string, unknown>; transition: EngineTransition }> {
+  if (!row.evaluation) throw sandboxConflict('No test is awaiting collection.');
+  const unchanged = { state: row.state, events: [] };
+  if (row.evaluation.purpose === 'compile') {
+    return { result: await collectBuild(store, row, service), transition: unchanged };
+  }
+  const project = projectFor(row),
+    definition = project.definition;
+  let transition: EngineTransition = unchanged;
+  let result: Record<string, unknown> = { collected: true };
+  const evaluation = row.evaluation;
+  const observed = await service.command(requireEnvironment(row), evaluation.id);
+  if (['starting', 'running', 'unknown'].includes(observed.state))
+    return { result: { pending: true, state: observed.state }, transition };
+  const snapshot = await fileSnapshot(service, row);
+  if (stageKey(row) !== evaluation.stageKey || snapshot.fingerprint !== evaluation.fingerprint) {
+    row.evaluation = null;
+    transition = invalidateWorkspace(row);
+    result = { stale: true };
+  } else {
+    const milestone = currentMilestone(definition, row.state)!;
+    const collected = row.state.collected[milestone.id]!;
+    transition = transitions.recordEvaluation(
+      definition,
+      row.state,
+      {
+        id: evaluation.id,
+        ...evaluationOutcome(
+          evaluationFor(project, milestone.id),
+          evaluation.id,
+          observed,
+          Object.keys(snapshot.files),
+        ),
+        evaluator: 'sandbox-command',
+        milestoneId: milestone.id,
+        stageIndex: row.state.position.stageIndex,
+        revision: {
+          id: snapshot.fingerprint,
+          provider: 'sandbox',
+          createdAt: new Date().toISOString(),
+        },
+        decisionRecordIds: Object.values(collected.decisionRecordIds),
+        planArtifactId: collected.plan?.id,
+        codeArtifactId: collected.code?.id,
+        startedAt: evaluation.startedAt,
+        completedAt: new Date().toISOString(),
+      },
+      { remediationId: randomUUID() },
+    );
+    row.evaluation = null;
+  }
+  return { result, transition };
+}
+
 export async function commandStudy(
   principal: OwnerPrincipal,
   id: string,
@@ -308,7 +382,7 @@ export async function commandStudy(
   }
   const operations: WorkspaceMutation[] =
     command.type === 'prepare'
-      ? ['create', 'restore', 'write']
+      ? ['create', 'restore', 'write', 'destroy']
       : command.type === 'save'
         ? ['write']
         : command.type === 'evaluate' || command.type === 'compile'
@@ -334,6 +408,16 @@ export async function commandStudy(
     if (collecting) {
       const saved = row.state.collected[row.state.position.milestoneId ?? '']?.tests;
       if (!row.evaluation && saved?.id === command.evaluationId) return { collected: true };
+      if (
+        !row.evaluation &&
+        (
+          await store.pool.query(
+            'SELECT 1 FROM pbl_v3_commands WHERE study_id=$1 AND id=$2 AND result IS NOT NULL',
+            [id, `build:${command.evaluationId}`],
+          )
+        ).rows.length
+      )
+        return { collected: true };
       if (row.evaluation?.id !== command.evaluationId)
         throw sandboxConflict('The pending evaluation changed. Refresh before collecting.');
     }
@@ -355,10 +439,12 @@ export async function commandStudy(
       if (row.revision !== command.revision && !alreadyStarted && !collecting)
         throw sandboxConflict('Progress changed. Refresh before submitting.', 'PROGRESS_CHANGED');
     }
-    if (row.state.status === 'completed') throw sandboxConflict('This project is completed.');
+    if (row.state.status === 'completed' && !['prepare', 'checkpoint'].includes(command.type))
+      throw sandboxConflict('This project is completed.');
     if (alreadyStarted) return { alreadyStarted: true };
     if (await busy(store, row))
       throw sandboxConflict('Wait for the teaching response, or cancel it first.');
+    await store.recordActivity(id, row.owner_id);
     const service = await SandboxService.forOwner(principal);
     if (command.type !== 'prepare')
       assertEnvironmentReady(await touchEnvironment(store, row, service));
@@ -424,6 +510,10 @@ export async function commandStudy(
           );
           if (!(await sessionStore.requeueSession(binding.session_id)))
             throw sandboxConflict('The teaching turn changed. Refresh before retrying.');
+          await db.query(
+            'UPDATE pbl_v3_roles SET turn_started_at=clock_timestamp() WHERE session_id=$1',
+            [binding.session_id],
+          );
           // Reuse the actual student turn: retrying is not new feedback or approval.
           result = { sessionId: binding.session_id };
         } else {
@@ -451,6 +541,8 @@ export async function commandStudy(
       );
     if (command.type === 'prepare') {
       const previousId = row.environment_id;
+      if (previousId && row.archive_discard?.environmentId === previousId)
+        await service.destroy(previousId);
       const previous = previousId ? await service.reconcile(previousId) : null;
       if (previous?.state === 'running' && previous.workspaceReady) {
         await service.renew(previous.id);
@@ -490,6 +582,9 @@ export async function commandStudy(
             if (!existing.has(path)) await service.writeText(env.id, path, text);
         }
         row.environment_id = env.id;
+        row.lifecycle_error = null;
+        // Old dirty edits belonged to the lost resource; restored bytes are the durable version.
+        row.workspace_dirty_at = null;
         const restored = recoveredProgress(
           row,
           project,
@@ -615,61 +710,10 @@ export async function commandStudy(
       });
       transition = { state: row.state, events: [] };
     } else if (command.type === 'collect') {
-      if (!row.evaluation) throw sandboxConflict('No test is awaiting collection.');
-      if (row.evaluation.purpose === 'compile') {
-        const buildResult = await collectBuild(store, row, service);
-        if ('pending' in buildResult) return buildResult;
-        result = buildResult;
-        transition = { state: row.state, events: [] };
-        return store.transaction(async (db) => {
-          await persist(db);
-          return result;
-        });
-      }
-      const evaluation = row.evaluation;
-      const observed = await service.command(requireEnvironment(row), evaluation.id);
-      if (['starting', 'running', 'unknown'].includes(observed.state))
-        return { pending: true, state: observed.state };
-      const snapshot = await fileSnapshot(service, row);
-      if (
-        stageKey(row) !== evaluation.stageKey ||
-        snapshot.fingerprint !== evaluation.fingerprint
-      ) {
-        row.evaluation = null;
-        transition = invalidateWorkspace(row);
-        result = { stale: true };
-      } else {
-        const milestone = currentMilestone(definition, row.state)!;
-        const collected = row.state.collected[milestone.id]!;
-        transition = transitions.recordEvaluation(
-          definition,
-          row.state,
-          {
-            id: evaluation.id,
-            ...evaluationOutcome(
-              evaluationFor(project, milestone.id),
-              evaluation.id,
-              observed,
-              Object.keys(snapshot.files),
-            ),
-            evaluator: 'sandbox-command',
-            milestoneId: milestone.id,
-            stageIndex: row.state.position.stageIndex,
-            revision: {
-              id: snapshot.fingerprint,
-              provider: 'sandbox',
-              createdAt: new Date().toISOString(),
-            },
-            decisionRecordIds: Object.values(collected.decisionRecordIds),
-            planArtifactId: collected.plan?.id,
-            codeArtifactId: collected.code?.id,
-            startedAt: evaluation.startedAt,
-            completedAt: new Date().toISOString(),
-          },
-          { remediationId: randomUUID() },
-        );
-        row.evaluation = null;
-      }
+      const collected = await collectStudyExecution(store, row, service);
+      if ('pending' in collected.result) return collected.result;
+      transition = collected.transition;
+      result = collected.result;
     } else if (command.type === 'next') {
       if (row.evaluation)
         throw sandboxConflict('Collect the pending test result before continuing.');
@@ -709,7 +753,7 @@ export async function commandStudy(
       return result;
     });
   };
-  return store.exclusive(id, () =>
+  return store.waitForExclusive(id, () =>
     withLearningWorkspaceAccess(
       {
         ownerId: principal.ownerId,
@@ -852,7 +896,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
   if (row.environment_id) {
     try {
       environmentService = await SandboxService.forOwner(principal);
-      const observed = await touchEnvironment(store, row, environmentService);
+      const observed = await touchEnvironment(store, row, environmentService, false);
       environment = observed
         ? { state: observed.state, ready: observed.state === 'running' && observed.workspaceReady }
         : null;
@@ -911,6 +955,9 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     revision: row.revision,
     title: project.definition.title,
     reportAvailable: canViewProjectReport(row.state),
+    lifecycleError: row.lifecycle_error ?? null,
+    checkpointFailure: row.checkpoint_failure ?? null,
+    archiveDiscard: row.archive_discard ?? null,
     environmentId: row.environment_id,
     environment,
     recovery:

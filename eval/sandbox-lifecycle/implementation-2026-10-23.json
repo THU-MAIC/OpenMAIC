@@ -1,0 +1,277 @@
+{
+  "date": "2026-10-23",
+  "branch": "fix/1995-sandbox-lifecycle",
+  "issue": 1995,
+  "scope": "PBL inactivity, active-task protection, checkpoint reclamation and recovery",
+  "defaultIdleTimeoutMs": 300000,
+  "liveTestIdleTimeoutMs": 60000,
+  "lifecycleScanMs": 30000,
+  "providerLeaseMs": 300000,
+  "checkpointStorage": "Local S3-compatible storage",
+  "database": "Dedicated PostgreSQL schema; integration suites use disposable schemas",
+  "browserScenario": {
+    "courseId": "pbl-13928b5f-af91-4cdd-a6d3-fcba2fed19c0",
+    "studyId": "2c87d0cc-e40a-4a7b-843c-88dc694076d9",
+    "fixture": "The test harness moved the study to coding to exercise an acknowledged learner save before a teaching-boundary checkpoint. This is a lifecycle scenario, not a complete teaching journey.",
+    "results": [
+      {
+        "label": "automatic-entry-and-agent",
+        "at": "2026-10-23T10:03:04.538Z",
+        "environmentId": "cb2bae7e-0459-4ffc-948c-7bd3f5c0972f",
+        "roleRun": "failed",
+        "failure": "incomplete"
+      },
+      {
+        "label": "manual-wheel-heartbeat",
+        "at": "2026-10-23T10:03:36.629Z"
+      },
+      {
+        "label": "acknowledged-save-before-stage-checkpoint",
+        "at": "2026-10-23T10:03:40.425Z"
+      },
+      {
+        "label": "other-scene-does-not-renew-activity",
+        "at": "2026-10-23T10:04:15.948Z"
+      },
+      {
+        "label": "checkpoint-before-release",
+        "at": "2026-10-23T10:04:47.369Z",
+        "oldEnvironmentId": "cb2bae7e-0459-4ffc-948c-7bd3f5c0972f"
+      },
+      {
+        "label": "scene-return-restores-acknowledged-file",
+        "at": "2026-10-23T10:04:55.070Z",
+        "environmentId": "987836b5-1a5e-41b6-b665-263634ec8eae"
+      },
+      {
+        "label": "visible-polling-does-not-reallocate",
+        "at": "2026-10-23T10:06:56.502Z"
+      },
+      {
+        "label": "new-user-input-restores",
+        "at": "2026-10-23T10:07:10.910Z",
+        "environmentId": "64b1e555-3bf3-435f-b38c-3480cf553d69"
+      },
+      {
+        "label": "course-exit-stops-activity",
+        "at": "2026-10-23T10:07:46.187Z"
+      },
+      {
+        "label": "all-live-resources-reclaimed",
+        "at": "2026-10-23T10:08:23.518Z"
+      }
+    ]
+  },
+  "realAgentScenario": {
+    "courseId": "pbl-a441f030-daaf-4118-afd2-a882dfeac5dd",
+    "studyId": "683a96b1-06fa-4828-ba86-14f500add7a2",
+    "fixture": "Fresh, unmodified greeting-python-lab project with real Paratera DeepSeek-V4.1-Flash; no stage fixture.",
+    "results": [
+      {
+        "turn": "begin",
+        "at": "2026-10-23T10:18:12.180Z",
+        "roleRun": {
+          "status": "succeeded",
+          "canRetry": false,
+          "failure": null
+        }
+      }
+    ]
+  },
+  "validation": {
+    "pblUnitTests": {
+      "passed": 165,
+      "skipped": 4
+    },
+    "postgresIntegrationTests": {
+      "passed": 64,
+      "includes": [
+        "Python and Java two-milestone teaching paths",
+        "dirty checkpoint without progress-revision changes",
+        "passive polling does not renew",
+        "active task retention and post-task grace",
+        "archive failure retains environment and exposes retry",
+        "cross-tab activity and competing reclaimers",
+        "browserless build collection and idempotent collection",
+        "uncertain replacement cleanup",
+        "overdue orphan cancellation and lease fencing",
+        "retry starts a fresh deadline without new learner feedback",
+        "completed-project file recovery and compute-free report reads",
+        "maintenance ownership isolation",
+        "cancellable lock waiting without retaining PG connections"
+      ]
+    },
+    "startupAndClassroomTests": {
+      "passed": 214
+    },
+    "typecheck": "passed",
+    "i18n": "12 locales aligned",
+    "boundedFailurePostgresTests": {
+      "passed": 86,
+      "includes": [
+        "persistent failure deadline survives another maintenance instance",
+        "previous checkpoint preserved and loss notice survives restore",
+        "deterministic failure classification and retry suppression",
+        "real activity cancels failure grace",
+        "periodic checkpoint failures do not start an idle release timer",
+        "durable discard intent before uncertain deletion",
+        "old writes fenced until replacement",
+        "failed discard metadata save prevents intentional deletion",
+        "stalled upload cancellation releases environment lock and fences late checkpoint commit"
+      ]
+    },
+    "boundedFailureUnitTests": {
+      "passed": 175,
+      "skipped": 4,
+      "note": "Hermetic unit invocation excludes the PostgreSQL suite, which runs separately"
+    },
+    "s3AdapterTests": {
+      "passed": 36
+    },
+    "archiveFailureLiveEvidence": "archive-failure-2026-10-23.json",
+    "uiScreenshot": {
+      "file": "archive-loss-notice-2026-10-23.png",
+      "method": "Browser screenshot of a real persisted released study; automatic compute preparation and teaching turns suppressed in the screenshot harness to avoid allocating additional resources"
+    },
+    "packageVersionCheck": "storage 0.39.0 -> 0.39.1 passed",
+    "checkpointLeaseFollowUp": {
+      "comment": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4360496405",
+      "checkpointTimeoutMs": 120000,
+      "checkpointMinimumLeaseMs": 180000,
+      "newUnitRegressions": 9,
+      "newPostgresRegressions": 2,
+      "postgresIntegrationTests": 100,
+      "sandboxAndPblUnitTests": { "passed": 431, "skipped": 11 },
+      "mode": "Real disposable PostgreSQL schemas and local Python/Java execution; the two lease regressions model 75 seconds of remote elapsed time under a configured 60-second lease without a wall-clock wait or live cloud calls",
+      "coverage": [
+        "PBL manual and maintenance checkpoints protect the lease before source snapshot I/O",
+        "Generic workspace saves renew within their existing environment lock before idle/export work",
+        "Checkpoint renewal requests the longer of the configured lifetime and the shared deadline plus 60 seconds",
+        "Ordinary provider renewal never shortens a longer remaining lease",
+        "Failed, stalled or expired checkpoint renewal cannot start export, commit a checkpoint or release the environment",
+        "Late ownership lookup after cancellation cannot start a provider timeout update"
+      ],
+      "selfReview": "Targeted subagent re-review found no new confirmed lease, deadline, lock or authorization regression; expired-grace and discard paths remain unchanged."
+    },
+    "sourceDeadlineFollowUp": {
+      "comment": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4360261199",
+      "newSourceIoUnitRegressions": 13,
+      "newPostgresRegressions": 2,
+      "postgresIntegrationTests": 98,
+      "sandboxAndPblUnitTests": { "passed": 422, "skipped": 11 },
+      "mode": "Controlled SDK I/O and real disposable PostgreSQL schemas with local Python/Java execution; no additional cloud compute allocated",
+      "coverage": [
+        "Source enumeration and file reads propagate the shared signal through service/provider boundaries and both provider connections",
+        "Stalled ownership lookup, connection, source copy, download, stream and cleanup cannot retain the caller after the shared deadline",
+        "Existing local 30-second stream timeout remains effective with a longer live Agent signal",
+        "Pre-expired requests start no provider I/O and late copy results cannot start downloads",
+        "Ignored adapter cancellation releases study admission, preserves the previous checkpoint and cannot overwrite a later checkpoint with late file/list results",
+        "Deferred-archive regression waits for later scans rather than assuming exact next-scan admission order"
+      ],
+      "selfReview": "Targeted subagent review confirmed both connection stages, enumeration, local timeout composition and bounded cleanup; no new confirmed issue. Races remain limited to read-only/provider I/O."
+    },
+    "maintenanceAdmissionFollowUp": {
+      "comment": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4360037244",
+      "newPostgresRegressions": 10,
+      "postgresIntegrationTests": 96,
+      "pblUnitTests": { "passed": 168, "skipped": 4 },
+      "mode": "Real disposable PostgreSQL schemas and local Python/Java execution with controlled provider/model behavior; no additional cloud compute allocated",
+      "coverage": [
+        "Reproduced unrelated activity failing with PBL_BUSY while two maintenance exports occupied the default pool's two study slots",
+        "Slow maintenance leaves admission for unrelated activity and commands across LearningStore instances sharing a pool",
+        "Deferred idle archive finishes on a subsequent scan",
+        "Queued/running Agent, recent reading, non-overdue commands and recent command/Agent completions retain lease protection during admission contention",
+        "Idle/overdue-only studies, expired archive grace and durable discard intent do not receive deferred lease renewal",
+        "Lease-only protection does not change teaching revisions or learner activity timestamps"
+      ],
+      "selfReview": "Reviewer identified lease starvation from fully serial scans and renewal after discard intent; final diff preserves both scan workers, adds bounded lease-only protection and checks discard intent. Re-review found no remaining confirmed issue."
+    },
+    "inputAndBootValidationFollowUp": {
+      "comments": [
+        "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4359910066",
+        "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4359910073"
+      ],
+      "targetedTests": 28,
+      "pblAndStartupTests": { "passed": 264, "skipped": 4 },
+      "browserWorkspaceJourney": "passed",
+      "mode": "Hermetic activity/startup suites with a controlled clock and mocked background workers, plus browser API fixture on local Next.js; no additional cloud compute allocated",
+      "coverage": [
+        "First trusted input after idle expiry reports without waiting for a heartbeat",
+        "Continuous input remains throttled and empty heartbeats do not renew activity",
+        "Failed batches and input arriving during a report remain pending without retry storms",
+        "Both lifecycle timeouts reject malformed values through fatal boot handling before background work starts"
+      ],
+      "selfReview": "Targeted subagent review found no confirmed new defect in activity coalescing, scene cleanup or fatal boot validation"
+    },
+    "navigationAndArchiveDeadlineFollowUp": {
+      "comments": [
+        "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4359423366",
+        "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4359423383"
+      ],
+      "targetedUnitTests": 28,
+      "postgresIntegrationTests": 86,
+      "browserWorkspaceJourney": "passed",
+      "mode": "Controlled E2B adapter I/O, real disposable PostgreSQL schemas, and browser API fixture on local Next.js; no additional cloud compute allocated",
+      "coverage": [
+        "Classroom navigation pointer-down does not restore inactive compute",
+        "Trusted project content input still restores inactive compute",
+        "Pre-expired export deadline starts no connection or archive generation",
+        "Generation and download receive the same shared cancellation signal",
+        "Stalled SDK generation and cleanup cannot retain the caller after expiry",
+        "Late connection or generation results cannot advance export after cancellation"
+      ],
+      "selfReview": "Targeted subagent review found no new confirmed defect in activity scoping, deadline propagation or cleanup bounds"
+    },
+    "terminalReviewFollowUp": {
+      "comment": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#discussion_r4359159199",
+      "newPostgresRegressions": 6,
+      "targetedUnitTests": 21,
+      "browserWorkspaceJourney": "passed",
+      "mode": "Real PostgreSQL and local workspace files, controlled provider/model behavior; browser API fixture on local Next.js",
+      "coverage": [
+        "Close abandoned terminal before archiving final writes and restore those files",
+        "Preserve another active tab and a running Agent turn",
+        "Bound persistent terminal close and discovery failures without an inconsistent archive",
+        "Transient closure retries preserve inactivity time",
+        "Learner return clears pending terminal cleanup",
+        "Failed preparation requires explicit retry after later trusted input",
+        "Completed report reopening never prepares compute",
+        "Append migration checksum pins for PBL versions 6 through 8 without changing shipped SQL"
+      ]
+    }
+  },
+  "observations": [
+    "Scene return restored the exact acknowledged file",
+    "Visible idle polling did not reallocate reclaimed compute",
+    "Fresh user input restored reclaimed compute",
+    "Navigating to another scene or out of the course stopped activity reports",
+    "All live test environments were confirmed destroyed after the scenarios",
+    "During development, live tools exposed maintenance lock contention and an old-message retry deadline; both have real-PG regressions, and the fresh real-model turn succeeded after fixes"
+  ],
+  "limitations": [
+    "Cloud verification uses a small Python workspace, one browser scenario and local object storage; concurrent capacity and production object-storage latency are not measured",
+    "Unexpected provider or application failure can lose changes since the last successful checkpoint; periodic dirty checkpoints require no active managed writer",
+    "After the configured idle archive-failure grace, release may discard changes newer than the last successful checkpoint; a durable loss notice identifies the recoverable version. If control metadata cannot be saved, provider-lease expiry is the compute fallback."
+  ],
+  "subIssues": {
+    "parent": 1995,
+    "lifecycle": 2007,
+    "runtime": 2008,
+    "hosted": 2009
+  },
+  "archiveFailureGraceMs": 300000,
+  "checkpointTransferTimeoutMs": 120000,
+  "selfReview": {
+    "base": "8f737ad715647304156f6377e0bf5bdb3705faec",
+    "reviewedCommit": "39be7c6a",
+    "axes": ["Standards", "Spec"],
+    "findingsAddressed": [
+      "Bound permanently unknown overdue commands using the idle failure grace even when cancellation cannot be acknowledged",
+      "Preserve the actual destroyed state while fencing discard-intent writes",
+      "Use the same resolved failure stage in diagnostics and durable metadata"
+    ],
+    "verifiedFixCommit": "317f8ea0",
+    "reReview": "Both reviewers confirmed their findings addressed and reported no new high-confidence blocker",
+    "terminalFollowUp": "Targeted subagent review confirmed the terminal-retention fix and explicit preparation-retry guards, with no new confirmed blocker."
+  }
+}

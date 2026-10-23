@@ -1,9 +1,17 @@
 import { createHash } from 'node:crypto';
-import { test, expect } from '@playwright/test';
+import { test, expect, type Request } from '@playwright/test';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 /** Browser interaction contract; backend/runner/Python execution is covered by runtime.pg.test.ts. */
 test.setTimeout(120000);
+
+function isPreparationRequest(request: Request) {
+  return (
+    request.method() === 'POST' &&
+    new URL(request.url()).pathname === '/api/pbl/v3' &&
+    request.postDataJSON()?.command?.type === 'prepare'
+  );
+}
 
 test('installed sample opens in the normal classroom and preserves progress after refresh', async ({
   page,
@@ -89,6 +97,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     }
     if (url.searchParams.has('samples')) return route.continue();
     if (body?.action === 'sample') return route.continue(); // actual course creation and persistence
+    if (url.pathname === '/api/pbl/v3/activity') return route.fulfill({ json: { recorded: true } });
     if (url.pathname === '/api/pbl/v3/report') {
       if (req.method() === 'POST') expect(req.headers()['content-type']).toBe('application/json');
       return route.fulfill({
@@ -422,14 +431,44 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByLabel('Your message').fill('Continue after restoring my environment.');
   view.environment = { state: 'destroyed', ready: false };
   failPreparation = true;
-  await page.getByRole('button', { name: 'Refresh progress' }).click();
+  const beforeRecovery = calls.filter((c) => c.type === 'prepare').length;
+  // Observe expiry without trusted input: passive refreshes must not allocate compute.
+  await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeRecovery);
+  // A navigation pointer-down can precede its click by an arbitrary interval. It must
+  // not wake this inactive workspace, even if the learner cancels the navigation gesture.
+  await page.waitForTimeout(1100);
+  const navigationRestore = page.waitForRequest(isPreparationRequest, { timeout: 1000 }).then(
+    () => true,
+    () => false,
+  );
+  await page.getByRole('button', { name: 'Back to Home', exact: true }).hover();
+  await page.mouse.down();
+  try {
+    expect(await navigationRestore).toBe(false);
+  } finally {
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+  }
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeRecovery);
+  // Exercise trusted input beyond the activity wake-up coalescing interval.
+  await page.waitForTimeout(1100);
+  await page.getByRole('button', { name: 'Restore project files', exact: true }).click();
   await expect(page.getByTestId('pbl-environment-setup')).toContainText('could not be prepared');
   const blocked = page.getByTestId('pbl-input-blocked');
   await expect(blocked).toContainText('retry above; your draft is kept.');
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
   const submitted = calls.filter((c) => c.type === 'chat').length;
+  await page.waitForTimeout(1100);
+  const automaticRetry = page.waitForRequest(isPreparationRequest, { timeout: 1500 }).then(
+    () => true,
+    () => false,
+  );
   await page.getByLabel('Your message').press('Enter');
+  expect(await automaticRetry).toBe(false);
   expect(calls.filter((c) => c.type === 'chat')).toHaveLength(submitted);
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeRecovery + 1);
   await expect(
     page
       .getByRole('alert')
@@ -450,6 +489,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.getByText('The workspace was restored', { exact: false })).toBeVisible();
   await page.getByLabel('Environment details', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+  const beforeContentRestore = calls.filter((c) => c.type === 'prepare').length;
+  view.environment = { state: 'destroyed', ready: false };
+  await page.getByRole('button', { name: 'Refresh progress' }).dispatchEvent('click');
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await page.waitForTimeout(1100);
+  // Trusted input in the PBL content still restores automatically, without changing the draft.
+  await page.getByLabel('Your message').press('ArrowLeft');
+  await expect(page.getByTestId('pbl-environment-setup')).toHaveCount(0);
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeContentRestore + 1);
   // A late read from PLAN.md must not populate or become savable as greeting.py.
   view.actions = ['chat', 'edit'];
   view.state.position.stageIndex = 3;
@@ -764,8 +812,12 @@ test('installed sample opens in the normal classroom and preserves progress afte
   view.actions = [];
   view.state.position.stageIndex = 6;
   await page.getByRole('button', { name: 'Refresh progress' }).click();
-  await expect(page.getByTestId('pbl-environment-setup')).toHaveCount(0);
-  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(attempts + 1);
+  await expect(page.getByRole('button', { name: 'Learning report', exact: true })).toBeVisible();
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  await expect(
+    page.getByRole('button', { name: 'Restore project files', exact: true }),
+  ).toBeVisible();
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeContentRestore + 1);
   await page.getByRole('button', { name: 'Expand project workspace' }).click();
   await page.getByRole('button', { name: 'Learning report', exact: true }).click();
   const report = page.getByRole('region', { name: 'Learning report' });
@@ -802,4 +854,5 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByRole('button', { name: 'Learning report', exact: true }).click();
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Return to learning' }).click();
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeContentRestore + 1);
 });

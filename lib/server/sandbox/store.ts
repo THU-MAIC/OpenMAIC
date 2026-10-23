@@ -83,6 +83,18 @@ export class SandboxStore {
     return result.rows[0];
   }
 
+  /** Background maintenance may only manage the environment still bound to an owned study. */
+  async assertLearningBinding(studyId: string, ownerId: string, id: string) {
+    const result = await this.persistence.pool.query(
+      `SELECT 1 FROM pbl_v3_studies s JOIN sandbox_environments e
+         ON (e.id=s.environment_id OR e.id=s.environment_recovery->>'requestId')
+       WHERE s.id=$1 AND s.owner_id=$2 AND e.id=$3 AND e.owner_id=$2
+         AND e.workspace_id=$4`,
+      [studyId, ownerId, id, `pbl-${studyId}`],
+    );
+    if (!result.rows.length) throw sandboxNotFound();
+  }
+
   async list(ownerId: string): Promise<SandboxRow[]> {
     const result = await this.persistence.pool.query<SandboxRow>(
       `SELECT * FROM sandbox_environments WHERE owner_id = $1
@@ -428,8 +440,13 @@ export class SandboxStore {
   checkpoint(ownerId: string, workspaceId: string) {
     return this.checkpointStorage().get(ownerId, workspaceId);
   }
-  saveCheckpoint(row: SandboxRow, expectedRevision: number, source: AsyncIterable<Uint8Array>) {
-    return this.checkpointStorage().saveLocked(row, expectedRevision, source);
+  saveCheckpoint(
+    row: SandboxRow,
+    expectedRevision: number,
+    source: AsyncIterable<Uint8Array>,
+    signal?: AbortSignal,
+  ) {
+    return this.checkpointStorage().saveLocked(row, expectedRevision, source, signal);
   }
   async assertCheckpointReadable(ownerId: string, saved: SavedCheckpoint) {
     // Check configuration, path policy and a real object read before allocating cloud compute.

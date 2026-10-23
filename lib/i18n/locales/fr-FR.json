@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "L’environnement du projet est inactif. Reprenez vos actions ou restaurez les fichiers ci-dessous.",
+    "recoverWorkspace": "Restaurer les fichiers du projet",
+    "checkpointUnavailable": "Les dernières modifications ne sont pas archivées. Réessayez de les enregistrer. En cas d’inactivité, l’environnement peut être libéré et les modifications non archivées perdues.",
+    "checkpointSkipped": "L’archivage échoue de façon persistante. La restauration peut perdre les modifications plus récentes que la sauvegarde.",
+    "lastDurableCheckpoint": "Sauvegarde récupérable pour cette libération : {{time}}.",
+    "noDurableCheckpoint": "Aucune archive disponible ; les fichiers du projet repartent de la version initiale.",
+    "checkpointReasons": {
+      "source-limit": "Le projet dépasse la limite de fichiers ou de taille.",
+      "archive-limit": "Le projet dépasse la limite de fichiers ou de taille.",
+      "unsupported-files": "Certains fichiers ne peuvent pas être archivés.",
+      "workspace-permission": "Les fichiers du projet sont illisibles.",
+      "workspace-full": "Le disque de travail est plein.",
+      "storage-quota": "Le quota de stockage des archives est atteint.",
+      "storage-config": "Vérifiez la configuration et les autorisations du stockage.",
+      "storage-permission": "Vérifiez la configuration et les autorisations du stockage.",
+      "timeout": "Le stockage ou l’environnement est indisponible, ou la requête a expiré.",
+      "unavailable": "Le stockage ou l’environnement est indisponible, ou la requête a expiré.",
+      "workspace-changed": "Les fichiers ont changé pendant l’archivage.",
+      "execution-unsettled": "Impossible de confirmer l’arrêt de la tâche."
     }
   }
 }

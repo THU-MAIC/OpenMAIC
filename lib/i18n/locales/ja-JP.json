@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "プロジェクト環境は休止中です。操作を続けるか、下のボタンでファイルを復元してください。",
+    "recoverWorkspace": "プロジェクトファイルを復元",
+    "checkpointUnavailable": "最新の変更を保存できませんでした。再試行してください。操作がない状態が続くと環境が解放され、未保存の変更が失われる場合があります。",
+    "checkpointSkipped": "アーカイブに繰り返し失敗しました。復元時に保存済みの版より新しい変更が失われる場合があります。",
+    "lastDurableCheckpoint": "今回の解放で復元できる保存日時：{{time}}。",
+    "noDurableCheckpoint": "復元できるアーカイブがないため、プロジェクトファイルは初期版から再開します。",
+    "checkpointReasons": {
+      "source-limit": "ファイル数またはサイズの上限を超えています。",
+      "archive-limit": "ファイル数またはサイズの上限を超えています。",
+      "unsupported-files": "一部のファイルをアーカイブできません。",
+      "workspace-permission": "プロジェクトファイルを読み取れません。",
+      "workspace-full": "作業領域のディスクがいっぱいです。",
+      "storage-quota": "アーカイブの保存容量が上限に達しました。",
+      "storage-config": "ストレージの設定と権限を確認してください。",
+      "storage-permission": "ストレージの設定と権限を確認してください。",
+      "timeout": "ストレージまたは作業環境が利用できないか、タイムアウトしました。",
+      "unavailable": "ストレージまたは作業環境が利用できないか、タイムアウトしました。",
+      "workspace-changed": "保存中にファイルが変更されました。",
+      "execution-unsettled": "タスクの停止を確認できません。"
     }
   }
 }

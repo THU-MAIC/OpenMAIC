@@ -1,5 +1,6 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
 import { ensurePBLStudySchema } from '@/lib/persistence/pbl-studies';
 import { retainDocumentAssets } from '@openmaic/storage/asset/pg';
@@ -17,6 +18,7 @@ import type { InstalledProject } from './catalog';
 import { resolveStudyProject } from './project-resolver';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import type { ArchiveFailure, ArchiveDiscard } from '@/lib/pbl/v3/types';
 
 export interface Study extends Record<string, unknown> {
   id: string;
@@ -32,6 +34,11 @@ export interface Study extends Record<string, unknown> {
   state: PblSessionState;
   environment_id: string | null;
   environment_checked_at: Date | null;
+  last_used_at: Date;
+  workspace_dirty_at: Date | null;
+  lifecycle_error: string | null;
+  checkpoint_failure: ArchiveFailure | null;
+  archive_discard: ArchiveDiscard | null;
   environment_recovery: {
     requestId: string;
     checkpointRevision?: number;
@@ -58,6 +65,7 @@ export interface RoleBinding extends Record<string, unknown> {
   context_key: string;
   stage_key: string;
   feedback_seq: number;
+  turn_started_at: Date;
   guided: import('./guided-review').GuidedSkillState | null;
   completion: { stageKey: string; feedbackSeq: number; userMessageSeq: number } | null;
 }
@@ -104,6 +112,68 @@ export class LearningStore {
   }
   async roles(id: string, db: Pool | PoolClient = this.pool) {
     return (await db.query<RoleBinding>('SELECT * FROM pbl_v3_roles WHERE study_id=$1', [id])).rows;
+  }
+  /** Activity is separate from teaching revisions; all tabs share the server clock. */
+  async recordActivity(id: string, ownerId: string) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      await db.query(
+        'UPDATE pbl_v3_studies SET last_used_at=clock_timestamp(),checkpoint_failure=NULL WHERE id=$1 AND owner_id=$2',
+        [id, ownerId],
+      );
+    });
+  }
+
+  async recordLifecycleError(id: string, ownerId: string, error: string | null) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      await db.query('UPDATE pbl_v3_studies SET lifecycle_error=$3 WHERE id=$1 AND owner_id=$2', [
+        id,
+        ownerId,
+        error,
+      ]);
+    });
+  }
+
+  async recordCheckpointFailure(row: Study, failure: ArchiveFailure) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      await db.query(
+        `UPDATE pbl_v3_studies SET checkpoint_failure=$4,lifecycle_error='checkpoint-unavailable'
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3`,
+        [row.id, row.owner_id, row.environment_id, JSON.stringify(failure)],
+      );
+    });
+  }
+
+  /** Durable point of no return. Further writes must use a replacement environment. */
+  async recordArchiveDiscard(row: Study, discard: ArchiveDiscard) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      await db.query(
+        `UPDATE pbl_v3_studies SET archive_discard=$4,lifecycle_error='checkpoint-skipped'
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3`,
+        [row.id, row.owner_id, row.environment_id, JSON.stringify(discard)],
+      );
+    });
+  }
+
+  /** Checkpoint metadata does not change teaching progress or invalidate an editor revision. */
+  async saveEnvironmentRecovery(row: Study) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      await db.query(
+        `UPDATE pbl_v3_studies SET environment_recovery=$4,workspace_dirty_at=$5,lifecycle_error=NULL,checkpoint_failure=NULL
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3`,
+        [
+          row.id,
+          row.owner_id,
+          row.environment_id,
+          JSON.stringify(row.environment_recovery),
+          row.workspace_dirty_at,
+        ],
+      );
+    });
   }
   async create(
     input: {
@@ -211,11 +281,23 @@ export class LearningStore {
       db.release();
     }
   }
-  /** Cross-process admission, including remote file I/O. Busy requests retry, never queue unboundedly. */
-  async exclusive<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  /** Bound pool admission and hold a cross-process study lock, including remote file I/O. */
+  async exclusive<T>(
+    id: string,
+    fn: () => Promise<T>,
+    mode: 'interactive' | 'maintenance' = 'interactive',
+  ): Promise<T> {
     const active = admitted.get(this.pool) ?? 0;
-    if (active >= Math.max(1, Math.floor((this.pool.options.max ?? 10) / 4)))
-      throw new SandboxError('PBL_BUSY', 429, 'Learning operations are busy. Retry shortly.');
+    const limit = Math.max(1, Math.floor((this.pool.options.max ?? 10) / 4));
+    // Leave one slot for interactive work whenever the pool supports multiple slots.
+    const capacity = mode === 'maintenance' ? Math.max(1, limit - 1) : limit;
+    if (active >= capacity)
+      throw new SandboxError(
+        'PBL_BUSY',
+        429,
+        'Learning operations are busy. Retry shortly.',
+        'STUDY_BUSY',
+      );
     admitted.set(this.pool, active + 1);
     let db: PoolClient | undefined;
     let locked = false;
@@ -229,7 +311,10 @@ export class LearningStore {
         )
       ).rows[0]!.locked;
       if (!locked)
-        throw sandboxConflict('The learning session is busy. Retry after the current operation.');
+        throw sandboxConflict(
+          'The learning session is busy. Retry after the current operation.',
+          'STUDY_BUSY',
+        );
       return await fn();
     } finally {
       try {
@@ -244,9 +329,34 @@ export class LearningStore {
     }
   }
 
+  /** Interactive work waits briefly for maintenance; no connection is held between attempts. */
+  async waitForExclusive<T>(id: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      signal?.throwIfAborted();
+      let entered = false;
+      try {
+        return await this.exclusive(id, () => {
+          entered = true;
+          return fn();
+        });
+      } catch (error) {
+        if (
+          entered ||
+          !(error instanceof SandboxError) ||
+          error.reason !== 'STUDY_BUSY' ||
+          Date.now() >= deadline
+        )
+          throw error;
+        await delay(50, undefined, { signal });
+      }
+    }
+  }
+
   async commit(db: PoolClient, row: Study, transition: EngineTransition) {
     const result = await db.query<Study>(
-      `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6
+      `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
+       workspace_dirty_at=$7,lifecycle_error=$8
       WHERE id=$1 AND revision=$2 RETURNING *`,
       [
         row.id,
@@ -255,6 +365,8 @@ export class LearningStore {
         row.environment_id,
         JSON.stringify(row.evaluation),
         JSON.stringify(row.environment_recovery),
+        row.workspace_dirty_at ?? null,
+        row.lifecycle_error ?? null,
       ],
     );
     if (!result.rows[0])

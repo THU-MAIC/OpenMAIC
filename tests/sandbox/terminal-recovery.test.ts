@@ -22,6 +22,7 @@ const env = {
 let terminal: TerminalRow;
 let locked = false;
 const provider = {
+  renew: vi.fn(),
   createTerminal: vi.fn(),
   findTerminal: vi.fn(),
   closeTerminal: vi.fn(),
@@ -40,13 +41,14 @@ const store = {
 const service = () =>
   Reflect.construct(SandboxService, [
     'owner-a',
-    { fingerprint: 'connection' },
+    { fingerprint: 'connection', lifetimeMs: 300_000 },
     store,
     provider,
   ]) as SandboxService;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  provider.renew.mockResolvedValue(undefined);
   locked = false;
   terminal = { id: terminalId, state: 'creating', pid: null };
   store.get.mockResolvedValue(env);

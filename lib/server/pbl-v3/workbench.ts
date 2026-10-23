@@ -54,7 +54,7 @@ export async function workbenchView(
   const store = await LearningStore.open(),
     row = await store.get(id, principal.ownerId),
     service = await SandboxService.forOwner(principal);
-  assertEnvironmentReady(await touchEnvironment(store, row, service));
+  assertEnvironmentReady(await touchEnvironment(store, row, service, false));
   const environmentId = requireEnvironment(row),
     policy = await permissions(store, row);
   const commands = [];

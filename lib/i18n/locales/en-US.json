@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "Your project environment is inactive. Interact with the project to restore it, or restore the files below.",
+    "recoverWorkspace": "Restore project files",
+    "checkpointUnavailable": "Your latest work could not be archived. Retry to save it. If left idle, this environment may be released and unarchived edits lost.",
+    "checkpointSkipped": "Archiving failed persistently. Recovery may lose changes newer than the saved checkpoint.",
+    "lastDurableCheckpoint": "Recoverable checkpoint for this release: {{time}}.",
+    "noDurableCheckpoint": "No checkpoint was available; project files restart from the initial version.",
+    "checkpointReasons": {
+      "source-limit": "The project exceeds the file or size limit.",
+      "archive-limit": "The project exceeds the file or size limit.",
+      "unsupported-files": "Some project files cannot be archived.",
+      "workspace-permission": "Project files are not readable.",
+      "workspace-full": "The workspace disk is full.",
+      "storage-quota": "Checkpoint storage quota is full.",
+      "storage-config": "Check storage configuration and permissions.",
+      "storage-permission": "Check storage configuration and permissions.",
+      "timeout": "The storage or workspace service is unavailable or timed out.",
+      "unavailable": "The storage or workspace service is unavailable or timed out.",
+      "workspace-changed": "Files changed during archiving.",
+      "execution-unsettled": "The task could not be confirmed stopped."
     }
   }
 }

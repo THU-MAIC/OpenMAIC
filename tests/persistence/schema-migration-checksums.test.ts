@@ -298,6 +298,27 @@ const SHIPPED: readonly (readonly [
     true,
     'de9e2193669d71579d6eb3eb2bade9b337e48c7866c94eac2b0bdf841c53ec6e',
   ],
+  [
+    'pbl-v3',
+    6,
+    'workspace-lifecycle',
+    true,
+    '489a1b92aac26796d92ccd2ba5d4329d4f6552566d0dde75f2ea309f90b0c3cc',
+  ],
+  [
+    'pbl-v3',
+    7,
+    'teaching-turn-deadline',
+    true,
+    '39cf33b2c1b45853f7bde1ffb8152d8011570386c9a1d50e81b9d7cacbbdac9c',
+  ],
+  [
+    'pbl-v3',
+    8,
+    'bounded-checkpoint-failure',
+    true,
+    '94c649267d2ea6b140ea15e093ea3d7e94ef28e2b47199cbbee6556a09051d2e',
+  ],
 ];
 
 /**
