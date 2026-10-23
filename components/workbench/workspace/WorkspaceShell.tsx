@@ -120,6 +120,9 @@ import { WorkspaceRail } from './WorkspaceRail';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
 import { WorkspaceClassroomPane } from './WorkspaceClassroomPane';
+import { WorkspaceRequestActivity } from './WorkspaceRequestActivity';
+import { requestStartIndex } from '@/lib/workbench/request-activity';
+import { watchFirstScene } from '@/lib/workbench/first-scene-ready';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { MaterialLibraryPage } from './MaterialLibraryPage';
@@ -922,6 +925,20 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const stageLinkStageIds = useWorkbenchStore((s) => s.stageLinkStageIds);
   const attachedSessionReplaying = useWorkbenchStore((s) => s.replaying);
   const replayedStageLinkCount = useWorkbenchStore((s) => s.replayedStageLinkCount);
+  // Serialize only provenance ids: streaming text changes must not restart the
+  // scene reads. This is a derived value, not another lifecycle/store.
+  const requestCreatedCourseIds = useWorkbenchStore((s) =>
+    JSON.stringify(
+      s.chat?.slice(requestStartIndex(s.chat) + 1).flatMap((node) => {
+        if (node.kind !== 'tool' || node.toolName !== 'create_stage' || node.toolState !== 'done')
+          return [];
+        // `reused` is a retry of this same call (the id derives from the call
+        // id), so it still proves this request created the course.
+        const details = node.toolDetails as { stageId?: unknown } | undefined;
+        return typeof details?.stageId === 'string' ? [details.stageId] : [];
+      }) ?? [],
+    ),
+  );
   const pageCount = useWorkbenchStore((s) => Object.keys(s.pages).length);
   const paneSessionStageId = useMemo(
     () => sessions.find((session) => session.id === panes.sessionId)?.stageId ?? null,
@@ -942,21 +959,47 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    *
    */
   useEffect(() => {
+    // A delayed first scene may arrive after re-attachment replayed its link.
+    // Only a successful new create_stage in this request proves provenance;
+    // arbitrary historical links do not.
+    const rememberedTabs = readCourseTabsMemory();
+    const rememberedCourseIds = [
+      ...(rememberedTabs?.courseIds ?? []),
+      ...(rememberedTabs?.closedCourseIds ?? []),
+    ];
+    const activeRequestCreates =
+      !panes.courseId &&
+      !panes.library &&
+      ['running', 'queued', 'connecting'].includes(attachedSessionStatus)
+        ? (JSON.parse(requestCreatedCourseIds) as string[]).filter(
+            (id) => !rememberedCourseIds.includes(id),
+          )
+        : [];
+    const eligibleLinks = stageLinkStageIds.filter(
+      (id, index) => index >= replayedStageLinkCount || activeRequestCreates.includes(id),
+    );
     const open = createdCourseTabsToOpen({
       sessionId: attachedSessionId === panes.sessionId ? panes.sessionId : null,
-      createdCourseIds: stageLinkStageIds,
-      replayedCourseCount: replayedStageLinkCount,
+      createdCourseIds: eligibleLinks,
+      replayedCourseCount: 0,
       availableCourseIds:
         courses.state === 'ready' ? courses.classrooms.map((course) => course.id) : [],
       openCourseIds: courseTabs.courseIds,
       closedCourseIds: courseTabs.closedCourseIds ?? [],
       replaying: attachedSessionReplaying,
     });
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- a durable library write is the external event being synchronized into URL/tab state
-    if (open.length > 0) openCourses(open);
+    if (open.length === 0) return;
+    // Existing classroom and library background navigation retain their contract.
+    if (panes.courseId || panes.library) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize the existing live course-link behavior
+      openCourses(open);
+      return;
+    }
+    return watchFirstScene(open, (courseId) => openCourses([courseId]));
   }, [
     attachedSessionId,
     attachedSessionReplaying,
+    requestCreatedCourseIds,
     courseTabs,
     courses.classrooms,
     courses.state,
@@ -964,6 +1007,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     openCourses,
     panes.sessionId,
     replayedStageLinkCount,
+    libraryRevision,
+    pageCount,
+    attachedSessionStatus,
+    panes.library,
+    panes.courseId,
   ]);
 
   useGeneratedCourseDiscoverySync({
@@ -1333,6 +1381,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             ) : undefined
           }
         />
+      ) : null}
+
+      {!panes.courseId && !render.library && !narrow && panes.sessionId === attachedSessionId ? (
+        <WorkspaceRequestActivity />
       ) : null}
 
       {panes.courseId ? (
