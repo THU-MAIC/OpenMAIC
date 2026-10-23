@@ -56,6 +56,7 @@ import {
 import katex from 'katex';
 import { safeKatexOptions } from '@openmaic/dsl';
 import { createLogger } from '@/lib/logger';
+import { legacyShapeCompatibilityError } from '@/lib/whiteboard/legacy-shape';
 
 const log = createLogger('ActionEngine');
 
@@ -223,6 +224,11 @@ export class ActionEngine {
       if (action.type.startsWith('widget_')) {
         return;
       }
+    }
+
+    if (action.type === 'wb_draw_shape') {
+      const error = legacyShapeCompatibilityError(action);
+      if (error) throw new Error(error);
     }
 
     // Auto-open whiteboard if a draw/clear/delete action is attempted while it's closed
@@ -518,7 +524,7 @@ export class ActionEngine {
         id: action.elementId || '',
         type: 'shape',
         viewBox: [1000, 1000] as [number, number],
-        path: SHAPE_PATHS[action.shape] ?? SHAPE_PATHS.rectangle,
+        path: SHAPE_PATHS[action.shape],
         left: action.x,
         top: action.y,
         width: action.width,
