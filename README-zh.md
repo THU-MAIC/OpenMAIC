@@ -438,6 +438,25 @@ slots:
   document: mineru
 ```
 
+### 可选：PaddleOCR（文档解析）
+
+[PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) 以两种形式支持同一个 `document` 插槽：通过 [PaddleX 服务化部署](https://paddlepaddle.github.io/PaddleX/latest/pipeline_usage/tutorials/ocr_pipelines/layout_parsing.html)**自部署**（无需 API key；注意服务端默认每个 PDF 只处理前 10 页），或**百度智能云**（PaddleOCR-VL，需要 API Key + Secret Key 密钥对）。在 `openmaic.yml` 中声明并分配 `document` 插槽：
+
+```yaml
+providers:
+  paddleocr:
+    preset: paddleocr
+    baseUrl: http://localhost:8080
+  paddleocr-cloud:
+    preset: paddleocr-cloud
+    credentials:
+      accessKeyId: ${PADDLEOCR_CLOUD_ACCESS_KEY_ID}
+      accessKeySecret: ${PADDLEOCR_CLOUD_ACCESS_KEY_SECRET}
+
+slots:
+  document: paddleocr
+```
+
 没有 `openmaic.yml` 时，在 `.env.local` 中设置旧版变量 `PDF_MINERU_CLOUD_API_KEY` 或 `PDF_MINERU_BASE_URL` 仍然有效。
 
 ### 可选：VoxCPM2（自托管 TTS，支持音色克隆）

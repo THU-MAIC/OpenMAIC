@@ -44,6 +44,23 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     icon: '/logos/aliyun.svg',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
   },
+
+  paddleocr: {
+    id: 'paddleocr',
+    name: 'PaddleOCR',
+    requiresApiKey: false,
+    icon: '/logos/baidu.png',
+    features: ['text', 'images', 'tables', 'layout-analysis', 'ocr'],
+  },
+
+  'paddleocr-cloud': {
+    id: 'paddleocr-cloud',
+    name: 'PaddleOCR (Cloud)',
+    requiresApiKey: true,
+    requiresCredentials: true,
+    icon: '/logos/baidu.png',
+    features: ['text', 'images', 'tables', 'layout-analysis', 'ocr'],
+  },
 };
 
 /**
