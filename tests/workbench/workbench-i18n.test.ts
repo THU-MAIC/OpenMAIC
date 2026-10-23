@@ -319,3 +319,12 @@ it('R8.5 states the media duration limit by interpolation in all twelve locales'
     }
   }
 });
+
+it('uses Arabic singular wording for one moved material', () => {
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.material', { count: 1 })).toBe(
+    '1 مادة',
+  );
+  expect(createWorkbenchTranslator('ar-SA')('workbench.tool.chip.materials', { count: 2 })).toBe(
+    '2 مواد',
+  );
+});

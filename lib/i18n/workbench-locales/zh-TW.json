@@ -239,7 +239,8 @@
       "parseFailed": "解析失敗",
       "folderExisted": "資料夾已存在",
       "unchanged": "沒有變化",
-      "movedOutOfFolder": "已移出資料夾"
+      "movedOutOfFolder": "已移出資料夾",
+      "material": "{{count}} 份材料"
     },
     "error": {
       "materialExtraction": "材料解析失敗",

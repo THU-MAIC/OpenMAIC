@@ -239,7 +239,8 @@
       "parseFailed": "Ошибка обработки",
       "folderExisted": "Папка уже была",
       "unchanged": "Без изменений",
-      "movedOutOfFolder": "Перемещено из папки"
+      "movedOutOfFolder": "Перемещено из папки",
+      "material": "{{count}} материал"
     },
     "error": {
       "materialExtraction": "Не удалось разобрать материал",

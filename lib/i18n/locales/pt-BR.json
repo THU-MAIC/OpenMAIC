@@ -2290,7 +2290,18 @@
         "notMovable": "Este material não pode ser movido",
         "gone": "Ele não existe mais",
         "save": "Não deu certo. Tente novamente",
-        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro",
+        "materialNotFound": "Material não encontrado ou inacessível.",
+        "folderNotFound": "Pasta não encontrada ou inacessível.",
+        "textUnavailable": "O texto do material está indisponível.",
+        "derivative": "Um material derivado usa o nome da fonte; renomeie a fonte.",
+        "moveTooMany": "Mova no máximo {{limit}} materiais por vez.",
+        "moveNotMovable": "Nenhum material foi movido. Alguns materiais selecionados estão indisponíveis ou não podem ser movidos.",
+        "toolFolderNameTooLong": "O nome da pasta é longo demais (até 40 caracteres de meia largura ou 20 de largura completa).",
+        "toolFolderLimit": "A base de conhecimento atingiu o máximo de {{limit}} pastas.",
+        "mediaUnsupported": "Somente imagens, vídeos ou áudios podem ser usados como mídia do curso.",
+        "mediaStorageFull": "Não há espaço suficiente para esta mídia. Libere espaço e tente novamente.",
+        "mediaNotFound": "O material de mídia não foi encontrado ou não contém arquivos de mídia disponíveis."
       },
       "actions": {
         "parse": "Analisar",
@@ -2319,6 +2330,9 @@
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
         "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Não há um serviço de análise configurado para este tipo de arquivo. Peça a um administrador para configurá-lo."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2364,8 @@
       "materialUnavailable": "Não é possível anexar {{name}} ({{reason}}). Abra a base de conhecimento para ver o motivo e analisar de novo.",
       "materialAttached": "Já está nesta conversa",
       "materialStaged": "Já está nesta mensagem",
-      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar"
+      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
+      "materialUnavailableGuidance": "Não é possível anexar {{name}}. {{guidance}} Você pode gerenciá-lo na página da base de conhecimento."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

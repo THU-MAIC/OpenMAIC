@@ -104,15 +104,11 @@ function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('aborted');
 }
 
-const FOLDER_NAME_REASONS: Record<string, string> = {
-  empty: 'The folder name is empty.',
-  tooLong: 'The folder name is too long (at most 40 half-width or 20 full-width characters).',
-};
-
 export function buildMaterialLibraryTools(
   deps: MaterialLibraryToolDependencies,
 ): AgentTool<never, never>[] {
   const write = { ownerId: deps.ownerId, fence: 'background' as const };
+  const copyNow = () => materialModelCopy(deps.locale?.() ?? defaultLocale);
 
   async function resultWithSessionCopies(details: Record<string, unknown>, materialIds: string[]) {
     const text = JSON.stringify(details, null, 2);
@@ -182,12 +178,18 @@ export function buildMaterialLibraryTools(
         name: params.name,
       });
       if (outcome.status === 'invalid_name') {
-        return result({ status: 'invalid_name' }, FOLDER_NAME_REASONS[outcome.reason]!, true);
+        return result(
+          { status: 'invalid_name' },
+          (await copyNow()).error(
+            outcome.reason === 'empty' ? 'folderNameEmpty' : 'toolFolderNameTooLong',
+          ),
+          true,
+        );
       }
       if (outcome.status === 'limit') {
         return result(
           { status: 'limit', limit: outcome.limit },
-          `The knowledge base already has the maximum of ${outcome.limit} folders.`,
+          (await copyNow()).error('toolFolderLimit', { limit: outcome.limit }),
           true,
         );
       }
@@ -222,11 +224,17 @@ export function buildMaterialLibraryTools(
       });
       switch (outcome.status) {
         case 'invalid_name':
-          return result({ status: 'invalid_name' }, FOLDER_NAME_REASONS[outcome.reason]!, true);
+          return result(
+            { status: 'invalid_name' },
+            (await copyNow()).error(
+              outcome.reason === 'empty' ? 'folderNameEmpty' : 'toolFolderNameTooLong',
+            ),
+            true,
+          );
         case 'not_found':
-          return result({ status: 'not_found' }, 'Folder not found.', true);
+          return result({ status: 'not_found' }, (await copyNow()).error('folderNotFound'), true);
         case 'name_taken':
-          return result({ status: 'name_taken' }, 'Another folder already has that name.', true);
+          return result({ status: 'name_taken' }, (await copyNow()).error('nameTaken'), true);
         default: {
           if (outcome.status === 'renamed') {
             deps.onLibraryChanged?.({
@@ -262,17 +270,21 @@ export function buildMaterialLibraryTools(
       });
       switch (outcome.status) {
         case 'folder_not_found':
-          return result({ status: 'folder_not_found' }, 'Folder not found.', true);
+          return result(
+            { status: 'folder_not_found' },
+            (await copyNow()).error('folderNotFound'),
+            true,
+          );
         case 'not_movable':
           return result(
             { status: 'not_movable', materialIds: outcome.materialIds },
-            `Nothing was moved. These ids are not source materials of the knowledge base: ${outcome.materialIds.join(', ')}.`,
+            `${(await copyNow()).error('moveNotMovable')}\nmaterialIds: ${outcome.materialIds.join(', ')}`,
             true,
           );
         case 'too_many':
           return result(
             { status: 'too_many', limit: outcome.limit },
-            `Move at most ${outcome.limit} materials at a time.`,
+            (await copyNow()).error('moveTooMany', { limit: outcome.limit }),
             true,
           );
         default: {
@@ -320,15 +332,11 @@ export function buildMaterialLibraryTools(
       });
       switch (outcome.status) {
         case 'invalid_name':
-          return result({ status: 'invalid_name' }, 'The name is empty or too long.', true);
+          return result({ status: 'invalid_name' }, (await copyNow()).error('invalidName'), true);
         case 'not_found':
-          return result({ status: 'not_found' }, 'Material not found.', true);
+          return result({ status: 'not_found' }, (await copyNow()).error('materialNotFound'), true);
         case 'derivative':
-          return result(
-            { status: 'derivative' },
-            'A derivative is named after its source; rename the source instead.',
-            true,
-          );
+          return result({ status: 'derivative' }, (await copyNow()).error('derivative'), true);
         default:
           if (outcome.status === 'renamed') {
             deps.onLibraryChanged?.({

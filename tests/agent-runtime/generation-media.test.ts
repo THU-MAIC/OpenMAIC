@@ -140,34 +140,41 @@ describe('generation media tools', () => {
     expect(fetchPreview).toHaveBeenCalledTimes(1);
   });
 
-  it('turns an ast_ asset id into a pointer to use it directly, copying nothing', async () => {
-    const storeAsset = vi.fn();
-    const resolveMaterial = vi.fn(async () => null);
-    const tool = buildMaterialMediaTool({
-      sessionId: 'session-a',
-      ownerId: 'owner-a',
-      storeAsset,
-      resolveMaterial,
-    });
-    const response = await tool.execute('asset', {
-      materialId: 'ast_generated_image',
-      stageId: 'stage-a',
-    } as never);
-    expect(response).toMatchObject({
-      isError: true,
-      details: { materialId: 'ast_generated_image', error: 'asset-id-not-material' },
-    });
-    expect(textOf(response)).toContain('already a usable src');
-    expect(textOf(response)).toContain('patch_stage');
-    expect(storeAsset).not.toHaveBeenCalled();
+  it.each([
+    [undefined, '找不到这份媒体资料，或它没有可用的媒体文件。'],
+    ['en-US', 'Media material not found or has no media bytes.'],
+  ] as const)(
+    'turns an ast_ asset id into a pointer without copying, and localizes missing materials (locale=%s)',
+    async (locale, missingText) => {
+      const storeAsset = vi.fn();
+      const resolveMaterial = vi.fn(async () => null);
+      const tool = buildMaterialMediaTool({
+        sessionId: 'session-a',
+        ownerId: 'owner-a',
+        storeAsset,
+        resolveMaterial,
+        ...(locale ? { locale: () => locale } : {}),
+      });
+      const response = await tool.execute('asset', {
+        materialId: 'ast_generated_image',
+        stageId: 'stage-a',
+      } as never);
+      expect(response).toMatchObject({
+        isError: true,
+        details: { materialId: 'ast_generated_image', error: 'asset-id-not-material' },
+      });
+      expect(textOf(response)).toContain('already a usable src');
+      expect(textOf(response)).toContain('patch_stage');
+      expect(storeAsset).not.toHaveBeenCalled();
 
-    // Any other unknown id keeps the plain not-found answer.
-    const missing = await tool.execute('missing', {
-      materialId: 'mat_gone',
-      stageId: 'stage-a',
-    } as never);
-    expect(textOf(missing)).toBe('Media material not found or has no media bytes.');
-  });
+      // Asset-ID recovery stays in English; unknown materials use the current locale.
+      const missing = await tool.execute('missing', {
+        materialId: 'mat_gone',
+        stageId: 'stage-a',
+      } as never);
+      expect(textOf(missing)).toBe(missingText);
+    },
+  );
 
   it('resolves a preview by page order or read_stage path and lists pages on a miss', async () => {
     const bodies: Array<{ scene: { id: string }; viewport: Record<string, number> }> = [];

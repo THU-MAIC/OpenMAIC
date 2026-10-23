@@ -550,10 +550,10 @@ describe('material library rows', () => {
         folderId: 'f',
         movedCount: 1,
       }),
-    ).toEqual(['1 materials']);
+    ).toEqual(['1 material']);
     expect(
       chipsOf('move_materials', { status: 'moved', materialIds: ['a'], folderId: null }),
-    ).toEqual(['1 materials', 'Moved out of folder']);
+    ).toEqual(['1 material', 'Moved out of folder']);
     // Nothing moved: no "moved out" (the result names no source folder either way).
     expect(
       chipsOf('move_materials', { status: 'unchanged', materialIds: ['a'], folderId: null }),

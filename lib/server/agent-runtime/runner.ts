@@ -1496,6 +1496,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // voice registration all use its provider.
     const ttsConnection = await serverMediaConnection('tts', meta.ownerId);
     const dslTools = buildDslCourseToolset({
+      locale: () => runLocale,
       store: ownerScopedStore,
       backgroundStore: mediaJobStore,
       // The video slot for this run's owner; generate_video exists only when

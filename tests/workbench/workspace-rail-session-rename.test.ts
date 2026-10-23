@@ -64,10 +64,13 @@ afterEach(() => {
 const NAMED = 'session-named';
 const UNNAMED = 'session-unnamed';
 
-async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn> }> {
+async function renderRail(
+  courseFolder?: 'top' | 'folder',
+): Promise<{ onRenameSession: ReturnType<typeof vi.fn>; moveCourse: ReturnType<typeof vi.fn> }> {
   const { WorkspaceRail } = await import('@/components/workbench/workspace/WorkspaceRail');
   const onRenameSession = vi.fn(async () => null);
-  window.localStorage.setItem(RAIL_TAB_STORAGE_KEY, 'sessions');
+  const moveCourse = vi.fn();
+  window.localStorage.setItem(RAIL_TAB_STORAGE_KEY, courseFolder ? 'courses' : 'sessions');
 
   const container = document.createElement('div');
   container.className = 'ws-root';
@@ -78,14 +81,24 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
     root.render(
       createElement(WorkspaceRail, {
         courses: {
-          classrooms: [],
+          classrooms: courseFolder
+            ? [
+                {
+                  id: 'drag-course',
+                  name: 'Course',
+                  createdAt: 1,
+                  updatedAt: 1,
+                  ...(courseFolder === 'folder' ? { folderId: 'folder-1' } : {}),
+                },
+              ]
+            : [],
           state: 'ready',
           reload: vi.fn(),
           importInput: null,
           discoveryContent: null,
-          folders: [],
+          folders: courseFolder === 'folder' ? [{ id: 'folder-1', name: 'Folder' }] : [],
           openNewFolder: vi.fn(),
-          moveCourse: vi.fn(),
+          moveCourse,
           createAndMove: () => () => {},
           deleteCourse: vi.fn(async () => true),
         } as never,
@@ -128,7 +141,7 @@ async function renderRail(): Promise<{ onRenameSession: ReturnType<typeof vi.fn>
       }),
     );
   });
-  return { onRenameSession };
+  return { onRenameSession, moveCourse };
 }
 
 const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
@@ -227,3 +240,59 @@ describe('renaming a chat from its row', () => {
     expect(byTestId(`pro-nav-session-rename-${NAMED}-input`)).toBeNull();
   });
 }, 30_000);
+
+describe('course rail move-out destination', () => {
+  it.each(['top', 'folder'] as const)(
+    'only arms for a foldered course and handles release after the activating move: %s',
+    async (location) => {
+      const { moveCourse } = await renderRail(location);
+      if (location === 'folder') {
+        await act(async () => byTestId('pro-nav-folder-folder-1')!.click());
+      }
+      const row = byTestId('pro-nav-course-drag-course')!;
+      expect(row).not.toBeNull();
+      const ground = byTestId('pro-nav-tree-ground-drop')!;
+      expect(ground.getAttribute('data-armed')).toBe('false');
+      expect(ground.getAttribute('data-ws-drop-folder')).toBe('');
+      // Hit testing is controlled; the production pointer gesture and row rendering are real.
+      const original = document.elementFromPoint;
+      document.elementFromPoint = () => ground;
+      try {
+        await act(async () => {
+          row.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+          );
+          window.dispatchEvent(
+            new PointerEvent('pointermove', { bubbles: true, clientX: 20, clientY: 20 }),
+          );
+        });
+        expect(ground.getAttribute('data-armed')).toBe(location === 'folder' ? 'true' : 'false');
+        expect(ground.getAttribute('data-ws-drop-folder')).toBe('');
+        expect(ground.textContent).toBe(location === 'folder' ? 'workspace.dropToUnfile' : '');
+        // Cancellation still clears the first gesture without moving anything.
+        await act(async () => window.dispatchEvent(new PointerEvent('pointercancel')));
+        expect(ground.getAttribute('data-armed')).toBe('false');
+        expect(moveCourse).not.toHaveBeenCalled();
+        await act(async () => {
+          row.dispatchEvent(
+            new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: 0, clientY: 0 }),
+          );
+          window.dispatchEvent(new PointerEvent('pointermove', { clientX: 20, clientY: 20 }));
+        });
+        // Release immediately: no second move may repair the activation hit test.
+        await act(async () =>
+          window.dispatchEvent(new PointerEvent('pointerup', { clientX: 20, clientY: 20 })),
+        );
+        if (location === 'folder') {
+          expect(moveCourse).toHaveBeenCalledExactlyOnceWith('drag-course', undefined);
+        } else {
+          expect(moveCourse).not.toHaveBeenCalled();
+        }
+
+        expect(ground.getAttribute('data-armed')).toBe('false');
+      } finally {
+        document.elementFromPoint = original;
+      }
+    },
+  );
+});
