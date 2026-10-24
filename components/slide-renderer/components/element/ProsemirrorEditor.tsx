@@ -5,7 +5,7 @@ import { debounce } from 'lodash';
 import { useKeyboardStore, useCanvasStore } from '@/lib/store';
 import type { EditorView } from 'prosemirror-view';
 import { toggleMark, wrapIn, lift } from 'prosemirror-commands';
-import { initProsemirrorEditor, createDocument } from '@/lib/prosemirror';
+import { initProsemirrorEditor, createDocument, editorHtmlForSave } from '@/lib/prosemirror';
 import {
   isActiveOfParentNodeType,
   findNodesWithSameMark,
@@ -93,13 +93,10 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
         debounce(
           (isHandleHistory = false) => {
             if (!editorView.current) return;
-            if (
-              value.replace(/ style=""/g, '') ===
-              editorView.current.dom.innerHTML.replace(/ style=""/g, '')
-            )
-              return;
+            const next = editorHtmlForSave(editorView.current.dom);
+            if (value.replace(/ style=""/g, '') === next.replace(/ style=""/g, '')) return;
             onUpdate?.({
-              value: editorView.current.dom.innerHTML,
+              value: next,
               ignore: isHandleHistory,
             });
           },

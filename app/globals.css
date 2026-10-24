@@ -167,6 +167,15 @@
   cursor: text;
 }
 
+/* ProseMirror inserts this zero-size caret helper after inline atoms.
+   Tailwind preflight sets `img { display: block }`, which would open a new
+   line. Playback's text element does not use `.prosemirror-editor`. */
+.prosemirror-editor img.ProseMirror-separator {
+  display: inline !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
 /* The slide editor draws a text element's frame via the renderer's Operate
    layer. The focused contenteditable must not also paint a UA focus ring on
    top of it (the base `* { @apply outline-ring/50 }` rule gives every focused
