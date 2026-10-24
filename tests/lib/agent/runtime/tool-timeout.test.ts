@@ -47,6 +47,13 @@ function hungTool(captured: AbortSignal[], started?: () => void): DemoTool {
   });
 }
 
+function hungCallAgentTool(
+  captured: AbortSignal[],
+  childRuntimeMode: 'legacy' | 'native',
+): DemoTool & { childRuntimeMode: 'legacy' | 'native' } {
+  return { ...hungTool(captured), name: 'call_agent', childRuntimeMode };
+}
+
 const result = (text: string) => ({
   content: [{ type: 'text' as const, text }],
   details: { source: 'tool' },
@@ -98,32 +105,26 @@ describe('resolveAgentToolTimeoutMs', () => {
     );
   });
 
-  it.each([
-    ['unset', undefined],
-    ['false', 'false'],
-  ] as const)(
-    'keeps the legacy call_agent bound at the global timeout when the Native Child runtime is %s',
-    (_label, flag) => {
-      setEnv('5000');
-      setNativeChildTimeout('20000');
-      setNativeChildRuntime(flag);
-
-      expect(resolveAgentToolTimeoutMs('call_agent')).toBe(5000);
-    },
-  );
-
-  it('extends only the call_agent bound past a larger Native Child timeout when the Native Child runtime is enabled', () => {
+  it('keeps explicit legacy call_agent at the global timeout when the Native Child flag is enabled', () => {
     setEnv('5000');
     setNativeChildTimeout('20000');
     setNativeChildRuntime('true');
 
-    expect(resolveAgentToolTimeoutMs('call_agent')).toBe(
+    expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'legacy')).toBe(5000);
+  });
+
+  it('extends only native call_agent past the Native Child timeout, independently of the feature flag', () => {
+    setEnv('5000');
+    setNativeChildTimeout('20000');
+    setNativeChildRuntime(undefined);
+
+    expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'native')).toBe(
       Math.max(5000, 20000 + CALL_AGENT_TIMEOUT_MARGIN_MS),
     );
-    expect(resolveAgentToolTimeoutMs('any_tool')).toBe(5000);
+    expect(resolveAgentToolTimeoutMs('any_tool', process.env, 'native')).toBe(5000);
 
     setEnv('90000');
-    expect(resolveAgentToolTimeoutMs('call_agent')).toBe(90000);
+    expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'native')).toBe(90000);
   });
 });
 
@@ -139,19 +140,14 @@ describe('withAgentToolTimeout', () => {
     vi.useRealTimers();
   });
 
-  it('does not abort call_agent at the global budget while its Native Child budget is still running', async () => {
+  it('does not abort native call_agent at the global budget while its Native Child budget is still running', async () => {
     vi.useFakeTimers();
     setEnv('5000');
     setNativeChildTimeout('20000');
-    setNativeChildRuntime('true');
+    setNativeChildRuntime(undefined);
     const captured: AbortSignal[] = [];
-    const tool = withAgentToolTimeout(
-      makeTool((_id, _args, signal) => {
-        if (signal) captured.push(signal);
-        return new Promise(() => {});
-      }, 'call_agent'),
-    );
-    const budget = resolveAgentToolTimeoutMs('call_agent');
+    const tool = withAgentToolTimeout(hungCallAgentTool(captured, 'native'));
+    const budget = resolveAgentToolTimeoutMs('call_agent', process.env, 'native');
 
     const promise = tool.execute('call-1', {}, undefined);
     const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
@@ -166,35 +162,24 @@ describe('withAgentToolTimeout', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each([
-    ['unset', undefined],
-    ['false', 'false'],
-  ] as const)(
-    'aborts a hung legacy call_agent at the global budget when the Native Child runtime is %s',
-    async (_label, flag) => {
-      vi.useFakeTimers();
-      setEnv('5000');
-      setNativeChildTimeout('20000');
-      setNativeChildRuntime(flag);
-      const captured: AbortSignal[] = [];
-      const tool = withAgentToolTimeout(
-        makeTool((_id, _args, signal) => {
-          if (signal) captured.push(signal);
-          return new Promise(() => {});
-        }, 'call_agent'),
-      );
+  it('aborts a hung legacy call_agent at the global budget when the Native Child flag is enabled', async () => {
+    vi.useFakeTimers();
+    setEnv('5000');
+    setNativeChildTimeout('20000');
+    setNativeChildRuntime('true');
+    const captured: AbortSignal[] = [];
+    const tool = withAgentToolTimeout(hungCallAgentTool(captured, 'legacy'));
 
-      const promise = tool.execute('call-1', {}, undefined);
-      const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await settled;
+    const promise = tool.execute('call-1', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
 
-      expect(captured[0]?.aborted).toBe(true);
-      expect(captured[0]?.reason).toBeInstanceOf(AgentToolTimeoutError);
-      expect(captured[0]?.reason).toMatchObject({ timeoutMs: 5_000 });
-      expect(vi.getTimerCount()).toBe(0);
-    },
-  );
+    expect(captured[0]?.aborted).toBe(true);
+    expect(captured[0]?.reason).toBeInstanceOf(AgentToolTimeoutError);
+    expect(captured[0]?.reason).toMatchObject({ timeoutMs: 5_000 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it('rejects a never-settling tool at the configured budget and aborts its signal', async () => {
     vi.useFakeTimers();
