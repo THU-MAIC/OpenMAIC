@@ -123,8 +123,8 @@ Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェ�
 | `course.content.pbl` | chat | `course.content` | プロジェクト型学習（PBL）シーン |
 | `course.actions` | chat | `llm` | シーンのアクション（各シーンでエージェントが話す内容と行う動作） |
 | `classroom` | chat | `llm` | 授業中のチャット、クイズの採点、PBL ランタイム |
-| `agent` | chat | `llm` | Pro ワークベンチのエージェント。**ツール呼び出しが必要。** `api` と `contextWindow` も指定可能 |
-| `agent.title` | chat | `agent` | Pro セッションのタイトル。`openmaic.yml` でのみ設定でき、モデル設定には表示されません |
+| `agent` | chat | `llm` | ワークベンチのエージェント。**ツール呼び出しが必要。** `api` と `contextWindow` も指定可能 |
+| `agent.title` | chat | `agent` | ワークベンチのセッションのタイトル。`openmaic.yml` でのみ設定でき、モデル設定には表示されません |
 | `tts` | tts | — | 音声合成 |
 | `asr` | asr | — | 音声認識（音声入力、音声・動画の文字起こし） |
 | `image` | image | — | 画像生成 |
@@ -313,7 +313,7 @@ slots:
   webSearch: tavily
 ```
 
-その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。`<PREFIX>_BASE_URL` はプロバイダーの `baseUrl` になり（`OPENAI_BASE_URL` → `openai` の `baseUrl`。URL を直接書くか、変数を設定したままなら `${OPENAI_BASE_URL}` と書きます）、`<PREFIX>_MODELS` はその `models` リストになります。変換された `DEFAULT_MODEL` と同じく、ここに書いた `llm` はワークスペースが変更できるサーバーの既定値です。全員に対して固定するには `lock: [llm]` を加えてください。変換結果と異なり、`agent` は `llm` に従うようになります。Pro エージェントを無効のままにするには `agent: null` と書いてください。
+その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。`<PREFIX>_BASE_URL` はプロバイダーの `baseUrl` になり（`OPENAI_BASE_URL` → `openai` の `baseUrl`。URL を直接書くか、変数を設定したままなら `${OPENAI_BASE_URL}` と書きます）、`<PREFIX>_MODELS` はその `models` リストになります。変換された `DEFAULT_MODEL` と同じく、ここに書いた `llm` はワークスペースが変更できるサーバーの既定値です。全員に対して固定するには `lock: [llm]` を加えてください。変換結果と異なり、`agent` は `llm` に従うようになります。ワークベンチのエージェントを無効のままにするには `agent: null` と書いてください。
 
 **server-providers.yml。** 移行前：
 
@@ -437,7 +437,7 @@ ACCESS_CODE=your-secret-code
 機能フラグは `true` または `1` を有効とし、特記がない限りそれ以外は無効です。`NEXT_PUBLIC_*` はビルド時にクライアントに注入されるため、変更後は再ビルドが必要です。
 
 ```bash
-# MAIC Editor（Pro モード）
+# MAIC Editor（授業エディター）
 NEXT_PUBLIC_MAIC_EDITOR_ENABLED=true
 
 # Pi 再生時の PPT・インタラクティブ教材参照（ビルド時フラグ。編集モードの参照には影響しません）

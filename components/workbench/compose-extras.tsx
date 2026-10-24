@@ -148,8 +148,8 @@ export function SkillSlashMenu({
   }, [highlightedIndex, matches, onDismiss, onPick]);
 
   const groups = [
-    { source: 'user' as const, label: t('proMode.userSkillsGroup') },
-    { source: 'builtin' as const, label: t('proMode.builtinSkillsGroup') },
+    { source: 'user' as const, label: t('workspace.composer.userSkillsGroup') },
+    { source: 'builtin' as const, label: t('workspace.composer.builtinSkillsGroup') },
   ];
   return (
     <div
@@ -167,24 +167,24 @@ export function SkillSlashMenu({
         {loading ? (
           <li className="flex items-center gap-2 px-3 py-3 text-[11px] text-muted-foreground">
             <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
-            {t('proMode.skillsLoading')}
+            {t('workspace.composer.skillsLoading')}
           </li>
         ) : error ? (
           <li className="px-3 py-3 text-[11px] text-muted-foreground">
-            <span>{t('proMode.skillsLoadFailed')}</span>{' '}
+            <span>{t('workspace.composer.skillsLoadFailed')}</span>{' '}
             <button
               type="button"
               className="text-[var(--wb-accent)] hover:underline"
               onClick={() => void reload().catch(() => {})}
             >
-              {t('proMode.retrySkills')}
+              {t('workspace.composer.retrySkills')}
             </button>
           </li>
         ) : matches.length === 0 ? (
           <li className="px-3 py-3 text-[11px] text-muted-foreground">
             {filter
-              ? t('proMode.noSkillMatch', { query: `/${filter}` })
-              : t('proMode.noSkillsAvailable')}
+              ? t('workspace.composer.noSkillMatch', { query: `/${filter}` })
+              : t('workspace.composer.noSkillsAvailable')}
           </li>
         ) : (
           groups.map((group) => {

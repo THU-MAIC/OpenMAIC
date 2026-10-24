@@ -105,11 +105,12 @@ export interface PlaybackChromeRootHandle {
 interface PlaybackChromeRootProps {
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
   readonly generationFailureMessage?: string;
-  /** Whether the Pro Switch in Header should be enabled. */
+  /** Whether the edit control in Header should be enabled. */
   readonly canEnterProMode?: boolean;
-  /** Pro Switch click handler — parent coordinates teardown + mode flip. */
+  /** Edit control click handler — parent coordinates teardown + mode flip. */
   readonly onEnterProMode?: () => void;
-  readonly proModeActive?: boolean;
+  /** The edit control opens the course in the workspace. */
+  readonly editOpensWorkspace?: boolean;
   readonly headerBackControl?: ReactNode;
   readonly hideHeaderBackControl?: boolean;
   readonly hideHeader?: boolean;
@@ -120,7 +121,7 @@ interface PlaybackChromeRootProps {
 
 /**
  * PlaybackChromeRoot — owns the entire playback/autonomous chrome and
- * its state. Mounted whenever `mode !== 'edit'`. The Pro Switch in
+ * its state. Mounted whenever `mode !== 'edit'`. The edit control in
  * `Header` calls `onEnterProMode`; the parent `Stage` is responsible
  * for calling `ref.teardown()` before unmounting this root so SSE and
  * the engine wind down cleanly.
@@ -132,7 +133,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       generationFailureMessage,
       canEnterProMode,
       onEnterProMode,
-      proModeActive,
+      editOpensWorkspace,
       headerBackControl,
       hideHeaderBackControl,
       hideHeader,
@@ -1703,7 +1704,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
-          {/* Header — playback only. The Pro Switch fires `onEnterProMode`
+          {/* Header — playback only. The edit control fires `onEnterProMode`
             (passed by the parent Stage) which awaits our `teardown()`
             before the parent flips mode to 'edit'. */}
           {!isPresenting && !hideHeader && (
@@ -1713,9 +1714,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 (isCourseComplete && isPendingScene ? t('stage.courseComplete') : '')
               }
               mode={mode}
-              proModeActive={proModeActive}
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
+              editOpensWorkspace={editOpensWorkspace}
               backControl={headerBackControl}
               hideBackControl={hideHeaderBackControl}
               hideGlobalControls={hideHeaderGlobalControls}

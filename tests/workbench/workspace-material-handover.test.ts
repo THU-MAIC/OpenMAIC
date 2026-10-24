@@ -206,7 +206,6 @@ vi.mock('@/lib/workbench/owner-session-client', () => ({
     }
   },
 }));
-vi.mock('@/lib/workbench/pro-swap', () => ({ startProSwap: vi.fn() }));
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;

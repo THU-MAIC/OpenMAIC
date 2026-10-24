@@ -100,19 +100,9 @@ import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
-import {
-  isProWorkbenchEnabled,
-  isPptxImportEnabled,
-  shouldShowVocationalTestUi,
-} from '@/lib/config/feature-flags';
+import { isPptxImportEnabled, shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
-import { ProBadge } from '@/components/workbench/ProBadge';
-import { arrivedByProSwap, startProSwap } from '@/lib/workbench/pro-swap';
-import {
-  readLastWorkspaceSessionId,
-  workspaceResumeHref,
-} from '@/lib/workbench/workspace-session-memory';
 
 const log = createLogger('Home');
 
@@ -123,9 +113,6 @@ const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
 // flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
 const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
-
-/** The configured runtime probe result, retained across client navigations. */
-let workbenchRuntimeCache: boolean | null = null;
 
 interface FormState {
   requirement: string;
@@ -143,48 +130,12 @@ function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  // Do not replay the classic hero's entrance after the route handoff already
-  // carried the lockup and composer into place. The entrance is CSS, not a
-  // JS-driven animation, so the server-rendered hero is painted (and fades in)
-  // before the page's scripts have loaded instead of staying invisible.
-  const [swapped] = useState(arrivedByProSwap);
+  // The entrance is CSS, not a JS-driven animation, so the server-rendered
+  // hero is painted (and fades in) before the page's scripts have loaded
+  // instead of staying invisible.
   const heroEnter = (classes: string) =>
-    swapped
-      ? undefined
-      : `animate-in fill-mode-both ease-out motion-reduce:animate-none ${classes}`;
+    `animate-in fill-mode-both ease-out motion-reduce:animate-none ${classes}`;
   const showVocationalTestUi = shouldShowVocationalTestUi();
-  const workbenchBuildEnabled = isProWorkbenchEnabled();
-  const [workbenchRuntimeEnabled, setWorkbenchRuntimeEnabled] = useState(
-    workbenchRuntimeCache === true,
-  );
-  useEffect(() => {
-    if (!workbenchBuildEnabled || workbenchRuntimeCache !== null) return;
-    let cancelled = false;
-    fetch('/api/agent/runtime')
-      .then((response) => {
-        // Not cached: a 401 before the access code is accepted is not an answer.
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((body) => {
-        workbenchRuntimeCache = body?.enabled === true;
-        if (!cancelled) setWorkbenchRuntimeEnabled(workbenchRuntimeCache);
-      })
-      .catch(() => {
-        // A failed probe keeps the entry hidden and allows a later visit to retry.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [workbenchBuildEnabled]);
-  const workbenchEntryEnabled = workbenchBuildEnabled && workbenchRuntimeEnabled;
-  const enterWorkbench = () => {
-    const href = workspaceResumeHref(readLastWorkspaceSessionId());
-    startProSwap(href, (next) => router.push(next));
-  };
-  useEffect(() => {
-    if (workbenchEntryEnabled) router.prefetch('/workspace');
-  }, [router, workbenchEntryEnabled]);
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -764,7 +715,7 @@ function HomePage() {
         )}
       >
         {/* ── Logo ── */}
-        <div className="relative" data-pro-morph="lockup">
+        <div className="relative">
           <img
             src="/logo-horizontal.png"
             alt="OpenMAIC"
@@ -773,14 +724,6 @@ function HomePage() {
               heroEnter('fade-in zoom-in-90 duration-500 delay-100'),
             )}
           />
-          {workbenchEntryEnabled ? (
-            <div
-              className="absolute left-full top-0 ml-1.5 mt-[10px] md:ml-2 md:mt-[14px]"
-              data-pro-morph="badge"
-            >
-              <ProBadge active={false} onToggle={enterWorkbench} />
-            </div>
-          ) : null}
         </div>
 
         {/* ── Slogan ── */}
@@ -795,10 +738,7 @@ function HomePage() {
 
         {/* ── Unified input area ── */}
         <div className={cn('w-full', heroEnter('fade-in zoom-in-97 duration-300 delay-350'))}>
-          <div
-            data-pro-morph="composer"
-            className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]"
-          >
+          <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
               <GreetingBar />

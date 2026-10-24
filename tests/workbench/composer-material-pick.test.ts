@@ -268,7 +268,7 @@ describe.each(['launch', 'follow'] as const)('the %s composer without classrooms
     const container = await mount(mode, false);
     const button = mentionButton(container, mode);
     expect(button).not.toBeNull();
-    expect(button!.getAttribute('aria-label')).toBe('proMode.mentionCourseOrMaterial');
+    expect(button!.getAttribute('aria-label')).toBe('workspace.composer.mentionCourseOrMaterial');
     await act(async () => button!.click());
     await wait(230);
     expect(

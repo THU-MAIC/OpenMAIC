@@ -320,7 +320,6 @@
     "stopListening": "Parar gravação"
   },
   "edit": {
-    "proMode": "Pro",
     "undo": "Desfazer",
     "redo": "Refazer",
     "delete": "Excluir",
@@ -747,7 +746,9 @@
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
     "doneEditing": "Concluir edição",
-    "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro."
+    "editDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editá-lo.",
+    "editToggle": "Editar",
+    "editInWorkspace": "Editar no espaço de trabalho"
   },
   "classroomComplete": {
     "title": "Curso concluído",
@@ -2366,7 +2367,6 @@
     "retry": "Retry",
     "untitledSession": "Untitled chat",
     "pagePosition": "Page {{index}} of {{total}}",
-    "exitPro": "Exit Pro",
     "navAria": "Workspace navigation",
     "homeAria": "Back to home",
     "currentSession": "Current chat",
@@ -2441,7 +2441,23 @@
     "courseTabsAria": "Cursos abertos",
     "courseTabClose": "Fechar aba: {{name}}",
     "courseTabRunning": "Gerando",
-    "foldersUnavailable": "As pastas não estão disponíveis nesta versão"
+    "foldersUnavailable": "As pastas não estão disponíveis nesta versão",
+    "composer": {
+      "attach": "Anexar material",
+      "mentionCourse": "引用课堂",
+      "mentionCourseOrMaterial": "Mencionar uma sala ou um material da base de conhecimento",
+      "loadSkill": "加载 skill",
+      "skillMenuTitle": "选择课程设计技能",
+      "skillsLoading": "正在加载 skill…",
+      "noSkillsAvailable": "暂无可用 skill",
+      "userSkillsGroup": "我的 Skill",
+      "builtinSkillsGroup": "内置 Skill",
+      "skillsLoadFailed": "Skill 加载失败，点击重试",
+      "retrySkills": "重试",
+      "noSkillMatch": "没有匹配“{{query}}”的 Skill",
+      "launchPlaceholder": "Descreva a experiência de aprendizagem que você quer criar",
+      "launchSend": "Iniciar construção"
+    }
   },
   "profile": {
     "title": "Perfil",
@@ -2472,25 +2488,6 @@
     "title": "Digite o Código de Acesso",
     "placeholder": "Código de acesso",
     "error": "Código inválido. Tente novamente."
-  },
-  "proMode": {
-    "attach": "Anexar material",
-    "mentionCourse": "引用课堂",
-    "loadSkill": "加载 skill",
-    "skillMenuTitle": "选择课程设计技能",
-    "skillsLoading": "正在加载 skill…",
-    "noSkillsAvailable": "暂无可用 skill",
-    "userSkillsGroup": "我的 Skill",
-    "builtinSkillsGroup": "内置 Skill",
-    "skillsLoadFailed": "Skill 加载失败，点击重试",
-    "retrySkills": "重试",
-    "noSkillMatch": "没有匹配“{{query}}”的 Skill",
-    "badgeAria": "Modo Pro",
-    "badgeEnter": "Modo Pro",
-    "badgeExit": "Voltar ao modo clássico",
-    "launchPlaceholder": "Descreva a experiência de aprendizagem que você quer criar",
-    "launchSend": "Iniciar construção",
-    "mentionCourseOrMaterial": "Mencionar uma sala ou um material da base de conhecimento"
   },
   "workbench": {
     "tool": {

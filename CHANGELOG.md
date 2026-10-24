@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The workbench is no longer a separate "Pro mode".** The PRO badge, the home ↔ workspace transition and the Exit Pro control are removed. Where the workbench is available, the classroom header offers **Edit in workspace** instead of the Pro switch. Deployments without the workbench behave as before; where only the classroom editor is enabled, its toggle is labelled **Edit** instead of **Pro**.
+- **`NEXT_PUBLIC_PRO_WORKBENCH_ENABLED` is renamed to `NEXT_PUBLIC_WORKBENCH_ENABLED`.** The previous name is still read when the new one is unset or empty, until its removal in 1.4.0, and the server logs a deprecation warning at startup when it is used. Like every `NEXT_PUBLIC_*` flag it is compiled into the build, so switching to the new name requires a rebuild; the Docker build and `docker-compose.yml` pass both names.
+
 ## [1.3.0-rc.1] - 2026-10-22
 
 1.3.0-rc.1 is the first release candidate for 1.3.0. Its main theme is the **knowledge base**: every upload is kept in its owner's knowledge base until it is deleted, organized in folders and parsed once, with the result reused by every conversation. A new library page lists and organizes the materials, the composer offers them through `@` and a picker, and the agent gets tools to read, search and organize them. Interactive scenes also load their libraries from the deployment instead of a public CDN, the editor marks pages that have current problems, and malformed slide shapes no longer hang the renderer. This release contains breaking changes and upgrade conditions: the built-in Veo provider is removed, and the knowledge base adds schema changes that cannot run beside older instances or be rolled back. Read **Breaking Changes** before upgrading from 1.2.x.
