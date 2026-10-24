@@ -38,6 +38,7 @@ import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent, Scene, Stage } from '@/lib/types/stage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { accessDocument, type DocumentMigrationDeps } from '@/lib/document-store';
+import { sha256Hex } from '@/lib/legacy-browser-import/digest';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -108,6 +109,59 @@ export interface ClassroomExportZip {
 /** File-system-safe base name for an exported classroom. */
 export function classroomExportBaseName(stageName: string): string {
   return stageName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
+}
+
+/** Common single-component filename limit (NAME_MAX), in UTF-8 bytes. */
+const CLASSROOM_EXPORT_FILENAME_MAX_BYTES = 255;
+/** Truncated SHA-256 hex length. Long enough to tell courses apart, short enough for a filename. */
+const CLASSROOM_EXPORT_ID_FINGERPRINT_HEX_CHARS = 16;
+
+function takeUtf8Prefix(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  const encoder = new TextEncoder();
+  let used = 0;
+  let out = '';
+  for (const char of value) {
+    const size = encoder.encode(char).length;
+    if (used + size > maxBytes) break;
+    used += size;
+    out += char;
+  }
+  return out;
+}
+
+function classroomExportIdFragment(stageId: string): string {
+  // The raw id is a bearer read capability on server persistence, so the name keeps only a one-way prefix.
+  return sha256Hex(stageId).slice(0, CLASSROOM_EXPORT_ID_FINGERPRINT_HEX_CHARS);
+}
+
+/** Compact form of `manifest.exportedAt`, milliseconds included (`20260916T023456789Z`). */
+function classroomExportStamp(exportedAt: string): string {
+  const compact = exportedAt.replace(/[-:.]/g, '').replace(/[^0-9A-Za-z]/g, '');
+  return compact.slice(0, 32) || 'undated';
+}
+
+/**
+ * `<title>-<fingerprint>-<exportedAt>.maic.zip`.
+ *
+ * The fingerprint is a truncated SHA-256 of the course id, not the id itself.
+ * The stamp is the exact `manifest.exportedAt` value with separators removed.
+ * The title is shortened on code-point boundaries so the UTF-8 name stays
+ * within 255 bytes.
+ */
+export function classroomExportFileName(
+  stageName: string,
+  stageId: string,
+  exportedAt: string,
+): string {
+  const idPart = classroomExportIdFragment(stageId);
+  const stamp = classroomExportStamp(exportedAt);
+  const suffix = `-${idPart}-${stamp}${CLASSROOM_ZIP_EXTENSION}`;
+  const titleBudget = CLASSROOM_EXPORT_FILENAME_MAX_BYTES - new TextEncoder().encode(suffix).length;
+  const title =
+    takeUtf8Prefix(classroomExportBaseName(stageName).trim(), Math.max(0, titleBudget)) ||
+    'classroom';
+  return `${title}${suffix}`;
 }
 
 /**
@@ -363,7 +417,7 @@ export async function buildClassroomExportZip(
 
   return {
     zip: zipBlob,
-    fileName: `${classroomExportBaseName(snapshot.stageName)}${CLASSROOM_ZIP_EXTENSION}`,
+    fileName: classroomExportFileName(snapshot.stageName, stage.id, snapshot.manifest.exportedAt),
     inlineFailures: snapshot.inlineFailures,
     missingAudioCount: snapshot.missingAudioCount,
   };
