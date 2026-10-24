@@ -41,11 +41,15 @@ export function usePlayback(
       scenes,
       navigate: (next) => navigateRef.current(next),
       ports: {
-        playAudio: (ref, control) => narration.play(ref, control),
+        playAudio: (ref, control) => {
+          widgets.pauseMedia();
+          return narration.play(ref, control);
+        },
         playVideo: (elementId, control) => videos.play(elementId, control),
         sendWidgetMessage: (type, payload) => widgets.send(type, payload),
       },
     });
+    widgets.onMediaPlay = () => controller.pause();
     videos.setUserHooks({
       onUserPause: () => controller.pause(),
       onUserPlay: () => controller.play(),
@@ -55,11 +59,12 @@ export function usePlayback(
 
   useEffect(
     () => () => {
+      widgets.attach(null);
       controller.dispose();
       narration.stop();
       media.dispose();
     },
-    [controller, media, narration],
+    [controller, media, narration, widgets],
   );
 
   // Effects run after the commit, so the new scene's video elements and
@@ -75,13 +80,17 @@ export function usePlayback(
   const play = useCallback(() => {
     narration.prime();
     videos.pauseManual();
+    widgets.pauseMedia();
     controller.play();
-  }, [controller, narration, videos]);
+  }, [controller, narration, videos, widgets]);
   const toggle = useCallback(() => {
     narration.prime();
-    if (controller.getState().mode !== 'playing') videos.pauseManual();
+    if (controller.getState().mode !== 'playing') {
+      videos.pauseManual();
+      widgets.pauseMedia();
+    }
     controller.toggle();
-  }, [controller, narration, videos]);
+  }, [controller, narration, videos, widgets]);
   const pause = useCallback(() => controller.pause(), [controller]);
   const dismissDiscussion = useCallback(() => controller.dismissDiscussion(), [controller]);
 

@@ -279,6 +279,7 @@ export class PlaybackEngine {
     } else {
       // Resume lecture
       this.setMode('playing');
+      this.callbacks.beforeSpeech?.();
       if (this.browserTTSPausedChunks.length > 0) {
         // Browser TTS was paused via cancel — re-speak remaining chunks
         this.browserTTSActive = true;
@@ -611,6 +612,7 @@ export class PlaybackEngine {
     switch (action.type) {
       case 'speech': {
         const speechAction = action as SpeechAction;
+        this.callbacks.beforeSpeech?.();
         this.callbacks.onSpeechStart?.(speechAction.text);
 
         // onEnded → processNext; if paused, resume() will call processNext
