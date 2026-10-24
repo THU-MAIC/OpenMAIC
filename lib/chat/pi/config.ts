@@ -12,6 +12,18 @@ const MAX_PI_MAX_ACTIONS_PER_AGENT = 8;
 const DEFAULT_PI_NATIVE_CHILD_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_PI_NATIVE_CHILD_MAX_PROVIDER_TRANSPORTS = 100;
 
+/** Node.js clamps `setTimeout` delays above this value to 1 ms. */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/** Extra time the enclosing `call_agent` bound allows after the Native Child deadline. */
+export const CALL_AGENT_TIMEOUT_MARGIN_MS = 30_000;
+
+/**
+ * The Native Child budget must leave room for the enclosing tool wrapper's
+ * margin while staying inside Node's supported timer range.
+ */
+export const MAX_PI_NATIVE_CHILD_TIMEOUT_MS = MAX_TIMER_DELAY_MS - CALL_AGENT_TIMEOUT_MARGIN_MS;
+
 export function resolveAgentConfigs(body: StatelessChatRequest): AgentConfig[] {
   const overrides = new Map<string, AgentConfig>();
   for (const cfg of body.config.agentConfigs ?? []) {
@@ -46,10 +58,13 @@ export function getPiMaxActionsPerAgent(body: StatelessChatRequest): number {
 }
 
 export function getPiNativeChildTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
-  return positiveIntegerFromEnv(
-    env,
-    'OPENMAIC_PI_NATIVE_CHILD_TIMEOUT_MS',
-    DEFAULT_PI_NATIVE_CHILD_TIMEOUT_MS,
+  return Math.min(
+    positiveIntegerFromEnv(
+      env,
+      'OPENMAIC_PI_NATIVE_CHILD_TIMEOUT_MS',
+      DEFAULT_PI_NATIVE_CHILD_TIMEOUT_MS,
+    ),
+    MAX_PI_NATIVE_CHILD_TIMEOUT_MS,
   );
 }
 

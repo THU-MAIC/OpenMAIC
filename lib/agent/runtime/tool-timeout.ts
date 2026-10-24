@@ -22,7 +22,9 @@
  */
 import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agent-core';
 import type { ChildRuntimeMode } from '@/lib/chat/pi/child-runtime';
-import { getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
+import { CALL_AGENT_TIMEOUT_MARGIN_MS, getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
+
+export { CALL_AGENT_TIMEOUT_MARGIN_MS };
 
 /**
  * Default budget for a single tool call. Generous on purpose: media-bearing
@@ -31,13 +33,6 @@ import { getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
  * {@link AGENT_TOOL_TIMEOUT_OVERRIDES}.
  */
 export const DEFAULT_AGENT_TOOL_TIMEOUT_MS = 10 * 60_000;
-
-/**
- * Extra time the enclosing `call_agent` bound allows after the Native Child's
- * own deadline so the child can settle its timeout and return its result
- * instead of being aborted by the outer tool wrapper first.
- */
-export const CALL_AGENT_TIMEOUT_MARGIN_MS = 30_000;
 
 /**
  * Runtime selected by a tool that delegates to a child agent. The timeout
@@ -129,7 +124,9 @@ export class AgentToolAbortedError extends Error {
  * even though the agent loop itself keeps running after a timeout. Progress
  * updates emitted by a zombie tool after the race settles are dropped.
  */
-export function withAgentToolTimeout(tool: AgentTool & AgentToolTimeoutContext): AgentTool {
+export function withAgentToolTimeout<T extends AgentTool>(
+  tool: T & AgentToolTimeoutContext,
+): AgentTool {
   const timeoutMs = resolveAgentToolTimeoutMs(tool.name, process.env, tool.childRuntimeMode);
   const execute = tool.execute.bind(tool);
   return {

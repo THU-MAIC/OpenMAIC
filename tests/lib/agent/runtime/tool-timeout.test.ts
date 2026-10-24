@@ -22,6 +22,11 @@ import {
   resolveAgentToolTimeoutMs,
   withAgentToolTimeout,
 } from '@/lib/agent/runtime/tool-timeout';
+import {
+  getPiNativeChildTimeoutMs,
+  MAX_PI_NATIVE_CHILD_TIMEOUT_MS,
+  MAX_TIMER_DELAY_MS,
+} from '@/lib/chat/pi/config';
 import { runStageMutation } from '@/lib/server/agent-runtime/mutation-fence';
 
 const Params = Type.Object({});
@@ -126,6 +131,22 @@ describe('resolveAgentToolTimeoutMs', () => {
     setEnv('90000');
     expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'native')).toBe(90000);
   });
+
+  it('keeps the enclosing native call_agent timeout at the maximum safe timer delay', () => {
+    setEnv('5000');
+    setNativeChildTimeout(String(MAX_PI_NATIVE_CHILD_TIMEOUT_MS));
+
+    expect(getPiNativeChildTimeoutMs(process.env)).toBe(MAX_PI_NATIVE_CHILD_TIMEOUT_MS);
+    expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'native')).toBe(MAX_TIMER_DELAY_MS);
+  });
+
+  it('caps a native child timeout that would overflow the timer range after the margin', () => {
+    setEnv('5000');
+    setNativeChildTimeout(String(MAX_PI_NATIVE_CHILD_TIMEOUT_MS + 1));
+
+    expect(getPiNativeChildTimeoutMs(process.env)).toBe(MAX_PI_NATIVE_CHILD_TIMEOUT_MS);
+    expect(resolveAgentToolTimeoutMs('call_agent', process.env, 'native')).toBe(MAX_TIMER_DELAY_MS);
+  });
 });
 
 describe('withAgentToolTimeout', () => {
@@ -160,6 +181,27 @@ describe('withAgentToolTimeout', () => {
 
     expect(captured[0]?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('schedules the maximum capped native child budget without a clamped 1ms timeout', async () => {
+    vi.useFakeTimers();
+    setEnv('5000');
+    setNativeChildTimeout(String(MAX_PI_NATIVE_CHILD_TIMEOUT_MS + 1));
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const captured: AbortSignal[] = [];
+    const tool = withAgentToolTimeout(hungCallAgentTool(captured, 'native'));
+
+    const promise = tool.execute('call-1', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), MAX_TIMER_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(captured[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(MAX_TIMER_DELAY_MS - 1);
+    await settled;
+
+    expect(captured[0]?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    setTimeoutSpy.mockRestore();
   });
 
   it('aborts a hung legacy call_agent at the global budget when the Native Child flag is enabled', async () => {
