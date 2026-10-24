@@ -25,7 +25,11 @@ import type { CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
 import { shiftCourseOrders } from './course-edit/tools';
 import { createGenerationAiCallFactory, sceneContentStage } from './generation-ai-call';
-import { describeNarrationVoice, synthesizeSceneNarration } from './scene-tts';
+import {
+  describeNarrationVoice,
+  formatTtsFailureTally,
+  synthesizeSceneNarration,
+} from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
@@ -613,11 +617,13 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           });
         }
       }
-      const voiced =
-        audio?.voice && audio.generated > 0
-          ? ` Narration audio: ${audio.generated} generated, ${audio.failed.length} failed. ${describeNarrationVoice(audio.voice)}`
+      const voiceNote =
+        audio?.voice && audio.generated > 0 ? ` ${describeNarrationVoice(audio.voice)}` : '';
+      const narration =
+        audio?.available === true
+          ? ` Narration audio: ${audio.generated} generated, ${audio.skipped} skipped, ${formatTtsFailureTally(audio.failed)}.${voiceNote}`
           : '';
-      return result(`Persisted ${actions.length} known actions for "${scene.title}".${voiced}`, {
+      return result(`Persisted ${actions.length} known actions for "${scene.title}".${narration}`, {
         sceneId: scene.id,
         actions,
         ...(audio ? { audio } : {}),

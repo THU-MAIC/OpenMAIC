@@ -18,6 +18,7 @@ import {
   AgentToolAbortedError,
   AgentToolTimeoutError,
   DEFAULT_AGENT_TOOL_TIMEOUT_MS,
+  agentToolBudgetRemainingMs,
   resolveAgentToolTimeoutMs,
   withAgentToolTimeout,
 } from '@/lib/agent/runtime/tool-timeout';
@@ -91,6 +92,22 @@ describe('withAgentToolTimeout', () => {
   afterEach(() => {
     setEnv(undefined);
     vi.useRealTimers();
+  });
+
+  it('stamps the remaining tool budget on the signal the tool receives', async () => {
+    let remaining: number | undefined;
+    const tool = withAgentToolTimeout(
+      makeTool(async (_id, _args, signal) => {
+        remaining = agentToolBudgetRemainingMs(signal);
+        return result('ok');
+      }),
+    );
+
+    await tool.execute('call-budget', {}, undefined);
+
+    expect(remaining).toEqual(expect.any(Number));
+    expect(remaining!).toBeGreaterThan(0);
+    expect(remaining!).toBeLessThanOrEqual(resolveAgentToolTimeoutMs('demo_tool'));
   });
 
   it('rejects a never-settling tool at the configured budget and aborts its signal', async () => {
