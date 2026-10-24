@@ -328,6 +328,59 @@ describe('runNativeChild', () => {
     expect(execute).toHaveBeenCalledTimes(5);
   });
 
+  it('completes after more than five provider requests with a corrective tool call', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'ok' }],
+      details: {},
+    }));
+    const result = await run({
+      streamFn: scriptedStream([
+        ...Array.from({ length: 9 }, (_, index) =>
+          call(`read-${index + 1}`, 'demo', { value: index + 1 }),
+        ),
+        call('invalid-corrective', 'demo', { value: 'bad' }),
+        call('retry-corrective', 'demo', { value: 10 }),
+        text('Completed after the corrective read.'),
+      ]),
+      tools: [demoTool(execute)],
+      maxProviderTransports: 20,
+    });
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      visibleOutput: 'Completed after the corrective read.',
+      attemptCount: 11,
+      executionCount: 10,
+      providerTransportCount: 12,
+    });
+    expect(execute).toHaveBeenCalledTimes(10);
+  });
+
+  it('stops a runaway child at the configured provider transport ceiling', async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: 'text' as const, text: 'ok' }],
+      details: {},
+    }));
+    const result = await run({
+      streamFn: scriptedStream(
+        Array.from({ length: 6 }, (_, index) =>
+          call(`call-${index + 1}`, 'demo', { value: index + 1 }),
+        ),
+      ),
+      tools: [demoTool(execute)],
+      maxProviderTransports: 3,
+    });
+
+    expect(result).toMatchObject({
+      status: 'exhausted',
+      stopReason: 'native_provider_transport_budget',
+      attemptCount: 3,
+      executionCount: 3,
+      providerTransportCount: 3,
+    });
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
   it('settles a never-resolving transport at the internal deadline', async () => {
     const never: StreamFn = (() => new Promise(() => {})) as StreamFn;
     const result = await run({ streamFn: never, timeoutMs: 10 });

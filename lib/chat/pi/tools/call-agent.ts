@@ -16,6 +16,7 @@ import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
+import { getPiNativeChildMaxProviderTransports, getPiNativeChildTimeoutMs } from '../config';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
 import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
@@ -797,8 +798,8 @@ export function buildCallAgentTool(opts: {
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
-            timeoutMs: 60_000,
-            maxProviderTransports: 5,
+            timeoutMs: getPiNativeChildTimeoutMs(),
+            maxProviderTransports: getPiNativeChildMaxProviderTransports(),
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);
               if (!visibleDelta) return '';

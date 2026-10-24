@@ -6,6 +6,11 @@ const DEFAULT_PI_MAX_AGENT_TURNS = 6;
 const MAX_PI_MAX_AGENT_TURNS = 6;
 const DEFAULT_PI_MAX_ACTIONS_PER_AGENT = 8;
 const MAX_PI_MAX_ACTIONS_PER_AGENT = 8;
+// A single Native Child turn may legitimately interleave whiteboard reads,
+// draws, and corrective calls. Keep the ceiling generous enough for that work
+// while still bounding a runaway child; deployments can tune both values.
+const DEFAULT_PI_NATIVE_CHILD_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_PI_NATIVE_CHILD_MAX_PROVIDER_TRANSPORTS = 100;
 
 export function resolveAgentConfigs(body: StatelessChatRequest): AgentConfig[] {
   const overrides = new Map<string, AgentConfig>();
@@ -38,6 +43,34 @@ export function getPiMaxActionsPerAgent(body: StatelessChatRequest): number {
     DEFAULT_PI_MAX_ACTIONS_PER_AGENT,
     MAX_PI_MAX_ACTIONS_PER_AGENT,
   );
+}
+
+export function getPiNativeChildTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  return positiveIntegerFromEnv(
+    env,
+    'OPENMAIC_PI_NATIVE_CHILD_TIMEOUT_MS',
+    DEFAULT_PI_NATIVE_CHILD_TIMEOUT_MS,
+  );
+}
+
+export function getPiNativeChildMaxProviderTransports(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  return positiveIntegerFromEnv(
+    env,
+    'OPENMAIC_PI_NATIVE_CHILD_MAX_PROVIDER_TRANSPORTS',
+    DEFAULT_PI_NATIVE_CHILD_MAX_PROVIDER_TRANSPORTS,
+  );
+}
+
+function positiveIntegerFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
 }
 
 function clampPositiveInteger(value: number | undefined, fallback: number, max: number): number {
