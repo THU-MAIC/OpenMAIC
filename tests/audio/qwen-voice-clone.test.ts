@@ -85,6 +85,22 @@ describe('Qwen voice cloning', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it.each(['query', 'delete'] as const)(
+    'uses the default target for adapter %s without a model',
+    async (action) => {
+      fetchMock.mockResolvedValue(readyVoiceResponse());
+      const adapter = getVoiceRegistrationAdapter('qwen-tts')!;
+      const cfg = { apiKey: CONFIG.apiKey, baseUrl: CONFIG.baseUrl };
+      const voiceId = `${CONFIG.targetModel}-saved-id`;
+      if (action === 'query') await expect(adapter.voiceExists(cfg, voiceId)).resolves.toBe(true);
+      else await expect(adapter.deleteVoice!(cfg, voiceId)).resolves.toBeUndefined();
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body).input).toEqual({
+        action: `${action}_voice`,
+        voice_id: voiceId,
+      });
+    },
+  );
+
   it('keeps the saved-voice grouping ID while using CosyVoice for new requests', () => {
     expect(QWEN_TTS_VOICE_CLONE_MODEL).toBe('qwen3-tts-vc-2026-01-22');
     expect(DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL).toBe('cosyvoice-v3.5-plus');

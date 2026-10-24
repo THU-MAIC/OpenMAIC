@@ -123,23 +123,16 @@ export async function synthesizeNarration(
   // Build TTS config (managed providers may pin the model server-side)
   const qwenCloneVoice =
     ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice, connection.voices);
-  try {
-    getVoiceRegistrationAdapter(ttsProviderId)?.assertVoiceCompatible?.(
-      ttsVoice,
-      connection.voices,
-    );
-  } catch (error) {
-    // A saved grouping ID is not an upstream request. Explicit models still
-    // require authorization even when the voice itself needs migration.
-    const requested = input.requestedModelId?.trim();
-    if (
-      connection.origin === 'request' &&
-      requested &&
-      !isTTSVoiceCloneGroupingModel(ttsProviderId, requested)
-    )
-      authorizeMediaModel(connection, 'tts', requested);
-    throw error;
-  }
+  // Grouping IDs are not upstream models; explicit requests must be authorized
+  // before compatibility checks can trigger a saved-voice recovery.
+  const requested = input.requestedModelId?.trim();
+  if (
+    connection.origin === 'request' &&
+    requested &&
+    !isTTSVoiceCloneGroupingModel(ttsProviderId, requested)
+  )
+    authorizeMediaModel(connection, 'tts', requested);
+  getVoiceRegistrationAdapter(ttsProviderId)?.assertVoiceCompatible?.(ttsVoice, connection.voices);
   const requestedSpeed = input.speed ?? 1.0;
   // A configured slot's own model; on the deprecated and default paths the
   // client's (or default) model under the legacy server pins. Qwen

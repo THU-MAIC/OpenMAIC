@@ -611,3 +611,15 @@ describe('Pi Google native migration through real model resolution', () => {
     }
   });
 });
+
+it('appends static guidance while preserving the authorization error contract', () => {
+  const error = new ModelAuthorizationError('Ask the administrator to enable the clone target.');
+  expect(error).toMatchObject({
+    name: 'ModelAuthorizationError',
+    code: 'PROVIDER_DISABLED',
+    httpStatus: 403,
+  });
+  expect(error.message).toBe(
+    `${new ModelAuthorizationError().message} Ask the administrator to enable the clone target.`,
+  );
+});
