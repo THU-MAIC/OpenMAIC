@@ -17,6 +17,7 @@ import {
   AGENT_TOOL_TIMEOUT_OVERRIDES,
   AgentToolAbortedError,
   AgentToolTimeoutError,
+  CALL_AGENT_TIMEOUT_MARGIN_MS,
   DEFAULT_AGENT_TOOL_TIMEOUT_MS,
   resolveAgentToolTimeoutMs,
   withAgentToolTimeout,
@@ -27,9 +28,9 @@ const Params = Type.Object({});
 
 type DemoTool = AgentTool<typeof Params>;
 
-function makeTool(execute: DemoTool['execute']): DemoTool {
+function makeTool(execute: DemoTool['execute'], name = 'demo_tool'): DemoTool {
   return {
-    name: 'demo_tool',
+    name,
     label: 'Demo',
     description: 'Test tool',
     parameters: Params,
@@ -56,9 +57,17 @@ const setEnv = (value: string | undefined): void => {
   else process.env[AGENT_TOOL_TIMEOUT_ENV] = value;
 };
 
+const PI_NATIVE_CHILD_TIMEOUT_ENV = 'OPENMAIC_PI_NATIVE_CHILD_TIMEOUT_MS';
+
+const setNativeChildTimeout = (value: string | undefined): void => {
+  if (value === undefined) delete process.env[PI_NATIVE_CHILD_TIMEOUT_ENV];
+  else process.env[PI_NATIVE_CHILD_TIMEOUT_ENV] = value;
+};
+
 describe('resolveAgentToolTimeoutMs', () => {
   afterEach(() => {
     setEnv(undefined);
+    setNativeChildTimeout(undefined);
   });
 
   it('uses the generous default when the env var is absent or invalid', () => {
@@ -81,6 +90,19 @@ describe('resolveAgentToolTimeoutMs', () => {
       AGENT_TOOL_TIMEOUT_OVERRIDES['generate_scene'],
     );
   });
+
+  it('extends only the call_agent bound past a larger Native Child timeout', () => {
+    setEnv('5000');
+    setNativeChildTimeout('20000');
+
+    expect(resolveAgentToolTimeoutMs('call_agent')).toBe(
+      Math.max(5000, 20000 + CALL_AGENT_TIMEOUT_MARGIN_MS),
+    );
+    expect(resolveAgentToolTimeoutMs('any_tool')).toBe(5000);
+
+    setEnv('90000');
+    expect(resolveAgentToolTimeoutMs('call_agent')).toBe(90000);
+  });
 });
 
 describe('withAgentToolTimeout', () => {
@@ -90,7 +112,34 @@ describe('withAgentToolTimeout', () => {
 
   afterEach(() => {
     setEnv(undefined);
+    setNativeChildTimeout(undefined);
     vi.useRealTimers();
+  });
+
+  it('does not abort call_agent at the global budget while its Native Child budget is still running', async () => {
+    vi.useFakeTimers();
+    setEnv('5000');
+    setNativeChildTimeout('20000');
+    const captured: AbortSignal[] = [];
+    const tool = withAgentToolTimeout(
+      makeTool((_id, _args, signal) => {
+        if (signal) captured.push(signal);
+        return new Promise(() => {});
+      }, 'call_agent'),
+    );
+    const budget = resolveAgentToolTimeoutMs('call_agent');
+
+    const promise = tool.execute('call-1', {}, undefined);
+    const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(captured[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(captured[0]?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(budget - 20_000);
+    await settled;
+
+    expect(captured[0]?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('rejects a never-settling tool at the configured budget and aborts its signal', async () => {

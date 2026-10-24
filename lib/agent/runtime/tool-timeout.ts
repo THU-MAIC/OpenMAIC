@@ -21,6 +21,7 @@
  * session does not die.
  */
 import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agent-core';
+import { getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
 
 /**
  * Default budget for a single tool call. Generous on purpose: media-bearing
@@ -29,6 +30,13 @@ import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agen
  * {@link AGENT_TOOL_TIMEOUT_OVERRIDES}.
  */
 export const DEFAULT_AGENT_TOOL_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Extra time the enclosing `call_agent` bound allows after the Native Child's
+ * own deadline so the child can settle its timeout and return its result
+ * instead of being aborted by the outer tool wrapper first.
+ */
+export const CALL_AGENT_TIMEOUT_MARGIN_MS = 30_000;
 
 /**
  * Per-tool budgets for tools with known longer (or shorter) execution
@@ -52,8 +60,22 @@ export function resolveAgentToolTimeoutMs(
   toolName: string,
   env: NodeJS.ProcessEnv = process.env,
 ): number {
+  const defaultTimeoutMs = resolveDefaultAgentToolTimeoutMs(env);
+  if (toolName === 'call_agent') {
+    // The Native Child has its own deadline. Keep the enclosing tool bound
+    // above it (plus a margin) even when the global tool budget is smaller, so
+    // the child can settle instead of being aborted by the outer wrapper.
+    return Math.max(
+      defaultTimeoutMs,
+      getPiNativeChildTimeoutMs(env) + CALL_AGENT_TIMEOUT_MARGIN_MS,
+    );
+  }
   const override = AGENT_TOOL_TIMEOUT_OVERRIDES[toolName];
   if (override !== undefined) return override;
+  return defaultTimeoutMs;
+}
+
+function resolveDefaultAgentToolTimeoutMs(env: NodeJS.ProcessEnv): number {
   const raw = env[AGENT_TOOL_TIMEOUT_ENV]?.trim();
   const parsed = raw ? Number(raw) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AGENT_TOOL_TIMEOUT_MS;
