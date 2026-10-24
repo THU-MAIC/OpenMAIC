@@ -199,6 +199,19 @@ describe('Pi call_agent JSON action output', () => {
     mocks.childPrompts.length = 0;
   });
 
+  it('exposes the selected child runtime mode for the enclosing timeout budget', async () => {
+    const { buildCallAgentTool } = await import('@/lib/chat/pi/tools/call-agent');
+    const events: StatelessEvent[] = [];
+
+    expect(buildCallAgentTool(baseToolOpts(events)).childRuntimeMode).toBe('legacy');
+    expect(
+      buildCallAgentTool({ ...baseToolOpts(events), childRuntimeMode: 'legacy' }).childRuntimeMode,
+    ).toBe('legacy');
+    expect(
+      buildCallAgentTool({ ...baseToolOpts(events), childRuntimeMode: 'native' }).childRuntimeMode,
+    ).toBe('native');
+  });
+
   it('attaches the same request-scoped selected-element evidence to every Legacy delegation', async () => {
     mockChildWithJsonOutput(JSON.stringify([{ type: 'text', content: '基于所选元素回答。' }]));
     const { buildCallAgentTool } = await import('@/lib/chat/pi/tools/call-agent');

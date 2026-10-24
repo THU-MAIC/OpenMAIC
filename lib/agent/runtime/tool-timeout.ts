@@ -21,6 +21,10 @@
  * session does not die.
  */
 import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agent-core';
+import type { ChildRuntimeMode } from '@/lib/chat/pi/child-runtime';
+import { CALL_AGENT_TIMEOUT_MARGIN_MS, getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
+
+export { CALL_AGENT_TIMEOUT_MARGIN_MS };
 
 /**
  * Default budget for a single tool call. Generous on purpose: media-bearing
@@ -29,6 +33,15 @@ import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agen
  * {@link AGENT_TOOL_TIMEOUT_OVERRIDES}.
  */
 export const DEFAULT_AGENT_TOOL_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Runtime selected by a tool that delegates to a child agent. The timeout
+ * wrapper reads this from the tool itself so the budget follows the runtime the
+ * invocation actually uses rather than a process-wide feature flag.
+ */
+export interface AgentToolTimeoutContext {
+  childRuntimeMode?: ChildRuntimeMode;
+}
 
 /**
  * Per-tool budgets for tools with known longer (or shorter) execution
@@ -51,9 +64,25 @@ export const AGENT_TOOL_TIMEOUT_ENV = 'OPENMAIC_AGENT_TOOL_TIMEOUT_MS';
 export function resolveAgentToolTimeoutMs(
   toolName: string,
   env: NodeJS.ProcessEnv = process.env,
+  childRuntimeMode?: ChildRuntimeMode,
 ): number {
+  const defaultTimeoutMs = resolveDefaultAgentToolTimeoutMs(env);
+  if (toolName === 'call_agent' && childRuntimeMode === 'native') {
+    // The Native Child has its own deadline. Keep the enclosing tool bound
+    // above it (plus a margin) even when the global tool budget is smaller, so
+    // the child can settle instead of being aborted by the outer wrapper. The
+    // Legacy Child has no separate deadline, so it keeps the global bound.
+    return Math.max(
+      defaultTimeoutMs,
+      getPiNativeChildTimeoutMs(env) + CALL_AGENT_TIMEOUT_MARGIN_MS,
+    );
+  }
   const override = AGENT_TOOL_TIMEOUT_OVERRIDES[toolName];
   if (override !== undefined) return override;
+  return defaultTimeoutMs;
+}
+
+function resolveDefaultAgentToolTimeoutMs(env: NodeJS.ProcessEnv): number {
   const raw = env[AGENT_TOOL_TIMEOUT_ENV]?.trim();
   const parsed = raw ? Number(raw) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_AGENT_TOOL_TIMEOUT_MS;
@@ -95,8 +124,10 @@ export class AgentToolAbortedError extends Error {
  * even though the agent loop itself keeps running after a timeout. Progress
  * updates emitted by a zombie tool after the race settles are dropped.
  */
-export function withAgentToolTimeout(tool: AgentTool): AgentTool {
-  const timeoutMs = resolveAgentToolTimeoutMs(tool.name);
+export function withAgentToolTimeout<T extends AgentTool>(
+  tool: T & AgentToolTimeoutContext,
+): AgentTool {
+  const timeoutMs = resolveAgentToolTimeoutMs(tool.name, process.env, tool.childRuntimeMode);
   const execute = tool.execute.bind(tool);
   return {
     ...tool,

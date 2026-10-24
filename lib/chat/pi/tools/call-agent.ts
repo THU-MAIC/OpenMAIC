@@ -16,6 +16,7 @@ import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
+import { getPiNativeChildMaxProviderTransports, getPiNativeChildTimeoutMs } from '../config';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
 import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
@@ -526,6 +527,10 @@ async function processParseResult(opts: {
   }
 }
 
+type CallAgentTool = AgentTool<typeof CallAgentParams> & {
+  childRuntimeMode: ChildRuntimeMode;
+};
+
 export function buildCallAgentTool(opts: {
   body: StatelessChatRequest;
   agentConfigs: AgentConfig[];
@@ -559,7 +564,8 @@ export function buildCallAgentTool(opts: {
     content: string;
     metadata?: Readonly<ElementReferenceEvidence>;
   }>;
-}): AgentTool<typeof CallAgentParams> {
+}): CallAgentTool {
+  const childRuntimeMode = opts.childRuntimeMode ?? 'legacy';
   // Loop-guard (model-agnostic): an empty/errored child turn used to bypass onAgentDone,
   // so the completed-turn count never advanced and the maxAgentTurns guard was defeated — a model
   // that returns empty completions (e.g. reasoning eats the output budget) could then trigger
@@ -579,6 +585,7 @@ export function buildCallAgentTool(opts: {
     description: `Ask one classroom agent to produce the next in-class response. Use this before giving your final director decision. Hard limit: at most ${opts.maxAgentTurns} classroom agent turns in this server-side loop. Once the limit is reached, finish with cue_user or close_session.`,
     parameters: CallAgentParams,
     executionMode: 'sequential',
+    childRuntimeMode,
     execute: async (_toolCallId: string, params: CallAgentParams, signal?: AbortSignal) => {
       if (totalAgentAttempts >= maxAgentAttempts) {
         return {
@@ -734,7 +741,6 @@ export function buildCallAgentTool(opts: {
         },
       });
 
-      const childRuntimeMode = opts.childRuntimeMode ?? 'legacy';
       if (childRuntimeMode === 'native') {
         const spotlightTargets = new Set(spotlightElementIds);
         const spotlightEnabled = Boolean(
@@ -797,8 +803,8 @@ export function buildCallAgentTool(opts: {
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
-            timeoutMs: 60_000,
-            maxProviderTransports: 5,
+            timeoutMs: getPiNativeChildTimeoutMs(),
+            maxProviderTransports: getPiNativeChildMaxProviderTransports(),
             onVisibleTextDelta: async (delta) => {
               const visibleDelta = sanitizeNativeDelta(delta);
               if (!visibleDelta) return '';
