@@ -367,9 +367,24 @@ export function parseChatWidth(stored: string | null): number {
   return clampChatWidth(Number.parseFloat(stored));
 }
 
-/** A persisted boolean flag. Only the exact string `'1'` means collapsed. */
-export function parseCollapsed(stored: string | null): boolean {
+/**
+ * A persisted boolean flag. Only the exact string `'1'` means collapsed; with
+ * nothing stored, the caller's default applies.
+ */
+export function parseCollapsed(stored: string | null, fallback = false): boolean {
+  if (stored === null) return fallback;
   return stored === '1';
+}
+
+/**
+ * Whether the navigation rail starts folded when the teacher has never set it.
+ * Folded on the home surface (#1957: the home page is the workspace with its
+ * sidebar collapsed by default); every deep link keeps the expanded default.
+ * Decided once, from the panes the workspace was entered with — the rail does
+ * not fold or unfold by itself as panes open afterwards.
+ */
+export function defaultNavCollapsed(entry: WorkspacePanes): boolean {
+  return workspaceLayout(entry) === 'home' && !entry.library;
 }
 
 export interface PaneCollapse {

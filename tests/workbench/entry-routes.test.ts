@@ -20,7 +20,14 @@ vi.mock('@/components/workbench/WorkspaceEntry', () => ({
 vi.mock('@/app/workbench/new/client', () => ({
   WorkbenchLaunchBridge: () => null,
 }));
+vi.mock('@/app/classic-home', () => ({
+  ClassicHomePage: () => null,
+}));
 
+import type { ReactElement } from 'react';
+import HomePage from '@/app/page';
+import { ClassicHomePage } from '@/app/classic-home';
+import { WorkspaceEntry } from '@/components/workbench/WorkspaceEntry';
 import WorkbenchNewCompatibilityPage from '@/app/workbench/new/page';
 import WorkspacePage from '@/app/workspace/page';
 
@@ -47,5 +54,18 @@ describe('workbench entry routes', () => {
     expect(WorkbenchNewCompatibilityPage()).toBeTruthy();
     expect(navigation.redirect).not.toHaveBeenCalled();
     expect(navigation.notFound).not.toHaveBeenCalled();
+  });
+
+  it('keeps the classic home at / when disabled, so the workspace redirect cannot loop', () => {
+    const home = HomePage() as ReactElement;
+    expect(home.type).toBe(ClassicHomePage);
+    expect(navigation.redirect).not.toHaveBeenCalled();
+  });
+
+  it('renders the workspace itself at / when enabled', () => {
+    state.enabled = true;
+    const home = HomePage() as ReactElement<{ children: ReactElement }>;
+    expect(home.props.children.type).toBe(WorkspaceEntry);
+    expect(navigation.redirect).not.toHaveBeenCalled();
   });
 });

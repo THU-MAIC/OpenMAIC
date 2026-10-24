@@ -59,6 +59,7 @@ const mocks = vi.hoisted(() => ({
   } | null,
   courses: null as Record<string, unknown> | null,
   railProps: null as Record<string, unknown> | null,
+  railCollapsedSeen: [] as unknown[],
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
   ownerRuns: { runs: [] as readonly unknown[], forget: () => {} },
@@ -208,6 +209,7 @@ vi.mock('@/lib/generation-run-client/use-owner-runs', () => ({
 vi.mock('@/components/workbench/workspace/WorkspaceRail', () => ({
   WorkspaceRail: (props: Record<string, unknown>) => {
     mocks.railProps = props;
+    mocks.railCollapsedSeen.push(props.collapsed);
     return null;
   },
 }));
@@ -248,6 +250,7 @@ import { WorkspaceShell } from '@/components/workbench/workspace/WorkspaceShell'
 import {
   CHAT_COLLAPSED_STORAGE_KEY,
   CLASSROOM_COLLAPSED_STORAGE_KEY,
+  NAV_COLLAPSED_STORAGE_KEY,
 } from '@/lib/workbench/workspace-panes';
 import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
 import {
@@ -314,6 +317,7 @@ beforeEach(() => {
   mocks.classroomMounts = 0;
   mocks.chatPaneProps = null;
   mocks.railProps = null;
+  mocks.railCollapsedSeen = [];
   mocks.homeProps = null;
   mocks.libraryProps = null;
   mocks.ownerRuns = { runs: [], forget: () => {} };
@@ -774,6 +778,58 @@ describe('workspace home intent', () => {
     await render();
     await act(async () => {});
     expect(mocks.routerReplace).not.toHaveBeenCalled();
+  });
+});
+
+describe('the navigation rail default', () => {
+  it('starts folded on the home surface, from the first render, without storing it', async () => {
+    mocks.searchParams = new URLSearchParams('');
+
+    await render();
+
+    expect(mocks.railCollapsedSeen.length).toBeGreaterThan(0);
+    expect(mocks.railCollapsedSeen.every((collapsed) => collapsed === true)).toBe(true);
+    expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each([
+    ['0', false],
+    ['1', true],
+  ])('keeps a stored preference %s on the home surface', async (stored, collapsed) => {
+    mocks.searchParams = new URLSearchParams('');
+    localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, stored);
+
+    await render();
+
+    expect(mocks.railProps?.collapsed).toBe(collapsed);
+  });
+
+  it.each(['course=stage-1', 'session=session-1', 'view=library'])(
+    'keeps the expanded default for the deep link ?%s',
+    async (query) => {
+      mocks.searchParams = new URLSearchParams(query);
+      mocks.store.sessionId = query.startsWith('session=') ? 'session-1' : null;
+      mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+
+      await render();
+
+      expect(mocks.railProps?.collapsed).toBe(false);
+      expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBeNull();
+    },
+  );
+
+  it('stays as entered when a conversation opens, and remembers the first toggle', async () => {
+    mocks.searchParams = new URLSearchParams('');
+    mocks.sessionRows = [{ id: 'session-1', stageId: 'stage-1', updatedAt: 9 }];
+    await render();
+
+    await act(async () => (mocks.railProps?.onOpenSession as (id: string) => void)('session-1'));
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace?session=session-1');
+    expect(mocks.railProps?.collapsed).toBe(true);
+
+    await act(async () => (mocks.railProps?.onToggleCollapsed as () => void)());
+    expect(mocks.railProps?.collapsed).toBe(false);
+    expect(localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY)).toBe('0');
   });
 });
 

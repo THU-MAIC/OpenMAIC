@@ -79,6 +79,7 @@ import {
   CLASSROOM_COLLAPSED_STORAGE_KEY,
   clampChatWidth,
   closeCourseTab,
+  defaultNavCollapsed,
   NAV_COLLAPSED_STORAGE_KEY,
   NO_COURSE_TABS,
   openCourseTab,
@@ -331,7 +332,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       rememberWorkspaceHome();
     }
   }, [panes.courseId, panes.sessionId]);
-  const collapse = usePaneCollapse();
+  const [navDefault] = useState(() => defaultNavCollapsed(initialPanes));
+  const collapse = usePaneCollapse(navDefault);
   const [courseTabs, setCourseTabs] = useState(() => restoreCourseTabs(null, panes.courseId));
   /**
    * The tab set as last committed, for work that finishes after later
@@ -1378,7 +1380,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    A viewing preference, not a location: it is remembered in `localStorage`
    and deliberately never travels in a shared link. Read in a layout effect
    rather than during render, because `localStorage` does not exist on the
-   server and reading it in an initializer is a hydration mismatch. */
+   server and reading it in an initializer is a hydration mismatch. The rail's
+   default is the exception that needs no storage: it comes from the entry
+   panes, which the server sees too, so the first paint already has it. */
 
 interface PaneCollapseState {
   readonly value: { readonly nav: boolean; readonly chat: boolean; readonly classroom: boolean };
@@ -1389,18 +1393,18 @@ interface PaneCollapseState {
   readonly expandClassroom: () => void;
 }
 
-function usePaneCollapse(): PaneCollapseState {
-  const [nav, setNav] = useState(false);
+function usePaneCollapse(navDefault: boolean): PaneCollapseState {
+  const [nav, setNav] = useState(navDefault);
   const [chat, setChat] = useState(false);
   const [classroom, setClassroom] = useState(false);
 
   useLayoutEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- storage is client-only; see the block comment above */
-    setNav(parseCollapsed(readFlag(NAV_COLLAPSED_STORAGE_KEY)));
+    setNav(parseCollapsed(readFlag(NAV_COLLAPSED_STORAGE_KEY), navDefault));
     setChat(parseCollapsed(readFlag(CHAT_COLLAPSED_STORAGE_KEY)));
     setClassroom(parseCollapsed(readFlag(CLASSROOM_COLLAPSED_STORAGE_KEY)));
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
+  }, [navDefault]);
 
   const value = useMemo(() => ({ nav, chat, classroom }), [nav, chat, classroom]);
   const toggleNav = useCallback(
