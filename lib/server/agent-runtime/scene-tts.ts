@@ -1,6 +1,20 @@
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
+import { voiceAfterUnavailableBinding } from '@/lib/audio/voice-resolver';
+import {
+  voiceCloneRecoveryReason,
+  voiceErrorCode,
+  type VoiceCloneRecoveryReason,
+} from '@/lib/audio/voice-clone-recovery';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
-import { DEFAULT_TTS_MODELS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import {
+  DEFAULT_TTS_MODELS,
+  DEFAULT_TTS_VOICES,
+  TTS_PROVIDERS,
+  isQwenCloneVoice,
+} from '@/lib/audio/constants';
 import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
@@ -12,16 +26,19 @@ import { resolveTTSModel, slotTTSModel } from '@/lib/server/provider-config';
 import { persistClassroomMediaBytes } from '@/lib/server/classroom-media-bytes';
 
 /**
- * The one voice every line of this synthesis used. Narration is voiced by the
- * roster teacher's binding when it belongs to the tts slot's provider, and by
+ * The last successfully persisted synthesis voice (or selected voice if none succeeded).
+ * Existing audio is unchanged. Narration uses the roster teacher's binding
+ * when it belongs to the tts slot's provider, and uses
  * the provider default otherwise; saying which is what lets the agent see that
  * a roster change did (or did not) reach the audio.
  */
 export interface SceneTtsVoice {
   /** `providerId::voiceId`; the voice part is empty when the provider has no default. */
   binding: string;
-  source: 'roster-teacher' | 'provider-default';
-  /** The teacher whose binding applied, or who was passed over for the default. */
+  source: 'roster-teacher' | 'provider-default' | 'recovery-fallback';
+  /** Earlier newly generated lines used another voice. */
+  mixed?: true;
+  /** The teacher whose binding applied, or who was passed over for a fallback. */
   teacher?: string;
   /** Why a teacher binding did not apply. */
   fallbackReason?: 'no-teacher' | 'teacher-unbound' | 'teacher-bound-to-other-provider';
@@ -33,6 +50,13 @@ export interface SceneTtsSummary {
   generated: number;
   skipped: number;
   failed: string[];
+  recovery?: {
+    reason: VoiceCloneRecoveryReason;
+    status: 'fallback' | 'failed';
+    message: string;
+    voiceId?: string;
+    errorCode?: string;
+  };
   voice?: SceneTtsVoice;
 }
 
@@ -53,6 +77,7 @@ function voiceReport(
   roster: SceneTtsInput['roster'],
   providerId: string,
   voice: string,
+  recovery?: SceneTtsSummary['recovery'],
 ): SceneTtsVoice {
   // The same teacher narratorVoice picks: the first bound one, else the first.
   const teacher =
@@ -60,6 +85,13 @@ function voiceReport(
     roster?.find((agent) => agent.role === 'teacher');
   const bound = teacher?.voiceConfig;
   const binding = `${providerId}::${voice}`;
+  if (recovery?.status === 'fallback') {
+    return {
+      binding,
+      source: 'recovery-fallback',
+      ...(teacher?.name ? { teacher: teacher.name } : {}),
+    };
+  }
   if (bound?.providerId === providerId && bound.voiceId) {
     return { binding, source: 'roster-teacher', teacher: teacher!.name };
   }
@@ -77,8 +109,12 @@ function voiceReport(
 
 /** One line for a tool result: which voice the synthesized lines used, and why. */
 export function describeNarrationVoice(voice: SceneTtsVoice): string {
+  const mixed = voice.mixed ? ' Earlier generated lines used a different voice.' : '';
+  if (voice.source === 'recovery-fallback') {
+    return `Voice: ${voice.binding} (temporary fallback for an unavailable saved voice).${mixed}`;
+  }
   if (voice.source === 'roster-teacher') {
-    return `Voice: ${voice.binding} (teacher "${voice.teacher}"'s roster binding).`;
+    return `Voice: ${voice.binding} (teacher "${voice.teacher}"'s roster binding).${mixed}`;
   }
   const why =
     voice.fallbackReason === 'no-teacher'
@@ -86,7 +122,7 @@ export function describeNarrationVoice(voice: SceneTtsVoice): string {
       : voice.fallbackReason === 'teacher-bound-to-other-provider'
         ? `teacher "${voice.teacher}" is bound to a voice of another provider`
         : `teacher "${voice.teacher}" has no voice bound`;
-  return `Voice: ${voice.binding} (provider default; ${why}).`;
+  return `Voice: ${voice.binding} (provider default; ${why}).${mixed}`;
 }
 
 function audioMime(format: string) {
@@ -112,20 +148,59 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
   if (provider?.requiresApiKey && !apiKey) {
     return { available: false, changed: false, generated: 0, skipped: 0, failed: [] };
   }
-  const voice =
-    bound?.providerId === providerId && bound.voiceId
-      ? bound.voiceId
-      : configuredDefaultVoice(connection.options, connection.voices) ||
-        DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
-        '';
+  const defaultVoice =
+    configuredDefaultVoice(connection.options, connection.voices) ||
+    DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
+    '';
+  let voice = bound?.providerId === providerId && bound.voiceId ? bound.voiceId : defaultVoice;
   const model =
     connection.modelId ?? (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
   // A configured slot's own model; the legacy server pins apply only to a default.
-  const modelId =
-    (connection.origin === 'configuration'
-      ? slotTTSModel(providerId, model, voice, connection.voices)
-      : resolveTTSModel(providerId, model, voice, connection.voices)) || '';
-  authorizeMediaModel(connection, 'tts', modelId);
+  const authorizedModel = (voiceId: string) => {
+    const resolved =
+      (connection.origin === 'configuration'
+        ? slotTTSModel(providerId, model, voiceId, connection.voices)
+        : resolveTTSModel(providerId, model, voiceId, connection.voices)) || '';
+    authorizeMediaModel(connection, 'tts', resolved);
+    return resolved;
+  };
+  let recovery: SceneTtsSummary['recovery'];
+  const propagate = (error: unknown) => {
+    if (
+      input.signal?.aborted ||
+      error instanceof TTSRequestTimeoutError ||
+      (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_TIMEOUT') ||
+      error instanceof ModelAuthorizationError ||
+      (error instanceof Error && error.name === 'AbortError')
+    )
+      throw error;
+  };
+  const generate = (speech: SpeechAction) => {
+    getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(voice, connection.voices);
+    return generateTTS(
+      {
+        providerId,
+        modelId: authorizedModel(voice),
+        apiKey,
+        baseUrl: connection.baseUrl,
+        managed: connection.managed,
+        publicOnly: connection.userEndpoint,
+        voice,
+        ...(connection.voices ? { voices: connection.voices } : {}),
+        speed: speech.speed,
+        providerOptions: {
+          ...adapterOptions(connection),
+          ...(providerId === 'qwen-tts'
+            ? { qwenVoiceClone: isQwenCloneVoice(voice, connection.voices) }
+            : {}),
+        },
+        signal: input.signal,
+      },
+      speech.text,
+    );
+  };
+  const selectedVoice = voiceReport(input.roster, providerId, voice);
+  let generatedVoice: SceneTtsVoice | undefined;
   let generated = 0;
   let skipped = 0;
   const failed: string[] = [];
@@ -138,23 +213,49 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     }
     if (input.signal?.aborted) throw new Error('aborted');
     try {
-      const audio = await generateTTS(
-        {
-          providerId,
-          modelId,
-          apiKey,
-          baseUrl: connection.baseUrl,
-          managed: connection.managed,
-          publicOnly: connection.userEndpoint,
-          voice,
-          ...(connection.voices ? { voices: connection.voices } : {}),
-          speed: speech.speed,
-          // The provider's own options (a VoxCPM backend, say).
-          providerOptions: adapterOptions(connection),
-          signal: input.signal,
-        },
-        speech.text,
-      );
+      if (recovery?.status === 'failed') {
+        failed.push(action.id);
+        continue;
+      }
+      let audio;
+      try {
+        audio = await generate(speech);
+      } catch (error) {
+        propagate(error);
+        const reason = voiceCloneRecoveryReason(error);
+        if (
+          recovery ||
+          !reason ||
+          bound?.providerId !== providerId ||
+          bound.voiceId !== voice ||
+          providerId !== 'qwen-tts' ||
+          !isQwenCloneVoice(voice, connection.voices)
+        )
+          throw error;
+        recovery = {
+          reason,
+          status: 'failed',
+          errorCode: voiceErrorCode(error),
+          message:
+            'The saved voice is unavailable. Please re-upload reference audio to clone it again.',
+        };
+        const candidate = voiceAfterUnavailableBinding(
+          { providerId, voiceId: voice },
+          { providerId, voiceId: defaultVoice },
+          { [providerId]: { enabled: true, apiKey, modelId: model, voices: connection.voices } },
+          reason,
+        );
+        if (!candidate) throw error;
+        voice = candidate.voiceId;
+        audio = await generate(speech);
+        recovery = {
+          reason,
+          status: 'fallback',
+          voiceId: voice,
+          message:
+            'Using a temporary narration voice. Please re-upload reference audio to clone the saved voice again.',
+        };
+      }
       if (input.signal?.aborted) throw new Error('aborted');
       // The persisted reference is the RELATIVE classroom-media path (the
       // agent runtime has no request origin; relative stays valid on any
@@ -173,13 +274,19 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       });
       speech.audioId = audioId;
       (speech as LegacySpeechAction).audioUrl = audioId;
+      const currentVoice = voiceReport(input.roster, providerId, voice, recovery);
+      generatedVoice = {
+        ...currentVoice,
+        ...(generatedVoice &&
+        (generatedVoice.mixed || generatedVoice.binding !== currentVoice.binding)
+          ? { mixed: true as const }
+          : {}),
+      };
       generated += 1;
     } catch (error) {
-      if (input.signal?.aborted) throw error;
-      // A hung provider must fail the tool call with the retryable timeout
-      // error instead of degrading into a per-action failure: the remaining
-      // actions would hit the same hung upstream and the session would wedge.
-      if (error instanceof TTSRequestTimeoutError) throw error;
+      propagate(error);
+      if (recovery?.status === 'failed')
+        recovery.errorCode = voiceErrorCode(error) ?? recovery.errorCode;
       failed.push(action.id);
     }
   }
@@ -189,6 +296,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     generated,
     skipped,
     failed,
-    voice: voiceReport(input.roster, providerId, voice),
+    ...(recovery ? { recovery } : {}),
+    voice: generatedVoice ?? selectedVoice,
   };
 }

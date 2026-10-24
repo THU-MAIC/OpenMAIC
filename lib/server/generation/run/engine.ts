@@ -40,6 +40,10 @@
  * the course ends the run in the deletion's own transaction (see the
  * owner-bound document store); a worker executing it loses its lease.
  */
+import {
+  voiceCloneRecoveryReason,
+  type VoiceCloneRecoveryReason,
+} from '@/lib/audio/voice-clone-recovery';
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
@@ -335,10 +339,6 @@ function assertValidScene(scene: unknown, stepId: string): void {
   }
 }
 
-function errorCode(error: unknown): unknown {
-  return error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined;
-}
-
 /** The built-in agents the browser's registry always holds, ahead of a generated roster. */
 function builtInAgents(): AgentConfig[] {
   return Object.values(BUILT_IN_AGENTS);
@@ -583,7 +583,7 @@ async function executeClaimedRun(
     );
 
   // Voice bindings this execution found unusable (a deleted clone).
-  const unavailableBindings = new Set<string>();
+  const unavailableBindings = new Map<string, VoiceCloneRecoveryReason>();
 
   // ── One step ──
   /** What a step commits; `null` for a scene skipped in parallel mode. */
@@ -1046,22 +1046,34 @@ async function executeClaimedRun(
           retryOptions(stepId, sceneIndex, 400),
         );
       } catch (error) {
-        // The bound voice's clone is gone: one retry with a different voice.
+        // An unavailable bound clone can retry once with a different voice.
+        const recoveryReason = voiceCloneRecoveryReason(error);
         if (
-          errorCode(error) === 'QWEN_VC_VOICE_NOT_FOUND' &&
+          recoveryReason &&
           bound &&
           hops < 1 &&
           voiceBindingKey(voice) === voiceBindingKey(bound)
         ) {
-          unavailableBindings.add(voiceBindingKey(bound));
+          const bindingKey = voiceBindingKey(bound);
+          const firstFailure = !unavailableBindings.has(bindingKey);
+          unavailableBindings.set(bindingKey, recoveryReason);
           const retryVoice = clipVoiceAfterMissingClone({
             target,
             bound,
             globalVoice,
             failed: voice,
             usedFallbackVoice: !!override,
+            recoveryReason,
           });
-          if (retryVoice) return narrate(action, retryVoice, hops + 1);
+          if (retryVoice) {
+            if (firstFailure) {
+              log.warn(
+                `run ${run.id}: ${stepId} temporarily using another voice (${recoveryReason}); re-upload the reference audio to re-clone the saved voice`,
+                error,
+              );
+            }
+            return narrate(action, retryVoice, hops + 1);
+          }
         }
         throw error;
       }

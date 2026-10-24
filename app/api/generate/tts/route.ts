@@ -20,7 +20,6 @@ import {
   isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
-  TTSModelNotAllowedError,
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
@@ -153,9 +152,6 @@ export async function POST(req: NextRequest) {
       return apiError(error.code, error.httpStatus || 502, qwenVoiceCloneErrorMessage(error));
     }
     if (error instanceof QwenTTSError) {
-      return apiError(error.code, error.httpStatus, error.message);
-    }
-    if (error instanceof TTSModelNotAllowedError) {
       return apiError(error.code, error.httpStatus, error.message);
     }
     return apiError(

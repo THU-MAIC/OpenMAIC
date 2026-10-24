@@ -1,3 +1,4 @@
+import type { VoiceCloneRecoveryReason } from './voice-clone-recovery';
 import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -6,9 +7,11 @@ import {
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
+  qwenVoiceMatchesTargetModel,
   resolveTTSModelForVoice,
   TTS_PROVIDERS,
   voiceServesModel,
+  voiceAllowedByConfiguredCatalogue,
 } from '@/lib/audio/constants';
 import {
   BROWSER_NATIVE_TTS_PROVIDER_ID,
@@ -269,30 +272,90 @@ export function deterministicNarratorVoice(
   );
 }
 
-/**
- * The one voice a narration clip is retried with after the provider said the
- * voice clone it used does not exist (QWEN_VC_VOICE_NOT_FOUND), or null when
- * no retry applies. Only a clip that used the bound narrator voice is
- * retried: with the global voice when the binding differs from it, else (a
- * pinned narrator, bound == global) with the deterministic enabled-provider
- * pick — unless the clip already used an explicit fallback voice.
- */
+/** Choose a different enabled voice without returning a known unavailable binding. */
+export function voiceAfterUnavailableBinding(
+  failed: ResolvedVoice,
+  globalVoice: ResolvedVoice,
+  providerConfigs: ProviderConfigMap,
+  reason: VoiceCloneRecoveryReason = 'missing',
+): ResolvedVoice | null {
+  // Only the explicitly selected global clone may be tried; catalog enumeration
+  // must not discover arbitrary account-scoped IDs. The server checks the real
+  // target and authorization when the browser only has the grouping sentinel.
+  const usable = (voice: ResolvedVoice, selectedGlobal = false): boolean => {
+    const config = providerConfigs[voice.providerId];
+    const hint = [voice.modelId, config?.modelId].find(
+      (model) =>
+        model &&
+        !/-tts-vc(?:-|$)/iu.test(model) &&
+        !TTS_PROVIDERS['qwen-tts'].models.some((entry) => entry.id === model),
+    );
+    const selectedClone =
+      selectedGlobal &&
+      (hint
+        ? qwenVoiceMatchesTargetModel(voice.voiceId, hint)
+        : voice.voiceId.startsWith('cosyvoice-'));
+    return (
+      narratorBindingDiffers(failed, voice) &&
+      isTTSProviderEnabled(voice.providerId, config) &&
+      (voice.providerId !== 'qwen-tts' ||
+        isQwenCatalogVoice(voice.voiceId, config?.voices) ||
+        selectedClone) &&
+      voiceAllowedByConfiguredCatalogue(voice.providerId, voice.voiceId, config?.voices) &&
+      voiceServesModel(
+        voice.providerId,
+        voice.voiceId,
+        resolveTTSModelForVoice(
+          voice.providerId,
+          voice.voiceId,
+          voice.modelId ?? config?.modelId,
+          config?.voices,
+        ),
+        config?.voices,
+      )
+    );
+  };
+  if (reason === 'reclone-required') {
+    if (usable(globalVoice, true))
+      return resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs);
+    for (const provider of getEnabledProvidersWithVoices(
+      providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
+    )) {
+      for (const voice of provider.voices) {
+        const candidate = { providerId: provider.providerId, voiceId: voice.id };
+        if (usable(candidate)) return candidate;
+      }
+    }
+    return null;
+  }
+  const candidate =
+    narratorBindingDiffers(failed, globalVoice) &&
+    isTTSProviderEnabled(globalVoice.providerId, providerConfigs[globalVoice.providerId])
+      ? resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs)
+      : deterministicNarratorVoice(providerConfigs);
+  return candidate && narratorBindingDiffers(failed, candidate) ? candidate : null;
+}
+
+/** Retry an unavailable bound clone once with a different enabled voice. */
 export function narratorVoiceAfterMissingClone(input: {
   bound: AgentConfig['voiceConfig'] | undefined;
   globalVoice: ResolvedVoice;
   failed: ResolvedVoice;
   providerConfigs: ProviderConfigMap;
   usedFallbackVoice: boolean;
+  recoveryReason?: VoiceCloneRecoveryReason;
 }): ResolvedVoice | null {
   const { bound, globalVoice, failed } = input;
   if (!bound || bound.providerId !== failed.providerId || bound.voiceId !== failed.voiceId) {
     return null;
   }
-  if (narratorBindingDiffers(bound, globalVoice)) {
-    return resolveNarratorVoiceBinding(undefined, globalVoice, input.providerConfigs);
-  }
   if (input.usedFallbackVoice) return null;
-  return deterministicNarratorVoice(input.providerConfigs);
+  return voiceAfterUnavailableBinding(
+    failed,
+    globalVoice,
+    input.providerConfigs,
+    input.recoveryReason,
+  );
 }
 
 /**
@@ -465,7 +528,7 @@ export function getEnabledProvidersWithVoices(
             ? [
                 {
                   modelId: QWEN_TTS_VOICE_CLONE_MODEL,
-                  modelName: 'Qwen3 TTS Voice Clone',
+                  modelName: 'CosyVoice Voice Clone',
                   voices: extraVoices,
                 },
               ]

@@ -30,8 +30,9 @@ export class ModelAuthorizationError extends Error {
   readonly code = 'PROVIDER_DISABLED';
   readonly httpStatus = 403;
 
-  constructor() {
-    super('This model is not authorized for server-managed credentials');
+  constructor(guidance?: string) {
+    const message = 'This model is not authorized for server-managed credentials';
+    super(guidance ? `${message} ${guidance}` : message);
     this.name = 'ModelAuthorizationError';
   }
 }

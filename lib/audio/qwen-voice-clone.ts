@@ -1,5 +1,4 @@
-import { createHash } from 'node:crypto';
-
+import { qwenVoiceMatchesTargetModel } from './constants';
 import type { TTSGenerationResult } from '@/lib/audio/tts-providers';
 import { createLogger } from '@/lib/logger';
 import {
@@ -14,10 +13,10 @@ import {
   validateUrlForSSRFWithPolicy,
 } from '@/lib/server/ssrf-guard';
 
-export const QWEN_VOICE_ENROLLMENT_MODEL = 'qwen-voice-enrollment';
+export const QWEN_VOICE_ENROLLMENT_MODEL = 'voice-enrollment';
 export const DEFAULT_QWEN_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1';
 const ENROLLMENT_PATH = '/api/v1/services/audio/tts/customization';
-const SYNTHESIS_PATH = '/api/v1/services/aigc/multimodal-generation/generation';
+const SYNTHESIS_PATH = '/api/v1/services/audio/tts/SpeechSynthesizer';
 const REQUEST_TIMEOUT_MS = 30_000;
 const AUDIO_DOWNLOAD_TIMEOUT_MS = 30_000;
 const SYNTHESIS_DEADLINE_MS = 24_000;
@@ -37,6 +36,9 @@ export type QwenVoiceCloneErrorCode =
   | 'QWEN_VC_AUDIO_TOO_LARGE'
   | 'QWEN_VC_AUDIO_EMPTY'
   | 'QWEN_VC_VOICE_NOT_FOUND'
+  | 'QWEN_VC_RECLONE_REQUIRED'
+  | 'QWEN_VC_VOICE_REJECTED'
+  | 'QWEN_VC_VOICE_PROCESSING'
   | 'QWEN_VC_BOOTSTRAP_UNSUPPORTED';
 
 export class QwenVoiceCloneError extends Error {
@@ -69,12 +71,10 @@ export interface QwenVoiceCloneConfig {
 
 interface QwenResponse {
   output?: {
-    voice?: unknown;
+    voice_id?: unknown;
+    target_model?: unknown;
+    status?: unknown;
     audio?: { url?: unknown; format?: unknown };
-    voice_list?: Array<{ voice?: unknown; target_model?: unknown }>;
-    page_index?: unknown;
-    page_size?: unknown;
-    total_count?: unknown;
   };
   code?: unknown;
   message?: unknown;
@@ -97,7 +97,12 @@ const ERROR_MESSAGES: Record<QwenVoiceCloneErrorCode, string> = {
   QWEN_VC_AUDIO_TOO_LARGE: 'The generated Qwen audio exceeds the 50 MB limit.',
   QWEN_VC_AUDIO_EMPTY: 'Qwen returned an empty audio file.',
   QWEN_VC_VOICE_NOT_FOUND: 'The cloned Qwen voice no longer exists.',
-  QWEN_VC_BOOTSTRAP_UNSUPPORTED: 'Qwen voice cloning requires reference audio and a transcript.',
+  QWEN_VC_RECLONE_REQUIRED:
+    'This saved voice is incompatible with the current cloning model. Upload its reference audio again to re-clone it.',
+  QWEN_VC_VOICE_REJECTED:
+    'The reference audio did not pass voice enrollment review. Upload a different reference recording and try again.',
+  QWEN_VC_VOICE_PROCESSING: 'The cloned voice is still being processed. Please try again shortly.',
+  QWEN_VC_BOOTSTRAP_UNSUPPORTED: 'Qwen voice cloning requires reference audio.',
 };
 
 export function qwenVoiceCloneErrorMessage(error: QwenVoiceCloneError): string {
@@ -108,6 +113,7 @@ function isUnknownVoiceResponse(body: QwenResponse): boolean {
   const code = typeof body.code === 'string' ? body.code : '';
   const message = typeof body.message === 'string' ? body.message : '';
   return (
+    code === 'BadRequest.ResourceNotExist' ||
     /^(?:voice[_-]?(?:not[_-]?found|not[_-]?exist|invalid)|invalid[_-]?voice)$/iu.test(code) ||
     /voice.{0,40}(?:not found|not exist|does not exist|invalid)/iu.test(message)
   );
@@ -166,17 +172,14 @@ function endpoint(baseUrl: URL, path: string): URL {
   return normalized;
 }
 
-export function preferredVoiceName(name: string, audio: Uint8Array): string {
-  let prefix = name
-    .normalize('NFKD')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '_')
-    .replace(/^_+|_+$/gu, '')
-    .slice(0, 6);
-  if (/^[0-9]/u.test(prefix)) prefix = `v${prefix.match(/^[0-9]+/u)?.[0] || ''}`.slice(0, 6);
-  else if (!/^[a-z]/u.test(prefix)) prefix = 'v';
-  const digest = createHash('sha256').update(audio).digest('hex').slice(0, 8);
-  return `${prefix}_${digest}`.slice(0, 16);
+export function preferredVoiceName(name: string): string {
+  return (
+    name
+      .normalize('NFKD')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/gu, '')
+      .slice(0, 10) || 'openmaic'
+  );
 }
 
 function timeoutSignal(parent: AbortSignal | undefined, timeoutMs: number) {
@@ -258,7 +261,7 @@ async function postJson(
 
 export async function registerQwenVoice(
   config: QwenVoiceCloneConfig,
-  input: { name: string; audio: Uint8Array; text: string },
+  input: { name: string; audio: Uint8Array },
   signal?: AbortSignal,
 ): Promise<{ voiceId: string; targetModel: string }> {
   const resolved = resolveConfig(config);
@@ -268,17 +271,16 @@ export async function registerQwenVoice(
     {
       model: QWEN_VOICE_ENROLLMENT_MODEL,
       input: {
-        action: 'create',
+        action: 'create_voice',
         target_model: resolved.targetModel,
-        preferred_name: preferredVoiceName(input.name, input.audio),
-        audio: { data: `data:audio/wav;base64,${Buffer.from(input.audio).toString('base64')}` },
-        text: input.text,
+        prefix: preferredVoiceName(input.name),
+        audio: `data:audio/wav;base64,${Buffer.from(input.audio).toString('base64')}`,
       },
     },
     signal,
     resolved,
   );
-  const voiceId = typeof body.output?.voice === 'string' ? body.output.voice.trim() : '';
+  const voiceId = typeof body.output?.voice_id === 'string' ? body.output.voice_id.trim() : '';
   if (!voiceId) throw new QwenVoiceCloneError('QWEN_VC_RESPONSE_VOICE_MISSING', 502);
   return { voiceId, targetModel: resolved.targetModel };
 }
@@ -295,68 +297,62 @@ export async function deleteQwenVoice(
   await postJson(
     endpoint(resolved.baseUrl, ENROLLMENT_PATH),
     resolved.apiKey,
-    { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete', voice } },
+    { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'delete_voice', voice_id: voice } },
     signal,
     resolved,
   );
 }
 
-/** Query the paginated Qwen-TTS voice list for a specific enrolled voice. */
+export type QwenVoiceReadiness =
+  | 'ready'
+  | 'processing'
+  | 'missing'
+  | 'incompatible'
+  | 'rejected'
+  | 'unavailable'
+  | 'unknown';
+
+/** Query the provider's authoritative target model and readiness for one voice. */
+export async function queryQwenVoiceReadiness(
+  config: QwenVoiceCloneConfig,
+  voiceId: string,
+  signal?: AbortSignal,
+): Promise<QwenVoiceReadiness> {
+  const resolved = resolveConfig(config);
+  const voice = voiceId.trim();
+  if (!voice) return 'missing';
+  try {
+    const body = await postJson(
+      endpoint(resolved.baseUrl, ENROLLMENT_PATH),
+      resolved.apiKey,
+      { model: QWEN_VOICE_ENROLLMENT_MODEL, input: { action: 'query_voice', voice_id: voice } },
+      signal,
+      resolved,
+    );
+    if (body.output?.target_model !== resolved.targetModel) return 'incompatible';
+    if (body.output.status === 'DEPLOYING') return 'processing';
+    if (body.output.status === 'OK') return 'ready';
+    if (body.output.status === 'UNDEPLOYED') return 'rejected';
+    return 'unavailable';
+  } catch (error) {
+    if (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_VOICE_NOT_FOUND')
+      return 'missing';
+    if (isTransientLookupFailure(error)) return 'unknown';
+    throw error;
+  }
+}
+
+/** Compatibility lookup for callers that only need existence and readiness. */
 export async function qwenVoiceExists(
   config: QwenVoiceCloneConfig,
   voiceId: string,
   signal?: AbortSignal,
 ): Promise<boolean | 'unknown'> {
-  const resolved = resolveConfig(config);
-  const wanted = voiceId.trim();
-  if (!wanted) return false;
-  const pageSize = 100;
-  let fetched = 0;
-  let retriedEmptyPage = false;
-  for (let pageIndex = 0; pageIndex < 100; pageIndex++) {
-    let body: QwenResponse;
-    try {
-      body = await postJson(
-        endpoint(resolved.baseUrl, ENROLLMENT_PATH),
-        resolved.apiKey,
-        {
-          model: QWEN_VOICE_ENROLLMENT_MODEL,
-          input: { action: 'list', page_size: pageSize, page_index: pageIndex },
-        },
-        signal,
-        resolved,
-      );
-    } catch (error) {
-      // A transient vendor failure (5xx or network error) makes the lookup
-      // inconclusive: report 'unknown' so callers fall back to the cached-clip
-      // idempotent re-register path instead of surfacing an error.
-      if (isTransientLookupFailure(error)) return 'unknown';
-      throw error;
-    }
-    const voices = Array.isArray(body.output?.voice_list) ? body.output.voice_list : [];
-    if (
-      voices.some((item) => item.voice === wanted && item.target_model === resolved.targetModel)
-    ) {
-      return true;
-    }
-    fetched += voices.length;
-    const total =
-      typeof body.output?.total_count === 'number' ? body.output.total_count : undefined;
-    if (voices.length === 0) {
-      if (total !== undefined && fetched < total) {
-        if (!retriedEmptyPage) {
-          retriedEmptyPage = true;
-          pageIndex--;
-          continue;
-        }
-        return 'unknown';
-      }
-      return false;
-    }
-    retriedEmptyPage = false;
-    if (total !== undefined && fetched >= total) return false;
-  }
-  return 'unknown';
+  const state = await queryQwenVoiceReadiness(config, voiceId, signal);
+  if (state === 'processing') throw new QwenVoiceCloneError('QWEN_VC_VOICE_PROCESSING', 409);
+  if (state === 'rejected') throw new QwenVoiceCloneError('QWEN_VC_VOICE_REJECTED', 422);
+  if (state === 'unknown') return 'unknown';
+  return state === 'ready';
 }
 
 export function audioFormat(contentType: string | null, vendorFormat: unknown, url: URL): string {
@@ -477,6 +473,13 @@ export async function downloadAudio(
   }
 }
 
+/** Reject locally incompatible saved IDs before model authorization or network work. */
+export function assertQwenVoiceTarget(voiceId: string, targetModel: string): void {
+  if (targetModel.startsWith('cosyvoice-') && !qwenVoiceMatchesTargetModel(voiceId, targetModel)) {
+    throw new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 400);
+  }
+}
+
 export async function synthesizeQwenVoiceClone(
   config: QwenVoiceCloneConfig,
   text: string,
@@ -487,16 +490,17 @@ export async function synthesizeQwenVoiceClone(
   const resolved = resolveConfig(config);
   const voice = voiceId.trim();
   if (!voice) throw new QwenVoiceCloneError('QWEN_VC_CONFIG_MISSING', 400);
+  assertQwenVoiceTarget(voice, resolved.targetModel);
   if ((!Number.isFinite(speed) || speed !== 1) && !loggedSpeedNormalization) {
     loggedSpeedNormalization = true;
-    log.debug('Qwen VC does not support rate control; normalizing synthesis speed to 1x');
+    log.debug('Keeping cloned voice synthesis at the fixed 1x speed');
   }
   const deadline = timeoutSignal(signal, SYNTHESIS_DEADLINE_MS);
   try {
     const body = await postJson(
       endpoint(resolved.baseUrl, SYNTHESIS_PATH),
       resolved.apiKey,
-      { model: resolved.targetModel, input: { text, voice } },
+      { model: resolved.targetModel, input: { text, voice, format: 'wav', sample_rate: 24_000 } },
       deadline.signal,
       resolved,
     );

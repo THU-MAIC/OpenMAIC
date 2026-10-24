@@ -179,6 +179,8 @@ async function respond(index: number, body = { base64: btoa(`audio-${index}`), f
 }
 
 beforeEach(() => {
+  selection.providerId = 'openai-tts';
+  selection.voice = 'alloy';
   vi.clearAllMocks();
   clearUnavailableVoiceBindingsForTests();
   resetDiscussionAudioElementForTests();
@@ -478,43 +480,75 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 2 });
   });
 
-  it('retries a missing prefetched clone with its fallback before advancing the segment counter', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    agents = [
-      teacher,
-      {
-        ...teacher,
-        id: 'clone-teacher',
-        voiceConfig: { providerId: 'qwen-tts', voiceId: 'clone-missing' },
-      },
-    ];
-    act(() => root.render(createElement(Probe)));
-    await seal('A');
-    await seal('B', 'clone-teacher');
-    await respond(0);
-    expect(requests[1].body.ttsVoice).toBe('clone-missing');
-    await act(async () =>
-      requests[1].response.resolve(
-        Response.json(
-          {
-            error: 'Missing clone',
-            errorCode: 'QWEN_VC_VOICE_NOT_FOUND',
-          },
-          { status: 404 },
+  it.each([
+    ['QWEN_VC_VOICE_NOT_FOUND', false, false],
+    ['QWEN_VC_VOICE_NOT_FOUND', false, true],
+    ['QWEN_VC_RECLONE_REQUIRED', false, false],
+    ['QWEN_VC_RECLONE_REQUIRED', false, true],
+    ['QWEN_VC_RECLONE_REQUIRED', false, 'other'],
+    ['QWEN_VC_VOICE_NOT_FOUND', true, false],
+    ['QWEN_VC_RECLONE_REQUIRED', true, false],
+  ] as const)(
+    'retries a missing prefetched clone with its fallback before advancing the segment counter (%s, fallback fails: %s, pinned: %s)',
+    async (errorCode, fallbackFails, pinned) => {
+      if (pinned) {
+        selection.providerId = 'qwen-tts';
+        selection.voice = pinned === 'other' ? 'another-retired-clone' : 'clone-missing';
+      }
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      agents = [
+        teacher,
+        {
+          ...teacher,
+          id: 'clone-teacher',
+          voiceConfig: { providerId: 'qwen-tts', voiceId: 'clone-missing' },
+        },
+      ];
+      act(() => root.render(createElement(Probe)));
+      await seal('A');
+      await seal('B', 'clone-teacher');
+      await respond(0);
+      expect(requests[1].body.ttsVoice).toBe('clone-missing');
+      await act(async () =>
+        requests[1].response.resolve(
+          Response.json(
+            {
+              error: 'Missing clone',
+              errorCode,
+            },
+            { status: 404 },
+          ),
         ),
-      ),
-    );
-    expect(mocks.warning).not.toHaveBeenCalled();
-    await act(async () => FakeAudio.instances[0].end());
-    expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B', 'B']);
-    expect(requests[2].body).toMatchObject({ ttsVoice: 'alloy' });
-    expect(requests[2].body).not.toHaveProperty('ttsProviderId');
-    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
-    expect(mocks.warning).toHaveBeenCalledOnce();
-    await respond(2);
-    await act(async () => FakeAudio.instances[0].end());
-    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
-  });
+      );
+      expect(mocks.warning).not.toHaveBeenCalled();
+      await act(async () => FakeAudio.instances[0].end());
+      expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B', 'B']);
+      expect(requests[2].body).toMatchObject({ ttsVoice: 'alloy' });
+      expect(requests[2].body).not.toHaveProperty('ttsProviderId');
+      expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
+      expect(mocks.warning).toHaveBeenCalledOnce();
+      if (errorCode === 'QWEN_VC_RECLONE_REQUIRED')
+        expect(mocks.warning).toHaveBeenCalledWith('settings.qwenCloneRecloneFallback');
+      if (fallbackFails) {
+        await act(async () =>
+          requests[2].response.resolve(
+            Response.json({ error: 'Fallback unavailable', errorCode }, { status: 400 }),
+          ),
+        );
+      } else {
+        await respond(2);
+        await act(async () => FakeAudio.instances[0].end());
+      }
+      expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
+      await seal('C', 'clone-teacher');
+      expect(requests.map((r) => r.body.audioId)).toEqual(['A', 'B', 'B', 'C']);
+      expect(requests[3].body.ttsVoice).toBe('alloy');
+      await respond(3);
+      await act(async () => FakeAudio.instances[0].end());
+      expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 3 });
+      expect(mocks.warning).toHaveBeenCalledOnce();
+    },
+  );
 
   it('preserves browser/server ordering and resumes after browser speech ends while paused', async () => {
     agents = [

@@ -24,7 +24,9 @@ vi.mock('@/lib/server/audio-provider-fetch', async (original) => ({
     });
     return String(url).includes('audio/speech')
       ? new Response(new Uint8Array([1]), { headers: { 'content-type': 'audio/wav' } })
-      : Response.json({ output: { voice: 'cloned-voice' } });
+      : body.input?.action === 'query_voice'
+        ? Response.json({ output: { target_model: 'cosyvoice-v3.5-plus', status: 'OK' } })
+        : Response.json({ output: { voice_id: 'cloned-voice' } });
   },
 }));
 vi.mock('@/lib/server/usage-storage', () => ({ recordGenerationUsage: async () => {} }));
@@ -52,7 +54,7 @@ beforeEach(() => {
     'TTS_OPENAI_API_KEY',
   ])
     vi.stubEnv(key, '');
-  vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'qwen3-tts-vc-2026-01-22');
+  vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'cosyvoice-v3.5-plus');
 });
 afterEach(() => vi.unstubAllEnvs());
 async function deployment(config: ModelConfigFile, legacy = false) {
@@ -72,7 +74,7 @@ function req(path: string, body: unknown, headers = {}) {
   });
 }
 function wav() {
-  const b = Buffer.alloc(44 + 48000 * 2);
+  const b = Buffer.alloc(44 + 48000 * 5);
   b.write('RIFF');
   b.writeUInt32LE(b.length - 8, 4);
   b.write('WAVE', 8);
@@ -88,9 +90,15 @@ function wav() {
   b.writeUInt32LE(b.length - 44, 40);
   return b;
 }
-it.each(['denied', 'allowed', 'byok'])(
-  'agent Qwen registration checks its target before lookup: %s',
-  async (mode) => {
+it.each([
+  { mode: 'denied', legacy: false },
+  { mode: 'allowed', legacy: false },
+  { mode: 'byok', legacy: false },
+  { mode: 'denied', legacy: true },
+  { mode: 'allowed', legacy: true },
+])(
+  'agent Qwen registration checks its target before lookup: $mode legacy=$legacy',
+  async ({ mode, legacy }) => {
     await deployment({
       providers: {
         speech: {
@@ -98,13 +106,14 @@ it.each(['denied', 'allowed', 'byok'])(
           apiKey: 'server-key',
           models:
             mode === 'allowed'
-              ? ['qwen3-tts-flash', 'qwen3-tts-vc-2026-01-22']
-              : ['qwen3-tts-flash'],
+              ? ['qwen3-tts-flash', 'cosyvoice-v3.5-plus']
+              : ['qwen3-tts-flash', 'qwen3-tts-vc-2026-01-22'],
         },
       },
       slots: { tts: 'speech:qwen3-tts-flash' },
     });
-    if (mode === 'allowed') vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', ' qwen3-tts-vc-2026-01-22 ');
+    if (mode === 'allowed') vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', ' cosyvoice-v3.5-plus ');
+    if (legacy) vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', ' qwen3-tts-vc-2026-01-22 ');
     const { serverMediaConnection } = await import('@/lib/server/model-config/media');
     const connection = await serverMediaConnection('tts');
     if (!connection || connection === 'off') throw Error('missing connection');
@@ -130,14 +139,63 @@ it.each(['denied', 'allowed', 'byok'])(
       await run;
       expect(captures.calls).toEqual([
         {
-          model: 'qwen-voice-enrollment',
-          target: 'qwen3-tts-vc-2026-01-22',
+          model: 'voice-enrollment',
+          target: 'cosyvoice-v3.5-plus',
+          key: `Bearer ${mode === 'byok' ? 'user-key' : 'server-key'}`,
+        },
+        {
+          model: 'voice-enrollment',
+          target: undefined,
           key: `Bearer ${mode === 'byok' ? 'user-key' : 'server-key'}`,
         },
       ]);
     }
   },
 );
+it.each([true, false])(
+  'voice route migrates the legacy clone env with new target authorized=%s',
+  async (authorized) => {
+    vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', ' qwen3-tts-vc-2026-01-22 ');
+    await deployment({
+      providers: {
+        speech: {
+          preset: 'qwen-tts',
+          apiKey: 'server-key',
+          models: authorized
+            ? ['qwen3-tts-flash', 'cosyvoice-v3.5-plus']
+            : ['qwen3-tts-flash', 'qwen3-tts-vc-2026-01-22'],
+        },
+      },
+      slots: { tts: 'speech:qwen3-tts-flash' },
+    });
+    const { POST } = await import('@/app/api/generate/voice/route');
+    const response = await POST(
+      req('generate/voice', {
+        providerId: 'qwen-tts',
+        voiceId: 'missing-voice',
+        referenceAudioBase64: wav().toString('base64'),
+        refText: 'Hello',
+      }),
+    );
+    if (authorized) {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ voiceId: 'cloned-voice', registered: true });
+      // A display name is not queried as a provider ID before enrollment.
+      expect(captures.calls).toEqual([
+        { model: 'voice-enrollment', target: 'cosyvoice-v3.5-plus', key: 'Bearer server-key' },
+        { model: 'voice-enrollment', target: undefined, key: 'Bearer server-key' },
+      ]);
+    } else {
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        errorCode: 'PROVIDER_DISABLED',
+        error: expect.stringContaining('cosyvoice-v3.5-plus'),
+      });
+      expect(captures.calls).toEqual([]);
+    }
+  },
+);
+
 it.each(['image', 'video'] as const)(
   'MiniMax %s verification sends the selected model on saved and legacy paths',
   async (capability) => {
@@ -179,7 +237,10 @@ it.each(['image', 'video'] as const)(
     expect(captures.calls[1]).toEqual({ model, key: 'Bearer legacy-key' });
   },
 );
-it('Qwen clone voice switches to an unauthorized upstream model and is refused before transport', async () => {
+it.each([
+  ['cosyvoice-v3.5-plus-abc123', 403, 'PROVIDER_DISABLED'],
+  ['qwen-tts-vc-abc123', 400, 'QWEN_VC_RECLONE_REQUIRED'],
+] as const)('Qwen voice %s is refused before transport', async (voice, status, errorCode) => {
   await deployment({
     providers: {
       speech: { preset: 'qwen-tts', apiKey: 'server-key', models: ['qwen3-tts-flash'] },
@@ -188,11 +249,11 @@ it('Qwen clone voice switches to an unauthorized upstream model and is refused b
   });
   const { POST } = await import('@/app/api/generate/tts/route');
   const response = await POST(
-    req('generate/tts', { text: 'Hello', audioId: 'a', ttsVoice: 'qwen-tts-vc-abc123' }),
+    req('generate/tts', { text: 'Hello', audioId: 'a', ttsVoice: voice }),
   );
   expect(captures.calls).toEqual([]);
-  expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({ errorCode: 'PROVIDER_DISABLED' });
+  expect(response.status).toBe(status);
+  expect(await response.json()).toMatchObject({ errorCode });
 });
 it('empty legacy TTS model selects the authorized default', async () => {
   vi.stubEnv('TTS_OPENAI_API_KEY', 'server-key');

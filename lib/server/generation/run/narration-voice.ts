@@ -1,3 +1,4 @@
+import type { VoiceCloneRecoveryReason } from '@/lib/audio/voice-clone-recovery';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 /**
  * Which voice a run narrates with, decided as the browser decides it for the
@@ -23,6 +24,7 @@ import {
   narratorBindingDiffers,
   narratorVoiceAfterMissingClone,
   resolveNarratorVoiceBinding,
+  voiceAfterUnavailableBinding,
   resolveNarratorVoiceForGeneration,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
@@ -177,7 +179,7 @@ export function clipVoice(input: {
   preference: GenerationRunInput['voice'];
   bound: AgentConfig['voiceConfig'] | undefined;
   /** The bindings this run found unusable (a deleted clone, say). */
-  unavailable: ReadonlySet<string>;
+  unavailable: ReadonlyMap<string, VoiceCloneRecoveryReason>;
   /** An explicit voice a retry uses instead. */
   override?: ResolvedVoice;
 }): { voice: ResolvedVoice; globalVoice: ResolvedVoice } | null {
@@ -190,10 +192,17 @@ export function clipVoice(input: {
   };
   let voice =
     input.override ??
-    resolveNarratorVoiceBinding(
-      bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
-      configs,
+    (bound && input.unavailable.has(voiceBindingKey(bound))
+      ? voiceAfterUnavailableBinding(
+          bound,
+          globalVoice,
+          configs,
+          input.unavailable.get(voiceBindingKey(bound)),
+        )
+      : resolveNarratorVoiceBinding(bound, globalVoice, configs));
+  if (!voice)
+    throw new Error(
+      'No enabled fallback voice is available; re-upload the reference audio to re-clone this voice.',
     );
   if (
     bound &&
@@ -213,6 +222,7 @@ export function clipVoiceAfterMissingClone(input: {
   globalVoice: ResolvedVoice;
   failed: ResolvedVoice;
   usedFallbackVoice: boolean;
+  recoveryReason?: VoiceCloneRecoveryReason;
 }): ResolvedVoice | null {
   return narratorVoiceAfterMissingClone({
     bound: input.bound,
@@ -220,6 +230,7 @@ export function clipVoiceAfterMissingClone(input: {
     failed: input.failed,
     providerConfigs: providersConfig(input.target),
     usedFallbackVoice: input.usedFallbackVoice,
+    recoveryReason: input.recoveryReason,
   });
 }
 

@@ -1,4 +1,5 @@
 import type { ConfiguredTTSVoice } from '@/lib/audio/types';
+import { DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
 /**
  * Media and tool capabilities from slot resolutions (RFC #1701, tracked in
  * #1725): text to speech, speech recognition, images, video, web search and
@@ -19,7 +20,11 @@ import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 import { getWebFetchProvider } from '@/lib/web-fetch/registry';
 import { isOfficialWebSearchBaseUrl, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
-import { assertDeploymentModelAuthorized, selectsUpstreamModel } from './model-authorization';
+import {
+  assertDeploymentModelAuthorized,
+  ModelAuthorizationError,
+  selectsUpstreamModel,
+} from './model-authorization';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { getSlot, type SlotCapability, type SlotId } from '@/lib/config/model-slots';
 import { registryDefaultBaseUrl } from '@/lib/config/provider-presets';
@@ -338,10 +343,25 @@ export function authorizeMediaModel(
     return;
   const capability = getSlot(slot).capability;
   if (!selectsUpstreamModel(presetIdFor(capability, connection.providerId), capability)) return;
-  assertDeploymentModelAuthorized(
-    deploymentConfig().layer?.config,
-    connection.deploymentProviderId ?? presetIdFor(capability, connection.providerId),
-    modelId,
-    capability,
-  );
+  try {
+    assertDeploymentModelAuthorized(
+      deploymentConfig().layer?.config,
+      connection.deploymentProviderId ?? presetIdFor(capability, connection.providerId),
+      modelId,
+      capability,
+    );
+  } catch (error) {
+    if (
+      error instanceof ModelAuthorizationError &&
+      slot === 'tts' &&
+      connection.providerId === 'qwen-tts' &&
+      modelId === DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL
+    ) {
+      // Static migration guidance; never reveal the operator's model list or override.
+      throw new ModelAuthorizationError(
+        'Qwen voice cloning now uses cosyvoice-v3.5-plus by default. Ask the server administrator to add it to the provider models list in openmaic.yml or TTS_QWEN_MODELS.',
+      );
+    }
+    throw error;
+  }
 }

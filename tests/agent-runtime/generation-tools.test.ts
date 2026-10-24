@@ -556,6 +556,42 @@ describe('generation and deck tools', () => {
     ]);
   });
 
+  it.each(['generate_tts', 'generate_actions'])(
+    'surfaces clone recovery guidance in %s',
+    async (name) => {
+      const current = state(document([slide('a', 1)]));
+      const recovery = {
+        reason: 'reclone-required',
+        status: 'fallback',
+        message: 'Using a temporary voice; re-upload reference audio to re-clone.',
+      };
+      const tools = buildDslCourseToolset(
+        deps(current.store, {
+          generateActions: vi.fn(async () => [{ id: 'speech', type: 'speech', text: 'Hello' }]),
+          synthesizeTts: vi.fn(async () => ({
+            available: true,
+            changed: false,
+            generated: 1,
+            skipped: 0,
+            failed: [],
+            recovery,
+            voice: { binding: 'qwen-tts::Cherry', source: 'recovery-fallback' },
+          })),
+        }),
+      );
+      const response = await find(tools, name).execute('call', {
+        stageId: 'stage-test',
+        sceneId: 'a',
+      } as never);
+      expect((response.content[0] as { text: string }).text).toContain(recovery.message);
+      expect((response.content[0] as { text: string }).text).toContain('qwen-tts::Cherry');
+      expect((response.content[0] as { text: string }).text).toContain('temporary fallback');
+      expect(response.details).toMatchObject(
+        name === 'generate_tts' ? { recovery } : { audio: { recovery } },
+      );
+    },
+  );
+
   it('drops action types unknown to the shared DSL', () => {
     expect(
       filterKnownActions([
