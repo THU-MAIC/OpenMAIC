@@ -358,8 +358,9 @@ export function authorizeMediaModel(
       modelId === DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL
     ) {
       // Static migration guidance; never reveal the operator's model list or override.
-      error.message +=
-        ' Qwen voice cloning now uses cosyvoice-v3.5-plus by default. Ask the server administrator to add it to the provider models list in openmaic.yml or TTS_QWEN_MODELS.';
+      throw new ModelAuthorizationError(
+        'Qwen voice cloning now uses cosyvoice-v3.5-plus by default. Ask the server administrator to add it to the provider models list in openmaic.yml or TTS_QWEN_MODELS.',
+      );
     }
     throw error;
   }

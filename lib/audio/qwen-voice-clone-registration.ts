@@ -7,6 +7,7 @@ import {
 
 import {
   QwenVoiceCloneError,
+  type QwenVoiceCloneConfig,
   assertQwenVoiceTarget,
   preferredVoiceName,
   deleteQwenVoice,
@@ -50,6 +51,18 @@ const registrationKeysByVoice = new Map<string, Set<string>>();
 
 function decodeBase64(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, 'base64'));
+}
+
+function providerConfig(
+  cfg: VoiceRegistrationConfig,
+): QwenVoiceCloneConfig & { targetModel: string } {
+  return {
+    apiKey: cfg.apiKey,
+    baseUrl: cfg.baseUrl,
+    targetModel: cfg.model || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+    publicOnly: cfg.publicOnly,
+    managed: cfg.managed,
+  };
 }
 
 async function registerVoice(
@@ -98,20 +111,14 @@ async function registerVoice(
       ),
     REGISTRATION_DEADLINE_MS,
   );
-  const providerConfig = {
-    apiKey: cfg.apiKey,
-    baseUrl: cfg.baseUrl,
-    targetModel: cfg.model || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
-    publicOnly: cfg.publicOnly,
-    managed: cfg.managed,
-  };
+  const provider = providerConfig(cfg);
   const work = (async () => {
     let voiceId = memoized?.voiceId;
     if (!voiceId) {
       const audio = decodeBase64(params.referenceAudioBase64);
       validateReferenceAudio(audio, QWEN_MIN_REFERENCE_DURATION_SECONDS);
       const result = await registerQwenVoice(
-        providerConfig,
+        provider,
         { name: params.voiceId, audio },
         // Creation keeps postJson's independent 30s transport/body deadline.
         // Aborting it at the 23s wait limit could lose an already-created ID.
@@ -121,7 +128,7 @@ async function registerVoice(
     }
     while (true) {
       controller.signal.throwIfAborted();
-      const state = await queryQwenVoiceReadiness(providerConfig, voiceId, controller.signal);
+      const state = await queryQwenVoiceReadiness(provider, voiceId, controller.signal);
       controller.signal.throwIfAborted();
       if (state === 'ready') {
         rememberRegistration(key, configKey, voiceId, 'ready');
@@ -204,24 +211,15 @@ async function voiceExists(
 ): Promise<boolean | 'unknown'> {
   // Enrollment names are labels, not provider IDs. Only query IDs for this
   // target, or an authoritative ID returned by our own enrollment request.
-  const targetModel = cfg.model || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+  const provider = providerConfig(cfg);
   const configKey = voiceRegistrationConfigKey(cfg);
   const matchingKeys = [...(registrationKeysByVoice.get(voiceId) ?? [])].filter(
     (key) => registrations.get(key)?.configKey === configKey,
   );
-  if (!qwenVoiceMatchesTargetModel(voiceId, targetModel) && matchingKeys.length === 0) return false;
+  if (!qwenVoiceMatchesTargetModel(voiceId, provider.targetModel) && matchingKeys.length === 0)
+    return false;
 
-  const result = await qwenVoiceExists(
-    {
-      apiKey: cfg.apiKey,
-      baseUrl: cfg.baseUrl,
-      targetModel: cfg.model,
-      publicOnly: cfg.publicOnly,
-      managed: cfg.managed,
-    },
-    voiceId,
-    signal,
-  ).catch((error: unknown) => {
+  const result = await qwenVoiceExists(provider, voiceId, signal).catch((error: unknown) => {
     if (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_VOICE_REJECTED')
       for (const key of matchingKeys) removeRegistrationKey(key, voiceId);
     throw error;
@@ -246,17 +244,7 @@ async function deleteVoice(
   voiceId: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  await deleteQwenVoice(
-    {
-      apiKey: cfg.apiKey,
-      baseUrl: cfg.baseUrl,
-      targetModel: cfg.model,
-      publicOnly: cfg.publicOnly,
-      managed: cfg.managed,
-    },
-    voiceId,
-    signal,
-  );
+  await deleteQwenVoice(providerConfig(cfg), voiceId, signal);
   evictQwenVoiceRegistrationMemo(voiceId);
 }
 

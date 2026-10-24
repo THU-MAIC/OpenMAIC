@@ -3,6 +3,7 @@ import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { voiceAfterUnavailableBinding } from '@/lib/audio/voice-resolver';
 import {
   voiceCloneRecoveryReason,
+  voiceErrorCode,
   type VoiceCloneRecoveryReason,
 } from '@/lib/audio/voice-clone-recovery';
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
@@ -174,13 +175,6 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     )
       throw error;
   };
-  const errorCode = (error: unknown) => {
-    if (!error || typeof error !== 'object') return undefined;
-    const code =
-      (error as { code?: unknown; errorCode?: unknown }).errorCode ??
-      (error as { code?: unknown }).code;
-    return typeof code === 'string' ? code : undefined;
-  };
   const generate = (speech: SpeechAction) => {
     getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(voice, connection.voices);
     return generateTTS(
@@ -241,7 +235,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
         recovery = {
           reason,
           status: 'failed',
-          errorCode: errorCode(error),
+          errorCode: voiceErrorCode(error),
           message:
             'The saved voice is unavailable. Please re-upload reference audio to clone it again.',
         };
@@ -292,7 +286,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     } catch (error) {
       propagate(error);
       if (recovery?.status === 'failed')
-        recovery.errorCode = errorCode(error) ?? recovery.errorCode;
+        recovery.errorCode = voiceErrorCode(error) ?? recovery.errorCode;
       failed.push(action.id);
     }
   }
