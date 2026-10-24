@@ -58,16 +58,23 @@ const setEnv = (value: string | undefined): void => {
 };
 
 const PI_NATIVE_CHILD_TIMEOUT_ENV = 'OPENMAIC_PI_NATIVE_CHILD_TIMEOUT_MS';
+const PI_NATIVE_CHILD_RUNTIME_ENV = 'OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME';
 
 const setNativeChildTimeout = (value: string | undefined): void => {
   if (value === undefined) delete process.env[PI_NATIVE_CHILD_TIMEOUT_ENV];
   else process.env[PI_NATIVE_CHILD_TIMEOUT_ENV] = value;
 };
 
+const setNativeChildRuntime = (value: string | undefined): void => {
+  if (value === undefined) delete process.env[PI_NATIVE_CHILD_RUNTIME_ENV];
+  else process.env[PI_NATIVE_CHILD_RUNTIME_ENV] = value;
+};
+
 describe('resolveAgentToolTimeoutMs', () => {
   afterEach(() => {
     setEnv(undefined);
     setNativeChildTimeout(undefined);
+    setNativeChildRuntime(undefined);
   });
 
   it('uses the generous default when the env var is absent or invalid', () => {
@@ -91,9 +98,24 @@ describe('resolveAgentToolTimeoutMs', () => {
     );
   });
 
-  it('extends only the call_agent bound past a larger Native Child timeout', () => {
+  it.each([
+    ['unset', undefined],
+    ['false', 'false'],
+  ] as const)(
+    'keeps the legacy call_agent bound at the global timeout when the Native Child runtime is %s',
+    (_label, flag) => {
+      setEnv('5000');
+      setNativeChildTimeout('20000');
+      setNativeChildRuntime(flag);
+
+      expect(resolveAgentToolTimeoutMs('call_agent')).toBe(5000);
+    },
+  );
+
+  it('extends only the call_agent bound past a larger Native Child timeout when the Native Child runtime is enabled', () => {
     setEnv('5000');
     setNativeChildTimeout('20000');
+    setNativeChildRuntime('true');
 
     expect(resolveAgentToolTimeoutMs('call_agent')).toBe(
       Math.max(5000, 20000 + CALL_AGENT_TIMEOUT_MARGIN_MS),
@@ -113,6 +135,7 @@ describe('withAgentToolTimeout', () => {
   afterEach(() => {
     setEnv(undefined);
     setNativeChildTimeout(undefined);
+    setNativeChildRuntime(undefined);
     vi.useRealTimers();
   });
 
@@ -120,6 +143,7 @@ describe('withAgentToolTimeout', () => {
     vi.useFakeTimers();
     setEnv('5000');
     setNativeChildTimeout('20000');
+    setNativeChildRuntime('true');
     const captured: AbortSignal[] = [];
     const tool = withAgentToolTimeout(
       makeTool((_id, _args, signal) => {
@@ -141,6 +165,36 @@ describe('withAgentToolTimeout', () => {
     expect(captured[0]?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each([
+    ['unset', undefined],
+    ['false', 'false'],
+  ] as const)(
+    'aborts a hung legacy call_agent at the global budget when the Native Child runtime is %s',
+    async (_label, flag) => {
+      vi.useFakeTimers();
+      setEnv('5000');
+      setNativeChildTimeout('20000');
+      setNativeChildRuntime(flag);
+      const captured: AbortSignal[] = [];
+      const tool = withAgentToolTimeout(
+        makeTool((_id, _args, signal) => {
+          if (signal) captured.push(signal);
+          return new Promise(() => {});
+        }, 'call_agent'),
+      );
+
+      const promise = tool.execute('call-1', {}, undefined);
+      const settled = expect(promise).rejects.toBeInstanceOf(AgentToolTimeoutError);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await settled;
+
+      expect(captured[0]?.aborted).toBe(true);
+      expect(captured[0]?.reason).toBeInstanceOf(AgentToolTimeoutError);
+      expect(captured[0]?.reason).toMatchObject({ timeoutMs: 5_000 });
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 
   it('rejects a never-settling tool at the configured budget and aborts its signal', async () => {
     vi.useFakeTimers();

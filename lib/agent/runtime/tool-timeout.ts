@@ -22,6 +22,7 @@
  */
 import type { AgentTool, AgentToolUpdateCallback } from '@earendil-works/pi-agent-core';
 import { getPiNativeChildTimeoutMs } from '@/lib/chat/pi/config';
+import { isPiNativeChildRuntimeEnabled } from '@/lib/config/feature-flags';
 
 /**
  * Default budget for a single tool call. Generous on purpose: media-bearing
@@ -61,10 +62,11 @@ export function resolveAgentToolTimeoutMs(
   env: NodeJS.ProcessEnv = process.env,
 ): number {
   const defaultTimeoutMs = resolveDefaultAgentToolTimeoutMs(env);
-  if (toolName === 'call_agent') {
+  if (toolName === 'call_agent' && isPiNativeChildRuntimeEnabled()) {
     // The Native Child has its own deadline. Keep the enclosing tool bound
     // above it (plus a margin) even when the global tool budget is smaller, so
-    // the child can settle instead of being aborted by the outer wrapper.
+    // the child can settle instead of being aborted by the outer wrapper. The
+    // Legacy Child has no separate deadline, so it keeps the global bound.
     return Math.max(
       defaultTimeoutMs,
       getPiNativeChildTimeoutMs(env) + CALL_AGENT_TIMEOUT_MARGIN_MS,
