@@ -58,6 +58,26 @@ describe('extractWhiteboardText', () => {
     fixedRatio: false,
   };
 
+  const sampleLabeledShape: PPTShapeElement = {
+    id: 'shape-labeled',
+    type: 'shape',
+    left: 10,
+    top: 180,
+    width: 120,
+    height: 60,
+    rotate: 0,
+    viewBox: [120, 60],
+    path: 'M 0 0 L 120 0 L 120 60 L 0 60 Z',
+    fill: '#4f46e5',
+    fixedRatio: false,
+    text: {
+      content: '<p>Decision Node &amp; Check</p>',
+      defaultFontName: 'Arial',
+      defaultColor: '#ffffff',
+      align: 'middle',
+    },
+  };
+
   const sampleImage: PPTImageElement = {
     id: 'img-1',
     type: 'image',
@@ -363,5 +383,87 @@ describe('extractWhiteboardText', () => {
     expect(result).toBe(
       'First line of notes\nSecond line of notes\n\nItem & Details\nCost <$100>\nWidget "A"\n$49.99\n\ndef solve(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total',
     );
+  });
+
+  it('extracts and decodes label text for shape-only boards with labeled shapes', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-shape-only',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleLabeledShape],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('Decision Node & Check');
+  });
+
+  it('extracts labeled shape content alongside text, table, and code in exact board order for mixed boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-mixed-all',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      // Board order: text, labeled shape, unlabeled shape (ignored), table, code
+      elements: [sampleText, sampleLabeledShape, sampleShape, sampleTable, sampleCode],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe(
+      'First line of notes\nSecond line of notes\n\nDecision Node & Check\n\nItem & Details\nCost <$100>\nWidget "A"\n$49.99\n\ndef solve(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total',
+    );
+  });
+
+  it('excludes shapes without text or with only empty tags/whitespace', () => {
+    const shapeEmptyString: PPTShapeElement = {
+      id: 'shape-empty-str',
+      type: 'shape',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      rotate: 0,
+      viewBox: [100, 100],
+      path: 'M 0 0 L 100 0 Z',
+      fill: '#000',
+      fixedRatio: false,
+      text: {
+        content: '',
+        defaultFontName: 'Arial',
+        defaultColor: '#fff',
+        align: 'middle',
+      },
+    };
+
+    const shapeWhitespace: PPTShapeElement = {
+      id: 'shape-whitespace',
+      type: 'shape',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      rotate: 0,
+      viewBox: [100, 100],
+      path: 'M 0 0 L 100 0 Z',
+      fill: '#000',
+      fixedRatio: false,
+      text: {
+        content: '   <p></p>   ',
+        defaultFontName: 'Arial',
+        defaultColor: '#fff',
+        align: 'middle',
+      },
+    };
+
+    const whiteboard: Whiteboard = {
+      id: 'wb-unlabeled-shapes',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleShape, shapeEmptyString, shapeWhitespace],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('');
   });
 });

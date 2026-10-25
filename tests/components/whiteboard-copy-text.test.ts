@@ -146,6 +146,26 @@ describe('Whiteboard "Copy all text" action', () => {
     fixedRatio: false,
   };
 
+  const labeledShapeElement: PPTShapeElement = {
+    id: 'shape-labeled-1',
+    type: 'shape',
+    left: 20,
+    top: 240,
+    width: 100,
+    height: 60,
+    rotate: 0,
+    viewBox: [100, 60],
+    path: 'M 0 0 L 100 0 L 100 60 L 0 60 Z',
+    fill: '#3b82f6',
+    fixedRatio: false,
+    text: {
+      content: '<p>Flowchart: Step 2 &amp; Review</p>',
+      defaultFontName: 'Arial',
+      defaultColor: '#ffffff',
+      align: 'middle',
+    },
+  };
+
   const tableElement: PPTTableElement = {
     id: 'table-1',
     type: 'table',
@@ -502,6 +522,82 @@ describe('Whiteboard "Copy all text" action', () => {
     expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
     const expected =
       'Step 1: Introduction\nKey formula: a & b\n\nAlpha & Beta\nScore > 90\nGamma\nPass\n\nfunction run() {\n  return 42;\n}';
+    expect(clipboardWriteMock).toHaveBeenCalledWith(expected);
+    expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
+
+    await act(async () => root.unmount());
+  });
+
+  it('copies labeled shape text on shape-only boards instead of reporting no text to copy', async () => {
+    const stage: Stage = {
+      id: 'st-shape-only',
+      name: 'Shape Test',
+      whiteboard: [
+        {
+          id: 'wb-shape-only',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          elements: [labeledShapeElement],
+        },
+      ],
+    } as unknown as Stage;
+    useStageStore.setState({ stage });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Whiteboard, { isOpen: true, onClose: vi.fn() }));
+    });
+
+    const copyBtn = container.querySelector(
+      'button[data-testid="whiteboard-copy-all-text"]',
+    ) as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+
+    await act(async () => {
+      copyBtn.click();
+    });
+
+    expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
+    expect(clipboardWriteMock).toHaveBeenCalledWith('Flowchart: Step 2 & Review');
+    expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
+    expect(toastMocks.info).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
+  it('copies mixed whiteboard containing text, labeled shape, table, and code in board order', async () => {
+    const stage: Stage = {
+      id: 'st-mixed-all',
+      name: 'Mixed All Test',
+      whiteboard: [
+        {
+          id: 'wb-mixed-all',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          // Board order: text, labeled shape, unlabeled shape (ignored), table, code
+          elements: [textElement, labeledShapeElement, shapeElement, tableElement, codeElement],
+        },
+      ],
+    } as unknown as Stage;
+    useStageStore.setState({ stage });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Whiteboard, { isOpen: true, onClose: vi.fn() }));
+    });
+
+    const copyBtn = container.querySelector(
+      'button[data-testid="whiteboard-copy-all-text"]',
+    ) as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+
+    await act(async () => {
+      copyBtn.click();
+    });
+
+    expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
+    const expected =
+      'Step 1: Introduction\nKey formula: a & b\n\nFlowchart: Step 2 & Review\n\nAlpha & Beta\nScore > 90\nGamma\nPass\n\nfunction run() {\n  return 42;\n}';
     expect(clipboardWriteMock).toHaveBeenCalledWith(expected);
     expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
 
