@@ -541,9 +541,9 @@ describe('extractWhiteboardText', () => {
     expect(result).toBe('Q1\nQ2\nQ3\nQ4\nRevenue\nProfit');
   });
 
-  it('preserves strict chart label before legend ordering and decodes HTML entities', () => {
-    const chartWithEntities: PPTChartElement = {
-      id: 'chart-entities',
+  it('preserves chart labels and legends as literal text, including markup-like strings and entity sequences in order', () => {
+    const chartWithLiteralMarkup: PPTChartElement = {
+      id: 'chart-markup',
       type: 'chart',
       left: 0,
       top: 0,
@@ -553,9 +553,12 @@ describe('extractWhiteboardText', () => {
       chartType: 'column',
       themeColors: ['#5b9bd5'],
       data: {
-        labels: ['R&amp;D', 'Sales &lt;Domestic&gt;'],
-        legends: ['Budget &quot;Approved&quot;'],
-        series: [[50, 80]],
+        labels: ['Sales <Domestic>', 'Profit <Margin>'],
+        legends: ['Budget &quot;Approved&quot;', 'R&amp;D'],
+        series: [
+          [50, 80],
+          [20, 30],
+        ],
       },
     };
 
@@ -570,7 +573,7 @@ describe('extractWhiteboardText', () => {
       chartType: 'pie',
       themeColors: ['#5b9bd5'],
       data: {
-        labels: ['Chrome', 'Firefox', 'Safari'],
+        labels: ['Chrome', 'Firefox', 'Safari <Tech Preview>'],
         legends: [],
         series: [[60, 25, 15]],
       },
@@ -588,19 +591,22 @@ describe('extractWhiteboardText', () => {
       themeColors: ['#5b9bd5'],
       data: {
         labels: [],
-        legends: ['Series Alpha', 'Series Beta'],
-        series: [[1, 2], [3, 4]],
+        legends: ['Series Alpha <1>', 'Series Beta & Co'],
+        series: [
+          [1, 2],
+          [3, 4],
+        ],
       },
     };
 
     expect(
       extractWhiteboardText({
-        id: 'wb-chart-entities',
+        id: 'wb-chart-markup',
         viewportSize: 1000,
         viewportRatio: 0.5625,
-        elements: [chartWithEntities],
+        elements: [chartWithLiteralMarkup],
       }),
-    ).toBe('R&D\nSales <Domestic>\nBudget "Approved"');
+    ).toBe('Sales <Domestic>\nProfit <Margin>\nBudget &quot;Approved&quot;\nR&amp;D');
 
     expect(
       extractWhiteboardText({
@@ -609,7 +615,7 @@ describe('extractWhiteboardText', () => {
         viewportRatio: 0.5625,
         elements: [pieChartOnlyLabels],
       }),
-    ).toBe('Chrome\nFirefox\nSafari');
+    ).toBe('Chrome\nFirefox\nSafari <Tech Preview>');
 
     expect(
       extractWhiteboardText({
@@ -618,7 +624,167 @@ describe('extractWhiteboardText', () => {
         viewportRatio: 0.5625,
         elements: [chartOnlyLegends],
       }),
-    ).toBe('Series Alpha\nSeries Beta');
+    ).toBe('Series Alpha <1>\nSeries Beta & Co');
+  });
+
+  it('ignores formatting whitespace between rich-text blocks while preserving intentional structure', () => {
+    const prettyPrintedText: PPTTextElement = {
+      id: 'text-pretty',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      rotate: 0,
+      content: '<p>First line</p>\n<p>Second line</p>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    const crlfIndentedText: PPTTextElement = {
+      id: 'text-crlf',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      rotate: 0,
+      content: '<div>\r\n  <p>Step 1: Prep</p>\r\n  <p>Step 2: Execute</p>\r\n</div>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    const intentionalBlankLineText: PPTTextElement = {
+      id: 'text-blank-p',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      rotate: 0,
+      content: '<p>Section A</p>\n<p></p>\n<p>Section B</p>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    const nestedListText: PPTTextElement = {
+      id: 'text-list',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      rotate: 0,
+      content: '<h3>Tasks</h3>\n<ul>\n  <li>Task 1</li>\n  <li>Task 2</li>\n</ul>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-pretty',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [prettyPrintedText],
+      }),
+    ).toBe('First line\nSecond line');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-crlf',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [crlfIndentedText],
+      }),
+    ).toBe('Step 1: Prep\nStep 2: Execute');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-intentional-blank',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [intentionalBlankLineText],
+      }),
+    ).toBe('Section A\n\nSection B');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-nested-list',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [nestedListText],
+      }),
+    ).toBe('Tasks\nTask 1\nTask 2');
+  });
+
+  it('preserves meaningful inline spacing in rich-text content', () => {
+    const inlineSpannedText: PPTTextElement = {
+      id: 'text-spans',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 60,
+      rotate: 0,
+      content: '<p><span>Hello</span> <span>world</span> from <b>OpenMAIC</b>!</p>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-inline-spans',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [inlineSpannedText],
+      }),
+    ).toBe('Hello world from OpenMAIC!');
+  });
+
+  it('preserves intentional newlines, blank lines, and indentation in plain-text content', () => {
+    const plainWithNewlines: PPTTextElement = {
+      id: 'text-plain-newlines',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 100,
+      rotate: 0,
+      content: 'Line 1: Note\nLine 2: Note\n\nLine 3: Note after blank\n  Indented note',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    const plainWithEntitiesAndBrackets: PPTTextElement = {
+      id: 'text-plain-brackets',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 80,
+      rotate: 0,
+      content: 'a < b &amp;&amp; c > d\nR&D &amp; Marketing',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-plain-newlines',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [plainWithNewlines],
+      }),
+    ).toBe('Line 1: Note\nLine 2: Note\n\nLine 3: Note after blank\n  Indented note');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-plain-brackets',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [plainWithEntitiesAndBrackets],
+      }),
+    ).toBe('a < b && c > d\nR&D & Marketing');
   });
 
   it('excludes chart elements with empty or whitespace-only labels and legends', () => {
@@ -633,7 +799,7 @@ describe('extractWhiteboardText', () => {
       chartType: 'bar',
       themeColors: ['#5b9bd5'],
       data: {
-        labels: ['', '   ', '<p></p>'],
+        labels: ['', '   ', ' \t '],
         legends: ['  ', ''],
         series: [],
       },
