@@ -779,7 +779,11 @@
     "restore": "Restaurar",
     "noHistory": "Sem histórico ainda",
     "restored": "Quadro restaurado",
-    "elementCount": "{{count}} elementos"
+    "elementCount": "{{count}} elementos",
+    "copyAllText": "Copiar todo o texto",
+    "copySuccess": "Todo o texto copiado para a área de transferência",
+    "copyError": "Falha ao copiar o texto",
+    "copyEmpty": "Nenhum texto para copiar"
   },
   "quiz": {
     "title": "Questionário",

@@ -779,7 +779,11 @@
     "restore": "Restaurar",
     "noHistory": "Aún no hay historial",
     "restored": "Pizarrón restaurado",
-    "elementCount": "{{count}} elementos"
+    "elementCount": "{{count}} elementos",
+    "copyAllText": "Copiar todo el texto",
+    "copySuccess": "Todo el texto copiado al portapapeles",
+    "copyError": "Error al copiar el texto",
+    "copyEmpty": "No hay texto para copiar"
   },
   "quiz": {
     "title": "Cuestionario",

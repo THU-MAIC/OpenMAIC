@@ -779,7 +779,11 @@
     "restore": "復元",
     "noHistory": "履歴はまだありません",
     "restored": "ホワイトボードを復元しました",
-    "elementCount": "{{count}} 個の要素"
+    "elementCount": "{{count}} 個の要素",
+    "copyAllText": "すべてのテキストをコピー",
+    "copySuccess": "すべてのテキストをクリップボードにコピーしました",
+    "copyError": "テキストのコピーに失敗しました",
+    "copyEmpty": "コピーするテキストがありません"
   },
   "quiz": {
     "title": "クイズ",

@@ -779,7 +779,11 @@
     "restore": "Wiederherstellen",
     "noHistory": "Noch kein Verlauf",
     "restored": "Whiteboard wiederhergestellt",
-    "elementCount": "Elemente: {{count}}"
+    "elementCount": "Elemente: {{count}}",
+    "copyAllText": "Gesamten Text kopieren",
+    "copySuccess": "Gesamter Text in Zwischenablage kopiert",
+    "copyError": "Text konnte nicht kopiert werden",
+    "copyEmpty": "Kein Text zum Kopieren vorhanden"
   },
   "quiz": {
     "title": "Quiz",

@@ -779,7 +779,11 @@
     "restore": "恢复",
     "noHistory": "暂无历史记录",
     "restored": "已恢复白板内容",
-    "elementCount": "{{count}} 个元素"
+    "elementCount": "{{count}} 个元素",
+    "copyAllText": "复制全部文字",
+    "copySuccess": "已复制全部文字到剪贴板",
+    "copyError": "复制文字失败",
+    "copyEmpty": "没有可复制的文字"
   },
   "quiz": {
     "title": "随堂测验",

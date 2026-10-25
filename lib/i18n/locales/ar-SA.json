@@ -779,7 +779,11 @@
     "restore": "استعادة",
     "noHistory": "لا يوجد سجل بعد",
     "restored": "تمت استعادة السبورة",
-    "elementCount": "{{count}} عنصر"
+    "elementCount": "{{count}} عنصر",
+    "copyAllText": "نسخ كل النص",
+    "copySuccess": "تم نسخ كل النص إلى الحافظة",
+    "copyError": "فشل نسخ النص",
+    "copyEmpty": "لا يوجد نص لنسخه"
   },
   "quiz": {
     "title": "اختبار",

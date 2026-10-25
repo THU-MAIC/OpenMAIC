@@ -779,7 +779,11 @@
     "restore": "Phục hồi",
     "noHistory": "Chưa có lịch sử",
     "restored": "Đã phục hồi bảng",
-    "elementCount": "{{count}} phần tử"
+    "elementCount": "{{count}} phần tử",
+    "copyAllText": "Sao chép toàn bộ văn bản",
+    "copySuccess": "Đã sao chép toàn bộ văn bản vào khay nhớ tạm",
+    "copyError": "Sao chép văn bản thất bại",
+    "copyEmpty": "Không có văn bản để sao chép"
   },
   "quiz": {
     "title": "Câu đố",

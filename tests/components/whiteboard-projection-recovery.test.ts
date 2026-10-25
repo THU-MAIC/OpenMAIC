@@ -16,6 +16,7 @@ vi.mock('motion/react', () => ({
   motion: { div: 'div', button: 'button' },
 }));
 vi.mock('lucide-react', () => ({
+  Copy: () => null,
   Eraser: () => null,
   History: () => null,
   Minimize2: () => null,
