@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  PPTChartElement,
   PPTCodeElement,
   PPTImageElement,
+  PPTLatexElement,
   PPTLineElement,
   PPTShapeElement,
   PPTTableElement,
@@ -124,6 +126,37 @@ describe('extractWhiteboardText', () => {
         { id: 'c4', colspan: 1, rowspan: 1, text: '$49.99' },
       ],
     ],
+  };
+
+  const sampleChart: PPTChartElement = {
+    id: 'chart-1',
+    type: 'chart',
+    left: 10,
+    top: 340,
+    width: 400,
+    height: 250,
+    rotate: 0,
+    chartType: 'bar',
+    themeColors: ['#5b9bd5'],
+    data: {
+      labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+      legends: ['Revenue', 'Profit'],
+      series: [
+        [100, 120, 140, 160],
+        [20, 25, 30, 35],
+      ],
+    },
+  };
+
+  const sampleLatex: PPTLatexElement = {
+    id: 'latex-1',
+    type: 'latex',
+    left: 10,
+    top: 610,
+    width: 300,
+    height: 80,
+    rotate: 0,
+    latex: 'E = mc^2',
   };
 
   it('combines text and code elements while excluding non-text elements and decorations', () => {
@@ -308,12 +341,40 @@ describe('extractWhiteboardText', () => {
       ],
     };
 
+    const emptyChart: PPTChartElement = {
+      id: 'chart-empty',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      rotate: 0,
+      chartType: 'bar',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: ['', '   '],
+        legends: ['  '],
+        series: [],
+      },
+    };
+
+    const emptyLatex: PPTLatexElement = {
+      id: 'latex-empty',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 50,
+      rotate: 0,
+      latex: '   ',
+    };
+
     expect(
       extractWhiteboardText({
         id: 'wb-blank',
         viewportSize: 1000,
         viewportRatio: 0.5625,
-        elements: [emptyText, emptyCode, emptyTable],
+        elements: [emptyText, emptyCode, emptyTable, emptyChart, emptyLatex],
       }),
     ).toBe('');
   });
@@ -465,5 +526,298 @@ describe('extractWhiteboardText', () => {
     const result = extractWhiteboardText(whiteboard);
 
     expect(result).toBe('');
+  });
+
+  it('extracts and decodes chart labels and legends in board order for chart-only boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-chart-only',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleChart],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('Q1\nQ2\nQ3\nQ4\nRevenue\nProfit');
+  });
+
+  it('preserves strict chart label before legend ordering and decodes HTML entities', () => {
+    const chartWithEntities: PPTChartElement = {
+      id: 'chart-entities',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 300,
+      rotate: 0,
+      chartType: 'column',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: ['R&amp;D', 'Sales &lt;Domestic&gt;'],
+        legends: ['Budget &quot;Approved&quot;'],
+        series: [[50, 80]],
+      },
+    };
+
+    const pieChartOnlyLabels: PPTChartElement = {
+      id: 'chart-pie',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 300,
+      rotate: 0,
+      chartType: 'pie',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: ['Chrome', 'Firefox', 'Safari'],
+        legends: [],
+        series: [[60, 25, 15]],
+      },
+    };
+
+    const chartOnlyLegends: PPTChartElement = {
+      id: 'chart-legends',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 300,
+      rotate: 0,
+      chartType: 'line',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: [],
+        legends: ['Series Alpha', 'Series Beta'],
+        series: [[1, 2], [3, 4]],
+      },
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-chart-entities',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [chartWithEntities],
+      }),
+    ).toBe('R&D\nSales <Domestic>\nBudget "Approved"');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-pie-labels',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [pieChartOnlyLabels],
+      }),
+    ).toBe('Chrome\nFirefox\nSafari');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-legends-only',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [chartOnlyLegends],
+      }),
+    ).toBe('Series Alpha\nSeries Beta');
+  });
+
+  it('excludes chart elements with empty or whitespace-only labels and legends', () => {
+    const blankChart: PPTChartElement = {
+      id: 'chart-blank',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 200,
+      rotate: 0,
+      chartType: 'bar',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: ['', '   ', '<p></p>'],
+        legends: ['  ', ''],
+        series: [],
+      },
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-blank-chart',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [blankChart],
+      }),
+    ).toBe('');
+  });
+
+  it('extracts stored formula source for formula-only boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-formula-only',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleLatex],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('E = mc^2');
+  });
+
+  it('preserves multiline formatting and LaTeX syntax in standalone formulas', () => {
+    const multilineFormula: PPTLatexElement = {
+      id: 'latex-maxwell',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 120,
+      rotate: 0,
+      latex:
+        '\\begin{aligned}\n\\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t} \\\\\n\\nabla \\times \\mathbf{B} &= \\mu_0 \\mathbf{J} + \\mu_0 \\epsilon_0 \\frac{\\partial \\mathbf{E}}{\\partial t}\n\\end{aligned}',
+    };
+
+    const whiteboard: Whiteboard = {
+      id: 'wb-maxwell',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [multilineFormula],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe(
+      '\\begin{aligned}\n\\nabla \\times \\mathbf{E} &= -\\frac{\\partial \\mathbf{B}}{\\partial t} \\\\\n\\nabla \\times \\mathbf{B} &= \\mu_0 \\mathbf{J} + \\mu_0 \\epsilon_0 \\frac{\\partial \\mathbf{E}}{\\partial t}\n\\end{aligned}',
+    );
+  });
+
+  it('decodes HTML entities in formula source if present', () => {
+    const formulaWithEntities: PPTLatexElement = {
+      id: 'latex-entities',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 60,
+      rotate: 0,
+      latex: 'x &lt; y \\implies y &gt; x',
+    };
+
+    const whiteboard: Whiteboard = {
+      id: 'wb-latex-entities',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [formulaWithEntities],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('x < y \\implies y > x');
+  });
+
+  it('excludes formulas with empty or whitespace-only LaTeX source', () => {
+    const emptyLatex1: PPTLatexElement = {
+      id: 'latex-empty-1',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 50,
+      rotate: 0,
+      latex: '',
+    };
+    const emptyLatex2: PPTLatexElement = {
+      id: 'latex-empty-2',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 50,
+      rotate: 0,
+      latex: '   \n   ',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-empty-latex',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [emptyLatex1, emptyLatex2],
+      }),
+    ).toBe('');
+  });
+
+  it('extracts charts, formulas, text, table, labeled shape, and code in exact board order for mixed boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-mixed-complete',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      // Board order: text, formula, chart, labeled shape, unlabeled shape (ignored), table, image (ignored), code
+      elements: [
+        sampleText,
+        sampleLatex,
+        sampleChart,
+        sampleLabeledShape,
+        sampleShape,
+        sampleTable,
+        sampleImage,
+        sampleCode,
+      ],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe(
+      'First line of notes\nSecond line of notes\n\n' +
+        'E = mc^2\n\n' +
+        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n\n' +
+        'Decision Node & Check\n\n' +
+        'Item & Details\nCost <$100>\nWidget "A"\n$49.99\n\n' +
+        'def solve(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total',
+    );
+  });
+
+  it('retains formula content and chart content across multiple formula and chart elements in board order', () => {
+    const secondLatex: PPTLatexElement = {
+      id: 'latex-2',
+      type: 'latex',
+      left: 0,
+      top: 0,
+      width: 200,
+      height: 50,
+      rotate: 0,
+      latex: 'a^2 + b^2 = c^2',
+    };
+
+    const secondChart: PPTChartElement = {
+      id: 'chart-2',
+      type: 'chart',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 200,
+      rotate: 0,
+      chartType: 'line',
+      themeColors: ['#5b9bd5'],
+      data: {
+        labels: ['Day 1', 'Day 2'],
+        legends: ['Visits'],
+        series: [[100, 200]],
+      },
+    };
+
+    const whiteboard: Whiteboard = {
+      id: 'wb-formulas-charts-order',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleLatex, sampleChart, secondLatex, secondChart],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe(
+      'E = mc^2\n\n' +
+        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n\n' +
+        'a^2 + b^2 = c^2\n\n' +
+        'Day 1\nDay 2\nVisits',
+    );
   });
 });

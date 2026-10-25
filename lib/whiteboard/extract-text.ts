@@ -1,8 +1,9 @@
 import type { Whiteboard } from '@openmaic/dsl';
-import { proseToPlainText } from '@/lib/export/pptx-rich-text';
+import { decodeHtmlEntities, proseToPlainText } from '@/lib/export/pptx-rich-text';
 
 /**
- * Extracts all text, code, table cell, and labeled shape content from a whiteboard in board order.
+ * Extracts all text, code, table cell, labeled shape, chart text, and standalone formula content
+ * from a whiteboard in board order.
  *
  * - Text elements (`type: 'text'`): rich-text HTML is converted to plain text,
  *   preserving meaningful line breaks (<p>, <br>, <li>) and decoding HTML entities.
@@ -10,9 +11,13 @@ import { proseToPlainText } from '@/lib/export/pptx-rich-text';
  *   and code formatting while excluding line numbers, filenames, and UI decorations.
  * - Table elements (`type: 'table'`): cells in `data` are flattened and decoded in row order.
  * - Shape elements (`type: 'shape'`): meaningful text labels in `text.content` are converted to plain text.
+ * - Chart elements (`type: 'chart'`): human-facing text from `data.labels` (axis/indicator labels)
+ *   and `data.legends` (series/legend labels) is extracted in order.
+ * - Formula elements (`type: 'latex'`): stored formula source in `latex` is extracted using
+ *   the existing LaTeX/plain-text conventions.
  * - Non-text elements (unlabeled shapes, images, lines, etc.) and UI controls are excluded.
  * - Distinct board elements are separated by blank lines (`\n\n`).
- * - Returns an empty string if there is no text, code, table, or labeled shape content.
+ * - Returns an empty string if there is no extractable content.
  */
 export function extractWhiteboardText(whiteboard?: Whiteboard | null): string {
   if (!whiteboard || !Array.isArray(whiteboard.elements) || whiteboard.elements.length === 0) {
@@ -61,6 +66,48 @@ export function extractWhiteboardText(whiteboard?: Whiteboard | null): string {
       const text = proseToPlainText(content).trim();
       if (text.length > 0) {
         sections.push(text);
+      }
+    } else if (element.type === 'chart') {
+      const data = element.data && typeof element.data === 'object' ? element.data : null;
+      const chartTexts: string[] = [];
+      if (data) {
+        if (Array.isArray(data.labels)) {
+          for (const label of data.labels) {
+            const raw =
+              typeof label === 'string'
+                ? label
+                : typeof label === 'number'
+                  ? String(label)
+                  : '';
+            const text = proseToPlainText(raw).trim();
+            if (text.length > 0) {
+              chartTexts.push(text);
+            }
+          }
+        }
+        if (Array.isArray(data.legends)) {
+          for (const legend of data.legends) {
+            const raw =
+              typeof legend === 'string'
+                ? legend
+                : typeof legend === 'number'
+                  ? String(legend)
+                  : '';
+            const text = proseToPlainText(raw).trim();
+            if (text.length > 0) {
+              chartTexts.push(text);
+            }
+          }
+        }
+      }
+      if (chartTexts.length > 0) {
+        sections.push(chartTexts.join('\n'));
+      }
+    } else if (element.type === 'latex') {
+      const latex =
+        typeof element.latex === 'string' ? decodeHtmlEntities(element.latex).trim() : '';
+      if (latex.length > 0) {
+        sections.push(latex);
       }
     }
   }
