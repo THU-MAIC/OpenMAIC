@@ -2,7 +2,13 @@
 import { act, createElement, Fragment, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PPTCodeElement, PPTTextElement, PPTShapeElement, Stage } from '@openmaic/dsl';
+import type {
+  PPTCodeElement,
+  PPTTextElement,
+  PPTShapeElement,
+  PPTTableElement,
+  Stage,
+} from '@openmaic/dsl';
 
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
@@ -138,6 +144,29 @@ describe('Whiteboard "Copy all text" action', () => {
     path: 'M 0 0 L 80 80 Z',
     fill: '#00ff00',
     fixedRatio: false,
+  };
+
+  const tableElement: PPTTableElement = {
+    id: 'table-1',
+    type: 'table',
+    left: 20,
+    top: 340,
+    width: 300,
+    height: 100,
+    rotate: 0,
+    colWidths: [0.5, 0.5],
+    cellMinHeight: 30,
+    outline: { width: 1, style: 'solid', color: '#ccc' },
+    data: [
+      [
+        { id: 'c1', colspan: 1, rowspan: 1, text: 'Alpha &amp; Beta' },
+        { id: 'c2', colspan: 1, rowspan: 1, text: 'Score &gt; 90' },
+      ],
+      [
+        { id: 'c3', colspan: 1, rowspan: 1, text: 'Gamma' },
+        { id: 'c4', colspan: 1, rowspan: 1, text: 'Pass' },
+      ],
+    ],
   };
 
   beforeEach(() => {
@@ -398,6 +427,82 @@ describe('Whiteboard "Copy all text" action', () => {
     });
 
     expect(clipboardWriteMock).toHaveBeenCalledWith('function run() {\n  return 42;\n}');
+    expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
+
+    await act(async () => root.unmount());
+  });
+
+  it('copies table-cell text on table-only boards instead of reporting no text to copy', async () => {
+    const stage: Stage = {
+      id: 'st-table',
+      name: 'Table Test',
+      whiteboard: [
+        {
+          id: 'wb-table',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          elements: [tableElement],
+        },
+      ],
+    } as unknown as Stage;
+    useStageStore.setState({ stage });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Whiteboard, { isOpen: true, onClose: vi.fn() }));
+    });
+
+    const copyBtn = container.querySelector(
+      'button[data-testid="whiteboard-copy-all-text"]',
+    ) as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+
+    await act(async () => {
+      copyBtn.click();
+    });
+
+    expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
+    expect(clipboardWriteMock).toHaveBeenCalledWith('Alpha & Beta\nScore > 90\nGamma\nPass');
+    expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
+    expect(toastMocks.info).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
+  it('copies mixed whiteboard containing text, table, and code in board order', async () => {
+    const stage: Stage = {
+      id: 'st-mixed',
+      name: 'Mixed Test',
+      whiteboard: [
+        {
+          id: 'wb-mixed',
+          viewportSize: 1000,
+          viewportRatio: 0.5625,
+          // Board order: text, shape (ignored), table, code
+          elements: [textElement, shapeElement, tableElement, codeElement],
+        },
+      ],
+    } as unknown as Stage;
+    useStageStore.setState({ stage });
+
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Whiteboard, { isOpen: true, onClose: vi.fn() }));
+    });
+
+    const copyBtn = container.querySelector(
+      'button[data-testid="whiteboard-copy-all-text"]',
+    ) as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+
+    await act(async () => {
+      copyBtn.click();
+    });
+
+    expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
+    const expected =
+      'Step 1: Introduction\nKey formula: a & b\n\nAlpha & Beta\nScore > 90\nGamma\nPass\n\nfunction run() {\n  return 42;\n}';
+    expect(clipboardWriteMock).toHaveBeenCalledWith(expected);
     expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
 
     await act(async () => root.unmount());

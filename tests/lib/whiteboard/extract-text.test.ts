@@ -4,6 +4,7 @@ import type {
   PPTImageElement,
   PPTLineElement,
   PPTShapeElement,
+  PPTTableElement,
   PPTTextElement,
   Whiteboard,
 } from '@openmaic/dsl';
@@ -80,6 +81,29 @@ describe('extractWhiteboardText', () => {
     color: '#000',
     style: 'solid',
     points: ['', ''],
+  };
+
+  const sampleTable: PPTTableElement = {
+    id: 'table-1',
+    type: 'table',
+    left: 10,
+    top: 200,
+    width: 300,
+    height: 120,
+    rotate: 0,
+    colWidths: [0.5, 0.5],
+    cellMinHeight: 36,
+    outline: { width: 1, style: 'solid', color: '#ccc' },
+    data: [
+      [
+        { id: 'c1', colspan: 1, rowspan: 1, text: 'Item &amp; Details' },
+        { id: 'c2', colspan: 1, rowspan: 1, text: 'Cost &lt;$100&gt;' },
+      ],
+      [
+        { id: 'c3', colspan: 1, rowspan: 1, text: 'Widget &quot;A&quot;' },
+        { id: 'c4', colspan: 1, rowspan: 1, text: '$49.99' },
+      ],
+    ],
   };
 
   it('combines text and code elements while excluding non-text elements and decorations', () => {
@@ -241,13 +265,103 @@ describe('extractWhiteboardText', () => {
       lines: [{ id: '1', content: '   ' }],
     };
 
+    const emptyTable: PPTTableElement = {
+      id: 'table-empty',
+      type: 'table',
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 50,
+      rotate: 0,
+      colWidths: [0.5, 0.5],
+      cellMinHeight: 36,
+      outline: { width: 1, style: 'solid', color: '#ccc' },
+      data: [
+        [
+          { id: 'ec1', colspan: 1, rowspan: 1, text: '' },
+          { id: 'ec2', colspan: 1, rowspan: 1, text: '   ' },
+        ],
+        [
+          { id: 'ec3', colspan: 1, rowspan: 1, text: '<p></p>' },
+          { id: 'ec4', colspan: 1, rowspan: 1, text: '<p>   </p>' },
+        ],
+      ],
+    };
+
     expect(
       extractWhiteboardText({
         id: 'wb-blank',
         viewportSize: 1000,
         viewportRatio: 0.5625,
-        elements: [emptyText, emptyCode],
+        elements: [emptyText, emptyCode, emptyTable],
       }),
     ).toBe('');
+  });
+
+  it('extracts and decodes table cells in row order for table-only boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-table-only',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [sampleTable],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('Item & Details\nCost <$100>\nWidget "A"\n$49.99');
+  });
+
+  it('preserves exact cell ordering across multi-column, multi-row tables in row order', () => {
+    const matrixTable: PPTTableElement = {
+      id: 'table-matrix',
+      type: 'table',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 120,
+      rotate: 0,
+      colWidths: [0.33, 0.33, 0.34],
+      cellMinHeight: 30,
+      outline: { width: 1, style: 'solid', color: '#ccc' },
+      data: [
+        [
+          { id: 'r1c1', colspan: 1, rowspan: 1, text: 'R1C1' },
+          { id: 'r1c2', colspan: 1, rowspan: 1, text: 'R1C2' },
+          { id: 'r1c3', colspan: 1, rowspan: 1, text: 'R1C3' },
+        ],
+        [
+          { id: 'r2c1', colspan: 1, rowspan: 1, text: 'R2C1' },
+          { id: 'r2c2', colspan: 1, rowspan: 1, text: 'R2C2' },
+          { id: 'r2c3', colspan: 1, rowspan: 1, text: 'R2C3' },
+        ],
+      ],
+    };
+
+    const whiteboard: Whiteboard = {
+      id: 'wb-matrix',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [matrixTable],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe('R1C1\nR1C2\nR1C3\nR2C1\nR2C2\nR2C3');
+  });
+
+  it('extracts table content alongside text and code in exact board order for mixed boards', () => {
+    const whiteboard: Whiteboard = {
+      id: 'wb-mixed',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      // Board order: text, non-text shape, table, non-text image, code
+      elements: [sampleText, sampleShape, sampleTable, sampleImage, sampleCode],
+    };
+
+    const result = extractWhiteboardText(whiteboard);
+
+    expect(result).toBe(
+      'First line of notes\nSecond line of notes\n\nItem & Details\nCost <$100>\nWidget "A"\n$49.99\n\ndef solve(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total',
+    );
   });
 });
