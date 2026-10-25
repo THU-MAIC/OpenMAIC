@@ -4,6 +4,34 @@ import { listItem as _listItem } from 'prosemirror-schema-list';
 
 type Attr = Record<string, number | string>;
 
+const textContainer: NodeSpec = {
+  group: 'block',
+  content: 'block+',
+  attrs: {
+    padding: { default: '' },
+    pptxTextInsets: { default: false },
+  },
+  parseDOM: [
+    {
+      tag: 'div',
+      getAttrs: (dom) => {
+        const padding = (dom as HTMLElement).style.padding;
+        const pptxTextInsets =
+          (dom as HTMLElement).getAttribute('data-pptx-text-insets') === 'true';
+        return padding || pptxTextInsets ? { padding, pptxTextInsets } : false;
+      },
+    },
+  ],
+  toDOM: (node: Node) => [
+    'div',
+    {
+      ...(node.attrs.padding ? { style: `padding: ${node.attrs.padding};` } : {}),
+      ...(node.attrs.pptxTextInsets ? { 'data-pptx-text-insets': 'true' } : {}),
+    },
+    0,
+  ],
+};
+
 const orderedList: NodeSpec = {
   attrs: {
     order: {
@@ -170,6 +198,7 @@ const schemaNodes = {
   ordered_list: orderedList,
   bullet_list: bulletList,
   list_item: listItem,
+  text_container: textContainer,
 };
 
 export default schemaNodes;
