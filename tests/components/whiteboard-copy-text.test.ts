@@ -637,7 +637,7 @@ describe('Whiteboard "Copy all text" action', () => {
     await act(async () => root.unmount());
   });
 
-  it('copies chart label and legend text on chart-only boards instead of reporting no text to copy', async () => {
+  it('copies chart label, legend, and visible series value text on chart-only boards instead of reporting no text to copy', async () => {
     const stage: Stage = {
       id: 'st-chart-only',
       name: 'Chart Test',
@@ -667,7 +667,9 @@ describe('Whiteboard "Copy all text" action', () => {
     });
 
     expect(clipboardWriteMock).toHaveBeenCalledTimes(1);
-    expect(clipboardWriteMock).toHaveBeenCalledWith('Q1\nQ2\nRevenue\nProfit');
+    expect(clipboardWriteMock).toHaveBeenCalledWith(
+      'Q1\nQ2\nRevenue\nProfit\n' + 'Revenue: Q1 100, Q2 150\n' + 'Profit: Q1 20, Q2 30',
+    );
     expect(toastMocks.success).toHaveBeenCalledWith('Copied all text to clipboard');
     expect(toastMocks.info).not.toHaveBeenCalled();
 
@@ -752,7 +754,9 @@ describe('Whiteboard "Copy all text" action', () => {
     const expected =
       'Step 1: Introduction\nKey formula: a & b\n\n' +
       'E = mc^2\n\n' +
-      'Q1\nQ2\nRevenue\nProfit\n\n' +
+      'Q1\nQ2\nRevenue\nProfit\n' +
+      'Revenue: Q1 100, Q2 150\n' +
+      'Profit: Q1 20, Q2 30\n\n' +
       'Flowchart: Step 2 & Review\n\n' +
       'Alpha & Beta\nScore > 90\nGamma\nPass\n\n' +
       'function run() {\n  return 42;\n}';

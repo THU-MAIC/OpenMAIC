@@ -271,6 +271,58 @@ describe('extractWhiteboardText', () => {
     expect(result).not.toContain('1');
   });
 
+  it('preserves intentional leading and trailing blank code lines while ignoring whitespace-only code', () => {
+    const codeWithBoundaryBlanks: PPTCodeElement = {
+      id: 'code-boundary-blanks',
+      type: 'code',
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 200,
+      rotate: 0,
+      language: 'typescript',
+      lines: [
+        { id: '1', content: '' },
+        { id: '2', content: 'const answer = 42;' },
+        { id: '3', content: '' },
+        { id: '4', content: '' },
+      ],
+    };
+
+    const whitespaceOnlyCode: PPTCodeElement = {
+      id: 'code-whitespace-only',
+      type: 'code',
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 200,
+      rotate: 0,
+      language: 'typescript',
+      lines: [
+        { id: '1', content: '   ' },
+        { id: '2', content: '' },
+      ],
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-code-boundary-blanks',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [codeWithBoundaryBlanks],
+      }),
+    ).toBe('\nconst answer = 42;\n\n');
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-code-whitespace-only',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [whitespaceOnlyCode],
+      }),
+    ).toBe('');
+  });
+
   it('handles empty content gracefully across empty whiteboards, null/undefined, and non-text elements', () => {
     expect(extractWhiteboardText(null)).toBe('');
     expect(extractWhiteboardText(undefined)).toBe('');
@@ -528,7 +580,7 @@ describe('extractWhiteboardText', () => {
     expect(result).toBe('');
   });
 
-  it('extracts and decodes chart labels and legends in board order for chart-only boards', () => {
+  it('extracts chart labels, legends, and visible series values in data order for chart-only boards', () => {
     const whiteboard: Whiteboard = {
       id: 'wb-chart-only',
       viewportSize: 1000,
@@ -538,7 +590,11 @@ describe('extractWhiteboardText', () => {
 
     const result = extractWhiteboardText(whiteboard);
 
-    expect(result).toBe('Q1\nQ2\nQ3\nQ4\nRevenue\nProfit');
+    expect(result).toBe(
+      'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n' +
+        'Revenue: Q1 100, Q2 120, Q3 140, Q4 160\n' +
+        'Profit: Q1 20, Q2 25, Q3 30, Q4 35',
+    );
   });
 
   it('preserves chart labels and legends as literal text, including markup-like strings and entity sequences in order', () => {
@@ -606,7 +662,11 @@ describe('extractWhiteboardText', () => {
         viewportRatio: 0.5625,
         elements: [chartWithLiteralMarkup],
       }),
-    ).toBe('Sales <Domestic>\nProfit <Margin>\nBudget &quot;Approved&quot;\nR&amp;D');
+    ).toBe(
+      'Sales <Domestic>\nProfit <Margin>\nBudget &quot;Approved&quot;\nR&amp;D\n' +
+        'Budget &quot;Approved&quot;: Sales <Domestic> 50, Profit <Margin> 80\n' +
+        'R&amp;D: Sales <Domestic> 20, Profit <Margin> 30',
+    );
 
     expect(
       extractWhiteboardText({
@@ -624,7 +684,11 @@ describe('extractWhiteboardText', () => {
         viewportRatio: 0.5625,
         elements: [chartOnlyLegends],
       }),
-    ).toBe('Series Alpha <1>\nSeries Beta & Co');
+    ).toBe(
+      'Series Alpha <1>\nSeries Beta & Co\n' +
+        'Series Alpha <1>: 1, 2\n' +
+        'Series Beta & Co: 3, 4',
+    );
   });
 
   it('ignores formatting whitespace between rich-text blocks while preserving intentional structure', () => {
@@ -715,6 +779,54 @@ describe('extractWhiteboardText', () => {
         elements: [nestedListText],
       }),
     ).toBe('Tasks\nTask 1\nTask 2');
+  });
+
+  it('keeps adjacent rich-text blocks on separate lines without source whitespace', () => {
+    const adjacentBlocks: PPTTextElement = {
+      id: 'text-adjacent-blocks',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 120,
+      rotate: 0,
+      content: '<h3>First</h3><h3>Second</h3><p>Third</p><blockquote>Fourth</blockquote>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-adjacent-blocks',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [adjacentBlocks],
+      }),
+    ).toBe('First\nSecond\nThird\nFourth');
+  });
+
+  it('decodes standard named and numeric HTML entities in rich-text content', () => {
+    const richEntities: PPTTextElement = {
+      id: 'text-standard-entities',
+      type: 'text',
+      left: 0,
+      top: 0,
+      width: 300,
+      height: 80,
+      rotate: 0,
+      content: '<p>Copyright &copy; 2026&ensp;OpenMAIC &#169; &#x2002; end</p>',
+      defaultColor: '#000',
+      defaultFontName: 'Arial',
+    };
+
+    expect(
+      extractWhiteboardText({
+        id: 'wb-standard-entities',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        elements: [richEntities],
+      }),
+    ).toBe('Copyright \u00a9 2026\u2002OpenMAIC \u00a9 \u2002 end');
   });
 
   it('preserves meaningful inline spacing in rich-text content', () => {
@@ -934,7 +1046,9 @@ describe('extractWhiteboardText', () => {
     expect(result).toBe(
       'First line of notes\nSecond line of notes\n\n' +
         'E = mc^2\n\n' +
-        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n\n' +
+        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n' +
+        'Revenue: Q1 100, Q2 120, Q3 140, Q4 160\n' +
+        'Profit: Q1 20, Q2 25, Q3 30, Q4 35\n\n' +
         'Decision Node & Check\n\n' +
         'Item & Details\nCost <$100>\nWidget "A"\n$49.99\n\n' +
         'def solve(n):\n    total = 0\n    for i in range(n):\n        total += i\n    return total',
@@ -981,9 +1095,12 @@ describe('extractWhiteboardText', () => {
 
     expect(result).toBe(
       'E = mc^2\n\n' +
-        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n\n' +
+        'Q1\nQ2\nQ3\nQ4\nRevenue\nProfit\n' +
+        'Revenue: Q1 100, Q2 120, Q3 140, Q4 160\n' +
+        'Profit: Q1 20, Q2 25, Q3 30, Q4 35\n\n' +
         'a^2 + b^2 = c^2\n\n' +
-        'Day 1\nDay 2\nVisits',
+        'Day 1\nDay 2\nVisits\n' +
+        'Visits: Day 1 100, Day 2 200',
     );
   });
 });

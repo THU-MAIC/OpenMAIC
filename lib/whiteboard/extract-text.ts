@@ -1,50 +1,220 @@
 import type { Whiteboard } from '@openmaic/dsl';
-import { decodeHtmlEntities, proseToPlainText } from '@/lib/export/pptx-rich-text';
+import { decodeHTML } from 'entities';
+import { type AST, toAST } from '@/lib/export/html-parser';
+import { inlineMathSource } from '@/lib/export/pptx-rich-text';
 
-/**
- * HTML markup detector matching the renderer's preservesPlainTextLineBreaks contract:
- * only markup-free values use white-space: pre-line.
- */
-const HTML_MARKUP_PATTERN = /<\/?[a-z][^>]*>|<![^>]*>/i;
+const HTML_MARKUP_PATTERN = /<\/?[a-z][^>]*>|<!--/i;
 
-const BLOCK_TAGS_PATTERN =
-  '(?:p|div|li|ul|ol|h[1-6]|blockquote|pre|table|tbody|thead|tfoot|tr|td|th|section|article|header|footer|nav|aside|figure|figcaption)';
+const BLOCK_TAGS = new Set([
+  'address',
+  'article',
+  'aside',
+  'blockquote',
+  'caption',
+  'dd',
+  'details',
+  'dialog',
+  'div',
+  'dl',
+  'dt',
+  'fieldset',
+  'figcaption',
+  'figure',
+  'footer',
+  'form',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'header',
+  'hgroup',
+  'hr',
+  'li',
+  'main',
+  'nav',
+  'ol',
+  'p',
+  'pre',
+  'section',
+  'table',
+  'tbody',
+  'td',
+  'tfoot',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+]);
 
-const BLOCK_CONTAINERS_PATTERN =
-  '(?:div|ul|ol|table|tbody|thead|tfoot|tr|section|article|header|footer|nav|aside|figure)';
+const EMPTY_LINE_BLOCK_TAGS = new Set([
+  'blockquote',
+  'dd',
+  'dt',
+  'figcaption',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'li',
+  'p',
+  'pre',
+  'td',
+  'th',
+]);
 
-/**
- * Removes formatting whitespace between rich-text blocks in HTML strings (e.g. `<p>A</p>\n<p>B</p>`),
- * while preserving meaningful text, inline spacing (e.g. `<span>A</span> <span>B</span>`),
- * and intentional newlines in plain-text content.
- */
-function cleanRichTextWhitespace(html: string): string {
-  if (!HTML_MARKUP_PATTERN.test(html)) {
-    return html;
+function decodeText(value: string): string {
+  return decodeHTML(value).replace(/\u00a0/g, ' ');
+}
+
+function normalizeText(value: string, preserveWhitespace: boolean): string {
+  const decoded = decodeHTML(value);
+  if (preserveWhitespace) {
+    return decoded.replace(/\u00a0/g, ' ');
   }
-  return html
-    .replace(
-      new RegExp(`(</${BLOCK_TAGS_PATTERN}>)\\s+(<${BLOCK_TAGS_PATTERN}(?:\\s[^>]*)?>)`, 'gi'),
-      '$1$2',
-    )
-    .replace(
-      new RegExp(
-        `(<${BLOCK_CONTAINERS_PATTERN}(?:\\s[^>]*)?>)\\s+(<${BLOCK_TAGS_PATTERN}(?:\\s[^>]*)?>)`,
-        'gi',
-      ),
-      '$1$2',
-    )
-    .replace(
-      new RegExp(`(</${BLOCK_TAGS_PATTERN}>)\\s+(</${BLOCK_CONTAINERS_PATTERN}>)`, 'gi'),
-      '$1$2',
-    )
-    .replace(new RegExp(`^\\s+(<${BLOCK_TAGS_PATTERN}(?:\\s[^>]*)?>)`, 'i'), '$1')
-    .replace(new RegExp(`(</${BLOCK_TAGS_PATTERN}>)\\s+$`, 'i'), '$1');
+  return decoded.replace(/[ \t\r\n\f]+/g, ' ').replace(/\u00a0/g, ' ');
+}
+
+function isBlockElement(item: AST): boolean {
+  return item.type === 'element' && BLOCK_TAGS.has(item.tagName);
+}
+
+function richTextToPlainText(html: string): string {
+  if (!HTML_MARKUP_PATTERN.test(html)) {
+    return decodeText(html);
+  }
+
+  const lines: string[] = [];
+  let line = '';
+
+  const breakLine = () => {
+    lines.push(line);
+    line = '';
+  };
+
+  const appendText = (value: string, preserveWhitespace: boolean) => {
+    const [first, ...rest] = normalizeText(value, preserveWhitespace).split('\n');
+    line += first;
+    for (const next of rest) {
+      breakLine();
+      line += next;
+    }
+  };
+
+  const walk = (items: AST[], preserveWhitespace: boolean) => {
+    const hasBlockChildren = items.some(isBlockElement);
+
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (item.type === 'comment') continue;
+
+      if (item.type === 'text') {
+        if (normalizeText(item.content, preserveWhitespace).trim().length === 0) {
+          const previousIsBlock = index > 0 && isBlockElement(items[index - 1]);
+          const nextIsBlock = index < items.length - 1 && isBlockElement(items[index + 1]);
+          if (items.length === 1 || hasBlockChildren || previousIsBlock || nextIsBlock) {
+            continue;
+          }
+        }
+        appendText(item.content, preserveWhitespace);
+        continue;
+      }
+
+      if (item.type !== 'element') continue;
+
+      const mathSource = inlineMathSource(item);
+      if (mathSource !== null) {
+        line += mathSource;
+        continue;
+      }
+
+      if (item.tagName === 'br') {
+        breakLine();
+        continue;
+      }
+
+      if (BLOCK_TAGS.has(item.tagName)) {
+        if (line.length > 0) breakLine();
+        const linesBefore = lines.length;
+        const childHasBlock = item.children.some(isBlockElement);
+        walk(item.children, preserveWhitespace || item.tagName === 'pre');
+        if (line.length > 0) {
+          breakLine();
+        } else if (
+          !childHasBlock &&
+          lines.length === linesBefore &&
+          EMPTY_LINE_BLOCK_TAGS.has(item.tagName)
+        ) {
+          lines.push('');
+        }
+        continue;
+      }
+
+      walk(item.children, preserveWhitespace);
+    }
+  };
+
+  walk(toAST(html), false);
+  if (line.length > 0) lines.push(line);
+  return lines.join('\n').trim();
 }
 
 function extractProseText(content: string): string {
-  const cleaned = cleanRichTextWhitespace(content);
-  return proseToPlainText(cleaned).trim();
+  return richTextToPlainText(content).trim();
+}
+
+function chartText(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number') return String(value).trim();
+  return '';
+}
+
+function chartShowsSeriesValues(
+  element: Whiteboard['elements'][number],
+  seriesIndex: number,
+): boolean {
+  if (element.type !== 'chart') return false;
+  if (element.chartType === 'line' || element.chartType === 'area') return true;
+  if (element.chartType === 'bar' || element.chartType === 'column') {
+    return element.importedStyle?.series?.[seriesIndex]?.showValue !== false;
+  }
+  return false;
+}
+
+function extractChartText(element: Whiteboard['elements'][number]): string {
+  if (element.type !== 'chart') return '';
+  const data = element.data && typeof element.data === 'object' ? element.data : null;
+  if (!data) return '';
+
+  const labels = Array.isArray(data.labels) ? data.labels.map(chartText) : [];
+  const legends = Array.isArray(data.legends) ? data.legends.map(chartText) : [];
+  const series = Array.isArray(data.series) ? data.series : [];
+  const texts = [
+    ...labels.filter((label) => label.length > 0),
+    ...legends.filter((legend) => legend.length > 0),
+  ];
+
+  for (let seriesIndex = 0; seriesIndex < series.length; seriesIndex++) {
+    const values = series[seriesIndex];
+    if (!Array.isArray(values) || !chartShowsSeriesValues(element, seriesIndex)) continue;
+
+    const points: string[] = [];
+    for (let valueIndex = 0; valueIndex < values.length; valueIndex++) {
+      const value = values[valueIndex];
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      const label = labels[valueIndex] ?? '';
+      points.push(label ? `${label} ${String(value)}` : String(value));
+    }
+    if (points.length === 0) continue;
+
+    const legend = legends[seriesIndex] ?? '';
+    texts.push(legend ? `${legend}: ${points.join(', ')}` : points.join(', '));
+  }
+
+  return texts.join('\n');
 }
 
 /**
@@ -52,16 +222,18 @@ function extractProseText(content: string): string {
  * from a whiteboard in board order.
  *
  * - Text elements (`type: 'text'`): rich-text HTML is converted to plain text,
- *   ignoring formatting whitespace between rich-text blocks while preserving
- *   meaningful line breaks (<p>, <br>, <li>), inline spacing, and intentional
- *   newlines in plain-text content.
- * - Code elements (`type: 'code'`): lines are joined with newlines, preserving indentation
- *   and code formatting while excluding line numbers, filenames, and UI decorations.
+ *   following the renderer's visible block boundaries, ignoring formatting-only
+ *   whitespace between blocks, and decoding standard HTML entities. Plain-text
+ *   content keeps its intentional newlines and indentation.
+ * - Code elements (`type: 'code'`): lines are joined with newlines, preserving indentation,
+ *   code formatting, and intentional leading/trailing blank lines while excluding line
+ *   numbers, filenames, and UI decorations.
  * - Table elements (`type: 'table'`): cells in `data` are flattened and decoded in row order.
  * - Shape elements (`type: 'shape'`): meaningful text labels in `text.content` are converted to plain text.
  * - Chart elements (`type: 'chart'`): literal text from `data.labels` (axis/indicator labels)
  *   and `data.legends` (series/legend labels) is preserved as human-readable strings in order,
- *   including markup-like strings and entity sequences.
+ *   including markup-like strings and entity sequences. Visible point values are included with
+ *   their category and series context for bar, column, line, and area charts.
  * - Formula elements (`type: 'latex'`): stored formula source in `latex` is extracted using
  *   the existing LaTeX/plain-text conventions.
  * - Non-text elements (unlabeled shapes, images, lines, etc.) and UI controls are excluded.
@@ -88,8 +260,7 @@ export function extractWhiteboardText(whiteboard?: Whiteboard | null): string {
       const lines = Array.isArray(element.lines) ? element.lines : [];
       const code = lines
         .map((line) => (line && typeof line.content === 'string' ? line.content : ''))
-        .join('\n')
-        .replace(/^\n+|\n+$/g, '');
+        .join('\n');
       if (code.trim().length > 0) {
         sections.push(code);
       }
@@ -117,40 +288,12 @@ export function extractWhiteboardText(whiteboard?: Whiteboard | null): string {
         sections.push(text);
       }
     } else if (element.type === 'chart') {
-      const data = element.data && typeof element.data === 'object' ? element.data : null;
-      const chartTexts: string[] = [];
-      if (data) {
-        if (Array.isArray(data.labels)) {
-          for (const label of data.labels) {
-            const raw =
-              typeof label === 'string' ? label : typeof label === 'number' ? String(label) : '';
-            const text = raw.trim();
-            if (text.length > 0) {
-              chartTexts.push(text);
-            }
-          }
-        }
-        if (Array.isArray(data.legends)) {
-          for (const legend of data.legends) {
-            const raw =
-              typeof legend === 'string'
-                ? legend
-                : typeof legend === 'number'
-                  ? String(legend)
-                  : '';
-            const text = raw.trim();
-            if (text.length > 0) {
-              chartTexts.push(text);
-            }
-          }
-        }
-      }
-      if (chartTexts.length > 0) {
-        sections.push(chartTexts.join('\n'));
+      const text = extractChartText(element);
+      if (text.length > 0) {
+        sections.push(text);
       }
     } else if (element.type === 'latex') {
-      const latex =
-        typeof element.latex === 'string' ? decodeHtmlEntities(element.latex).trim() : '';
+      const latex = typeof element.latex === 'string' ? decodeText(element.latex).trim() : '';
       if (latex.length > 0) {
         sections.push(latex);
       }
