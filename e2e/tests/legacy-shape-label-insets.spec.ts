@@ -113,14 +113,21 @@ test('legacy shape labels keep imported insets through editing and reload', asyn
     const originalText = (await editor.textContent())!;
     await page.locator(`#editable-element-${label.id} .shape-path`).dblclick();
     await expect(editor).toHaveAttribute('contenteditable', 'true');
-    await editor.press('ControlOrMeta+End');
-    await editor.pressSequentially(' edited');
-    await expect(editor).toContainText('edited');
-    await editor.press('ControlOrMeta+z');
-    await expect(editor).not.toContainText('edited');
-    await editor.press('ControlOrMeta+y');
-    await expect(editor).toContainText('edited');
+    await editor.focus();
+    // Place the native caret at the boundary without platform-specific Home shortcuts.
+    await editor.evaluate((element) => {
+      window.getSelection()?.collapse(element.querySelector('p')!.firstChild, 0);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+    await editor.press('Backspace');
     await expect(editor).toContainText(originalText);
+    await editor.press('ControlOrMeta+a');
+    await editor.pressSequentially(`Edited ${label.id}`);
+    await expect(editor).toContainText(`Edited ${label.id}`);
+    await editor.press('ControlOrMeta+z');
+    await expect(editor).not.toContainText(`Edited ${label.id}`);
+    await editor.press('ControlOrMeta+y');
+    await expect(editor).toContainText(`Edited ${label.id}`);
     await expect
       .poll(async () => {
         const document = await readServerDocument(page, stageId);
@@ -128,13 +135,13 @@ test('legacy shape labels keep imported insets through editing and reload', asyn
           .canvas;
         return canvas.elements.find((element) => element.id === label.id)?.text.content;
       })
-      .toContain('edited');
+      .toContain(`Edited ${label.id}`);
   }
   await openEditor();
   for (const label of labels) {
     const wrapper = page.locator(`#editable-element-${label.id} .shape-text`);
     await expect(wrapper).toHaveCSS('padding-left', label.outer);
-    await expect(wrapper).toContainText('edited');
+    await expect(wrapper).toContainText(`Edited ${label.id}`);
     if (label.inner !== null) {
       await expect(wrapper.locator('[data-pptx-text-insets="true"]')).toHaveCSS(
         'padding-left',

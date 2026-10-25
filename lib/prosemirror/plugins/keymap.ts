@@ -2,6 +2,7 @@ import { splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-li
 import type { Schema } from 'prosemirror-model';
 import { undo, redo } from 'prosemirror-history';
 import { undoInputRule } from 'prosemirror-inputrules';
+import { selectAllText } from '../utils';
 import type { Command } from 'prosemirror-state';
 import {
   toggleMark,
@@ -23,6 +24,7 @@ export const buildKeymap = (schema: Schema) => {
   bind('Alt-ArrowDown', joinDown);
   bind('Mod-z', undo);
   bind('Mod-y', redo);
+  bind('Mod-a', selectAllText);
   bind('Backspace', undoInputRule);
   bind('Escape', selectParentNode);
   bind('Mod-b', toggleMark(schema.marks.strong));

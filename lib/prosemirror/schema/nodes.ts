@@ -7,6 +7,8 @@ type Attr = Record<string, number | string>;
 const textContainer: NodeSpec = {
   group: 'block',
   content: 'block+',
+  defining: true,
+  isolating: true,
   attrs: {
     padding: { default: '' },
     pptxTextInsets: { default: false },

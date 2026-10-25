@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { undo, redo } from 'prosemirror-history';
+import { joinBackward } from 'prosemirror-commands';
+import { EditorState } from 'prosemirror-state';
 import { describe, expect, it } from 'vitest';
 import { createDocument, initProsemirrorEditor } from '@/lib/prosemirror';
+import { autoSelectAll, selectAllText } from '@/lib/prosemirror/utils';
 
 const importedLabels = [
   '<div data-pptx-text-insets="true" style="padding: 0pt"><p>Imported</p></div>',
@@ -43,6 +46,28 @@ describe('legacy text insets', () => {
     }
   });
 
+  it('keeps the container when backspacing at the start or replacing all label text', () => {
+    const host = document.createElement('div');
+    const view = initProsemirrorEditor(host, importedLabels[1], {});
+    try {
+      const original = view.state.doc;
+      expect(joinBackward(view.state, view.dispatch)).toBe(false);
+      expect(view.state.doc.eq(original)).toBe(true);
+      autoSelectAll(view);
+      view.dispatch(view.state.tr.insertText('Replacement'));
+      const replaced = view.state.doc;
+      expect(replaced.firstChild?.attrs).toEqual(original.firstChild?.attrs);
+      expect(replaced.textContent).toBe('Replacement');
+      expect(createDocument(view.dom.innerHTML).eq(replaced)).toBe(true);
+      expect(undo(view.state, view.dispatch)).toBe(true);
+      expect(view.state.doc.eq(original)).toBe(true);
+      expect(redo(view.state, view.dispatch)).toBe(true);
+      expect(view.state.doc.eq(replaced)).toBe(true);
+    } finally {
+      view.destroy();
+    }
+  });
+
   it('keeps ordinary paragraphs and lists without adding an inset container', () => {
     const doc = createDocument(
       '<div><p>Plain <strong>bold</strong></p><ul><li><p>Item</p></li></ul></div>',
@@ -52,5 +77,12 @@ describe('legacy text insets', () => {
     expect(doc.child(0).lastChild?.marks[0].type.name).toBe('strong');
     expect(doc.child(1).type.name).toBe('bullet_list');
     expect(doc.textContent).toBe('Plain boldItem');
+    let state = EditorState.create({ doc });
+    selectAllText(state, (tr) => {
+      state = state.apply(tr);
+    });
+    state = state.apply(state.tr.insertText('Plain replacement'));
+    expect(state.doc.firstChild?.type.name).toBe('paragraph');
+    expect(state.doc.textContent).toBe('Plain replacement');
   });
 });
