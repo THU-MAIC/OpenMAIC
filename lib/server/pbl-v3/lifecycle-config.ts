@@ -16,5 +16,4 @@ export function pblArchiveFailureGraceMs() {
 
 export const PBL_LIFECYCLE_INTERVAL_MS = 30_000;
 export const PBL_DIRTY_CHECKPOINT_MS = 60_000;
-export const PBL_MAX_AGENT_TURN_MS = 15 * 60_000;
 export const PBL_MAX_COMMAND_MS = 330_000;

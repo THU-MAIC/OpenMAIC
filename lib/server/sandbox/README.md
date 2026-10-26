@@ -89,9 +89,16 @@ the learner uses the explicit setup retry control, preserving any draft input.
 
 The server renews while the study is recently used or an Agent/execution is active. Task
 completion starts a fresh inactivity interval. Builds and assessments are collected through
-the same verdict path as browser collection, even with no browser open. An Agent turn older
-than 15 minutes is requested to cancel; queued/orphaned cancellation uses the existing Agent
-lease fence. Commands still active/unknown after 330 seconds are requested to cancel through
+the same verdict path as browser collection, even with no browser open. Lifecycle maintenance
+does not cancel teaching turns based on their age or silence. Healthy queued/running turns
+remain protected after departure; durable completion starts the inactivity interval. Explicit
+cancellation, actual provider failures and worker lease/orphan recovery remain the Agent
+runner's responsibility, including its write fences. The companion teaching execution-policy
+changes in PR #2003 remove the runner's inherited V3 duration/output/tool limits; lifecycle
+maintenance adds no substitute deadline. A live worker heartbeat does not establish upstream
+request health, and silence alone does not establish failure. Without a concrete failure or
+explicit cancellation, a pending turn has no lifecycle-imposed duration bound.
+Commands still active/unknown after 330 seconds are requested to cancel through
 their existing operation ID. An unknown outcome is never assumed to have stopped writing.
 If all unresolved commands remain overdue after cancellation, idle maintenance uses the
 same finite failure grace. On expiry it records an interrupted-work loss notice and

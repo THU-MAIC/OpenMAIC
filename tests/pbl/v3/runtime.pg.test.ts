@@ -664,12 +664,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
     const previousMax = pool.options.max;
     pool.options.max = 10; // The production pool's default admits two study operations.
-    let release!: () => void;
+    let release!: () => void, entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
     const started = new Set<string>();
     let scanning: Promise<void> | undefined;
+    let maintaining: Promise<void> | undefined;
     const originalExport = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
     const archive = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace');
     try {
@@ -687,34 +691,42 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       archive.mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
         if (environments.has(args[0])) {
           started.add(args[0]);
+          entered();
           await gate;
         }
         yield* originalExport.apply(this, args);
       });
       const renewals = mocked.renewals.length;
+      // Establish the slow archive before scanning. A scan may legitimately defer every
+      // archive when a lightweight recent-study renewal wins the maintenance slot.
+      maintaining = maintainStudy(store, first.id, principal.ownerId);
+      await Promise.race([
+        ready,
+        maintaining.then(() => {
+          throw new Error('Maintenance completed before entering the archive.');
+        }),
+      ]);
       scanning = maintainLearningEnvironments();
-      await vi.waitFor(() => expect(started.size).toBeGreaterThan(0), { timeout: 5000 });
-      // Leave the archives blocked long enough for all scan workers to seek admission.
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
       await expect(
         store.waitForExclusive(interactive.id, () =>
           store.recordActivity(interactive.id, principal.ownerId),
         ),
       ).resolves.toBeUndefined();
       await expect(interactive.send('checkpoint')).resolves.toBeDefined();
+      await scanning;
+      expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
       expect(started.size).toBe(1);
       release();
-      await scanning;
-      // A short renewal can win admission first; later scans still reclaim the deferred candidate.
-      await vi.waitFor(async () => {
-        await maintainLearningEnvironments();
-        expect(started.size).toBe(2);
-      });
+      await maintaining;
+      // With no recent-use competitor, successive scans reclaim the two remaining idle
+      // candidates regardless of the database's UPDATE ... RETURNING order.
+      await ageStudy(interactive.id);
+      for (let pass = 0; pass < 2 && started.size < 2; pass++) await maintainLearningEnvironments();
+      expect(started.size).toBe(2);
     } finally {
       release();
       try {
-        await scanning;
+        await Promise.allSettled([maintaining, scanning]);
       } finally {
         archive.mockRestore();
         pool.options.max = previousMax;
@@ -4251,6 +4263,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   it('retains an active turn after departure and starts inactivity after the durable task completion', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
+    await pool.query(
+      "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
+      [queued.sessionId],
+    );
     await ageStudy(fresh.id);
     const before = await store.get(fresh.id, principal.ownerId);
     const renewals = mocked.renewals.length;
@@ -4655,19 +4671,85 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }),
     ).resolves.toEqual({ collected: true });
   });
-  it('settles an overdue unleased turn through the existing cancellation fence', async () => {
+  it.each(['queued', 'reasoning', 'tool'] as const)(
+    'preserves a healthy %s turn older than fifteen minutes',
+    async (phase) => {
+      const fresh = await freshStudy();
+      const queued = (await fresh.send('chat')) as { sessionId: string };
+      if (phase !== 'queued')
+        await agents.claimNextSession('healthy-worker', process.pid, {
+          sessionId: queued.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+      const before = await store.get(fresh.id, principal.ownerId);
+      if (phase === 'tool')
+        await pool.query(
+          "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES($1,$2,'long-tool')",
+          [before.environment_id, randomUUID()],
+        );
+      await pool.query(
+        "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
+        [queued.sessionId],
+      );
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(await agents.isCancelRequested(queued.sessionId)).toBe(false);
+      expect((await agents.getSession(queued.sessionId))?.status).toBe(
+        phase === 'queued' ? 'queued' : 'running',
+      );
+      expect((await store.get(fresh.id, principal.ownerId)).revision).toBe(before.revision);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(before.environment_id!),
+      ).toMatchObject({ state: 'running' });
+    },
+  );
+
+  it('recovers an actual orphan through the runner lease and reclaims after completion', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
+    const previous = await agents.claimNextSession('lost-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await pool.query('UPDATE agent_sessions SET lease_heartbeat_at=0 WHERE id=$1', [
+      queued.sessionId,
+    ]);
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(await agents.isCancelRequested(queued.sessionId)).toBe(false);
+    const recovered = await agents.claimNextSession('replacement-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    expect(recovered).toMatchObject({
+      claimReason: 'orphaned',
+      attempt: previous!.attempt + 1,
+    });
+    expect(await agents.heartbeat(queued.sessionId, 'lost-worker')).toBe(false);
+    expect(
+      await agents.finishSession(queued.sessionId, 'lost-worker', {
+        status: 'succeeded',
+        expectedAttempt: previous!.attempt,
+      }),
+    ).toBe(false);
+    await agents.finishSession(queued.sessionId, 'replacement-worker', {
+      status: 'succeeded',
+      expectedAttempt: recovered!.attempt,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const finished = await store.get(fresh.id, principal.ownerId);
+    expect(finished.last_used_at.getTime()).toBeGreaterThan((await store.now()).getTime() - 10000);
     await pool.query(
-      "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
+      "UPDATE agent_sessions SET updated_at=now()-interval '20 minutes' WHERE id=$1",
       [queued.sessionId],
     );
+    await ageStudy(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
-    expect((await agents.getSession(queued.sessionId))?.status).toBe('cancelled');
-    await maintainStudy(store, fresh.id, principal.ownerId);
-    expect((await store.get(fresh.id, principal.ownerId)).last_used_at.getTime()).toBeGreaterThan(
-      Date.now() - 10000,
-    );
+    expect(
+      await (await SandboxService.forOwner(principal)).get(finished.environment_id!),
+    ).toMatchObject({ state: 'destroyed' });
   });
 
   it.each([false, true])(
@@ -4800,7 +4882,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     release();
     await held;
   });
-  it('gives a retried turn a new deadline without inventing learner feedback', async () => {
+  it('records a retried turn start without inventing learner feedback', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
     const turn = await agents.claimNextSession('retry-deadline', process.pid, {

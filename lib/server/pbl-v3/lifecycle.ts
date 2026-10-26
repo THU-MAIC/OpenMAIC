@@ -3,8 +3,6 @@ import { LearningStore, type Study } from './store';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxStore } from '@/lib/server/sandbox/store';
 import { recordExpiredWorkspace } from './environment';
-import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
-import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import {
   withLearningWorkspaceAccess,
   learningWorkspaceId,
@@ -30,30 +28,16 @@ import {
   pblIdleTimeoutMs,
   pblArchiveFailureGraceMs,
   PBL_DIRTY_CHECKPOINT_MS,
-  PBL_MAX_AGENT_TURN_MS,
   PBL_MAX_COMMAND_MS,
 } from './lifecycle-config';
 
 async function activeStudyTurns(store: LearningStore, id: string, ownerId: string) {
-  return store.pool.query<{ id: string; status: string; turn_started: string }>(
-    `SELECT a.id,a.status,(extract(epoch FROM r.turn_started_at)*1000)::text AS turn_started
+  return store.pool.query<{ id: string }>(
+    `SELECT a.id
  FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
  WHERE r.study_id=$1 AND a.owner_id=$2 AND a.status IN ('queued','running')`,
     [id, ownerId],
   );
-}
-
-async function cancelOverdueTurns(agents: { id: string; turn_started: string }[], now: Date) {
-  for (const agent of agents) {
-    if (now.getTime() - Number(agent.turn_started) <= PBL_MAX_AGENT_TURN_MS) continue;
-    const sessions = await getAgentSessionStore();
-    await sessions.requestCancel(agent.id);
-    await sessions.claimNextSession(`pbl-lifecycle:${process.pid}`, process.pid, {
-      sessionId: agent.id,
-      leaseTtlMs: agentRuntimeConfig.leaseTtlMs,
-      maxAttempts: agentRuntimeConfig.maxAttempts,
-    });
-  }
 }
 
 async function renewForMaintenance(
@@ -181,7 +165,6 @@ export async function maintainStudy(
           environmentId: currentEnvironmentId,
         });
     }
-    await cancelOverdueTurns(running.rows, await store.now());
     return;
   }
   const maintain = async () => {
@@ -225,7 +208,6 @@ export async function maintainStudy(
           if (!archiveGraceExpired(row, await store.now()))
             await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
-          await cancelOverdueTurns(agents.rows, await store.now());
           // A terminal result is persisted once by SandboxService.command, including lost start acknowledgements.
           const commands = await store.pool.query<{ id: string; created_at: Date }>(
             `SELECT id,created_at FROM sandbox_commands WHERE environment_id=$1
