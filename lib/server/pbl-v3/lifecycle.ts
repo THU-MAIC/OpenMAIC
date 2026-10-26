@@ -59,7 +59,7 @@ async function renewForMaintenance(
     latest.archive_discard?.environmentId === environmentId ||
     (latest.idle_turn_cleanup?.environmentId === environmentId &&
       latest.idle_turn_cleanup.releasing) ||
-    archiveGraceExpired(latest, now)
+    archiveGraceExpired(latest, now, environmentId)
   )
     return;
   if (
@@ -85,15 +85,15 @@ async function renewForMaintenance(
   );
 }
 
-function archiveGraceExpired(row: Study, now: Date) {
+function archiveGraceExpired(row: Study, now: Date, environmentId = row.environment_id) {
   if (
-    row.idle_turn_cleanup?.environmentId === row.environment_id &&
+    row.idle_turn_cleanup?.environmentId === environmentId &&
     now.getTime() >= Date.parse(row.idle_turn_cleanup.releaseAt)
   )
     return true;
   const failed = row.checkpoint_failure;
   return (
-    failed?.environmentId === row.environment_id &&
+    failed?.environmentId === environmentId &&
     !!failed.firstIdleFailureAt &&
     now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs() &&
     now.getTime() - Date.parse(failed.firstIdleFailureAt) >= pblArchiveFailureGraceMs()
@@ -109,7 +109,11 @@ async function renewDeferredStudy(
 ) {
   const row = await store.get(id, ownerId);
   const now = await store.now();
-  if (row.archive_discard?.environmentId === environmentId || archiveGraceExpired(row, now)) return;
+  if (
+    row.archive_discard?.environmentId === environmentId ||
+    archiveGraceExpired(row, now, environmentId)
+  )
+    return;
   if (
     row.idle_turn_cleanup?.environmentId === environmentId &&
     now.getTime() >= Date.parse(row.idle_turn_cleanup.releaseAt)
@@ -458,7 +462,7 @@ export async function maintainStudy(
     );
   };
   await store.exclusive(id, maintain, 'maintenance').catch(async (error: unknown) => {
-    if (error instanceof SandboxError && error.code === 'PBL_BUSY' && currentEnvironmentId)
+    if (error instanceof SandboxError && error.reason === 'STUDY_BUSY' && currentEnvironmentId)
       await renewDeferredStudy(store, id, ownerId, currentEnvironmentId);
     throw error;
   });

@@ -15,7 +15,7 @@
     "safeRelease": "Queued-only or acknowledged turns quiesce writers and checkpoint. After expiry checkpointing uses only the remaining lease; no second renewal follows the source snapshot.",
     "committedRelease": "A short activity CAS commits releasing=true after a safe checkpoint. Return before that intent cancels release; return afterward completes deletion/recovery. Contention cannot erase the deadline or restart renewal.",
     "uncertainRelease": "Unacknowledged running turns are durably cancelled and their leases revoked before discard intent/destruction. Previous checkpoint and loss notice remain.",
-    "recovery": "Real input clears only cancellable cleanup; already cancelled work requires explicit retry. Replacement binding clears old cleanup.",
+    "recovery": "Real input clears only cancellable cleanup; already cancelled work requires explicit retry. Replacement binding clears old cleanup. Expired predecessor cleanup never suppresses renewal of a genuinely returning learner's pending replacement.",
     "faultBoundary": "If the control database cannot persist fences/intents, intentional destructive release is refused and the remaining provider lease bounds compute."
   },
   "implementation": {
@@ -45,18 +45,36 @@
       "Preserve cleanup through successful checkpoint and uncertain deletion.",
       "Remove renewal using a stale decision after snapshot I/O.",
       "Let returning activity cancel an in-flight uncommitted release, including failure paths.",
-      "Do not reinstall a stale failure clock after returning activity."
+      "Do not reinstall a stale failure clock after returning activity.",
+      "Scope retention expiry to the renewal target, so old release intent cannot expire a returning learner's restored replacement.",
+      "Cover both capacity and Study advisory-lock contention with deferred renewal."
     ],
     "result": "Both reviewers completed final delta inspection with no remaining confirmed findings. Execution evidence below was produced by the coordinator.",
-    "laterDelta": "Configuration and README comments clarified the two grace uses and the irreversible release phase; this evidence file was added after review."
+    "laterDelta": "Only verification evidence updated after final code/test delta review.",
+    "finalDelta": {
+      "parent": "30c31dcc103015be348831515ec722c3373b7038",
+      "diffSha256": "4739dce4084842a072183fe05b311fd80139146b43eeb049fedca8316f26b2f2",
+      "files": {
+        "lib/server/pbl-v3/lifecycle.ts": "12d5104470ead19c5563a4f012e1f61c915865a3405ba1835b31f5c51c681e88",
+        "tests/pbl/v3/runtime.pg.test.ts": "baea7fa7ff792fd29022113e544ff834d3d4a40b621e166cf600dce13473f96e"
+      },
+      "coverage": [
+        "Target-specific expiry through pending restoration and binding publication",
+        "Capacity and advisory Study admission failures",
+        "Old release/discard fences",
+        "Idle pending replacement reclamation"
+      ],
+      "result": "Both reviewers confirmed no remaining findings in the exact final code/test delta; source traces and test-source inspection, coordinator execution below."
+    }
   },
   "validation": {
     "redEvidence": [
       "Original departed queued/running renewal and automatic-cancellation regressions failed before implementation.",
-      "Runner claim-identity regression failed before capturing the per-claim worker identity."
+      "Runner claim-identity regression failed before capturing the per-claim worker identity.",
+      "Pending-replacement renewal regressions failed before the final fix for both capacity and advisory-lock contention."
     ],
     "ciAppDomainPostgres": {
-      "passed": 373,
+      "passed": 375,
       "filesPassed": 31,
       "manifest": ".github/workflows/storage-pg-contract.yml",
       "maxWorkers": 2,
@@ -71,10 +89,12 @@
       "isolation": "Fresh dedicated PostgreSQL database, dropped after the run; PG contract suites required rather than silently skipped"
     },
     "sandboxPblAgentUnit": {
-      "passed": 1587,
+      "passed": 1822,
       "skipped": 14,
-      "filesPassed": 129,
-      "filesSkipped": 3
+      "filesPassed": 150,
+      "filesSkipped": 3,
+      "scope": "Expanded to all unit suites under tests/pbl/v3, tests/sandbox, tests/agent-runtime and tests/persistence; excludes PG suites.",
+      "configuration": "Explicit empty deployment config; an initial invocation loaded ignored local deployment settings and was corrected before the passing run."
     },
     "focusedFinalRegression": {
       "passed": 16,
@@ -93,6 +113,12 @@
     "eslint": {
       "errors": 0,
       "existingWarnings": 17
+    },
+    "replacementRetentionRegression": {
+      "passed": 2,
+      "focusedRelatedPassed": 24,
+      "contention": ["capacity", "Study advisory mutex"],
+      "boundary": "Real PostgreSQL preparation, persisted old release intent, restored replacement ready but awaiting source validation, and maintenance without Study admission. Provider elapsed time is simulated: creation lease 60 seconds, renewal during validation at 20 seconds, reads complete at 75 seconds."
     }
   },
   "scenarios": [
@@ -106,7 +132,8 @@
     "Concurrent stale command, readiness and checkpoint publication fences",
     "Real same-process runner: forced cancel during delayed setup, immediate restore/retry, missed notification, distinct new claim, rejected old heartbeat/finish",
     "Slow archive/snapshot crosses activity or deadline boundaries",
-    "Deletion contention retains irreversible intent without losing safe checkpoint"
+    "Deletion contention retains irreversible intent without losing safe checkpoint",
+    "Returning learner's restored replacement remains leased during slow source validation despite expired predecessor cleanup and either Study admission contention path."
   ],
   "limitations": [
     "No paid cloud/model call or new wall-clock lifecycle benchmark in this follow-up.",

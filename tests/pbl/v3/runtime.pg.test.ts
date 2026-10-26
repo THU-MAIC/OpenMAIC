@@ -5126,6 +5126,93 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
+  it.each(['capacity', 'mutex'])(
+    'renews a restored replacement during slow validation despite expired predecessor cleanup and %s contention',
+    async (contention) => {
+      const previousMax = pool.options.max;
+      pool.options.max = contention === 'capacity' ? 10 : 12;
+      mocked.lifetimeMs = 60_000;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let preparing: Promise<unknown> | undefined;
+      const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+      const originalRead = E2BCompatibleSandboxProvider.prototype.readText;
+      const renew = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'renew');
+      const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+      try {
+        const fresh = await freshStudy();
+        await ageStudy(fresh.id);
+        await maintainStudy(store, fresh.id, principal.ownerId);
+        const previous = await store.get(fresh.id, principal.ownerId);
+        expect(previous.idle_turn_cleanup?.releasing).toBe(true);
+        expect(Date.parse(previous.idle_turn_cleanup!.releaseAt)).toBeLessThan(
+          (await store.now()).getTime(),
+        );
+        let elapsed = 20_000,
+          expiresAt = 60_000,
+          first = true;
+        renew.mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          await originalRenew.apply(this, args);
+          if (args[0] !== previous.environment_id) expiresAt = elapsed + args[2];
+        });
+        read.mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] !== previous.environment_id) {
+            if (first) {
+              first = false;
+              entered();
+              await gate;
+              elapsed = 75_000;
+            }
+            if (elapsed >= expiresAt)
+              throw new Error('Replacement lease expired during validation');
+          }
+          return originalRead.apply(this, args);
+        });
+        preparing = fresh.send('prepare');
+        const outcome = preparing.then(
+          () => ({ prepared: true }),
+          (error: unknown) => ({ error }),
+        );
+        await Promise.race([
+          ready,
+          outcome.then(() => {
+            throw new Error('Restored source validation did not start.');
+          }),
+        ]);
+        const pending = await store.get(fresh.id, principal.ownerId);
+        const replacement = pending.environment_recovery!.requestId;
+        expect(pending.environment_id).toBe(previous.environment_id);
+        expect(replacement).not.toBe(previous.environment_id);
+        expect(pending.idle_turn_cleanup).toEqual(previous.idle_turn_cleanup);
+        const service = await SandboxService.forOwner(principal);
+        expect(await service.get(replacement)).toMatchObject({ workspaceReady: true });
+        const renewals = mocked.renewals.length;
+        await expect(
+          maintainStudy(store, fresh.id, principal.ownerId, replacement),
+        ).rejects.toMatchObject({ reason: 'STUDY_BUSY' });
+        expect(mocked.renewals.slice(renewals)).toEqual([replacement]);
+        release();
+        expect(await outcome).toEqual({ prepared: true });
+        const restored = await store.get(fresh.id, principal.ownerId);
+        expect(restored.environment_id).toBe(replacement);
+        expect(restored.idle_turn_cleanup).toBeNull();
+      } finally {
+        release();
+        if (preparing) await Promise.allSettled([preparing]);
+        read.mockRestore();
+        renew.mockRestore();
+        mocked.lifetimeMs = 300_000;
+        pool.options.max = previousMax;
+      }
+    },
+  );
+
   it('does not renew again when source snapshot crosses a departed cleanup deadline', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
