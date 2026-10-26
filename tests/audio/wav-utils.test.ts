@@ -46,4 +46,11 @@ describe('normalizeASRUploadAudio', () => {
     expect(result.blob).toBe(input);
     expect(result.fileName).toBe('recording.wav');
   });
+
+  it('normalizes Qwen3 recordings on the compatible OpenAI transcription path', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
+    const result = await normalizeASRUploadAudio('openai-whisper', input, 'qwen3-asr');
+    expect(result.blob).toBe(input);
+    expect(result.fileName).toBe('recording.wav');
+  });
 });

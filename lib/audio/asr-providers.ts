@@ -358,7 +358,7 @@ async function transcribeCustomOpenAICompatibleASR(
 
   const formData = new FormData();
   // Use 'file' key — required by the OpenAI audio/transcriptions spec.
-  formData.set('file', audioBlob, 'audio.webm');
+  formData.set('file', audioBlob, (await isWavAudio(audioBlob)) ? 'audio.wav' : 'audio.webm');
   formData.set('model', config.modelId);
   formData.set('response_format', 'json');
   if (config.language && config.language !== 'auto') {
@@ -399,9 +399,18 @@ async function transcribeOpenAIWhisper(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
+  const modelId = config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId;
+  const baseUrl = config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
+  // The SDK assumes unknown model IDs support Whisper's verbose_json. Many
+  // compatible services only support plain JSON; we only consume their text.
+  // Reuse the JSON adapter and its guarded transport for those models.
+  if (!['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'].includes(modelId)) {
+    return transcribeCustomOpenAICompatibleASR({ ...config, modelId, baseUrl }, audioBuffer);
+  }
+
   const openai = createOpenAI({
     apiKey: config.apiKey!,
-    baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
+    baseURL: baseUrl,
     // The AI SDK issues the multipart upload through this transport, so the
     // provider request inherits the same redirect + pinned-DNS protection as
     // the raw provider fetches.
@@ -421,7 +430,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription(config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId),
+      model: openai.transcription(modelId),
       audio: audioData,
       providerOptions: {
         openai: {

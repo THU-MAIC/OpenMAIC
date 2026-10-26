@@ -14,9 +14,11 @@ export const ASR_NOT_CONFIGURED_MESSAGE = 'Speech recognition is not set up';
  * The provider the workspace's asr slot resolves to (its registry id), and the
  * user's language for it. The provider, model and key are the server's.
  */
-async function asrSetup(
-  locale: string,
-): Promise<{ providerId: ASRProviderId; language: string } | null> {
+async function asrSetup(locale: string): Promise<{
+  providerId: ASRProviderId;
+  modelId?: string;
+  language: string;
+} | null> {
   const [{ asr }, { useSettingsStore, resolveASRLanguage }] = await Promise.all([
     loadModelCapabilities(),
     import('@/lib/store/settings'),
@@ -25,6 +27,7 @@ async function asrSetup(
   const providerId = asr.registryId as ASRProviderId;
   return {
     providerId,
+    modelId: asr.modelId,
     language: resolveASRLanguage(providerId, useSettingsStore.getState().asrLanguage, locale),
   };
 }
@@ -72,7 +75,11 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         // onstop 持有开始录音时的回调；转录时读取最新语言，避免录音期间切换界面后仍用旧值。
         const setup = typeof window !== 'undefined' ? await asrSetup(localeRef.current) : null;
         if (setup) {
-          const uploadAudio = await normalizeASRUploadAudio(setup.providerId, audioBlob);
+          const uploadAudio = await normalizeASRUploadAudio(
+            setup.providerId,
+            audioBlob,
+            setup.modelId,
+          );
           formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
           formData.append('language', setup.language);
         } else {
