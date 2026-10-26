@@ -231,7 +231,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
     'lib/server/generation/steps/narration.ts',
     'Temporary: TTS request preparation has not moved behind adapters.',
     [
-      ['qwen', 7],
+      ['qwen', 5],
       ['voxcpm', 11],
       ['browser-native-tts', 2],
       ['browser-native', 2],

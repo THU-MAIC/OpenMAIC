@@ -117,7 +117,6 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
           voice: 'Cherry',
           modelId: 'qwen3-tts-flash',
           speed: 1.25,
-          providerOptions: expect.not.objectContaining({ qwenVoiceClone: true }),
         }),
         'Hello',
       );
@@ -132,7 +131,6 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
         voice: 'cosyvoice-v3.5-plus-vendor-id',
         modelId: 'cosyvoice-v3.5-plus',
         speed: 1,
-        providerOptions: expect.objectContaining({ qwenVoiceClone: true }),
       }),
       'Hello',
     );
@@ -180,7 +178,6 @@ it('keeps configured Qwen catalogue voices on the authorised normal model', asyn
         voice: 'vivian',
         speed: 1.25,
         voices: [{ id: 'vivian', name: 'Vivian' }],
-        providerOptions: expect.not.objectContaining({ qwenVoiceClone: true }),
       }),
       'Hello',
     );

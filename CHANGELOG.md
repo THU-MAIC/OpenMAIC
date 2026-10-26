@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Upgrade Notes
+
+- **Qwen voice cloning: authorize the new CosyVoice target before upgrading.** Managed deployments must add `cosyvoice-v3.5-plus` (or their configured clone target) to the provider model allowlist in `TTS_QWEN_MODELS` or `openmaic.yml`. An allowlist containing only the retired `qwen3-tts-vc-2026-01-22` does not authorize the new target and will return HTTP 403. Normalizing the old target override does not change the allowlist. Existing incompatible voices must also be cloned again from suitable reference audio.
+
 ### Features
 
 - `@openmaic/generation` exports `renderScenePrompt('slide-content', { imageElementEnabled, generatedImageEnabled, generatedVideoEnabled })`, which returns the slide content system prompt without running generation. Slide generation builds its system prompt through the same code, so the two cannot drift. `@openmaic/generation` 0.3.26.

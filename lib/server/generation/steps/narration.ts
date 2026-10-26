@@ -124,7 +124,7 @@ export async function synthesizeNarration(
   const qwenCloneVoice =
     ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice, connection.voices);
   // Grouping IDs are not upstream models; explicit requests must be authorized
-  // before compatibility checks can trigger a saved-voice recovery.
+  // before reporting that a saved voice needs to be cloned again.
   const requested = input.requestedModelId?.trim();
   if (
     connection.origin === 'request' &&
@@ -160,10 +160,7 @@ export async function synthesizeNarration(
     // The provider's own options (a VoxCPM backend, say) with the voice's.
     // A run cancels the request when it loses its lease or its course.
     signal: ctx.signal,
-    providerOptions: {
-      ...adapterOptions(connection, ttsProviderOptions),
-      ...(qwenCloneVoice ? { qwenVoiceClone: true } : {}),
-    },
+    providerOptions: adapterOptions(connection, ttsProviderOptions),
   };
 
   ctx.log.info(
