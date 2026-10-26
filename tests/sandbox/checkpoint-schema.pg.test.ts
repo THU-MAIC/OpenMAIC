@@ -38,7 +38,7 @@ it.skipIf(!process.env.PG_CONTRACT_URL)(
         ).rows[0].archive_bytes.toString(),
       ).toBe('test');
       await pool.query('DELETE FROM sandbox_workspace_checkpoints'); // Test-owned fixture only.
-      await expect(applySchemaMigrations(pool, migrations)).resolves.toEqual([9]);
+      await expect(applySchemaMigrations(pool, migrations)).resolves.toEqual([9, 10]);
       expect(
         (
           await pool.query(

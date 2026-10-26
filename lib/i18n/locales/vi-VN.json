@@ -2873,6 +2873,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "Môi trường dự án đang tạm nghỉ. Tiếp tục thao tác hoặc khôi phục tệp bằng nút bên dưới.",
+    "recoverWorkspace": "Khôi phục tệp dự án",
+    "checkpointUnavailable": "Không thể lưu trữ các thay đổi mới nhất. Hãy thử lưu lại. Nếu không hoạt động, môi trường có thể được giải phóng và các thay đổi chưa lưu trữ có thể bị mất.",
+    "checkpointSkipped": "Việc lưu trữ liên tục thất bại. Khi khôi phục, các thay đổi mới hơn bản đã lưu có thể bị mất.",
+    "lastDurableCheckpoint": "Bản lưu có thể khôi phục cho lần giải phóng này: {{time}}.",
+    "noDurableCheckpoint": "Không có bản lưu trữ; tệp dự án sẽ bắt đầu lại từ phiên bản ban đầu.",
+    "checkpointReasons": {
+      "source-limit": "Dự án vượt giới hạn số lượng hoặc kích thước tệp.",
+      "archive-limit": "Dự án vượt giới hạn số lượng hoặc kích thước tệp.",
+      "unsupported-files": "Một số tệp không thể lưu trữ.",
+      "workspace-permission": "Không thể đọc tệp dự án.",
+      "workspace-full": "Ổ đĩa không gian làm việc đã đầy.",
+      "storage-quota": "Hạn mức lưu trữ bản sao đã đầy.",
+      "storage-config": "Hãy kiểm tra cấu hình và quyền truy cập kho lưu trữ.",
+      "storage-permission": "Hãy kiểm tra cấu hình và quyền truy cập kho lưu trữ.",
+      "timeout": "Dịch vụ lưu trữ hoặc môi trường không khả dụng, hoặc đã hết thời gian chờ.",
+      "unavailable": "Dịch vụ lưu trữ hoặc môi trường không khả dụng, hoặc đã hết thời gian chờ.",
+      "workspace-changed": "Tệp đã thay đổi trong khi lưu trữ.",
+      "execution-unsettled": "Không thể xác nhận tác vụ đã dừng."
     }
   }
 }

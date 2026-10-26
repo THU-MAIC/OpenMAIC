@@ -151,9 +151,22 @@ export function LearningWorkbenchPanel({
   const refresh = useCallback(async () => {
     if (!view.environment?.ready) return;
     const id = view.environmentId;
-    const next = await workbenchRequest<LearningWorkbench>(
-      `/api/pbl/v3/workspace?id=${encodeURIComponent(view.id)}`,
-    );
+    let next: LearningWorkbench;
+    try {
+      next = await workbenchRequest<LearningWorkbench>(
+        `/api/pbl/v3/workspace?id=${encodeURIComponent(view.id)}`,
+      );
+    } catch (error) {
+      // Parent study polling presents inactivity/recovery. A late read from the retired
+      // environment must not paint a false failure over its healthy replacement.
+      if (
+        current.current.environmentId !== id ||
+        !current.current.environment?.ready ||
+        (error instanceof SandboxRequestError && error.reason === 'ENVIRONMENT_UNAVAILABLE')
+      )
+        return;
+      throw error;
+    }
     if (current.current.environmentId === id)
       setWork((prior) =>
         !prior ||
@@ -167,6 +180,7 @@ export function LearningWorkbenchPanel({
     executionSequence.current++;
     setWork(null);
     setTerminal('');
+    setError('');
   }, [refresh]);
   useEffect(() => {
     void refresh().catch((e) => setError(e.message));

@@ -8,10 +8,75 @@ import type { Study, LearningStore } from './store';
 import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
 import type { InstalledProject } from './catalog';
 
+/** Confirmed provider expiry still needs an honest recoverable-version/loss notice. */
+export async function recordExpiredWorkspace(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+) {
+  const environmentId = row.environment_id;
+  if (
+    !environmentId ||
+    !row.workspace_dirty_at ||
+    row.archive_discard?.environmentId === environmentId
+  )
+    return;
+  const saved = await service.checkpoint(environmentId);
+  const discard = {
+    environmentId,
+    at: (await store.now()).toISOString(),
+    checkpointRevision: saved?.revision ?? 0,
+    checkpointAt: saved?.createdAt ?? null,
+    reason: 'unavailable' as const,
+  };
+  if (await store.recordArchiveDiscard(row, discard, true)) row.archive_discard = discard;
+}
+
+/** A committed release cannot be cancelled by activity or authorize new writes. */
+export function environmentReleaseCommitted(
+  row: Pick<Study, 'archive_discard' | 'idle_turn_cleanup'>,
+  environmentId: string,
+) {
+  return (
+    row.archive_discard?.environmentId === environmentId ||
+    (row.idle_turn_cleanup?.environmentId === environmentId &&
+      row.idle_turn_cleanup.releasing === true)
+  );
+}
+
+/** Final write admission must not use a snapshot captured before project/permission I/O. */
+export async function assertEnvironmentWritable(
+  store: LearningStore,
+  id: string,
+  ownerId: string,
+  environmentId: string,
+) {
+  const current = (
+    await store.pool.query<Pick<Study, 'environment_id' | 'archive_discard' | 'idle_turn_cleanup'>>(
+      'SELECT environment_id,archive_discard,idle_turn_cleanup FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2',
+      [id, ownerId],
+    )
+  ).rows[0];
+  if (!current || current.environment_id !== environmentId)
+    throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
+  if (environmentReleaseCommitted(current, environmentId))
+    throw sandboxConflict(
+      'Prepare or recover the project environment before continuing.',
+      'ENVIRONMENT_UNAVAILABLE',
+    );
+}
+
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
-export async function touchEnvironment(store: LearningStore, row: Study, service: SandboxService) {
+export async function touchEnvironment(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+  renew = true,
+) {
   if (!row.environment_id) return null;
   let env = await service.get(row.environment_id);
+  if (environmentReleaseCommitted(row, row.environment_id))
+    return { ...env, workspaceReady: false };
   const deadline = Date.now() + 5_000;
   let reconciled = false;
   for (;;) {
@@ -23,6 +88,8 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
         'The learning environment changed. Refresh before continuing.',
         'ENVIRONMENT_CHANGED',
       );
+    if (environmentReleaseCommitted(current, row.environment_id))
+      return { ...env, workspaceReady: false };
     if (
       current.environment_checked_at &&
       Date.now() - current.environment_checked_at.getTime() < 20_000
@@ -32,7 +99,11 @@ export async function touchEnvironment(store: LearningStore, row: Study, service
       env = await service.reconcile(env.id, false);
       reconciled = true;
     }
-    if (env.state !== 'running' || !env.workspaceReady) return env;
+    if (env.state !== 'running' || !env.workspaceReady) {
+      if (env.state === 'destroyed') await recordExpiredWorkspace(store, row, service);
+      return env;
+    }
+    if (!renew) return env;
     try {
       await service.renew(env.id);
     } catch (error) {

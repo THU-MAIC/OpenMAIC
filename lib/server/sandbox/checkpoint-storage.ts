@@ -1,6 +1,7 @@
 import 'server-only';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AssetByteStore } from '@openmaic/storage/asset/pg';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import type { ServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
   resolveConfiguredAssetByteStore,
@@ -10,7 +11,9 @@ import {
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { SandboxError, sandboxConflict } from '@/lib/sandbox/errors';
 import type { SandboxRow } from './store';
+import { checkpointIO } from './checkpoint-errors';
 import {
+  CHECKPOINT_TIMEOUT_MS,
   checkpointPolicy,
   checkpointArchiveLimit,
   checkpointOwnerQuota,
@@ -44,28 +47,52 @@ function hash(bytes: Uint8Array): Hash {
   return `sha256-${createHash('sha256').update(bytes).digest('hex')}` as Hash;
 }
 /** Fixed-size objects let existing byte backends handle large archives without a whole-archive buffer. */
-export async function* checkpointChunks(source: AsyncIterable<Uint8Array>, maximum: number) {
+export async function* checkpointChunks(
+  source: AsyncIterable<Uint8Array>,
+  maximum: number,
+  signal?: AbortSignal,
+) {
   let pending = Buffer.alloc(CHUNK_BYTES),
     used = 0,
     total = 0;
-  for await (const bytes of source) {
-    total += bytes.byteLength;
-    if (total > maximum) throw sandboxConflict('Checkpoint exceeds the configured archive limit.');
-    let offset = 0;
-    while (offset < bytes.byteLength) {
-      const n = Math.min(CHUNK_BYTES - used, bytes.byteLength - offset);
-      pending.set(bytes.subarray(offset, offset + n), used);
-      used += n;
-      offset += n;
-      if (used === CHUNK_BYTES) {
-        yield pending;
-        pending = Buffer.alloc(CHUNK_BYTES);
-        used = 0;
+  const iterator = source[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const next = signal
+        ? await checkpointIO(() => iterator.next(), signal)
+        : await iterator.next();
+      if (next.done) break;
+      const bytes = next.value;
+      total += bytes.byteLength;
+      if (total > maximum)
+        throw new SandboxError(
+          'CHECKPOINT_ARCHIVE_LIMIT',
+          409,
+          'Checkpoint exceeds the configured archive limit.',
+        );
+      let offset = 0;
+      while (offset < bytes.byteLength) {
+        const n = Math.min(CHUNK_BYTES - used, bytes.byteLength - offset);
+        pending.set(bytes.subarray(offset, offset + n), used);
+        used += n;
+        offset += n;
+        if (used === CHUNK_BYTES) {
+          yield pending;
+          pending = Buffer.alloc(CHUNK_BYTES);
+          used = 0;
+        }
       }
     }
+    if (used) yield pending.subarray(0, used);
+    if (!total) throw sandboxConflict('Empty checkpoint archive.');
+  } finally {
+    const closing = iterator.return?.();
+    if (closing) {
+      if (signal?.aborted) void closing.catch(() => {});
+      else if (signal) await checkpointIO(() => closing, signal);
+      else await closing;
+    }
   }
-  if (used) yield pending.subarray(0, used);
-  if (!total) throw sandboxConflict('Empty checkpoint archive.');
 }
 
 export class CheckpointStorage {
@@ -111,12 +138,27 @@ export class CheckpointStorage {
   }
 
   /** Caller holds the source environment lock throughout export, upload and commit. */
-  async saveLocked(row: SandboxRow, revision: number, source: AsyncIterable<Uint8Array>) {
+  async saveLocked(
+    row: SandboxRow,
+    revision: number,
+    source: AsyncIterable<Uint8Array>,
+    signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS),
+  ) {
+    return (await this.prepare(row, revision, source, signal)).commit();
+  }
+
+  /** Upload immutable pending bytes; the caller validates its source generation before commit. */
+  async prepare(
+    row: SandboxRow,
+    revision: number,
+    source: AsyncIterable<Uint8Array>,
+    signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS),
+  ) {
     const policy = checkpointPolicy(),
       id = randomUUID();
     const prefix = checkpointPrefix() + id + '/';
     // Fail before consuming/exporting the workspace when external storage is unavailable.
-    const bytes = await this.bytes(prefix);
+    const bytes = await checkpointIO(() => this.bytes(prefix), signal);
     {
       await this.persistence.withTransaction(async (tx) => {
         await fenceOwnerWrite(tx, row.owner_id);
@@ -135,7 +177,7 @@ export class CheckpointStorage {
       const parts: Part[] = [];
       const digest = createHash('sha256');
       let size = 0;
-      for await (const chunk of checkpointChunks(source, checkpointArchiveLimit(policy))) {
+      for await (const chunk of checkpointChunks(source, checkpointArchiveLimit(policy), signal)) {
         digest.update(chunk);
         size += chunk.byteLength;
         parts.push({ hash: hash(chunk), bytes: chunk.byteLength });
@@ -160,40 +202,59 @@ export class CheckpointStorage {
             [id, JSON.stringify(parts), size],
           );
         });
-        await bytes.write(parts.at(-1)!.hash, chunk);
+        await checkpointIO(() => bytes.write(parts.at(-1)!.hash, chunk, { signal }), signal);
       }
+      signal.throwIfAborted();
       const archiveHash = digest.digest('hex');
-      await this.persistence.withTransaction(async (tx) => {
-        await fenceOwnerWrite(tx, row.owner_id);
-        await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
-          `sandbox.checkpoint:${row.owner_id}`,
-        ]);
-        const current = (
-          await tx.query<{ revision: number; object_id: string | null }>(
-            'SELECT revision,object_id FROM sandbox_workspace_checkpoints WHERE owner_id=$1 AND workspace_id=$2',
-            [row.owner_id, row.workspace_id],
-          )
-        ).rows[0];
-        if ((current?.revision ?? 0) !== revision)
-          throw sandboxConflict('A newer checkpoint exists. Refresh before saving.');
-        if (current?.object_id)
+      const commit = async (publish?: (tx: Queryable) => Promise<void>) => {
+        signal.throwIfAborted();
+        await this.persistence.withTransaction(async (tx) => {
+          await fenceOwnerWrite(tx, row.owner_id);
+          await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+            `sandbox.checkpoint:${row.owner_id}`,
+          ]);
+          const current = (
+            await tx.query<{ revision: number; object_id: string | null }>(
+              'SELECT revision,object_id FROM sandbox_workspace_checkpoints WHERE owner_id=$1 AND workspace_id=$2',
+              [row.owner_id, row.workspace_id],
+            )
+          ).rows[0];
+          if ((current?.revision ?? 0) !== revision)
+            throw sandboxConflict('A newer checkpoint exists. Refresh before saving.');
+          signal.throwIfAborted();
+          if (current?.object_id)
+            await tx.query(
+              "UPDATE sandbox_checkpoint_objects SET state='retired',updated_at=now() WHERE id=$1",
+              [current.object_id],
+            );
           await tx.query(
-            "UPDATE sandbox_checkpoint_objects SET state='retired',updated_at=now() WHERE id=$1",
-            [current.object_id],
-          );
-        await tx.query(
-          `INSERT INTO sandbox_workspace_checkpoints(owner_id,workspace_id,revision,source_environment_id,archive_hash,object_id,archive_size)
+            `INSERT INTO sandbox_workspace_checkpoints(owner_id,workspace_id,revision,source_environment_id,archive_hash,object_id,archive_size)
           VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(owner_id,workspace_id) DO UPDATE SET
           revision=EXCLUDED.revision,source_environment_id=EXCLUDED.source_environment_id,archive_hash=EXCLUDED.archive_hash,
           object_id=EXCLUDED.object_id,archive_size=EXCLUDED.archive_size,created_at=now()`,
-          [row.owner_id, row.workspace_id, revision + 1, row.id, archiveHash, id, size],
-        );
-        await tx.query(
-          "UPDATE sandbox_checkpoint_objects SET state='committed',updated_at=now() WHERE id=$1",
-          [id],
-        );
-      });
-      return { revision: revision + 1, hash: archiveHash, bytes: size };
+            [row.owner_id, row.workspace_id, revision + 1, row.id, archiveHash, id, size],
+          );
+          await tx.query(
+            "UPDATE sandbox_checkpoint_objects SET state='committed',updated_at=now() WHERE id=$1",
+            [id],
+          );
+          await publish?.(tx);
+          signal.throwIfAborted();
+        });
+        return { revision: revision + 1, hash: archiveHash, bytes: size };
+      };
+      return {
+        checkpoint: { revision: revision + 1, hash: archiveHash, bytes: size },
+        commit,
+        discard: () =>
+          this.persistence.withTransaction(async (tx) => {
+            await fenceOwnerWrite(tx, row.owner_id);
+            await tx.query(
+              "UPDATE sandbox_checkpoint_objects SET state='retired',updated_at=now() WHERE id=$1 AND owner_id=$2 AND state='pending'",
+              [id, row.owner_id],
+            );
+          }),
+      };
     }
   }
 

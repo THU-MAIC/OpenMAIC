@@ -120,7 +120,7 @@ export function lazyAssetByteStore(
       },
     ));
   const base = {
-    write: async (hash, bytes) => (await resolve()).write(hash, bytes),
+    write: async (hash, bytes, options) => (await resolve()).write(hash, bytes, options),
     read: async (hash) => (await resolve()).read(hash),
     delete: async (hash) => (await resolve()).delete(hash),
   } satisfies AssetByteStore;
@@ -235,7 +235,7 @@ function lazyRegisteredByteStore(
       throw error;
     }));
   return {
-    write: async (hash, bytes) => (await resolve()).write(hash, bytes),
+    write: async (hash, bytes, options) => (await resolve()).write(hash, bytes, options),
     read: async (hash) => (await resolve()).read(hash),
     delete: async (hash) => (await resolve()).delete(hash),
     writesOutsideRegistryDatabase: true as const,

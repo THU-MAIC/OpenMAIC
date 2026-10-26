@@ -331,6 +331,26 @@ describe('runSession NOTIFY wakeup wiring', () => {
     mocks.store.listUserMessages.mockResolvedValue([]);
   });
 
+  it('uses the lease identity captured for this claim rather than the process identity', async () => {
+    const workerId = 'unique-claim-worker';
+    const run = runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...SESSION, lease: { workerId, workerPid: process.pid, heartbeatAt: Date.now() } },
+    );
+    try {
+      await waitForReady();
+      expect(mocks.store.appendRunEvent.mock.calls[0]?.[1]).toBe(workerId);
+    } finally {
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.finishSession).toHaveBeenCalledWith(
+      'session-wake',
+      workerId,
+      expect.anything(),
+    );
+  });
+
   it('subscribes to the session route, wakes the cancel check and drain, and unsubscribes on settle', async () => {
     const run = runSession({ running: new Map(), shuttingDown: false }, SESSION);
     await waitForReady();

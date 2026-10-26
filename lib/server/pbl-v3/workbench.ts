@@ -22,7 +22,7 @@ import {
   stageKey,
 } from './runtime';
 import { assertProjectSource, projectFiles } from './workspace-files';
-import { touchEnvironment, assertEnvironmentReady } from './environment';
+import { touchEnvironment, assertEnvironmentReady, assertEnvironmentWritable } from './environment';
 
 async function permissions(store: LearningStore, row: Study) {
   const stage = stageFor(row),
@@ -54,7 +54,7 @@ export async function workbenchView(
   const store = await LearningStore.open(),
     row = await store.get(id, principal.ownerId),
     service = await SandboxService.forOwner(principal);
-  assertEnvironmentReady(await touchEnvironment(store, row, service));
+  assertEnvironmentReady(await touchEnvironment(store, row, service, false));
   const environmentId = requireEnvironment(row),
     policy = await permissions(store, row);
   const commands = [];
@@ -147,6 +147,7 @@ export async function workbenchCommand(
                 'Terminal input is unavailable at this stage.',
                 'WORKBENCH_ACCESS_DENIED',
               );
+            await assertEnvironmentWritable(store, id, principal.ownerId, command.environmentId);
           },
         ),
     );

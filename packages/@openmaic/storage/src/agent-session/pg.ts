@@ -735,6 +735,9 @@ export class PgAgentSessionStore
     const staleBefore = this.clock() - options.leaseTtlMs;
     const params: unknown[] = [staleBefore, workerId, options.maxAttempts + 1];
     const targeted = options.sessionId ? ` AND id = $${params.push(options.sessionId)}` : '';
+    const excluded = options.excludeSessionIds?.length
+      ? ` AND NOT(id=ANY($${params.push([...options.excludeSessionIds])}::text[]))`
+      : '';
     // A successful ask_user is durable in the event log before the run settles.
     // Textless user messages may carry newly attached materials, but they are
     // not answers. Keep such work queued until a later nonblank user message
@@ -761,7 +764,7 @@ export class PgAgentSessionStore
               (status = 'running'
                AND (lease_heartbeat_at IS NULL OR lease_heartbeat_at < $1)
                AND (lease_worker_id IS NULL OR lease_worker_id <> $2)))
-         AND (attempt < $3 OR status = 'running')${askAdmission}${targeted}
+         AND (attempt < $3 OR status = 'running')${askAdmission}${targeted}${excluded}
        ORDER BY created_at LIMIT 5`,
       params,
     );
@@ -1356,14 +1359,15 @@ export class PgAgentSessionStore
     return this.transaction((tx) => this.requeueIn(tx, sessionId, false));
   }
 
-  async requestCancel(sessionId: string): Promise<void> {
+  async requestCancel(sessionId: string, options?: { settle?: boolean }): Promise<void> {
     await this.transaction(async (tx) => {
       const ts = this.clock();
       const result = await tx.query<{ id: string }>(
         `UPDATE ${this.table('sessions')}
          SET cancel_requested_at = $2, updated_at = now()
-         WHERE id = $1 AND deleted_at IS NULL AND cancel_requested_at IS NULL RETURNING id`,
-        [sessionId, ts],
+         WHERE id = $1 AND deleted_at IS NULL AND cancel_requested_at IS NULL
+           AND (NOT $3::boolean OR status IN ('queued','running')) RETURNING id`,
+        [sessionId, ts, options?.settle === true],
       );
       if (result.rows[0]) {
         await this.appendProjection({ type: 'session_cancel_requested', sessionId, ts }, tx);
@@ -1371,6 +1375,16 @@ export class PgAgentSessionStore
         // its per-session SSE reader) at COMMIT, so an abort lands within
         // milliseconds instead of on the fallback poll (reference semantics).
         await this.cancelHook?.(tx, sessionId);
+      }
+      if (options?.settle) {
+        const pending = await tx.query<{ attempt: number }>(
+          `SELECT attempt FROM ${this.table('sessions')}
+           WHERE id=$1 AND deleted_at IS NULL AND status IN ('queued','running')
+             AND cancel_requested_at IS NOT NULL FOR UPDATE`,
+          [sessionId],
+        );
+        if (pending.rows[0])
+          await this.settleCancelledAtClaim(tx, sessionId, ts, Number(pending.rows[0].attempt));
       }
     });
   }

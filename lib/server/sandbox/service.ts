@@ -16,7 +16,12 @@ import {
 import { assertWorkspaceMutation, type WorkspaceMutation } from './managed-workspace';
 import { issuePreviewGrant, previewConfig, verifyPreviewGrant } from './preview';
 import { WORKSPACE_ROOT, workspacePath } from './workspace-archive';
-import { checkpointPolicy } from './checkpoint-policy';
+import {
+  checkpointPolicy,
+  CHECKPOINT_TIMEOUT_MS,
+  CHECKPOINT_MIN_LIFETIME_MS,
+} from './checkpoint-policy';
+import { checkpointIO } from './checkpoint-errors';
 import type { SandboxConfig } from './config';
 import { resolvedSandboxConfig } from './settings';
 import { publicEnvironment, SandboxStore, type SandboxRow } from './store';
@@ -74,6 +79,17 @@ export class SandboxService {
       await SandboxStore.open(),
       new E2BCompatibleSandboxProvider(config),
     );
+  }
+
+  /** Host maintenance of an existing study binding, without inventing a verified user identity.
+   * The caller holds the study lock and grants only checkpoint/destroy workspace operations.
+   */
+  static async forLearningMaintenance(studyId: string, ownerId: string, environmentId: string) {
+    const store = await SandboxStore.open();
+    await store.assertLearningBinding(studyId, ownerId, environmentId);
+    const config = await resolvedSandboxConfig();
+    const { E2BCompatibleSandboxProvider } = await import('./providers/e2b-compatible');
+    return new SandboxService(ownerId, config, store, new E2BCompatibleSandboxProvider(config));
   }
 
   /** An explicit, expiring delegation created by an authenticated sandbox owner. */
@@ -370,11 +386,13 @@ export class SandboxService {
     return row as SandboxRow & { resource_id: string };
   }
 
-  async readText(id: string, path: unknown) {
+  async readText(id: string, path: unknown, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     path = `${WORKSPACE_ROOT}/${workspacePath(path)}`;
     assertPath(path);
     const row = await this.running(id);
-    return this.provider.readText(row.resource_id, row.id, path);
+    signal?.throwIfAborted();
+    return this.provider.readText(row.resource_id, row.id, path, signal);
   }
 
   async writeText(id: string, path: unknown, text: unknown) {
@@ -534,7 +552,12 @@ export class SandboxService {
     return this.command(id, input.id);
   }
 
-  async command(id: string, commandId: string): Promise<SandboxCommandResult> {
+  async command(
+    id: string,
+    commandId: string,
+    signal?: AbortSignal,
+  ): Promise<SandboxCommandResult> {
+    signal?.throwIfAborted();
     assertSandboxId(commandId);
     const row = await this.binding(id);
     const cached = await this.store.command(row, commandId);
@@ -543,7 +566,11 @@ export class SandboxService {
       throw sandboxConflict(
         'The command result was not collected before the sandbox became unavailable.',
       );
-    const result = await this.provider.readCommand(row.resource_id, row.id, commandId);
+    const result = await checkpointIO(
+      () => this.provider.readCommand(row.resource_id!, row.id, commandId, signal),
+      signal,
+    );
+    signal?.throwIfAborted();
     await this.store.saveCommand(row, result);
     return (await this.store.command(row, commandId)) ?? result;
   }
@@ -651,12 +678,17 @@ export class SandboxService {
     return { id: terminal.id, state: terminal.state };
   }
 
-  private async terminalBinding(id: string, terminalId: string) {
+  private async terminalBinding(id: string, terminalId: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     assertSandboxId(terminalId);
     const env = await this.running(id);
     let terminal = await this.store.terminal(env, terminalId);
     if (terminal.state === 'closed') return { env, terminal };
-    const pid = await this.provider.findTerminal(env.resource_id, env.id, terminalId);
+    const pid = await checkpointIO(
+      () => this.provider.findTerminal(env.resource_id, env.id, terminalId, signal),
+      signal,
+    );
+    signal?.throwIfAborted();
     if (pid !== null) {
       if (terminal.pid !== null && terminal.pid !== pid)
         throw sandboxConflict('Terminal process identity changed.');
@@ -667,8 +699,8 @@ export class SandboxService {
     return { env, terminal };
   }
 
-  async terminal(id: string, terminalId: string) {
-    const { terminal } = await this.terminalBinding(id, terminalId);
+  async terminal(id: string, terminalId: string, signal?: AbortSignal) {
+    const { terminal } = await this.terminalBinding(id, terminalId, signal);
     return { id: terminal.id, state: terminal.state };
   }
 
@@ -679,20 +711,22 @@ export class SandboxService {
     authorize?: () => Promise<void>,
   ) {
     await this.mutation(id, 'terminal');
-    return this.store.exclusive(id, async () => {
-      await authorize?.();
-      return this.updateTerminalUnlocked(id, terminalId, body);
-    });
+    return this.store.exclusive(id, () =>
+      this.updateTerminalUnlocked(id, terminalId, body, authorize),
+    );
   }
 
   private async updateTerminalUnlocked(
     id: string,
     terminalId: string,
     body: Record<string, unknown>,
+    authorize?: () => Promise<void>,
   ) {
     const { env, terminal } = await this.terminalBinding(id, terminalId);
     if (terminal.state !== 'running' || terminal.pid === null)
       throw sandboxConflict('Terminal is not running.');
+    // Discovery can outlive a learning release decision. Recheck policy after remote reads.
+    await authorize?.();
     if (body.action === 'input') {
       if (typeof body.data !== 'string' || Buffer.byteLength(body.data) > 16_384)
         throw sandboxInvalid('Terminal input is limited to 16 KiB.');
@@ -729,14 +763,40 @@ export class SandboxService {
     await this.binding(id);
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
-      await this.provider.renew(row.resource_id, row.id, this.config.lifetimeMs);
-      return { renewed: true, lifetimeMs: this.config.lifetimeMs };
+      return this.renewUnlocked(row, this.config.lifetimeMs);
     });
   }
 
-  async listFiles(id: string) {
+  /** Protect source snapshot I/O before the archive path acquires its own environment lock. */
+  async renewForCheckpoint(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    await this.binding(id);
+    return this.store.exclusive(id, async () =>
+      this.renewUnlocked(
+        await this.running(id),
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+        signal,
+      ),
+    );
+  }
+
+  private async renewUnlocked(
+    row: SandboxRow & { resource_id: string },
+    lifetimeMs: number,
+    signal?: AbortSignal,
+  ) {
+    await checkpointIO(
+      () => this.provider.renew(row.resource_id, row.id, lifetimeMs, signal),
+      signal,
+    );
+    return { renewed: true, lifetimeMs };
+  }
+
+  async listFiles(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const row = await this.running(id);
-    return this.provider.listWorkspace(row.resource_id, row.id);
+    signal?.throwIfAborted();
+    return this.provider.listWorkspace(row.resource_id, row.id, signal);
   }
 
   async checkpoint(id: string) {
@@ -753,17 +813,19 @@ export class SandboxService {
   }
 
   /** Reads/evidence must not race background commands or a terminal started before teaching took ownership. */
-  async assertWorkspaceIdle(id: string) {
+  async assertWorkspaceIdle(id: string, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     await this.binding(id);
     return this.store.exclusive(id, async () =>
-      this.assertWorkspaceIdleUnlocked(await this.running(id)),
+      this.assertWorkspaceIdleUnlocked(await this.running(id), signal),
     );
   }
 
-  private async assertWorkspaceIdleUnlocked(row: SandboxRow) {
+  private async assertWorkspaceIdleUnlocked(row: SandboxRow, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     // A file checkpoint is not a process or database snapshot. Quiesce managed writers first.
     for (const cmd of await this.store.listCommands(row)) {
-      const result = await this.command(row.id, cmd.id);
+      const result = await this.command(row.id, cmd.id, signal);
       if (['starting', 'running', 'unknown'].includes(result.state))
         throw sandboxConflict(
           'Stop and collect running commands before saving the workspace.',
@@ -771,7 +833,7 @@ export class SandboxService {
         );
     }
     for (const t of await this.store.listTerminals(row)) {
-      const observed = await this.terminal(row.id, t.id);
+      const observed = await this.terminal(row.id, t.id, signal);
       if (observed.state !== 'closed')
         throw sandboxConflict(
           'Close terminals before saving the workspace.',
@@ -780,22 +842,72 @@ export class SandboxService {
     }
   }
 
-  async saveWorkspace(id: string, expectedRevision: unknown, release = false) {
+  async saveWorkspace(
+    id: string,
+    expectedRevision: unknown,
+    release = false,
+    signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS),
+  ) {
+    signal.throwIfAborted();
     if (!Number.isSafeInteger(expectedRevision) || (expectedRevision as number) < 0)
       throw sandboxInvalid('An expected checkpoint revision is required (0 for the first save).');
     await this.mutation(id, 'checkpoint');
     return this.store.exclusive(id, async () => {
       const row = await this.running(id);
-      await this.assertWorkspaceIdleUnlocked(row);
+      await this.renewUnlocked(
+        row,
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+        signal,
+      );
+      await this.assertWorkspaceIdleUnlocked(row, signal);
       const checkpoint = await this.store.saveCheckpoint(
         row,
         expectedRevision as number,
-        this.provider.exportWorkspace(row.resource_id, row.id),
+        this.provider.exportWorkspace(row.resource_id, row.id, signal),
+        signal,
       );
       // Durability is established BEFORE resource deletion. Delete uncertainty retains the checkpoint.
       if (release) await this.destroyUnlocked(id);
       return { checkpoint, released: release };
     });
+  }
+
+  /** Periodic capture/upload is read-only and holds no environment lock; publication is short. */
+  async assertRecordedWorkspaceIdle(id: string) {
+    return this.store.assertRecordedIdle(await this.running(id));
+  }
+
+  async prepareWorkspaceCheckpoint(
+    id: string,
+    revision: number,
+    signal: AbortSignal,
+    options: { renew?: boolean } = {},
+  ) {
+    signal.throwIfAborted();
+    await this.mutation(id, 'checkpoint');
+    if (options.renew !== false) await this.renewForCheckpoint(id, signal);
+    const row = await this.running(id);
+    await this.store.assertRecordedIdle(row);
+    const prepared = await this.store.prepareCheckpoint(
+      row,
+      revision,
+      this.provider.exportWorkspace(row.resource_id, row.id, signal),
+      signal,
+    );
+    return {
+      checkpoint: prepared.checkpoint,
+      discard: prepared.discard,
+      commit: (publish?: Parameters<typeof prepared.commit>[0]) =>
+        this.store.exclusive(id, async () => {
+          signal.throwIfAborted();
+          await this.mutation(id, 'checkpoint');
+          const current = await this.running(id);
+          if (current.resource_id !== row.resource_id)
+            throw sandboxConflict('Workspace changed.', 'WORKSPACE_STOPPED');
+          await this.store.assertRecordedIdle(current);
+          return prepared.commit(publish);
+        }),
+    };
   }
 
   async restoreWorkspace(id: string) {

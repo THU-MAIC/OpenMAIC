@@ -32,7 +32,7 @@ export async function GET(request: Request) {
       const row = await store.get(id, principal.ownerId);
       assertProjectSource(projectFor(row), path);
       const service = await SandboxService.forOwner(principal);
-      assertEnvironmentReady(await touchEnvironment(store, row, service));
+      assertEnvironmentReady(await touchEnvironment(store, row, service, false));
       const text = await service.readText(requireEnvironment(row), path);
       return Response.json({ text, hash: digest(text) });
     }

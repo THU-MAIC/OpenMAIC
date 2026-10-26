@@ -4,6 +4,7 @@ import type { SandboxErrorReason } from './errors';
 const reasonKeys: Record<SandboxErrorReason, string> = {
   ENVIRONMENT_UNAVAILABLE: 'sandbox.errors.environmentUnavailable',
   ENVIRONMENT_BUSY: 'sandbox.errors.environmentBusy',
+  STUDY_BUSY: 'sandbox.errors.environmentBusy',
   ENVIRONMENT_CHANGED: 'sandbox.errors.environmentChanged',
   PROGRESS_CHANGED: 'sandbox.errors.progressChanged',
   PBL_REPORT_PENDING: 'pblV3.reportCopy.waitFinal',

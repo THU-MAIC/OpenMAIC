@@ -32,7 +32,7 @@ interface S3GetObjectOutput {
 }
 
 export interface S3AssetByteStoreClient {
-  send(command: unknown): Promise<unknown>;
+  send(command: unknown, options?: { abortSignal?: AbortSignal }): Promise<unknown>;
 }
 
 export interface S3AssetByteStoreCommands {
@@ -197,8 +197,19 @@ export async function loadS3AssetByteStore(
   }
 }
 
-function s3Failure(operation: string): Error {
-  return new Error(`@openmaic/storage: S3 asset byte ${operation} failed`);
+function s3Failure(operation: string, error?: unknown): Error {
+  // Only stable categories escape the SDK boundary: messages/causes can contain credentials.
+  const name = error && typeof error === 'object' && 'name' in error ? error.name : undefined;
+  const code = ['AccessDenied', 'InvalidAccessKeyId', 'SignatureDoesNotMatch'].includes(
+    String(name),
+  )
+    ? 'ASSET_STORAGE_PERMISSION'
+    : ['NoSuchBucket', 'CredentialsProviderError', 'InvalidRegion'].includes(String(name))
+      ? 'ASSET_STORAGE_CONFIG'
+      : ['TimeoutError', 'AbortError', 'RequestTimeout'].includes(String(name))
+        ? 'ASSET_STORAGE_TIMEOUT'
+        : 'ASSET_STORAGE_UNAVAILABLE';
+  return Object.assign(new Error(`@openmaic/storage: S3 asset byte ${operation} failed`), { code });
 }
 
 /**
@@ -323,10 +334,16 @@ export class S3AssetByteStore implements AssetByteStore {
     return pending;
   }
 
-  async write(hash: ContentHash, bytes: Uint8Array): Promise<void> {
+  async write(
+    hash: ContentHash,
+    bytes: Uint8Array,
+    options?: { signal?: AbortSignal },
+  ): Promise<void> {
     // Resolved outside the try so a missing optional dependency reports itself
     // by name instead of being flattened into an opaque "write failed".
+    options?.signal?.throwIfAborted();
     const commands = await this.commands();
+    options?.signal?.throwIfAborted();
     try {
       await this.client.send(
         commands.put({
@@ -335,9 +352,10 @@ export class S3AssetByteStore implements AssetByteStore {
           Body: bytes,
           ContentLength: bytes.byteLength,
         }),
+        ...(options?.signal ? [{ abortSignal: options.signal }] : []),
       );
-    } catch {
-      throw s3Failure('write');
+    } catch (error) {
+      throw s3Failure('write', error);
     }
   }
 

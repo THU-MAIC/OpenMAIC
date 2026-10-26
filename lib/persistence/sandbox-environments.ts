@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS sandbox_commands (
         );
       },
     },
+    {
+      version: 10,
+      name: 'maintenance-fairness',
+      transaction: true,
+      up: `ALTER TABLE sandbox_environments ADD COLUMN maintenance_checked_at TIMESTAMPTZ;
+      CREATE INDEX sandbox_environments_maintenance_idx ON sandbox_environments(maintenance_checked_at,id)
+        WHERE state<>'destroyed';`,
+    },
   ],
 };
 

@@ -14,6 +14,7 @@ import { ensureOwnerMergeSchema } from '@/lib/persistence/owner-merges';
 const contractUrl = process.env.PG_CONTRACT_URL;
 const schema = 'sandbox_check_' + randomUUID().replaceAll('-', '');
 let admin: Pool, pool: Pool, storage: CheckpointStorage, store: SandboxStore, row: SandboxRow;
+let persistence: ServerPersistenceProvider;
 const objects = new Map<string, Uint8Array>();
 let failWrite = false,
   failDelete = false;
@@ -62,7 +63,7 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
     });
     await ensureOwnerMergeSchema(pool);
     await ensureSandboxEnvironmentSchema(pool);
-    const persistence = {
+    persistence = {
       pool,
       withTransaction: async (fn: (tx: import('pg').PoolClient) => Promise<unknown>) => {
         const tx = await pool.connect();
@@ -243,5 +244,85 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
       code: 'SANDBOX_LIMIT',
     });
     expect(provider.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the lock after a stalled upload aborts and never commits its late result', async () => {
+    const target = (
+      await store.reserve({
+        ownerId: 'timeout-owner',
+        id: randomUUID(),
+        workspaceId: 'timeout',
+        fingerprint: 'test',
+        maxActive: 100,
+        maxActiveTotal: 100,
+        profile: 'code',
+      })
+    ).row;
+    await store.exclusive(target.id, () => storage.saveLocked(target, 0, source('durable')));
+    let finish!: () => void;
+    let observed: AbortSignal | undefined;
+    const stalled = new CheckpointStorage(persistence, store.exclusive.bind(store), async () => ({
+      writesOutsideRegistryDatabase: true,
+      write: async () => {},
+      read: async () => null,
+      delete: async () => {},
+      withPrefix: () => ({
+        write: async (_hash, _bytes, options) => {
+          observed = options?.signal;
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+        },
+        read: async () => null,
+        delete: async () => {},
+      }),
+    }));
+    const controller = new AbortController();
+    const saving = store.exclusive(target.id, () =>
+      stalled.saveLocked(target, 1, source('late'), controller.signal),
+    );
+    const rejected = expect(saving).rejects.toThrow('deadline');
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    controller.abort(new DOMException('deadline', 'TimeoutError'));
+    await rejected;
+    expect(observed?.aborted).toBe(true);
+    expect((await storage.get(target.owner_id, target.workspace_id))?.revision).toBe(1);
+    await store.exclusive(target.id, () => storage.saveLocked(target, 1, source('new durable')));
+    finish();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect((await storage.get(target.owner_id, target.workspace_id))?.revision).toBe(2);
+    expect(
+      (
+        await pool.query(
+          "SELECT id FROM sandbox_checkpoint_objects WHERE source_environment_id=$1 AND state='pending'",
+          [target.id],
+        )
+      ).rows,
+    ).toHaveLength(1);
+  });
+
+  it('publishes a prepared head and its consumer metadata in one transaction', async () => {
+    const target = (
+      await store.reserve({
+        ownerId: 'atomic-owner',
+        id: randomUUID(),
+        workspaceId: 'atomic',
+        fingerprint: 'test',
+        maxActive: 100,
+        maxActiveTotal: 100,
+        profile: 'code',
+      })
+    ).row;
+    await store.exclusive(target.id, () => storage.saveLocked(target, 0, source('durable')));
+    const pending = await storage.prepare(target, 1, source('unpublished'));
+    await expect(
+      pending.commit(async (tx) => {
+        await tx.query('UPDATE sandbox_environments SET preview_epoch=1 WHERE id=$1', [target.id]);
+        throw new Error('consumer metadata failed');
+      }),
+    ).rejects.toThrow('consumer metadata failed');
+    expect((await storage.get(target.owner_id, target.workspace_id))?.revision).toBe(1);
+    expect((await store.get(target.owner_id, target.id)).preview_epoch).toBe(0);
+    await pending.discard();
   });
 });

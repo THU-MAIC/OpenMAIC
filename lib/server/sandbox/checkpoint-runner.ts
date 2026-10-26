@@ -1,5 +1,5 @@
 /** Streaming, deterministic tar. Extraction never delegates paths or links to tarfile.extract. */
-export const CHECKPOINT_RUNNER = String.raw`
+const CHECKPOINT_BODY = String.raw`
 import os, sys, stat, json, base64, hashlib, tarfile, tempfile, shutil
 cfg=json.loads(base64.b64decode(sys.argv[3]))
 roots=cfg['roots']; limit=cfg['maxBytes']; count_limit=cfg['maxFiles']
@@ -124,4 +124,17 @@ elif action=='import':
     finally:
         for stage in stages.values(): shutil.rmtree(stage,ignore_errors=True)
 else: raise ValueError('action')
+`;
+
+/** A fixed protocol replaces raw tracebacks, paths and platform-dependent error text. */
+export const CHECKPOINT_RUNNER = `
+import sys, errno
+try:
+    exec(${JSON.stringify(CHECKPOINT_BODY)})
+except Exception as error:
+    code={'byte limit':'limit','entry limit':'limit','links or special files are not checkpointable':'unsupported','linked root parent':'unsupported','root':'unsupported','changed':'changed','workspace changed during save':'changed'}.get(str(error),'unavailable')
+    if isinstance(error, PermissionError): code='permission'
+    if isinstance(error, OSError) and error.errno==errno.ENOSPC: code='disk-full'
+    print('OPENMAIC_CHECKPOINT_ERROR:'+code,file=sys.stderr)
+    sys.exit(1)
 `;

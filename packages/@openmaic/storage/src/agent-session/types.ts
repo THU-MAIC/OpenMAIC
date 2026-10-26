@@ -124,6 +124,8 @@ export interface ClaimAgentSessionOptions {
   maxAttempts: number;
   /** Restricts a claim to one session instead of scanning the oldest candidates. */
   sessionId?: string;
+  /** Sessions still executing in this worker process must not be re-leased after cancellation. */
+  excludeSessionIds?: readonly string[];
 }
 
 export interface FinishAgentSessionPatch {
@@ -314,7 +316,8 @@ export interface AgentSessionStore {
     patch: FinishAgentSessionPatch,
   ): Promise<boolean>;
   releaseLease(sessionId: string, workerId: string): Promise<void>;
-  requestCancel(sessionId: string): Promise<void>;
+  /** settle also revokes the worker lease and records cancellation without waiting for acknowledgement. */
+  requestCancel(sessionId: string, options?: { settle?: boolean }): Promise<void>;
   getCancelRequestedAt(sessionId: string): Promise<number | null>;
   isCancelRequested(sessionId: string): Promise<boolean>;
   clearCancel(

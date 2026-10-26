@@ -34,9 +34,10 @@ export async function projectFiles(
   service: SandboxService,
   environmentId: string,
   project: InstalledProject,
+  signal?: AbortSignal,
 ) {
   const paths = project.sourceRoots
-    ? (await service.listFiles(environmentId))
+    ? (await service.listFiles(environmentId, signal))
         .filter((entry) => isProjectSource(project, entry.path))
         .map((entry) => entry.path)
     : Object.keys(project.files);

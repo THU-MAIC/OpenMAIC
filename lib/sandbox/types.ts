@@ -63,7 +63,11 @@ export interface SandboxLifecycleCapabilities {
 
 export interface SandboxProvider {
   readonly capabilities: SandboxLifecycleCapabilities;
-  exportWorkspace(resourceId: string, operationId: string): AsyncIterable<Uint8Array>;
+  exportWorkspace(
+    resourceId: string,
+    operationId: string,
+    signal?: AbortSignal,
+  ): AsyncIterable<Uint8Array>;
   importWorkspace(
     resourceId: string,
     operationId: string,
@@ -75,8 +79,15 @@ export interface SandboxProvider {
   listWorkspace(
     resourceId: string,
     operationId: string,
+    signal?: AbortSignal,
   ): Promise<Array<{ path: string; bytes: number }>>;
-  renew(resourceId: string, operationId: string, lifetimeMs: number): Promise<void>;
+  /** Extend the lease without shortening any existing remaining lifetime. */
+  renew(
+    resourceId: string,
+    operationId: string,
+    lifetimeMs: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
   /** Server-only descriptor. Never serialize its credentials into a browser API response. */
   nativePreview(
     resourceId: string,
@@ -103,7 +114,12 @@ export interface SandboxProvider {
   find(operationId: string): Promise<SandboxResource[]>;
   inspect(resourceId: string, operationId: string): Promise<SandboxResource | null>;
   destroy(resourceId: string, operationId: string): Promise<void>;
-  readText(resourceId: string, operationId: string, path: string): Promise<string>;
+  readText(
+    resourceId: string,
+    operationId: string,
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string>;
   writeText(resourceId: string, operationId: string, path: string, text: string): Promise<void>;
   mutateFile?(
     resourceId: string,
@@ -117,7 +133,12 @@ export interface SandboxProvider {
     },
   ): Promise<void>;
   startCommand(resourceId: string, operationId: string, input: SandboxCommandInput): Promise<void>;
-  readCommand(resourceId: string, operationId: string, id: string): Promise<SandboxCommandResult>;
+  readCommand(
+    resourceId: string,
+    operationId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<SandboxCommandResult>;
   cancelCommand(resourceId: string, operationId: string, id: string): Promise<void>;
   desktopScreenshot(resourceId: string, operationId: string): Promise<Uint8Array>;
   desktopAction(resourceId: string, operationId: string, action: DesktopAction): Promise<void>;
@@ -128,7 +149,12 @@ export interface SandboxProvider {
     cols: number,
     rows: number,
   ): Promise<number>;
-  findTerminal(resourceId: string, operationId: string, id: string): Promise<number | null>;
+  findTerminal(
+    resourceId: string,
+    operationId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<number | null>;
   terminalInput(resourceId: string, operationId: string, pid: number, data: string): Promise<void>;
   resizeTerminal(
     resourceId: string,

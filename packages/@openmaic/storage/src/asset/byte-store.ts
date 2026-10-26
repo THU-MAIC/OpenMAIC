@@ -69,7 +69,8 @@ export interface AssetByteStore {
    * implementation must not read first, and must not return anything that
    * varies with prior presence.
    */
-  write(hash: ContentHash, bytes: Uint8Array): Promise<void>;
+  /** External adapters should cancel their I/O when the optional signal aborts. */
+  write(hash: ContentHash, bytes: Uint8Array, options?: { signal?: AbortSignal }): Promise<void>;
 
   /**
    * Read the bytes stored under a hash, or `null` if there are none.
