@@ -30,6 +30,7 @@ export type {
 export { buildCompleteScene } from './scene-builder.js';
 export type { BuildCompleteSceneOptions } from './scene-builder.js';
 export {
+  DEFAULT_MAX_DELAY_MS,
   isAbortError,
   isRetryableGenerationError,
   withGenerationRetry,

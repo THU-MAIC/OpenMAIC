@@ -199,7 +199,16 @@ export class PlaybackEngine {
       if (!this.isCurrentGeneration(generation)) return false;
       const action = actions[i];
       if (isWhiteboardPlaybackAction(action)) {
-        await this.actionEngine.execute(action, { silent: true });
+        try {
+          await this.actionEngine.execute(action, { silent: true });
+        } catch (error) {
+          log.error(
+            'Skipping failed action during whiteboard restoration:',
+            action.id,
+            action.type,
+            error,
+          );
+        }
       }
     }
 
@@ -746,8 +755,12 @@ export class PlaybackEngine {
       case 'widget_setState':
       case 'widget_annotation':
       case 'widget_reveal': {
-        // Synchronous actions — await completion, then continue
-        await this.actionEngine.execute(action);
+        // A rejected stored action must not strand playback before the next action.
+        try {
+          await this.actionEngine.execute(action);
+        } catch (error) {
+          log.error('Skipping failed playback action:', action.id, action.type, error);
+        }
         if (!this.isCurrentGeneration(generation)) return;
         if (this.mode === 'playing') {
           this.processNext(generation);
