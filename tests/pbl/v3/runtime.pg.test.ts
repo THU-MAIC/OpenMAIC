@@ -328,6 +328,7 @@ import * as catalog from '@/lib/server/pbl-v3/catalog';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { LearningStore } from '@/lib/server/pbl-v3/store';
 import { maintainLearningEnvironments, maintainStudy } from '@/lib/server/pbl-v3/lifecycle';
+import { pblIdleTimeoutMs } from '@/lib/server/pbl-v3/lifecycle-config';
 import {
   commandStudy,
   openStudy,
@@ -344,6 +345,10 @@ import { reportConversationMessages } from '@/lib/pbl/v3/report';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxStore } from '@/lib/server/sandbox/store';
+import {
+  withLearningWorkspaceAccess,
+  learningWorkspaceId,
+} from '@/lib/server/sandbox/managed-workspace';
 import { E2BCompatibleSandboxProvider } from '@/lib/server/sandbox/providers/e2b-compatible';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
 
@@ -711,7 +716,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         store.waitForExclusive(interactive.id, () =>
           store.recordActivity(interactive.id, principal.ownerId),
         ),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ id: interactive.id });
       await expect(interactive.send('checkpoint')).resolves.toBeDefined();
       await scanning;
       expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
@@ -767,14 +772,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           new Date(Date.now() - (kind === 'overdue-command' ? 20 * 60_000 : 60_000)),
         ],
       );
-    if (!['reading', 'discard-intent'].includes(kind)) await ageStudy(fresh.id);
+    if (!['reading', 'agent', 'discard-intent'].includes(kind)) await ageStudy(fresh.id);
     if (kind.startsWith('queued-'))
       await pool.query(
         "UPDATE pbl_v3_studies SET last_used_at=now()-interval '6 minutes',workspace_dirty_at=CASE WHEN $2 THEN now()-interval '2 minutes' ELSE NULL END WHERE id=$1",
         [fresh.id, kind === 'queued-dirty'],
       );
     if (kind === 'expired-failure')
-      await store.recordCheckpointFailure(row, {
+      await store.recordCheckpointFailure(await store.get(fresh.id, principal.ownerId), {
         environmentId: row.environment_id!,
         reason: 'unavailable',
         stage: 'archive',
@@ -811,7 +816,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const renewals = mocked.renewals.length;
       const before = await store.get(fresh.id, principal.ownerId);
       const maintenance = maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
-      if (kind === 'agent') await maintenance;
+      if (kind === 'agent' || kind === 'discard-intent') await maintenance;
       else await expect(maintenance).rejects.toMatchObject({ code: 'PBL_BUSY' });
       expect(mocked.renewals.slice(renewals).includes(row.environment_id!)).toBe(renewed);
       const after = await store.get(fresh.id, principal.ownerId);
@@ -3710,6 +3715,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       [id],
     );
   }
+  async function ageIntoTurnCleanup(id: string) {
+    await pool.query(
+      "UPDATE pbl_v3_studies SET last_used_at=clock_timestamp()-($2::double precision*interval '1 millisecond') WHERE id=$1",
+      [id, pblIdleTimeoutMs() + 30_000],
+    );
+  }
 
   it.each(['evaluate', 'compile'] as const)(
     'clears a %s execution whose start failed before command reservation',
@@ -4267,7 +4278,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       "UPDATE pbl_v3_roles SET turn_started_at=now()-interval '20 minutes' WHERE session_id=$1",
       [queued.sessionId],
     );
-    await ageStudy(fresh.id);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET last_used_at=clock_timestamp()-($2::double precision*interval '1 millisecond') WHERE id=$1",
+      [fresh.id, pblIdleTimeoutMs() / 2],
+    );
     const before = await store.get(fresh.id, principal.ownerId);
     const renewals = mocked.renewals.length;
     await maintainStudy(store, fresh.id, principal.ownerId);
@@ -4395,7 +4409,6 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await maintainStudy(store, fresh.id, principal.ownerId);
     expect(close).not.toHaveBeenCalled();
     const queued = (await fresh.send('chat')) as { sessionId: string };
-    await ageStudy(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     expect(close).not.toHaveBeenCalled();
     expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
@@ -4704,6 +4717,586 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it.each(['queued', 'running'] as const)(
+    'bounds a departed learner’s %s turn even without cancellation acknowledgement',
+    async (status) => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const edited = await store.get(fresh.id, principal.ownerId);
+      await writeFile(
+        join(mocked.root, edited.environment_id!, 'greeting.py'),
+        '# dirty edit after checkpoint\n',
+      );
+      await pool.query(
+        'UPDATE pbl_v3_studies SET workspace_dirty_at=clock_timestamp() WHERE id=$1',
+        [fresh.id],
+      );
+      const queued = (await fresh.send('chat')) as { sessionId: string };
+      const claimed =
+        status === 'running'
+          ? await agents.claimNextSession('departed-worker', process.pid, {
+              sessionId: queued.sessionId,
+              leaseTtlMs: 10000,
+              maxAttempts: 5,
+            })
+          : null;
+      await ageStudy(fresh.id);
+      const row = await store.get(fresh.id, principal.ownerId);
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect((await agents.getSession(queued.sessionId))?.status).toBe('cancelled');
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+      const saved = await (
+        await SandboxService.forOwner(principal)
+      ).checkpoint(row.environment_id!);
+      const after = await store.get(fresh.id, principal.ownerId);
+      if (status === 'queued') {
+        expect(saved?.revision).toBe(2);
+        expect(after.archive_discard).toBeNull();
+      } else {
+        expect(saved?.revision).toBe(1);
+        expect(after.archive_discard).toMatchObject({ checkpointRevision: 1 });
+      }
+      if (claimed)
+        await expect(
+          agents.assertActiveLease(queued.sessionId, 'departed-worker', claimed.attempt, pool),
+        ).rejects.toThrow();
+    },
+  );
+
+  it('does not turn automatic departure cancellation into new learner activity', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claimed = await agents.claimNextSession('departure-ack-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    const before = await store.get(fresh.id, principal.ownerId);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(await agents.isCancelRequested(queued.sessionId)).toBe(true);
+    await agents.finishSession(queued.sessionId, 'departure-ack-worker', {
+      status: 'cancelled',
+      expectedAttempt: claimed!.attempt,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).last_used_at).toEqual(
+      before.last_used_at,
+    );
+    expect(
+      await (await SandboxService.forOwner(principal)).get(before.environment_id!),
+    ).toMatchObject({ state: 'destroyed' });
+  });
+
+  it('archives safe edits after acknowledged cancellation even if the next pass is past the deadline', async () => {
+    const fresh = await freshStudy();
+    await fresh.send('checkpoint');
+    const row = await store.get(fresh.id, principal.ownerId);
+    await writeFile(
+      join(mocked.root, row.environment_id!, 'greeting.py'),
+      '# safe acknowledged edit\n',
+    );
+    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=clock_timestamp() WHERE id=$1', [
+      fresh.id,
+    ]);
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('acknowledged-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await agents.finishSession(queued.sessionId, 'acknowledged-worker', {
+      status: 'cancelled',
+      expectedAttempt: claim!.attempt,
+    });
+    await pool.query(
+      "UPDATE pbl_v3_studies SET idle_turn_cleanup=jsonb_set(idle_turn_cleanup,'{releaseAt}',to_jsonb((clock_timestamp()-interval '1 minute')::text)) WHERE id=$1",
+      [fresh.id],
+    );
+    const renewals = mocked.renewals.length;
+    await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+    expect(mocked.renewals).toHaveLength(renewals);
+    const service = await SandboxService.forOwner(principal);
+    expect(await service.get(row.environment_id!)).toMatchObject({ state: 'destroyed' });
+    expect(await service.checkpoint(row.environment_id!)).toMatchObject({ revision: 2 });
+    expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+  });
+
+  it('fences stale commands and fresh readiness checks after concurrent discard without changing revision', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await agents.claimNextSession('discard-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const stale = await store.get(fresh.id, principal.ownerId);
+    const service = await SandboxService.forOwner(principal);
+    const destroy = vi
+      .spyOn(SandboxService.prototype, 'destroy')
+      .mockImplementation(async (id) => service.get(id));
+    try {
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).revision).toBe(stale.revision);
+      expect(await touchEnvironment(store, stale, service)).toMatchObject({
+        workspaceReady: false,
+      });
+      await expect(
+        store.transaction((db) => store.commit(db, stale, { state: stale.state, events: [] })),
+      ).rejects.toThrow();
+      const returned = await store.recordActivity(fresh.id, principal.ownerId);
+      expect(returned.archive_discard).toBeTruthy();
+    } finally {
+      destroy.mockRestore();
+      await maintainStudy(store, fresh.id, principal.ownerId);
+    }
+  });
+
+  it('cannot publish an in-flight teaching checkpoint after forced release intent', async () => {
+    const fresh = await freshStudy();
+    await fresh.send('checkpoint');
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await agents.claimNextSession('checkpoint-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const row = await store.get(fresh.id, principal.ownerId);
+    const service = await SandboxService.forOwner(principal);
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
+    const exporting = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+      .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+        entered();
+        await gate;
+        yield* original.apply(this, args);
+      });
+    const destroy = vi
+      .spyOn(SandboxService.prototype, 'destroy')
+      .mockRejectedValue(new SandboxError('SANDBOX_CONFLICT', 409, 'busy', 'ENVIRONMENT_BUSY'));
+    const saving = store.exclusive(fresh.id, () =>
+      withLearningWorkspaceAccess(
+        {
+          ownerId: principal.ownerId,
+          workspaceId: learningWorkspaceId(fresh.id),
+          environmentIds: () => [row.environment_id],
+          operations: ['checkpoint'],
+        },
+        () => saveStudyCheckpoint(service, row),
+      ),
+    );
+    const outcome = saving.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    try {
+      await Promise.race([
+        ready,
+        outcome.then(() => {
+          throw new Error('Checkpoint did not enter archive.');
+        }),
+      ]);
+      await ageStudy(fresh.id);
+      await expect(maintainStudy(store, fresh.id, principal.ownerId)).rejects.toMatchObject({
+        reason: 'ENVIRONMENT_BUSY',
+      });
+      release();
+      expect(await outcome).toMatchObject({ code: 'CHECKPOINT_CHANGED' });
+      expect(await service.checkpoint(row.environment_id!)).toMatchObject({ revision: 1 });
+      await expect(store.saveEnvironmentRecovery(row)).rejects.toMatchObject({
+        code: 'CHECKPOINT_CHANGED',
+      });
+    } finally {
+      release();
+      await outcome;
+      exporting.mockRestore();
+      destroy.mockRestore();
+      await maintainStudy(store, fresh.id, principal.ownerId);
+    }
+  });
+
+  it('keeps one departed-turn deadline across maintenance instances and late heartbeats', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await agents.claimNextSession('silent-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const first = (await store.get(fresh.id, principal.ownerId)).idle_turn_cleanup;
+    expect(first).toBeTruthy();
+    await agents.heartbeat(queued.sessionId, 'silent-worker');
+    await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).idle_turn_cleanup).toEqual(first);
+    await pool.query(
+      "UPDATE pbl_v3_studies SET idle_turn_cleanup=jsonb_set(idle_turn_cleanup,'{releaseAt}',to_jsonb((clock_timestamp()-interval '1 minute')::text)) WHERE id=$1",
+      [fresh.id],
+    );
+    const renewals = mocked.renewals.length;
+    await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+    expect(mocked.renewals).toHaveLength(renewals);
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('cancelled');
+  });
+
+  it('allows a returning learner to stop cleanup and explicitly retry a cancelled turn', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('return-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await store.recordActivity(fresh.id, principal.ownerId);
+    const returned = await store.get(fresh.id, principal.ownerId);
+    expect(returned.idle_turn_cleanup).toBeNull();
+    await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('running');
+    await agents.finishSession(queued.sessionId, 'return-worker', {
+      status: 'cancelled',
+      expectedAttempt: claim!.attempt,
+    });
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).last_used_at).toEqual(
+      returned.last_used_at,
+    );
+    await fresh.send('retry');
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+  });
+
+  it('fences and releases a departed turn while its teaching mutex is held', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    await agents.claimNextSession('locked-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageStudy(fresh.id);
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = store.exclusive(fresh.id, async () => {
+      entered();
+      await gate;
+    });
+    try {
+      await ready;
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect((await agents.getSession(queued.sessionId))?.lease).toBeUndefined();
+      const row = await store.get(fresh.id, principal.ownerId);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+    } finally {
+      release();
+      await held;
+    }
+  });
+
+  it.each([false, true])(
+    'a learner return during acknowledged cleanup archive cancels release, with archive failure: %s',
+    async (fails) => {
+      const fresh = await freshStudy();
+      const queued = (await fresh.send('chat')) as { sessionId: string };
+      const claim = await agents.claimNextSession('return-archive', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      await ageIntoTurnCleanup(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      await agents.finishSession(queued.sessionId, 'return-archive', {
+        status: 'cancelled',
+        expectedAttempt: claim!.attempt,
+      });
+      const row = await store.get(fresh.id, principal.ownerId);
+      let entered!: () => void, release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const original = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
+      const archive = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+        .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+          entered();
+          await gate;
+          if (fails) throw new Error('Archive failed');
+          yield* original.apply(this, args);
+        });
+      const maintaining = maintainStudy(store, fresh.id, principal.ownerId);
+      try {
+        await Promise.race([
+          ready,
+          maintaining.then(() => {
+            throw new Error('Archive did not start.');
+          }),
+        ]);
+        const returned = await store.recordActivity(fresh.id, principal.ownerId);
+        release();
+        await maintaining;
+        const after = await store.get(fresh.id, principal.ownerId);
+        expect(after.last_used_at).toEqual(returned.last_used_at);
+        expect(after.idle_turn_cleanup).toBeNull();
+        expect(after.archive_discard).toBeNull();
+        expect(after.checkpoint_failure).toBeNull();
+        expect(
+          await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+        ).toMatchObject({ state: 'running' });
+      } finally {
+        release();
+        await Promise.allSettled([maintaining]);
+        archive.mockRestore();
+      }
+    },
+  );
+
+  it('keeps committed safe-release intent through deletion contention and learner return', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('busy-delete', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await agents.finishSession(queued.sessionId, 'busy-delete', {
+      status: 'cancelled',
+      expectedAttempt: claim!.attempt,
+    });
+    await pool.query(
+      "UPDATE pbl_v3_studies SET idle_turn_cleanup=jsonb_set(idle_turn_cleanup,'{releaseAt}',to_jsonb((clock_timestamp()-interval '1 minute')::text)) WHERE id=$1",
+      [fresh.id],
+    );
+    const destroy = vi
+      .spyOn(SandboxService.prototype, 'destroy')
+      .mockRejectedValueOnce(new SandboxError('SANDBOX_CONFLICT', 409, 'busy', 'ENVIRONMENT_BUSY'));
+    try {
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const saved = await store.get(fresh.id, principal.ownerId);
+      expect(saved.idle_turn_cleanup?.releasing).toBe(true);
+      expect(saved.archive_discard).toBeNull();
+      await store.recordActivity(fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).idle_turn_cleanup).toEqual(
+        saved.idle_turn_cleanup,
+      );
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(saved.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+      await fresh.send('prepare');
+      const restored = await store.get(fresh.id, principal.ownerId);
+      expect(restored.environment_id).not.toBe(saved.environment_id);
+      expect(restored.idle_turn_cleanup).toBeNull();
+    } finally {
+      destroy.mockRestore();
+    }
+  });
+
+  it('does not renew again when source snapshot crosses a departed cleanup deadline', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('crossing-deadline', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await ageIntoTurnCleanup(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    await agents.finishSession(queued.sessionId, 'crossing-deadline', {
+      status: 'cancelled',
+      expectedAttempt: claim!.attempt,
+    });
+    await pool.query(
+      "UPDATE pbl_v3_studies SET idle_turn_cleanup=jsonb_set(idle_turn_cleanup,'{releaseAt}',to_jsonb((clock_timestamp()+interval '3 seconds')::text)) WHERE id=$1",
+      [fresh.id],
+    );
+    const row = await store.get(fresh.id, principal.ownerId);
+    let entered!: () => void,
+      release!: () => void,
+      first = true;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = SandboxService.prototype.readText;
+    const read = vi.spyOn(SandboxService.prototype, 'readText').mockImplementation(async function (
+      this: SandboxService,
+      ...args
+    ) {
+      if (args[0] === row.environment_id && first) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return original.apply(this, args);
+    });
+    const maintaining = maintainStudy(store, fresh.id, principal.ownerId);
+    try {
+      await Promise.race([
+        ready,
+        maintaining.then(() => {
+          throw new Error('Snapshot did not start.');
+        }),
+      ]);
+      const remaining =
+        Date.parse(row.idle_turn_cleanup!.releaseAt) - (await store.now()).getTime();
+      expect(remaining).toBeGreaterThan(0);
+      const renewals = mocked.renewals.length;
+      await new Promise((resolve) => setTimeout(resolve, remaining + 50));
+      release();
+      await maintaining;
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+      expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+    } finally {
+      release();
+      await Promise.allSettled([maintaining]);
+      read.mockRestore();
+    }
+  }, 15000);
+
+  it('does not restore a stale idle-failure clock after a learner returns during terminal closure', async () => {
+    const { fresh, service, environmentId } = await studyWithTerminal();
+    let returned = false;
+    const close = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'closeTerminal')
+      .mockImplementation(async () => {
+        if (!returned) {
+          returned = true;
+          await store.recordActivity(fresh.id, principal.ownerId);
+        }
+        throw new Error('Terminal close failed.');
+      });
+    try {
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).checkpoint_failure).toBeNull();
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const row = await store.get(fresh.id, principal.ownerId);
+      expect(row.checkpoint_failure?.stage).toBe('terminal');
+      expect(
+        Math.abs(
+          Date.parse(row.checkpoint_failure!.firstIdleFailureAt!) - (await store.now()).getTime(),
+        ),
+      ).toBeLessThan(10_000);
+      expect(row.archive_discard).toBeNull();
+      expect(await service.get(environmentId)).toMatchObject({ state: 'running' });
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  it('does not re-lease a forced-cancelled local run before its old setup settles', async () => {
+    const fresh = await freshStudy();
+    await fresh.send('checkpoint');
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const realClaim = agents.claimNextSession.bind(agents);
+    const claims = vi
+      .spyOn(agents, 'claimNextSession')
+      .mockImplementation((worker, pid, options) =>
+        realClaim(worker, pid, { ...options, sessionId: queued.sessionId }),
+      );
+    const runnerTools = await import('@/lib/server/pbl-v3/runner-tools');
+    const configure = runnerTools.teachingRunnerConfig;
+    let entered = false,
+      first = true,
+      release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const setup = vi
+      .spyOn(runnerTools, 'teachingRunnerConfig')
+      .mockImplementation(async (input) => {
+        if (input.sessionId === queued.sessionId && first) {
+          first = false;
+          entered = true;
+          await gate;
+        }
+        return configure(input);
+      });
+    const runner = startAgentRunner();
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true), { timeout: 5000 });
+      const old = await agents.getSession(queued.sessionId);
+      expect(old?.lease).toBeTruthy();
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      await fresh.send('prepare');
+      await fresh.send('retry');
+      await vi.waitFor(
+        () =>
+          expect(
+            claims.mock.calls.some((call) => call[2].excludeSessionIds?.includes(queued.sessionId)),
+          ).toBe(true),
+        { timeout: 5000 },
+      );
+      expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
+      release();
+      await vi.waitFor(
+        async () => {
+          const leased = (
+            await Promise.all(claims.mock.results.map((result) => result.value))
+          ).filter(Boolean);
+          expect(leased.length).toBeGreaterThanOrEqual(2);
+          expect(leased[1]?.lease?.workerId).not.toBe(old!.lease!.workerId);
+        },
+        { timeout: 5000 },
+      );
+      expect(await agents.heartbeat(queued.sessionId, old!.lease!.workerId)).toBe(false);
+      expect(
+        await agents.finishSession(queued.sessionId, old!.lease!.workerId, {
+          status: 'succeeded',
+          expectedAttempt: old!.attempt,
+        }),
+      ).toBe(false);
+    } finally {
+      release();
+      await runner.stop();
+      setup.mockRestore();
+      claims.mockRestore();
+      mocked.responses.length = 0;
+    }
+  });
+
   it('recovers an actual orphan through the runner lease and reclaims after completion', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
@@ -4715,7 +5308,6 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await pool.query('UPDATE agent_sessions SET lease_heartbeat_at=0 WHERE id=$1', [
       queued.sessionId,
     ]);
-    await ageStudy(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     expect(await agents.isCancelRequested(queued.sessionId)).toBe(false);
     const recovered = await agents.claimNextSession('replacement-worker', process.pid, {

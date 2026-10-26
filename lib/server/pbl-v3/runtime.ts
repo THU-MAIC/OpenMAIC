@@ -2,6 +2,7 @@ import { recordLearningEvidence } from './evidence';
 import { projectConversation, learningRunFailure, boundConversation } from './conversation';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
+import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { reviewQuestion } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
@@ -123,15 +124,48 @@ export async function fileSnapshot(service: SandboxService, row: Study, signal?:
 }
 export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
   const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
+  const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
+  const current = (
+    await pool.query<Pick<Study, 'idle_turn_cleanup' | 'archive_discard'> & { now: Date }>(
+      'SELECT clock_timestamp() AS now,idle_turn_cleanup,archive_discard FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND environment_id=$3',
+      [row.id, row.owner_id, row.environment_id],
+    )
+  ).rows[0];
+  if (
+    !current ||
+    current.archive_discard?.environmentId === row.environment_id ||
+    current.idle_turn_cleanup?.releasing
+  )
+    throw new SandboxError('CHECKPOINT_CHANGED', 409, 'Workspace was released.');
+  const renew = !(
+    current.idle_turn_cleanup?.environmentId === row.environment_id &&
+    current.now.getTime() >= Date.parse(current.idle_turn_cleanup.releaseAt)
+  );
   const snapshot = await checkpointStep('snapshot', async () => {
-    await service.renewForCheckpoint(requireEnvironment(row), signal);
+    if (renew) await service.renewForCheckpoint(requireEnvironment(row), signal);
     return fileSnapshot(service, row, signal);
   });
   const previous = await service.checkpoint(requireEnvironment(row));
-  const saved = await checkpointStep('archive', () =>
-    service.saveWorkspace(requireEnvironment(row), previous?.revision ?? 0, false, signal),
+  const prepared = await checkpointStep('archive', () =>
+    service.prepareWorkspaceCheckpoint(requireEnvironment(row), previous?.revision ?? 0, signal, {
+      renew: false,
+    }),
   );
-  checkpointRecovery(row, saved.checkpoint.revision, snapshot.fingerprint);
+  try {
+    await prepared.commit(async (db) => {
+      const valid = await db.query(
+        `SELECT id FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+         AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
+         AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true' FOR SHARE`,
+        [row.id, row.owner_id, row.environment_id],
+      );
+      if (!valid.rows.length)
+        throw new SandboxError('CHECKPOINT_CHANGED', 409, 'Workspace was released.');
+    });
+    checkpointRecovery(row, prepared.checkpoint.revision, snapshot.fingerprint);
+  } finally {
+    await prepared.discard().catch(() => {});
+  }
 }
 
 export function checkpointRecovery(row: Study, revision: number, fingerprint: string) {
@@ -465,7 +499,7 @@ export async function commandStudy(
     if (alreadyStarted) return { alreadyStarted: true };
     if (await busy(store, row))
       throw sandboxConflict('Wait for the teaching response, or cancel it first.');
-    await store.recordActivity(id, row.owner_id);
+    row = { ...row, ...(await store.recordActivity(id, row.owner_id)) };
     const service = await SandboxService.forOwner(principal);
     if (command.type !== 'prepare')
       assertEnvironmentReady(await touchEnvironment(store, row, service));
@@ -562,7 +596,11 @@ export async function commandStudy(
       );
     if (command.type === 'prepare') {
       const previousId = row.environment_id;
-      if (previousId && row.archive_discard?.environmentId === previousId)
+      if (
+        previousId &&
+        (row.archive_discard?.environmentId === previousId ||
+          (row.idle_turn_cleanup?.environmentId === previousId && row.idle_turn_cleanup.releasing))
+      )
         await service.destroy(previousId);
       const previous = previousId ? await service.reconcile(previousId) : null;
       if (previous?.state === 'running' && previous.workspaceReady) {

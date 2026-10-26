@@ -15,7 +15,8 @@ export function POST(request: Request) {
     const store = await LearningStore.open();
     const study = await store.findForScene(principal.ownerId, body.stageId, body.sceneId);
     if (!study) return Response.json({ recorded: false });
-    await store.waitForExclusive(study.id, () => store.recordActivity(study.id, principal.ownerId));
+    // Activity is control traffic; a long teaching tool must not hide a returning learner.
+    await store.recordActivity(study.id, principal.ownerId);
     return Response.json({ recorded: true });
   });
 }

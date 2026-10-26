@@ -87,17 +87,36 @@ its explicit restore control opens the project files when wanted.
 After a preparation failure, further typing/scrolling does not automatically retry it;
 the learner uses the explicit setup retry control, preserving any draft input.
 
-The server renews while the study is recently used or an Agent/execution is active. Task
-completion starts a fresh inactivity interval. Builds and assessments are collected through
-the same verdict path as browser collection, even with no browser open. Lifecycle maintenance
-does not cancel teaching turns based on their age or silence. Healthy queued/running turns
-remain protected after departure; durable completion starts the inactivity interval. Explicit
-cancellation, actual provider failures and worker lease/orphan recovery remain the Agent
-runner's responsibility, including its write fences. The companion teaching execution-policy
-changes in PR #2003 remove the runner's inherited V3 duration/output/tool limits; lifecycle
-maintenance adds no substitute deadline. A live worker heartbeat does not establish upstream
-request health, and silence alone does not establish failure. Without a concrete failure or
-explicit cancellation, a pending turn has no lifecycle-imposed duration bound.
+Healthy teaching turns have no lifecycle age/silence cutoff while the learner is recently
+active. Normal task completion starts a fresh inactivity interval. Builds and assessments
+are collected through the same verdict path as browser collection, even with no browser open.
+After learner inactivity reaches the idle timeout, maintenance records a fixed departed-turn
+cleanup deadline at last use + idle timeout + archive failure grace, and requests cancellation.
+This reuses the two existing settings (ten plus five minutes by default). PostgreSQL stores
+the deadline in `idle_turn_cleanup`; scans, restarts and worker heartbeats cannot extend it.
+Automatic cancellation is not learner activity. Real input clears pending cleanup, but an
+already cancelled turn needs explicit retry and durable discard intent remains irreversible.
+Activity reporting does not wait for the Study advisory lock held by a long teaching tool.
+After a safe checkpoint, a short transaction checks that no learner returned and commits
+normal release intent in the same cleanup record. Checkpoint success alone never erases
+the deadline. Once release is committed, returning input completes deletion/recovery rather
+than reversing it; deletion contention cannot restart renewal. Earlier return during archive
+I/O cancels release, including the archive-failure path.
+
+At cleanup expiry, no maintenance path renews the binding. A still-running unacknowledged
+turn is durably cancelled and its lease revoked before recording discard intent and trying
+destruction. Each runner claim has a distinct lease identity; the scanner excludes locally
+executing sessions, so a reset retry cannot reauthorize a late old worker. Queued-only or
+acknowledged work follows normal writer cleanup and checkpointing; a checkpoint after expiry
+uses only the remaining lease. Failure or uncertain writers fall back to the previous
+checkpoint and loss notice. Database failure prevents intentional destruction; uncertain
+provider deletion is retried, with the remaining provider lease as the final compute bound.
+
+Explicit cancellation, actual provider failures and worker lease/orphan recovery remain
+available. The companion teaching execution-policy changes in PR #2003 remove the runner's
+inherited V3 duration/output/tool limits; this lifecycle policy bounds only learner inactivity.
+A live worker heartbeat does not establish upstream request health, and silence alone does
+not establish failure. Inactivity cleanup is intentional cancellation, not a model timeout.
 Commands still active/unknown after 330 seconds are requested to cancel through
 their existing operation ID. An unknown outcome is never assumed to have stopped writing.
 If all unresolved commands remain overdue after cancellation, idle maintenance uses the
@@ -114,7 +133,7 @@ does not count as learner activity or a passing assessment.
 
 Idle reclamation closes leftover workbench terminals through the existing terminal cleanup
 path before archiving, including ordinary background processes in the terminal session.
-Recent learner activity and active Agent/build/assessment work still prevent reclamation.
+Recent learner activity and work protected by its execution/cleanup interval prevent reclamation.
 Uncertain terminal discovery or failed closure records an execution-unsettled failure at
 the terminal stage, using the same idle failure grace; retries never restart that deadline.
 If closure cannot be confirmed before expiry, release without a new archive under the
@@ -135,16 +154,19 @@ Intentional reclamation collects outcomes, quiesces writers, commits a checkpoin
 study recovery position, then destroys the resource. It preserves the logical study and
 recovers into a new physical environment through the existing allocation identity path.
 Interrupted allocations/restores and uncertain deletes are reconciled under their original
-IDs. Passive polling never recreates an idle environment. Once reclamation holds the study
-lock, new operations retry after it finishes rather than attempting to reverse deletion.
+IDs. Passive polling never recreates an idle environment. Project mutations retry while
+reclamation holds the Study lock. Activity control can stop an uncommitted release; after
+durable release intent, return completes deletion and restoration under the original IDs.
 
 Checkpoint failures record a safe reason, stage and first idle failure timestamp. Transient
 failures retry on the next pass; deterministic size/file/quota/configuration failures wait
 for user activity or an explicit retry instead of repeatedly exporting unchanged files.
 `OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS` is optional, read at runtime, defaults to **300000**
-and accepts 60000–86400000. It starts on the first failed **idle reclamation**, not a
-periodic dirty checkpoint. Retries and polling never extend it. Real learner activity
-clears the pending failure cycle; task completion starts a fresh inactivity interval.
+and accepts 60000–86400000. For archive failures it starts on the first failed **idle
+reclamation**, not a periodic dirty checkpoint. The same setting bounds departed-turn
+cleanup starting at the learner inactivity deadline. Retries and polling never extend a
+started cycle. Real learner activity clears a pending failure cycle; normal task completion
+starts a fresh inactivity interval, while automatic cancellation does not.
 Both the idle timeout and archive failure grace are validated during fatal boot checks,
 before background workers start; malformed settings refuse startup.
 

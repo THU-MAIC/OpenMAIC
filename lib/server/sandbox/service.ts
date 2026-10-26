@@ -875,10 +875,15 @@ export class SandboxService {
     return this.store.assertRecordedIdle(await this.running(id));
   }
 
-  async prepareWorkspaceCheckpoint(id: string, revision: number, signal: AbortSignal) {
+  async prepareWorkspaceCheckpoint(
+    id: string,
+    revision: number,
+    signal: AbortSignal,
+    options: { renew?: boolean } = {},
+  ) {
     signal.throwIfAborted();
     await this.mutation(id, 'checkpoint');
-    await this.renewForCheckpoint(id, signal);
+    if (options.renew !== false) await this.renewForCheckpoint(id, signal);
     const row = await this.running(id);
     await this.store.assertRecordedIdle(row);
     const prepared = await this.store.prepareCheckpoint(

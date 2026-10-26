@@ -55,6 +55,12 @@ export async function touchEnvironment(
         'ENVIRONMENT_CHANGED',
       );
     if (
+      current.archive_discard?.environmentId === row.environment_id ||
+      (current.idle_turn_cleanup?.environmentId === row.environment_id &&
+        current.idle_turn_cleanup.releasing)
+    )
+      return { ...env, workspaceReady: false };
+    if (
       current.environment_checked_at &&
       Date.now() - current.environment_checked_at.getTime() < 20_000
     )

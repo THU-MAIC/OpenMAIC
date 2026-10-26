@@ -6,7 +6,7 @@ export function pblIdleTimeoutMs() {
   return value;
 }
 
-/** Extra retention after an idle archive first fails; retries never extend it. */
+/** Archive failure and departed-turn cleanup grace; retries never extend a started cycle. */
 export function pblArchiveFailureGraceMs() {
   const value = Number(process.env.OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS ?? 300_000);
   if (!Number.isSafeInteger(value) || value < 60_000 || value > 86_400_000)

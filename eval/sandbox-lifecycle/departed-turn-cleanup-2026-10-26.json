@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-26",
+  "branch": "fix/1995-sandbox-lifecycle",
+  "pullRequest": 2011,
+  "review": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#pullrequestreview-5647227902",
+  "previousHead": "f07aabfbc148f3bdd0e107608bb56f6809e402ea",
+  "base": "8f737ad715647304156f6377e0bf5bdb3705faec",
+  "defaults": {
+    "idleTimeoutMs": 600000,
+    "cleanupGraceMs": 300000
+  },
+  "policy": {
+    "active": "Genuine activity protects healthy queued/running teaching regardless of total turn age or silence.",
+    "cancelling": "At learner inactivity, persist idleAt/releaseAt in idle_turn_cleanup and request cancellation. The deadline is anchored to last use and cannot slide with scans, restarts or heartbeats.",
+    "safeRelease": "Queued-only or acknowledged turns quiesce writers and checkpoint. After expiry checkpointing uses only the remaining lease; no second renewal follows the source snapshot.",
+    "committedRelease": "A short activity CAS commits releasing=true after a safe checkpoint. Return before that intent cancels release; return afterward completes deletion/recovery. Contention cannot erase the deadline or restart renewal.",
+    "uncertainRelease": "Unacknowledged running turns are durably cancelled and their leases revoked before discard intent/destruction. Previous checkpoint and loss notice remain.",
+    "recovery": "Real input clears only cancellable cleanup; already cancelled work requires explicit retry. Replacement binding clears old cleanup.",
+    "faultBoundary": "If the control database cannot persist fences/intents, intentional destructive release is refused and the remaining provider lease bounds compute."
+  },
+  "implementation": {
+    "migration": {
+      "store": "pbl-v3",
+      "version": 9,
+      "name": "departed-teaching-cleanup",
+      "checksum": "0452ede8a64ee73615cf243bbd8e0af7ce32c7f772999079c52fde86c9042e8c",
+      "shippedSqlChanged": false
+    },
+    "storage": {
+      "version": "0.39.2",
+      "compatibleOptions": ["requestCancel(settle)", "claimNextSession(excludeSessionIds)"]
+    },
+    "leaseIdentity": "Stable process ID for diagnostics, distinct random ID per claim; all runSession writes use its captured lease identity.",
+    "control": "Short DB-only cleanup precedes project hydration and Study advisory admission; cancellation/write transactions lock Agent rows before Study rows.",
+    "activity": "Returning input bypasses long teaching advisory locks; failure/discard/release writes validate current activity.",
+    "staleWriters": "Readiness uses current intent; teaching commit compares discard/release snapshots; checkpoint head and recovery publication reject released bindings."
+  },
+  "selfReview": {
+    "reviewers": ["departure_fencing_review", "departure_policy_review"],
+    "finalReviewedTrackedDiffSha256": "2e65e6ede34d926b0aec35c20797d6df5d52abd7bda246e5f586f8594e965ca0",
+    "fixes": [
+      "Prevent same-process retry from reauthorizing an old worker after attempt reset.",
+      "Checkpoint safe queued/acknowledged edits after expiry instead of treating them as uncertain writes.",
+      "Reject stale interactive commits/readiness after concurrent discard.",
+      "Preserve cleanup through successful checkpoint and uncertain deletion.",
+      "Remove renewal using a stale decision after snapshot I/O.",
+      "Let returning activity cancel an in-flight uncommitted release, including failure paths.",
+      "Do not reinstall a stale failure clock after returning activity."
+    ],
+    "result": "Both reviewers completed final delta inspection with no remaining confirmed findings. Execution evidence below was produced by the coordinator.",
+    "laterDelta": "Configuration and README comments clarified the two grace uses and the irreversible release phase; this evidence file was added after review."
+  },
+  "validation": {
+    "redEvidence": [
+      "Original departed queued/running renewal and automatic-cancellation regressions failed before implementation.",
+      "Runner claim-identity regression failed before capturing the per-claim worker identity."
+    ],
+    "ciAppDomainPostgres": {
+      "passed": 373,
+      "filesPassed": 31,
+      "manifest": ".github/workflows/storage-pg-contract.yml",
+      "maxWorkers": 2,
+      "timeouts": "Default ten-minute idle and five-minute grace",
+      "isolation": "Disposable schemas; controlled provider/object storage; real local Python/Java 17 execution"
+    },
+    "storage": {
+      "passed": 1448,
+      "skipped": 7,
+      "filesPassed": 35,
+      "filesSkipped": 1,
+      "isolation": "Fresh dedicated PostgreSQL database, dropped after the run; PG contract suites required rather than silently skipped"
+    },
+    "sandboxPblAgentUnit": {
+      "passed": 1587,
+      "skipped": 14,
+      "filesPassed": 129,
+      "filesSkipped": 3
+    },
+    "focusedFinalRegression": {
+      "passed": 16,
+      "covers": [
+        "Real return during terminal-close failure",
+        "Next idle cycle receives a fresh failure grace",
+        "Deferred work",
+        "Return during successful/failed archive",
+        "Deletion contention and return",
+        "Snapshot crossing cleanup deadline"
+      ]
+    },
+    "rootTypecheck": "passed",
+    "storageSourceAndTestTypecheck": "passed",
+    "formatting": "passed",
+    "eslint": {
+      "errors": 0,
+      "existingWarnings": 17
+    }
+  },
+  "scenarios": [
+    "Healthy long queued, reasoning and tool turns with recent learner activity",
+    "Never-claimed queue and fresh-heartbeat provider hang after departure",
+    "Cancellation acknowledgement without fabricated user activity",
+    "Deadline reuse across stores/restart and repeated scans",
+    "Return before cleanup commitment and explicit retry",
+    "Deadline cleanup while the teaching mutex remains occupied",
+    "Dirty queued/acknowledged workspace archived after the deadline without renewal",
+    "Concurrent stale command, readiness and checkpoint publication fences",
+    "Real same-process runner: forced cancel during delayed setup, immediate restore/retry, missed notification, distinct new claim, rejected old heartbeat/finish",
+    "Slow archive/snapshot crosses activity or deadline boundaries",
+    "Deletion contention retains irreversible intent without losing safe checkpoint"
+  ],
+  "limitations": [
+    "No paid cloud/model call or new wall-clock lifecycle benchmark in this follow-up.",
+    "Aged DB timestamps, controlled provider reservations and a short real snapshot-boundary wait are distinct from a full live fifteen-minute journey.",
+    "Companion PR 2003 still owns generic teaching runner duration/tool/output policy removal.",
+    "Provider deletion failure may leave compute until its remaining lease expires; latest-checkpoint recovery remains the data-loss boundary."
+  ]
+}

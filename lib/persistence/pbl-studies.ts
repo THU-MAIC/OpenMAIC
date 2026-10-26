@@ -114,6 +114,12 @@ UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_a
         ADD COLUMN checkpoint_failure JSONB,
         ADD COLUMN archive_discard JSONB;`,
     },
+    {
+      version: 9,
+      name: 'departed-teaching-cleanup',
+      transaction: true,
+      up: 'ALTER TABLE pbl_v3_studies ADD COLUMN idle_turn_cleanup JSONB;',
+    },
   ],
 };
 

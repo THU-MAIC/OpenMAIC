@@ -46,6 +46,33 @@ async function renewForMaintenance(
   id: string,
   environmentId: string,
 ) {
+  const latest = (await store.pool.query<Study>('SELECT * FROM pbl_v3_studies WHERE id=$1', [id]))
+    .rows[0];
+  if (
+    !latest ||
+    (latest.environment_id !== environmentId &&
+      latest.environment_recovery?.requestId !== environmentId)
+  )
+    return;
+  const now = await store.now();
+  if (
+    latest.archive_discard?.environmentId === environmentId ||
+    (latest.idle_turn_cleanup?.environmentId === environmentId &&
+      latest.idle_turn_cleanup.releasing) ||
+    archiveGraceExpired(latest, now)
+  )
+    return;
+  if (
+    latest.idle_turn_cleanup?.environmentId === environmentId &&
+    now.getTime() >= Date.parse(latest.idle_turn_cleanup.releaseAt)
+  )
+    return;
+  if (
+    now.getTime() - latest.last_used_at.getTime() >=
+      pblIdleTimeoutMs() + pblArchiveFailureGraceMs() &&
+    (await activeStudyTurns(store, id, latest.owner_id)).rows.length
+  )
+    return;
   // Do not endlessly renew compute when the control database cannot persist writes.
   await store.pool.query(
     'UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1 AND environment_id=$2',
@@ -59,6 +86,11 @@ async function renewForMaintenance(
 }
 
 function archiveGraceExpired(row: Study, now: Date) {
+  if (
+    row.idle_turn_cleanup?.environmentId === row.environment_id &&
+    now.getTime() >= Date.parse(row.idle_turn_cleanup.releaseAt)
+  )
+    return true;
   const failed = row.checkpoint_failure;
   return (
     failed?.environmentId === row.environment_id &&
@@ -78,6 +110,11 @@ async function renewDeferredStudy(
   const row = await store.get(id, ownerId);
   const now = await store.now();
   if (row.archive_discard?.environmentId === environmentId || archiveGraceExpired(row, now)) return;
+  if (
+    row.idle_turn_cleanup?.environmentId === environmentId &&
+    now.getTime() >= Date.parse(row.idle_turn_cleanup.releaseAt)
+  )
+    return;
   const withinRetention =
     now.getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs() + pblArchiveFailureGraceMs();
   if (!withinRetention) {
@@ -88,7 +125,7 @@ async function renewDeferredStudy(
          OR (result_json->>'state' IN ('exited','failed','cancelled','timed_out') AND updated_at >= $3))
        UNION ALL
        SELECT 1 FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
-         WHERE r.study_id=$4 AND a.status IN ('succeeded','failed','cancelled') AND a.updated_at >= $3
+         WHERE r.study_id=$4 AND a.status IN ('succeeded','failed') AND a.updated_at >= $3
        LIMIT 1`,
       [
         environmentId,
@@ -107,14 +144,19 @@ async function releaseWithoutArchive(store: LearningStore, row: Study, service: 
   const environmentId = row.environment_id!;
   const saved = await service.checkpoint(environmentId);
   // This durable intent also fences edits if deletion is uncertain.
-  await store.recordArchiveDiscard(row, {
-    environmentId,
-    at: new Date().toISOString(),
-    checkpointRevision: saved?.revision ?? 0,
-    checkpointAt: saved?.createdAt ?? null,
-    reason: row.checkpoint_failure!.reason,
-  });
-  await service.destroy(environmentId);
+  const recorded = await store.recordArchiveDiscard(
+    row,
+    {
+      environmentId,
+      at: new Date().toISOString(),
+      checkpointRevision: saved?.revision ?? 0,
+      checkpointAt: saved?.createdAt ?? null,
+      reason: row.checkpoint_failure?.reason ?? 'execution-unsettled',
+    },
+    false,
+    row.last_used_at,
+  );
+  if (recorded) await service.destroy(environmentId);
 }
 
 async function handleUnsettledWriter(
@@ -144,11 +186,32 @@ export async function maintainStudy(
   pendingEnvironmentId?: string,
 ) {
   let periodic: Study | undefined;
-  const initial = await store.get(id, ownerId);
+  const control = await store.reconcileIdleTurns({ id, owner_id: ownerId });
+  const initial = control.row;
   const currentEnvironmentId =
     pendingEnvironmentId ?? initial.environment_id ?? initial.environment_recovery?.requestId;
-  const running = await activeStudyTurns(store, id, ownerId);
-  if (currentEnvironmentId && running.rows.length) {
+  if (
+    control.release &&
+    initial.environment_id &&
+    (!pendingEnvironmentId || pendingEnvironmentId === initial.environment_id)
+  ) {
+    const service = await SandboxService.forLearningMaintenance(
+      id,
+      ownerId,
+      initial.environment_id,
+    );
+    await withLearningWorkspaceAccess(
+      {
+        ownerId,
+        workspaceId: learningWorkspaceId(id),
+        environmentIds: () => [initial.environment_id],
+        operations: ['destroy'],
+      },
+      () => service.destroy(initial.environment_id!),
+    );
+    return;
+  }
+  if (currentEnvironmentId && control.active) {
     // Model generation has no study lock. Keep its resource alive without taking that lock,
     // so skill reads and writes never lose a teaching turn to background maintenance.
     try {
@@ -223,7 +286,10 @@ export async function maintainStudy(
               .catch(() => ({ state: 'unknown' }));
             if (['starting', 'running', 'unknown'].includes(observed.state)) {
               commandsBusy++;
-              if (commandNow.getTime() - command.created_at.getTime() > PBL_MAX_COMMAND_MS) {
+              if (
+                commandNow.getTime() - command.created_at.getTime() > PBL_MAX_COMMAND_MS ||
+                (row.idle_turn_cleanup && archiveGraceExpired(row, commandNow))
+              ) {
                 overdueCommands++;
                 // Failure to acknowledge cancellation is still an unresolved writer, not a terminal result.
                 await service.cancelCommand(environmentId, command.id).catch(() => {});
@@ -236,7 +302,7 @@ export async function maintainStudy(
               await handleUnsettledWriter(store, row, service, 'execution');
             return;
           }
-          if (row.checkpoint_failure?.stage === 'execution') {
+          if (!row.idle_turn_cleanup && row.checkpoint_failure?.stage === 'execution') {
             await store.recordActivity(id, ownerId);
             await store.recordLifecycleError(id, ownerId, null);
           }
@@ -246,10 +312,10 @@ export async function maintainStudy(
             await db.query(
               `UPDATE pbl_v3_studies s SET last_used_at=GREATEST(s.last_used_at,
               (SELECT max(a.updated_at) FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
-               WHERE r.study_id=s.id AND a.status IN ('succeeded','failed','cancelled')),
+               WHERE r.study_id=s.id AND a.status IN ('succeeded','failed')),
               (SELECT max(c.updated_at) FROM sandbox_commands c WHERE c.environment_id=$2
                AND c.result_json->>'state' IN ('exited','failed','cancelled','timed_out')))
-             WHERE s.id=$1 AND s.owner_id=$3`,
+             WHERE s.id=$1 AND s.owner_id=$3 AND s.idle_turn_cleanup IS NULL`,
               [id, environmentId, ownerId],
             );
           });
@@ -263,7 +329,11 @@ export async function maintainStudy(
             try {
               collected = await collectStudyExecution(store, row, service);
             } catch (error) {
-              if (checkpointBusy(error)) return;
+              if (checkpointBusy(error)) {
+                if (row.idle_turn_cleanup && archiveGraceExpired(row, await store.now()))
+                  await releaseWithoutArchive(store, row, service);
+                return;
+              }
               const failedAt = await store.now();
               await store.recordCheckpointFailure(row, {
                 environmentId,
@@ -280,7 +350,8 @@ export async function maintainStudy(
             }
             if ('pending' in collected.result) return;
             row = await store.transaction((db) => store.commit(db, row, collected.transition));
-            if (!('interrupted' in collected.result)) await store.recordActivity(id, ownerId);
+            if (!row.idle_turn_cleanup && !('interrupted' in collected.result))
+              await store.recordActivity(id, ownerId);
             row = await store.get(id, ownerId);
           }
           const now = await store.now();
@@ -341,7 +412,17 @@ export async function maintainStudy(
               // Persist recovery position BEFORE deletion. A lost delete acknowledgement is retried by identity.
               await store.saveEnvironmentRecovery(row);
             } catch (error) {
-              if (checkpointBusy(error)) return;
+              const latest = await store.get(id, ownerId);
+              if (
+                latest.last_used_at.getTime() !== row.last_used_at.getTime() ||
+                (row.idle_turn_cleanup && !latest.idle_turn_cleanup)
+              )
+                return;
+              if (checkpointBusy(error)) {
+                if (row.idle_turn_cleanup && archiveGraceExpired(row, await store.now()))
+                  await releaseWithoutArchive(store, row, service);
+                return;
+              }
               const cause = checkpointFailure(error);
               const failureStage = error instanceof CheckpointAttemptError ? error.stage : stage;
               await store.recordCheckpointFailure(row, {
@@ -358,9 +439,11 @@ export async function maintainStudy(
                 ...cause,
                 stage: failureStage,
               });
+              if (row.idle_turn_cleanup && archiveGraceExpired(row, await store.now()))
+                await releaseWithoutArchive(store, row, service);
               return;
             }
-            if (idle) await service.destroy(environmentId);
+            if (idle && (await store.claimIdleRelease(row))) await service.destroy(environmentId);
           }
         } catch (error) {
           if (checkpointBusy(error)) return;
@@ -390,6 +473,7 @@ async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
     current.revision === captured.revision &&
     current.workspace_dirty_at?.getTime() === captured.workspace_dirty_at?.getTime() &&
     current.archive_discard?.environmentId !== environmentId &&
+    !current.idle_turn_cleanup &&
     !current.evaluation &&
     (!current.environment_recovery || current.environment_recovery.requestId === environmentId);
   try {
@@ -421,7 +505,9 @@ async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
           );
           const previous = await service.checkpoint(environmentId);
           const prepared = await checkpointStep('archive', () =>
-            service.prepareWorkspaceCheckpoint(environmentId, previous?.revision ?? 0, signal),
+            service.prepareWorkspaceCheckpoint(environmentId, previous?.revision ?? 0, signal, {
+              renew: false,
+            }),
           );
           try {
             await publish(async () => {

@@ -326,6 +326,13 @@ const SHIPPED: readonly (readonly [
     true,
     '94c649267d2ea6b140ea15e093ea3d7e94ef28e2b47199cbbee6556a09051d2e',
   ],
+  [
+    'pbl-v3',
+    9,
+    'departed-teaching-cleanup',
+    true,
+    '0452ede8a64ee73615cf243bbd8e0af7ce32c7f772999079c52fde86c9042e8c',
+  ],
 ];
 
 /**

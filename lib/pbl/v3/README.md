@@ -236,6 +236,10 @@ no tables, workers, provider, or configuration switches.
   periodic maintenance also enters a checkpoint-only scope: capture/upload uses a separate
   checkpoint mutex, while publication briefly locks the study and environment, revalidates
   the file generation and writers, and atomically commits the head and recovery metadata.
+  Departed-turn cleanup is short database control traffic outside Study admission. It locks
+  Agent rows before the Study row and, at expiry, fences unacknowledged workers and records
+  irreversible discard intent before its destroy-only scope. Fresh readiness, teaching
+  commits and checkpoint publication reject that discarded binding, including stale callers.
   Scope matches owner, workspace, current/recovery environment IDs and specific
   operations; it expires when the awaited action ends. Stage, role, feedback and
   optimistic revision checks still run before mutation. No HTTP parameter creates

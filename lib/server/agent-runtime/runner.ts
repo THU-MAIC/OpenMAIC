@@ -109,7 +109,7 @@ import {
 } from './personal-history-tools';
 
 const log = createLogger('AgentRunner');
-const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
+const PROCESS_WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
 const SESSION_WAKEUP_FALLBACK_MS = 5_000;
 const MESSAGE_UPDATE_MIN_INTERVAL_MS = 150;
 
@@ -924,6 +924,7 @@ export function createAskUserTerminateLatch(): {
 }
 
 export interface AgentRunnerHandle {
+  /** Stable process identity for diagnostics; each claim owns a distinct lease identity. */
   readonly workerId: string;
   stop(options?: { timeoutMs?: number }): Promise<void>;
 }
@@ -963,6 +964,8 @@ function leaseMatches(
 // finally blocks pair every timer, subscription, and agent listener with the
 // exact lifetime in which it can fire.
 export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Promise<void> {
+  // Attempts reset on attended retry; the lease identity must still distinguish old work.
+  const WORKER_ID = meta.lease?.workerId ?? PROCESS_WORKER_ID;
   const id = meta.id;
   const attempt = meta.attempt;
   const claimSeq = meta.claimSeq;
@@ -2092,10 +2095,15 @@ export function startAgentRunner(): AgentRunnerHandle {
     try {
       const store = await getAgentSessionStore();
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
-        const meta = await store.claimNextSession(WORKER_ID, process.pid, {
-          leaseTtlMs: config.leaseTtlMs,
-          maxAttempts: config.maxAttempts,
-        });
+        const meta = await store.claimNextSession(
+          `${PROCESS_WORKER_ID}:${randomUUID()}`,
+          process.pid,
+          {
+            leaseTtlMs: config.leaseTtlMs,
+            maxAttempts: config.maxAttempts,
+            excludeSessionIds: [...ctx.running.keys()],
+          },
+        );
         if (!meta) break;
         // Process-local fence in addition to the store's lease exclusion.
         if (ctx.running.has(meta.id)) continue;
@@ -2116,7 +2124,7 @@ export function startAgentRunner(): AgentRunnerHandle {
   scanTimer.unref?.();
   void scan();
   log.info(
-    `runner ${WORKER_ID} started (scan=${config.scanIntervalMs}ms, ` +
+    `runner ${PROCESS_WORKER_ID} started (scan=${config.scanIntervalMs}ms, ` +
       `heartbeat=${config.heartbeatIntervalMs}ms, leaseTtl=${config.leaseTtlMs}ms, ` +
       `maxConcurrent=${config.maxConcurrent}, maxAttempts=${config.maxAttempts})`,
   );
@@ -2128,7 +2136,7 @@ export function startAgentRunner(): AgentRunnerHandle {
   );
 
   return {
-    workerId: WORKER_ID,
+    workerId: PROCESS_WORKER_ID,
     async stop(options?: { timeoutMs?: number }): Promise<void> {
       ctx.shuttingDown = true;
       if (scanTimer) clearInterval(scanTimer);
@@ -2140,7 +2148,7 @@ export function startAgentRunner(): AgentRunnerHandle {
       if (ctx.running.size > 0) {
         log.warn(`stop() timed out with ${ctx.running.size} session(s) still settling`);
       }
-      log.info(`runner ${WORKER_ID} stopped`);
+      log.info(`runner ${PROCESS_WORKER_ID} stopped`);
     },
   };
 }
