@@ -92,6 +92,7 @@ export class GuidedSkillReview {
 
   /** A blocked build can return control without creating review/approval evidence. */
   handoff(question: string): void {
+    if (!question.trim()) throw new Error('A concrete learner question is required.');
     this.assertWritable();
     delete this.state.pending;
     delete this.state.coverage;

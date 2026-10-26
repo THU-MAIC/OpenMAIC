@@ -10,6 +10,24 @@ const protocol = {
 const artifact = 'a'.repeat(64);
 
 describe('guided review boundaries', () => {
+  it('persists a meaningful help handoff without crediting its reply as Skill review', () => {
+    const review = new GuidedSkillReview(protocol);
+    review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    review.advance('A-teach.md', undefined, artifact);
+    expect(() => review.handoff('   ')).toThrow('concrete learner question');
+    review.handoff('Which build requirement needs clarification?');
+    const resumed = new GuidedSkillReview(protocol, review.state);
+    resumed.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    expect(() => resumed.assertWritable()).toThrow();
+    resumed.beginRun('code:3', [{ seq: 2, text: 'Here is the build requirement.' }], true);
+    expect(() => resumed.advance('B-review.md', 'The learner helped.', artifact)).toThrow();
+    resumed.checkpoint('Review the repaired artifact.', artifact);
+    resumed.beginRun('code:3', [{ seq: 3, text: 'I reviewed the repaired artifact.' }], true);
+    expect(() =>
+      resumed.advance('B-review.md', 'The artifact was reviewed.', artifact),
+    ).not.toThrow();
+  });
+
   it('requires a later real reply and refuses changed artifacts and fabricated feedback without a reply', () => {
     const review = new GuidedSkillReview(protocol);
     const start = { seq: 1, text: 'Start' };
