@@ -4375,6 +4375,113 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     return { fresh, service, terminal, environmentId: row.environment_id! };
   }
 
+  it.each(
+    (
+      [
+        ['discard', 'input'],
+        ['discard', 'resize'],
+        ['release', 'input'],
+        ['release', 'resize'],
+      ] as const
+    ).flatMap(([intent, action]) =>
+      (['snapshot', 'discovery', 'permissions'] as const).map((timing) => ({
+        intent,
+        action,
+        timing,
+      })),
+    ),
+  )(
+    'fences terminal $action after $intent intent committed during $timing',
+    async ({ intent, action, timing }) => {
+      const { fresh, service, terminal, environmentId } = await studyWithTerminal();
+      const row = await store.get(fresh.id, principal.ownerId);
+      const original = SandboxService.prototype.updateTerminal;
+      const originalFind = E2BCompatibleSandboxProvider.prototype.findTerminal;
+      const originalRoles = LearningStore.prototype.roles;
+      const input = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'terminalInput');
+      const resize = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'resizeTerminal');
+      let committed = false;
+      const commitIntent = async () => {
+        if (committed) return;
+        committed = true;
+        if (intent === 'discard') {
+          const saved = await service.checkpoint(environmentId);
+          expect(
+            await store.recordArchiveDiscard(row, {
+              environmentId,
+              at: (await store.now()).toISOString(),
+              checkpointRevision: saved!.revision,
+              checkpointAt: saved!.createdAt,
+              reason: 'execution-unsettled',
+            }),
+          ).toBe(true);
+        } else expect(await store.claimIdleRelease(row)).toBe(true);
+      };
+      const update = vi
+        .spyOn(SandboxService.prototype, 'updateTerminal')
+        .mockImplementation(async function (this: SandboxService, ...args) {
+          if (timing === 'snapshot') await commitIntent();
+          return original.apply(this, args);
+        });
+      const find = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'findTerminal')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          const result = await originalFind.apply(this, args);
+          if (timing === 'discovery') await commitIntent();
+          return result;
+        });
+      const roles = vi.spyOn(LearningStore.prototype, 'roles').mockImplementation(async function (
+        this: LearningStore,
+        ...args
+      ) {
+        const result = await originalRoles.apply(this, args);
+        if (timing === 'permissions') await commitIntent();
+        return result;
+      });
+      try {
+        await expect(
+          workbenchCommand(principal, fresh.id, {
+            id: randomUUID(),
+            revision: row.revision,
+            environmentId,
+            action: 'input',
+            terminalId: terminal.id,
+            ...(action === 'input' ? { data: 'echo doomed\n' } : { cols: 90, rows: 24 }),
+          }),
+        ).rejects.toMatchObject({ reason: 'ENVIRONMENT_UNAVAILABLE' });
+        expect(input).not.toHaveBeenCalled();
+        expect(resize).not.toHaveBeenCalled();
+        // Stop stays available after irreversible intent without Study admission.
+        await store.exclusive(fresh.id, () =>
+          workbenchCommand(principal, fresh.id, {
+            id: randomUUID(),
+            revision: row.revision,
+            environmentId,
+            action: 'stop',
+          }),
+        );
+        expect(await service.terminal(environmentId, terminal.id)).toMatchObject({
+          state: 'closed',
+        });
+      } finally {
+        update.mockRestore();
+        find.mockRestore();
+        roles.mockRestore();
+        input.mockRestore();
+        resize.mockRestore();
+        await withLearningWorkspaceAccess(
+          {
+            ownerId: principal.ownerId,
+            workspaceId: learningWorkspaceId(fresh.id),
+            environmentIds: () => [environmentId],
+            operations: ['destroy'],
+          },
+          () => service.destroy(environmentId),
+        );
+      }
+    },
+  );
+
   it('closes an abandoned terminal before archiving its final writes and releasing the idle environment', async () => {
     const { fresh, service, terminal, environmentId } = await studyWithTerminal();
     const source = Object.keys(project.files).find((path) => path !== 'PLAN.md')!;

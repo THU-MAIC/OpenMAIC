@@ -711,20 +711,22 @@ export class SandboxService {
     authorize?: () => Promise<void>,
   ) {
     await this.mutation(id, 'terminal');
-    return this.store.exclusive(id, async () => {
-      await authorize?.();
-      return this.updateTerminalUnlocked(id, terminalId, body);
-    });
+    return this.store.exclusive(id, () =>
+      this.updateTerminalUnlocked(id, terminalId, body, authorize),
+    );
   }
 
   private async updateTerminalUnlocked(
     id: string,
     terminalId: string,
     body: Record<string, unknown>,
+    authorize?: () => Promise<void>,
   ) {
     const { env, terminal } = await this.terminalBinding(id, terminalId);
     if (terminal.state !== 'running' || terminal.pid === null)
       throw sandboxConflict('Terminal is not running.');
+    // Discovery can outlive a learning release decision. Recheck policy after remote reads.
+    await authorize?.();
     if (body.action === 'input') {
       if (typeof body.data !== 'string' || Buffer.byteLength(body.data) > 16_384)
         throw sandboxInvalid('Terminal input is limited to 16 KiB.');

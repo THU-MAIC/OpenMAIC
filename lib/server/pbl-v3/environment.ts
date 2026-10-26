@@ -32,6 +32,40 @@ export async function recordExpiredWorkspace(
   if (await store.recordArchiveDiscard(row, discard, true)) row.archive_discard = discard;
 }
 
+/** A committed release cannot be cancelled by activity or authorize new writes. */
+export function environmentReleaseCommitted(
+  row: Pick<Study, 'archive_discard' | 'idle_turn_cleanup'>,
+  environmentId: string,
+) {
+  return (
+    row.archive_discard?.environmentId === environmentId ||
+    (row.idle_turn_cleanup?.environmentId === environmentId &&
+      row.idle_turn_cleanup.releasing === true)
+  );
+}
+
+/** Final write admission must not use a snapshot captured before project/permission I/O. */
+export async function assertEnvironmentWritable(
+  store: LearningStore,
+  id: string,
+  ownerId: string,
+  environmentId: string,
+) {
+  const current = (
+    await store.pool.query<Pick<Study, 'environment_id' | 'archive_discard' | 'idle_turn_cleanup'>>(
+      'SELECT environment_id,archive_discard,idle_turn_cleanup FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2',
+      [id, ownerId],
+    )
+  ).rows[0];
+  if (!current || current.environment_id !== environmentId)
+    throw sandboxConflict('The learning environment changed.', 'ENVIRONMENT_CHANGED');
+  if (environmentReleaseCommitted(current, environmentId))
+    throw sandboxConflict(
+      'Prepare or recover the project environment before continuing.',
+      'ENVIRONMENT_UNAVAILABLE',
+    );
+}
+
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
 export async function touchEnvironment(
   store: LearningStore,
@@ -41,7 +75,7 @@ export async function touchEnvironment(
 ) {
   if (!row.environment_id) return null;
   let env = await service.get(row.environment_id);
-  if (row.archive_discard?.environmentId === row.environment_id)
+  if (environmentReleaseCommitted(row, row.environment_id))
     return { ...env, workspaceReady: false };
   const deadline = Date.now() + 5_000;
   let reconciled = false;
@@ -54,11 +88,7 @@ export async function touchEnvironment(
         'The learning environment changed. Refresh before continuing.',
         'ENVIRONMENT_CHANGED',
       );
-    if (
-      current.archive_discard?.environmentId === row.environment_id ||
-      (current.idle_turn_cleanup?.environmentId === row.environment_id &&
-        current.idle_turn_cleanup.releasing)
-    )
+    if (environmentReleaseCommitted(current, row.environment_id))
       return { ...env, workspaceReady: false };
     if (
       current.environment_checked_at &&
