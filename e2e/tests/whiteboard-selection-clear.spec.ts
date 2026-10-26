@@ -2,7 +2,7 @@ import { expect, test } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { seedDatabase } from '../fixtures/interactive-state';
 
-test('clears whiteboard selection on empty-canvas click and pan while preserving selection and zoom', async ({
+test('clears whiteboard selection on canvas click, pan and double-click reset while preserving selection and zoom', async ({
   page,
 }, testInfo) => {
   const stageId = await seedDatabase(page, {
@@ -81,6 +81,13 @@ test('clears whiteboard selection on empty-canvas click and pan while preserving
   await expect
     .poll(async () => (await text.boundingBox())!.width)
     .toBeGreaterThan(beforeZoom.width);
+  await text.dblclick({ position: { x: 5, y: 5 } });
+  await expect.poll(selection).toBe('Selectable');
+
+  await page.mouse.dblclick(empty.x, empty.y);
+  await expect.poll(selection).toBe('');
+  await expect.poll(async () => (await text.boundingBox())!.x).toBeCloseTo(beforePan.x, 0);
+  await expect.poll(async () => (await text.boundingBox())!.width).toBeCloseTo(beforePan.width, 0);
   await text.dblclick({ position: { x: 5, y: 5 } });
   await expect.poll(selection).toBe('Selectable');
 });
