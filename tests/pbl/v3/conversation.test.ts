@@ -15,6 +15,7 @@ import {
 } from '@/lib/pbl/v3/domain/orchestration/transition';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { StageDefinition } from '@/lib/pbl/v3/domain/project/project-schema';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 
 const event = (
   id: number,
@@ -29,6 +30,59 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it('keeps thinking identity and duration when only the latest snapshot survives compaction', () => {
+    const track = createThinkingTimingTracker();
+    const frame = (thinking: string, text = '') => ({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking }, ...(text ? [{ type: 'text', text }] : [])],
+      },
+    });
+    const start = event(2, 'message_start', track('message_start', frame(''), 2));
+    const first = event(10, 'message_update', track('message_update', frame('Considering'), 10));
+    const original = projectConversation([start, first], 'discussion', true)[0]!.parts[0]!;
+    const updated = event(
+      20,
+      'message_update',
+      track('message_update', frame('Considering more'), 20),
+    );
+    const live = projectConversation([start, updated], 'discussion', true)[0]!.parts[0]!;
+    expect(live).toMatchObject({ id: original.id, startedAt: 10, streaming: true });
+    track('message_update', frame('Considering more', 'Answer'), 30);
+    const end = event(
+      50,
+      'message_end',
+      track('message_end', frame('Considering more', 'Answer'), 50),
+    );
+    const replay = projectConversation([start, end], 'discussion', false)[0]!.parts[0]!;
+    expect(replay).toMatchObject({ id: original.id, startedAt: 10, endedAt: 30, streaming: false });
+  });
+
+  it('tracks separate thinking blocks and resets anchors for the next message', () => {
+    const track = createThinkingTimingTracker();
+    const frame = (...content: unknown[]) => ({ message: { role: 'assistant', content } });
+    track('message_start', frame(), 1);
+    track('message_update', frame({ type: 'thinking', thinking: 'First' }), 5);
+    track(
+      'message_update',
+      frame({ type: 'thinking', thinking: 'First' }, { type: 'text', text: 'A' }),
+      9,
+    );
+    const second = frame(
+      { type: 'thinking', thinking: 'First' },
+      { type: 'text', text: 'A' },
+      { type: 'thinking', thinking: 'Second' },
+    );
+    track('message_update', second, 20);
+    expect(track('message_end', second, 25)).toMatchObject({
+      pblThinkingTimings: { 0: { startedAt: 5, endedAt: 9 }, 2: { startedAt: 20, endedAt: 25 } },
+    });
+    track('message_start', frame(), 40);
+    expect(track('message_end', frame({ type: 'thinking', thinking: 'New' }), 50)).toMatchObject({
+      pblThinkingTimings: { 0: { startedAt: 50, endedAt: 50 } },
+    });
+  });
+
   it.each([true, false])(
     'shows one question body while retaining the full review card (already spoken: %s)',
     (spoken) => {
@@ -361,7 +415,7 @@ describe('student conversation projection', () => {
     expect(first[0]?.parts).toEqual([
       {
         kind: 'thinking',
-        id: 'thinking-3-0',
+        id: 'thinking-2-0',
         text: 'Consider the input.',
         startedAt: 3,
         streaming: true,

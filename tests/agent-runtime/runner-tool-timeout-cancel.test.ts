@@ -453,6 +453,23 @@ describe('runner: unbounded V3 teaching turns', () => {
     expect(mocks.streamLLM.mock.calls[0]![0].maxOutputTokens).toBeUndefined();
     expect(mocks.streamLLM.mock.calls[0]![2]).toMatchObject({ effort: 'low' });
     expect(JSON.stringify((await session.buildContext()).messages)).toContain(text);
+    const snapshots = store.appendRunEvent.mock.calls
+      .map(
+        (call) =>
+          call[2] as {
+            type: string;
+            ts: number;
+            data: { pblThinkingTimings?: Record<string, { startedAt: number; endedAt?: number }> };
+          },
+      )
+      .filter((event) => event.type === 'message_update' || event.type === 'message_end');
+    const firstThinking = snapshots.find((event) => event.data.pblThinkingTimings?.[0]);
+    const finalThinking = snapshots.findLast((event) => event.type === 'message_end')!;
+    expect(firstThinking?.data.pblThinkingTimings?.[0]?.startedAt).toBe(firstThinking?.ts);
+    expect(finalThinking.data.pblThinkingTimings?.[0]).toEqual({
+      startedAt: firstThinking!.ts,
+      endedAt: finalThinking.ts,
+    });
   });
   it('switches from disabled welcome to low after readiness and retains low across tools', async () => {
     const meta = makeMeta({ id: 'pbl-role-readiness' }),

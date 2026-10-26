@@ -333,6 +333,9 @@ async function pump(
   const settleError = (reason: 'error' | 'aborted', error: unknown): boolean => {
     if (settled) return false;
     settled = true;
+    // Settling the local stream must also release a still-open provider request.
+    // Mark settled first because abort synchronously invokes our own listener.
+    requestAbort.abort(error);
     clearIdleTimer();
     mapper.finalize();
     removeExecutableToolCalls();

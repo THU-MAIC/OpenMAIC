@@ -350,6 +350,7 @@ import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
 import { recordLearningEvidence } from '@/lib/server/pbl-v3/evidence';
 import { reportConversationMessages } from '@/lib/pbl/v3/report';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxStore } from '@/lib/server/sandbox/store';
@@ -1838,19 +1839,31 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const queued = (await study.send('begin')) as { sessionId: string };
     const text = 'Detailed explanation. '.repeat(40_000),
       thinking = 'Reasoning. '.repeat(60_000);
+    const track = createThinkingTimingTracker();
+    const at = Date.now();
+    const snapshot = (text: string) => ({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking }, ...(text ? [{ type: 'text', text }] : [])],
+      },
+    });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at,
+      type: 'message_start',
+      data: track('message_start', { message: { role: 'assistant', content: [] } }, at),
+    });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at + 10,
+      type: 'message_update',
+      data: track('message_update', snapshot(''), at + 10),
+    });
+    const firstView = await learningView(principal, study.id, { passive: true });
+    const firstThinking = firstView.conversation?.at(-1)?.parts.find((p) => p.kind === 'thinking');
     for (let i = 0; i < 4; i++)
       await agents.appendControlEvent(queued.sessionId, {
-        ts: Date.now(),
+        ts: at + 20 + i,
         type: 'message_update',
-        data: {
-          message: {
-            role: 'assistant',
-            content: [
-              { type: 'thinking', thinking },
-              { type: 'text', text: text + ' ' + i },
-            ],
-          },
-        },
+        data: track('message_update', snapshot(text + ' ' + i), at + 20 + i),
       });
     const { readConversationHistory } = await import('@/lib/server/pbl-v3/conversation-history');
     const events = await readConversationHistory(
@@ -1866,6 +1879,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
     expect(view.conversation?.at(-1)?.parts.find((p) => p.kind === 'thinking')).toMatchObject({
       text: thinking,
+      id: firstThinking!.id,
+      startedAt: at + 10,
+      endedAt: at + 20,
+      streaming: false,
     });
     const row = await store.get(study.id, principal.ownerId);
     await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
@@ -3339,109 +3356,177 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).environment?.ready).toBe(true);
   });
 
-  it('hands a blocked build back without creating review evidence or unlocking advancement', async () => {
-    const codeStage = project.definition.milestones[0]!.stages[3]!;
-    if (codeStage.kind !== 'produce') throw new Error('Expected code stage');
-    const beforeRequired = codeStage.compileBeforeReview,
-      beforeBuild = project.buildCommand;
-    onTestFinished(() => {
-      codeStage.compileBeforeReview = beforeRequired;
-      project.buildCommand = beforeBuild;
-    });
-    codeStage.compileBeforeReview = true;
-    project.buildCommand = 'python3 -m py_compile greeting.py';
-    const study = await freshStudy();
-    onTestFinished(async () => {
-      const own = await store.get(study.id, principal.ownerId);
-      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
-        own.environment_id,
-      ]);
-    });
-    const row = await store.get(study.id, principal.ownerId);
-    row.state.position.stageIndex = 3;
-    row.state.milestones[0]!.stageIndex = 3;
-    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
-    const queued = (await study.send('chat')) as {
-      sessionId: string;
-    };
-    const claimed = await agents.claimNextSession('blocked-build-worker', process.pid, {
-      sessionId: queued.sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const request = {
-      sessionId: queued.sessionId,
-      ownerId: principal.ownerId,
-      workerId: 'blocked-build-worker',
-      attempt: claimed!.attempt,
-      signal: new AbortController().signal,
-    };
-    const config = await teachingRunnerConfig(request);
-    await invoke(config, 'read_next_skill');
-    await expect(
-      invoke(config, 'request_skill_review', { question: 'Approve this code?' }),
-    ).rejects.toThrow('successful build');
-    await invoke(config, 'request_learner_help', {
-      question: 'Which build requirement should we clarify?',
-    });
-    expect(config.isTurnComplete()).toBe(true);
-    expect(config.needsTurnReceipt()).toBe(false);
-    const guided = (await store.binding(queued.sessionId))!.guided!;
-    expect(guided.pending).toBeUndefined();
-    expect(guided.coverage).toBeUndefined();
-    expect(guided.handoff?.question).toContain('build requirement');
-    await expect(
-      invoke(config, 'complete_stage', {
-        studentFeedback: 'This is not approval.',
-        reuseFeedback: true,
-      }),
-    ).rejects.toThrow();
-    await agents.finishSession(queued.sessionId, 'blocked-build-worker', {
-      status: 'succeeded',
-      expectedAttempt: claimed!.attempt,
-    });
-    const view = await learningView(principal, study.id, { passive: true });
-    expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false });
-    expect(view.actions).not.toContain('next');
-    expect(JSON.stringify(view.conversation)).toContain('Which build requirement');
-    expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
-    const current = await (
-      await SandboxService.forOwner(principal)
-    ).readText(row.environment_id!, 'greeting.py');
-    await commandStudy(principal, study.id, {
-      id: randomUUID(),
-      revision: view.revision,
-      type: 'save',
-      path: 'greeting.py',
-      expectedHash: digest(current),
-      text: current + '\n# learner can still edit\n',
-    });
-    await expect(study.send('next')).rejects.toThrow();
-    await study.send('chat');
-    const follow = await agents.claimNextSession('blocked-build-followup', process.pid, {
-      sessionId: queued.sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const resumed = await teachingRunnerConfig({
-      ...request,
-      workerId: 'blocked-build-followup',
-      attempt: follow!.attempt,
-    });
-    await expect(
-      invoke(resumed, 'read_next_skill', {
-        studentFeedback: 'Help is not review feedback.',
-        reuseFeedback: true,
-      }),
-    ).rejects.toThrow();
-    await invoke(resumed, 'run_build');
-    await invoke(resumed, 'collect_build');
-    await invoke(resumed, 'request_skill_review', { question: 'Now review the compiled code.' });
-    await agents.finishSession(queued.sessionId, 'blocked-build-followup', {
-      status: 'succeeded',
-      expectedAttempt: follow!.attempt,
-    });
-  });
+  it.each(['missing', 'running', 'unknown'] as const)(
+    'hands a %s build back without creating review evidence or unlocking advancement',
+    async (buildState) => {
+      const codeStage = project.definition.milestones[0]!.stages[3]!;
+      if (codeStage.kind !== 'produce') throw new Error('Expected code stage');
+      const beforeRequired = codeStage.compileBeforeReview,
+        beforeBuild = project.buildCommand;
+      onTestFinished(() => {
+        codeStage.compileBeforeReview = beforeRequired;
+        project.buildCommand = beforeBuild;
+      });
+      codeStage.compileBeforeReview = true;
+      project.buildCommand = 'python3 -m py_compile greeting.py';
+      const study = await freshStudy();
+      onTestFinished(async () => {
+        const own = await store.get(study.id, principal.ownerId);
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          own.environment_id,
+        ]);
+      });
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const queued = (await study.send('chat')) as {
+        sessionId: string;
+      };
+      const claimed = await agents.claimNextSession('blocked-build-worker', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const request = {
+        sessionId: queued.sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'blocked-build-worker',
+        attempt: claimed!.attempt,
+        signal: new AbortController().signal,
+      };
+      const config = await teachingRunnerConfig(request);
+      await invoke(config, 'read_next_skill');
+      await expect(
+        invoke(config, 'request_skill_review', { question: 'Approve this code?' }),
+      ).rejects.toThrow('successful build');
+      let restoreCommand: (() => void) | undefined;
+      if (buildState !== 'missing') {
+        await invoke(config, 'run_build');
+        const pending = (await store.get(study.id, principal.ownerId)).evaluation!;
+        await pool.query(
+          "UPDATE sandbox_commands SET result_json=jsonb_set(result_json,'{state}',to_jsonb($3::text)) WHERE environment_id=$1 AND id=$2",
+          [row.environment_id, pending.id, buildState],
+        );
+        const original = E2BCompatibleSandboxProvider.prototype.readCommand;
+        const observation = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand')
+          .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+            const result = await original.apply(this, args);
+            return args[2] === pending.id ? { ...result, state: buildState } : result;
+          });
+        restoreCommand = () => observation.mockRestore();
+        onTestFinished(restoreCommand);
+        const service = await SandboxService.forOwner(principal);
+        await expect(service.assertWorkspaceIdle(row.environment_id!)).rejects.toThrow();
+      }
+      const question = 'Which build requirement should we clarify?';
+      await invoke(config, 'request_learner_help', {
+        question,
+      });
+      // The durable handoff precedes its tool display event, just like a review.
+      const beforeDisplay = await learningEvidence(principal, study.id);
+      expect(beforeDisplay.conversations.flatMap((c) => c.messages)).toContainEqual(
+        expect.objectContaining({ role: 'assistant', text: question }),
+      );
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_end',
+        data: {
+          toolName: 'request_learner_help',
+          isError: false,
+          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+        },
+      });
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_end',
+        data: {
+          toolName: 'request_learner_help',
+          isError: true,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify({ question: 'FAILED QUESTION' }) }],
+          },
+        },
+      });
+      const displayed = await learningEvidence(principal, study.id);
+      expect(
+        displayed.conversations.flatMap((c) => c.messages).filter((m) => m.text === question),
+      ).toHaveLength(1);
+      expect(JSON.stringify(displayed)).not.toContain('FAILED QUESTION');
+      expect(config.isTurnComplete()).toBe(true);
+      expect(config.needsTurnReceipt()).toBe(false);
+      const guided = (await store.binding(queued.sessionId))!.guided!;
+      expect(guided.pending).toBeUndefined();
+      expect(guided.coverage).toBeUndefined();
+      expect(guided.handoff?.question).toContain('build requirement');
+      await expect(
+        invoke(config, 'complete_stage', {
+          studentFeedback: 'This is not approval.',
+          reuseFeedback: true,
+        }),
+      ).rejects.toThrow();
+      await agents.finishSession(queued.sessionId, 'blocked-build-worker', {
+        status: 'succeeded',
+        expectedAttempt: claimed!.attempt,
+      });
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false });
+      expect(view.actions).not.toContain('next');
+      expect(JSON.stringify(view.conversation)).toContain('Which build requirement');
+      expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
+      const current = await (
+        await SandboxService.forOwner(principal)
+      ).readText(row.environment_id!, 'greeting.py');
+      const save = async () =>
+        commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, principal.ownerId)).revision,
+          type: 'save',
+          path: 'greeting.py',
+          expectedHash: digest(current),
+          text: current + '\n# learner can still edit\n',
+        });
+      if (restoreCommand) {
+        await expect(save()).rejects.toThrow();
+        restoreCommand();
+        await study.send('collect');
+      }
+      await save();
+      await expect(study.send('next')).rejects.toThrow();
+      await study.send('chat');
+      const follow = await agents.claimNextSession('blocked-build-followup', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const resumed = await teachingRunnerConfig({
+        ...request,
+        workerId: 'blocked-build-followup',
+        attempt: follow!.attempt,
+      });
+      await expect(
+        invoke(resumed, 'read_next_skill', {
+          studentFeedback: 'Help is not review feedback.',
+          reuseFeedback: true,
+        }),
+      ).rejects.toThrow();
+      await invoke(resumed, 'run_build');
+      await invoke(resumed, 'collect_build');
+      await invoke(resumed, 'request_skill_review', { question: 'Now review the compiled code.' });
+      await agents.finishSession(queued.sessionId, 'blocked-build-followup', {
+        status: 'succeeded',
+        expectedAttempt: follow!.attempt,
+      });
+      const answered = await learningEvidence(principal, study.id);
+      expect(answered.conversations.flatMap((c) => c.messages)).toContainEqual(
+        expect.objectContaining({ role: 'assistant', text: question }),
+      );
+      expect(answered.conversations.flatMap((c) => c.messages)).toContainEqual(
+        expect.objectContaining({ role: 'user', text: 'Please start.' }),
+      );
+    },
+  );
   it.each(['compile', 'infrastructure'] as const)(
     'keeps %s assessment failure repairable without abandoning the test step',
     async (kind) => {

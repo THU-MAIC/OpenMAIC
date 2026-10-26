@@ -63,6 +63,7 @@ export function projectConversation(
   const entries: LearningConversationEntry[] = [];
   let assistant: LearningConversationEntry | undefined;
   let attempt: number | undefined;
+  let messageId: number | undefined;
   const blocks = new Map<number, Extract<Part, { kind: 'text' | 'thinking' }>>();
   const tools = new Map<string, ToolPart>();
   const settleThinking = (ts: number) => {
@@ -82,6 +83,7 @@ export function projectConversation(
       }
     blocks.clear();
     tools.clear();
+    messageId = undefined;
   };
   const getAssistant = (event: Pick<PersistedAgentSessionEvent, 'id' | 'ts'>) => {
     if (!assistant) {
@@ -166,7 +168,9 @@ export function projectConversation(
         settleThinking(event.ts);
         for (const part of blocks.values()) part.streaming = false;
         blocks.clear();
+        messageId = event.id;
       }
+      messageId ??= event.id;
       const content = Array.isArray(message.content) ? message.content : [];
       for (const [index, raw] of content.entries()) {
         const block = record(raw);
@@ -180,13 +184,18 @@ export function projectConversation(
             block.type === 'thinking'
               ? {
                   kind: 'thinking',
-                  id: `thinking-${event.id}-${index}`,
+                  id: `thinking-${messageId}-${index}`,
                   text,
                   startedAt: event.ts,
                 }
-              : { kind: 'text', id: `text-${event.id}-${index}`, text };
+              : { kind: 'text', id: `text-${messageId}-${index}`, text };
           blocks.set(index, part);
           getAssistant(event).parts.push(part);
+        }
+        if (part.kind === 'thinking') {
+          const timing = record(record(data.pblThinkingTimings)[index]);
+          if (typeof timing.startedAt === 'number') part.startedAt = timing.startedAt;
+          if (typeof timing.endedAt === 'number') part.endedAt = timing.endedAt;
         }
         part.text = text;
         part.streaming =
@@ -196,6 +205,7 @@ export function projectConversation(
         settleThinking(event.ts);
         for (const part of blocks.values()) part.streaming = false;
         blocks.clear();
+        messageId = undefined;
       }
     }
     if (

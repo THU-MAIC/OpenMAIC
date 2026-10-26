@@ -14,7 +14,7 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
-import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
+import { useLearningObservation } from './use-learning-observation';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
@@ -62,8 +62,8 @@ function PBLV3WorkspaceContent({
   const { resolvedTheme, setTheme } = useTheme();
   const { t } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
-  const [view, setView] = useState<LearningView | null>(null),
-    [error, setError] = useState(''),
+  const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
+  const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
   const storageError = useCallback(() => setError(t('pblV3.draftStorageUnavailable')), [t]);
   const {
@@ -76,8 +76,6 @@ function PBLV3WorkspaceContent({
     showAssistant,
     setShowAssistant,
   } = useStudyDraft(view?.id, storageError);
-  const latestView = useRef(view);
-  latestView.current = view;
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
     null,
@@ -94,35 +92,16 @@ function PBLV3WorkspaceContent({
     id: string;
     revision: number;
   } | null>(null);
-  const updateView = useCallback((next: LearningView) => {
-    const prior = latestView.current;
-    if (
-      prior?.id === next.id &&
-      (prior.revision < next.revision ||
-        (prior.revision === next.revision &&
-          (prior.activitySequence ?? 0) <= (next.activitySequence ?? 0)))
-    )
-      latestView.current = next;
-    // A delayed stream snapshot or command response cannot undo newer progress or replace another study.
-    setView((current) =>
-      current?.id === next.id &&
-      (current.revision < next.revision ||
-        (current.revision === next.revision &&
-          (current.activitySequence ?? 0) <= (next.activitySequence ?? 0)))
-        ? next
-        : current,
-    );
-  }, []);
-  const [workbench, setWorkbench] = useState<LearningWorkbench | null>(null);
   const studyId = view?.id;
-  const stream = useLearningStream(studyId, (snapshot) => {
-    updateView(snapshot.view);
-    setWorkbench(snapshot.workbench);
-  });
+  const stream = useLearningStream(studyId, receive);
   const refresh = useCallback(async () => {
+    const baseline = latestView.current;
     if (studyId)
-      updateView(await pblRequest<LearningView>(`/api/pbl/v3?id=${encodeURIComponent(studyId)}`));
-  }, [studyId, updateView]);
+      updateView(
+        await pblRequest<LearningView>(`/api/pbl/v3?id=${encodeURIComponent(studyId)}`),
+        baseline,
+      );
+  }, [studyId, updateView, latestView]);
   const open = useCallback(async () => {
     if (!stageId) return;
     setPending(true);
@@ -135,14 +114,14 @@ function PBLV3WorkspaceContent({
         sceneId,
       });
       setDirtyFiles(hasEditorDraft(opened.id));
-      setView(opened);
+      openView(opened);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setPending(false);
       setPendingAction(null);
     }
-  }, [stageId, sceneId]);
+  }, [stageId, sceneId, openView]);
   useEffect(() => {
     void open();
   }, [open]);
@@ -164,6 +143,7 @@ function PBLV3WorkspaceContent({
           chosen: String(request.payload.chosen),
         });
       if (type === 'chat' && !repeat) setSent((n) => n + 1);
+      const baseline = latestView.current;
       try {
         const result = await pblRequest<{ view: LearningView; result?: { stale?: boolean } }>(
           '/api/pbl/v3',
@@ -177,7 +157,7 @@ function PBLV3WorkspaceContent({
             },
           },
         );
-        updateView(result.view);
+        updateView(result.view, baseline);
         if (result.result?.stale) setError(t('pblV3.testResult.stale'));
         retry.current = null;
         if (request.type === 'chat')
@@ -196,7 +176,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, setText],
+    [view, updateView, refresh, t, setText, latestView],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -537,7 +517,7 @@ function PBLV3WorkspaceContent({
                       await refresh().catch(() => {});
                     throw error;
                   }
-                  updateView(result.view);
+                  updateView(result.view, selected);
                   return {
                     hash: Array.from(new Uint8Array(digest), (b) =>
                       b.toString(16).padStart(2, '0'),

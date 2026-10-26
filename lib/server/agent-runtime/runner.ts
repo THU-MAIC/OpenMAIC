@@ -9,6 +9,7 @@ import { ModelAuthorizationError } from '@/lib/server/model-config/model-authori
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 import { Session, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
 import {
   AgentSessionLeaseLostError,
@@ -1036,6 +1037,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let messageHadThinking = false;
   let thinkingEndPending = false;
   let thinkingEndEmitted = false;
+  const trackThinking = meta.id.startsWith('pbl-role-') ? createThinkingTimingTracker() : undefined;
 
   const appendEvent = (type: string, data: unknown, ts: number): void => {
     const snapshot = snapshotEventDataForLog(type, data, meta.id.startsWith('pbl-role-'));
@@ -1079,6 +1081,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     if (leaseLost) return;
 
     const now = Date.now();
+    if (trackThinking) data = trackThinking(type, data, now);
     const endOwesThinkingEnd = type === 'message_end' && thinkingEndPending && !thinkingEndEmitted;
     if (type === 'message_start' || type === 'message_end') {
       lastMessageUpdateAt = 0;

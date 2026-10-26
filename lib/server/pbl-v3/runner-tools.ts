@@ -425,10 +425,13 @@ export async function teachingRunnerConfig(input: {
         'Only when a required current-source build is missing, failed or pending and you need learner input to proceed. Ask one concrete question and end the turn. This is NOT a Skill review, approval, completion or permission to advance. Prefer repairing and collecting the build yourself when possible.',
         Type.Object({ question: Type.String({ minLength: 1 }) }),
         async (current, p, _callId, signal) => {
+          // Pending execution already rules out approval. A help question must
+          // not require the idle-source snapshot used for artifact evidence.
           if (
             stage.kind !== 'produce' ||
             !stage.compileBeforeReview ||
-            (await isBuilt(store, current, await fingerprint(current, signal)))
+            (!current.evaluation &&
+              (await isBuilt(store, current, await fingerprint(current, signal))))
           )
             throw sandboxConflict('Use request_skill_review for an ordinary review.');
           review.handoff(p.question);
