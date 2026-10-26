@@ -3550,9 +3550,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).environment?.ready).toBe(true);
   });
 
-  it.each(['missing', 'running', 'unknown'] as const)(
-    'hands a %s build back without creating review evidence or unlocking advancement',
-    async (buildState) => {
+  it.each(
+    (['missing', 'running', 'unknown'] as const).flatMap((buildState) =>
+      (['displayed', 'crash'] as const).map((receipt) => ({ buildState, receipt })),
+    ),
+  )(
+    'hands a $buildState build back with a $receipt receipt without unlocking advancement',
+    async ({ buildState, receipt }) => {
       const codeStage = project.definition.milestones[0]!.stages[3]!;
       if (codeStage.kind !== 'produce') throw new Error('Expected code stage');
       const beforeRequired = codeStage.compileBeforeReview,
@@ -3589,7 +3593,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         attempt: claimed!.attempt,
         signal: new AbortController().signal,
       };
-      const config = await teachingRunnerConfig(request);
+      let config = await teachingRunnerConfig(request);
       await invoke(config, 'read_next_skill');
       await expect(
         invoke(config, 'request_skill_review', { question: 'Approve this code?' }),
@@ -3615,6 +3619,27 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         await expect(service.assertWorkspaceIdle(row.environment_id!)).rejects.toThrow();
       }
       const question = 'Which build requirement should we clarify?';
+      if (buildState === 'missing' && receipt === 'displayed') {
+        await pool.query(`CREATE FUNCTION reject_handoff_event() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'handoff event write failed'; END $$`);
+        await pool.query(`CREATE TRIGGER reject_handoff_event BEFORE INSERT ON agent_session_events
+          FOR EACH ROW WHEN (NEW.type='pbl_learner_handoff') EXECUTE FUNCTION reject_handoff_event()`);
+        try {
+          await expect(invoke(config, 'request_learner_help', { question })).rejects.toThrow(
+            'handoff event write failed',
+          );
+          expect((await store.binding(queued.sessionId))!.guided?.handoff).toBeUndefined();
+          expect(
+            (await agents.readEventsAfter(queued.sessionId, 0, 1000)).some(
+              (event) => event.type === 'pbl_learner_handoff',
+            ),
+          ).toBe(false);
+        } finally {
+          await pool.query('DROP TRIGGER reject_handoff_event ON agent_session_events');
+          await pool.query('DROP FUNCTION reject_handoff_event()');
+        }
+        config = await teachingRunnerConfig(request);
+      }
       await invoke(config, 'request_learner_help', {
         question,
       });
@@ -3623,26 +3648,33 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(beforeDisplay.conversations.flatMap((c) => c.messages)).toContainEqual(
         expect.objectContaining({ role: 'assistant', text: question }),
       );
-      await agents.appendControlEvent(queued.sessionId, {
-        ts: Date.now(),
-        type: 'tool_execution_end',
-        data: {
-          toolName: 'request_learner_help',
-          isError: false,
-          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
-        },
-      });
-      await agents.appendControlEvent(queued.sessionId, {
-        ts: Date.now(),
-        type: 'tool_execution_end',
-        data: {
-          toolName: 'request_learner_help',
-          isError: true,
-          result: {
-            content: [{ type: 'text', text: JSON.stringify({ question: 'FAILED QUESTION' }) }],
+      const handoff = (await agents.readEventsAfter(queued.sessionId, 0, 1000)).find(
+        (event) => event.type === 'pbl_learner_handoff',
+      )!;
+      expect(handoff.data).toMatchObject({ question, toolCallId: expect.any(String) });
+      if (receipt === 'displayed') {
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'tool_execution_end',
+          data: {
+            toolName: 'request_learner_help',
+            toolCallId: (handoff.data as { toolCallId: string }).toolCallId,
+            isError: false,
+            result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
           },
-        },
-      });
+        });
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'tool_execution_end',
+          data: {
+            toolName: 'request_learner_help',
+            isError: true,
+            result: {
+              content: [{ type: 'text', text: JSON.stringify({ question: 'FAILED QUESTION' }) }],
+            },
+          },
+        });
+      }
       const displayed = await learningEvidence(principal, study.id);
       expect(
         displayed.conversations.flatMap((c) => c.messages).filter((m) => m.text === question),
@@ -3660,15 +3692,34 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           reuseFeedback: true,
         }),
       ).rejects.toThrow();
-      await agents.finishSession(queued.sessionId, 'blocked-build-worker', {
-        status: 'succeeded',
-        expectedAttempt: claimed!.attempt,
-      });
+      if (receipt === 'crash') {
+        await agents.releaseLease(queued.sessionId, 'blocked-build-worker');
+        const recovery = await agents.claimNextSession('handoff-recovery', process.pid, {
+          sessionId: queued.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        expect(recovery).toBeTruthy();
+        const calls = mocked.modelCalls;
+        await runSession({ running: new Map(), shuttingDown: false }, recovery!);
+        expect(mocked.modelCalls).toBe(calls);
+        expect(
+          (await agents.readEventsAfter(queued.sessionId, 0, 1000)).some(
+            (event) => event.type === 'tool_execution_end',
+          ),
+        ).toBe(false);
+      } else {
+        await agents.finishSession(queued.sessionId, 'blocked-build-worker', {
+          status: 'succeeded',
+          expectedAttempt: claimed!.attempt,
+        });
+      }
       const view = await learningView(principal, study.id, { passive: true });
       expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false });
       expect(view.actions).not.toContain('next');
       expect(JSON.stringify(view.conversation)).toContain('Which build requirement');
-      expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
+      if (receipt === 'displayed')
+        expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
       const current = await (
         await SandboxService.forOwner(principal)
       ).readText(row.environment_id!, 'greeting.py');
@@ -3713,8 +3764,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expectedAttempt: follow!.attempt,
       });
       const answered = await learningEvidence(principal, study.id);
-      expect(answered.conversations.flatMap((c) => c.messages)).toContainEqual(
-        expect.objectContaining({ role: 'assistant', text: question }),
+      const answeredMessages = answered.conversations.flatMap((c) => c.messages);
+      expect(answeredMessages.filter((message) => message.text === question)).toHaveLength(1);
+      expect(answeredMessages.findIndex((message) => message.text === question)).toBeLessThan(
+        answeredMessages.findLastIndex((message) => message.role === 'user'),
       );
       expect(answered.conversations.flatMap((c) => c.messages)).toContainEqual(
         expect.objectContaining({ role: 'user', text: 'Please start.' }),

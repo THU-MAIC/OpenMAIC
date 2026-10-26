@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 vi.mock('server-only', () => ({}));
@@ -106,13 +106,15 @@ it
   15000,
 );
 
-it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
-  'locates a real javac error and passes after repair',
-  async () => {
+it
+  .runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')
+  .each(['Greeting.java', 'at school/Greeting.java', 'at school(foo/Greeting.java'])(
+  'locates a real javac error in %s and passes after repair',
+  async (file) => {
     const root = await mkdtemp(join(tmpdir(), 'pbl-javac-'));
     const installed = {
       resources: { 'tests/future-stage.java': 'INVALID FUTURE API AND SOURCE' },
-      prepare: ['javac', '-d', '{build}', 'Greeting.java'],
+      prepare: ['javac', '-d', '{build}', file],
       cases: [{ id: 'greeting', argv: ['java', '-cp', '{build}', 'Greeting'], stdout: 'hello\n' }],
     };
     const run = async () => {
@@ -122,12 +124,13 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         { cwd: root },
       );
       return evaluationOutcome(installed, 'javac', { state: 'exited', exitCode: 0, ...observed }, [
-        'Greeting.java',
+        file,
       ]);
     };
     try {
+      await mkdir(dirname(join(root, file)), { recursive: true });
       await writeFile(
-        join(root, 'Greeting.java'),
+        join(root, file),
         'public class Greeting { public static void main(String[] args) { System.out.println(missing); } }',
       );
       expect(await run()).toMatchObject({
@@ -136,7 +139,7 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         publicDiagnostics: {
           locations: [
             {
-              file: 'Greeting.java',
+              file,
               line: 1,
               code: expect.stringMatching(/^(cannot_find_symbol|compile_error)$/),
             },
@@ -144,7 +147,7 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         },
       });
       await writeFile(
-        join(root, 'Greeting.java'),
+        join(root, file),
         'public class Greeting { public static void main(String[] args) { System.out.println("hello"); } }',
       );
       expect((await run()).status).toBe('passed');
@@ -412,6 +415,24 @@ it.each([
     expected: 'assertion',
   },
   {
+    label: 'prefixed module frame',
+    file: 'Greeting.java',
+    stderr: '[ERROR] \tat app/pkg.Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'Java path resembling a stack-frame prefix',
+    file: 'at school(foo/Greeting.java',
+    stderr: 'at school(foo/Greeting.java:3: error: incompatible types\n',
+    expected: 'compile',
+  },
+  {
+    label: 'prefixed Java path resembling a stack-frame prefix',
+    file: 'at school(foo/Greeting.java',
+    stderr: '[ERROR] at school(foo/Greeting.java:[3,2] incompatible types\n',
+    expected: 'compile',
+  },
+  {
     label: 'Java path with spaces',
     file: 'at school/Greeting.java',
     stderr: 'at school/Greeting.java:3: error: incompatible types\n',
@@ -426,7 +447,7 @@ it.each([
 ])('parses $label without requiring a JDK', async ({ file, stderr, expected }) => {
   const root = await mkdtemp(join(tmpdir(), 'pbl-diagnostics-'));
   try {
-    await mkdir(join(root, 'at school'));
+    await mkdir(dirname(join(root, file)), { recursive: true });
     await writeFile(join(root, file), 'public learner source');
     const installed = {
       cases: [

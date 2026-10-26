@@ -10,7 +10,7 @@ import { readConversationHistory, CONVERSATION_BYTES } from './conversation-hist
 import 'server-only';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
-import { reviewQuestion } from './review-question';
+import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -897,6 +897,7 @@ export async function learningView(
       meta?.status === 'running' || meta?.status === 'queued',
       roleRun.status,
     );
+    const questions = reviewQuestions(events);
     for (const event of events) {
       const data = event.data as {
         text?: string;
@@ -905,8 +906,8 @@ export async function learningView(
         result?: { content?: { type: string; text?: string }[] };
         message?: { role?: string; content?: unknown };
       };
-      const question = reviewQuestion(event);
-      if (question !== null) {
+      const question = questions.get(event.id);
+      if (question !== undefined) {
         messages.push({ role: 'assistant', text: question });
         if (
           event.id > (latestUserSeq ?? 0) &&

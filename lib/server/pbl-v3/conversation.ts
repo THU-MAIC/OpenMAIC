@@ -2,7 +2,7 @@ import 'server-only';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
-import { reviewQuestion } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   modelRequestFailureCode,
@@ -46,6 +46,7 @@ const runEvents = new Set([
   'tool_execution_start',
   'tool_execution_update',
   'tool_execution_end',
+  LEARNER_HANDOFF_EVENT,
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -67,6 +68,7 @@ export function projectConversation(
   let messageId: number | undefined;
   const blocks = new Map<number, Extract<Part, { kind: 'text' | 'thinking' }>>();
   const tools = new Map<string, ToolPart>();
+  const questions = reviewQuestions(events);
   const settleThinking = (ts: number) => {
     for (const part of blocks.values())
       if (part.kind === 'thinking') {
@@ -98,6 +100,16 @@ export function projectConversation(
       entries.push(assistant);
     }
     return assistant;
+  };
+  const appendQuestion = (event: PersistedAgentSessionEvent) => {
+    const question = questions.get(event.id);
+    if (
+      question &&
+      !getAssistant(event).parts.some(
+        (part) => part.kind === 'text' && part.text.includes(question),
+      )
+    )
+      getAssistant(event).parts.push({ kind: 'text', id: `question-${event.id}`, text: question });
   };
   for (const event of events) {
     const data = record(event.data);
@@ -140,6 +152,10 @@ export function projectConversation(
       assistant = undefined;
     }
     attempt = event.attempt;
+    if (event.type === LEARNER_HANDOFF_EVENT) {
+      appendQuestion(event);
+      continue;
+    }
     if (event.type === 'session_start' || event.type === 'session_resumed') {
       getAssistant(event);
       continue;
@@ -263,18 +279,7 @@ export function projectConversation(
           }
         }
       }
-      const question = reviewQuestion(event);
-      if (
-        question &&
-        !getAssistant(event).parts.some(
-          (part) => part.kind === 'text' && part.text.includes(question),
-        )
-      )
-        getAssistant(event).parts.push({
-          kind: 'text',
-          id: `question-${event.id}`,
-          text: question,
-        });
+      appendQuestion(event);
     }
   }
   if (!running) {
@@ -307,10 +312,21 @@ export function projectConversation(
 
 /** One model message, rather than the whole multi-call Agent turn. */
 export function latestMessagePartIds(entries: LearningConversationEntry[]) {
-  const entry = entries.findLast((item) =>
-    item.parts.some((part) => part.kind === 'text' || part.kind === 'thinking'),
+  const modelEntry = entries.findLast((item) =>
+    item.parts.some(
+      (part) => (part.kind === 'text' || part.kind === 'thinking') && part.messageId !== undefined,
+    ),
   );
-  const message = entry?.parts.findLast((part) => part.kind === 'text' || part.kind === 'thinking');
+  const entry =
+    modelEntry ??
+    entries.findLast((item) =>
+      item.parts.some((part) => part.kind === 'text' || part.kind === 'thinking'),
+    );
+  const message = entry?.parts.findLast(
+    (part) =>
+      (part.kind === 'text' || part.kind === 'thinking') &&
+      (!modelEntry || part.messageId !== undefined),
+  );
   return new Set(
     entry?.parts
       .filter(

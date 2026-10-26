@@ -43,6 +43,7 @@ import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
 import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
+import { LEARNER_HANDOFF_EVENT } from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -195,6 +196,19 @@ export async function teachingRunnerConfig(input: {
                 input.sessionId,
                 JSON.stringify(review.state),
               ]);
+              if (name === 'request_learner_help') {
+                // Commit the visible question with the handoff, before the SDK
+                // emits its tool result. Recovery never has to invent that event.
+                const sequence = await store
+                  .agentStore(db)
+                  .appendRunEvent(input.sessionId, input.workerId, {
+                    ts: Date.now(),
+                    attempt: input.attempt,
+                    type: LEARNER_HANDOFF_EVENT,
+                    data: { ...review.state.handoff!, toolCallId: _id },
+                  });
+                if (sequence === null) throw sandboxConflict('The teaching claim changed.');
+              }
               if (name === 'complete_stage')
                 await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
                   input.sessionId,

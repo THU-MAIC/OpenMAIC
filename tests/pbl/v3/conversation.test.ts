@@ -30,6 +30,78 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it('deduplicates a committed handoff and its SDK receipt by call identity across learner turns', () => {
+    const question = 'Which build requirement should we clarify?';
+    const receipt = {
+      toolName: 'request_learner_help',
+      toolCallId: 'help-1',
+      isError: false,
+      result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+    };
+    const entries = projectConversation(
+      [
+        event(1, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(2, 'tool_execution_end', receipt),
+        event(3, 'user_message', { text: 'Please explain.' }),
+        event(4, 'pbl_learner_handoff', { question, toolCallId: 'help-2' }),
+        event(5, 'tool_execution_end', { ...receipt, toolCallId: 'help-2' }),
+      ],
+      'discussion',
+      false,
+    );
+    expect(
+      entries
+        .flatMap((entry) => entry.parts)
+        .filter((part) => part.kind === 'text' && part.text === question),
+    ).toHaveLength(2);
+  });
+
+  it('keeps the question after model prose even if the transactional event wins the append race', () => {
+    const question = 'What should we clarify?';
+    const entries = projectConversation(
+      [
+        event(1, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(2, 'message_end', message('Here is the build problem.')),
+        event(3, 'tool_execution_end', {
+          toolName: 'request_learner_help',
+          toolCallId: 'help-1',
+          isError: false,
+          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+        }),
+      ],
+      'discussion',
+      false,
+    );
+    expect(
+      entries
+        .flatMap((entry) => entry.parts)
+        .filter((part) => part.kind === 'text')
+        .map((part) => part.text),
+    ).toEqual(['Here is the build problem.', question]);
+  });
+
+  it('keeps the latest large model message whole when a host handoff follows it', () => {
+    const text = 'Long teaching explanation. '.repeat(30000);
+    const question = 'What should we clarify?';
+    const entries = projectConversation(
+      [
+        event(1, 'message_end', message(text)),
+        event(2, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(3, 'tool_execution_end', {
+          toolName: 'request_learner_help',
+          toolCallId: 'help-1',
+          isError: false,
+          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+        }),
+      ],
+      'discussion',
+      false,
+    );
+    const parts = entries.flatMap((entry) => entry.parts);
+    expect(parts.some((part) => part.kind === 'text' && part.text === text)).toBe(true);
+    expect(parts.filter((part) => part.kind === 'text' && part.text === question)).toHaveLength(1);
+  });
+
   it('keeps thinking identity and duration when only the latest snapshot survives compaction', () => {
     const track = createThinkingTimingTracker();
     const frame = (thinking: string, text = '') => ({

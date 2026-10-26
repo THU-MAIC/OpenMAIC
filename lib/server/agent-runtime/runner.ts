@@ -1649,7 +1649,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         if (
           teaching &&
           !toolContext.isError &&
-          ['request_skill_review', 'complete_stage'].includes(toolContext.toolCall.name)
+          ['request_skill_review', 'request_learner_help', 'complete_stage'].includes(
+            toolContext.toolCall.name,
+          )
         ) {
           questionEmitted = true;
           return { terminate: true };
@@ -1722,13 +1724,16 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // Same-run steering needs a guard because steer() accepts a message before
     // its eventual message_end has reached the durable tree.
     const acceptedMessageSeqs = new Set<number>();
+    const awaitingLearner = () =>
+      questionEmitted || askUserLatch.isCommitted() || !!teaching?.isTurnComplete();
     const drainMessages = async (): Promise<number> => {
-      if (questionEmitted || askUserLatch.isCommitted()) return 0;
+      if (awaitingLearner()) return 0;
       // These reads deliberately avoid a shared transaction: a message added
       // between them is left for the next serialized drain, while the lease
       // snapshot prevents steering after ownership has already changed.
       const all = await listAgentUserMessages(store, id);
       const current = await store.getSession(id);
+      if (awaitingLearner()) return 0;
       if (!leaseMatches(current, WORKER_ID, attempt)) {
         markLeaseLost();
         return 0;
@@ -1742,6 +1747,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // course's current name, not the pick-time snapshot.
         const courseResolved = await resolveCourseRefContext(meta.ownerId, followUp);
         const resolved = await resolveFollowUpElementContext(courseResolved);
+        if (awaitingLearner()) break;
         agent.steer(
           tagDurableUserMessage(
             {
@@ -1906,7 +1912,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       for (;;) {
         await agent.waitForIdle();
         if (abort.signal.aborted) break;
-        if (questionEmitted || askUserLatch.isCommitted()) break;
+        if (awaitingLearner()) break;
         if (await repairTeachingStop()) {
           await agent.continue();
           continue;

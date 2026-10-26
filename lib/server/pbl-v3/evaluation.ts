@@ -51,7 +51,7 @@ def diagnose(raw):
  for pattern in patterns:
   for m in re.finditer(pattern,text):
    if m[1].endswith('.py') and not re.search(r'(?:SyntaxError|IndentationError|TabError):',text): continue
-   if m[1].endswith('.java') and re.match(r'^\\s*at\\s+[^\\s(]+\\([^()]*\\.java$',m[1]): continue
+   if m[1].endswith('.java') and re.fullmatch(r'(?:\\[ERROR\\]\\s+)?\\s*at\\s+[^\\s(]+\\([^()]*\\.java:\\d+\\)\\s*',m[0]): continue
    compilation=True; path=os.path.relpath(os.path.realpath(m[1].strip()),os.getcwd())
    if path=='..' or path.startswith('../'): continue
    line=int(m[2] or m[3]); message=m[4] if path.endswith('.java') else ''
