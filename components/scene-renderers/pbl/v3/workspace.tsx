@@ -102,8 +102,11 @@ function PBLV3WorkspaceContent({
         baseline,
       );
   }, [studyId, updateView, latestView]);
+  const openAttempt = useRef(0);
   const open = useCallback(async () => {
     if (!stageId) return;
+    const attempt = ++openAttempt.current;
+    const baseline = latestView.current;
     setPending(true);
     setPendingAction('open');
     setError('');
@@ -113,15 +116,18 @@ function PBLV3WorkspaceContent({
         stageId,
         sceneId,
       });
+      if (attempt !== openAttempt.current) return;
       setDirtyFiles(hasEditorDraft(opened.id));
-      openView(opened);
+      openView(opened, baseline);
     } catch (e) {
-      setError((e as Error).message);
+      if (attempt === openAttempt.current) setError((e as Error).message);
     } finally {
-      setPending(false);
-      setPendingAction(null);
+      if (attempt === openAttempt.current) {
+        setPending(false);
+        setPendingAction(null);
+      }
     }
-  }, [stageId, sceneId, openView]);
+  }, [stageId, sceneId, openView, latestView]);
   useEffect(() => {
     void open();
   }, [open]);

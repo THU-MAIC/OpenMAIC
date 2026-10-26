@@ -31,10 +31,18 @@ export function useLearningObservation() {
     },
     [updateView],
   );
-  const openView = useCallback((next: LearningView) => {
-    latestView.current = next;
-    setView(next);
-    setWorkbench(null);
-  }, []);
+  const openView = useCallback(
+    (next: LearningView, baseline = latestView.current) => {
+      if (latestView.current?.id === next.id) {
+        updateView(next, baseline);
+        return;
+      }
+      if (latestView.current && latestView.current.id !== baseline?.id) return;
+      latestView.current = next;
+      setView(next);
+      setWorkbench(null);
+    },
+    [updateView],
+  );
   return { view, workbench, latestView, updateView, receive, openView };
 }

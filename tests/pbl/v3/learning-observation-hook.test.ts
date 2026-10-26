@@ -32,6 +32,23 @@ afterEach(async () => {
 });
 
 describe('HTTP and SSE observation ordering', () => {
+  it('fences duplicate open responses without clearing the live workspace or reopening an old study', async () => {
+    await act(async () =>
+      current.receive({ view: view(1, 1, 'exited'), workbench: workbench(1, 2) }),
+    );
+    await act(async () => current.openView(view(), null));
+    expect(current.view?.evaluation?.state).toBe('exited');
+    expect(current.workbench?.epoch).toBe(2);
+    const enteringAnother = current.latestView.current;
+    await act(async () => current.receive({ view: view(1, 2), workbench: workbench(1, 3) }));
+    await act(async () => current.openView({ ...view(), id: 'next' }, enteringAnother));
+    expect(current.view?.id).toBe('next');
+    const previous = current.latestView.current;
+    await act(async () => current.openView({ ...view(), id: 'other' }));
+    await act(async () => current.openView(view(9, 9), previous));
+    expect(current.view?.id).toBe('other');
+  });
+
   it('keeps newer SSE execution and workspace state when an equal-counter HTTP response arrives late', async () => {
     const baseline = current.latestView.current;
     let resolve!: (next: LearningView) => void;
