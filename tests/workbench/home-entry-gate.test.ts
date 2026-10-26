@@ -32,9 +32,9 @@ const RUNTIME: Env = {
 
 function rendersWorkspace(env: Env): boolean {
   for (const [name, value] of Object.entries(env)) process.env[name] = value;
-  const home = HomePage() as ReactElement<{ children?: ReactElement }>;
+  const home = HomePage() as ReactElement;
   if (home.type === ClassicHomePage) return false;
-  expect(home.props.children?.type).toBe(WorkspaceEntry);
+  expect(home.type).toBe(WorkspaceEntry);
   return true;
 }
 

@@ -64,8 +64,8 @@ describe('workbench entry routes', () => {
 
   it('renders the workspace itself at / when enabled', () => {
     state.enabled = true;
-    const home = HomePage() as ReactElement<{ children: ReactElement }>;
-    expect(home.props.children.type).toBe(WorkspaceEntry);
+    const home = HomePage() as ReactElement;
+    expect(home.type).toBe(WorkspaceEntry);
     expect(navigation.redirect).not.toHaveBeenCalled();
   });
 });
