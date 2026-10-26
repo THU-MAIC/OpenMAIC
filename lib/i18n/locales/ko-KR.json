@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "뒤로",
     "you": "나",
     "confirm": "확인",
     "cancel": "취소",
@@ -10,6 +11,7 @@
     "close": "닫기"
   },
   "home": {
+    "resumeGeneration": "생성 계속",
     "emptyLibraryTitle": "여기서 수업을 시작하세요",
     "emptyLibraryBody": "홈에서 수업을 만들면 여기서 학습을 이어갈 수 있습니다.",
     "mobileTitle": "무엇을 배우고 싶으세요?",

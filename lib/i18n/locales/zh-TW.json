@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "you": "你",
     "confirm": "確定",
     "cancel": "取消",
@@ -10,6 +11,7 @@
     "close": "關閉"
   },
   "home": {
+    "resumeGeneration": "繼續生成",
     "emptyLibraryTitle": "你的課程，從這裡開始",
     "emptyLibraryBody": "在首頁建立課程後，可以在這裡繼續學習。",
     "mobileTitle": "今天想學什麼？",

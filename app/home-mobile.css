@@ -242,7 +242,7 @@
   animation: home-drawer-in 180ms ease-out;
 }
 .home-library-title {
-  padding: max(24px, var(--safe-area-top)) 56px 22px 20px;
+  padding: max(24px, var(--safe-area-top)) 108px 22px 20px;
   font-size: 20px;
   line-height: 28px;
   border-bottom: 1px solid var(--border);
@@ -275,7 +275,7 @@
   touch-action: pan-y;
 }
 .home-library-drawer .home-library-grid {
-  gap: 20px;
+  gap: 12px;
 }
 .home-mobile-options[data-slot='dialog-content'] {
   top: auto;
@@ -320,17 +320,21 @@
 }
 .home-library-drawer .home-course-card-mobile {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 80px minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+  min-height: 100px;
   position: relative;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  border-radius: 14px;
 }
 .home-library-drawer .home-course-thumbnail {
-  align-self: start;
-  width: 84px;
-  border-radius: 10px;
+  align-self: center;
+  width: 80px;
+  aspect-ratio: 8 / 5;
+  border-radius: 8px;
+  pointer-events: none;
 }
 .home-library-drawer .home-course-meta {
   margin: 0;
@@ -343,26 +347,58 @@
 }
 .home-library-drawer .home-course-meta > p {
   max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 22px;
 }
 .home-library-drawer .home-course-meta > span {
   padding: 0;
   background: transparent;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 18px;
   white-space: normal;
+  max-width: 100%;
+}
+.home-library-drawer
+  .home-course-meta
+  > span:not([data-testid='course-run-status']):not(.home-course-resume) {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-library-drawer .home-course-meta .home-course-resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--primary);
+  font-size: 12px;
+  max-width: 100%;
+}
+.home-course-resume > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .home-mobile-card-actions {
-  grid-column: 1 / -1;
+  grid-column: 3;
+  grid-row: 1;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   gap: 4px;
 }
 .home-mobile-card-actions button {
   position: static;
   opacity: 1;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   background: transparent;
   color: var(--muted-foreground);
   box-shadow: none;
@@ -444,24 +480,48 @@ html:has(.home-page[data-mobile='true']) {
   inset: 0;
   z-index: 20;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 16px;
-  padding: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 14px;
+  padding: 12px;
   background: var(--background);
-  text-align: center;
+  text-align: left;
+}
+.home-delete-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .home-mobile-delete-confirm p {
-  font-size: 13px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.home-mobile-delete-confirm .home-delete-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+.home-mobile-delete-confirm > .flex {
+  flex-shrink: 0;
+  gap: 6px;
 }
 .home-mobile-delete-confirm button {
   min-height: 44px;
-  min-width: 72px;
+  min-width: 56px;
   border: 1px solid var(--border);
   border-radius: 10px;
   font-size: 13px;
+}
+.home-mobile-delete-confirm button.text-destructive {
+  border-color: transparent;
+  color: white;
+  background: var(--destructive);
 }
 /* Prevent desktop-sized option controls from widening the phone dialog's grid. */
 .home-mobile-options[data-slot='dialog-content'] {
@@ -574,4 +634,108 @@ html:has(.home-page[data-mobile='true']) .home-settings-dialog {
 }
 .home-mobile-options .home-mobile-teaching-options > div:first-child > .absolute {
   width: 100%;
+}
+
+/* Folder navigation is a compact row; covers belong to courses. */
+.home-library-header {
+  position: relative;
+  flex-shrink: 0;
+}
+.home-library-header-action {
+  position: absolute;
+  top: max(16px, var(--safe-area-top));
+  right: 52px;
+}
+.home-library-header-action button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--muted-foreground);
+  border-radius: 10px;
+}
+.home-library-header-action button:hover {
+  background: var(--muted);
+}
+.home-folder-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 12px 8px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+.home-folder-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--background));
+}
+.home-folder-open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  text-align: start;
+}
+.home-folder-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.home-folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-folder-open .home-folder-name {
+  flex: none;
+}
+.home-folder-count {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted-foreground);
+}
+.home-folder-more {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  color: var(--muted-foreground);
+  border-radius: 10px;
+}
+.home-folder-name input {
+  width: 100%;
+  min-width: 0;
+  border-bottom: 1px solid var(--primary);
+  background: transparent;
+  font-size: 16px;
+  outline: none;
+}
+.home-folder-confirm[data-slot='alert-dialog-content'] {
+  width: calc(100vw - 32px);
+  max-width: 320px;
+}
+.home-library-drawer > [data-slot='dialog-close'] {
+  top: max(16px, var(--safe-area-top));
+  right: 8px;
+  width: 44px;
+  height: 44px;
 }

@@ -291,6 +291,7 @@ function HomePage() {
   const [hydrated, setHydrated] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const newFolderButtonRef = useRef<HTMLButtonElement>(null);
   // When set, the new-folder dialog is creating a folder AND moving this course
   // into it (entered via the move-menu's "new folder" entry).
   const [createAndMoveTarget, setCreateAndMoveTarget] = useState<string | null>(null);
@@ -1100,6 +1101,20 @@ function HomePage() {
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         title={t('classroom.recentClassrooms')}
+        headerAction={
+          !currentFolderId && !isSearching ? (
+            <button
+              type="button"
+              ref={newFolderButtonRef}
+              data-testid="home-new-folder"
+              aria-label={t('classroom.newFolderTitle')}
+              title={t('classroom.newFolderTitle')}
+              onClick={() => setNewFolderOpen(true)}
+            >
+              <FolderPlus size={20} />
+            </button>
+          ) : undefined
+        }
       >
         {mobile && (
           <div className="home-mobile-library-search">
@@ -1127,16 +1142,6 @@ function HomePage() {
               />
             </div>
           </div>
-        )}
-        {mobile && !currentFolderId && !isSearching && (
-          <button
-            type="button"
-            className="mb-3 flex items-center gap-2 text-sm text-muted-foreground"
-            onClick={() => setNewFolderOpen(true)}
-          >
-            <FolderPlus size={18} />
-            {t('classroom.newFolderTitle')}
-          </button>
         )}
         {/* Trigger — divider-line with centered text. Fixed height keeps the
               bar geometrically stable when the New-folder action or the folder
@@ -1341,7 +1346,7 @@ function HomePage() {
                   {t('classroom.searchEmpty')}
                 </div>
               ) : (
-                <div className="pt-8">
+                <div className={mobile ? '' : 'pt-8'}>
                   {/* Breadcrumb — shown only while searching (the folder path
                         already lives in the centered header above). */}
                   {isSearching && (
@@ -1397,6 +1402,7 @@ function HomePage() {
                             transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
                           >
                             <FolderCard
+                              mobile={mobile}
                               folder={folder}
                               courseCount={courseCountByFolder.get(folder.id) ?? 0}
                               coverSlides={folderCovers.get(folder.id)?.slides ?? []}
@@ -1469,13 +1475,14 @@ function HomePage() {
                             overlay={
                               <>
                                 <MoveToFolderMenu
+                                  variant={mobile ? 'items' : 'icon'}
                                   folders={folders}
                                   currentFolderId={classroom.folderId}
                                   onMove={(folderId) => handleMoveCourse(classroom.id, folderId)}
                                   onCreateAndMove={handleCreateAndMove(classroom.id)}
                                 />
                                 {/* Search view: show the owning folder as a badge. */}
-                                {isSearching && classroom.folderId && (
+                                {!mobile && isSearching && classroom.folderId && (
                                   <span className="absolute bottom-2 left-2 z-10 inline-flex items-center gap-1 rounded-md bg-violet-500/80 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm pointer-events-none">
                                     <Folder className="size-2.5" />
                                     {folderNameById.get(classroom.folderId) ?? ''}
@@ -1493,6 +1500,27 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Keep the portalled folder dialog inside the library's React tree.
+            Touch dismissal must not also reach the drawer underneath it. */}
+        <NewFolderDialog
+          open={newFolderOpen}
+          onOpenChange={(open) => {
+            setNewFolderOpen(open);
+            if (!open) setCreateAndMoveTarget(null);
+          }}
+          folders={folders}
+          onCreate={handleCreateFolder}
+          onCloseAutoFocus={(event) => {
+            if (!mobile || !historyOpen) return;
+            event.preventDefault();
+            requestAnimationFrame(() => {
+              const target =
+                newFolderButtonRef.current ??
+                document.querySelector<HTMLInputElement>('[data-testid="home-mobile-search"]');
+              target?.focus();
+            });
+          }}
+        />
       </HomeLibrary>
 
       {mobile && (
@@ -1552,18 +1580,6 @@ function HomePage() {
           </DialogContent>
         </Dialog>
       )}
-
-      {/* Folder dialogs — mounted at the top level so they are reachable even
-          while the Recent section is collapsed or the course list is empty. */}
-      <NewFolderDialog
-        open={newFolderOpen}
-        onOpenChange={(open) => {
-          setNewFolderOpen(open);
-          if (!open) setCreateAndMoveTarget(null);
-        }}
-        folders={folders}
-        onCreate={handleCreateFolder}
-      />
 
       {/* Footer — flows with content, at the very end */}
       <div className="home-footer mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
@@ -1922,6 +1938,7 @@ function ClassroomCard({
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
   const renameAfterMenuRef = useRef(false);
+  const [moving, setMoving] = useState(false);
   const nearViewport = useNearViewport(thumbRef);
 
   useEffect(() => {
@@ -2114,6 +2131,12 @@ function ClassroomCard({
 
       {/* Info — outside the thumbnail */}
       <div className="home-course-meta mt-2.5 px-1 flex items-center gap-2">
+        {mobile && runStatus?.kind === 'paused' && (
+          <span className="home-course-resume">
+            <span>{t('home.resumeGeneration')}</span>
+            <ChevronRight size={12} className="shrink-0" />
+          </span>
+        )}
         {runStatus ? (
           <CourseRunStatusLabel status={runStatus} />
         ) : (
@@ -2180,7 +2203,10 @@ function ClassroomCard({
           role="alert"
           onClick={(event) => event.stopPropagation()}
         >
-          <p>{t('classroom.deleteConfirmTitle')}?</p>
+          <div className="home-delete-copy">
+            <p className="home-delete-title">{classroom.name}</p>
+            <p>{t('classroom.deleteConfirmTitle')}?</p>
+          </div>
           <div className="flex gap-3">
             <button type="button" onClick={onCancelDelete}>
               {t('common.cancel')}
@@ -2193,8 +2219,11 @@ function ClassroomCard({
       )}
       {mobile && !confirmingDelete && (
         <div className="home-mobile-card-actions" onClick={(event) => event.stopPropagation()}>
-          {overlay}
-          <DropdownMenu>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (!open) setMoving(false);
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
@@ -2205,6 +2234,7 @@ function ClassroomCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
+              className="home-course-menu min-w-44 [&_[data-slot=dropdown-menu-item]]:min-h-11"
               align="end"
               onClick={(event) => event.stopPropagation()}
               onCloseAutoFocus={(event) => {
@@ -2215,21 +2245,53 @@ function ClassroomCard({
                 }
               }}
             >
-              {!pendingCourse && (
-                <DropdownMenuItem
-                  onClick={(event) => {
-                    renameAfterMenuRef.current = true;
-                    startRename(event);
-                  }}
-                >
-                  <Pencil size={16} />
-                  {t('classroom.rename')}
-                </DropdownMenuItem>
+              {moving ? (
+                <>
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      setMoving(false);
+                    }}
+                  >
+                    <ChevronRight size={16} className="rotate-180" />
+                    {t('common.back')}
+                  </DropdownMenuItem>
+                  {overlay}
+                </>
+              ) : (
+                <>
+                  {!pendingCourse && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={(event) => {
+                          renameAfterMenuRef.current = true;
+                          startRename(event);
+                        }}
+                      >
+                        <Pencil size={16} />
+                        {t('classroom.rename')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          setMoving(true);
+                        }}
+                      >
+                        <Folder size={16} />
+                        {t('classroom.moveToFolder')}
+                        <ChevronRight size={16} className="ml-auto" />
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={(event) => onDelete(classroom.id, event)}
+                  >
+                    <Trash2 size={16} />
+                    {t('classroom.delete')}
+                  </DropdownMenuItem>
+                </>
               )}
-              <DropdownMenuItem onClick={(event) => onDelete(classroom.id, event)}>
-                <Trash2 size={16} />
-                {t('classroom.delete')}
-              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

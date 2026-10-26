@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Voltar",
     "you": "Você",
     "confirm": "Confirmar",
     "cancel": "Cancelar",
@@ -10,6 +11,7 @@
     "close": "Fechar"
   },
   "home": {
+    "resumeGeneration": "Continuar geração",
     "emptyLibraryTitle": "Suas aulas começam aqui",
     "emptyLibraryBody": "Crie um curso na página inicial e volte aqui para continuar.",
     "mobileTitle": "O que quer aprender?",

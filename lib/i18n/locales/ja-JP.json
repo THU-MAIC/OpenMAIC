@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "戻る",
     "you": "あなた",
     "confirm": "確認",
     "cancel": "キャンセル",
@@ -10,6 +11,7 @@
     "close": "閉じる"
   },
   "home": {
+    "resumeGeneration": "生成を続ける",
     "emptyLibraryTitle": "ここから学びが始まります",
     "emptyLibraryBody": "ホームで授業を作成すると、ここから学習を再開できます。",
     "mobileTitle": "今日は何を学びますか？",

@@ -9,12 +9,14 @@ export function HomeLibrary({
   open,
   onOpenChange,
   title,
+  headerAction,
   children,
 }: {
   mobile: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
+  headerAction?: ReactNode;
   children: ReactNode;
 }) {
   if (!mobile)
@@ -34,11 +36,18 @@ export function HomeLibrary({
         aria-describedby={undefined}
         onOpenAutoFocus={(event) => event.preventDefault()}
         onEscapeKeyDown={(event) => {
-          if ((event.target as HTMLElement)?.matches('[data-home-course-rename]'))
+          if (
+            (event.target as HTMLElement)?.matches(
+              '[data-home-course-rename], [data-home-folder-rename]',
+            )
+          )
             event.preventDefault();
         }}
       >
-        <DialogTitle className="home-library-title">{title}</DialogTitle>
+        <div className="home-library-header">
+          <DialogTitle className="home-library-title">{title}</DialogTitle>
+          {headerAction && <div className="home-library-header-action">{headerAction}</div>}
+        </div>
         <div className="home-library-scroll">{children}</div>
       </DialogContent>
     </Dialog>

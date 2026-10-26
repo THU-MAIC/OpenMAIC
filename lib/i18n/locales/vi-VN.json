@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Quay lại",
     "you": "Bạn",
     "confirm": "Xác nhận",
     "cancel": "Hủy",
@@ -10,6 +11,7 @@
     "close": "Đóng"
   },
   "home": {
+    "resumeGeneration": "Tiếp tục tạo",
     "emptyLibraryTitle": "Lớp học của bạn bắt đầu ở đây",
     "emptyLibraryBody": "Tạo khóa học ở trang chủ và quay lại đây để học tiếp.",
     "mobileTitle": "Bạn muốn học gì?",
