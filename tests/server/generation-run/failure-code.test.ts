@@ -1,3 +1,4 @@
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { APICallError, RetryError } from 'ai';
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +18,13 @@ function providerError(statusCode: number, body?: unknown) {
 }
 
 describe('run failure codes', () => {
+  it('preserves the actionable reclone code instead of classifying it as a generic upstream error', () => {
+    expect(runFailureCode(new QwenVoiceCloneError('QWEN_VC_RECLONE_REQUIRED', 409))).toEqual({
+      errorCode: 'QWEN_VC_RECLONE_REQUIRED',
+      statusCode: 409,
+    });
+  });
+
   it.each([
     'insufficient_quota',
     'credit_balance_exhausted',

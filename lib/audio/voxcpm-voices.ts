@@ -20,7 +20,11 @@ import {
   registerVoiceFromReference,
   type VoiceRegistrationRequestConfig,
 } from '@/lib/audio/voice-registration-client';
-import { InvalidReferenceAudioError, validateReferenceAudio } from '@/lib/audio/wav-validate';
+import {
+  InvalidReferenceAudioError,
+  QWEN_MIN_REFERENCE_DURATION_SECONDS,
+  validateReferenceAudio,
+} from '@/lib/audio/wav-validate';
 
 export type VoxCPMVoiceProfile = VoiceProfileRecord;
 
@@ -161,7 +165,10 @@ export async function normalizeQwenReferenceAudio(
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
   const audioBuffer = await decodeAudioBlob(blob);
   const wav = new Blob([audioBufferToMonoWav(audioBuffer, 24_000)], { type: 'audio/wav' });
-  validateReferenceAudio(new Uint8Array(await wav.arrayBuffer()));
+  validateReferenceAudio(
+    new Uint8Array(await wav.arrayBuffer()),
+    QWEN_MIN_REFERENCE_DURATION_SECONDS,
+  );
   return {
     blob: wav,
     name: replaceFileExtension(fileName, 'wav'),
@@ -362,7 +369,7 @@ export function useQwenVoiceProfiles() {
   }, [refresh]);
 
   const addCloneVoice = useCallback(
-    async (input: { name: string; referenceAudio: File; refText: string }) => {
+    async (input: { name: string; referenceAudio: File; refText?: string }) => {
       const normalized = await normalizeQwenReferenceAudio(
         input.referenceAudio,
         input.referenceAudio.name,

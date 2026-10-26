@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Qwen voice cloning: migrate enrollment and synthesis to CosyVoice (`cosyvoice-v3.5-plus` by default, Beijing DashScope). Saved voices stay visible; incompatible voices require re-uploading a suitable reference recording and re-cloning, with no automatic sample migration. Managed deployments must authorize the new target in `TTS_QWEN_MODELS` or `openmaic.yml`. An empty or exact retired `TTS_QWEN_VOICE_CLONE_MODEL=qwen3-tts-vc-2026-01-22` value selects the default; other overrides remain unchanged. [#1941](https://github.com/THU-MAIC/OpenMAIC/issues/1941)
 - A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
 
 ## [1.3.0-rc.1] - 2026-10-22

@@ -4,6 +4,7 @@
  * called those routes itself.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
 import { WebSearchConfigError } from '@/lib/server/web-search-config';
@@ -15,6 +16,7 @@ import { StepRefusal } from '../steps/context';
  * codes through the same `errorCode` field; this union is only the built-in set.
  */
 export type RunFailureErrorCode =
+  | 'QWEN_VC_RECLONE_REQUIRED'
   | 'PROVIDER_DISABLED'
   | 'MISSING_API_KEY'
   | 'INVALID_URL'
@@ -41,6 +43,8 @@ export interface RunFailureCode {
 export function runFailureCode(
   error: unknown,
 ): RunFailureCode & { errorCode: RunFailureErrorCode } {
+  if (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_RECLONE_REQUIRED')
+    return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelAuthorizationError)
     return { errorCode: error.code, statusCode: error.httpStatus };
   if (error instanceof ModelConfigurationError || error instanceof WebSearchConfigError) {

@@ -1,3 +1,4 @@
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 /**
  * Narration: synthesize one speech line through the tts slot's provider.
@@ -7,7 +8,12 @@ import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
  */
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { generateTTS, type TTSGenerationResult } from '@/lib/audio/tts-providers';
-import { TTS_PROVIDERS, DEFAULT_TTS_VOICES, isQwenCloneVoice } from '@/lib/audio/constants';
+import {
+  TTS_PROVIDERS,
+  DEFAULT_TTS_VOICES,
+  isQwenCloneVoice,
+  isVoiceCloneGroupId,
+} from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
@@ -117,6 +123,16 @@ export async function synthesizeNarration(
   // Build TTS config (managed providers may pin the model server-side)
   const qwenCloneVoice =
     ttsProviderId === 'qwen-tts' && isQwenCloneVoice(ttsVoice, connection.voices);
+  // Grouping IDs are not upstream models; explicit requests must be authorized
+  // before compatibility checks can trigger a saved-voice recovery.
+  const requested = input.requestedModelId?.trim();
+  if (
+    connection.origin === 'request' &&
+    requested &&
+    !isVoiceCloneGroupId(ttsProviderId, requested)
+  )
+    authorizeMediaModel(connection, 'tts', requested);
+  getVoiceRegistrationAdapter(ttsProviderId)?.assertVoiceCompatible?.(ttsVoice, connection.voices);
   const requestedSpeed = input.speed ?? 1.0;
   // A configured slot's own model; on the deprecated and default paths the
   // client's (or default) model under the legacy server pins. Qwen

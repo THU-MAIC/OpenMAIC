@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { QWEN_VOICE_CLONE_GROUP_ID } from '@/lib/audio/constants';
 import { createLogger } from '@/lib/logger';
 
 const callLLM = vi.fn();
@@ -230,7 +230,7 @@ describe('agent profiles step — voiceDesign', () => {
     // The clone is account-scoped and self-contained; the model follows the voice.
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-ghost',
     });
   });
@@ -334,13 +334,13 @@ describe('agent profiles step — voiceDesign', () => {
     // The teacher is still pinned to the (self-contained) ghost clone…
     expect(body.agents[0].voiceConfig).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-ghost',
     });
     // …but the schema example token is always an advertised voice.
     const prompt = callLLM.mock.calls[0][0].prompt as string;
     expect(prompt).toContain("e.g. 'qwen-tts::Cherry'");
-    expect(prompt).not.toContain(`e.g. 'qwen-tts::${QWEN_TTS_VOICE_CLONE_MODEL}::clone-ghost'`);
+    expect(prompt).not.toContain(`e.g. 'qwen-tts::${QWEN_VOICE_CLONE_GROUP_ID}::clone-ghost'`);
   });
 
   it('prompts for a voice on every non-teacher agent and never reuses the teacher voice', async () => {

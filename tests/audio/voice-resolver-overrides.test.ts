@@ -10,7 +10,7 @@ import {
   resolveNarratorVoiceBinding,
   type ProviderWithVoices,
 } from '@/lib/audio/voice-resolver';
-import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { QWEN_VOICE_CLONE_GROUP_ID } from '@/lib/audio/constants';
 
 const agent = (id: string, voiceConfig?: AgentConfig['voiceConfig']) =>
   ({ id, voiceConfig }) as AgentConfig;
@@ -60,7 +60,7 @@ describe('resolveAgentVoice with overrides', () => {
     });
     expect(resolved).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'NotAVoice',
     });
   });
@@ -100,7 +100,7 @@ describe('resolveAgentVoice with overrides', () => {
       modelGroups: [
         { modelId: 'qwen3-tts-flash', modelName: 'Flash', voices: qwen.voices },
         {
-          modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+          modelId: QWEN_VOICE_CLONE_GROUP_ID,
           modelName: 'VC',
           voices: [{ id: 'clone-1', name: 'Clone' }],
         },
@@ -116,14 +116,14 @@ describe('resolveAgentVoice with overrides', () => {
       ]),
     ).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-1',
     });
     expect(
       resolveAgentVoice(
         agent('bound-clone', {
           providerId: 'qwen-tts',
-          modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+          modelId: QWEN_VOICE_CLONE_GROUP_ID,
           voiceId: 'clone-1',
         }),
         0,
@@ -131,7 +131,7 @@ describe('resolveAgentVoice with overrides', () => {
       ),
     ).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-1',
     });
   });
@@ -145,7 +145,7 @@ describe('resolveAgentVoice with overrides', () => {
       ),
     ).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'remote-vendor-id',
     });
   });
@@ -154,7 +154,7 @@ describe('resolveAgentVoice with overrides', () => {
     const global = { providerId: 'qwen-tts' as const, modelId: 'flash', voiceId: 'Cherry' };
     const bound = {
       providerId: 'qwen-tts' as const,
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-1',
     };
     expect(

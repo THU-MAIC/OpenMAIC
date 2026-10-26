@@ -1,6 +1,7 @@
 export const QWEN_REFERENCE_SAMPLE_RATE = 24_000;
 export const QWEN_REFERENCE_CHANNELS = 1;
 export const MIN_REFERENCE_DURATION_SECONDS = 1;
+export const QWEN_MIN_REFERENCE_DURATION_SECONDS = 5;
 export const MAX_REFERENCE_DURATION_SECONDS = 60;
 
 export interface ValidatedReferenceAudio {
@@ -12,8 +13,10 @@ export interface ValidatedReferenceAudio {
 export class InvalidReferenceAudioError extends Error {
   readonly code = 'QWEN_VC_REFERENCE_AUDIO_INVALID';
 
-  constructor() {
-    super('Reference audio must be a 24 kHz mono PCM WAV file between 1 and 60 seconds long');
+  constructor(minDurationSeconds = MIN_REFERENCE_DURATION_SECONDS) {
+    super(
+      `Reference audio must be a 24 kHz mono PCM WAV file between ${minDurationSeconds} and ${MAX_REFERENCE_DURATION_SECONDS} seconds long`,
+    );
     this.name = 'InvalidReferenceAudioError';
   }
 }
@@ -22,16 +25,19 @@ function readAscii(bytes: Uint8Array, start: number, end: number): string {
   return String.fromCharCode(...bytes.subarray(start, end));
 }
 
-/** Validate the exact PCM WAV format accepted by Qwen voice enrollment. */
-export function validateReferenceAudio(audio: Uint8Array): ValidatedReferenceAudio {
-  if (audio.byteLength < 44) throw new InvalidReferenceAudioError();
+/** Validate the shared PCM WAV format and the caller's minimum duration. */
+export function validateReferenceAudio(
+  audio: Uint8Array,
+  minDurationSeconds = MIN_REFERENCE_DURATION_SECONDS,
+): ValidatedReferenceAudio {
+  if (audio.byteLength < 44) throw new InvalidReferenceAudioError(minDurationSeconds);
 
   const view = new DataView(audio.buffer, audio.byteOffset, audio.byteLength);
   if (readAscii(audio, 0, 4) !== 'RIFF' || readAscii(audio, 8, 12) !== 'WAVE') {
-    throw new InvalidReferenceAudioError();
+    throw new InvalidReferenceAudioError(minDurationSeconds);
   }
   if (view.getUint32(4, true) + 8 !== audio.byteLength) {
-    throw new InvalidReferenceAudioError();
+    throw new InvalidReferenceAudioError(minDurationSeconds);
   }
 
   let offset = 12;
@@ -45,10 +51,10 @@ export function validateReferenceAudio(audio: Uint8Array): ValidatedReferenceAud
     const chunkBytes = view.getUint32(offset + 4, true);
     const chunkStart = offset + 8;
     const chunkEnd = chunkStart + chunkBytes;
-    if (chunkEnd > audio.byteLength) throw new InvalidReferenceAudioError();
+    if (chunkEnd > audio.byteLength) throw new InvalidReferenceAudioError(minDurationSeconds);
 
     if (chunkId === 'fmt ') {
-      if (sawFormat || chunkBytes < 16) throw new InvalidReferenceAudioError();
+      if (sawFormat || chunkBytes < 16) throw new InvalidReferenceAudioError(minDurationSeconds);
       const format = view.getUint16(chunkStart, true);
       const channels = view.getUint16(chunkStart + 2, true);
       const sampleRate = view.getUint32(chunkStart + 4, true);
@@ -63,7 +69,7 @@ export function validateReferenceAudio(audio: Uint8Array): ValidatedReferenceAud
         blockAlign !== channels * 2 ||
         byteRate !== sampleRate * blockAlign
       ) {
-        throw new InvalidReferenceAudioError();
+        throw new InvalidReferenceAudioError(minDurationSeconds);
       }
       sawFormat = true;
     } else if (chunkId === 'data') {
@@ -80,10 +86,10 @@ export function validateReferenceAudio(audio: Uint8Array): ValidatedReferenceAud
     !dataBytes ||
     !blockAlign ||
     dataBytes % blockAlign !== 0 ||
-    durationSeconds < MIN_REFERENCE_DURATION_SECONDS ||
+    durationSeconds < minDurationSeconds ||
     durationSeconds > MAX_REFERENCE_DURATION_SECONDS
   ) {
-    throw new InvalidReferenceAudioError();
+    throw new InvalidReferenceAudioError(minDurationSeconds);
   }
 
   return {
