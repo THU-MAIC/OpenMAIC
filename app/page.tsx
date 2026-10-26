@@ -985,19 +985,18 @@ function HomePage() {
                 </Tooltip>
               )}
 
-              {/* Voice input */}
-              {(!mobile || (!form.requirement.trim() && !preparingGenerate)) && (
-                <SpeechButton
-                  className="home-speech"
-                  size="md"
-                  onTranscription={(text) => {
-                    setForm((prev) => {
-                      const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
-                      return { ...prev, requirement: next };
-                    });
-                  }}
-                />
-              )}
+              {/* Keep the recorder mounted when text replaces its idle control. */}
+              <SpeechButton
+                className="home-speech"
+                size="md"
+                hiddenWhenIdle={mobile && (!!form.requirement.trim() || preparingGenerate)}
+                onTranscription={(text) => {
+                  setForm((prev) => {
+                    const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
+                    return { ...prev, requirement: next };
+                  });
+                }}
+              />
 
               {/* Send button */}
               <button
