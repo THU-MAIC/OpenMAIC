@@ -201,3 +201,21 @@ describe('scene clone recovery', () => {
     });
   });
 });
+
+it('continues on the fallback voice after a line fails to persist', async () => {
+  mocks.persist.mockRejectedValueOnce(new Error('disk unavailable'));
+  const input = request();
+  const result = await synthesizeSceneNarration(input);
+  expect(result).toMatchObject({
+    generated: 2,
+    failed: ['s1'],
+    recovery: { status: 'fallback', voiceId: 'Cherry' },
+  });
+  expect(mocks.generate.mock.calls.map(([cfg]) => cfg.voice)).toEqual([
+    'cosyvoice-v3.5-plus-unavailable-id',
+    'Cherry',
+    'Cherry',
+    'Cherry',
+  ]);
+  expect(input.scene.actions![0]).not.toHaveProperty('audioId');
+});

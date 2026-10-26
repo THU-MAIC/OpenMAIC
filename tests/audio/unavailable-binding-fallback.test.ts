@@ -24,6 +24,7 @@ describe('unavailable binding fallback', () => {
   it.each([
     ['cosyvoice-v3.5-plus-new-id', 'qwen3-tts-vc-2026-01-22'],
     ['cosyvoice-v3-flash-new-id', 'cosyvoice-v3-flash'],
+    ['cosyvoice-v3.5-plus-new-id', 'qwen3-tts'],
     ['operator-target-new-id', 'operator-target'],
   ])('tries the newly selected global clone %s before catalog fallback', (voiceId, modelId) => {
     expect(
@@ -34,6 +35,16 @@ describe('unavailable binding fallback', () => {
         'reclone-required',
       ),
     ).toMatchObject({ voiceId });
+  });
+  it('ignores the legacy catalog model hint on the provider configuration', () => {
+    expect(
+      voiceAfterUnavailableBinding(
+        { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-old-id' },
+        { providerId: 'qwen-tts', voiceId: 'cosyvoice-v3.5-plus-new-id' },
+        { 'qwen-tts': { apiKey: 'test', enabled: true, modelId: 'qwen3-tts' } },
+        'reclone-required',
+      ),
+    ).toMatchObject({ voiceId: 'cosyvoice-v3.5-plus-new-id' });
   });
   it.each([
     ['cosyvoice-v3-plus-other-id', 'cosyvoice-v3-flash'],

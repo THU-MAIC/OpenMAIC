@@ -3,7 +3,7 @@ import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
-  QWEN_TTS_VOICE_CLONE_MODEL,
+  QWEN_VOICE_CLONE_GROUP_ID,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -279,28 +279,46 @@ export function voiceAfterUnavailableBinding(
   providerConfigs: ProviderConfigMap,
   reason: VoiceCloneRecoveryReason = 'missing',
 ): ResolvedVoice | null {
-  // Only the explicitly selected global clone may be tried; catalog enumeration
-  // must not discover arbitrary account-scoped IDs. The server checks the real
-  // target and authorization when the browser only has the grouping sentinel.
-  const usable = (voice: ResolvedVoice, selectedGlobal = false): boolean => {
+  return reason === 'reclone-required'
+    ? voiceAfterIncompatibleClone(failed, globalVoice, providerConfigs)
+    : voiceAfterMissingClone(failed, globalVoice, providerConfigs);
+}
+
+/**
+ * A deleted clone says nothing about other voices: the global voice when it
+ * differs and is enabled, else the deterministic enabled-provider pick.
+ */
+function voiceAfterMissingClone(
+  failed: ResolvedVoice,
+  globalVoice: ResolvedVoice,
+  providerConfigs: ProviderConfigMap,
+): ResolvedVoice | null {
+  const candidate =
+    narratorBindingDiffers(failed, globalVoice) &&
+    isTTSProviderEnabled(globalVoice.providerId, providerConfigs[globalVoice.providerId])
+      ? resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs)
+      : deterministicNarratorVoice(providerConfigs);
+  return candidate && narratorBindingDiffers(failed, candidate) ? candidate : null;
+}
+
+/**
+ * An incompatible binding cannot serve the current clone target. Try the selected
+ * global catalog voice or compatible clone, else the first playable catalog voice.
+ * Enumeration never discovers account-scoped clone IDs.
+ */
+function voiceAfterIncompatibleClone(
+  failed: ResolvedVoice,
+  globalVoice: ResolvedVoice,
+  providerConfigs: ProviderConfigMap,
+): ResolvedVoice | null {
+  const playable = (voice: ResolvedVoice, allowClone: boolean): boolean => {
     const config = providerConfigs[voice.providerId];
-    const hint = [voice.modelId, config?.modelId].find(
-      (model) =>
-        model &&
-        !/-tts-vc(?:-|$)/iu.test(model) &&
-        !TTS_PROVIDERS['qwen-tts'].models.some((entry) => entry.id === model),
-    );
-    const selectedClone =
-      selectedGlobal &&
-      (hint
-        ? qwenVoiceMatchesTargetModel(voice.voiceId, hint)
-        : voice.voiceId.startsWith('cosyvoice-'));
     return (
       narratorBindingDiffers(failed, voice) &&
       isTTSProviderEnabled(voice.providerId, config) &&
       (voice.providerId !== 'qwen-tts' ||
         isQwenCatalogVoice(voice.voiceId, config?.voices) ||
-        selectedClone) &&
+        (allowClone && mayServeCurrentCloneTarget(voice, config))) &&
       voiceAllowedByConfiguredCatalogue(voice.providerId, voice.voiceId, config?.voices) &&
       voiceServesModel(
         voice.providerId,
@@ -315,25 +333,43 @@ export function voiceAfterUnavailableBinding(
       )
     );
   };
-  if (reason === 'reclone-required') {
-    if (usable(globalVoice, true))
-      return resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs);
-    for (const provider of getEnabledProvidersWithVoices(
-      providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
-    )) {
-      for (const voice of provider.voices) {
-        const candidate = { providerId: provider.providerId, voiceId: voice.id };
-        if (usable(candidate)) return candidate;
-      }
-    }
-    return null;
+  if (playable(globalVoice, true)) {
+    return resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs);
   }
-  const candidate =
-    narratorBindingDiffers(failed, globalVoice) &&
-    isTTSProviderEnabled(globalVoice.providerId, providerConfigs[globalVoice.providerId])
-      ? resolveNarratorVoiceBinding(undefined, globalVoice, providerConfigs)
-      : deterministicNarratorVoice(providerConfigs);
-  return candidate && narratorBindingDiffers(failed, candidate) ? candidate : null;
+  for (const provider of getEnabledProvidersWithVoices(
+    providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
+  )) {
+    for (const voice of provider.voices) {
+      const candidate = { providerId: provider.providerId, voiceId: voice.id };
+      if (playable(candidate, false)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
+ * Catalog models and persisted groups do not identify the clone target.
+ * Other explicit model IDs remain target hints, including operator overrides.
+ * Without a target hint only a selected CosyVoice ID is worth one attempt;
+ * the server still checks the actual target and authorization.
+ */
+function mayServeCurrentCloneTarget(
+  voice: ResolvedVoice,
+  config: ProviderConfigMap[string],
+): boolean {
+  const target = [voice.modelId, config?.modelId]
+    .map((model) => model?.trim())
+    .find(
+      (model) =>
+        model &&
+        !/-tts-vc(?:-|$)/iu.test(model) &&
+        // qwen3-tts is the legacy catalog synthesis model, no longer advertised.
+        model !== 'qwen3-tts' &&
+        !TTS_PROVIDERS['qwen-tts'].models.some((entry) => entry.id === model),
+    );
+  return target
+    ? qwenVoiceMatchesTargetModel(voice.voiceId, target)
+    : voice.voiceId.startsWith('cosyvoice-');
 }
 
 /** Retry an unavailable bound clone once with a different enabled voice. */
@@ -527,7 +563,7 @@ export function getEnabledProvidersWithVoices(
           ...(providerId === 'qwen-tts' && extraVoices.length
             ? [
                 {
-                  modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+                  modelId: QWEN_VOICE_CLONE_GROUP_ID,
                   modelName: 'CosyVoice Voice Clone',
                   voices: extraVoices,
                 },

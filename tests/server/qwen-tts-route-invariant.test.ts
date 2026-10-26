@@ -10,7 +10,7 @@ vi.mock('@/lib/audio/tts-providers', async (importOriginal) => {
 });
 
 import { POST } from '@/app/api/generate/tts/route';
-import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { QWEN_VOICE_CLONE_GROUP_ID } from '@/lib/audio/constants';
 
 function request(voice: string, modelId: string, speed = 1.25): NextRequest {
   return new NextRequest('http://localhost/api/generate/tts', {
@@ -47,7 +47,7 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
     vi.resetModules();
     const { POST: legacyPost } = await import('@/app/api/generate/tts/route');
     const response = await legacyPost(
-      request('cosyvoice-v3.5-plus-teacher-id', QWEN_TTS_VOICE_CLONE_MODEL),
+      request('cosyvoice-v3.5-plus-teacher-id', QWEN_VOICE_CLONE_GROUP_ID),
     );
     expect(response.status).toBe(200);
     expect(mocks.generateTTS).toHaveBeenCalledWith(
@@ -67,7 +67,7 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
       setDeploymentConfigForTests();
       vi.resetModules();
       const { POST: legacyPost } = await import('@/app/api/generate/tts/route');
-      const response = await legacyPost(request(voice, QWEN_TTS_VOICE_CLONE_MODEL));
+      const response = await legacyPost(request(voice, QWEN_VOICE_CLONE_GROUP_ID));
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({
         errorCode: 'QWEN_VC_RECLONE_REQUIRED',
@@ -78,7 +78,7 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
   );
   it.each([
     ['qwen-tts-vc-retired-id', 'unlisted-model'],
-    ['cosyvoice-v3.5-plus-new-id', QWEN_TTS_VOICE_CLONE_MODEL],
+    ['cosyvoice-v3.5-plus-new-id', QWEN_VOICE_CLONE_GROUP_ID],
   ])('rejects unauthorized model %s / %s before generation', async (voice, model) => {
     vi.stubEnv('TTS_QWEN_API_KEY', 'server-key');
     vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash');
@@ -95,7 +95,7 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
     setDeploymentConfigForTests();
     vi.resetModules();
     const { POST: legacyPost } = await import('@/app/api/generate/tts/route');
-    const response = await legacyPost(request('Cherry', QWEN_TTS_VOICE_CLONE_MODEL));
+    const response = await legacyPost(request('Cherry', QWEN_VOICE_CLONE_GROUP_ID));
     expect(response.status).toBe(200);
     expect(mocks.generateTTS).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -107,7 +107,7 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
     );
   });
 
-  it.each([QWEN_TTS_VOICE_CLONE_MODEL, 'cosyvoice-v3.5-plus'])(
+  it.each([QWEN_VOICE_CLONE_GROUP_ID, 'cosyvoice-v3.5-plus'])(
     'keeps a catalog voice on Qwen3 when the requested model is %s',
     async (modelId) => {
       const response = await POST(request('Cherry', modelId));
@@ -139,14 +139,14 @@ describe('Qwen TTS route model-follows-voice invariant', () => {
   });
 
   it('trims a catalog voice before clone detection and rejects whitespace-only voices', async () => {
-    const response = await POST(request(' Cherry ', QWEN_TTS_VOICE_CLONE_MODEL));
+    const response = await POST(request(' Cherry ', QWEN_VOICE_CLONE_GROUP_ID));
     expect(response.status).toBe(200);
     expect(mocks.generateTTS).toHaveBeenCalledWith(
       expect.objectContaining({ voice: 'Cherry', modelId: 'qwen3-tts-flash' }),
       'Hello',
     );
 
-    const emptyResponse = await POST(request('   ', QWEN_TTS_VOICE_CLONE_MODEL));
+    const emptyResponse = await POST(request('   ', QWEN_VOICE_CLONE_GROUP_ID));
     expect(emptyResponse.status).toBe(400);
   });
 });

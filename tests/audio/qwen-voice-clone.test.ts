@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+  DEFAULT_QWEN_VOICE_CLONE_TARGET,
   getManuallySelectableTTSModels,
-  QWEN_TTS_VOICE_CLONE_MODEL,
+  QWEN_VOICE_CLONE_GROUP_ID,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 import {
@@ -102,8 +102,8 @@ describe('Qwen voice cloning', () => {
   );
 
   it('keeps the saved-voice grouping ID while using CosyVoice for new requests', () => {
-    expect(QWEN_TTS_VOICE_CLONE_MODEL).toBe('qwen3-tts-vc-2026-01-22');
-    expect(DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL).toBe('cosyvoice-v3.5-plus');
+    expect(QWEN_VOICE_CLONE_GROUP_ID).toBe('qwen3-tts-vc-2026-01-22');
+    expect(DEFAULT_QWEN_VOICE_CLONE_TARGET).toBe('cosyvoice-v3.5-plus');
     expect(resolveQwenVoiceCloneModel()).toBe('cosyvoice-v3.5-plus');
   });
 
@@ -1025,7 +1025,7 @@ describe('Qwen voice cloning', () => {
     await generateTTS(
       {
         providerId: 'qwen-tts',
-        modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+        modelId: QWEN_VOICE_CLONE_GROUP_ID,
         voice: 'Cherry',
         speed: 1,
         apiKey: CONFIG.apiKey,
@@ -1183,7 +1183,7 @@ describe('Qwen voice cloning', () => {
         language: 'auto',
       });
       expect(
-        qwen.modelGroups.find((group) => group.modelId === QWEN_TTS_VOICE_CLONE_MODEL)?.voices,
+        qwen.modelGroups.find((group) => group.modelId === QWEN_VOICE_CLONE_GROUP_ID)?.voices,
       ).toEqual([{ id: voiceId, name: 'Saved voice', language: 'auto' }]);
       expect(
         qwen.modelGroups.find((group) => group.modelId === 'qwen3-tts-flash')?.voices,
@@ -1194,10 +1194,10 @@ describe('Qwen voice cloning', () => {
   it('excludes the voice-clone model from manual model options but keeps it in the registry', () => {
     const qwenModels = TTS_PROVIDERS['qwen-tts'].models;
     // The registry entry stays so voice-driven dispatch can still resolve it.
-    expect(qwenModels.some((model) => model.id === QWEN_TTS_VOICE_CLONE_MODEL)).toBe(true);
+    expect(qwenModels.some((model) => model.id === QWEN_VOICE_CLONE_GROUP_ID)).toBe(true);
 
     const manualModels = getManuallySelectableTTSModels('qwen-tts');
-    expect(manualModels.some((model) => model.id === QWEN_TTS_VOICE_CLONE_MODEL)).toBe(false);
+    expect(manualModels.some((model) => model.id === QWEN_VOICE_CLONE_GROUP_ID)).toBe(false);
     expect(manualModels.length).toBe(qwenModels.length - 1);
     // Non-clone models remain selectable.
     expect(manualModels.map((model) => model.id)).toContain('qwen3-tts-flash');

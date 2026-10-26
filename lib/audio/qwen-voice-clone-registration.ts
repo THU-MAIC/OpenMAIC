@@ -16,7 +16,7 @@ import {
   registerQwenVoice,
 } from '@/lib/audio/qwen-voice-clone';
 import {
-  DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+  DEFAULT_QWEN_VOICE_CLONE_TARGET,
   isQwenCloneVoice,
   qwenVoiceMatchesTargetModel,
 } from '@/lib/audio/constants';
@@ -59,7 +59,7 @@ function providerConfig(
   return {
     apiKey: cfg.apiKey,
     baseUrl: cfg.baseUrl,
-    targetModel: cfg.model || DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
+    targetModel: cfg.model || DEFAULT_QWEN_VOICE_CLONE_TARGET,
     publicOnly: cfg.publicOnly,
     managed: cfg.managed,
   };

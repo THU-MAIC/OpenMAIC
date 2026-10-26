@@ -71,7 +71,7 @@ const mockFetch = vi.fn() as Mock;
 vi.stubGlobal('fetch', mockFetch);
 
 import { resolveNarratorVoiceForGeneration } from '@/lib/audio/voice-resolver';
-import { QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { QWEN_VOICE_CLONE_GROUP_ID } from '@/lib/audio/constants';
 import { clearUnavailableVoiceBindingsForTests } from '@/lib/audio/unavailable-voice-bindings';
 
 function jsonResponse(status: number, body: unknown) {
@@ -109,7 +109,7 @@ describe('resolveNarratorVoiceForGeneration — unusable global voice is not pin
       }),
     ).toEqual({
       providerId: 'qwen-tts',
-      modelId: QWEN_TTS_VOICE_CLONE_MODEL,
+      modelId: QWEN_VOICE_CLONE_GROUP_ID,
       voiceId: 'clone-1',
     });
   });
@@ -137,14 +137,14 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
       mocks.settingsState.mockReturnValue({
         ttsVoiceProviderId: 'qwen-tts',
         ttsProvidersConfig: {
-          'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+          'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_VOICE_CLONE_GROUP_ID },
         },
         ttsVoice: 'clone-ghost',
         ttsSpeed: 1,
       });
       // The workspace's tts slot resolves to this provider.
       setModelSettingsViewForTests({
-        tts: { registryId: 'qwen-tts', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+        tts: { registryId: 'qwen-tts', modelId: QWEN_VOICE_CLONE_GROUP_ID },
       });
       // Everything enabled → the deterministic pick is the first enabled provider
       // in canonical order: openai-tts / 'marin'.
@@ -194,14 +194,14 @@ describe('generateAndStoreTTS — pinned narrator fallback (bound == global)', (
     mocks.settingsState.mockReturnValue({
       ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
-        'qwen-tts': { apiKey: '', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+        'qwen-tts': { apiKey: '', modelId: QWEN_VOICE_CLONE_GROUP_ID },
       },
       ttsVoice: 'clone-pinned',
       ttsSpeed: 1,
     });
     // The workspace's tts slot resolves to this provider.
     setModelSettingsViewForTests({
-      tts: { registryId: 'qwen-tts', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+      tts: { registryId: 'qwen-tts', modelId: QWEN_VOICE_CLONE_GROUP_ID },
     });
     // qwen unconfigured/disabled; openai enabled → deterministic pick = openai/marin.
     mocks.isTTSProviderEnabled.mockImplementation(
@@ -248,14 +248,14 @@ describe('generateAndStoreTTS — bound clone dead, global clone dead (review fi
     mocks.settingsState.mockReturnValue({
       ttsVoiceProviderId: 'qwen-tts',
       ttsProvidersConfig: {
-        'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+        'qwen-tts': { apiKey: 'tts-key', modelId: QWEN_VOICE_CLONE_GROUP_ID },
       },
       ttsVoice: 'clone-global-dead',
       ttsSpeed: 1,
     });
     // The workspace's tts slot resolves to this provider.
     setModelSettingsViewForTests({
-      tts: { registryId: 'qwen-tts', modelId: QWEN_TTS_VOICE_CLONE_MODEL },
+      tts: { registryId: 'qwen-tts', modelId: QWEN_VOICE_CLONE_GROUP_ID },
     });
     // Bound voice differs from the global voice; every synthesis is missing.
     mocks.isTTSProviderEnabled.mockReturnValue(true);

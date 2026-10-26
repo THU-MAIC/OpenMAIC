@@ -21,11 +21,11 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
 import {
-  DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL,
-  QWEN_TTS_VOICE_CLONE_MODEL,
+  DEFAULT_QWEN_VOICE_CLONE_TARGET,
+  QWEN_VOICE_CLONE_GROUP_ID,
   isQwenCatalogVoice,
   isQwenVoiceCloneModel,
-  isTTSVoiceCloneGroupingModel,
+  isVoiceCloneGroupId,
   TTS_PROVIDERS,
 } from '@/lib/audio/constants';
 
@@ -779,8 +779,8 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
 export function resolveQwenVoiceCloneModel(): string {
   const configured = process.env.TTS_QWEN_VOICE_CLONE_MODEL?.trim();
   // The retired model ID is retained only as the saved-voice grouping sentinel.
-  return !configured || configured === QWEN_TTS_VOICE_CLONE_MODEL
-    ? DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL
+  return !configured || configured === QWEN_VOICE_CLONE_GROUP_ID
+    ? DEFAULT_QWEN_VOICE_CLONE_TARGET
     : configured;
 }
 
@@ -806,14 +806,15 @@ export function resolveTTSModel(
   voiceId?: string,
   configuredVoices?: readonly { id: string }[],
 ): string | undefined {
-  // Saved clone profiles carry a grouping ID, not an upstream model to authorize.
-  const requestedModel = isTTSVoiceCloneGroupingModel(providerId, clientModel?.trim())
-    ? ttsModelFor(providerId, clientModel?.trim(), voiceId, configuredVoices)
+  // Authorize both the client's explicit request and the voice-selected wire model.
+  // A persisted grouping ID names no upstream model, so resolve it before checking.
+  const trimmed = clientModel?.trim();
+  const requested = isVoiceCloneGroupId(providerId, trimmed)
+    ? ttsModelFor(providerId, trimmed, voiceId, configuredVoices)
     : clientModel;
-  const requested = resolveManagedMediaModel('tts', providerId, requestedModel);
-  const model = ttsModelFor(providerId, requested, voiceId, configuredVoices);
-  // Voice compatibility may change the wire model; it still needs authorization.
-  return resolveManagedMediaModel('tts', providerId, model);
+  const authorized = resolveManagedMediaModel('tts', providerId, requested);
+  const wire = ttsModelFor(providerId, authorized, voiceId, configuredVoices);
+  return resolveManagedMediaModel('tts', providerId, wire);
 }
 
 function ttsModelFor(

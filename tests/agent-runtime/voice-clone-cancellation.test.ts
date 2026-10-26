@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import type { AgentSessionMaterial } from '@openmaic/storage';
 import type { RegisteredVoiceInfo } from '@/lib/audio/voice-catalog';
 import { clearQwenVoiceRegistrationMemoForTests } from '@/lib/audio/qwen-voice-clone-registration';
-import { DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { DEFAULT_QWEN_VOICE_CLONE_TARGET } from '@/lib/audio/constants';
 import { buildVoiceCloneTools } from '@/lib/server/agent-runtime/voice-clone-tools';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
@@ -67,7 +67,7 @@ for (const providerId of ['qwen-tts', 'voxcpm-tts'] as const) {
     `${providerId}: cancel caller %i without canceling its peer or recording its result`,
     async (canceledIndex) => {
       fetchMock.mockReset();
-      const model = DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL;
+      const model = DEFAULT_QWEN_VOICE_CLONE_TARGET;
       setDeploymentConfigForTests({
         layer: {
           source: 'deployment',

@@ -1,5 +1,5 @@
 import type { ConfiguredTTSVoice } from '@/lib/audio/types';
-import { DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL } from '@/lib/audio/constants';
+import { DEFAULT_QWEN_VOICE_CLONE_TARGET } from '@/lib/audio/constants';
 /**
  * Media and tool capabilities from slot resolutions (RFC #1701, tracked in
  * #1725): text to speech, speech recognition, images, video, web search and
@@ -355,7 +355,7 @@ export function authorizeMediaModel(
       error instanceof ModelAuthorizationError &&
       slot === 'tts' &&
       connection.providerId === 'qwen-tts' &&
-      modelId === DEFAULT_QWEN_TTS_VOICE_CLONE_MODEL
+      modelId === DEFAULT_QWEN_VOICE_CLONE_TARGET
     ) {
       // Static migration guidance; never reveal the operator's model list or override.
       throw new ModelAuthorizationError(

@@ -686,6 +686,11 @@ export function QwenVoiceCloneManager() {
           {t('settings.qwenCloneVoicesTitle')}
         </Label>
         <p className="mt-1 text-xs text-muted-foreground">{t('settings.qwenCloneRefAudioHint')}</p>
+        {profiles.some(({ id }) => /^qwen(?:3)?-tts-vc-/iu.test(id)) && (
+          <p role="status" className="mt-1 text-xs text-amber-600 dark:text-amber-300">
+            {t('settings.qwenCloneMigrationHint')}
+          </p>
+        )}
         {!recordingSupported && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">
             {t('settings.qwenCloneUnsupported')}

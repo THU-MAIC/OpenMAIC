@@ -1,22 +1,26 @@
-import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
-import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
-import { voiceAfterUnavailableBinding } from '@/lib/audio/voice-resolver';
-import {
-  voiceCloneRecoveryReason,
-  voiceErrorCode,
-  type VoiceCloneRecoveryReason,
-} from '@/lib/audio/voice-clone-recovery';
-import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
+import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import {
   DEFAULT_TTS_MODELS,
   DEFAULT_TTS_VOICES,
   TTS_PROVIDERS,
   isQwenCloneVoice,
 } from '@/lib/audio/constants';
-import { generateTTS, TTSRequestTimeoutError } from '@/lib/audio/tts-providers';
+import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
+import {
+  generateTTS,
+  TTSRequestTimeoutError,
+  type TTSGenerationResult,
+} from '@/lib/audio/tts-providers';
 import type { TTSProviderId } from '@/lib/audio/types';
+import {
+  voiceCloneRecoveryReason,
+  voiceErrorCode,
+  type VoiceCloneRecoveryReason,
+} from '@/lib/audio/voice-clone-recovery';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { voiceAfterUnavailableBinding } from '@/lib/audio/voice-resolver';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
 import type { GeneratedAgentConfig, Scene } from '@/lib/types/stage';
@@ -129,6 +133,26 @@ function audioMime(format: string) {
   return format === 'wav' ? 'audio/wav' : format === 'ogg' ? 'audio/ogg' : 'audio/mpeg';
 }
 
+const RECOVERY_FAILED_MESSAGE =
+  'The saved voice is unavailable. Please re-upload reference audio to clone it again.';
+const RECOVERY_FALLBACK_MESSAGE =
+  'Using a temporary narration voice. Please re-upload reference audio to clone the saved voice again.';
+
+/**
+ * Failures that end the whole synthesis rather than one line: a hung provider
+ * must fail the tool call with its retryable timeout, or the remaining lines
+ * would hit the same upstream and wedge the session.
+ */
+function isFatalSynthesisError(error: unknown, signal?: AbortSignal): boolean {
+  return (
+    !!signal?.aborted ||
+    error instanceof TTSRequestTimeoutError ||
+    (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_TIMEOUT') ||
+    error instanceof ModelAuthorizationError ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
+}
+
 /** Server-configured narration synthesis into the stage's classroom-media path. */
 export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<SceneTtsSummary> {
   // The tts slot decides the provider; the narrator's bound voice applies
@@ -164,34 +188,25 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
     authorizeMediaModel(connection, 'tts', resolved);
     return resolved;
   };
-  let recovery: SceneTtsSummary['recovery'];
-  const propagate = (error: unknown) => {
-    if (
-      input.signal?.aborted ||
-      error instanceof TTSRequestTimeoutError ||
-      (error instanceof QwenVoiceCloneError && error.code === 'QWEN_VC_TIMEOUT') ||
-      error instanceof ModelAuthorizationError ||
-      (error instanceof Error && error.name === 'AbortError')
-    )
-      throw error;
-  };
-  const generate = (speech: SpeechAction) => {
-    getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(voice, connection.voices);
+  const synthesize = async (speech: SpeechAction, voiceId: string) => {
+    // A saved voice this deployment can no longer use fails before a model is
+    // resolved and authorized for it.
+    getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible?.(voiceId, connection.voices);
     return generateTTS(
       {
         providerId,
-        modelId: authorizedModel(voice),
+        modelId: authorizedModel(voiceId),
         apiKey,
         baseUrl: connection.baseUrl,
         managed: connection.managed,
         publicOnly: connection.userEndpoint,
-        voice,
+        voice: voiceId,
         ...(connection.voices ? { voices: connection.voices } : {}),
         speed: speech.speed,
         providerOptions: {
           ...adapterOptions(connection),
           ...(providerId === 'qwen-tts'
-            ? { qwenVoiceClone: isQwenCloneVoice(voice, connection.voices) }
+            ? { qwenVoiceClone: isQwenCloneVoice(voiceId, connection.voices) }
             : {}),
         },
         signal: input.signal,
@@ -199,6 +214,61 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       speech.text,
     );
   };
+
+  // At most one recovery per scene: the bound clone's first typed clone
+  // failure picks a fallback voice that the remaining lines keep using, or
+  // records why none worked so the remaining lines are not attempted.
+  let recovery: SceneTtsSummary['recovery'];
+  const synthesizeWithRecovery = async (speech: SpeechAction): Promise<TTSGenerationResult> => {
+    try {
+      return await synthesize(speech, voice);
+    } catch (error) {
+      const reason =
+        !recovery &&
+        !isFatalSynthesisError(error, input.signal) &&
+        providerId === 'qwen-tts' &&
+        bound?.providerId === providerId &&
+        bound.voiceId === voice &&
+        isQwenCloneVoice(voice, connection.voices)
+          ? voiceCloneRecoveryReason(error)
+          : undefined;
+      if (!reason) throw error;
+      const fallback = voiceAfterUnavailableBinding(
+        { providerId, voiceId: voice },
+        { providerId, voiceId: defaultVoice },
+        { [providerId]: { enabled: true, apiKey, modelId: model, voices: connection.voices } },
+        reason,
+      )?.voiceId;
+      const recordFailure = (cause: unknown) => {
+        recovery = {
+          reason,
+          status: 'failed',
+          errorCode: voiceErrorCode(cause) ?? voiceErrorCode(error),
+          message: RECOVERY_FAILED_MESSAGE,
+        };
+      };
+      if (!fallback) {
+        recordFailure(error);
+        throw error;
+      }
+      let audio: TTSGenerationResult;
+      try {
+        audio = await synthesize(speech, fallback);
+      } catch (fallbackError) {
+        recordFailure(fallbackError);
+        throw fallbackError;
+      }
+      voice = fallback;
+      recovery = {
+        reason,
+        status: 'fallback',
+        voiceId: fallback,
+        message: RECOVERY_FALLBACK_MESSAGE,
+      };
+      return audio;
+    }
+  };
+
   const selectedVoice = voiceReport(input.roster, providerId, voice);
   let generatedVoice: SceneTtsVoice | undefined;
   let generated = 0;
@@ -212,50 +282,12 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       continue;
     }
     if (input.signal?.aborted) throw new Error('aborted');
+    if (recovery?.status === 'failed') {
+      failed.push(action.id);
+      continue;
+    }
     try {
-      if (recovery?.status === 'failed') {
-        failed.push(action.id);
-        continue;
-      }
-      let audio;
-      try {
-        audio = await generate(speech);
-      } catch (error) {
-        propagate(error);
-        const reason = voiceCloneRecoveryReason(error);
-        if (
-          recovery ||
-          !reason ||
-          bound?.providerId !== providerId ||
-          bound.voiceId !== voice ||
-          providerId !== 'qwen-tts' ||
-          !isQwenCloneVoice(voice, connection.voices)
-        )
-          throw error;
-        recovery = {
-          reason,
-          status: 'failed',
-          errorCode: voiceErrorCode(error),
-          message:
-            'The saved voice is unavailable. Please re-upload reference audio to clone it again.',
-        };
-        const candidate = voiceAfterUnavailableBinding(
-          { providerId, voiceId: voice },
-          { providerId, voiceId: defaultVoice },
-          { [providerId]: { enabled: true, apiKey, modelId: model, voices: connection.voices } },
-          reason,
-        );
-        if (!candidate) throw error;
-        voice = candidate.voiceId;
-        audio = await generate(speech);
-        recovery = {
-          reason,
-          status: 'fallback',
-          voiceId: voice,
-          message:
-            'Using a temporary narration voice. Please re-upload reference audio to clone the saved voice again.',
-        };
-      }
+      const audio = await synthesizeWithRecovery(speech);
       if (input.signal?.aborted) throw new Error('aborted');
       // The persisted reference is the RELATIVE classroom-media path (the
       // agent runtime has no request origin; relative stays valid on any
@@ -284,9 +316,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       };
       generated += 1;
     } catch (error) {
-      propagate(error);
-      if (recovery?.status === 'failed')
-        recovery.errorCode = voiceErrorCode(error) ?? recovery.errorCode;
+      if (isFatalSynthesisError(error, input.signal)) throw error;
       failed.push(action.id);
     }
   }

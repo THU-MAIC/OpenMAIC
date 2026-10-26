@@ -12,7 +12,7 @@ import {
   TTS_PROVIDERS,
   DEFAULT_TTS_VOICES,
   isQwenCloneVoice,
-  isTTSVoiceCloneGroupingModel,
+  isVoiceCloneGroupId,
 } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
@@ -129,7 +129,7 @@ export async function synthesizeNarration(
   if (
     connection.origin === 'request' &&
     requested &&
-    !isTTSVoiceCloneGroupingModel(ttsProviderId, requested)
+    !isVoiceCloneGroupId(ttsProviderId, requested)
   )
     authorizeMediaModel(connection, 'tts', requested);
   getVoiceRegistrationAdapter(ttsProviderId)?.assertVoiceCompatible?.(ttsVoice, connection.voices);
