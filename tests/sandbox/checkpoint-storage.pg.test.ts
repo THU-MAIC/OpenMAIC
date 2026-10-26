@@ -300,4 +300,29 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
       ).rows,
     ).toHaveLength(1);
   });
+
+  it('publishes a prepared head and its consumer metadata in one transaction', async () => {
+    const target = (
+      await store.reserve({
+        ownerId: 'atomic-owner',
+        id: randomUUID(),
+        workspaceId: 'atomic',
+        fingerprint: 'test',
+        maxActive: 100,
+        maxActiveTotal: 100,
+        profile: 'code',
+      })
+    ).row;
+    await store.exclusive(target.id, () => storage.saveLocked(target, 0, source('durable')));
+    const pending = await storage.prepare(target, 1, source('unpublished'));
+    await expect(
+      pending.commit(async (tx) => {
+        await tx.query('UPDATE sandbox_environments SET preview_epoch=1 WHERE id=$1', [target.id]);
+        throw new Error('consumer metadata failed');
+      }),
+    ).rejects.toThrow('consumer metadata failed');
+    expect((await storage.get(target.owner_id, target.workspace_id))?.revision).toBe(1);
+    expect((await store.get(target.owner_id, target.id)).preview_epoch).toBe(0);
+    await pending.discard();
+  });
 });

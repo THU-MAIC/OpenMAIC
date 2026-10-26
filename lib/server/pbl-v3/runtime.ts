@@ -27,7 +27,7 @@ import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import { assertLearningPlan } from './plan';
-import { startBuild, collectBuild } from './compilation';
+import { startBuild, collectBuild, executionCommand, executionSnapshot } from './compilation';
 import { evaluationCommand, evaluationFor, evaluationOutcome } from './evaluation';
 import { installedProject } from './catalog';
 import { resolveProject } from './project-resolver';
@@ -96,7 +96,7 @@ export async function readFiles(
   const result: Record<string, string> = {};
   const environmentId = requireEnvironment(row);
   // A process can modify files without using our file API. Refuse evidence until managed writers stop.
-  await service.assertWorkspaceIdle(environmentId);
+  await service.assertWorkspaceIdle(environmentId, signal);
   let bytes = 0;
   const paths = await checkpointIO(
     () => projectFiles(service, environmentId, project, signal),
@@ -131,14 +131,18 @@ export async function saveStudyCheckpoint(service: SandboxService, row: Study) {
   const saved = await checkpointStep('archive', () =>
     service.saveWorkspace(requireEnvironment(row), previous?.revision ?? 0, false, signal),
   );
+  checkpointRecovery(row, saved.checkpoint.revision, snapshot.fingerprint);
+}
+
+export function checkpointRecovery(row: Study, revision: number, fingerprint: string) {
   row.environment_recovery = {
     ...row.environment_recovery,
     requestId: row.environment_id!,
     savedPosition: {
-      revision: saved.checkpoint.revision,
+      revision,
       milestoneIndex: row.state.position.milestoneIndex,
       stageIndex: row.state.position.stageIndex,
-      fingerprint: snapshot.fingerprint,
+      fingerprint,
     },
   };
   row.workspace_dirty_at = null;
@@ -315,22 +319,30 @@ export async function collectStudyExecution(
   if (!row.evaluation) throw sandboxConflict('No test is awaiting collection.');
   const unchanged = { state: row.state, events: [] };
   if (row.evaluation.purpose === 'compile') {
-    return { result: await collectBuild(store, row, service), transition: unchanged };
+    const result = await collectBuild(store, row, service);
+    return { result, transition: { state: row.state, events: [] } };
   }
   const project = projectFor(row),
     definition = project.definition;
   let transition: EngineTransition = unchanged;
   let result: Record<string, unknown> = { collected: true };
   const evaluation = row.evaluation;
-  const observed = await service.command(requireEnvironment(row), evaluation.id);
-  if (['starting', 'running', 'unknown'].includes(observed.state))
+  const observed = await executionCommand(store, row, service);
+  if (observed && ['starting', 'running', 'unknown'].includes(observed.state))
     return { result: { pending: true, state: observed.state }, transition };
-  const snapshot = await fileSnapshot(service, row);
-  if (stageKey(row) !== evaluation.stageKey || snapshot.fingerprint !== evaluation.fingerprint) {
+  const snapshot = observed ? await executionSnapshot(service, row) : null;
+  if (
+    stageKey(row) !== evaluation.stageKey ||
+    (snapshot && snapshot.fingerprint !== evaluation.fingerprint)
+  ) {
     row.evaluation = null;
     transition = invalidateWorkspace(row);
     result = { stale: true };
   } else {
+    if (!snapshot || !observed) {
+      row.workspace_dirty_at ??= await store.now();
+      result = { collected: true, interrupted: true };
+    }
     const milestone = currentMilestone(definition, row.state)!;
     const collected = row.state.collected[milestone.id]!;
     transition = transitions.recordEvaluation(
@@ -341,14 +353,23 @@ export async function collectStudyExecution(
         ...evaluationOutcome(
           evaluationFor(project, milestone.id),
           evaluation.id,
-          observed,
-          Object.keys(snapshot.files),
+          snapshot && observed
+            ? observed
+            : {
+                id: evaluation.id,
+                state: 'failed',
+                exitCode: null,
+                stdout: '',
+                stderr: '',
+                truncated: false,
+              },
+          snapshot ? Object.keys(snapshot.files) : [],
         ),
         evaluator: 'sandbox-command',
         milestoneId: milestone.id,
         stageIndex: row.state.position.stageIndex,
         revision: {
-          id: snapshot.fingerprint,
+          id: snapshot?.fingerprint ?? evaluation.fingerprint,
           provider: 'sandbox',
           createdAt: new Date().toISOString(),
         },

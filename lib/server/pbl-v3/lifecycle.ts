@@ -1,6 +1,8 @@
 import 'server-only';
 import { LearningStore, type Study } from './store';
 import { SandboxService } from '@/lib/server/sandbox/service';
+import { SandboxStore } from '@/lib/server/sandbox/store';
+import { recordExpiredWorkspace } from './environment';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import {
@@ -10,13 +12,20 @@ import {
 import { SandboxError } from '@/lib/sandbox/errors';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
-import { collectStudyExecution, saveStudyCheckpoint } from './runtime';
+import {
+  collectStudyExecution,
+  saveStudyCheckpoint,
+  fileSnapshot,
+  checkpointRecovery,
+} from './runtime';
 import {
   checkpointBusy,
   checkpointFailure,
   CheckpointAttemptError,
   type CheckpointStage,
+  checkpointStep,
 } from '@/lib/server/sandbox/checkpoint-errors';
+import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
 import {
   pblIdleTimeoutMs,
   pblArchiveFailureGraceMs,
@@ -34,9 +43,9 @@ async function activeStudyTurns(store: LearningStore, id: string, ownerId: strin
   );
 }
 
-async function cancelOverdueTurns(agents: { id: string; turn_started: string }[]) {
+async function cancelOverdueTurns(agents: { id: string; turn_started: string }[], now: Date) {
   for (const agent of agents) {
-    if (Date.now() - Number(agent.turn_started) <= PBL_MAX_AGENT_TURN_MS) continue;
+    if (now.getTime() - Number(agent.turn_started) <= PBL_MAX_AGENT_TURN_MS) continue;
     const sessions = await getAgentSessionStore();
     await sessions.requestCancel(agent.id);
     await sessions.claimNextSession(`pbl-lifecycle:${process.pid}`, process.pid, {
@@ -58,20 +67,20 @@ async function renewForMaintenance(
     'UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1 AND environment_id=$2',
     [id, environmentId],
   );
-  await service.renew(environmentId);
+  await service.renewForCheckpoint(environmentId);
   await store.pool.query(
     'UPDATE pbl_v3_studies SET environment_checked_at=clock_timestamp() WHERE id=$1 AND environment_id=$2',
     [id, environmentId],
   );
 }
 
-function archiveGraceExpired(row: Study) {
+function archiveGraceExpired(row: Study, now: Date) {
   const failed = row.checkpoint_failure;
   return (
     failed?.environmentId === row.environment_id &&
     !!failed.firstIdleFailureAt &&
-    Date.now() - row.last_used_at.getTime() >= pblIdleTimeoutMs() &&
-    Date.now() - Date.parse(failed.firstIdleFailureAt) >= pblArchiveFailureGraceMs()
+    now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs() &&
+    now.getTime() - Date.parse(failed.firstIdleFailureAt) >= pblArchiveFailureGraceMs()
   );
 }
 
@@ -83,9 +92,11 @@ async function renewDeferredStudy(
   environmentId: string,
 ) {
   const row = await store.get(id, ownerId);
-  if (row.archive_discard?.environmentId === environmentId || archiveGraceExpired(row)) return;
-  const recent = Date.now() - row.last_used_at.getTime() < pblIdleTimeoutMs();
-  if (!recent) {
+  const now = await store.now();
+  if (row.archive_discard?.environmentId === environmentId || archiveGraceExpired(row, now)) return;
+  const withinRetention =
+    now.getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs() + pblArchiveFailureGraceMs();
+  if (!withinRetention) {
     const work = await store.pool.query(
       `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND (
          ((result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))
@@ -97,8 +108,8 @@ async function renewDeferredStudy(
        LIMIT 1`,
       [
         environmentId,
-        new Date(Date.now() - PBL_MAX_COMMAND_MS),
-        new Date(Date.now() - pblIdleTimeoutMs()),
+        new Date(now.getTime() - PBL_MAX_COMMAND_MS),
+        new Date(now.getTime() - pblIdleTimeoutMs()),
         id,
       ],
     );
@@ -128,14 +139,15 @@ async function handleUnsettledWriter(
   service: SandboxService,
   stage: 'execution' | 'terminal',
 ) {
-  if (Date.now() - row.last_used_at.getTime() < pblIdleTimeoutMs()) return;
-  if (archiveGraceExpired(row)) return releaseWithoutArchive(store, row, service);
+  const now = await store.now();
+  if (now.getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs()) return;
+  if (archiveGraceExpired(row, now)) return releaseWithoutArchive(store, row, service);
   await store.recordCheckpointFailure(row, {
     environmentId: row.environment_id!,
     reason: 'execution-unsettled',
     stage,
     retryable: true,
-    firstIdleFailureAt: row.checkpoint_failure?.firstIdleFailureAt ?? new Date().toISOString(),
+    firstIdleFailureAt: row.checkpoint_failure?.firstIdleFailureAt ?? now.toISOString(),
     dirtyAt: row.workspace_dirty_at?.toISOString() ?? null,
   });
 }
@@ -147,6 +159,7 @@ export async function maintainStudy(
   ownerId: string,
   pendingEnvironmentId?: string,
 ) {
+  let periodic: Study | undefined;
   const initial = await store.get(id, ownerId);
   const currentEnvironmentId =
     pendingEnvironmentId ?? initial.environment_id ?? initial.environment_recovery?.requestId;
@@ -168,7 +181,7 @@ export async function maintainStudy(
           environmentId: currentEnvironmentId,
         });
     }
-    await cancelOverdueTurns(running.rows);
+    await cancelOverdueTurns(running.rows, await store.now());
     return;
   }
   const maintain = async () => {
@@ -187,7 +200,11 @@ export async function maintainStudy(
       async () => {
         try {
           const env = await service.reconcile(environmentId, false);
-          if (env.state === 'destroyed') return;
+          if (env.state === 'destroyed') {
+            if (environmentId === row.environment_id)
+              await recordExpiredWorkspace(store, row, service);
+            return;
+          }
           if (row.archive_discard?.environmentId === environmentId) {
             await service.destroy(environmentId);
             return;
@@ -200,15 +217,15 @@ export async function maintainStudy(
           // An interrupted allocation/restore has acknowledged no new learner work.
           // Keep its identity for retry, and reclaim it even if an older environment is still bound.
           if (!env.workspaceReady || row.environment_id !== environmentId) {
-            if (Date.now() - row.last_used_at.getTime() >= pblIdleTimeoutMs())
+            if ((await store.now()).getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs())
               await service.destroy(environmentId);
             return;
           }
           // Cover collection/export with a fresh provider lease, even after the last tab closes.
-          if (!archiveGraceExpired(row))
+          if (!archiveGraceExpired(row, await store.now()))
             await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
-          await cancelOverdueTurns(agents.rows);
+          await cancelOverdueTurns(agents.rows, await store.now());
           // A terminal result is persisted once by SandboxService.command, including lost start acknowledgements.
           const commands = await store.pool.query<{ id: string; created_at: Date }>(
             `SELECT id,created_at FROM sandbox_commands WHERE environment_id=$1
@@ -217,13 +234,14 @@ export async function maintainStudy(
           );
           let commandsBusy = 0,
             overdueCommands = 0;
+          const commandNow = await store.now();
           for (const command of commands.rows) {
             const observed = await service
               .command(environmentId, command.id)
               .catch(() => ({ state: 'unknown' }));
             if (['starting', 'running', 'unknown'].includes(observed.state)) {
               commandsBusy++;
-              if (Date.now() - command.created_at.getTime() > PBL_MAX_COMMAND_MS) {
+              if (commandNow.getTime() - command.created_at.getTime() > PBL_MAX_COMMAND_MS) {
                 overdueCommands++;
                 // Failure to acknowledge cancellation is still an unresolved writer, not a terminal result.
                 await service.cancelCommand(environmentId, command.id).catch(() => {});
@@ -255,17 +273,40 @@ export async function maintainStudy(
           });
           row = await store.get(id, ownerId);
           if (row.evaluation) {
-            const collected = await collectStudyExecution(store, row, service);
+            if (archiveGraceExpired(row, await store.now())) {
+              await releaseWithoutArchive(store, row, service);
+              return;
+            }
+            let collected;
+            try {
+              collected = await collectStudyExecution(store, row, service);
+            } catch (error) {
+              if (checkpointBusy(error)) return;
+              const failedAt = await store.now();
+              await store.recordCheckpointFailure(row, {
+                environmentId,
+                ...checkpointFailure(error),
+                stage: 'collection',
+                dirtyAt: row.workspace_dirty_at?.toISOString() ?? null,
+                firstIdleFailureAt:
+                  row.checkpoint_failure?.firstIdleFailureAt ??
+                  (failedAt.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs()
+                    ? failedAt.toISOString()
+                    : null),
+              });
+              return;
+            }
             if ('pending' in collected.result) return;
             row = await store.transaction((db) => store.commit(db, row, collected.transition));
-            await store.recordActivity(id, ownerId);
+            if (!('interrupted' in collected.result)) await store.recordActivity(id, ownerId);
             row = await store.get(id, ownerId);
           }
-          const idle = Date.now() - row.last_used_at.getTime() >= pblIdleTimeoutMs();
+          const now = await store.now();
+          const idle = now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs();
           if (
             idle ||
             (row.workspace_dirty_at &&
-              Date.now() - row.workspace_dirty_at.getTime() >= PBL_DIRTY_CHECKPOINT_MS)
+              now.getTime() - row.workspace_dirty_at.getTime() >= PBL_DIRTY_CHECKPOINT_MS)
           ) {
             if (idle) {
               // An abandoned shell is a writer, not learner activity. Close it before taking
@@ -293,7 +334,7 @@ export async function maintainStudy(
               row.checkpoint_failure?.environmentId === environmentId
                 ? row.checkpoint_failure
                 : null;
-            if (archiveGraceExpired(row) && failure) {
+            if (archiveGraceExpired(row, now) && failure) {
               await releaseWithoutArchive(store, row, service);
               return;
             }
@@ -303,8 +344,12 @@ export async function maintainStudy(
               if (idle && !failure.firstIdleFailureAt)
                 await store.recordCheckpointFailure(row, {
                   ...failure,
-                  firstIdleFailureAt: new Date().toISOString(),
+                  firstIdleFailureAt: (await store.now()).toISOString(),
                 });
+              return;
+            }
+            if (!idle) {
+              periodic = row;
               return;
             }
             let stage: CheckpointStage = 'archive';
@@ -323,7 +368,7 @@ export async function maintainStudy(
                 stage: failureStage,
                 dirtyAt,
                 firstIdleFailureAt:
-                  failure?.firstIdleFailureAt ?? (idle ? new Date().toISOString() : null),
+                  failure?.firstIdleFailureAt ?? (idle ? (await store.now()).toISOString() : null),
               });
               console.warn('[pbl-lifecycle] Checkpoint deferred', {
                 studyId: id,
@@ -347,24 +392,112 @@ export async function maintainStudy(
       },
     );
   };
-  return store.exclusive(id, maintain, 'maintenance').catch(async (error: unknown) => {
+  await store.exclusive(id, maintain, 'maintenance').catch(async (error: unknown) => {
     if (error instanceof SandboxError && error.code === 'PBL_BUSY' && currentEnvironmentId)
       await renewDeferredStudy(store, id, ownerId, currentEnvironmentId);
     throw error;
   });
+  if (periodic) await checkpointDirtyStudy(store, periodic);
 }
 
-export async function maintainLearningEnvironments() {
+/** Slow read/upload work owns a separate checkpoint lock; only publication needs the study lock. */
+async function checkpointDirtyStudy(store: LearningStore, captured: Study) {
+  const environmentId = captured.environment_id!;
+  const unchanged = (current: Study) =>
+    current.environment_id === environmentId &&
+    current.revision === captured.revision &&
+    current.workspace_dirty_at?.getTime() === captured.workspace_dirty_at?.getTime() &&
+    current.archive_discard?.environmentId !== environmentId &&
+    !current.evaluation &&
+    (!current.environment_recovery || current.environment_recovery.requestId === environmentId);
+  try {
+    await store.periodicCheckpoint(captured.id, async (publish) => {
+      const current = await store.get(captured.id, captured.owner_id);
+      if (
+        !unchanged(current) ||
+        (await activeStudyTurns(store, current.id, current.owner_id)).rows.length
+      )
+        return;
+      const service = await SandboxService.forLearningMaintenance(
+        current.id,
+        current.owner_id,
+        environmentId,
+      );
+      await withLearningWorkspaceAccess(
+        {
+          ownerId: current.owner_id,
+          workspaceId: learningWorkspaceId(current.id),
+          environmentIds: () => [environmentId],
+          operations: ['checkpoint'],
+        },
+        async () => {
+          const signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS);
+          await service.renewForCheckpoint(environmentId, signal);
+          await service.assertRecordedWorkspaceIdle(environmentId);
+          const snapshot = await checkpointStep('snapshot', () =>
+            fileSnapshot(service, current, signal),
+          );
+          const previous = await service.checkpoint(environmentId);
+          const prepared = await checkpointStep('archive', () =>
+            service.prepareWorkspaceCheckpoint(environmentId, previous?.revision ?? 0, signal),
+          );
+          try {
+            await publish(async () => {
+              const latest = await store.get(current.id, current.owner_id);
+              if (
+                !unchanged(latest) ||
+                (await activeStudyTurns(store, latest.id, latest.owner_id)).rows.length
+              )
+                throw new SandboxError(
+                  'CHECKPOINT_CHANGED',
+                  409,
+                  'Workspace changed during checkpoint.',
+                );
+              checkpointRecovery(latest, prepared.checkpoint.revision, snapshot.fingerprint);
+              await prepared.commit((tx) => store.saveEnvironmentRecovery(latest, tx));
+            });
+          } finally {
+            await prepared.discard().catch(() => {});
+          }
+        },
+      );
+    });
+  } catch (error) {
+    if (
+      checkpointBusy(error) ||
+      (error instanceof SandboxError &&
+        (error.reason === 'STUDY_BUSY' || error.code === 'CHECKPOINT_CHANGED'))
+    )
+      return;
+    await store.exclusive(captured.id, async () => {
+      const latest = await store.get(captured.id, captured.owner_id);
+      if (!unchanged(latest)) return;
+      await store.recordCheckpointFailure(latest, {
+        environmentId,
+        ...checkpointFailure(error),
+        stage: error instanceof CheckpointAttemptError ? error.stage : 'archive',
+        dirtyAt: latest.workspace_dirty_at?.toISOString() ?? null,
+        firstIdleFailureAt: latest.checkpoint_failure?.firstIdleFailureAt ?? null,
+      });
+    });
+  }
+}
+
+export async function maintainLearningEnvironments(maintain = maintainStudy) {
   const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
   const existing = await pool.query<{ ready: boolean }>(
     "SELECT to_regclass('pbl_v3_studies') IS NOT NULL AND to_regclass('sandbox_environments') IS NOT NULL AS ready",
   );
   if (!existing.rows[0]?.ready) return;
   const store = await LearningStore.open();
+  await SandboxStore.open();
   const rows = await store.pool.query<{ id: string; owner_id: string; environment_id: string }>(
-    `SELECT s.id,s.owner_id,e.id AS environment_id FROM pbl_v3_studies s JOIN sandbox_environments e
+    `WITH candidates AS (SELECT s.id,s.owner_id,e.id AS environment_id FROM pbl_v3_studies s JOIN sandbox_environments e
        ON (e.id=s.environment_id OR e.id=s.environment_recovery->>'requestId')
-     WHERE e.state<>'destroyed' ORDER BY e.updated_at LIMIT 100`,
+     WHERE e.state<>'destroyed' AND e.owner_id=s.owner_id AND e.workspace_id='pbl-'||s.id
+     ORDER BY e.maintenance_checked_at NULLS FIRST,e.id LIMIT 100 FOR UPDATE OF e SKIP LOCKED)
+     UPDATE sandbox_environments e SET maintenance_checked_at=clock_timestamp()
+       FROM candidates c WHERE e.id=c.environment_id RETURNING c.id,c.owner_id,e.id AS environment_id`,
   );
   let next = 0;
   await Promise.all(
@@ -373,7 +506,7 @@ export async function maintainLearningEnvironments() {
         const row = rows.rows[next++];
         if (!row) return;
         try {
-          await maintainStudy(store, row.id, row.owner_id, row.environment_id);
+          await maintain(store, row.id, row.owner_id, row.environment_id);
         } catch (error) {
           if (!(error instanceof SandboxError && [409, 429].includes(error.status)))
             console.warn('[pbl-lifecycle] Study reconciliation deferred', { studyId: row.id });

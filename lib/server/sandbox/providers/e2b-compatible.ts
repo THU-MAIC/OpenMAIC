@@ -298,6 +298,7 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     resourceId: string,
     operationId: string,
     id: string,
+    signal?: AbortSignal,
   ): Promise<SandboxCommandResult> {
     let value: unknown;
     try {
@@ -307,6 +308,7 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
           operationId,
           `/tmp/openmaic-commands/${id}/status.json`,
           2 * MAX_TEXT_FILE_BYTES,
+          signal,
         ),
       );
     } catch (error) {
@@ -428,11 +430,14 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     return handle.pid;
   }
 
-  async findTerminal(resourceId: string, operationId: string, id: string) {
-    const sandbox = await this.connect(resourceId, operationId);
-    const matches = (await sandbox.commands.list({ requestTimeoutMs: REQUEST_TIMEOUT_MS })).filter(
-      (p) => p.envs.OPENMAIC_TERMINAL_ID === id,
-    );
+  async findTerminal(resourceId: string, operationId: string, id: string, signal?: AbortSignal) {
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const matches = (
+      await checkpointIO(
+        () => sandbox.commands.list({ requestTimeoutMs: REQUEST_TIMEOUT_MS, signal }),
+        signal,
+      )
+    ).filter((p) => p.envs.OPENMAIC_TERMINAL_ID === id);
     if (matches.length > 1) throw sandboxConflict('Terminal allocation is ambiguous.');
     return matches[0]?.pid ?? null;
   }

@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-26",
+  "branch": "fix/1995-sandbox-lifecycle",
+  "pullRequest": 2011,
+  "review": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#pullrequestreview-5646698265",
+  "base": "8f737ad715647304156f6377e0bf5bdb3705faec",
+  "previousHead": "27e785bf3016efce5db5e1854d89e7c8364ed863",
+  "scope": "The review's P1 and all six P2s; historical cloud/timing evidence remains unchanged.",
+  "defaultIdleTimeoutMs": 600000,
+  "archiveFailureGraceMs": 300000,
+  "postgresTestIdleTimeoutMs": 300000,
+  "changes": [
+    {
+      "requirement": "Bound execution collection failures",
+      "behavior": "Collection errors retain one idle failure deadline; missing reservations and permanent source limits interrupt pending execution without passing evidence or fabricated learner activity.",
+      "coverage": [
+        "Missing evaluate/compile reservation unlocks editing",
+        "Repeated collection errors keep the original deadline and stop renewal after grace",
+        "Source size/count limits preserve the previous checkpoint on release"
+      ]
+    },
+    {
+      "requirement": "Keep periodic checkpoint I/O outside the Study lock",
+      "behavior": "Capture/upload uses a checkpoint mutex. Brief Study/environment publication validates the source generation and writers; head and recovery metadata commit in one PostgreSQL transaction.",
+      "coverage": [
+        "Activity succeeds while upload is blocked",
+        "Concurrent edits or command reservations reject publication",
+        "A second maintenance instance does not duplicate capture",
+        "Metadata callback failure rolls back checkpoint head"
+      ]
+    },
+    {
+      "requirement": "Fair maintenance beyond 100 environments",
+      "behavior": "Add migration 10 with maintenance_checked_at. Claim least-checked environments with SKIP LOCKED and advance their timestamp before attempting work.",
+      "coverage": [
+        "105 synthetic bindings visited in two durable scan batches",
+        "Shipped migration checksums retained; new checksum pinned"
+      ]
+    },
+    {
+      "requirement": "Protect deferred work",
+      "behavior": "Lease-only maintenance protects idle timeout plus failure grace and bounded active/recent work. Renewal covers the checkpoint deadline plus margin; expired grace/discard intent gets no extension.",
+      "coverage": [
+        "Queued dirty and clean bindings receive protection",
+        "Older idle/overdue, expired grace and discard boundaries remain bounded",
+        "Passive and maintenance observation of confirmed dirty expiry records a recovery/loss notice"
+      ]
+    },
+    {
+      "requirement": "Use database time",
+      "behavior": "PostgreSQL clocks determine inactivity, grace, dirty generation and execution deadlines.",
+      "coverage": [
+        "Date constructor shifted seven days forward/backward cannot change inactivity decisions",
+        "First dirty timestamp remains close to database time"
+      ]
+    },
+    {
+      "requirement": "Forward lazy storage cancellation",
+      "behavior": "Both built-in and registered lazy byte-store wrappers forward optional write options.",
+      "coverage": ["Two lazy wrapper cancellation contract regressions"]
+    },
+    {
+      "requirement": "Raise default and document activity semantics",
+      "behavior": "Default idle timeout is ten minutes; the five-minute operator choice and trusted input/visibility limits are documented.",
+      "coverage": [
+        "Default configuration regression",
+        "Fatal boot validation and browser workspace journey"
+      ]
+    }
+  ],
+  "selfReview": {
+    "reviewers": ["oct26_spec_review", "oct26_standards_review"],
+    "fixes": [
+      "Assign first dirty timestamp with PostgreSQL time instead of a skewable Date constructor.",
+      "Require current dirty state and expected revision before recording an observed-expiry loss notice.",
+      "Reuse periodic capture admission for publication on one-slot Study pools.",
+      "Clarify checkpoint-only scope and deferred retention in both READMEs."
+    ],
+    "result": "Both reviewers completed final/delta inspection with no remaining confirmed finding. They did not run tests; validation below was run by the coordinating agent."
+  },
+  "validation": {
+    "sandboxPblPersistenceUnit": {
+      "passed": 439,
+      "skipped": 11,
+      "filesPassed": 46,
+      "filesSkipped": 2
+    },
+    "postgres": {
+      "passed": 119,
+      "filesPassed": 3,
+      "database": "Disposable PostgreSQL schemas",
+      "provider": "Controlled provider and in-memory object storage; actual local Python/Java 17 execution",
+      "commands": [
+        "tests/pbl/v3/runtime.pg.test.ts",
+        "tests/sandbox/checkpoint-storage.pg.test.ts",
+        "tests/sandbox/checkpoint-schema.pg.test.ts"
+      ]
+    },
+    "startupClassroom": {
+      "passed": 194,
+      "filesPassed": 16
+    },
+    "browser": {
+      "passed": 1,
+      "suite": "e2e/tests/pbl-v3-workspace.spec.ts",
+      "backend": "Browser route fixtures; backend concurrency is covered separately by PostgreSQL tests"
+    },
+    "typecheck": "pnpm exec tsc --noEmit --incremental false passed",
+    "formatting": "pnpm check passed",
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 17
+    },
+    "i18n": "12 locale files aligned",
+    "packageVersions": "Gate passed against the pinned PR base; storage 0.39.0 -> 0.39.1",
+    "testHarnessAdjustment": "An initial concurrent full run hit the existing one-second archive-start synchronization timeout (118 passed, 1 failed). The isolated scenario passed. Its wait was raised to five seconds with all behavior assertions retained; the complete rerun passed all 119."
+  },
+  "limitations": [
+    "No new paid cloud/model call or wall-clock lifecycle timing measurement was performed in this follow-up.",
+    "Historical cloud/S3-compatible storage and timing results remain in the October 23 artifacts.",
+    "Unexpected provider/application/storage failure can still lose changes since the latest successful checkpoint.",
+    "Broader hosted language/provider billing/deployment/capacity acceptance remains in issues 2008 and 2009; this PR closes 2007, not parent 1995."
+  ]
+}

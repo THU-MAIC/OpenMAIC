@@ -693,7 +693,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       });
       const renewals = mocked.renewals.length;
       scanning = maintainLearningEnvironments();
-      await vi.waitFor(() => expect(started.size).toBeGreaterThan(0));
+      await vi.waitFor(() => expect(started.size).toBeGreaterThan(0), { timeout: 5000 });
       // Leave the archives blocked long enough for all scan workers to seek admission.
       await new Promise((resolve) => setTimeout(resolve, 250));
       expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
@@ -732,6 +732,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ['idle', false],
     ['expired-failure', false],
     ['discard-intent', false],
+    ['queued-dirty', true],
+    ['queued-clean', true],
   ] as const)('keeps deferred %s work leased only while protected', async (kind, renewed) => {
     const fresh = await freshStudy();
     const row = await store.get(fresh.id, principal.ownerId);
@@ -754,6 +756,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         ],
       );
     if (!['reading', 'discard-intent'].includes(kind)) await ageStudy(fresh.id);
+    if (kind.startsWith('queued-'))
+      await pool.query(
+        "UPDATE pbl_v3_studies SET last_used_at=now()-interval '6 minutes',workspace_dirty_at=CASE WHEN $2 THEN now()-interval '2 minutes' ELSE NULL END WHERE id=$1",
+        [fresh.id, kind === 'queued-dirty'],
+      );
     if (kind === 'expired-failure')
       await store.recordCheckpointFailure(row, {
         environmentId: row.environment_id!,
@@ -3691,6 +3698,365 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       [id],
     );
   }
+
+  it.each(['evaluate', 'compile'] as const)(
+    'clears a %s execution whose start failed before command reservation',
+    async (type) => {
+      const fresh = await freshStudy(
+        installedProject({ id: 'greeting-python-lab', version: '1.1.0' }),
+      );
+      const row = await store.get(fresh.id, principal.ownerId);
+      row.state.position.stageIndex = type === 'compile' ? 3 : 4;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const reserve = vi
+        .spyOn(SandboxStore.prototype, 'reserveCommand')
+        .mockRejectedValueOnce(new SandboxError('SANDBOX_BUSY', 429, 'busy'));
+      try {
+        await expect(fresh.send(type)).rejects.toMatchObject({ code: 'SANDBOX_BUSY' });
+        const pending = await store.get(fresh.id, principal.ownerId);
+        expect(pending.evaluation).not.toBeNull();
+        await fresh.send('collect');
+        expect((await store.get(fresh.id, principal.ownerId)).evaluation).toBeNull();
+        expect((await workbenchView(principal, fresh.id)).canEdit).toBe(true);
+      } finally {
+        reserve.mockRestore();
+      }
+    },
+  );
+
+  it('bounds repeated idle execution collection failures without renewing forever', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId),
+      commandId = randomUUID();
+    row.evaluation = {
+      id: commandId,
+      fingerprint: 'fixture',
+      stageKey: stageKey(row),
+      startedAt: new Date().toISOString(),
+    };
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    await pool.query(
+      `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json,updated_at)
+      VALUES($1,$2,'fixture',$3,now()-interval '20 minutes')`,
+      [
+        row.environment_id,
+        commandId,
+        JSON.stringify({
+          id: commandId,
+          state: 'exited',
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          truncated: false,
+        }),
+      ],
+    );
+    await ageStudy(fresh.id);
+    const command = vi
+      .spyOn(SandboxService.prototype, 'command')
+      .mockRejectedValue(new Error('collection unavailable'));
+    try {
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const first = (await store.get(fresh.id, principal.ownerId)).checkpoint_failure
+        ?.firstIdleFailureAt;
+      expect(first).toBeTruthy();
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).checkpoint_failure?.firstIdleFailureAt,
+      ).toBe(first);
+      await expireArchiveGrace(fresh.id);
+      const renewals = mocked.renewals.length;
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(mocked.renewals).toHaveLength(renewals);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+      expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeTruthy();
+    } finally {
+      command.mockRestore();
+    }
+  });
+
+  it.each(['activity', 'edit', 'command'] as const)(
+    'keeps %s available during periodic upload and fences changed generations',
+    async (action) => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const row = await store.get(fresh.id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      await pool.query(
+        "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+        [fresh.id],
+      );
+      let release!: () => void, entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const original = E2BCompatibleSandboxProvider.prototype.exportWorkspace;
+      const archive = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
+        .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+          entered();
+          await gate;
+          yield* original.apply(this, args);
+        });
+      const maintaining = maintainStudy(store, fresh.id, principal.ownerId);
+      try {
+        await ready;
+        await store.waitForExclusive(fresh.id, () =>
+          store.recordActivity(fresh.id, principal.ownerId),
+        );
+        if (action === 'edit') {
+          const before = await store.get(fresh.id, principal.ownerId);
+          const text = await readFile(
+            join(mocked.root, row.environment_id!, 'greeting.py'),
+            'utf8',
+          );
+          await commandStudy(principal, fresh.id, {
+            id: randomUUID(),
+            revision: before.revision,
+            type: 'save',
+            path: 'greeting.py',
+            expectedHash: digest(text),
+            text: text + '\n# concurrent editor save\n',
+          });
+        } else if (action === 'command')
+          await pool.query(
+            "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES($1,$2,'fixture')",
+            [row.environment_id, randomUUID()],
+          );
+        else {
+          await maintainStudy(new LearningStore(pool), fresh.id, principal.ownerId);
+          expect(archive).toHaveBeenCalledTimes(1);
+        }
+        release();
+        await maintaining;
+        expect(
+          (await (await SandboxService.forOwner(principal)).checkpoint(row.environment_id!))
+            ?.revision,
+        ).toBe(action === 'activity' ? 2 : 1);
+        expect((await store.get(fresh.id, principal.ownerId)).workspace_dirty_at === null).toBe(
+          action === 'activity',
+        );
+      } finally {
+        release();
+        await maintaining;
+        archive.mockRestore();
+      }
+    },
+  );
+
+  it.each(['size', 'count', 'compile'] as const)(
+    'bounds idle collection after a permanent source %s limit and unlocks editing',
+    async (limit) => {
+      const selected = installedProject({ id: 'greeting-python-lab', version: '1.1.0' });
+      const fresh = await freshStudy(selected);
+      await fresh.send('checkpoint');
+      const row = await store.get(fresh.id, principal.ownerId),
+        commandId = randomUUID();
+      row.state.position.stageIndex = limit === 'compile' ? 3 : 4;
+      row.evaluation = {
+        id: commandId,
+        fingerprint: 'fixture',
+        stageKey: stageKey(row),
+        startedAt: new Date().toISOString(),
+        ...(limit === 'compile' ? { purpose: 'compile' as const } : {}),
+      };
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      await pool.query(
+        `INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,result_json,updated_at)
+      VALUES($1,$2,'fixture',$3,now()-interval '20 minutes')`,
+        [
+          row.environment_id,
+          commandId,
+          JSON.stringify({
+            id: commandId,
+            state: 'exited',
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            truncated: false,
+          }),
+        ],
+      );
+      if (limit !== 'count') {
+        await writeFile(join(mocked.root, row.environment_id!, 'PLAN.md'), 'x'.repeat(600_000));
+        await writeFile(
+          join(mocked.root, row.environment_id!, 'src/greeting.py'),
+          'x'.repeat(600_000),
+        );
+      } else {
+        for (let n = 0; n < 257; n++)
+          await writeFile(
+            join(mocked.root, row.environment_id!, `src/generated${n}.py`),
+            '# generated\n',
+          );
+      }
+      await ageStudy(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const failed = await store.get(fresh.id, principal.ownerId);
+      expect(failed.evaluation).toBeNull();
+      expect((await workbenchView(principal, fresh.id)).canEdit).toBe(true);
+      expect(failed.checkpoint_failure).toMatchObject({ reason: 'source-limit', retryable: false });
+      expect(failed.checkpoint_failure?.firstIdleFailureAt).toBeTruthy();
+      await expireArchiveGrace(fresh.id);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+      expect(
+        (await store.get(fresh.id, principal.ownerId)).archive_discard?.checkpointRevision,
+      ).toBe(1);
+    },
+  );
+
+  it('uses database time for inactivity even when the application clock is skewed', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    const realNow = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(realNow + 7 * 86400_000);
+    try {
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'running' });
+      await ageStudy(fresh.id);
+      vi.setSystemTime(realNow - 7 * 86400_000);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect(
+        await (await SandboxService.forOwner(principal)).get(row.environment_id!),
+      ).toMatchObject({ state: 'destroyed' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('timestamps the first dirty generation with database time despite a skewed Date constructor', async () => {
+    const fresh = await freshStudy();
+    const row = await store.get(fresh.id, principal.ownerId);
+    row.state.position.stageIndex = 3;
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const before = await store.get(fresh.id, principal.ownerId);
+    const text = await readFile(join(mocked.root, row.environment_id!, 'greeting.py'), 'utf8');
+    const realNow = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(realNow + 7 * 86400_000);
+    try {
+      await commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        revision: before.revision,
+        type: 'save',
+        path: 'greeting.py',
+        expectedHash: digest(text),
+        text: text + '\n# skewed edit\n',
+      });
+      const dirty = await store.get(fresh.id, principal.ownerId);
+      expect(
+        Math.abs((await store.now()).getTime() - dirty.workspace_dirty_at!.getTime()),
+      ).toBeLessThan(10_000);
+      await pool.query(
+        "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+        [fresh.id],
+      );
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).workspace_dirty_at).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not record loss from a stale dirty view after a successful checkpoint/release', async () => {
+    const fresh = await freshStudy();
+    await pool.query('UPDATE pbl_v3_studies SET workspace_dirty_at=now() WHERE id=$1', [fresh.id]);
+    const stale = await store.get(fresh.id, principal.ownerId);
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    const { recordExpiredWorkspace } = await import('@/lib/server/pbl-v3/environment');
+    await recordExpiredWorkspace(store, stale, await SandboxService.forOwner(principal));
+    expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+  });
+
+  it('publishes periodic dirty work with a single study admission slot', async () => {
+    const fresh = await freshStudy();
+    await pool.query(
+      "UPDATE pbl_v3_studies SET workspace_dirty_at=now()-interval '2 minutes' WHERE id=$1",
+      [fresh.id],
+    );
+    const previousMax = pool.options.max;
+    pool.options.max = 4;
+    try {
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).workspace_dirty_at).toBeNull();
+    } finally {
+      pool.options.max = previousMax;
+    }
+  });
+
+  it.each(['poll', 'maintenance'] as const)(
+    'retains a loss notice on confirmed dirty expiry observed by %s',
+    async (mode) => {
+      const fresh = await freshStudy();
+      await fresh.send('checkpoint');
+      const row = await store.get(fresh.id, principal.ownerId);
+      await pool.query(
+        'UPDATE pbl_v3_studies SET workspace_dirty_at=now(),environment_checked_at=NULL WHERE id=$1',
+        [fresh.id],
+      );
+      mocked.missing.add(row.environment_id!);
+      if (mode === 'poll') await learningView(principal, fresh.id);
+      else await maintainStudy(store, fresh.id, principal.ownerId);
+      expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toMatchObject({
+        checkpointRevision: 1,
+        reason: 'unavailable',
+      });
+    },
+  );
+
+  it('rotates maintenance beyond the first hundred environments durably', async () => {
+    const environments: string[] = [];
+    onTestFinished(async () => {
+      await pool.query(
+        "UPDATE sandbox_environments SET state='destroyed' WHERE id=ANY($1::text[])",
+        [environments],
+      );
+    });
+    await pool.query(
+      "UPDATE sandbox_environments SET maintenance_checked_at=now()+interval '1 day'",
+    );
+    const ids = new Set<string>();
+    for (let n = 0; n < 105; n++) {
+      const study = await store.create(
+        {
+          ownerId: principal.ownerId,
+          stageId: randomUUID(),
+          sceneId: 'scene',
+          projectId: project.ref.id,
+          version: project.ref.version,
+        },
+        startOrchestration(project.definition),
+      );
+      const env = randomUUID();
+      environments.push(env);
+      ids.add(study.id);
+      await pool.query(
+        `INSERT INTO sandbox_environments(id,owner_id,workspace_id,connection_fingerprint,resource_id,state,workspace_ready)
+        VALUES($1,$2,$3,'test',$1,'running',true)`,
+        [env, principal.ownerId, `pbl-${study.id}`],
+      );
+      await pool.query('UPDATE pbl_v3_studies SET environment_id=$2 WHERE id=$1', [study.id, env]);
+    }
+    const visited = new Set<string>();
+    for (let round = 0; round < 2; round++)
+      await maintainLearningEnvironments(async (_store, id) => {
+        if (ids.has(id)) visited.add(id);
+      });
+    expect(visited.size).toBe(105);
+  });
 
   it.each(['command', 'maintenance'] as const)(
     'protects a slow %s checkpoint when the configured lease is only sixty seconds',

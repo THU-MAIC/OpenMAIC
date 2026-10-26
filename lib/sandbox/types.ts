@@ -133,7 +133,12 @@ export interface SandboxProvider {
     },
   ): Promise<void>;
   startCommand(resourceId: string, operationId: string, input: SandboxCommandInput): Promise<void>;
-  readCommand(resourceId: string, operationId: string, id: string): Promise<SandboxCommandResult>;
+  readCommand(
+    resourceId: string,
+    operationId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<SandboxCommandResult>;
   cancelCommand(resourceId: string, operationId: string, id: string): Promise<void>;
   desktopScreenshot(resourceId: string, operationId: string): Promise<Uint8Array>;
   desktopAction(resourceId: string, operationId: string, action: DesktopAction): Promise<void>;
@@ -144,7 +149,12 @@ export interface SandboxProvider {
     cols: number,
     rows: number,
   ): Promise<number>;
-  findTerminal(resourceId: string, operationId: string, id: string): Promise<number | null>;
+  findTerminal(
+    resourceId: string,
+    operationId: string,
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<number | null>;
   terminalInput(resourceId: string, operationId: string, pid: number, data: string): Promise<void>;
   resizeTerminal(
     resourceId: string,

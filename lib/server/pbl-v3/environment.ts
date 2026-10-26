@@ -8,6 +8,30 @@ import type { Study, LearningStore } from './store';
 import { createCollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/state';
 import type { InstalledProject } from './catalog';
 
+/** Confirmed provider expiry still needs an honest recoverable-version/loss notice. */
+export async function recordExpiredWorkspace(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+) {
+  const environmentId = row.environment_id;
+  if (
+    !environmentId ||
+    !row.workspace_dirty_at ||
+    row.archive_discard?.environmentId === environmentId
+  )
+    return;
+  const saved = await service.checkpoint(environmentId);
+  const discard = {
+    environmentId,
+    at: (await store.now()).toISOString(),
+    checkpointRevision: saved?.revision ?? 0,
+    checkpointAt: saved?.createdAt ?? null,
+    reason: 'unavailable' as const,
+  };
+  if (await store.recordArchiveDiscard(row, discard, true)) row.archive_discard = discard;
+}
+
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
 export async function touchEnvironment(
   store: LearningStore,
@@ -39,7 +63,10 @@ export async function touchEnvironment(
       env = await service.reconcile(env.id, false);
       reconciled = true;
     }
-    if (env.state !== 'running' || !env.workspaceReady) return env;
+    if (env.state !== 'running' || !env.workspaceReady) {
+      if (env.state === 'destroyed') await recordExpiredWorkspace(store, row, service);
+      return env;
+    }
     if (!renew) return env;
     try {
       await service.renew(env.id);

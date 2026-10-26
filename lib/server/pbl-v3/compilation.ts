@@ -3,6 +3,26 @@ import type { SandboxService } from '@/lib/server/sandbox/service';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import { fileSnapshot, projectFor, requireEnvironment, stageFor, stageKey } from './runtime';
 import type { LearningStore, Study } from './store';
+import { checkpointFailure } from '@/lib/server/sandbox/checkpoint-errors';
+import { invalidateWorkspace } from './runtime';
+
+/** Absence of a reservation is definitive; lost start acknowledgements have a command row. */
+export async function executionCommand(store: LearningStore, row: Study, service: SandboxService) {
+  const found = await store.pool.query(
+    'SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND id=$2',
+    [requireEnvironment(row), row.evaluation!.id],
+  );
+  return found.rows.length ? service.command(requireEnvironment(row), row.evaluation!.id) : null;
+}
+
+export async function executionSnapshot(service: SandboxService, row: Study) {
+  try {
+    return await fileSnapshot(service, row);
+  } catch (error) {
+    if (checkpointFailure(error).reason === 'source-limit') return null;
+    throw error;
+  }
+}
 
 export async function startBuild(
   store: LearningStore,
@@ -52,9 +72,25 @@ export async function startBuild(
 export async function collectBuild(store: LearningStore, row: Study, service: SandboxService) {
   const execution = row.evaluation;
   if (execution?.purpose !== 'compile') throw sandboxConflict('No build is awaiting collection.');
-  const result = await service.command(requireEnvironment(row), execution.id);
+  const result = await executionCommand(store, row, service);
+  if (!result) {
+    row.evaluation = null;
+    Object.assign(
+      row,
+      await store.transaction((db) => store.commit(db, row, invalidateWorkspace(row))),
+    );
+    return { stale: true, interrupted: true };
+  }
   if (['starting', 'running', 'unknown'].includes(result.state)) return { pending: true };
-  const snapshot = await fileSnapshot(service, row);
+  const snapshot = await executionSnapshot(service, row);
+  if (!snapshot) {
+    row.evaluation = null;
+    Object.assign(
+      row,
+      await store.transaction((db) => store.commit(db, row, invalidateWorkspace(row))),
+    );
+    return { stale: true, interrupted: true };
+  }
   const evidence = {
     kind: 'compile',
     revision: row.revision,

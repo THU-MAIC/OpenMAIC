@@ -448,6 +448,26 @@ export class SandboxStore {
   ) {
     return this.checkpointStorage().saveLocked(row, expectedRevision, source, signal);
   }
+  prepareCheckpoint(
+    row: SandboxRow,
+    revision: number,
+    source: AsyncIterable<Uint8Array>,
+    signal: AbortSignal,
+  ) {
+    return this.checkpointStorage().prepare(row, revision, source, signal);
+  }
+
+  /** Final publication uses durable writer reservations, with no provider I/O under the lock. */
+  async assertRecordedIdle(row: SandboxRow) {
+    const active = await this.persistence.pool.query(
+      `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND
+       (result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))
+       UNION ALL SELECT 1 FROM sandbox_terminals WHERE environment_id=$1 AND state<>'closed' LIMIT 1`,
+      [row.id],
+    );
+    if (active.rows.length)
+      throw sandboxConflict('A managed writer is active.', 'WORKSPACE_COMMAND_ACTIVE');
+  }
   async assertCheckpointReadable(ownerId: string, saved: SavedCheckpoint) {
     // Check configuration, path policy and a real object read before allocating cloud compute.
     // Full archive integrity is checked again during restoration.

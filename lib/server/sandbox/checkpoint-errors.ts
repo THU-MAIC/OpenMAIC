@@ -19,6 +19,7 @@ export type CheckpointStage =
   | 'recovery'
   | 'release'
   | 'execution'
+  | 'collection'
   | 'terminal';
 
 export function checkpointBusy(error: unknown) {

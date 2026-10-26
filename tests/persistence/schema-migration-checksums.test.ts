@@ -257,6 +257,13 @@ const SHIPPED: readonly (readonly [
     '5e9cf4ab91fc2db5388bde7140533c74f4aece46bab33173fa66ba7dba63bb13',
   ],
   [
+    'sandbox-environments',
+    10,
+    'maintenance-fairness',
+    true,
+    'f74aae6d1de902a2e054a88b01669806dcebe08675044e1b31c3405084419521',
+  ],
+  [
     'pbl-projects',
     1,
     'validated-project-assets',

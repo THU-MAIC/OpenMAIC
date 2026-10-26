@@ -2,10 +2,18 @@ import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 vi.mock('@/lib/server/pbl-v3/lifecycle', () => ({ maintainLearningEnvironments: vi.fn() }));
 import { startLearningLifecycle } from '@/lib/server/pbl-v3/lifecycle-schedule';
+import { pblIdleTimeoutMs } from '@/lib/server/pbl-v3/lifecycle-config';
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.useRealTimers();
+});
+
+it('defaults to ten minutes of inactivity while keeping the threshold configurable', () => {
+  vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', undefined);
+  expect(pblIdleTimeoutMs()).toBe(600_000);
+  vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', '300000');
+  expect(pblIdleTimeoutMs()).toBe(300_000);
 });
 
 it('skips duplicate schedules and overlapping scans, and drains on shutdown', async () => {

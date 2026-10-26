@@ -2,6 +2,7 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { ensurePBLStudySchema } from '@/lib/persistence/pbl-studies';
 import { retainDocumentAssets } from '@openmaic/storage/asset/pg';
 import { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
@@ -74,6 +75,9 @@ const admitted = new WeakMap<Pool, number>();
 
 export class LearningStore {
   constructor(readonly pool: Pool) {}
+  async now(): Promise<Date> {
+    return (await this.pool.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0].now;
+  }
   static async open() {
     const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
     await getAgentSessionStore();
@@ -147,20 +151,29 @@ export class LearningStore {
   }
 
   /** Durable point of no return. Further writes must use a replacement environment. */
-  async recordArchiveDiscard(row: Study, discard: ArchiveDiscard) {
-    await this.transaction(async (db) => {
+  async recordArchiveDiscard(row: Study, discard: ArchiveDiscard, onlyIfDirty = false) {
+    return this.transaction(async (db) => {
       await fenceOwnerWrite(db, row.owner_id);
-      await db.query(
+      const updated = await db.query(
         `UPDATE pbl_v3_studies SET archive_discard=$4,lifecycle_error='checkpoint-skipped'
-         WHERE id=$1 AND owner_id=$2 AND environment_id=$3`,
-        [row.id, row.owner_id, row.environment_id, JSON.stringify(discard)],
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND (NOT $5::boolean OR (workspace_dirty_at IS NOT NULL AND revision=$6)) RETURNING id`,
+        [
+          row.id,
+          row.owner_id,
+          row.environment_id,
+          JSON.stringify(discard),
+          onlyIfDirty,
+          row.revision,
+        ],
       );
+      return updated.rows.length > 0;
     });
   }
 
   /** Checkpoint metadata does not change teaching progress or invalidate an editor revision. */
-  async saveEnvironmentRecovery(row: Study) {
-    await this.transaction(async (db) => {
+  async saveEnvironmentRecovery(row: Study, db?: Queryable) {
+    const save = async (db: Queryable) => {
       await fenceOwnerWrite(db, row.owner_id);
       await db.query(
         `UPDATE pbl_v3_studies SET environment_recovery=$4,workspace_dirty_at=$5,lifecycle_error=NULL,checkpoint_failure=NULL
@@ -173,7 +186,9 @@ export class LearningStore {
           row.workspace_dirty_at,
         ],
       );
-    });
+    };
+    if (db) await save(db);
+    else await this.transaction(save);
   }
   async create(
     input: {
@@ -287,6 +302,36 @@ export class LearningStore {
     fn: () => Promise<T>,
     mode: 'interactive' | 'maintenance' = 'interactive',
   ): Promise<T> {
+    return this.admitted(`pbl-v3:${id}`, fn, mode);
+  }
+
+  /** A separate cross-process lock prevents duplicate periodic uploads without blocking study use. */
+  async periodicCheckpoint<T>(
+    id: string,
+    fn: (publish: <R>(action: () => Promise<R>) => Promise<R>) => Promise<T>,
+  ): Promise<T> {
+    return this.admitted(
+      `pbl-checkpoint:${id}`,
+      () =>
+        fn(async (action) => {
+          // Retain the checkpoint mutex, but reuse its admission slot for short publication.
+          // This also permits publication on injected pools with only one study slot.
+          admitted.set(this.pool, (admitted.get(this.pool) ?? 1) - 1);
+          try {
+            return await this.exclusive(id, action);
+          } finally {
+            admitted.set(this.pool, (admitted.get(this.pool) ?? 0) + 1);
+          }
+        }),
+      'maintenance',
+    );
+  }
+
+  private async admitted<T>(
+    key: string,
+    fn: () => Promise<T>,
+    mode: 'interactive' | 'maintenance',
+  ) {
     const active = admitted.get(this.pool) ?? 0;
     const limit = Math.max(1, Math.floor((this.pool.options.max ?? 10) / 4));
     // Leave one slot for interactive work whenever the pool supports multiple slots.
@@ -307,7 +352,7 @@ export class LearningStore {
       locked = (
         await db.query<{ locked: boolean }>(
           'SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',
-          [`pbl-v3:${id}`],
+          [key],
         )
       ).rows[0]!.locked;
       if (!locked)
@@ -318,8 +363,7 @@ export class LearningStore {
       return await fn();
     } finally {
       try {
-        if (locked)
-          await db!.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [`pbl-v3:${id}`]);
+        if (locked) await db!.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]);
       } catch (error) {
         releaseError = error instanceof Error ? error : new Error('Learning lock cleanup failed');
       } finally {
@@ -356,7 +400,7 @@ export class LearningStore {
   async commit(db: PoolClient, row: Study, transition: EngineTransition) {
     const result = await db.query<Study>(
       `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
-       workspace_dirty_at=$7,lifecycle_error=$8
+       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,lifecycle_error=$8
       WHERE id=$1 AND revision=$2 RETURNING *`,
       [
         row.id,

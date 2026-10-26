@@ -1,6 +1,6 @@
 /** Business inactivity is independent of the provider's renewable resource lease. */
 export function pblIdleTimeoutMs() {
-  const value = Number(process.env.OPENMAIC_PBL_IDLE_TIMEOUT_MS ?? 300_000);
+  const value = Number(process.env.OPENMAIC_PBL_IDLE_TIMEOUT_MS ?? 600_000);
   if (!Number.isSafeInteger(value) || value < 60_000 || value > 86_400_000)
     throw new Error('OPENMAIC_PBL_IDLE_TIMEOUT_MS must be between 60000 and 86400000.');
   return value;

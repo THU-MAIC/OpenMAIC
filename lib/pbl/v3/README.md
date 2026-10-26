@@ -231,8 +231,11 @@ no tables, workers, provider, or configuration switches.
   stored owner/workspace binding. Creation also checks the reserved namespace,
   preventing allocation before the learning runtime establishes its request ID.
   Existing preview tickets are checked on use. Ordinary workspace IDs are unchanged.
-- **Narrow internal access.** Only the owner-checked learning command or leased role
-  tool enters a server-only workspace scope, while holding the existing study lock.
+- **Narrow internal access.** Owner-checked learning commands and leased role tools
+  enter a server-only workspace scope while holding the existing study lock. Owner-bound
+  periodic maintenance also enters a checkpoint-only scope: capture/upload uses a separate
+  checkpoint mutex, while publication briefly locks the study and environment, revalidates
+  the file generation and writers, and atomically commits the head and recovery metadata.
   Scope matches owner, workspace, current/recovery environment IDs and specific
   operations; it expires when the awaited action ends. Stage, role, feedback and
   optimistic revision checks still run before mutation. No HTTP parameter creates
