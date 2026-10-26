@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Voice settings retain a server-reported re-clone instruction beside the affected saved Qwen/CosyVoice profile after preview fails. A successful retry clears the notice; saved voices and bindings remain unchanged. [#2030](https://github.com/THU-MAIC/OpenMAIC/issues/2030)
+
 - A slide image whose box has a different shape from the image is now fitted inside the box the model laid out, centered, like `object-fit: contain`. Previously the box kept its width and changed its height, so a box flatter than its image grew downward and covered the text below it. Boxes within 10% of the image's ratio, and images with unknown dimensions, are unchanged. `@openmaic/generation` 0.3.25.
 
 ## [1.3.0-rc.1] - 2026-10-22
