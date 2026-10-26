@@ -49,6 +49,8 @@ recognize every terminal failure.
 A dead worker is handled by the existing durable lease/reclaim/attempt mechanism.
 A local heartbeat proves worker lease ownership, not provider progress. Maintenance
 must not turn an old `running` row into failure solely because the learner left.
+Reclaim still requires an available worker; neither a live heartbeat nor a
+`queued`/`running` status proves that useful work is progressing.
 
 ## Integration with sandbox lifecycle
 
@@ -71,7 +73,36 @@ silence timer or cancel work based on `turn_started_at`, event age or user age.
 No separate `stalled` top-level status is necessary: the request owner first
 settles a failed request, then maintenance observes the terminal status.
 
-Remaining lifecycle-owner work before real course integration:
+## Required lifecycle follow-up before real course integration
+
+Active-turn protection is a safety rule, **not a complete stalled-work recovery
+policy**. The model silence guard does not cover an unclaimed queue entry or a
+hung tool. Those cases can currently retain an environment indefinitely. The
+follow-up was accepted in the [maintainer review](https://github.com/THU-MAIC/OpenMAIC/pull/2003#pullrequestreview-5649817140)
+and the [lifecycle owner's response](https://github.com/THU-MAIC/OpenMAIC/pull/2003#issuecomment-6413001789).
+
+The lifecycle owner must coordinate execution recovery with the runner and
+deliver a finite outcome for failed/abandoned work, covering:
+
+- Queued work that never receives a claim: unavailable workers, exhausted
+  attempts or blocked admission. Distinguish actual orphaned work from valid
+  scheduling or learner-input waits; age alone is not a failure verdict.
+- A hung tool while its worker continues heartbeating. Worker heartbeats and
+  browser connection health are not tool progress. Preserve legitimately slow
+  model/tool work; do not substitute a total-turn deadline or tool-count cap.
+- Repeated worker crashes/reclaims, including a worker that crashes before
+  persisting the existing over-attempt terminal verdict. Lease expiry alone
+  cannot guarantee completion if no worker can finish recovery.
+- Long healthy execution beyond the session grant's one-hour lifetime. Provider
+  lease renewal does not refresh that grant; keep authorized workspace access
+  valid without reviving an explicitly released or discarded environment.
+
+Any terminal verdict must use the existing claim/write fences and persisted
+session state before normal inactivity/archive/release can proceed. Do not
+destroy a sandbox merely because a row looks old while a writer may still run.
+This PR does not yet establish a finite outcome for all of the cases above.
+
+Remaining lifecycle validation and integration:
 
 - Review these merged changes and consume terminal state without reinstating the
   former ten-minute cancellation plus five-minute forced-release policy.
