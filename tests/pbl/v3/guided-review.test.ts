@@ -10,6 +10,33 @@ const protocol = {
 const artifact = 'a'.repeat(64);
 
 describe('guided review boundaries', () => {
+  it('rolls back local progression and terminal flags only when a tool transaction fails', async () => {
+    const review = new GuidedSkillReview(protocol);
+    review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    const before = structuredClone(review.state);
+    await expect(
+      review.withRollback(async () => {
+        review.advance('A-teach.md', undefined, artifact);
+        review.handoff('Which build requirement?');
+        throw new Error('write failed');
+      }),
+    ).rejects.toThrow('write failed');
+    expect(review.state).toEqual(before);
+    review.advance('A-teach.md', undefined, artifact);
+    const active = structuredClone(review.state);
+    await expect(
+      review.withRollback(async () => {
+        review.handoff('Which build requirement?');
+        throw new Error('write failed again');
+      }),
+    ).rejects.toThrow('write failed again');
+    expect(review.state).toEqual(active);
+    expect(() => review.assertWritable()).not.toThrow();
+    await review.withRollback(async () => review.handoff('Which build requirement?'));
+    expect(() => review.assertWritable()).toThrow();
+    expect(review.state.handoff?.question).toBe('Which build requirement?');
+  });
+
   it('persists a meaningful help handoff without crediting its reply as Skill review', () => {
     const review = new GuidedSkillReview(protocol);
     review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);

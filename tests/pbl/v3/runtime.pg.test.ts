@@ -1908,10 +1908,146 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(
       compacted.some((event) => event.type === 'message_update' || event.type === 'message_start'),
     ).toBe(false);
+    // Local stop receipts and tool-call-only messages must not displace visible text/thinking.
+    for (const content of [
+      [],
+      [
+        {
+          type: 'toolCall',
+          id: 'tool-only',
+          name: 'read_file',
+          arguments: { padding: 'z'.repeat(700000) },
+        },
+      ],
+    ]) {
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: at + 40,
+        type: 'message_start',
+        data: { message: { role: 'assistant', content: [] } },
+      });
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: at + 50,
+        type: 'message_end',
+        data: { message: { role: 'assistant', content, stopReason: 'stop' } },
+      });
+    }
+    const afterControl = await learningView(principal, study.id, { passive: true });
+    const visibleParts = afterControl.conversation!.flatMap((entry) => entry.parts);
+    expect(
+      visibleParts.some((part) => part.kind === 'text' && part.text === text + ' completed'),
+    ).toBe(true);
+    expect(visibleParts.some((part) => part.kind === 'thinking' && part.text === thinking)).toBe(
+      true,
+    );
+    expect(Buffer.byteLength(JSON.stringify(afterControl.conversation))).toBeLessThan(2_000_000);
     const row = await store.get(study.id, principal.ownerId);
     await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
       row.environment_id,
     ]);
+  });
+
+  it('keeps frozen history retries and older cursors stable after a message ends', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('begin')) as { sessionId: string };
+    const { readConversationPage } = await import('@/lib/server/pbl-v3/conversation-history');
+    const append = (type: string, text: string) =>
+      agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type,
+        data: { message: { role: 'assistant', content: [{ type: 'text', text }] } },
+      });
+    await append('message_start', '');
+    await append('message_update', 'earlier snapshot');
+    await append('message_update', 'frozen snapshot:' + 'x'.repeat(600000));
+    const through = await agents.lastEventSeq(sessionId);
+    const page = await readConversationPage(pool, sessionId, through, null);
+    expect(page.events).toHaveLength(1);
+    expect(page.nextBefore).not.toBeNull();
+    const older = await readConversationPage(pool, sessionId, through, page.nextBefore);
+    await append('message_update', 'later snapshot');
+    await append('message_update', 'last snapshot');
+    await append('message_end', 'final message');
+    expect(digest(JSON.stringify(await readConversationPage(pool, sessionId, through, null)))).toBe(
+      digest(JSON.stringify(page)),
+    );
+    expect(JSON.stringify(page).includes('frozen snapshot')).toBe(true);
+    expect(
+      digest(JSON.stringify(await readConversationPage(pool, sessionId, through, page.nextBefore))),
+    ).toBe(digest(JSON.stringify(older)));
+  });
+
+  it('merges history tools and handoff questions across oversized page boundaries', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('begin')) as { sessionId: string };
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const { mergeConversationHistory } = await import('@/lib/pbl/v3/conversation');
+    const question = 'Which requirement should we clarify?';
+    for (const [type, data] of [
+      [
+        'tool_execution_start',
+        { toolName: 'request_learner_help', toolCallId: 'split-help', args: { question } },
+      ],
+      ['pbl_learner_handoff', { toolCallId: 'split-help', question }],
+      [
+        'tool_execution_end',
+        {
+          toolName: 'request_learner_help',
+          toolCallId: 'split-help',
+          isError: false,
+          result: {
+            content: [
+              { type: 'text', text: JSON.stringify({ question, padding: 'x'.repeat(600000) }) },
+            ],
+          },
+        },
+      ],
+      ['session_end', { status: 'succeeded' }],
+    ] as const)
+      await agents.appendControlEvent(sessionId, { ts: Date.now(), type, data });
+    const through = await agents.lastEventSeq(sessionId);
+    const pages = [];
+    let before: number | null = null;
+    for (let i = 0; i < 10; i++) {
+      const page = await conversationPage(
+        principal,
+        new URLSearchParams({
+          id: study.id,
+          sessionId,
+          through: String(through),
+          ...(before ? { before: String(before) } : {}),
+        }),
+      );
+      pages.unshift(page.conversation);
+      if (!page.nextBefore) break;
+      before = page.nextBefore;
+      if (i === 9) throw new Error('History did not terminate');
+    }
+    expect(pages.length).toBeGreaterThan(1);
+    const cached = JSON.stringify(pages);
+    const parts = mergeConversationHistory(pages).flatMap((entry) => entry.parts);
+    const tools = parts.filter((part) => part.kind === 'tool');
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({
+      status: 'succeeded',
+      args: { question },
+      result: expect.any(Object),
+      startedAt: expect.any(Number),
+      endedAt: expect.any(Number),
+    });
+    expect(parts.filter((part) => part.kind === 'text' && part.text === question)).toHaveLength(1);
+    expect(JSON.stringify(pages)).toBe(cached);
   });
 
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
@@ -2723,9 +2859,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           totalTokens: 2,
         },
       };
+      const largeReply = 'Let us inspect the greeting. '.repeat(30000);
       mocked.responses = [
         [
-          { type: 'text-delta', text: 'Let us inspect the greeting.' },
+          { type: 'text-delta', text: largeReply },
           { type: 'tool-call', toolCallId: 'read-section', toolName: 'read_next_skill', input: {} },
           {
             type: 'tool-call',
@@ -2761,6 +2898,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const settled = await agents.getSession(queued.sessionId);
       expect(settled?.status, settled?.error).toBe('succeeded');
       const restored = await learningView(principal, studyId);
+      expect(
+        restored.conversation
+          ?.flatMap((entry) => entry.parts)
+          .some((part) => part.kind === 'text' && part.text === largeReply),
+      ).toBe(true);
+
       expect(
         restored.conversation?.filter((entry) => !entry.boundary && entry.speaker !== 'user'),
       ).toMatchObject([{ status: 'succeeded' }]);
@@ -2828,9 +2971,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const assistantParts = request.flatMap((m) =>
         m.role === 'assistant' && Array.isArray(m.content) ? m.content : [],
       );
+      expect(assistantParts.some((part) => part.type === 'text' && part.text === largeReply)).toBe(
+        true,
+      );
       expect(assistantParts).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'text', text: 'Let us inspect the greeting.' }),
           expect.objectContaining({ type: 'tool-call', toolCallId: 'read-section' }),
           expect.objectContaining({ type: 'tool-call', toolCallId: 'ask-review' }),
         ]),
@@ -3593,7 +3738,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         attempt: claimed!.attempt,
         signal: new AbortController().signal,
       };
-      let config = await teachingRunnerConfig(request);
+      const config = await teachingRunnerConfig(request);
       await invoke(config, 'read_next_skill');
       await expect(
         invoke(config, 'request_skill_review', { question: 'Approve this code?' }),
@@ -3638,7 +3783,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           await pool.query('DROP TRIGGER reject_handoff_event ON agent_session_events');
           await pool.query('DROP FUNCTION reject_handoff_event()');
         }
-        config = await teachingRunnerConfig(request);
+        expect(config.isTurnComplete()).toBe(false);
+        await invoke(config, 'read_next_skill');
+        expect((await store.binding(queued.sessionId))!.guided?.handoff).toBeUndefined();
       }
       await invoke(config, 'request_learner_help', {
         question,

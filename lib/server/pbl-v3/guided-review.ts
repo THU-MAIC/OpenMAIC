@@ -90,6 +90,21 @@ export class GuidedSkillReview {
     if (this.state.handoff?.runId !== this.runId) delete this.state.handoff;
   }
 
+  /** Keep local protocol flags aligned with a tool's committed database result. */
+  async withRollback<T>(work: () => Promise<T>): Promise<T> {
+    const state = structuredClone(this.state),
+      advanced = this.advanced,
+      ended = this.ended;
+    try {
+      return await work();
+    } catch (error) {
+      this.state = state;
+      this.advanced = advanced;
+      this.ended = ended;
+      throw error;
+    }
+  }
+
   /** A blocked build can return control without creating review/approval evidence. */
   handoff(question: string): void {
     if (!question.trim()) throw new Error('A concrete learner question is required.');

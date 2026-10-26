@@ -1052,7 +1052,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         markLeaseLost();
         return;
       }
-      if (type === 'message_end') {
+      // V3 history cursors may point into an in-flight message. Keep those
+      // snapshots immutable; its read layer compacts them before pagination.
+      if (type === 'message_end' && !meta.id.startsWith('pbl-role-')) {
         try {
           await store.pruneMessageUpdates(id, seq);
         } catch (error) {

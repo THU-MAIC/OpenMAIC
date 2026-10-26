@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => {
       sessionId = _id;
       return 1;
     }),
+    pruneMessageUpdates: vi.fn(async () => 0),
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () =>
@@ -560,6 +561,22 @@ describe('runSession NOTIFY wakeup wiring', () => {
     );
     expect(mocks.store.requeueSession).not.toHaveBeenCalled();
   });
+
+  it.each(['session-wake', 'pbl-role-wake'])(
+    'preserves V3 frozen history while retaining ordinary snapshot pruning for %s',
+    async (id) => {
+      const run = runSession({ running: new Map(), shuttingDown: false }, { ...SESSION, id });
+      try {
+        await waitForReady();
+      } finally {
+        fake.current.instance?.releasePrompt();
+        await run;
+      }
+      if (id.startsWith('pbl-role-'))
+        expect(mocks.store.pruneMessageUpdates).not.toHaveBeenCalled();
+      else expect(mocks.store.pruneMessageUpdates).toHaveBeenCalled();
+    },
+  );
 
   it('still unsubscribes when setup fails before the agent is built', async () => {
     // A driver-model failure kills the run during setup — the wakeup

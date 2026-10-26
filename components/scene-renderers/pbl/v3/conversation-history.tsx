@@ -4,7 +4,10 @@ import { History, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
-import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
+import {
+  mergeConversationHistory,
+  type LearningConversationEntry,
+} from '@/lib/pbl/v3/conversation';
 
 type Source = NonNullable<LearningView['conversationHistory']>[number];
 type Page = {
@@ -137,16 +140,8 @@ export function ConversationHistory({
                 {t('pblV3.history.failed')}
               </p>
             )}
-            {pages.map((page, index) => (
-              <div
-                key={`${page.through}:${page.nextBefore ?? 'end'}`}
-                className="space-y-5"
-                data-history-page={index}
-              >
-                {page.conversation.map((entry) => (
-                  <div key={entry.id}>{renderEntry(entry)}</div>
-                ))}
-              </div>
+            {mergeConversationHistory(pages.map((page) => page.conversation)).map((entry) => (
+              <div key={entry.id}>{renderEntry(entry)}</div>
             ))}
             {!pending &&
               !failed &&

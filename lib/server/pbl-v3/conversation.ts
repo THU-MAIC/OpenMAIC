@@ -109,7 +109,14 @@ export function projectConversation(
         (part) => part.kind === 'text' && part.text.includes(question),
       )
     )
-      getAssistant(event).parts.push({ kind: 'text', id: `question-${event.id}`, text: question });
+      getAssistant(event).parts.push({
+        kind: 'text',
+        id:
+          typeof record(event.data).toolCallId === 'string'
+            ? `question-${event.attempt}-${record(event.data).toolCallId}`
+            : `question-${event.id}`,
+        text: question,
+      });
   };
   for (const event of events) {
     const data = record(event.data);
@@ -241,7 +248,7 @@ export function projectConversation(
         if (!tool) {
           tool = {
             kind: 'tool',
-            id: `tool-${event.attempt}-${event.id}-${data.toolCallId}`,
+            id: `tool-${event.attempt}-${data.toolCallId}`,
             name,
             action,
             status: 'running',

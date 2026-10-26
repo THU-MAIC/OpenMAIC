@@ -81,7 +81,11 @@ it('loads only on demand, freezes the cursor across SSE changes and preserves ea
     expect(requests[0].url.searchParams.get('through')).toBe('100');
     await act(async () =>
       requests[0].resolve(
-        Response.json({ through: 100, nextBefore: 50, conversation: [{ id: 'newer' }] }),
+        Response.json({
+          through: 100,
+          nextBefore: 50,
+          conversation: [{ id: 'newer', speaker: 'coder', parts: [] }],
+        }),
       ),
     );
     expect(container.textContent).toContain('newer');
@@ -97,7 +101,11 @@ it('loads only on demand, freezes the cursor across SSE changes and preserves ea
     await click('common.retry');
     await act(async () =>
       requests[2].resolve(
-        Response.json({ through: 100, nextBefore: null, conversation: [{ id: 'older' }] }),
+        Response.json({
+          through: 100,
+          nextBefore: null,
+          conversation: [{ id: 'older', speaker: 'coder', parts: [] }],
+        }),
       ),
     );
     expect(container.textContent!.indexOf('older')).toBeLessThan(
@@ -110,10 +118,79 @@ it('loads only on demand, freezes the cursor across SSE changes and preserves ea
     expect(requests[3].signal.aborted).toBe(true);
     await act(async () =>
       requests[3].resolve(
-        Response.json({ through: 200, nextBefore: null, conversation: [{ id: 'late' }] }),
+        Response.json({
+          through: 200,
+          nextBefore: null,
+          conversation: [{ id: 'late', speaker: 'coder', parts: [] }],
+        }),
       ),
     );
     expect(container.textContent).not.toContain('late');
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it('renders one complete tool and one question after loading the older fragment', async () => {
+  const question = { kind: 'text' as const, id: 'question-1-help', text: 'Which requirement?' };
+  const tool = {
+    kind: 'tool' as const,
+    id: 'tool-1-help',
+    name: 'request_learner_help',
+    action: 'tool' as const,
+  };
+  const newer = {
+    through: 100,
+    nextBefore: 50,
+    conversation: [
+      {
+        id: 'newer',
+        speaker: 'coder',
+        parts: [{ ...tool, status: 'succeeded', result: { answer: 'done' } }, question],
+      },
+    ],
+  };
+  const older = {
+    through: 100,
+    nextBefore: null,
+    conversation: [
+      {
+        id: 'older',
+        speaker: 'coder',
+        parts: [
+          { ...tool, status: 'interrupted', args: { question: 'Which requirement?' } },
+          question,
+        ],
+      },
+    ],
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValueOnce(Response.json(newer)).mockResolvedValueOnce(Response.json(older)),
+  );
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ConversationHistory, {
+          id: 'study',
+          sources: [{ sessionId: 'coder', through: 100, role: 'coder' }],
+          renderEntry: (entry) => createElement('p', null, JSON.stringify(entry.parts)),
+        }),
+      ),
+    );
+    await act(async () => container.querySelector<HTMLButtonElement>('button')!.click());
+    const olderButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'pblV3.history.older',
+    )!;
+    await act(async () => olderButton.click());
+    expect(container.textContent!.split('tool-1-help')).toHaveLength(2);
+    expect(container.textContent!.split('question-1-help')).toHaveLength(2);
+    expect(container.textContent).toContain('"status":"succeeded"');
+    expect(container.textContent).not.toContain('"status":"interrupted"');
+    expect(container.textContent).toContain('"args"');
+    expect(container.textContent).toContain('"result"');
   } finally {
     await act(async () => root.unmount());
   }

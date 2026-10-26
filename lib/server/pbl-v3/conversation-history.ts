@@ -4,6 +4,10 @@ import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 
 export const CONVERSATION_BYTES = 512 * 1024;
 
+// Local empty stops and tool-call-only frames have no learner-visible model content.
+const visibleContent = (alias: string) => `${alias}.data->'message'->'content' @?
+  '$[*] ? ((@.type == "text" && @.text != "") || (@.type == "thinking" && @.thinking != ""))'`;
+
 // Compact snapshots before pagination, against a fixed high-water mark. Applying
 // the cursor first would replay older snapshots of the same message on each page.
 const historyWindow = (live = false) => `WITH boundary AS (
@@ -37,7 +41,7 @@ const historyWindow = (live = false) => `WITH boundary AS (
   ORDER BY f.seq DESC LIMIT $3
 ), sized AS (
   SELECT r.*,e.ts,e.data,octet_length(e.data::text) AS bytes,
-    e.data->'message'->>'role'='assistant' AS assistant
+    (e.data->'message'->>'role'='assistant' AND ${visibleContent('e')}) AS assistant
   FROM ${
     live
       ? `(SELECT * FROM recent UNION SELECT * FROM framed
@@ -45,7 +49,8 @@ const historyWindow = (live = false) => `WITH boundary AS (
     OR ($6::boolean AND seq=(SELECT e.seq FROM agent_session_events e
       WHERE e.session_id=$1 AND e.seq<=$2
         AND e.type IN ('message_start','message_update','message_end')
-        AND e.data->'message'->>'role'='assistant' ORDER BY e.seq DESC LIMIT 1)))`
+        AND e.data->'message'->>'role'='assistant' AND ${visibleContent('e')}
+        ORDER BY e.seq DESC LIMIT 1)))`
       : 'recent'
   } r JOIN agent_session_events e ON e.session_id=$1 AND e.seq=r.seq
 )`;
