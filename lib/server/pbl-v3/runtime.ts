@@ -1,5 +1,10 @@
 import { recordLearningEvidence } from './evidence';
-import { projectConversation, learningRunFailure, boundConversation } from './conversation';
+import {
+  projectConversation,
+  learningRunFailure,
+  boundConversation,
+  latestMessagePartIds,
+} from './conversation';
 import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
@@ -843,6 +848,7 @@ export async function learningView(
   const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
   const messages: LearningView['messages'] = [];
   let conversation: LearningView['conversation'] = [];
+  const conversationHistory: NonNullable<LearningView['conversationHistory']> = [];
   let activitySequence = 0;
   let roleRun: LearningView['roleRun'] = null;
   let latestUserSeq: number | undefined;
@@ -877,6 +883,12 @@ export async function learningView(
     };
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
     const last = await agents.lastEventSeq(binding.session_id);
+    if (last)
+      conversationHistory.push({
+        sessionId: binding.session_id,
+        through: last,
+        role: binding.role,
+      });
     activitySequence = last;
     const events = await readConversationHistory(store.pool, binding.session_id, last, 1000);
     conversation = projectConversation(
@@ -934,20 +946,21 @@ export async function learningView(
   }));
   // Capture identity before merging other roles and the pending-question fallback.
   // Display order alone does not identify the current assistant response.
-  const currentReplyIds = new Set(
-    conversation
-      .filter((entry) => entry.speaker !== 'user' && !entry.boundary)
-      .slice(-1)
-      .map((entry) => entry.id),
-  );
+  const currentPartIds = latestMessagePartIds(conversation);
   for (const previous of bindings.filter(
     (item) =>
       item.session_id !== binding?.session_id &&
       (item.context_key === milestone.id || item.context_key === 'project'),
   )) {
     const last = await agents.lastEventSeq(previous.session_id);
+    if (last)
+      conversationHistory.push({
+        sessionId: previous.session_id,
+        through: last,
+        role: previous.role,
+      });
     activitySequence += last;
-    const events = await readConversationHistory(store.pool, previous.session_id, last, 500);
+    const events = await readConversationHistory(store.pool, previous.session_id, last, 500, false);
     conversation.push(
       ...projectConversation(events, previous.role, false).map((entry) => ({
         ...entry,
@@ -967,7 +980,7 @@ export async function learningView(
       parts: [{ kind: 'text', id: 'pending-question', text: pendingReview.question }],
     });
   }
-  conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES, currentReplyIds);
+  conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES, currentPartIds);
   const cached =
     options.observation?.revision === row.revision &&
     options.observation.environmentId === row.environment_id
@@ -1071,6 +1084,7 @@ export async function learningView(
     busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
     messages: messages.slice(-60),
     conversation,
+    conversationHistory,
     activitySequence,
     task: { title: milestone.title, goal: milestone.goal ?? milestone.title },
     roleRun,

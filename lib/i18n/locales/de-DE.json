@@ -2895,6 +2895,13 @@
       "unavailable": "Speicher oder Arbeitsumgebung ist nicht verfügbar oder hat das Zeitlimit überschritten.",
       "workspace-changed": "Dateien wurden während der Archivierung geändert.",
       "execution-unsettled": "Das Ende der Aufgabe konnte nicht bestätigt werden."
+    },
+    "history": {
+      "title": "Conversation history",
+      "description": "Saved messages at the time you open this view. Earlier records load on demand.",
+      "older": "Load earlier records",
+      "failed": "Could not load history. Please retry.",
+      "empty": "No saved messages in this page."
     }
   }
 }

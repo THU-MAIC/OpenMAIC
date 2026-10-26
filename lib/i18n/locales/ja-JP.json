@@ -2895,6 +2895,13 @@
       "unavailable": "ストレージまたは作業環境が利用できないか、タイムアウトしました。",
       "workspace-changed": "保存中にファイルが変更されました。",
       "execution-unsettled": "タスクの停止を確認できません。"
+    },
+    "history": {
+      "title": "Conversation history",
+      "description": "Saved messages at the time you open this view. Earlier records load on demand.",
+      "older": "Load earlier records",
+      "failed": "Could not load history. Please retry.",
+      "empty": "No saved messages in this page."
     }
   }
 }

@@ -416,6 +416,7 @@ describe('student conversation projection', () => {
       {
         kind: 'thinking',
         id: 'thinking-2-0',
+        messageId: 2,
         text: 'Consider the input.',
         startedAt: 3,
         streaming: true,
@@ -719,6 +720,24 @@ it('protects the current reply independently of a later pending question fallbac
     speaker: 'coder',
     parts: [{ kind: 'text', id: 'q', text: 'Can you explain this?' }],
   });
-  boundConversation(entries, 1024, new Set([currentId]));
+  boundConversation(entries, 1024, new Set([`${currentId}:${entries[0]!.parts[0]!.id}`]));
   expect(entries[0]!.parts).toMatchObject([{ text }]);
+});
+
+it('bounds earlier model messages in a single long Agent turn without limiting the latest message', () => {
+  const events = [event(1, 'user_message', { text: 'Please implement this.' })];
+  const old = 'Older explanation. '.repeat(40_000);
+  const current = 'Current reasoning and text. '.repeat(50_000);
+  for (let n = 0; n < 12; n++) {
+    events.push(event(2 + n * 3, 'message_start', message('')));
+    events.push(event(3 + n * 3, 'message_end', message(old + n)));
+  }
+  events.push(event(100, 'message_start', message('')));
+  events.push(event(101, 'message_update', message(current)));
+  const entries = projectConversation(events, 'coder', true);
+  expect(JSON.stringify(entries)).toContain(current);
+  expect(Buffer.byteLength(JSON.stringify(entries))).toBeLessThan(
+    Buffer.byteLength(current) + 550_000,
+  );
+  expect(entries.some((entry) => entry.omitted)).toBe(true);
 });

@@ -1884,6 +1884,200 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       endedAt: at + 20,
       streaming: false,
     });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at + 30,
+      type: 'message_end',
+      data: track('message_end', snapshot(text + ' completed'), at + 30),
+    });
+    const completed = await learningView(principal, study.id, { passive: true });
+    expect(
+      completed.conversation?.at(-1)?.parts.find((part) => part.kind === 'thinking'),
+    ).toMatchObject({
+      id: firstThinking!.id,
+      startedAt: at + 10,
+      endedAt: at + 20,
+      streaming: false,
+    });
+    const compacted = await readConversationHistory(
+      pool,
+      queued.sessionId,
+      await agents.lastEventSeq(queued.sessionId),
+      1000,
+    );
+    expect(compacted.filter((event) => event.type === 'message_end')).toHaveLength(1);
+    expect(
+      compacted.some((event) => event.type === 'message_update' || event.type === 'message_start'),
+    ).toBe(false);
+    const row = await store.get(study.id, principal.ownerId);
+    await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+      row.environment_id,
+    ]);
+  });
+
+  it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const { readConversationHistory, readConversationPage, CONVERSATION_BYTES } =
+      await import('@/lib/server/pbl-v3/conversation-history');
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const bodies = Array.from(
+      { length: 115 },
+      (_, index) => `Message ${index}: ` + 'x'.repeat(index === 15 ? 1_200_000 : 14_000),
+    );
+    bodies.push('Current complete reply: ' + 'y'.repeat(700_000));
+    for (const [index, text] of bodies.entries()) {
+      for (const [type, content] of [
+        ['message_start', ''],
+        ['message_update', text.slice(0, 30)],
+        [index === bodies.length - 1 ? 'message_update' : 'message_end', text],
+      ])
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type,
+          data: { message: { role: 'assistant', content: [{ type: 'text', text: content }] } },
+        });
+    }
+    const largeToolResult = { content: [{ type: 'text', text: 'tool output '.repeat(60_000) }] };
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: Date.now(),
+      type: 'tool_execution_end',
+      data: { toolName: 'read_file', toolCallId: 'large-history-tool', result: largeToolResult },
+    });
+    const initial = await learningView(principal, study.id, { passive: true });
+    const initialPart = initial.conversation
+      ?.flatMap((entry) => entry.parts)
+      .findLast((part) => part.kind === 'text');
+    for (let index = 0; index < 1040; index++)
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_update',
+        data: { toolName: 'list_files', toolCallId: 'many-tool-events', partialResult: { index } },
+      });
+    const through = await agents.lastEventSeq(queued.sessionId);
+    const live = await readConversationHistory(pool, queued.sessionId, through, 30);
+    expect(live.length).toBeLessThanOrEqual(32); // durable learner and current-message anchors
+    expect(
+      live.some((event) => (event.data as { pblHistoryBefore?: boolean }).pblHistoryBefore),
+    ).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(live))).toBeLessThan(CONVERSATION_BYTES + 750_000);
+    expect(JSON.stringify(live).includes(bodies.at(-1)!)).toBe(true);
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(Buffer.byteLength(JSON.stringify(view.conversation))).toBeLessThan(
+      CONVERSATION_BYTES + 750_000,
+    );
+    expect(JSON.stringify(view.conversation).includes(bodies.at(-1)!)).toBe(true);
+    expect(
+      view.conversation?.flatMap((entry) => entry.parts).findLast((part) => part.kind === 'text')
+        ?.id,
+    ).toBe(initialPart?.id);
+    expect(view.conversationHistory).toContainEqual({
+      sessionId: queued.sessionId,
+      through,
+      role: 'discussion',
+    });
+
+    // New updates must not move the frozen history window or change its cursors.
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: Date.now(),
+      type: 'message_update',
+      data: {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'NEWER_UPDATE_NOT_IN_SNAPSHOT' }],
+        },
+      },
+    });
+    const seen = new Set<number>();
+    const restored: string[] = [];
+    let before: number | null = null;
+    for (let count = 0; count < 40; count++) {
+      const page = await readConversationPage(pool, queued.sessionId, through, before);
+      expect(page.events.length).toBeGreaterThan(0);
+      expect(page.events.length).toBeLessThanOrEqual(80);
+      if (Buffer.byteLength(JSON.stringify(page.events)) > CONVERSATION_BYTES + 10_000)
+        expect(page.events).toHaveLength(1);
+      for (const event of page.events) {
+        expect(seen.has(event.id)).toBe(false);
+        seen.add(event.id);
+        const data = event.data as { message?: { role: string; content: { text: string }[] } };
+        if (data.message?.role === 'assistant') restored.push(data.message.content[0].text);
+      }
+      if (!page.nextBefore) break;
+      expect(page.nextBefore).toBeLessThan(before ?? through + 1);
+      before = page.nextBefore;
+      if (count === 39) throw new Error('History pagination did not terminate');
+    }
+    expect(restored.map(digest).sort()).toEqual(bodies.map(digest).sort());
+    const renewals = mocked.renewals.length,
+      creates = mocked.creates.length;
+    const params = new URLSearchParams({
+      id: study.id,
+      sessionId: queued.sessionId,
+      through: String(through),
+    });
+    const response = await conversationPage(principal, params);
+    expect(response.through).toBe(through);
+    expect(JSON.stringify(response)).not.toContain('NEWER_UPDATE_NOT_IN_SNAPSHOT');
+    expect(response.nextBefore).not.toBeNull();
+    const displayed: string[] = [];
+    let toolRestored = false;
+    let projected = response;
+    for (let count = 0; count < 40; count++) {
+      for (const entry of projected.conversation)
+        if (entry.speaker !== 'user')
+          for (const part of entry.parts) if (part.kind === 'text') displayed.push(part.text);
+      for (const entry of projected.conversation)
+        for (const part of entry.parts)
+          if (part.kind === 'tool' && part.id.includes('large-history-tool'))
+            toolRestored =
+              digest((part.result as typeof largeToolResult)?.content?.[0]?.text ?? '') ===
+              digest(largeToolResult.content[0].text);
+      if (!projected.nextBefore) break;
+      projected = await conversationPage(
+        principal,
+        new URLSearchParams({
+          ...Object.fromEntries(params),
+          before: String(projected.nextBefore),
+        }),
+      );
+      if (count === 39) throw new Error('Projected history pagination did not terminate');
+    }
+    expect(displayed.map(digest).sort()).toEqual(bodies.map(digest).sort());
+    expect(toolRestored).toBe(true);
+    await expect(
+      conversationPage({ ...principal, ownerId: 'another-learner' }, params),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(mocked.renewals).toHaveLength(renewals);
+    expect(mocked.creates).toHaveLength(creates);
+    await expect(
+      conversationPage(
+        principal,
+        new URLSearchParams({ ...Object.fromEntries(params), before: '-1' }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    const other = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId: randomUUID(),
+        sceneId: 'scene',
+        projectId: project.ref.id,
+        version: project.ref.version,
+      },
+      startOrchestration(project.definition),
+    );
+    await expect(
+      conversationPage(
+        principal,
+        new URLSearchParams({ ...Object.fromEntries(params), id: other.id }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await agents.getSession(queued.sessionId))!.status).toBe('queued');
     const row = await store.get(study.id, principal.ownerId);
     await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
       row.environment_id,

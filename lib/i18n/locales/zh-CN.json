@@ -2895,6 +2895,13 @@
       "unavailable": "存储或工作区服务不可用，或请求超时。",
       "workspace-changed": "归档期间文件发生变化。",
       "execution-unsettled": "无法确认任务已经停止。"
+    },
+    "history": {
+      "title": "查看历史记录",
+      "description": "展示打开时的已保存记录，较早内容可按需加载。",
+      "older": "加载更早记录",
+      "failed": "历史记录加载失败，请重试。",
+      "empty": "本页暂无对话内容。"
     }
   }
 }

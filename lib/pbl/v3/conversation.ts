@@ -19,10 +19,11 @@ export interface LearningConversationEntry {
     total: number;
   };
   parts: (
-    | { kind: 'text'; id: string; text: string; streaming?: boolean }
+    | { kind: 'text'; id: string; messageId?: number; text: string; streaming?: boolean }
     | {
         kind: 'thinking';
         id: string;
+        messageId?: number;
         text: string;
         streaming?: boolean;
         startedAt?: number;

@@ -22,9 +22,12 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   const [expanded, setExpanded] = useState(false);
   const [autoExpand, setAutoExpand] = useState(false);
   const [fullscreenRoot, setFullscreenRoot] = useState<Element | null>(null);
-  const [portalHost] = useState(() =>
-    typeof document === 'undefined' ? null : document.createElement('div'),
-  );
+  const [portalHost] = useState(() => {
+    if (typeof document === 'undefined') return null;
+    const host = document.createElement('div');
+    host.dataset.pblV3Portal = '';
+    return host;
+  });
   const [reload, setReload] = useState(0);
   useEffect(() => {
     if (!stageId) return;

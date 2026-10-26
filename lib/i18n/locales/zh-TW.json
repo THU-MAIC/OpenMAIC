@@ -2895,6 +2895,13 @@
       "unavailable": "儲存或工作區服務無法使用，或請求逾時。",
       "workspace-changed": "封存期間檔案發生變更。",
       "execution-unsettled": "無法確認工作已停止。"
+    },
+    "history": {
+      "title": "查看歷史記錄",
+      "description": "展示開啟時的已儲存記錄，較早內容可按需載入。",
+      "older": "載入更早記錄",
+      "failed": "歷史記錄載入失敗，請重試。",
+      "empty": "本頁暫無對話內容。"
     }
   }
 }

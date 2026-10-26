@@ -2895,6 +2895,13 @@
       "unavailable": "O armazenamento ou o ambiente está indisponível, ou a solicitação expirou.",
       "workspace-changed": "Os arquivos mudaram durante o arquivamento.",
       "execution-unsettled": "Não foi possível confirmar que a tarefa parou."
+    },
+    "history": {
+      "title": "Conversation history",
+      "description": "Saved messages at the time you open this view. Earlier records load on demand.",
+      "older": "Load earlier records",
+      "failed": "Could not load history. Please retry.",
+      "empty": "No saved messages in this page."
     }
   }
 }

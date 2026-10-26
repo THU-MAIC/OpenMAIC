@@ -59,6 +59,7 @@ export function projectConversation(
   role: AgentRole,
   running: boolean,
   terminalStatus?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'missing',
+  history = false,
 ): LearningConversationEntry[] {
   const entries: LearningConversationEntry[] = [];
   let assistant: LearningConversationEntry | undefined;
@@ -164,11 +165,15 @@ export function projectConversation(
       ['message_start', 'message_update', 'message_end'].includes(event.type) &&
       message.role === 'assistant'
     ) {
-      if (event.type === 'message_start') {
+      const anchor =
+        typeof data.pblMessageId === 'number' && data.pblMessageId > 0
+          ? data.pblMessageId
+          : undefined;
+      if (event.type === 'message_start' || (anchor !== undefined && anchor !== messageId)) {
         settleThinking(event.ts);
         for (const part of blocks.values()) part.streaming = false;
         blocks.clear();
-        messageId = event.id;
+        messageId = anchor ?? event.id;
       }
       messageId ??= event.id;
       const content = Array.isArray(message.content) ? message.content : [];
@@ -185,10 +190,11 @@ export function projectConversation(
               ? {
                   kind: 'thinking',
                   id: `thinking-${messageId}-${index}`,
+                  messageId,
                   text,
                   startedAt: event.ts,
                 }
-              : { kind: 'text', id: `text-${messageId}-${index}`, text };
+              : { kind: 'text', id: `text-${messageId}-${index}`, messageId, text };
           blocks.set(index, part);
           getAssistant(event).parts.push(part);
         }
@@ -283,20 +289,36 @@ export function projectConversation(
     const last = events.at(-1);
     getAssistant({ id: (last?.id ?? 0) + 1, ts: (last?.ts ?? 0) + 1 });
   }
-  return boundConversation(
-    entries
+  const visible = entries.filter(
+    (e) =>
+      e.boundary ||
+      e.omitted ||
+      e.parts.length ||
+      // Empty failures belong in the run banner, not in fabricated replies.
+      // Retain partial replies, active waiters and cancellation history.
+      e.status === 'running' ||
+      e.status === 'cancelled' ||
+      e.status === 'interrupted',
+  );
+  if (events.some((event) => record(event.data).pblHistoryBefore) && visible.length)
+    visible[0].omitted = true;
+  return history ? visible : boundConversation(visible.slice(-60));
+}
+
+/** One model message, rather than the whole multi-call Agent turn. */
+export function latestMessagePartIds(entries: LearningConversationEntry[]) {
+  const entry = entries.findLast((item) =>
+    item.parts.some((part) => part.kind === 'text' || part.kind === 'thinking'),
+  );
+  const message = entry?.parts.findLast((part) => part.kind === 'text' || part.kind === 'thinking');
+  return new Set(
+    entry?.parts
       .filter(
-        (e) =>
-          e.boundary ||
-          e.omitted ||
-          e.parts.length ||
-          // Empty failures belong in the run banner, not in fabricated replies.
-          // Retain partial replies, active waiters and cancellation history.
-          e.status === 'running' ||
-          e.status === 'cancelled' ||
-          e.status === 'interrupted',
+        (part) =>
+          (part.kind === 'text' || part.kind === 'thinking') &&
+          part.messageId === (message && 'messageId' in message ? message.messageId : undefined),
       )
-      .slice(-60),
+      .map((part) => `${entry.id}:${part.id}`),
   );
 }
 
@@ -304,14 +326,17 @@ export function projectConversation(
 export function boundConversation(
   entries: LearningConversationEntry[],
   budget = CONVERSATION_BYTES,
-  currentReplyIds = new Set(entries.at(-1) ? [entries.at(-1)!.id] : []),
+  currentPartIds = latestMessagePartIds(entries),
 ) {
   let remaining = budget;
   for (const entry of entries.toReversed()) {
     const kept: Part[] = [];
     for (const part of entry.parts.toReversed()) {
       const size = Buffer.byteLength(JSON.stringify(part));
-      if (currentReplyIds.has(entry.id) && (part.kind === 'text' || part.kind === 'thinking')) {
+      if (
+        currentPartIds.has(`${entry.id}:${part.id}`) &&
+        (part.kind === 'text' || part.kind === 'thinking')
+      ) {
         kept.push(part);
       } else if (size <= remaining) {
         kept.push(part);
