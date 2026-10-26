@@ -77,6 +77,14 @@ it('records a successful renewal against the same owner and environment', async 
   ]);
 });
 
+it('reconciles a passive view without renewing or advancing the successful renewal time', async () => {
+  const f = fixture();
+  expect(await touchEnvironment(f.store, f.row, f.service, false)).toBe(f.env);
+  expect(f.reconcile).toHaveBeenCalledOnce();
+  expect(f.renew).not.toHaveBeenCalled();
+  expect(f.query).not.toHaveBeenCalled();
+});
+
 it("reuses another request's successful check after an environment lock conflict", async () => {
   const f = fixture();
   f.renew.mockRejectedValueOnce(sandboxConflict('busy', 'ENVIRONMENT_BUSY'));

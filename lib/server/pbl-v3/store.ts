@@ -1,6 +1,8 @@
 import 'server-only';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { Pool, PoolClient } from 'pg';
+import type { Queryable } from '@openmaic/storage/document/pg';
 import { ensurePBLStudySchema } from '@/lib/persistence/pbl-studies';
 import { retainDocumentAssets } from '@openmaic/storage/asset/pg';
 import { PgAgentSessionStore } from '@openmaic/storage/agent-session/pg';
@@ -17,6 +19,8 @@ import type { InstalledProject } from './catalog';
 import { resolveStudyProject } from './project-resolver';
 import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { assetPrincipalForOwner } from '@/lib/persistence/owner-assets';
+import type { ArchiveFailure, ArchiveDiscard } from '@/lib/pbl/v3/types';
+import { pblIdleTimeoutMs, pblArchiveFailureGraceMs } from './lifecycle-config';
 
 export interface Study extends Record<string, unknown> {
   id: string;
@@ -32,6 +36,17 @@ export interface Study extends Record<string, unknown> {
   state: PblSessionState;
   environment_id: string | null;
   environment_checked_at: Date | null;
+  last_used_at: Date;
+  workspace_dirty_at: Date | null;
+  lifecycle_error: string | null;
+  checkpoint_failure: ArchiveFailure | null;
+  archive_discard: ArchiveDiscard | null;
+  idle_turn_cleanup: {
+    environmentId: string;
+    idleAt: string;
+    releaseAt: string;
+    releasing?: true;
+  } | null;
   environment_recovery: {
     requestId: string;
     checkpointRevision?: number;
@@ -58,6 +73,7 @@ export interface RoleBinding extends Record<string, unknown> {
   context_key: string;
   stage_key: string;
   feedback_seq: number;
+  turn_started_at: Date;
   guided: import('./guided-review').GuidedSkillState | null;
   completion: { stageKey: string; feedbackSeq: number; userMessageSeq: number } | null;
 }
@@ -66,6 +82,9 @@ const admitted = new WeakMap<Pool, number>();
 
 export class LearningStore {
   constructor(readonly pool: Pool) {}
+  async now(): Promise<Date> {
+    return (await this.pool.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0].now;
+  }
   static async open() {
     const { pool } = await getServerPersistenceProvider(process.env.DATABASE_URL ?? '');
     await getAgentSessionStore();
@@ -105,6 +124,204 @@ export class LearningStore {
   async roles(id: string, db: Pool | PoolClient = this.pool) {
     return (await db.query<RoleBinding>('SELECT * FROM pbl_v3_roles WHERE study_id=$1', [id])).rows;
   }
+  /** Activity is separate from teaching revisions; all tabs share the server clock. */
+  async recordActivity(id: string, ownerId: string) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      return (
+        await db.query<Study>(
+          `UPDATE pbl_v3_studies SET last_used_at=clock_timestamp(),checkpoint_failure=NULL,
+           idle_turn_cleanup=CASE WHEN idle_turn_cleanup->>'releasing'='true' THEN idle_turn_cleanup ELSE NULL END
+           WHERE id=$1 AND owner_id=$2 RETURNING *`,
+          [id, ownerId],
+        )
+      ).rows[0];
+    });
+  }
+
+  /** Short control transaction: no Study admission or remote I/O, including during a hung tool. */
+  async reconcileIdleTurns(observed: Pick<Study, 'id' | 'owner_id'>) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, observed.owner_id);
+      // Match teaching write order: agent lease first, then the Study row.
+      const turns = await db.query<{ id: string; status: string }>(
+        `SELECT a.id,a.status FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
+         WHERE r.study_id=$1 AND a.owner_id=$2 AND a.status IN ('queued','running')
+         ORDER BY a.id FOR UPDATE OF a`,
+        [observed.id, observed.owner_id],
+      );
+      const current = (
+        await db.query<Study>(
+          'SELECT * FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 FOR UPDATE',
+          [observed.id, observed.owner_id],
+        )
+      ).rows[0];
+      if (!current)
+        throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
+      const row = { ...observed, ...current };
+      const now = (await db.query<{ now: Date }>('SELECT clock_timestamp() AS now')).rows[0].now;
+      if (!row.environment_id) return { row, active: turns.rows.length > 0, release: false };
+      let cleanup = row.idle_turn_cleanup;
+      if (cleanup?.environmentId !== row.environment_id) cleanup = null;
+      // Learner inactivity is not execution failure. The runner settles failed
+      // requests (including upstream silence); healthy queued/running work is protected.
+      // Explicit release/discard intents below still fence retired writers.
+      const release = !!cleanup && now.getTime() >= Date.parse(cleanup.releaseAt);
+      const releasing = cleanup?.releasing === true;
+      const discarded = row.archive_discard?.environmentId === row.environment_id;
+      if (cleanup || row.archive_discard?.environmentId === row.environment_id) {
+        const agents = this.agentStore(db);
+        for (const turn of turns.rows)
+          await agents.requestCancel(turn.id, {
+            settle: release || releasing || discarded || turn.status === 'queued',
+          });
+        if (
+          release &&
+          !releasing &&
+          turns.rows.some((turn) => turn.status === 'running') &&
+          row.archive_discard?.environmentId !== row.environment_id
+        ) {
+          const saved = (
+            await db.query<{ revision: number; created_at: Date }>(
+              'SELECT revision,created_at FROM sandbox_workspace_checkpoints WHERE owner_id=$1 AND workspace_id=$2',
+              [row.owner_id, `pbl-${row.id}`],
+            )
+          ).rows[0];
+          row.archive_discard = {
+            environmentId: row.environment_id,
+            at: now.toISOString(),
+            checkpointRevision: saved?.revision ?? 0,
+            checkpointAt: saved?.created_at.toISOString() ?? null,
+            reason: 'execution-unsettled',
+          };
+          await db.query(
+            "UPDATE pbl_v3_studies SET archive_discard=$2,lifecycle_error='checkpoint-skipped' WHERE id=$1",
+            [row.id, JSON.stringify(row.archive_discard)],
+          );
+        }
+      }
+      const active = cleanup
+        ? (
+            await db.query(
+              `SELECT 1 FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
+             WHERE r.study_id=$1 AND a.status IN ('queued','running') LIMIT 1`,
+              [row.id],
+            )
+          ).rows.length > 0
+        : turns.rows.length > 0;
+      return {
+        row,
+        active,
+        release: releasing || row.archive_discard?.environmentId === row.environment_id,
+      };
+    });
+  }
+
+  async recordLifecycleError(id: string, ownerId: string, error: string | null) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      await db.query('UPDATE pbl_v3_studies SET lifecycle_error=$3 WHERE id=$1 AND owner_id=$2', [
+        id,
+        ownerId,
+        error,
+      ]);
+    });
+  }
+
+  async recordCheckpointFailure(row: Study, failure: ArchiveFailure) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      await db.query(
+        `UPDATE pbl_v3_studies SET checkpoint_failure=$4,lifecycle_error='checkpoint-unavailable'
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND date_trunc('milliseconds',last_used_at)=$5
+           AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
+           AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'`,
+        [row.id, row.owner_id, row.environment_id, JSON.stringify(failure), row.last_used_at],
+      );
+    });
+  }
+
+  /** Durable point of no return. Further writes must use a replacement environment. */
+  async recordArchiveDiscard(
+    row: Study,
+    discard: ArchiveDiscard,
+    onlyIfDirty = false,
+    expectedLastUsedAt?: Date,
+  ) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      const updated = await db.query(
+        `UPDATE pbl_v3_studies SET archive_discard=$4,lifecycle_error='checkpoint-skipped'
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND (NOT $5::boolean OR (workspace_dirty_at IS NOT NULL AND revision=$6))
+           AND ($7::timestamptz IS NULL OR date_trunc('milliseconds',last_used_at)=$7) RETURNING id`,
+        [
+          row.id,
+          row.owner_id,
+          row.environment_id,
+          JSON.stringify(discard),
+          onlyIfDirty,
+          row.revision,
+          expectedLastUsedAt ?? null,
+        ],
+      );
+      return updated.rows.length > 0;
+    });
+  }
+
+  /** Checkpoint metadata does not change teaching progress or invalidate an editor revision. */
+  async saveEnvironmentRecovery(row: Study, db?: Queryable) {
+    const save = async (db: Queryable) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      const updated = await db.query(
+        `UPDATE pbl_v3_studies SET environment_recovery=$4,workspace_dirty_at=$5,lifecycle_error=NULL,checkpoint_failure=NULL
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'
+           AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3) RETURNING id`,
+        [
+          row.id,
+          row.owner_id,
+          row.environment_id,
+          JSON.stringify(row.environment_recovery),
+          row.workspace_dirty_at,
+        ],
+      );
+      if (!updated.rows.length)
+        throw new SandboxError('CHECKPOINT_CHANGED', 409, 'Workspace was released.');
+    };
+    if (db) await save(db);
+    else await this.transaction(save);
+  }
+  /** Commit normal release only if no learner returned during checkpoint I/O. */
+  async claimIdleRelease(row: Study) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      const idleAt = row.last_used_at.getTime() + pblIdleTimeoutMs();
+      const cleanup = {
+        ...(row.idle_turn_cleanup ?? {
+          environmentId: row.environment_id!,
+          idleAt: new Date(idleAt).toISOString(),
+          releaseAt: new Date(idleAt + pblArchiveFailureGraceMs()).toISOString(),
+        }),
+        releasing: true,
+      };
+      return (
+        (
+          await db.query(
+            `UPDATE pbl_v3_studies s SET idle_turn_cleanup=$4
+         WHERE s.id=$1 AND s.owner_id=$2 AND s.environment_id=$3
+           AND date_trunc('milliseconds',s.last_used_at)=$5
+           AND (s.archive_discard IS NULL OR s.archive_discard->>'environmentId'<>$3)
+           AND NOT EXISTS(SELECT 1 FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
+             WHERE r.study_id=s.id AND a.status IN ('queued','running')) RETURNING id`,
+            [row.id, row.owner_id, row.environment_id, JSON.stringify(cleanup), row.last_used_at],
+          )
+        ).rows.length > 0
+      );
+    });
+  }
+
   async create(
     input: {
       ownerId: string;
@@ -211,11 +428,53 @@ export class LearningStore {
       db.release();
     }
   }
-  /** Cross-process admission, including remote file I/O. Busy requests retry, never queue unboundedly. */
-  async exclusive<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  /** Bound pool admission and hold a cross-process study lock, including remote file I/O. */
+  async exclusive<T>(
+    id: string,
+    fn: () => Promise<T>,
+    mode: 'interactive' | 'maintenance' = 'interactive',
+  ): Promise<T> {
+    return this.admitted(`pbl-v3:${id}`, fn, mode);
+  }
+
+  /** A separate cross-process lock prevents duplicate periodic uploads without blocking study use. */
+  async periodicCheckpoint<T>(
+    id: string,
+    fn: (publish: <R>(action: () => Promise<R>) => Promise<R>) => Promise<T>,
+  ): Promise<T> {
+    return this.admitted(
+      `pbl-checkpoint:${id}`,
+      () =>
+        fn(async (action) => {
+          // Retain the checkpoint mutex, but reuse its admission slot for short publication.
+          // This also permits publication on injected pools with only one study slot.
+          admitted.set(this.pool, (admitted.get(this.pool) ?? 1) - 1);
+          try {
+            return await this.exclusive(id, action);
+          } finally {
+            admitted.set(this.pool, (admitted.get(this.pool) ?? 0) + 1);
+          }
+        }),
+      'maintenance',
+    );
+  }
+
+  private async admitted<T>(
+    key: string,
+    fn: () => Promise<T>,
+    mode: 'interactive' | 'maintenance',
+  ) {
     const active = admitted.get(this.pool) ?? 0;
-    if (active >= Math.max(1, Math.floor((this.pool.options.max ?? 10) / 4)))
-      throw new SandboxError('PBL_BUSY', 429, 'Learning operations are busy. Retry shortly.');
+    const limit = Math.max(1, Math.floor((this.pool.options.max ?? 10) / 4));
+    // Leave one slot for interactive work whenever the pool supports multiple slots.
+    const capacity = mode === 'maintenance' ? Math.max(1, limit - 1) : limit;
+    if (active >= capacity)
+      throw new SandboxError(
+        'PBL_BUSY',
+        429,
+        'Learning operations are busy. Retry shortly.',
+        'STUDY_BUSY',
+      );
     admitted.set(this.pool, active + 1);
     let db: PoolClient | undefined;
     let locked = false;
@@ -225,16 +484,18 @@ export class LearningStore {
       locked = (
         await db.query<{ locked: boolean }>(
           'SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',
-          [`pbl-v3:${id}`],
+          [key],
         )
       ).rows[0]!.locked;
       if (!locked)
-        throw sandboxConflict('The learning session is busy. Retry after the current operation.');
+        throw sandboxConflict(
+          'The learning session is busy. Retry after the current operation.',
+          'STUDY_BUSY',
+        );
       return await fn();
     } finally {
       try {
-        if (locked)
-          await db!.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [`pbl-v3:${id}`]);
+        if (locked) await db!.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]);
       } catch (error) {
         releaseError = error instanceof Error ? error : new Error('Learning lock cleanup failed');
       } finally {
@@ -244,10 +505,38 @@ export class LearningStore {
     }
   }
 
+  /** Interactive work waits briefly for maintenance; no connection is held between attempts. */
+  async waitForExclusive<T>(id: string, fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    const deadline = Date.now() + 5_000;
+    for (;;) {
+      signal?.throwIfAborted();
+      let entered = false;
+      try {
+        return await this.exclusive(id, () => {
+          entered = true;
+          return fn();
+        });
+      } catch (error) {
+        if (
+          entered ||
+          !(error instanceof SandboxError) ||
+          error.reason !== 'STUDY_BUSY' ||
+          Date.now() >= deadline
+        )
+          throw error;
+        await delay(50, undefined, { signal });
+      }
+    }
+  }
+
   async commit(db: PoolClient, row: Study, transition: EngineTransition) {
     const result = await db.query<Study>(
-      `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6
-      WHERE id=$1 AND revision=$2 RETURNING *`,
+      `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
+       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,lifecycle_error=$8,
+       idle_turn_cleanup=CASE WHEN environment_id IS DISTINCT FROM $4::text THEN NULL ELSE idle_turn_cleanup END
+      WHERE id=$1 AND revision=$2
+        AND archive_discard IS NOT DISTINCT FROM $9::jsonb
+        AND (idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true' OR idle_turn_cleanup IS NOT DISTINCT FROM $10::jsonb) RETURNING *`,
       [
         row.id,
         row.revision,
@@ -255,6 +544,10 @@ export class LearningStore {
         row.environment_id,
         JSON.stringify(row.evaluation),
         JSON.stringify(row.environment_recovery),
+        row.workspace_dirty_at ?? null,
+        row.lifecycle_error ?? null,
+        row.archive_discard ? JSON.stringify(row.archive_discard) : null,
+        row.idle_turn_cleanup ? JSON.stringify(row.idle_turn_cleanup) : null,
       ],
     );
     if (!result.rows[0])

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -395,4 +395,68 @@ it('never puts expected stdout or its digest in the sandbox command payload', ()
       forged,
     ),
   ).toBe(false);
+});
+
+it.each([
+  {
+    label: 'NPE frame',
+    file: 'Greeting.java',
+    stderr:
+      'Exception in thread "main" java.lang.NullPointerException\n\tat Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'module frame',
+    file: 'Greeting.java',
+    stderr: '\tat app/pkg.Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'Java path with spaces',
+    file: 'at school/Greeting.java',
+    stderr: 'at school/Greeting.java:3: error: incompatible types\n',
+    expected: 'compile',
+  },
+  {
+    label: 'Python path with spaces',
+    file: 'at school/greeting.py',
+    stderr: '  File "at school/greeting.py", line 3\nSyntaxError: invalid syntax\n',
+    expected: 'compile',
+  },
+])('parses $label without requiring a JDK', async ({ file, stderr, expected }) => {
+  const root = await mkdtemp(join(tmpdir(), 'pbl-diagnostics-'));
+  try {
+    await mkdir(join(root, 'at school'));
+    await writeFile(join(root, file), 'public learner source');
+    const installed = {
+      cases: [
+        {
+          id: 'error',
+          argv: [
+            'python3',
+            '-c',
+            `import sys; sys.stderr.write(${JSON.stringify(stderr)}); sys.exit(1)`,
+          ],
+          stdout: '',
+        },
+      ],
+    };
+    const observed = await promisify(execFile)(
+      '/bin/sh',
+      ['-c', evaluationCommand(installed, 'diagnostic')],
+      { cwd: root },
+    );
+    const outcome = evaluationOutcome(
+      installed,
+      'diagnostic',
+      { state: 'exited', exitCode: 0, ...observed },
+      [file],
+    );
+    expect(outcome).toMatchObject({ status: 'failed', failureKind: expected });
+    if (expected === 'compile')
+      expect(outcome.publicDiagnostics?.locations?.[0]).toMatchObject({ file, line: 3 });
+    else expect(outcome.publicDiagnostics?.locations).toBeUndefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

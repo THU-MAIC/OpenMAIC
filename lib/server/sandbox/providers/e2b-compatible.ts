@@ -29,7 +29,12 @@ import {
   workspacePath,
 } from '../workspace-archive';
 import { CHECKPOINT_RUNNER } from '../checkpoint-runner';
-import { checkpointPolicy, checkpointArchiveLimit } from '../checkpoint-policy';
+import {
+  checkpointPolicy,
+  checkpointArchiveLimit,
+  CHECKPOINT_TIMEOUT_MS,
+} from '../checkpoint-policy';
+import { checkpointIO } from '../checkpoint-errors';
 import { Readable } from 'node:stream';
 import { TERMINAL_CLEANUP } from '../terminal-cleanup';
 import { openSdkPreviewConnection } from '../preview-connection';
@@ -99,10 +104,17 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     return matches;
   }
 
-  private async ownedInfo(resourceId: string, operationId: string): Promise<SandboxInfo | null> {
+  private async ownedInfo(
+    resourceId: string,
+    operationId: string,
+    signal?: AbortSignal,
+  ): Promise<SandboxInfo | null> {
     let info: SandboxInfo;
     try {
-      info = await Sandbox.getInfo(resourceId, this.options);
+      info = await checkpointIO(
+        () => Sandbox.getInfo(resourceId, { ...this.options, signal }),
+        signal,
+      );
     } catch (error) {
       if (error instanceof SandboxNotFoundError) return null;
       throw error;
@@ -124,8 +136,8 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async connectionOptions(resourceId: string, operationId: string) {
-    const info = await this.ownedInfo(resourceId, operationId);
+  private async connectionOptions(resourceId: string, operationId: string, signal?: AbortSignal) {
+    const info = await this.ownedInfo(resourceId, operationId, signal);
     if (!info || info.state !== 'running') {
       throw sandboxConflict('Sandbox is not running. Reconcile its state before using files.');
     }
@@ -137,11 +149,24 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     // Reconnect must not extend a billable environment past its current lease.
     const remainingMs = Math.floor(info.endAt.getTime() - Date.now() - 1000);
     if (remainingMs < 1000) throw sandboxConflict('Sandbox lease is expiring.');
-    return { ...this.options, timeoutMs: remainingMs };
+    return { ...this.options, timeoutMs: remainingMs, signal };
   }
 
-  private async connect(resourceId: string, operationId: string) {
-    return Sandbox.connect(resourceId, await this.connectionOptions(resourceId, operationId));
+  private async connect(resourceId: string, operationId: string, signal?: AbortSignal) {
+    const options = await this.connectionOptions(resourceId, operationId, signal);
+    return checkpointIO(() => Sandbox.connect(resourceId, options), signal);
+  }
+
+  private async removeTransfer(sandbox: Sandbox, path: string, signal?: AbortSignal) {
+    const cleanupSignal = AbortSignal.timeout(5_000);
+    const cleanup = sandbox.files
+      .remove(path, { requestTimeoutMs: 5_000, signal: cleanupSignal })
+      .catch(() => {});
+    // Cleanup may continue best effort after cancellation, without retaining the caller's lock.
+    await checkpointIO(
+      () => cleanup,
+      signal ? AbortSignal.any([signal, cleanupSignal]) : cleanupSignal,
+    ).catch(() => {});
   }
 
   private fileFailure(error: unknown): never {
@@ -169,19 +194,29 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     throw error;
   }
 
-  async readText(resourceId: string, operationId: string, path: string): Promise<string> {
-    const sandbox = await this.connect(resourceId, operationId);
+  async readText(
+    resourceId: string,
+    operationId: string,
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const sandbox = await this.connect(resourceId, operationId, signal);
     const transfer = `/tmp/openmaic-file-${randomUUID()}`;
     try {
-      await sandbox.commands.run(
-        `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} read ${shellQuote(Buffer.from(workspacePath(path)).toString('base64'))} ${shellQuote(transfer)}`,
-        { timeoutMs: 30_000, requestTimeoutMs: 35_000 },
+      await checkpointIO(
+        () =>
+          sandbox.commands.run(
+            `python3 -c ${shellQuote(WORKSPACE_FILE_RUNNER)} read ${shellQuote(Buffer.from(workspacePath(path)).toString('base64'))} ${shellQuote(transfer)}`,
+            { timeoutMs: 30_000, requestTimeoutMs: 35_000, signal },
+          ),
+        signal,
       );
-      return await this.readUtf8(resourceId, operationId, transfer, MAX_TEXT_FILE_BYTES);
+      return await this.readUtf8(resourceId, operationId, transfer, MAX_TEXT_FILE_BYTES, signal);
     } catch (error) {
-      this.fileFailure(error);
+      return this.fileFailure(error);
     } finally {
-      await sandbox.files.remove(transfer).catch(() => {});
+      await this.removeTransfer(sandbox, transfer, signal);
+      signal?.throwIfAborted();
     }
   }
 
@@ -190,20 +225,27 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     operationId: string,
     path: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<string> {
-    const sandbox = await this.connect(resourceId, operationId);
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const local = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const readSignal = signal ? AbortSignal.any([signal, local]) : local;
     try {
-      const stream = await sandbox.files.read(path, {
-        format: 'stream',
-        requestTimeoutMs: REQUEST_TIMEOUT_MS,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
+      const stream = await checkpointIO(
+        () =>
+          sandbox.files.read(path, {
+            format: 'stream',
+            requestTimeoutMs: REQUEST_TIMEOUT_MS,
+            signal: readSignal,
+          }),
+        readSignal,
+      );
       const reader = stream.getReader();
       const chunks: Uint8Array[] = [];
       let size = 0;
       try {
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await checkpointIO(() => reader.read(), readSignal);
           if (done) break;
           size += value.byteLength;
           if (size > limit) {
@@ -216,7 +258,8 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
           chunks.push(value);
         }
       } finally {
-        await reader.cancel().catch(() => {});
+        const closing = reader.cancel().catch(() => {});
+        if (!readSignal.aborted) await checkpointIO(() => closing, readSignal).catch(() => {});
         reader.releaseLock();
       }
       try {
@@ -255,6 +298,7 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     resourceId: string,
     operationId: string,
     id: string,
+    signal?: AbortSignal,
   ): Promise<SandboxCommandResult> {
     let value: unknown;
     try {
@@ -264,6 +308,7 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
           operationId,
           `/tmp/openmaic-commands/${id}/status.json`,
           2 * MAX_TEXT_FILE_BYTES,
+          signal,
         ),
       );
     } catch (error) {
@@ -385,11 +430,14 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     return handle.pid;
   }
 
-  async findTerminal(resourceId: string, operationId: string, id: string) {
-    const sandbox = await this.connect(resourceId, operationId);
-    const matches = (await sandbox.commands.list({ requestTimeoutMs: REQUEST_TIMEOUT_MS })).filter(
-      (p) => p.envs.OPENMAIC_TERMINAL_ID === id,
-    );
+  async findTerminal(resourceId: string, operationId: string, id: string, signal?: AbortSignal) {
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const matches = (
+      await checkpointIO(
+        () => sandbox.commands.list({ requestTimeoutMs: REQUEST_TIMEOUT_MS, signal }),
+        signal,
+      )
+    ).filter((p) => p.envs.OPENMAIC_TERMINAL_ID === id);
     if (matches.length > 1) throw sandboxConflict('Terminal allocation is ambiguous.');
     return matches[0]?.pid ?? null;
   }
@@ -540,11 +588,16 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
       await sandbox.files.remove(transfer).catch(() => {});
     }
   }
-  async renew(resourceId: string, operationId: string, lifetimeMs: number) {
-    const info = await this.ownedInfo(resourceId, operationId);
+  async renew(resourceId: string, operationId: string, lifetimeMs: number, signal?: AbortSignal) {
+    const info = await this.ownedInfo(resourceId, operationId, signal);
     if (!info || info.state !== 'running')
       throw sandboxConflict('Only a running sandbox can be renewed.');
-    await Sandbox.setTimeout(resourceId, lifetimeMs, this.options);
+    // Ordinary short renewals must not shorten a checkpoint's temporary lease.
+    const duration = Math.max(lifetimeMs, info.endAt.getTime() - Date.now());
+    await checkpointIO(
+      () => Sandbox.setTimeout(resourceId, duration, { ...this.options, signal }),
+      signal,
+    );
   }
 
   async previewLifetime(resourceId: string, operationId: string) {
@@ -581,38 +634,76 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     };
   }
 
-  async *exportWorkspace(resourceId: string, operationId: string): AsyncIterable<Uint8Array> {
-    const sandbox = await this.connect(resourceId, operationId);
+  async *exportWorkspace(
+    resourceId: string,
+    operationId: string,
+    signal = AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS),
+  ): AsyncIterable<Uint8Array> {
+    signal.throwIfAborted();
+    const sandbox = await this.connect(resourceId, operationId, signal);
     const path = `/tmp/openmaic-archive-${randomUUID()}.tar`;
     const policy = checkpointPolicy();
     const encoded = Buffer.from(JSON.stringify(policy)).toString('base64');
     try {
-      await sandbox.commands.run(
-        `python3 -c ${shellQuote(CHECKPOINT_RUNNER)} export ${shellQuote(path)} ${shellQuote(encoded)}`,
-        { timeoutMs: 120_000, requestTimeoutMs: 125_000 },
+      await checkpointIO(
+        () =>
+          sandbox.commands.run(
+            `python3 -c ${shellQuote(CHECKPOINT_RUNNER)} export ${shellQuote(path)} ${shellQuote(encoded)}`,
+            {
+              timeoutMs: CHECKPOINT_TIMEOUT_MS,
+              requestTimeoutMs: CHECKPOINT_TIMEOUT_MS + 5_000,
+              signal,
+            },
+          ),
+        signal,
       );
-      const stream = await sandbox.files.read(path, {
-        format: 'stream',
-        requestTimeoutMs: 120_000,
-        signal: AbortSignal.timeout(120_000),
-      });
+      const stream = await checkpointIO(
+        () =>
+          sandbox.files.read(path, {
+            format: 'stream',
+            requestTimeoutMs: CHECKPOINT_TIMEOUT_MS,
+            signal,
+          }),
+        signal,
+      );
       const reader = stream.getReader();
       let size = 0;
       try {
         while (true) {
-          const { done, value } = await reader.read();
+          const { done, value } = await checkpointIO(() => reader.read(), signal);
           if (done) break;
           size += value.byteLength;
           if (size > checkpointArchiveLimit(policy))
-            throw sandboxConflict('Workspace archive exceeds its configured limit.');
+            throw new SandboxError(
+              'CHECKPOINT_ARCHIVE_LIMIT',
+              409,
+              'Workspace archive exceeds its configured limit.',
+            );
           yield value;
         }
       } finally {
-        await reader.cancel().catch(() => {});
+        const closing = reader.cancel().catch(() => {});
+        if (!signal.aborted) await checkpointIO(() => closing, signal).catch(() => {});
         reader.releaseLock();
       }
+    } catch (error) {
+      const tag =
+        error instanceof CommandExitError
+          ? /OPENMAIC_CHECKPOINT_ERROR:(limit|unsupported|changed|permission|disk-full)/.exec(
+              error.stderr,
+            )?.[1]
+          : undefined;
+      const codes: Record<string, string> = {
+        limit: 'CHECKPOINT_ARCHIVE_LIMIT',
+        unsupported: 'CHECKPOINT_UNSUPPORTED_FILES',
+        changed: 'CHECKPOINT_CHANGED',
+        permission: 'CHECKPOINT_WORKSPACE_PERMISSION',
+        'disk-full': 'CHECKPOINT_WORKSPACE_FULL',
+      };
+      if (tag) throw new SandboxError(codes[tag], 409, 'Workspace export could not complete.');
+      throw error;
     } finally {
-      await sandbox.files.remove(path).catch(() => {});
+      await this.removeTransfer(sandbox, path, signal);
     }
   }
 
@@ -647,10 +738,12 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
     await sandbox.files.makeDir(WORKSPACE_ROOT);
   }
 
-  async listWorkspace(resourceId: string, operationId: string) {
-    const sandbox = await this.connect(resourceId, operationId);
-    const result = await sandbox.commands.run(
-      `python3 -c ${shellQuote(String.raw`
+  async listWorkspace(resourceId: string, operationId: string, signal?: AbortSignal) {
+    const sandbox = await this.connect(resourceId, operationId, signal);
+    const result = await checkpointIO(
+      () =>
+        sandbox.commands.run(
+          `python3 -c ${shellQuote(String.raw`
 import os,json,stat
 root='/home/user/project'; out=[]
 if os.path.realpath(root)!=root: raise ValueError('root')
@@ -664,10 +757,13 @@ for parent,dirs,files in os.walk(root,followlinks=False):
         if len(out)>4096: raise ValueError('listing limit')
 print(json.dumps(out))
 `)}`,
-      {
-        timeoutMs: 30_000,
-        requestTimeoutMs: 35_000,
-      },
+          {
+            timeoutMs: 30_000,
+            requestTimeoutMs: 35_000,
+            signal,
+          },
+        ),
+      signal,
     );
     const entries = JSON.parse(result.stdout) as Array<{ path: string; bytes: number }>;
     if (

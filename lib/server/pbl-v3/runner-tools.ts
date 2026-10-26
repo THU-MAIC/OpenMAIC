@@ -30,7 +30,7 @@ import {
 } from './runtime';
 import { touchEnvironment, assertEnvironmentReady } from './environment';
 import { assertLearningPlan } from './plan';
-import { startBuild, collectBuild, assertBuilt } from './compilation';
+import { startBuild, collectBuild, assertBuilt, isBuilt } from './compilation';
 import { packagedStageSkill } from './project-package';
 import {
   renderTeachingPrompt,
@@ -93,6 +93,7 @@ export async function teachingRunnerConfig(input: {
   let turnComplete =
     guided &&
     (review.state.pending?.runId === runId ||
+      review.state.handoff?.runId === runId ||
       (completionRecorded &&
         bound.completion?.feedbackSeq === bound.feedback_seq &&
         bound.completion?.userMessageSeq === latest?.seq));
@@ -148,74 +149,79 @@ export async function teachingRunnerConfig(input: {
       async execute(_id: string, params: Static<T>, toolSignal?: AbortSignal) {
         const signal = toolSignal ? AbortSignal.any([input.signal, toolSignal]) : input.signal;
         assertActive(signal);
-        return store.exclusive(row.id, async () => {
-          assertActive(signal);
-          const current = await store.get(row.id, input.ownerId);
-          if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
-            throw sandboxConflict('The teaching stage changed.');
-          await agents.assertActiveLease(
-            input.sessionId,
-            input.workerId,
-            input.attempt,
-            store.pool,
-          );
-          const result = await withLearningWorkspaceAccess(
-            {
-              ownerId: current.owner_id,
-              workspaceId: learningWorkspaceId(current.id),
-              environmentIds: () => [current.environment_id],
-              operations:
-                name === 'write_file' || name === 'manage_file'
-                  ? ['write']
-                  : name === 'run_build'
-                    ? ['command']
-                    : name === 'complete_stage'
-                      ? ['checkpoint']
-                      : [],
-            },
-            () => execute(current, params, _id, signal),
-          );
-          assertActive(signal);
-          await store.transaction(async (db) => {
-            await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+        return store.waitForExclusive(
+          row.id,
+          async () => {
             assertActive(signal);
-            if (result.evidence)
-              await recordLearningEvidence(
-                db,
-                current,
-                bound.role,
-                name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
-                result.evidence,
-              );
-            if (result.transition) await store.commit(db, current, result.transition);
-            await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+            const current = await store.get(row.id, input.ownerId);
+            if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+              throw sandboxConflict('The teaching stage changed.');
+            await agents.assertActiveLease(
               input.sessionId,
-              JSON.stringify(review.state),
-            ]);
-            if (name === 'complete_stage')
-              await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
-                input.sessionId,
-                JSON.stringify({
-                  stageKey: bound.stage_key,
-                  feedbackSeq: bound.feedback_seq,
-                  userMessageSeq: latest?.seq ?? 0,
-                }),
-              ]);
-          });
-          completionRecorded =
-            name === 'complete_stage' ||
-            hasStageCompletion(
-              { ...current, state: result.transition?.state ?? current.state },
-              stage,
-              bound,
+              input.workerId,
+              input.attempt,
+              store.pool,
             );
-          if (name === 'complete_stage') review.finishRun();
-          if (name === 'request_skill_review' || name === 'complete_stage') turnComplete = true;
-          return {
-            content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
-            details: {},
-          };
-        });
+            const result = await withLearningWorkspaceAccess(
+              {
+                ownerId: current.owner_id,
+                workspaceId: learningWorkspaceId(current.id),
+                environmentIds: () => [current.environment_id],
+                operations:
+                  name === 'write_file' || name === 'manage_file'
+                    ? ['write']
+                    : name === 'run_build'
+                      ? ['command']
+                      : name === 'complete_stage'
+                        ? ['checkpoint']
+                        : [],
+              },
+              () => execute(current, params, _id, signal),
+            );
+            assertActive(signal);
+            await store.transaction(async (db) => {
+              await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+              assertActive(signal);
+              if (result.evidence)
+                await recordLearningEvidence(
+                  db,
+                  current,
+                  bound.role,
+                  name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
+                  result.evidence,
+                );
+              if (result.transition) await store.commit(db, current, result.transition);
+              await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+                input.sessionId,
+                JSON.stringify(review.state),
+              ]);
+              if (name === 'complete_stage')
+                await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
+                  input.sessionId,
+                  JSON.stringify({
+                    stageKey: bound.stage_key,
+                    feedbackSeq: bound.feedback_seq,
+                    userMessageSeq: latest?.seq ?? 0,
+                  }),
+                ]);
+            });
+            completionRecorded =
+              name === 'complete_stage' ||
+              hasStageCompletion(
+                { ...current, state: result.transition?.state ?? current.state },
+                stage,
+                bound,
+              );
+            if (name === 'complete_stage') review.finishRun();
+            if (['request_skill_review', 'request_learner_help', 'complete_stage'].includes(name))
+              turnComplete = true;
+            return {
+              content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
+              details: {},
+            };
+          },
+          signal,
+        );
       },
     } as unknown as AgentTool;
   }
@@ -414,6 +420,21 @@ export async function teachingRunnerConfig(input: {
       ),
     );
     tools.push(
+      tool(
+        'request_learner_help',
+        'Only when a required current-source build is missing, failed or pending and you need learner input to proceed. Ask one concrete question and end the turn. This is NOT a Skill review, approval, completion or permission to advance. Prefer repairing and collecting the build yourself when possible.',
+        Type.Object({ question: Type.String({ minLength: 1 }) }),
+        async (current, p, _callId, signal) => {
+          if (
+            stage.kind !== 'produce' ||
+            !stage.compileBeforeReview ||
+            (await isBuilt(store, current, await fingerprint(current, signal)))
+          )
+            throw sandboxConflict('Use request_skill_review for an ordinary review.');
+          review.handoff(p.question);
+          return { value: { question: p.question, waitForStudent: true, blocked: 'build' } };
+        },
+      ),
       tool(
         'request_skill_review',
         'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
@@ -697,7 +718,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. If it contains a question, copy that question verbatim into request_skill_review and output only the tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. If it contains a question, copy that question verbatim into request_skill_review (or request_learner_help for a blocked required build) and output only the tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
   if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }

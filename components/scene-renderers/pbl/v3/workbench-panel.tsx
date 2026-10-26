@@ -146,6 +146,7 @@ export function LearningWorkbenchPanel({
   useEffect(() => {
     executionSequence.current++;
     setTerminal('');
+    setError('');
   }, [view.id, view.environmentId]);
   const run = async (action: string, payload: Record<string, unknown> = {}) => {
     // Stop invalidates earlier creation responses even when the provider finishes later.

@@ -2875,6 +2875,26 @@
       "output": "输出",
       "display": "展示",
       "stopped": "已停止"
+    },
+    "environmentSleeping": "项目环境已休眠。继续操作即可恢复，也可以点击下方按钮恢复项目文件。",
+    "recoverWorkspace": "恢复项目文件",
+    "checkpointUnavailable": "最新修改未能归档，请重试保存。若持续空闲，环境可能被释放，未归档的修改可能丢失。",
+    "checkpointSkipped": "归档持续失败，恢复时可能丢失已归档版本之后的修改。",
+    "lastDurableCheckpoint": "本次回收可恢复的归档时间：{{time}}。",
+    "noDurableCheckpoint": "没有可恢复的归档，项目文件将从初始版本重新开始。",
+    "checkpointReasons": {
+      "source-limit": "项目超过文件数量或大小限制。",
+      "archive-limit": "项目超过文件数量或大小限制。",
+      "unsupported-files": "部分项目文件无法归档。",
+      "workspace-permission": "没有读取项目文件的权限。",
+      "workspace-full": "工作区磁盘已满。",
+      "storage-quota": "归档存储配额已满。",
+      "storage-config": "请检查存储配置和权限。",
+      "storage-permission": "请检查存储配置和权限。",
+      "timeout": "存储或工作区服务不可用，或请求超时。",
+      "unavailable": "存储或工作区服务不可用，或请求超时。",
+      "workspace-changed": "归档期间文件发生变化。",
+      "execution-unsettled": "无法确认任务已经停止。"
     }
   }
 }

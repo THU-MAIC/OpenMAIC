@@ -1,0 +1,179 @@
+{
+  "date": "2026-10-26",
+  "branch": "fix/1995-sandbox-lifecycle",
+  "pullRequest": 2011,
+  "review": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#pullrequestreview-5647227902",
+  "previousHead": "f07aabfbc148f3bdd0e107608bb56f6809e402ea",
+  "base": "8f737ad715647304156f6377e0bf5bdb3705faec",
+  "defaults": {
+    "idleTimeoutMs": 600000,
+    "cleanupGraceMs": 300000
+  },
+  "policy": {
+    "active": "Genuine activity protects healthy queued/running teaching regardless of total turn age or silence.",
+    "cancelling": "At learner inactivity, persist idleAt/releaseAt in idle_turn_cleanup and request cancellation. The deadline is anchored to last use and cannot slide with scans, restarts or heartbeats.",
+    "safeRelease": "Queued-only or acknowledged turns quiesce writers and checkpoint. After expiry checkpointing uses only the remaining lease; no second renewal follows the source snapshot.",
+    "committedRelease": "A short activity CAS commits releasing=true after a safe checkpoint. Return before that intent cancels release; return afterward completes deletion/recovery. Contention cannot erase the deadline or restart renewal.",
+    "uncertainRelease": "Unacknowledged running turns are durably cancelled and their leases revoked before discard intent/destruction. Previous checkpoint and loss notice remain.",
+    "recovery": "Real input clears only cancellable cleanup; already cancelled work requires explicit retry. Replacement binding clears old cleanup. Expired predecessor cleanup never suppresses renewal of a genuinely returning learner's pending replacement.",
+    "faultBoundary": "If the control database cannot persist fences/intents, intentional destructive release is refused and the remaining provider lease bounds compute."
+  },
+  "implementation": {
+    "migration": {
+      "store": "pbl-v3",
+      "version": 9,
+      "name": "departed-teaching-cleanup",
+      "checksum": "0452ede8a64ee73615cf243bbd8e0af7ce32c7f772999079c52fde86c9042e8c",
+      "shippedSqlChanged": false
+    },
+    "storage": {
+      "version": "0.39.2",
+      "compatibleOptions": ["requestCancel(settle)", "claimNextSession(excludeSessionIds)"]
+    },
+    "leaseIdentity": "Stable process ID for diagnostics, distinct random ID per claim; all runSession writes use its captured lease identity.",
+    "control": "Short DB-only cleanup precedes project hydration and Study advisory admission; cancellation/write transactions lock Agent rows before Study rows.",
+    "activity": "Returning input bypasses long teaching advisory locks; failure/discard/release writes validate current activity.",
+    "staleWriters": "Readiness uses current intent; teaching commit compares discard/release snapshots; checkpoint head and recovery publication reject released bindings. Terminal input/resize check raw current owner/binding/intent after discovery and permissions under the environment mutex, immediately before provider dispatch."
+  },
+  "selfReview": {
+    "reviewers": ["departure_fencing_review", "departure_policy_review"],
+    "finalReviewedTrackedDiffSha256": "2e65e6ede34d926b0aec35c20797d6df5d52abd7bda246e5f586f8594e965ca0",
+    "fixes": [
+      "Prevent same-process retry from reauthorizing an old worker after attempt reset.",
+      "Checkpoint safe queued/acknowledged edits after expiry instead of treating them as uncertain writes.",
+      "Reject stale interactive commits/readiness after concurrent discard.",
+      "Preserve cleanup through successful checkpoint and uncertain deletion.",
+      "Remove renewal using a stale decision after snapshot I/O.",
+      "Let returning activity cancel an in-flight uncommitted release, including failure paths.",
+      "Do not reinstall a stale failure clock after returning activity.",
+      "Scope retention expiry to the renewal target, so old release intent cannot expire a returning learner's restored replacement.",
+      "Cover both capacity and Study advisory-lock contention with deferred renewal.",
+      "Fence terminal input and resize after irreversible release/discard with a final raw Study check after terminal discovery and permission I/O; preserve Stop/control without long Study locking."
+    ],
+    "result": "Both reviewers completed final delta inspection with no remaining confirmed findings. Execution evidence below was produced by the coordinator.",
+    "laterDelta": "Only verification evidence updated after final code/test delta review.",
+    "replacementRetentionDelta": {
+      "parent": "30c31dcc103015be348831515ec722c3373b7038",
+      "diffSha256": "4739dce4084842a072183fe05b311fd80139146b43eeb049fedca8316f26b2f2",
+      "files": {
+        "lib/server/pbl-v3/lifecycle.ts": "12d5104470ead19c5563a4f012e1f61c915865a3405ba1835b31f5c51c681e88",
+        "tests/pbl/v3/runtime.pg.test.ts": "baea7fa7ff792fd29022113e544ff834d3d4a40b621e166cf600dce13473f96e"
+      },
+      "coverage": [
+        "Target-specific expiry through pending restoration and binding publication",
+        "Capacity and advisory Study admission failures",
+        "Old release/discard fences",
+        "Idle pending replacement reclamation"
+      ],
+      "result": "Both reviewers confirmed no remaining findings in the exact final code/test delta; source traces and test-source inspection, coordinator execution below."
+    },
+    "finalDelta": {
+      "parent": "c8df0fbf5acf65ea32a597824e0b8ead3464ba31",
+      "diffSha256": "841739aafae257de9294cf17eaf6bdf4f9054f06b6b970c71b5cdb9bbad8b8f6",
+      "files": {
+        "lib/server/pbl-v3/environment.ts": "8cea5454dd13e1c442d3c86346e774c0801f779379b8f2d6feb744f6369d3255",
+        "lib/server/pbl-v3/workbench.ts": "6c8389b11dc8f849ee6eb9d746e4d476045ea11936b7e9147aa9b962445e1b58",
+        "lib/server/sandbox/service.ts": "4c5637104d4fdd0a4ee2a22cc52ab5fc0fd0a6a9c2b2920149dca74dd68674e3",
+        "tests/pbl/v3/runtime.pg.test.ts": "1471147915ac25efb07e8944d29b9b0bf5afed01230890805826ea1bf1635b33"
+      },
+      "coverage": [
+        "Terminal input/resize through initial snapshot, process discovery and permission I/O",
+        "Final raw owner/binding/committed-release admission before provider dispatch",
+        "Generic managed-workspace mutation routes and sibling file/command/teaching paths",
+        "Normal terminal input and Stop/control while Study admission is occupied",
+        "Per-fixture environment cleanup without raising capacity limits"
+      ],
+      "result": "Both reviewers cleared the final code and 12-case regression matrix; the fencing reviewer also cleared the subsequent test-only fixture cleanup. Source traces and test-source inspection; coordinator execution below."
+    }
+  },
+  "validation": {
+    "redEvidence": [
+      "Original departed queued/running renewal and automatic-cancellation regressions failed before implementation.",
+      "Runner claim-identity regression failed before capturing the per-claim worker identity.",
+      "Pending-replacement renewal regressions failed before the final fix for both capacity and advisory-lock contention.",
+      "All four initial terminal-release cases accepted forbidden writes before the guard. An early guard still failed eight discovery/permission timing cases, proving the final check must follow those awaits."
+    ],
+    "ciAppDomainPostgres": {
+      "passed": 387,
+      "filesPassed": 31,
+      "manifest": ".github/workflows/storage-pg-contract.yml",
+      "maxWorkers": 2,
+      "timeouts": "Default ten-minute idle and five-minute grace",
+      "isolation": "Disposable schemas; controlled provider/object storage; real local Python/Java 17 execution"
+    },
+    "storage": {
+      "passed": 1448,
+      "skipped": 7,
+      "filesPassed": 35,
+      "filesSkipped": 1,
+      "isolation": "Fresh dedicated PostgreSQL database, dropped after the run; PG contract suites required rather than silently skipped"
+    },
+    "sandboxPblAgentUnit": {
+      "passed": 1822,
+      "skipped": 14,
+      "filesPassed": 150,
+      "filesSkipped": 3,
+      "scope": "Expanded to all unit suites under tests/pbl/v3, tests/sandbox, tests/agent-runtime and tests/persistence; excludes PG suites.",
+      "configuration": "Explicit empty deployment config; an initial invocation loaded ignored local deployment settings and was corrected before the passing run."
+    },
+    "focusedFinalRegression": {
+      "passed": 16,
+      "covers": [
+        "Real return during terminal-close failure",
+        "Next idle cycle receives a fresh failure grace",
+        "Deferred work",
+        "Return during successful/failed archive",
+        "Deletion contention and return",
+        "Snapshot crossing cleanup deadline"
+      ]
+    },
+    "rootTypecheck": "passed",
+    "storageSourceAndTestTypecheck": "passed",
+    "formatting": "passed",
+    "eslint": {
+      "errors": 0,
+      "existingWarnings": 17
+    },
+    "replacementRetentionRegression": {
+      "passed": 2,
+      "focusedRelatedPassed": 24,
+      "contention": ["capacity", "Study advisory mutex"],
+      "boundary": "Real PostgreSQL preparation, persisted old release intent, restored replacement ready but awaiting source validation, and maintenance without Study admission. Provider elapsed time is simulated: creation lease 60 seconds, renewal during validation at 20 seconds, reads complete at 75 seconds."
+    },
+    "terminalFenceRegression": {
+      "passed": 12,
+      "focusedIncludingExistingIntegrationPassed": 15,
+      "intents": ["archive_discard", "idle_turn_cleanup.releasing"],
+      "actions": ["terminal input", "terminal resize"],
+      "timings": [
+        "after initial request snapshot",
+        "during provider process discovery",
+        "during permission lookup"
+      ],
+      "control": "Stop remains available while the Study mutex is held; existing integration preserves normal terminal input under the same contention.",
+      "boundary": "Actual PostgreSQL intent publication and SandboxService environment locking, with controlled terminal provider dispatch. Release intent is injected into a still-running fixture to test the fence rather than archive quiescence.",
+      "isolation": "Every new fixture is destroyed in finally; an initial full run exposed accumulated mock capacity, corrected without raising the 100-environment limit."
+    }
+  },
+  "scenarios": [
+    "Healthy long queued, reasoning and tool turns with recent learner activity",
+    "Never-claimed queue and fresh-heartbeat provider hang after departure",
+    "Cancellation acknowledgement without fabricated user activity",
+    "Deadline reuse across stores/restart and repeated scans",
+    "Return before cleanup commitment and explicit retry",
+    "Deadline cleanup while the teaching mutex remains occupied",
+    "Dirty queued/acknowledged workspace archived after the deadline without renewal",
+    "Concurrent stale command, readiness and checkpoint publication fences",
+    "Real same-process runner: forced cancel during delayed setup, immediate restore/retry, missed notification, distinct new claim, rejected old heartbeat/finish",
+    "Slow archive/snapshot crosses activity or deadline boundaries",
+    "Deletion contention retains irreversible intent without losing safe checkpoint",
+    "Returning learner's restored replacement remains leased during slow source validation despite expired predecessor cleanup and either Study admission contention path.",
+    "Terminal input/resize cannot dispatch after committed release/discard observed after process discovery or permission I/O; Stop/control still works."
+  ],
+  "limitations": [
+    "No paid cloud/model call or new wall-clock lifecycle benchmark in this follow-up.",
+    "Aged DB timestamps, controlled provider reservations and a short real snapshot-boundary wait are distinct from a full live fifteen-minute journey.",
+    "Companion PR 2003 still owns generic teaching runner duration/tool/output policy removal.",
+    "Provider deletion failure may leave compute until its remaining lease expires; latest-checkpoint recovery remains the data-loss boundary."
+  ]
+}

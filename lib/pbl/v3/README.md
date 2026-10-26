@@ -61,8 +61,15 @@ Report analysis keeps thinking disabled, including on provider model aliases.
 V3 teaching has no application-level turn duration,
 inactivity, model-output-token or tool-call-count ceiling. Its tool wrapper retains
 explicit cancellation/lease-loss handling without a timer. Its model transport has
-no header/body deadline. A prose-only stop can continue until the actual review or
-completion receipt is recorded; the prior visible reply remains recovery context.
+no total turn deadline. Each model request has an upstream-silence guard using the
+existing 15-minute LLM transport window: received stream parts reset it; local
+worker heartbeats and browser SSE do not. Silence produces a retryable request
+failure, not proof that the model crashed. Continuous reasoning/output can run
+longer than that window. SOCKS5 retains Undici's existing 300-second transport
+fallback. A prose-only stop gets one receipt-repair continuation, then fails
+explicitly if still incomplete; normal tool/model loops have no count ceiling.
+A blocked required build can hand control back with `request_learner_help`, without
+creating review, coverage or approval evidence. The prior reply remains recovery context.
 Package size/path validation, history pagination, worker admission and writer fences
 are independent protections. Non-teaching model/tool policies remain unchanged.
 
@@ -263,8 +270,16 @@ no tables, workers, provider, or configuration switches.
   stored owner/workspace binding. Creation also checks the reserved namespace,
   preventing allocation before the learning runtime establishes its request ID.
   Existing preview tickets are checked on use. Ordinary workspace IDs are unchanged.
-- **Narrow internal access.** Only the owner-checked learning command or leased role
-  tool enters a server-only workspace scope, while holding the existing study lock.
+- **Narrow internal access.** Owner-checked learning commands and leased role tools
+  enter a server-only workspace scope while holding the existing study lock. Owner-bound
+  periodic maintenance also enters a checkpoint-only scope: capture/upload uses a separate
+  checkpoint mutex, while publication briefly locks the study and environment, revalidates
+  the file generation and writers, and atomically commits the head and recovery metadata.
+  Execution reconciliation is short database control traffic outside Study admission. It locks
+  Agent rows before the Study row. Learner inactivity alone cannot cancel queued/running
+  Agents. Explicit release/discard intents still fence retired workers and record
+  irreversible discard intent before their destroy-only scope. Fresh readiness, teaching
+  commits and checkpoint publication reject that discarded binding, including stale callers.
   Scope matches owner, workspace, current/recovery environment IDs and specific
   operations; it expires when the awaited action ends. Stage, role, feedback and
   optimistic revision checks still run before mutation. No HTTP parameter creates
@@ -479,3 +494,9 @@ staged descriptors; the cooperative shell remains unsuitable as a hostile-code e
 boundary. PBL thinking bars retain the full emitted text in both streaming and replay; their
 compact preview expands in place, matching OpenPBL. Replay presentation follows
 the aggregate bounds above without clipping the retained payloads.
+
+### Execution and lifecycle handoff
+
+See [the execution contract](../../server/pbl-v3/execution-lifecycle.md) for persisted
+request failure codes, retry semantics, active-turn protection and the lifecycle
+owner's remaining validation work. No new top-level Agent status or storage migration is needed.

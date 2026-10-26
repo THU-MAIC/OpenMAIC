@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-26",
+  "pullRequest": 2011,
+  "review": "https://github.com/THU-MAIC/OpenMAIC/pull/2011#pullrequestreview-5647030718",
+  "branch": "fix/1995-sandbox-lifecycle",
+  "previousHead": "e0932b3f0d060b56325f36ee13006b420a17c736",
+  "base": "8f737ad715647304156f6377e0bf5bdb3705faec",
+  "changes": [
+    "Remove the lifecycle's 15-minute age-based teaching-turn cancellation from both maintenance paths; no replacement silence deadline.",
+    "Keep active queued/running teaching protected after departure. Durable task completion still starts inactivity before ordinary checkpoint/release.",
+    "Keep explicit cancellation, genuine failures, shared runner worker-lease/orphan recovery, worker/attempt write fences and learning gates.",
+    "Replace the CI test's single-scan/timing assumption with an explicit archive-entry gate, real concurrent scanning/foreground assertions, and subsequent idle scans.",
+    "Fail promptly if maintenance completes/rejects before reaching the gate; await both maintenance operations before restoring test state."
+  ],
+  "ciDiagnosis": {
+    "failingRun": "https://github.com/THU-MAIC/OpenMAIC/actions/runs/40263940884",
+    "symptom": "runtime.pg.test.ts concurrency test timed out waiting for its first archive; no export started even with the five-second wait.",
+    "localReproduction": "The unmodified test failed locally on the first isolated invocation.",
+    "trace": [
+      "second study attempt starts",
+      "interactive study attempt starts",
+      "second study receives PBL_BUSY",
+      "first study attempt starts",
+      "first study receives PBL_BUSY",
+      "interactive renewal completes"
+    ],
+    "cause": "A lightweight recent-study renewal can win the sole maintenance admission slot. Both archive attempts defer and the only scan completes. Waiting does not schedule another scan.",
+    "fix": "Arrange an actual blocked archive before testing concurrent scanning/foreground capacity. Preserve deferred renewal, exactly-one-archive, foreground activity/checkpoint and later reclamation assertions.",
+    "stressValidation": {
+      "independentPgRunsPassed": 8,
+      "extraFinalDeltaPgCasesPassed": 6
+    },
+    "productionSchedulerChanged": false
+  },
+  "teachingPolicyValidation": {
+    "preFix": "New healthy queued/reasoning/tool-state regressions failed on the age cancellation policy.",
+    "postFix": [
+      "Healthy queued and running reasoning/tool states older than fifteen minutes remain uncancelled, without changing teaching revision.",
+      "An aged active turn remains protected after learner departure; completion starts a fresh inactivity interval.",
+      "A stale worker lease is reclaimed through the shared claim interface; old heartbeat and terminal writes are fenced.",
+      "A recovered task completes, then its genuinely idle study checkpoints and releases."
+    ],
+    "timeModel": "Aged durable PostgreSQL timestamps and controlled command reservations; not twenty minutes of live model/tool execution."
+  },
+  "companion": {
+    "pullRequest": 2003,
+    "inspectedHead": "9674fe30065afbd162b0a1d0003850d0a9b0bf77",
+    "verification": "Independent source comparison confirms companion removes teachingDeadline, inherited tool timer, output cap and interactive LLM deadlines; this follow-up adds no substitute.",
+    "limitation": "The companion remains a separate open PR. Existing runner-level limits remain on this branch until #2003 is integrated; no merged runtime or live end-to-end joint acceptance is claimed."
+  },
+  "selfReview": {
+    "reviewers": ["teaching_lifecycle_correctness", "teaching_lifecycle_integration"],
+    "fixes": [
+      "Pre-export completion/rejection now exits the test gate promptly.",
+      "Failure cleanup waits for both maintenance operations before restoring shared test state."
+    ],
+    "finalReviewedDiffSha256": "36f3e79b2ab31b118c80e826da86eeec7ae2a5dce53d04e80bf0a76345309b02",
+    "result": "Both reviewers completed the final delta with no remaining confirmed finding.",
+    "scope": "Four code/test/documentation files; this evidence file was added afterward."
+  },
+  "validation": {
+    "ciAppDomainPostgres": {
+      "filesPassed": 31,
+      "passed": 358,
+      "maxWorkers": 2,
+      "timeouts": "Default ten-minute inactivity and five-minute failure grace",
+      "isolation": "Disposable PostgreSQL schemas; controlled provider/object storage; real local Python/Java 17 execution",
+      "manifest": ".github/workflows/storage-pg-contract.yml"
+    },
+    "sandboxPblAgentUnit": {
+      "filesPassed": 128,
+      "filesSkipped": 3,
+      "passed": 1585,
+      "skipped": 14
+    },
+    "typecheck": "Full root tsc --noEmit --incremental false passed.",
+    "formatting": "pnpm check passed.",
+    "lint": {
+      "errors": 0,
+      "existingWarnings": 17
+    },
+    "environmentNote": "The first broad local run inherited deployment identity settings and failed unrelated configuration checks. The exact CI app-domain manifest then passed with only local DB/toolchain settings inherited."
+  },
+  "limitations": [
+    "No new paid cloud/model call or wall-clock lifecycle measurement.",
+    "No lifecycle-imposed duration bound for a pending turn without a concrete failure or explicit cancellation.",
+    "Checkpoint I/O and uncertain standalone command protections remain unchanged."
+  ]
+}

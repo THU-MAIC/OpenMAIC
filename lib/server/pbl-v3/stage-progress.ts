@@ -47,7 +47,8 @@ export function succeededWithoutTeachingReceipt(
     binding?.stage_key === key &&
     (stage.kind === 'mentor_say' || stage.kind === 'produce') &&
     !hasStageCompletion(row, stage, binding) &&
-    binding.guided?.pending?.runId !== `${key}:${latestUserSeq}`
+    binding.guided?.pending?.runId !== `${key}:${latestUserSeq}` &&
+    binding.guided?.handoff?.runId !== `${key}:${latestUserSeq}`
   );
 }
 

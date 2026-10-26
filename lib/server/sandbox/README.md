@@ -34,6 +34,173 @@ A `workspaceId` is an opaque owner-scoped key. It does not convey teaching seman
 allow attachment of an arbitrary provider resource. Templates contain language tools:
 Java/Maven projects, Python exercises and other course content remain consumers.
 
+## PBL workspace lifecycle
+
+PBL uses one inactivity interval: `OPENMAIC_PBL_IDLE_TIMEOUT_MS` (default **600000**, allowed
+60000–86400000). This is independent of the provider's renewable `sandbox.lifetimeMs` lease;
+keep the cloud lease at least five minutes for normal hosted use. The application runs a
+30-second reconciliation schedule from `instrumentation.ts`. Replicas share the existing
+study/environment locks, and application restart does not reset durable usage timestamps.
+Inactivity and grace comparisons use PostgreSQL's clock. Maintenance claims the least
+recently checked environments in durable batches of 100; failed or busy attempts also
+advance the scan, so later environments are not starved by a fixed first batch.
+
+Short configured leases remain valid. Before a PBL source snapshot and before a generic
+workspace archive, the service renews for at least **180000 ms**: the shared 120-second
+checkpoint deadline plus 60 seconds of margin, or the configured lease if longer. Ordinary
+provider renewals preserve any longer remaining lease, so a concurrent short renewal cannot
+remove that protection. Renewal honors the checkpoint signal; an expired or failed renewal
+starts no snapshot/export or checkpoint commit. The existing failure-grace/discard paths
+still release without requesting a new checkpoint lease.
+
+Study-lock admission is shared by all stores using the same PostgreSQL pool. Maintenance
+leaves one admission slot for interactive work when the pool supports multiple slots: the
+default ten-connection pool admits two study operations, of which maintenance may occupy
+one. The two scan workers still traverse other studies while an archive is slow. Deferred
+studies within the idle timeout plus failure grace, a command within its execution deadline,
+or a recent command/Agent completion receive only a lightweight lease renewal; checkpoint,
+collection and release still require admission. Older idle/overdue-only studies, expired
+failure grace and durable discard intent do not gain extra retention through this path.
+A deferred archive is retried on a later scan. Injected pools with only one study slot retain
+single-operation behavior; periodic publication reuses its capture admission slot.
+
+The ten-minute idle default balances reading time and cost. Operators who choose five
+minutes should treat it as a cost-leaning setting: static reading/thinking and consulting
+documentation in a hidden tab do not renew activity. Only entry/visibility return and the
+trusted interactions below count; returning after release can require allocation/restore.
+If archival repeatedly fails, changes newer than the last checkpoint can be lost after
+the additional failure grace, as described below.
+
+The active PBL scene reports coalesced trusted pointer, keyboard and wheel input inside
+the project frame at most once every 30 seconds. Entry and visibility return also mark
+activity. The provider stays above scene rendering, while input capture belongs to the project frame
+(including its React portals). Classroom navigation controls do not restore idle compute.
+The first input after a reporting gap sends immediately; later input is coalesced within
+the 30-second interval. The existing heartbeat flushes pending input and retries failed
+batches, but never sends an empty batch. No additional activity timer is required.
+Ordinary view polling and automatic scrolling do not count. Switching scenes or leaving
+a course stops that scene's activity reports; another tab can still update the same study.
+No unload callback or tab counter is required. A long static reading period can reach
+inactivity; subsequent input restores the
+workspace automatically. Returning to a completed project's report does not allocate compute;
+its explicit restore control opens the project files when wanted.
+After a preparation failure, further typing/scrolling does not automatically retry it;
+the learner uses the explicit setup retry control, preserving any draft input.
+
+Healthy teaching turns have no lifecycle age/silence cutoff while the learner is recently
+active. Normal task completion starts a fresh inactivity interval. Builds and assessments
+are collected through the same verdict path as browser collection, even with no browser open.
+After learner inactivity reaches the idle timeout, maintenance records a fixed departed-turn
+cleanup deadline at last use + idle timeout + archive failure grace, and requests cancellation.
+This reuses the two existing settings (ten plus five minutes by default). PostgreSQL stores
+the deadline in `idle_turn_cleanup`; scans, restarts and worker heartbeats cannot extend it.
+Automatic cancellation is not learner activity. Real input clears pending cleanup, but an
+already cancelled turn needs explicit retry and durable discard intent remains irreversible.
+Activity reporting does not wait for the Study advisory lock held by a long teaching tool.
+After a safe checkpoint, a short transaction checks that no learner returned and commits
+normal release intent in the same cleanup record. Checkpoint success alone never erases
+the deadline. Once release is committed, returning input completes deletion/recovery rather
+than reversing it; deletion contention cannot restart renewal. Earlier return during archive
+I/O cancels release, including the archive-failure path.
+
+At cleanup expiry, no maintenance path renews the binding. A still-running unacknowledged
+turn is durably cancelled and its lease revoked before recording discard intent and trying
+destruction. Each runner claim has a distinct lease identity; the scanner excludes locally
+executing sessions, so a reset retry cannot reauthorize a late old worker. Queued-only or
+acknowledged work follows normal writer cleanup and checkpointing; a checkpoint after expiry
+uses only the remaining lease. Failure or uncertain writers fall back to the previous
+checkpoint and loss notice. Database failure prevents intentional destruction; uncertain
+provider deletion is retried, with the remaining provider lease as the final compute bound.
+
+Explicit cancellation, actual provider failures and worker lease/orphan recovery remain
+available. The companion teaching execution-policy changes in PR #2003 remove the runner's
+inherited V3 duration/output/tool limits; this lifecycle policy bounds only learner inactivity.
+A live worker heartbeat does not establish upstream request health, and silence alone does
+not establish failure. Inactivity cleanup is intentional cancellation, not a model timeout.
+Commands still active/unknown after 330 seconds are requested to cancel through
+their existing operation ID. An unknown outcome is never assumed to have stopped writing.
+If all unresolved commands remain overdue after cancellation, idle maintenance uses the
+same finite failure grace. On expiry it records an interrupted-work loss notice and
+destroys the environment without taking a potentially inconsistent archive. Confirmation
+that commands have stopped clears this failure and starts normal post-task inactivity.
+
+Execution-result collection failures also use the finite idle failure grace; repeated
+collection errors cannot renew an idle workspace forever. A missing command reservation or
+a permanent source snapshot limit interrupts the pending build/assessment and invalidates
+its evidence so the learner can repair and retry. Lost start acknowledgements with an
+existing command reservation remain uncertain until observed or cancelled; an interruption
+does not count as learner activity or a passing assessment.
+
+Idle reclamation closes leftover workbench terminals through the existing terminal cleanup
+path before archiving, including ordinary background processes in the terminal session.
+Recent learner activity and work protected by its execution/cleanup interval prevent reclamation.
+Uncertain terminal discovery or failed closure records an execution-unsettled failure at
+the terminal stage, using the same idle failure grace; retries never restart that deadline.
+If closure cannot be confirmed before expiry, release without a new archive under the
+existing durable discard/loss policy. Terminal closure itself does not count as activity.
+
+File invalidation marks the workspace dirty before the remote write. In addition to teaching
+checkpoints, dirty work is checkpointed after 60 seconds when no managed writer is active.
+Periodic capture/upload holds a separate checkpoint lock while study and file operations
+remain available. Publication briefly locks the study/environment and validates the same
+revision, dirty generation, environment and writer reservations. Checkpoint head and study
+recovery metadata publish in one PostgreSQL transaction. Concurrent edits or work discard
+the pending upload without replacing the previous checkpoint or clearing dirty state.
+This limits the normal between-stage recovery window; a long running writer or unavailable
+storage can extend it. Unexpected provider expiry or application/storage failure can lose
+changes since the last successful checkpoint. Local browser drafts are not durable backups.
+
+Intentional reclamation collects outcomes, quiesces writers, commits a checkpoint and its
+study recovery position, then destroys the resource. It preserves the logical study and
+recovers into a new physical environment through the existing allocation identity path.
+Interrupted allocations/restores and uncertain deletes are reconciled under their original
+IDs. Passive polling never recreates an idle environment. Project mutations retry while
+reclamation holds the Study lock. Activity control can stop an uncommitted release; after
+durable release intent, return completes deletion and restoration under the original IDs.
+
+Checkpoint failures record a safe reason, stage and first idle failure timestamp. Transient
+failures retry on the next pass; deterministic size/file/quota/configuration failures wait
+for user activity or an explicit retry instead of repeatedly exporting unchanged files.
+`OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS` is optional, read at runtime, defaults to **300000**
+and accepts 60000–86400000. For archive failures it starts on the first failed **idle
+reclamation**, not a periodic dirty checkpoint. The same setting bounds departed-turn
+cleanup starting at the learner inactivity deadline. Retries and polling never extend a
+started cycle. Real learner activity clears a pending failure cycle; normal task completion
+starts a fresh inactivity interval, while automatic cancellation does not.
+Both the idle timeout and archive failure grace are validated during fatal boot checks,
+before background workers start; malformed settings refuse startup.
+
+After that grace, maintenance stops renewing and records release-without-archive intent
+before deletion. The previous successful checkpoint remains intact; the UI shows its
+timestamp and warns that newer work may be lost. With no checkpoint, recovery uses starter
+files. Existing recovery invalidates approvals/tests for unavailable versions. A durable
+discard intent fences old-environment writes even if deletion fails; return/retry completes
+deletion under the original ID before preparing a replacement. If metadata cannot be
+persisted, no intentional destructive release occurs; the remaining provider lease is the
+compute bound. Maintenance checks database writability before renewing.
+
+Checkpoint I/O shares a 120-second total deadline, including source enumeration, source
+copy/download, provider connections, archive generation/download and chunk upload. Source
+reads and enumeration pass cancellation through the service/provider boundary; read-only
+I/O races also bound callers of adapters that ignore it. A late source result cannot start
+another read, archive or checkpoint commit. Source downloads keep their local 30-second
+bound even with a longer Agent-turn signal. A pre-expired deadline starts no source or
+archive I/O. Temporary transfer
+cleanup is best effort with its own short I/O bound and cannot extend the caller's lock
+beyond the shared deadline. Cancellation bounds caller waiting; it does not confirm that
+a remote archive process has stopped. Built-in S3 uploads receive its cancellation signal;
+custom byte adapters should honor the optional write signal. Even an adapter ignoring
+cancellation cannot commit a late checkpoint head; uncertain chunks remain pending for the
+existing collector.
+Logs contain safe reason/stage and study/environment IDs, never raw provider errors.
+Do not disable/change provider or storage configuration until outstanding environments are
+drained. The provider lease remains the final compute bound if application workers disappear;
+it cannot itself guarantee archival before expiry.
+
+The pre-change sequential baseline is recorded in `eval/sandbox-lifecycle/baseline-2026-10-23.json`.
+It uses a small two-milestone Python project, real cloud compute and local S3-compatible
+checkpoint storage; it is not a production object-storage or concurrency capacity result.
+
 ## Server configuration
 
 Configure the installation's `sandbox` section in `openmaic.yml` (see
@@ -506,8 +673,10 @@ The `pbl-<study UUID>` namespace is owned by the PBL learning runtime. Generic
 sandbox controls cannot mutate those workspaces or issue preview/agent grants;
 existing preview tickets are checked again on use. Owner/resource checks still
 apply, and normal workspace IDs keep their existing behavior. Only narrow,
-server-only scopes established by the teaching runtime under its study lock allow
-specific mutations. Read/observe, renew, cancel and close remain available.
+server-only scopes established by the teaching runtime allow specific mutations. Ordinary
+mutations hold the study lock; periodic checkpoint capture uses a separate checkpoint lock
+and validates the study again under its lock before publication. Read/observe, renew, cancel
+and close remain available.
 
 See the [PBL workspace contract](../../pbl/v3/README.md#learning-workspace-contract)
 for evidence invalidation, source scope, recovery handoff and the dedicated

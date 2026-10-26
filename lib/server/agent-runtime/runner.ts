@@ -20,6 +20,8 @@ import {
 
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
+import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
+import { LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { createLogger } from '@/lib/logger';
 import { parseCourseRefs, type CourseRef } from '@/lib/workbench/course-refs';
@@ -108,7 +110,7 @@ import {
 } from './personal-history-tools';
 
 const log = createLogger('AgentRunner');
-const WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
+const PROCESS_WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
 const SESSION_WAKEUP_FALLBACK_MS = 5_000;
 const MESSAGE_UPDATE_MIN_INTERVAL_MS = 150;
 
@@ -923,6 +925,7 @@ export function createAskUserTerminateLatch(): {
 }
 
 export interface AgentRunnerHandle {
+  /** Stable process identity for diagnostics; each claim owns a distinct lease identity. */
   readonly workerId: string;
   stop(options?: { timeoutMs?: number }): Promise<void>;
 }
@@ -962,6 +965,8 @@ function leaseMatches(
 // finally blocks pair every timer, subscription, and agent listener with the
 // exact lifetime in which it can fire.
 export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Promise<void> {
+  // Attempts reset on attended retry; the lease identity must still distinguish old work.
+  const WORKER_ID = meta.lease?.workerId ?? PROCESS_WORKER_ID;
   const id = meta.id;
   const attempt = meta.attempt;
   const claimSeq = meta.claimSeq;
@@ -1356,6 +1361,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       omitMaxOutputTokens: !!teaching || driver.wireMaxOutputTokens === undefined,
       thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
       unbounded: !!teaching,
+      responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
       source: 'agent-runtime',
       abortSignal: abort.signal,
     });
@@ -1776,8 +1782,10 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const messagePoll = setInterval(() => void requestDrain(), SESSION_WAKEUP_FALLBACK_MS);
     messagePoll.unref?.();
 
+    let repairedTeachingStop = false;
     const repairTeachingStop = async () => {
       if (
+        repairedTeachingStop ||
         !teaching?.needsTurnReceipt() ||
         abort.signal.aborted ||
         terminalLoopError(agent.state.messages, agent.state.errorMessage)
@@ -1785,6 +1793,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         return false;
       const { prepareTeachingContinuation } = await import('@/lib/server/pbl-v3/runner-tools');
       if (!prepareTeachingContinuation(agent, teaching.historyWindow)) return false;
+      // This repairs an already-ended, malformed handoff once. It does not
+      // count normal model requests/tools or limit a healthy execution loop.
+      repairedTeachingStop = true;
       return true;
     };
     try {
@@ -1936,7 +1947,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (settledCancelled) abort.abort();
       const error = !settledCancelled && loopError ? loopError : undefined;
       const status = settledCancelled ? 'cancelled' : error ? 'failed' : 'succeeded';
-      emit(LIFECYCLE.sessionEnd, { status, toolCalls, ...(error ? { error } : {}) });
+      emit(LIFECYCLE.sessionEnd, {
+        status,
+        toolCalls,
+        ...(error ? { error, errorCode: modelRequestFailureCode(error) ?? undefined } : {}),
+      });
       await flushAll();
       const settled = await store.finishSession(id, WORKER_ID, {
         status,
@@ -2049,10 +2064,15 @@ export function startAgentRunner(): AgentRunnerHandle {
     try {
       const store = await getAgentSessionStore();
       while (ctx.running.size < config.maxConcurrent && !ctx.shuttingDown) {
-        const meta = await store.claimNextSession(WORKER_ID, process.pid, {
-          leaseTtlMs: config.leaseTtlMs,
-          maxAttempts: config.maxAttempts,
-        });
+        const meta = await store.claimNextSession(
+          `${PROCESS_WORKER_ID}:${randomUUID()}`,
+          process.pid,
+          {
+            leaseTtlMs: config.leaseTtlMs,
+            maxAttempts: config.maxAttempts,
+            excludeSessionIds: [...ctx.running.keys()],
+          },
+        );
         if (!meta) break;
         // Process-local fence in addition to the store's lease exclusion.
         if (ctx.running.has(meta.id)) continue;
@@ -2073,7 +2093,7 @@ export function startAgentRunner(): AgentRunnerHandle {
   scanTimer.unref?.();
   void scan();
   log.info(
-    `runner ${WORKER_ID} started (scan=${config.scanIntervalMs}ms, ` +
+    `runner ${PROCESS_WORKER_ID} started (scan=${config.scanIntervalMs}ms, ` +
       `heartbeat=${config.heartbeatIntervalMs}ms, leaseTtl=${config.leaseTtlMs}ms, ` +
       `maxConcurrent=${config.maxConcurrent}, maxAttempts=${config.maxAttempts})`,
   );
@@ -2085,7 +2105,7 @@ export function startAgentRunner(): AgentRunnerHandle {
   );
 
   return {
-    workerId: WORKER_ID,
+    workerId: PROCESS_WORKER_ID,
     async stop(options?: { timeoutMs?: number }): Promise<void> {
       ctx.shuttingDown = true;
       if (scanTimer) clearInterval(scanTimer);
@@ -2097,7 +2117,7 @@ export function startAgentRunner(): AgentRunnerHandle {
       if (ctx.running.size > 0) {
         log.warn(`stop() timed out with ${ctx.running.size} session(s) still settling`);
       }
-      log.info(`runner ${WORKER_ID} stopped`);
+      log.info(`runner ${PROCESS_WORKER_ID} stopped`);
     },
   };
 }

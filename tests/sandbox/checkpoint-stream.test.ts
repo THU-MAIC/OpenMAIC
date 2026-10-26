@@ -85,11 +85,25 @@ describe('streamed checkpoint archive', () => {
   it('rejects links and configured size overflow', () => {
     const x = setup();
     symlinkSync('/etc/passwd', join(x.project, 'outside'));
-    expect(() => x.run('export')).toThrow();
+    try {
+      x.run('export');
+      throw new Error('Expected export failure');
+    } catch (error) {
+      expect((error as { stderr: Buffer }).stderr.toString()).toBe(
+        'OPENMAIC_CHECKPOINT_ERROR:unsupported\n',
+      );
+    }
     rmSync(join(x.project, 'outside'));
     x.config.maxBytes = 2;
     writeFileSync(join(x.project, 'large'), '123');
-    expect(() => x.run('export')).toThrow();
+    try {
+      x.run('export');
+      throw new Error('Expected export failure');
+    } catch (error) {
+      expect((error as { stderr: Buffer }).stderr.toString()).toBe(
+        'OPENMAIC_CHECKPOINT_ERROR:limit\n',
+      );
+    }
   });
   it('validates the whole archive before touching original application data', () => {
     const x = setup();

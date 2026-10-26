@@ -70,6 +70,8 @@ export async function register(): Promise<void> {
   const assetSchedule = startAssetCollectorSchedule();
   const { startCheckpointCollector } = await import('@/lib/server/sandbox/checkpoint-collector');
   const checkpointSchedule = startCheckpointCollector();
+  const { startLearningLifecycle } = await import('@/lib/server/pbl-v3/lifecycle-schedule');
+  const learningLifecycle = startLearningLifecycle();
 
   // Warn-first boot-time validation of model routing config (MODEL_ROUTES,
   // DEFAULT_MODEL, <PREFIX>_MODELS). Cheap and non-throwing: broken config
@@ -178,6 +180,7 @@ export async function register(): Promise<void> {
         console.error('[instrumentation] Asset collector drain failed', error);
       }
       await checkpointSchedule?.stop();
+      await learningLifecycle?.stop();
       const connectionString = process.env.DATABASE_URL?.trim();
       if (connectionString) {
         try {
@@ -215,6 +218,10 @@ async function validateBootConfiguration(): Promise<void> {
   // `docker compose up` for a deployment).
   const { requireDatabaseUrl } = await import('@/lib/server/database-requirement');
   runConfigurationCheck(() => requireDatabaseUrl());
+  const { pblIdleTimeoutMs, pblArchiveFailureGraceMs } =
+    await import('@/lib/server/pbl-v3/lifecycle-config');
+  runConfigurationCheck(() => pblIdleTimeoutMs());
+  runConfigurationCheck(() => pblArchiveFailureGraceMs());
 
   // The deployment's model configuration: openmaic.yml (or the file named by
   // OPENMAIC_CONFIG), else the legacy provider variables translated. A

@@ -24,6 +24,7 @@ const provider = {
   find: vi.fn(),
   inspect: vi.fn(),
   destroy: vi.fn(),
+  renew: vi.fn(),
   exportWorkspace: vi.fn(),
   importWorkspace: vi.fn(),
   initializeWorkspace: vi.fn(),
@@ -104,8 +105,66 @@ beforeEach(() => {
     yield bytes;
   });
   provider.destroy.mockResolvedValue(undefined);
+  provider.renew.mockResolvedValue(undefined);
 });
 describe('sandbox recovery semantics', () => {
+  it.each([60_000, 300_000])(
+    'protects checkpoint work with a sufficient lease when configured for %s ms',
+    async (lifetimeMs) => {
+      const target = Reflect.construct(SandboxService, [
+        'owner-a',
+        { ...config, lifetimeMs },
+        store,
+        provider,
+      ]) as SandboxService;
+      provider.exportWorkspace.mockImplementation(async function* () {
+        expect(provider.renew).toHaveBeenCalledWith(
+          'cloud-id',
+          id,
+          Math.max(lifetimeMs, 180_000),
+          expect.any(AbortSignal),
+        );
+        yield bytes;
+      });
+      await expect(target.saveWorkspace(id, 0)).resolves.toMatchObject({
+        checkpoint: { revision: 1 },
+      });
+    },
+  );
+
+  it('never exports, commits or releases when checkpoint lease protection fails', async () => {
+    provider.renew.mockRejectedValue(new Error('renewal unavailable'));
+    await expect(service().saveWorkspace(id, 0, true)).rejects.toThrow('renewal unavailable');
+    expect(provider.exportWorkspace).not.toHaveBeenCalled();
+    expect(store.saveCheckpoint).not.toHaveBeenCalled();
+    expect(provider.destroy).not.toHaveBeenCalled();
+    expect(saved).toBeNull();
+  });
+
+  it('does not renew or export after an already-expired checkpoint deadline', async () => {
+    const controller = new AbortController();
+    controller.abort(new DOMException('checkpoint deadline', 'TimeoutError'));
+    await expect(service().saveWorkspace(id, 0, false, controller.signal)).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
+    expect(provider.renew).not.toHaveBeenCalled();
+    expect(provider.exportWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting for a stalled lease renewal at the shared checkpoint deadline', async () => {
+    provider.renew.mockImplementation(() => new Promise(() => {}));
+    const controller = new AbortController();
+    const failed = expect(
+      service().saveWorkspace(id, 0, true, controller.signal),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.waitFor(() => expect(provider.renew).toHaveBeenCalledTimes(1));
+    controller.abort(new DOMException('checkpoint deadline', 'TimeoutError'));
+    await failed;
+    expect(provider.exportWorkspace).not.toHaveBeenCalled();
+    expect(store.saveCheckpoint).not.toHaveBeenCalled();
+    expect(provider.destroy).not.toHaveBeenCalled();
+  });
+
   it('releases confirmed expired environments without deleting their checkpoint', async () => {
     saved = {
       revision: 1,

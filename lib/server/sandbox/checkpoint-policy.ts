@@ -2,6 +2,9 @@ import 'server-only';
 import { SandboxError } from '@/lib/sandbox/errors';
 import { WORKSPACE_ROOT, WORKSPACE_EXCLUDES } from './workspace-archive';
 
+export const CHECKPOINT_TIMEOUT_MS = 120_000;
+export const CHECKPOINT_MIN_LIFETIME_MS = CHECKPOINT_TIMEOUT_MS + 60_000;
+
 export interface CheckpointRoot {
   name: string;
   path: string;

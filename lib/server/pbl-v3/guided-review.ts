@@ -18,6 +18,7 @@ export const guidedSkillStateSchema = z
     activeFile: z.string(),
     reviewedFiles: z.array(z.string()).max(16),
     pending: receiptSchema.optional(),
+    handoff: z.object({ runId: z.string(), question: z.string().min(1) }).optional(),
     welcome: z.enum(['pending', 'ready']).optional(),
     approval: z
       .object({
@@ -84,7 +85,18 @@ export class GuidedSkillReview {
     this.eligible = eligible;
     this.advanced = false;
     // A retry is still the same student turn, not permission to revise their review.
-    this.ended = this.state.pending?.runId === this.runId;
+    this.ended =
+      this.state.pending?.runId === this.runId || this.state.handoff?.runId === this.runId;
+    if (this.state.handoff?.runId !== this.runId) delete this.state.handoff;
+  }
+
+  /** A blocked build can return control without creating review/approval evidence. */
+  handoff(question: string): void {
+    this.assertWritable();
+    delete this.state.pending;
+    delete this.state.coverage;
+    this.state.handoff = { runId: this.runId, question };
+    this.finishRun();
   }
 
   /** The runner supplies durable user events, never model-authored quotes or assistant turns. */

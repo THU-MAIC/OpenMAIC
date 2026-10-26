@@ -3,11 +3,29 @@ import type { AgentRole, StageDefinition } from './domain/project/project-schema
 
 export { isPBLV3Reference } from '@openmaic/dsl';
 export type { PBLV3Reference } from '@openmaic/dsl';
+export interface ArchiveFailure {
+  environmentId: string;
+  reason: import('@/lib/server/sandbox/checkpoint-errors').CheckpointFailureReason;
+  stage: import('@/lib/server/sandbox/checkpoint-errors').CheckpointStage;
+  retryable: boolean;
+  firstIdleFailureAt: string | null;
+  dirtyAt: string | null;
+}
+export interface ArchiveDiscard {
+  environmentId: string;
+  at: string;
+  checkpointRevision: number;
+  checkpointAt: string | null;
+  reason: ArchiveFailure['reason'];
+}
 export interface LearningView {
   id: string;
   revision: number;
   title: string;
   reportAvailable: boolean;
+  lifecycleError?: string | null;
+  checkpointFailure?: ArchiveFailure | null;
+  archiveDiscard?: ArchiveDiscard | null;
   environmentId: string | null;
   environment: { state: import('@/lib/sandbox/types').SandboxState; ready: boolean } | null;
   recovery: { checkpointRevision: number; progressReset: boolean } | null;
@@ -26,6 +44,7 @@ export interface LearningView {
   roleRun: {
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'missing';
     failure: import('./conversation').LearningRunFailure | null;
+    failureCode?: import('@/lib/agent/runtime/request-failure').ModelRequestFailureCode | null;
     canRetry: boolean;
   } | null;
   decisions: { id: string; prompt: string; options: { id: string; label: string }[] }[];

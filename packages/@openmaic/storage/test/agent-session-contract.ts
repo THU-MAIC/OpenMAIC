@@ -477,6 +477,64 @@ export function runAgentSessionStoreContract(
       expect(await store.getSession('session-1')).toMatchObject({ status: 'queued', attempt: 0 });
     });
 
+    test.each([false, true])(
+      'settled cancellation fences a live worker, with a prior request: %s',
+      async (requested) => {
+        const store = makeStore();
+        await store.createSession(makeAgentSessionInput());
+        const claim = await store.claimNextSession('worker-a', 101, {
+          leaseTtlMs: 10_000,
+          maxAttempts: 3,
+        });
+        const tree = await store.openEntryTree('session-1', 'worker-a', claim!.attempt);
+        if (requested) await store.requestCancel('session-1');
+        await store.requestCancel('session-1', { settle: true });
+        await store.requestCancel('session-1', { settle: true });
+        expect(await store.getSession('session-1')).toMatchObject({
+          status: 'cancelled',
+          attempt: 0,
+        });
+        expect((await store.getSession('session-1'))?.lease).toBeUndefined();
+        expect(await store.isCancelRequested('session-1')).toBe(false);
+        expect(await store.heartbeat('session-1', 'worker-a')).toBe(false);
+        expect(
+          await store.finishSession('session-1', 'worker-a', {
+            status: 'succeeded',
+            expectedAttempt: claim!.attempt,
+          }),
+        ).toBe(false);
+        await expect(
+          tree.appendEntry({
+            id: 'late',
+            parentId: null,
+            type: 'message',
+            timestamp: '2026-10-26T00:00:00.000Z',
+            message: { role: 'user', content: 'Late work' },
+          }),
+        ).rejects.toThrow();
+        const events = await store.readEventsAfter('session-1', 0);
+        expect(
+          events.filter((event) => event.type === AGENT_SESSION_LIFECYCLE.sessionEnd),
+        ).toHaveLength(1);
+        expect(await store.requeueForRetry('session-1')).toBe(true);
+      },
+    );
+
+    test('excludes locally active sessions before claiming a reset retry', async () => {
+      const store = makeStore();
+      await store.createSession(makeAgentSessionInput());
+      await store.claimNextSession('old-claim', 101, { leaseTtlMs: 10_000, maxAttempts: 3 });
+      await store.requestCancel('session-1', { settle: true });
+      await store.requeueSession('session-1');
+      const claim = await store.claimNextSession('new-claim', 101, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+        excludeSessionIds: ['session-1'],
+      });
+      expect(claim).toBeNull();
+      expect((await store.getSession('session-1'))?.status).toBe('queued');
+    });
+
     test('a stale cancellation cleanup cannot erase a newer attempt request', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());

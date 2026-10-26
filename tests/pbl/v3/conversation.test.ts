@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-import { projectConversation, learningRunFailure } from '@/lib/server/pbl-v3/conversation';
+import {
+  projectConversation,
+  learningRunFailure,
+  boundConversation,
+} from '@/lib/server/pbl-v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
@@ -650,4 +654,17 @@ describe('general teaching protocols', () => {
     expect(interactionRules).toContain('先在当前边界内正面解释');
     expect(interactionRules).toContain('真实新回复');
   });
+});
+
+it('protects the current reply independently of a later pending question fallback', () => {
+  const text = 'Large current reply. '.repeat(120_000);
+  const entries = projectConversation([event(1, 'message_end', message(text))], 'coder', false);
+  const currentId = entries[0]!.id;
+  entries.push({
+    id: 'pending-question',
+    speaker: 'coder',
+    parts: [{ kind: 'text', id: 'q', text: 'Can you explain this?' }],
+  });
+  boundConversation(entries, 1024, new Set([currentId]));
+  expect(entries[0]!.parts).toMatchObject([{ text }]);
 });

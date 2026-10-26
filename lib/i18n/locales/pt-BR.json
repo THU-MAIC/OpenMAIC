@@ -2875,6 +2875,26 @@
       "output": "Output",
       "display": "Display",
       "stopped": "Stopped"
+    },
+    "environmentSleeping": "O ambiente do projeto está inativo. Continue trabalhando ou restaure os arquivos abaixo.",
+    "recoverWorkspace": "Restaurar arquivos do projeto",
+    "checkpointUnavailable": "Não foi possível arquivar as últimas alterações. Tente salvar novamente. Se ficar inativo, o ambiente poderá ser liberado e alterações não arquivadas poderão ser perdidas.",
+    "checkpointSkipped": "O arquivamento falhou repetidamente. A recuperação pode perder alterações posteriores ao salvamento.",
+    "lastDurableCheckpoint": "Salvamento recuperável para esta liberação: {{time}}.",
+    "noDurableCheckpoint": "Nenhum arquivo de recuperação disponível; os arquivos do projeto voltam à versão inicial.",
+    "checkpointReasons": {
+      "source-limit": "O projeto excede o limite de arquivos ou de tamanho.",
+      "archive-limit": "O projeto excede o limite de arquivos ou de tamanho.",
+      "unsupported-files": "Alguns arquivos não podem ser arquivados.",
+      "workspace-permission": "Não é possível ler os arquivos do projeto.",
+      "workspace-full": "O disco do espaço de trabalho está cheio.",
+      "storage-quota": "A cota de armazenamento de arquivos de recuperação está cheia.",
+      "storage-config": "Verifique a configuração e as permissões do armazenamento.",
+      "storage-permission": "Verifique a configuração e as permissões do armazenamento.",
+      "timeout": "O armazenamento ou o ambiente está indisponível, ou a solicitação expirou.",
+      "unavailable": "O armazenamento ou o ambiente está indisponível, ou a solicitação expirou.",
+      "workspace-changed": "Os arquivos mudaram durante o arquivamento.",
+      "execution-unsettled": "Não foi possível confirmar que a tarefa parou."
     }
   }
 }

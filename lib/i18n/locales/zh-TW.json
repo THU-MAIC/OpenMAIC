@@ -2875,6 +2875,26 @@
       "output": "輸出",
       "display": "展示",
       "stopped": "已停止"
+    },
+    "environmentSleeping": "專案環境已休眠。繼續操作即可恢復，也可以按下方按鈕恢復專案檔案。",
+    "recoverWorkspace": "恢復專案檔案",
+    "checkpointUnavailable": "最新修改未能封存，請重試儲存。若持續閒置，環境可能被釋放，未封存的修改可能遺失。",
+    "checkpointSkipped": "封存持續失敗，復原時可能遺失已封存版本之後的修改。",
+    "lastDurableCheckpoint": "本次回收可復原的封存時間：{{time}}。",
+    "noDurableCheckpoint": "沒有可復原的封存，專案檔案將從初始版本重新開始。",
+    "checkpointReasons": {
+      "source-limit": "專案超過檔案數量或大小限制。",
+      "archive-limit": "專案超過檔案數量或大小限制。",
+      "unsupported-files": "部分專案檔案無法封存。",
+      "workspace-permission": "沒有讀取專案檔案的權限。",
+      "workspace-full": "工作區磁碟已滿。",
+      "storage-quota": "封存儲存配額已滿。",
+      "storage-config": "請檢查儲存設定和權限。",
+      "storage-permission": "請檢查儲存設定和權限。",
+      "timeout": "儲存或工作區服務無法使用，或請求逾時。",
+      "unavailable": "儲存或工作區服務無法使用，或請求逾時。",
+      "workspace-changed": "封存期間檔案發生變更。",
+      "execution-unsettled": "無法確認工作已停止。"
     }
   }
 }

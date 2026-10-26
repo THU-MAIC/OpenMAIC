@@ -404,7 +404,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect(ctx.running.size).toBe(0);
     },
   );
-  it('allows silent reasoning and a large reply beyond twenty minutes, uses low effort and omits the output cap', async () => {
+  it('allows progressing reasoning and a large reply beyond twenty minutes, uses low effort and omits the output cap', async () => {
     vi.useFakeTimers();
     const meta = makeMeta({ id: 'pbl-role-thinking' }),
       session = await makeEntryTree(),
@@ -432,7 +432,10 @@ describe('runner: unbounded V3 teaching turns', () => {
     mocks.streamLLM.mockImplementation(() => ({
       fullStream: (async function* () {
         started();
-        await new Promise((r) => setTimeout(r, 1_200_000));
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, 300_000));
+          yield { type: 'reasoning-delta', text: 'Still reasoning.' };
+        }
         yield { type: 'text-delta', text };
         yield finish('stop');
       })(),
@@ -528,4 +531,80 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect.objectContaining({ status: 'succeeded' }),
     );
   });
+});
+
+it('fails an ended teaching turn after one receipt repair rather than continuing indefinitely', async () => {
+  const meta = makeMeta({ id: 'pbl-role-no-receipt' });
+  const session = await makeEntryTree();
+  const store = makeStore(meta);
+  mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+  mocks.getAgentSessionStore.mockResolvedValue(store);
+  mocks.teachingRunnerConfig.mockResolvedValue({
+    tools: [],
+    systemPrompt: 'Teaching test',
+    thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
+    allowedToolNames: new Set(),
+    needsTurnReceipt: () => true,
+    isTurnComplete: () => false,
+    historyWindow: { stageKey: 'm:0', studentTurns: 1 },
+  });
+  useResponses([
+    [{ type: 'text-delta', text: 'Build blocked, please help.' }, finish('stop')],
+    [{ type: 'text-delta', text: 'Still blocked.' }, finish('stop')],
+  ]);
+  await runSession({ running: new Map(), shuttingDown: false }, meta);
+  expect(mocks.streamLLM).toHaveBeenCalledTimes(2);
+  expect(store.finishSession).toHaveBeenCalledWith(
+    meta.id,
+    WORKER_ID,
+    expect.objectContaining({
+      status: 'failed',
+      error: expect.stringContaining('Teaching turn ended without recording'),
+    }),
+  );
+});
+
+it('persists a request timeout as failed and releases the worker without cancelling learning', async () => {
+  vi.useFakeTimers();
+  const meta = makeMeta({ id: 'pbl-role-silent-request' });
+  const session = await makeEntryTree(),
+    store = makeStore(meta);
+  mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+  mocks.getAgentSessionStore.mockResolvedValue(store);
+  mocks.teachingRunnerConfig.mockResolvedValue({
+    tools: [],
+    systemPrompt: 'Teaching test',
+    thinkingConfig: () => ({ mode: 'disabled' }),
+    allowedToolNames: new Set(),
+    needsTurnReceipt: () => true,
+    isTurnComplete: () => false,
+  });
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  mocks.streamLLM.mockImplementation(() => {
+    started();
+    return new Promise(() => {});
+  });
+  const ctx = { running: new Map(), shuttingDown: false };
+  const run = runSession(ctx, meta);
+  await ready;
+  await vi.advanceTimersByTimeAsync(15 * 60_000);
+  await run;
+  expect(store.finishSession).toHaveBeenCalledWith(
+    meta.id,
+    WORKER_ID,
+    expect.objectContaining({
+      status: 'failed',
+      error: expect.stringContaining('[MODEL_REQUEST_IDLE_TIMEOUT]'),
+    }),
+  );
+  expect(ctx.running.size).toBe(0);
+  expect(
+    store.appendRunEvent.mock.calls.some(
+      (call) =>
+        call[2].type === 'session_end' && call[2].data?.errorCode === 'MODEL_REQUEST_IDLE_TIMEOUT',
+    ),
+  ).toBe(true);
 });

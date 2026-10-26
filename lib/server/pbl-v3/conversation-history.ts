@@ -21,14 +21,21 @@ export async function readConversationHistory(
     `WITH boundary AS (
        SELECT COALESCE(max(seq),0) AS first FROM agent_session_events
        WHERE session_id=$1 AND seq<=$2 AND type='user_message'
+     ), current_events AS (
+       SELECT e.seq,e.attempt,e.type,sum(CASE WHEN type='message_start' THEN 1 ELSE 0 END)
+         OVER (PARTITION BY attempt ORDER BY seq) AS message_group
+       FROM agent_session_events e,boundary b
+       WHERE e.session_id=$1 AND e.seq>=b.first AND e.seq<=$2
+     ), latest_updates AS (
+       SELECT DISTINCT ON (attempt,message_group) seq FROM current_events
+       WHERE type='message_update' ORDER BY attempt,message_group,seq DESC
      ), recent AS (
        (SELECT e.* FROM agent_session_events e,boundary b
         WHERE e.session_id=$1 AND e.seq<b.first ORDER BY seq DESC LIMIT $3)
        UNION ALL
        SELECT e.* FROM agent_session_events e,boundary b
         WHERE e.session_id=$1 AND e.seq>=b.first AND e.seq<=$2
-          AND (e.type<>'message_update' OR e.seq=(SELECT max(seq) FROM agent_session_events
-            WHERE session_id=$1 AND seq<=$2 AND type='message_update'))
+          AND (e.type<>'message_update' OR e.seq IN (SELECT seq FROM latest_updates))
      ), sized AS (
        SELECT e.*,octet_length(e.data::text) AS bytes,
          (e.seq>=b.first AND e.type IN ('message_start','message_update','message_end')
