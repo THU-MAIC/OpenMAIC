@@ -9,6 +9,7 @@ import {
 import { startOrchestration, submitDecision } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { isDecisionResponseValid } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { projectArtifacts } from '@/lib/pbl/v3/domain/orchestration/artifacts';
+import { renderTeachingPrompt } from '@/lib/server/pbl-v3/teaching-prompt';
 
 function fixture() {
   const source = installedProject({ id: 'greeting-python', version: '1.0.0' });
@@ -102,6 +103,18 @@ describe('authored decision responses', () => {
       chosen,
       rationale: 'An improved explanation.',
     });
+    const planningPrompt = renderTeachingPrompt({
+      definition,
+      milestone,
+      stage: milestone.stages[2]!,
+      stageKey: `${milestone.id}:2`,
+      role: 'planner',
+      packaged: true,
+      skill: { content: {}, progression: ['SKILL.md', 'A-plan.md'], documents: [] },
+      collected: revised.state.collected[milestone.id]!,
+    }).systemPrompt;
+    expect(planningPrompt).toContain(JSON.stringify(projection.decisionsChosen));
+    expect(planningPrompt).toContain('Use the recorded rationale in plans and reviews');
   });
 
   it('keeps stage authorization and rejects invalid submissions before producing a transition', () => {
