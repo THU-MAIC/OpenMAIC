@@ -25,15 +25,19 @@
  *    separate validity flag that could disagree with what would actually be sent.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { readQuestionDraft, writeQuestionDraft } from '@/lib/workbench/question-host';
+import { useQuestionDraft } from '@/lib/workbench/question-host';
 import type { ChatNode, QuestionOption } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import {
+  isFreeTextOption,
   isQuestionLocked,
   questionMode,
   togglePicked,
   multiAnswerSeparator,
 } from './question-card-state';
+
+// The reserved free-text option lives with the card's rules; re-exported for the form's callers.
+export { FREE_TEXT_OPTION_ID, isFreeTextOption } from './question-card-state';
 
 /**
  * The free-text row's label, and what the keyboard hint calls it — in the
@@ -76,23 +80,6 @@ export type QuestionFormRow =
   | { readonly kind: 'option'; readonly id: string; readonly label: string }
   /** `label` is the agent's own wording for it, when it supplied the row. */
   | { readonly kind: 'other'; readonly label?: string };
-
-/**
- * The option id the agent uses for its own free-text choice (`ask_user`'s
- * schema says so). That option IS the form's "other…" row — with the agent's
- * label — rather than a second free-text row beside it. Matched on the id,
- * never on wording.
- */
-export const FREE_TEXT_OPTION_ID = 'other';
-
-/**
- * Whether an option is the agent's free-text choice. Its label is a prompt to
- * write, never an answer: every surface (the form, the preview's form, the
- * transcript card) routes it to text entry through this one rule.
- */
-export function isFreeTextOption(id: string): boolean {
-  return id === FREE_TEXT_OPTION_ID;
-}
 
 /** What is selected right now: envelope option ids, plus whether the "other" row is on. */
 export interface QuestionFormPicks {
@@ -284,8 +271,6 @@ export function useQuestionForm(
   t: WorkbenchTranslator = defaultWorkbenchTranslator,
   /** Open on the free-text row, picked: the user asked to write the answer. */
   startInFreeText = false,
-  /** Where this question's half-written answer is kept across surfaces. */
-  draftKey: string | null = null,
 ): {
   mode: 'open' | 'single' | 'multi';
   rows: QuestionFormRow[];
@@ -310,31 +295,30 @@ export function useQuestionForm(
   const options = node.questionOptions ?? [];
   const rows = useMemo(() => questionFormRows(node), [node]);
   const startOther = startInFreeText && rows.length > 0;
-  // Resume the answer this question had on the other surface, if any.
-  const [draft] = useState(() => (draftKey ? readQuestionDraft(draftKey) : null));
-  const [picks, setPicks] = useState<QuestionFormPicks>(() => {
-    const resumed = draft ? { picked: draft.picked, otherPicked: draft.otherPicked } : NO_PICKS;
-    return startOther && !resumed.otherPicked ? pickOther(resumed, mode === 'multi') : resumed;
-  });
-  const [highlight, setHighlight] = useState(() =>
-    startOther ? rows.length - 1 : (draft?.highlight ?? 0),
-  );
-  const [otherText, setOtherText] = useState(draft?.otherText ?? '');
-  const [openText, setOpenText] = useState(draft?.openText ?? '');
+  // The answer in progress is the question's one shared draft: the card, this
+  // form and the preview's form all read and write it.
+  const answered = Boolean(node.questionAnswered);
+  const { draft, update } = useQuestionDraft(node.key, answered);
+  const picks: QuestionFormPicks = { picked: draft.picked, otherPicked: draft.otherPicked };
+  const { otherText, openText } = draft;
+  const setPicks = (next: QuestionFormPicks) =>
+    update({ picked: next.picked, otherPicked: next.otherPicked });
+  const setOtherText = (text: string) => update({ otherText: text });
+  const setOpenText = (text: string) => update({ openText: text });
+  const [highlight, setHighlight] = useState(() => (startOther ? rows.length - 1 : 0));
+  // Asked to write: the free-text row turns on, keeping any canned picks.
+  const [startedOther] = useState(startOther);
   useEffect(() => {
-    if (!draftKey) return;
-    writeQuestionDraft(draftKey, {
-      picked: picks.picked,
-      otherPicked: picks.otherPicked,
-      otherText,
-      openText,
-      highlight,
-    });
-  }, [draftKey, picks, otherText, openText, highlight]);
+    if (startedOther && !draft.otherPicked) {
+      update({ otherPicked: true, ...(mode === 'multi' ? {} : { picked: [] }) });
+    }
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [sending, setSending] = useState(false);
 
   const locked = isQuestionLocked({
-    answered: Boolean(node.questionAnswered),
+    answered,
     sending,
     canSend: Boolean(onAnswer),
   });

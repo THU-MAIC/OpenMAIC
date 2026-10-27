@@ -36,8 +36,7 @@ const ROWS_FADE = {
   WebkitMaskImage: 'linear-gradient(to bottom, #000 calc(100% - 40px), transparent)',
 };
 import { Check } from 'lucide-react';
-import { useWorkbenchStore, type ChatNode } from '@/lib/workbench/session-store';
-import { sessionScopedKey } from '@/lib/workbench/request-scope';
+import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
 import { editingKindFor, questionFormKeyAction, useQuestionForm } from './question-form-state';
@@ -67,15 +66,7 @@ export function QuestionForm({
   readonly startInFreeText?: boolean;
   readonly t?: WorkbenchTranslator;
 }) {
-  // One draft per question, shared by the chat's form and the preview's.
-  const sessionId = useWorkbenchStore((s) => s.sessionId);
-  const form = useQuestionForm(
-    node,
-    onAnswer,
-    t,
-    startInFreeText,
-    sessionScopedKey(sessionId, node.key),
-  );
+  const form = useQuestionForm(node, onAnswer, t, startInFreeText);
   const { mode, rows, locked } = form;
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const otherRef = useRef<HTMLInputElement | null>(null);

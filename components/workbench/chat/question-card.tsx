@@ -40,8 +40,7 @@ import { Check, HelpCircle } from 'lucide-react';
 import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
-import { useQuestionAnswer } from './question-card-state';
-import { isFreeTextOption } from './question-form-state';
+import { isFreeTextOption, useQuestionAnswer } from './question-card-state';
 
 /** What the surfaces say about whose move it is. */
 export const QUESTION_WAITING_LABEL = defaultWorkbenchTranslator('workbench.question.waiting');

@@ -11,7 +11,10 @@
  * shows a compact pointer instead of a second form. Answering in either place
  * sends the same message, and the fold retires the question for both.
  */
+import { useEffect } from 'react';
 import { create } from 'zustand';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
+import { useWorkbenchStore } from '@/lib/workbench/session-store';
 
 export type QuestionAnswerer = (text: string) => Promise<boolean>;
 
@@ -35,27 +38,76 @@ export const useQuestionHost = create<QuestionHostState>((set) => ({
 }));
 
 /**
- * A half-written answer, kept per question (`sessionScopedKey(sessionId,
- * node.key)`) so it survives the question moving between the chat's form and
- * the preview's. In memory only: a draft is for this visit.
+ * The answer in progress for one question: the picked option ids, whether the
+ * free-text row is on, and what was written. ONE per question
+ * (`sessionScopedKey(sessionId, node.key)`), shared by every surface that can
+ * answer it — the transcript card, the chat's form and the preview's form — so
+ * moving between them, or between canned picks and free text, loses nothing.
+ * In memory only: a draft is for this visit. Cleared once the question is
+ * answered.
  */
 export interface QuestionDraft {
   readonly picked: readonly string[];
   readonly otherPicked: boolean;
   readonly otherText: string;
   readonly openText: string;
-  readonly highlight: number;
 }
 
-const MAX_DRAFTS = 20;
-const drafts = new Map<string, QuestionDraft>();
+export const EMPTY_QUESTION_DRAFT: QuestionDraft = {
+  picked: [],
+  otherPicked: false,
+  otherText: '',
+  openText: '',
+};
 
-export function readQuestionDraft(key: string): QuestionDraft | null {
-  return drafts.get(key) ?? null;
+const MAX_DRAFTS = 50;
+
+interface QuestionDraftState {
+  readonly drafts: Readonly<Record<string, QuestionDraft>>;
+  readonly update: (key: string, patch: Partial<QuestionDraft>) => void;
+  readonly clear: (key: string) => void;
 }
 
-export function writeQuestionDraft(key: string, draft: QuestionDraft): void {
-  drafts.delete(key);
-  drafts.set(key, draft);
-  while (drafts.size > MAX_DRAFTS) drafts.delete(drafts.keys().next().value as string);
+export const useQuestionDrafts = create<QuestionDraftState>((set) => ({
+  drafts: {},
+  update: (key, patch) =>
+    set((state) => {
+      const rest = Object.entries(state.drafts).filter(([other]) => other !== key);
+      const next = { ...(state.drafts[key] ?? EMPTY_QUESTION_DRAFT), ...patch };
+      return { drafts: Object.fromEntries([...rest, [key, next]].slice(-MAX_DRAFTS)) };
+    }),
+  clear: (key) =>
+    set((state) => {
+      if (!(key in state.drafts)) return state;
+      const { [key]: _cleared, ...rest } = state.drafts;
+      return { drafts: rest };
+    }),
+}));
+
+/**
+ * This question's shared draft, and the way to change it. Every answering
+ * surface goes through here; the draft is dropped once the question is
+ * answered, so a later question with a reused key starts empty.
+ */
+export function useQuestionDraft(
+  nodeKey: string,
+  answered: boolean,
+): {
+  readonly draft: QuestionDraft;
+  readonly update: (patch: Partial<QuestionDraft>) => void;
+  readonly clear: () => void;
+} {
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
+  const key = sessionScopedKey(sessionId, nodeKey);
+  const draft = useQuestionDrafts((s) => s.drafts[key]) ?? EMPTY_QUESTION_DRAFT;
+  const updateDraft = useQuestionDrafts((s) => s.update);
+  const clearDraft = useQuestionDrafts((s) => s.clear);
+  useEffect(() => {
+    if (answered) clearDraft(key);
+  }, [answered, clearDraft, key]);
+  return {
+    draft,
+    update: (patch) => updateDraft(key, patch),
+    clear: () => clearDraft(key),
+  };
 }

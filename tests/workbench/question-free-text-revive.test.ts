@@ -32,10 +32,12 @@ import {
   WorkbenchDraftConversationProvider,
 } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type ChatNode } from '@/lib/workbench/session-store';
+import { useQuestionDrafts } from '@/lib/workbench/question-host';
 
 Element.prototype.scrollIntoView ??= function scrollIntoView() {};
 
 let posts: string[] = [];
+let sent: string[] = [];
 let dispose: (() => Promise<void>) | undefined;
 
 beforeEach(() => {
@@ -49,12 +51,18 @@ beforeEach(() => {
     },
   );
   posts = [];
+  sent = [];
+  useQuestionDrafts.setState({ drafts: {} });
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (init?.method === 'POST') {
         posts.push(url);
+        if (url.endsWith('/messages')) {
+          const body = JSON.parse(String(init.body)) as { text?: string; content?: string };
+          sent.push(String(body.text ?? body.content ?? ''));
+        }
         return Response.json({});
       }
       if (url === '/api/agent/runtime') return Response.json({ enabled: true });
@@ -81,12 +89,12 @@ const question: ChatNode = {
   ],
 };
 
-async function mount(): Promise<HTMLElement> {
-  useWorkbenchStore.getState().attach('ses-q', 'stage-1');
+async function mount(node: ChatNode = question, sessionId = 'ses-q'): Promise<HTMLElement> {
+  useWorkbenchStore.getState().attach(sessionId, 'stage-1');
   useWorkbenchStore.setState({
     replaying: false,
     status: 'succeeded',
-    chat: [{ key: 'u', kind: 'user', text: 'Make a course' }, question],
+    chat: [{ key: 'u', kind: 'user', text: 'Make a course' }, node],
   });
   const container = document.createElement('div');
   document.body.append(container);
@@ -166,5 +174,98 @@ describe("the transcript card's free-text option", () => {
     );
     expect(back?.value).toBe('Parents of young children');
     expect(posts).toEqual([]);
+  });
+});
+
+const multi: ChatNode = {
+  key: 'q2',
+  kind: 'question',
+  text: 'Which topics?',
+  questionMultiSelect: true,
+  questionOptions: [
+    { id: 'light', label: 'Light' },
+    { id: 'sound', label: 'Sound' },
+    { id: 'other', label: 'Something else' },
+  ],
+};
+
+// The mocked translator returns keys, so the list separator is its key.
+const SEP = 'workbench.question.multiAnswerSeparator';
+
+const write = (container: HTMLElement, text: string) =>
+  act(async () => {
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="workbench-question-form-other-input"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+const q = (container: HTMLElement, id: string) => container.querySelector(`[data-testid="${id}"]`);
+
+describe('one answer in progress per question, across its surfaces', () => {
+  it('keeps the card’s picks when its free-text option opens the form', async () => {
+    const container = await mount(multi);
+    await click(q(container, 'workbench-question-form-dismiss'));
+    await click(q(container, 'workbench-question-option-light'));
+    await click(q(container, 'workbench-question-option-other'));
+    // The form is back with the canned pick kept and the text row on.
+    expect(q(container, 'workbench-question-form-option-light')?.getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    await write(container, 'Lenses');
+    await click(q(container, 'workbench-question-form-submit'));
+    expect(sent).toEqual([`Light${SEP}Lenses`]);
+  });
+
+  it('sends the written answer with picks made on the card afterwards', async () => {
+    const container = await mount(multi);
+    await click(q(container, 'workbench-question-form-other'));
+    await write(container, 'Lenses');
+    await click(q(container, 'workbench-question-form-dismiss'));
+    await click(q(container, 'workbench-question-option-sound'));
+    await click(q(container, 'workbench-question-confirm'));
+    expect(sent).toEqual([`Sound${SEP}Lenses`]);
+  });
+
+  it('keeps picks made in the form when it is dismissed and revived', async () => {
+    const container = await mount(multi);
+    await click(q(container, 'workbench-question-form-option-sound'));
+    await click(q(container, 'workbench-question-form-dismiss'));
+    // The card shows the same pick.
+    expect(q(container, 'workbench-question-option-sound')?.getAttribute('data-picked')).toBe(
+      'true',
+    );
+    await click(q(container, 'workbench-question-revive'));
+    expect(q(container, 'workbench-question-form-option-sound')?.getAttribute('aria-checked')).toBe(
+      'true',
+    );
+  });
+
+  it('keeps each conversation’s draft to itself', async () => {
+    let container = await mount(multi, 'ses-a');
+    await click(q(container, 'workbench-question-form-option-sound'));
+    await dispose?.();
+    dispose = undefined;
+    container = await mount(multi, 'ses-b');
+    expect(q(container, 'workbench-question-form-option-sound')?.getAttribute('aria-checked')).toBe(
+      'false',
+    );
+  });
+
+  it('drops the draft once the question is answered', async () => {
+    const container = await mount(multi);
+    await click(q(container, 'workbench-question-form-option-sound'));
+    expect(Object.keys(useQuestionDrafts.getState().drafts)).toHaveLength(1);
+    await act(async () => {
+      useWorkbenchStore.setState({
+        chat: [
+          { key: 'u', kind: 'user', text: 'Make a course' },
+          { ...multi, questionAnswered: true },
+          { key: 'u2', kind: 'user', text: 'Sound' },
+        ],
+      });
+    });
+    expect(useQuestionDrafts.getState().drafts).toEqual({});
+    expect(container).toBeTruthy();
   });
 });
