@@ -1544,7 +1544,7 @@ function HomePage() {
             className={cn('home-mobile-options', mobileMaterialsOpen && 'home-materials-view')}
             aria-describedby={undefined}
           >
-            <div className={mobileMaterialsOpen ? 'home-materials-header' : undefined}>
+            <div className={mobileMaterialsOpen ? 'home-materials-header' : 'home-options-header'}>
               {mobileMaterialsOpen && (
                 <button
                   type="button"
@@ -1562,8 +1562,10 @@ function HomePage() {
               {mobileMaterialsOpen && <span aria-hidden="true" />}
             </div>
             <div
-              className={mobileMaterialsOpen ? 'home-materials-body' : 'space-y-4'}
-              data-testid={mobileMaterialsOpen ? 'home-materials-body' : undefined}
+              className={
+                mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body space-y-4'
+              }
+              data-testid={mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body'}
             >
               {!mobileMaterialsOpen && (
                 <div className="home-mobile-teaching-options flex flex-wrap items-start gap-3">

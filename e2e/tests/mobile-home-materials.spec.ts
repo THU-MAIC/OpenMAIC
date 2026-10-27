@@ -37,7 +37,16 @@ test.describe('course material navigation and scrolling', () => {
       await page.goto('/');
       const options = page.getByTestId('home-mobile-options');
       if (size.mobile) await page.getByTestId('home-options-open').click();
+      const optionsBox = size.mobile ? (await options.boundingBox())! : null;
       await page.getByTestId('course-material-button').click();
+      if (optionsBox) {
+        await expect
+          .poll(async () => (await options.boundingBox())!.height)
+          .toBeCloseTo(optionsBox.height, 0);
+        await expect
+          .poll(async () => (await options.boundingBox())!.y)
+          .toBeCloseTo(optionsBox.y, 0);
+      }
       await page.locator('input[type="file"][multiple]').setInputFiles(
         Array.from({ length: 5 }, (_, index) => ({
           name: `notes-${index}.txt`,
@@ -80,11 +89,30 @@ test.describe('course material navigation and scrolling', () => {
       await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
       if (size.mobile) {
         await expect(page.locator('body')).toHaveAttribute('data-scroll-locked');
+        const materialBox = (await options.boundingBox())!;
         await options.getByRole('button', { name: 'Done', exact: true }).tap();
         await expect(panel).not.toBeVisible();
+        await expect
+          .poll(async () => (await options.boundingBox())!.height)
+          .toBeCloseTo(materialBox.height, 0);
+        await expect
+          .poll(async () => (await options.boundingBox())!.y)
+          .toBeCloseTo(materialBox.y, 0);
         await expect(
           options.getByRole('heading', { name: 'Course options', exact: true }),
         ).toBeVisible();
+        const optionsBody = page.getByTestId('home-options-body');
+        await expect
+          .poll(() =>
+            optionsBody.evaluate((element) => element.scrollHeight - element.clientHeight),
+          )
+          .toBeGreaterThan(0);
+        expect(await upwardTouchIsPrevented(optionsBody)).toBe(false);
+        await optionsBody.hover();
+        await page.mouse.wheel(0, 120);
+        await expect
+          .poll(() => optionsBody.evaluate((element) => element.scrollTop))
+          .toBeGreaterThan(0);
         await expect(page.getByTestId('course-material-pill')).toContainText('Course materials');
         await expect(page.getByTestId('course-material-pill')).toContainText('5');
         await page.getByTestId('course-material-pill').tap();
