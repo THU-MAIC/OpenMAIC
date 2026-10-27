@@ -33,12 +33,15 @@ function bundle(declared: boolean) {
 import React, {useLayoutEffect,useEffect,useMemo,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createObservationSession} from './lib/interactive/observation-bridge';
+import {createInteractiveMediaSession,mediaDocumentId,MEDIA_CONTROL} from './lib/interactive/media-bridge';
 import {patchHtmlForIframe} from './lib/utils/iframe';
 import {supportsInteractiveObservation, OBSERVATION_SCOPE_ID} from './lib/interactive/observation';
 import {sampleInteractiveState} from './lib/interactive/chat-observation';
 const useI18n=()=>({t:k=>k});
-const widget={registerObservation(){},registerIframe(){},markIframeReady(){},getSendMessage(){return undefined}};
-const useWidgetIframeStore=selector=>selector(widget);
+const widget={documentTokenByScene:{},sendMessageByScene:{},registerObservation(){},
+ registerIframe(sceneId,send,token){widget.documentTokenByScene[sceneId]=token;widget.sendMessageByScene[sceneId]=send;},
+ markIframeReady(){},getSendMessage(){return undefined}};
+const useWidgetIframeStore=Object.assign(selector=>selector(widget),{getState:()=>widget});
 const useCanvasStore={use:{pickTarget:()=>null}};
 const useElementRefsStore={use:{refs:()=>[]}};
 const runtimeErrorState={errors:{},clearScene(){}};
