@@ -223,7 +223,7 @@ function ChatNodeView({
   node: ChatNode;
   plan: PlannedPage[];
   onAnswer?: ChatAnswerHandler;
-  onRevive?: () => void;
+  onRevive?: (freeText?: boolean) => void;
   collapsedQuestion?: boolean;
   questionPointer?: QuestionPointer;
   repeat?: number;
@@ -316,7 +316,8 @@ export function ChatTimeline({
    * unaware the form exists.
    */
   dismissedQuestionKey?: string | null;
-  onReviveQuestion?: () => void;
+  /** Bring a dismissed question's form back; `freeText` opens it on its text row. */
+  onReviveQuestion?: (freeText?: boolean) => void;
   /**
    * The question whose form currently owns the composer. That row collapses to a
    * one-line pointer at the form, so the question and its options are on the

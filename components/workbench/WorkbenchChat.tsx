@@ -267,6 +267,8 @@ export function WorkbenchChat({
    * remember to reset.
    */
   const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
+  // The question whose form was brought back to write a free-text answer.
+  const [freeTextQuestionKey, setFreeTextQuestionKey] = useState<string | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
@@ -938,7 +940,10 @@ export function WorkbenchChat({
                     plan={displayedPlan}
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
-                    onReviveQuestion={() => setDismissedQuestionKey(null)}
+                    onReviveQuestion={(freeText) => {
+                      setFreeTextQuestionKey(freeText ? dismissedQuestionKey : null);
+                      setDismissedQuestionKey(null);
+                    }}
                     takenOverQuestionKey={
                       takeoverKey ?? (previewHostsQuestion ? (pending?.key ?? null) : null)
                     }
@@ -1000,6 +1005,7 @@ export function WorkbenchChat({
               <QuestionForm
                 node={takeover}
                 onAnswer={answerQuestion}
+                startInFreeText={freeTextQuestionKey === takeover.key}
                 onDismiss={() => setDismissedQuestionKey(takeover.key)}
                 t={t}
               />

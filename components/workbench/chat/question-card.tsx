@@ -41,6 +41,7 @@ import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
 import { useQuestionAnswer } from './question-card-state';
+import { isFreeTextOption } from './question-form-state';
 
 /** What the surfaces say about whose move it is. */
 export const QUESTION_WAITING_LABEL = defaultWorkbenchTranslator('workbench.question.waiting');
@@ -73,7 +74,7 @@ export function QuestionCard({
    * composer back over with it. The card never knows about that state itself —
    * the host hands it this callback or nothing.
    */
-  readonly onRevive?: () => void;
+  readonly onRevive?: (freeText?: boolean) => void;
   /**
    * This question's form currently owns the composer, so the row is the pointer
    * to it and nothing more. Never true together with `onRevive`: one means the
@@ -130,10 +131,13 @@ export function QuestionCard({
                 data-testid={`workbench-question-option-${option.id}`}
                 data-picked={isPicked ? 'true' : 'false'}
                 aria-pressed={mode === 'multi' ? isPicked : undefined}
-                disabled={locked}
+                // The free-text choice asks for writing: it hands back to the
+                // form's text row, and is dead where there is no form to reopen.
+                disabled={locked || (isFreeTextOption(option.id) && !onRevive)}
                 className={styles.questionCard.option}
                 onClick={() => {
-                  if (mode === 'multi') answer.toggle(option.id);
+                  if (isFreeTextOption(option.id)) onRevive?.(true);
+                  else if (mode === 'multi') answer.toggle(option.id);
                   else answer.answerWith(option.label);
                 }}
               >
@@ -164,7 +168,7 @@ export function QuestionCard({
               type="button"
               data-testid="workbench-question-revive"
               className={styles.questionCard.revive}
-              onClick={onRevive}
+              onClick={() => onRevive()}
             >
               {t('workbench.question.revive')}
             </button>

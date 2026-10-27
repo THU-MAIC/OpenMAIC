@@ -84,6 +84,15 @@ export type QuestionFormRow =
  */
 export const FREE_TEXT_OPTION_ID = 'other';
 
+/**
+ * Whether an option is the agent's free-text choice. Its label is a prompt to
+ * write, never an answer: every surface (the form, the preview's form, the
+ * transcript card) routes it to text entry through this one rule.
+ */
+export function isFreeTextOption(id: string): boolean {
+  return id === FREE_TEXT_OPTION_ID;
+}
+
 /** What is selected right now: envelope option ids, plus whether the "other" row is on. */
 export interface QuestionFormPicks {
   readonly picked: readonly string[];
@@ -99,7 +108,7 @@ export const NO_PICKS: QuestionFormPicks = { picked: [], otherPicked: false };
 export function questionFormRows(node: ChatNode): QuestionFormRow[] {
   const options = node.questionOptions ?? [];
   if (options.length === 0) return [];
-  const own = options.find((option) => option.id === FREE_TEXT_OPTION_ID);
+  const own = options.find((option) => isFreeTextOption(option.id));
   return [
     ...options
       .filter((option) => option !== own)
@@ -272,6 +281,8 @@ export function useQuestionForm(
   node: ChatNode,
   onAnswer?: (text: string) => Promise<boolean>,
   t: WorkbenchTranslator = defaultWorkbenchTranslator,
+  /** Open on the free-text row, picked: the user asked to write the answer. */
+  startInFreeText = false,
 ): {
   mode: 'open' | 'single' | 'multi';
   rows: QuestionFormRow[];
@@ -295,8 +306,11 @@ export function useQuestionForm(
   const mode = questionMode(node);
   const options = node.questionOptions ?? [];
   const rows = useMemo(() => questionFormRows(node), [node]);
-  const [picks, setPicks] = useState<QuestionFormPicks>(NO_PICKS);
-  const [highlight, setHighlight] = useState(0);
+  const startOther = startInFreeText && rows.length > 0;
+  const [picks, setPicks] = useState<QuestionFormPicks>(() =>
+    startOther ? pickOther(NO_PICKS, mode === 'multi') : NO_PICKS,
+  );
+  const [highlight, setHighlight] = useState(() => (startOther ? rows.length - 1 : 0));
   const [otherText, setOtherText] = useState('');
   const [openText, setOpenText] = useState('');
   const [sending, setSending] = useState(false);

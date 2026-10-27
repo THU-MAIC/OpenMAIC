@@ -49,6 +49,7 @@ export function QuestionForm({
   onAnswer,
   onDismiss,
   embedded = false,
+  startInFreeText = false,
   t = defaultWorkbenchTranslator,
 }: {
   readonly node: ChatNode;
@@ -61,9 +62,11 @@ export function QuestionForm({
    * already draws the frame: no box of its own.
    */
   readonly embedded?: boolean;
+  /** Open with the free-text row picked and focused (the user chose to write). */
+  readonly startInFreeText?: boolean;
   readonly t?: WorkbenchTranslator;
 }) {
-  const form = useQuestionForm(node, onAnswer, t);
+  const form = useQuestionForm(node, onAnswer, t, startInFreeText);
   const { mode, rows, locked } = form;
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const otherRef = useRef<HTMLInputElement | null>(null);
