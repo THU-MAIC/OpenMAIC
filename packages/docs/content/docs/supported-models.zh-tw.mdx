@@ -109,8 +109,10 @@ description: 開源版 OpenMAIC 的內建模型與 provider 清單。
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Doubao TTS 2.0 | `doubao-tts`         | 無模型選擇器，使用 Doubao TTS 2.0 音色 ID。                                                                                                                                                                                            |
 | ElevenLabs TTS | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
-| Google Gemini TTS | `google-tts`         | Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
+| Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | 瀏覽器原生 TTS | `browser-native-tts` | 無模型選擇器，使用瀏覽器和作業系統提供的音色清單。                                                                                                                                                                                     |
+
+Google TTS 預設使用 `gemini-3.8-flash-lite-tts`，已明確選取的模型保持不變。Google 列出的上述三個預覽模型的[最早下線日期](https://ai.google.dev/gemini-api/docs/deprecations)為 **2026 年 11 月 17 日**。請在下線前切換至 3.8 模型；使用部署託管憑證時，也須更新 `openmaic.yml` 中的 `tts` 槽位或供應商的 `models` 允許清單。Gemini 3.8 回傳的 WAV 會原樣保留，舊模型回傳的 PCM 仍會轉換為 WAV 供播放。
 
 ## ASR 模型
 

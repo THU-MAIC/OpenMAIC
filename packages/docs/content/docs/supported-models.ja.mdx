@@ -109,8 +109,10 @@ description: オープンソース版 OpenMAIC の組み込みモデルと provi
 | Lemonade TTS   | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Doubao TTS 2.0 | `doubao-tts`         | モデルセレクターはなく、Doubao TTS 2.0 の音声 ID を使用します。                                                                                                                                                                                            |
 | ElevenLabs TTS | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
-| Google Gemini TTS | `google-tts`         | Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
+| Google Gemini TTS | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | ブラウザネイティブ TTS | `browser-native-tts` | モデルセレクターはなく、ブラウザや OS が提供する音声リストを使用します。                                                                                                                                                                                     |
+
+Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的に選択済みのモデルは変更されません。Google が公表する上記 3 つのプレビューモデルの[最も早い提供終了日](https://ai.google.dev/gemini-api/docs/deprecations)は **2026 年 11 月 17 日**です。終了前に 3.8 モデルに切り替えてください。デプロイ側で管理する認証情報を使う場合は、`openmaic.yml` の `tts` スロットまたはプロバイダーの `models` 許可リストも更新します。Gemini 3.8 の WAV 応答はそのまま保持し、旧モデルの PCM 応答は引き続き再生用の WAV に変換します。
 
 ## ASR モデル
 

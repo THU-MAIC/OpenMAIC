@@ -109,8 +109,10 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 | Lemonade TTS       | `lemonade-tts`       | Kokoro v1 (`kokoro-v1`)                                                                                                                                                                                                                |
 | Doubao TTS 2.0     | `doubao-tts`         | لا يوجد محدد نموذج؛ تُستخدم معرّفات أصوات Doubao TTS 2.0.                                                                                                                                                                                      |
 | ElevenLabs TTS     | `elevenlabs-tts`     | Multilingual v2 (`eleven_multilingual_v2`)<br />Flash v2.5 (`eleven_flash_v2_5`)<br />Flash v2 (`eleven_flash_v2`)                                                                                                                     |
-| Google Gemini TTS  | `google-tts`         | Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
+| Google Gemini TTS  | `google-tts`         | Gemini 3.8 Flash-Lite TTS (`gemini-3.8-flash-lite-tts`)<br />Gemini 3.8 Flash TTS (`gemini-3.8-flash-tts`)<br />Gemini 3.1 Flash TTS Preview (`gemini-3.1-flash-tts-preview`)<br />Gemini 2.5 Flash Preview TTS (`gemini-2.5-flash-preview-tts`)<br />Gemini 2.5 Pro Preview TTS (`gemini-2.5-pro-preview-tts`)                                        |
 | Browser Native TTS | `browser-native-tts` | لا يوجد محدد نموذج؛ تُستخدم قائمة أصوات المتصفح ونظام التشغيل.                                                                                                                                                                |
+
+النموذج الافتراضي لـ Google TTS هو `gemini-3.8-flash-lite-tts`، وتبقى اختيارات النماذج الصريحة كما هي. تحدد Google **17 نوفمبر 2026** بوصفه [أقرب موعد محتمل للإيقاف](https://ai.google.dev/gemini-api/docs/deprecations) لنماذج المعاينة الثلاثة أعلاه. اختر نموذج 3.8 قبل إيقافها؛ وعند استخدام بيانات اعتماد تديرها بيئة النشر، حدّث أيضًا خانة `tts` أو قائمة `models` المسموح بها للمزوّد في `openmaic.yml`. تُحفظ استجابات WAV من Gemini 3.8 كما هي، بينما تستمر استجابات PCM القديمة بالتحويل إلى WAV للتشغيل.
 
 ## نماذج ASR
 
