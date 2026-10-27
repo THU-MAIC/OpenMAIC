@@ -47,12 +47,10 @@ async function renewForMaintenance(
 ) {
   const latest = (await store.pool.query<Study>('SELECT * FROM pbl_v3_studies WHERE id=$1', [id]))
     .rows[0];
-  if (
-    !latest ||
-    (latest.environment_id !== environmentId &&
-      latest.environment_recovery?.requestId !== environmentId)
-  )
-    return;
+  // A pending allocation belongs to the preparation holding the study lock.
+  // Renewing it here races initialization/starter writes under the environment
+  // lock. Preparation owns its lease until the binding is committed.
+  if (!latest || latest.environment_id !== environmentId) return;
   const now = await store.now();
   if (
     latest.archive_discard?.environmentId === environmentId ||

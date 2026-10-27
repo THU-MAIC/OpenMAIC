@@ -235,6 +235,62 @@ it('initializes the workspace idempotently through the owned private connection'
   expect(mkdir).toHaveBeenNthCalledWith(2, '/home/user/project');
 });
 
+describe('checkpoint import lease protection', () => {
+  it('renews after a slow upload before starting a separately bounded extraction', async () => {
+    const { sandbox, run } = archiveFixture();
+    const target = new E2BCompatibleSandboxProvider({ ...sandboxConfig(), lifetimeMs: 60_000 });
+    let now = 1_700_000_000_000,
+      expiresAt = now + 180_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    sdk.getInfo.mockImplementation(async () => ({
+      sandboxId: 'resource',
+      state: 'running',
+      endAt: new Date(expiresAt),
+      network: { allowPublicTraffic: false },
+      metadata: { openmaic_connection: 'test-installation', openmaic_operation: 'op' },
+    }));
+    sdk.setTimeout.mockImplementation(async (_resource, duration) => {
+      expiresAt = now + duration;
+    });
+    const write = vi.fn(async () => {
+      now += 110_000;
+    });
+    sdk.connect.mockResolvedValue({ ...sandbox, files: { ...sandbox.files, write } });
+    run.mockImplementation(async () => {
+      now += 80_000;
+      if (now >= expiresAt) throw new Error('Lease expired during extraction');
+      return { stdout: '' };
+    });
+    const source = async function* () {
+      yield new Uint8Array([1, 2, 3]);
+    };
+    try {
+      await expect(
+        target.importWorkspace('resource', 'op', source(), 'hash'),
+      ).resolves.toBeUndefined();
+      expect(write).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(sdk.setTimeout).toHaveBeenCalledWith('resource', 180_000, expect.any(Object));
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('does not extract when renewal after the upload fails', async () => {
+    const { provider, sandbox, run, remove } = archiveFixture();
+    sdk.connect.mockResolvedValue({ ...sandbox, files: { ...sandbox.files, write: vi.fn() } });
+    sdk.setTimeout.mockRejectedValueOnce(new Error('renewal unavailable'));
+    const source = async function* () {
+      yield new Uint8Array([1]);
+    };
+    await expect(provider.importWorkspace('resource', 'op', source(), 'hash')).rejects.toThrow(
+      'renewal unavailable',
+    );
+    expect(run).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('checkpoint generation deadline', () => {
   it('does not connect or generate an archive after a pre-expired checkpoint deadline', async () => {
     const { provider, run } = archiveFixture();

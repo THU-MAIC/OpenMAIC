@@ -354,6 +354,12 @@ multiple matches require operator investigation. Network calls hold no SQL trans
 Conditional updates prevent late replies resurrecting a destroyed environment.
 Session-lock admission uses at most half of the shared PG pool; excess operations return
 retryable `429 SANDBOX_BUSY`, leaving SQL connections available for the locked operations.
+PBL preparation briefly retries only idempotent lease admission on `ENVIRONMENT_BUSY`
+or `SANDBOX_BUSY`: up to five seconds, yielding for 50 ms without retaining an extra
+SQL connection or environment lock. Bound-environment reuse follows the existing durable
+20-second keepalive check and rechecks release intent while waiting. Pending preparation
+protects its own lease. Sustained pressure and provider failures remain errors; this
+does not replay allocations, starter writes, or teaching actions or change pool limits.
 After provider-confirmed expiry of a known resource, reconcile marks it destroyed and
 retains its last checkpoint. In the workspace, use Reconnect, then Open / restore project
 to allocate a new instance and recover that checkpoint. An empty discovery list for an

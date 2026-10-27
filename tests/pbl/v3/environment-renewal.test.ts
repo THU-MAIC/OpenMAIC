@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { setTimeout as delay } from 'node:timers/promises';
-import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
+import { touchEnvironment, renewPreparationLease } from '@/lib/server/pbl-v3/environment';
 import type { LearningStore, Study } from '@/lib/server/pbl-v3/store';
 import type { SandboxService } from '@/lib/server/sandbox/service';
 import type { SandboxEnvironment } from '@/lib/sandbox/types';
-import { sandboxConflict } from '@/lib/sandbox/errors';
+import { sandboxConflict, SandboxError } from '@/lib/sandbox/errors';
 
 vi.mock('server-only', () => ({}));
 const clock = vi.hoisted(() => ({ now: 0, onDelay: undefined as (() => void) | undefined }));
@@ -96,24 +96,88 @@ it("reuses another request's successful check after an environment lock conflict
   expect(f.query).not.toHaveBeenCalled();
 });
 
-it('can renew after a workspace mutation releases its lock without repeated provider inspection', async () => {
+it.each([
+  sandboxConflict('busy', 'ENVIRONMENT_BUSY'),
+  new SandboxError('SANDBOX_BUSY', 429, 'admission busy'),
+])('can renew after short contention without repeated provider inspection: %s', async (error) => {
   const f = fixture();
-  f.renew.mockRejectedValueOnce(sandboxConflict('busy', 'ENVIRONMENT_BUSY'));
+  f.renew.mockRejectedValueOnce(error);
   expect(await touchEnvironment(f.store, f.row, f.service)).toBe(f.env);
   expect(f.renew).toHaveBeenCalledTimes(2);
   expect(f.reconcile).toHaveBeenCalledTimes(1);
   expect(f.query).toHaveBeenCalledTimes(1);
 });
 
-it('bounds contention retries to five seconds and never records an unsuccessful check', async () => {
-  const f = fixture();
-  const error = sandboxConflict('busy', 'ENVIRONMENT_BUSY');
-  f.renew.mockRejectedValue(error);
+it.each([
+  sandboxConflict('busy', 'ENVIRONMENT_BUSY'),
+  new SandboxError('SANDBOX_BUSY', 429, 'admission busy'),
+])(
+  'bounds contention retries to five seconds and never records an unsuccessful check: %s',
+  async (error) => {
+    const f = fixture();
+    f.renew.mockRejectedValue(error);
+    const started = clock.now;
+    await expect(touchEnvironment(f.store, f.row, f.service)).rejects.toBe(error);
+    expect(clock.now - started).toBe(5_000);
+    expect(f.reconcile).toHaveBeenCalledTimes(1);
+    expect(f.query).not.toHaveBeenCalled();
+  },
+);
+
+it.each(['discarded', 'releasing'] as const)(
+  'does not renew after %s intent appears during contention',
+  async (intent) => {
+    const f = fixture();
+    f.renew.mockRejectedValueOnce(sandboxConflict('busy', 'ENVIRONMENT_BUSY'));
+    clock.onDelay = () => {
+      if (intent === 'discarded')
+        f.row.archive_discard = { environmentId: f.env.id } as Study['archive_discard'];
+      else
+        f.row.idle_turn_cleanup = {
+          environmentId: f.env.id,
+          releasing: true,
+        } as Study['idle_turn_cleanup'];
+    };
+    expect(await touchEnvironment(f.store, f.row, f.service)).toMatchObject({
+      workspaceReady: false,
+    });
+    expect(f.renew).toHaveBeenCalledTimes(1);
+    expect(f.query).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  sandboxConflict('busy', 'ENVIRONMENT_BUSY'),
+  new SandboxError('SANDBOX_BUSY', 429, 'admission busy'),
+])('retries only short preparation lease contention: %s', async (error) => {
+  const renewForCheckpoint = vi
+    .fn()
+    .mockRejectedValueOnce(error)
+    .mockResolvedValue({ renewed: true });
+  const service = { renewForCheckpoint } as unknown as SandboxService;
+  await renewPreparationLease(service, 'pending');
+  expect(renewForCheckpoint).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  sandboxConflict('busy', 'ENVIRONMENT_BUSY'),
+  new SandboxError('SANDBOX_BUSY', 429, 'admission busy'),
+])('leaves sustained preparation pressure visible after five seconds: %s', async (error) => {
+  const renewForCheckpoint = vi.fn().mockRejectedValue(error);
+  const service = { renewForCheckpoint } as unknown as SandboxService;
   const started = clock.now;
-  await expect(touchEnvironment(f.store, f.row, f.service)).rejects.toBe(error);
+  await expect(renewPreparationLease(service, 'pending')).rejects.toBe(error);
   expect(clock.now - started).toBe(5_000);
-  expect(f.reconcile).toHaveBeenCalledTimes(1);
-  expect(f.query).not.toHaveBeenCalled();
+});
+
+it('does not retry a preparation provider failure or claim renewal success', async () => {
+  const error = new Error('Provider renewal unavailable');
+  const renewForCheckpoint = vi.fn().mockRejectedValue(error);
+  await expect(
+    renewPreparationLease({ renewForCheckpoint } as unknown as SandboxService, 'pending'),
+  ).rejects.toBe(error);
+  expect(renewForCheckpoint).toHaveBeenCalledTimes(1);
+  expect(delay).not.toHaveBeenCalled();
 });
 
 it.each([new Error('Provider unavailable'), sandboxConflict('Not running')])(

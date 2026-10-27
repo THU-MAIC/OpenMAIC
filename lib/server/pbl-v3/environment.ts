@@ -66,6 +66,28 @@ export async function assertEnvironmentWritable(
     );
 }
 
+function renewalContention(error: unknown): error is SandboxError {
+  return (
+    error instanceof SandboxError &&
+    (error.reason === 'ENVIRONMENT_BUSY' || error.code === 'SANDBOX_BUSY')
+  );
+}
+
+/** Only retry lease admission, never replay initialization, file writes or allocation. */
+export async function renewPreparationLease(service: SandboxService, environmentId: string) {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    try {
+      await service.renewForCheckpoint(environmentId);
+      return;
+    } catch (error) {
+      if (!renewalContention(error) || Date.now() >= deadline) throw error;
+      // Failed environment admission retains no extra SQL connection or lock.
+      await delay(50);
+    }
+  }
+}
+
 /** Throttle successful checks for 20 seconds; briefly recheck contention without replaying a teaching action. */
 export async function touchEnvironment(
   store: LearningStore,
@@ -107,12 +129,7 @@ export async function touchEnvironment(
     try {
       await service.renew(env.id);
     } catch (error) {
-      if (
-        !(error instanceof SandboxError) ||
-        error.reason !== 'ENVIRONMENT_BUSY' ||
-        Date.now() >= deadline
-      )
-        throw error;
+      if (!renewalContention(error) || Date.now() >= deadline) throw error;
       // No SQL connection or environment lock is retained while waiting. Mutation
       // locks and pool admission stay fail-fast; only this keepalive is retried.
       await delay(50);
