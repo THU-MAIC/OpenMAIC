@@ -1,3 +1,4 @@
+import { mediaBridgeScript } from '@/lib/interactive/media-bridge';
 import { postProcessInteractiveHtml } from '@openmaic/generation/browser';
 import { injectIntoDocumentHead } from './html-document';
 import {
@@ -391,7 +392,7 @@ const ELEMENT_PICKER_SHIM = `<script data-iframe-element-picker-shim>
 export function patchHtmlForIframe(
   html: string,
   observation?: ObservationIdentity,
-  options?: { processed?: boolean },
+  options?: { processed?: boolean; mediaId?: string },
 ): string {
   if (!options?.processed) html = postProcessInteractiveHtml(html);
   const iframeCss = `<style data-iframe-patch>
@@ -409,7 +410,16 @@ export function patchHtmlForIframe(
 </style>`;
 
   const injection =
-    '\n' + ERROR_CAPTURE_SHIM + '\n' + ELEMENT_PICKER_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
+    '\n' +
+    ERROR_CAPTURE_SHIM +
+    '\n' +
+    ELEMENT_PICKER_SHIM +
+    '\n' +
+    STORAGE_SHIM +
+    '\n' +
+    (options?.mediaId ? mediaBridgeScript(options.mediaId) : '') +
+    '\n' +
+    iframeCss;
 
   const patched = injectIntoDocumentHead(html, injection);
   // Body end, not head: the reader captures the scope element as it installs.

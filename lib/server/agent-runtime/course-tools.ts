@@ -309,9 +309,9 @@ interface CoursePromptBlocks {
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;
   /**
-   * Session-materials listing. Present only when the session actually has
-   * materials (reference semantics: the block must not appear for a session
-   * with nothing to read).
+   * Static materials and knowledge-base guidance. The runner always
+   * passes it, including when nothing is attached, so the model can
+   * still use the knowledge base. The text does not list the set.
    */
   materials?: string;
   /** Roster guidance (list_voices / set_roster; always registered). */
