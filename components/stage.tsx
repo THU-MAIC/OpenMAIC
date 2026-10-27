@@ -152,6 +152,13 @@ export function Stage({
     'idle' | 'loading' | 'playback' | 'ready' | 'failed'
   >(() => (isEditorPreloaded() ? 'ready' : 'idle'));
   const playbackRef = useRef<PlaybackChromeRootHandle>(null);
+  // Teardown quiesces the learning surface (engine, SSE, audio) for good. When
+  // an edit entry that already tore it down is abandoned — the user picks
+  // Learn again first, or the editor fails to load — the same root would stay
+  // on screen, stopped. Bumping this key mounts a fresh one instead, so the
+  // learning surface always matches the selected mode.
+  const [playbackEpoch, setPlaybackEpoch] = useState(0);
+  const remountPlayback = useCallback(() => setPlaybackEpoch((epoch) => epoch + 1), []);
 
   useEffect(() => {
     const mountedPlayback = playbackRef.current;
@@ -168,26 +175,38 @@ export function Stage({
       return;
     }
     let cancelled = false;
+    let tornDown = false;
+    let activated = false;
     setEditorPreloadState((previous) =>
       mountedPlayback && previous === 'playback' ? 'playback' : 'loading',
     );
     void enterEditMode({
-      teardown: () => mountedPlayback?.teardown(),
+      teardown: () => {
+        if (!mountedPlayback) return undefined;
+        tornDown = true;
+        return mountedPlayback.teardown();
+      },
       preload: preloadEditor,
       activate: () => {
-        if (!cancelled) setEditorPreloadState('ready');
+        if (cancelled) return;
+        activated = true;
+        setEditorPreloadState('ready');
       },
       onError: (error) => {
         console.error('[Stage] hosted editor entry failed', error);
-        if (!cancelled) {
-          setEditorPreloadState((previous) => (previous === 'playback' ? 'playback' : 'failed'));
-        }
+        if (cancelled) return;
+        // Still on learning, but its root was already torn down.
+        if (tornDown) remountPlayback();
+        setEditorPreloadState((previous) => (previous === 'playback' ? 'playback' : 'failed'));
       },
     });
     return () => {
       cancelled = true;
+      // Abandoned before the editor took over: the learning root stays.
+      if (tornDown && !activated) remountPlayback();
     };
   }, [
+    remountPlayback,
     hosted,
     workbenchShowingClassroom,
     hostedSceneEditable,
@@ -248,10 +267,13 @@ export function Stage({
       preload: preloadEditor,
       activate: () => setMode('edit'),
       // Stay in playback so the failure surfaces rather than half-entering
-      // edit mode.
-      onError: (error) => console.error('[Stage] Pro mode entry failed during teardown', error),
+      // edit mode — on a fresh root, since the old one was torn down.
+      onError: (error) => {
+        console.error('[Stage] Pro mode entry failed during teardown', error);
+        remountPlayback();
+      },
     });
-  }, [mode, setMode]);
+  }, [mode, setMode, remountPlayback]);
 
   // Auto-exit edit mode when the current scene becomes uneditable
   // (pending generation, no scenes, currently generating).
@@ -366,6 +388,7 @@ export function Stage({
           className="absolute inset-0 flex"
         >
           <PlaybackChromeRoot
+            key={playbackEpoch}
             ref={playbackRef}
             onInteractivePickerChange={setPlaybackInteractivePicker}
             onRetryOutline={onRetryOutline}

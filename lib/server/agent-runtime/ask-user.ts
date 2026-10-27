@@ -33,7 +33,8 @@ const AskUserParams = Type.Object({
         label: Type.String({ description: 'Human-readable option label.' }),
       }),
       {
-        description: 'Optional multiple-choice options the interface can render as buttons.',
+        description:
+          "Optional multiple-choice options the interface can render as buttons. The interface always offers a free-text answer as the last row; to word that row yourself, give it the id 'other'.",
       },
     ),
   ),

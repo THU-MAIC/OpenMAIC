@@ -103,6 +103,7 @@ import { chatColumn, composerLayout, wbStyles as styles } from './chat/chat-styl
 import { ChatTimeline } from './chat/chat-timeline';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
+import { useQuestionHost } from '@/lib/workbench/question-host';
 import { composerTakeover } from './chat/question-form-state';
 import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
@@ -517,7 +518,13 @@ export function WorkbenchChat({
   // The composer IS the question while one waits, unless this exact question's
   // form was dismissed. One derived value, so the swap below and the card's way
   // back cannot describe different states.
-  const takeover = composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
+  // While the request preview shows this question as its form, the composer
+  // stays a composer and the transcript row points across to it.
+  const previewQuestionKey = useQuestionHost((s) => s.previewKey);
+  const previewHostsQuestion = pending !== null && pending.key === previewQuestionKey;
+  const takeover = previewHostsQuestion
+    ? null
+    : composerTakeover({ pending, dismissedKey: dismissedQuestionKey });
   // Pure-derived: the idle placeholder owns the rail only while it is truly
   // empty — no messages, not catching up, no run live. It disappears the
   // instant a bubble lands or a send flips the composer to STOP.
@@ -792,6 +799,16 @@ export function WorkbenchChat({
     [submit],
   );
 
+  // Publish the one answer path for the preview's question form.
+  useEffect(() => {
+    useQuestionHost.getState().setAnswer(answerQuestion);
+    return () => {
+      if (useQuestionHost.getState().answer === answerQuestion) {
+        useQuestionHost.getState().setAnswer(null);
+      }
+    };
+  }, [answerQuestion]);
+
   async function send() {
     // What is in the box IS the message — skill handles included. There is
     // nothing to assemble here.
@@ -920,7 +937,10 @@ export function WorkbenchChat({
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
                     onReviveQuestion={() => setDismissedQuestionKey(null)}
-                    takenOverQuestionKey={takeoverKey}
+                    takenOverQuestionKey={
+                      takeoverKey ?? (previewHostsQuestion ? (pending?.key ?? null) : null)
+                    }
+                    questionPointer={previewHostsQuestion ? 'preview' : 'below'}
                     t={t}
                   />
                 ) : showEmptyState ? (

@@ -118,6 +118,9 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       aria-hidden={hidden || undefined}
       className={cn(
         'ws-pane ws-pane-last h-full min-w-0 flex-1 flex-col',
+        // Opening the pane (a course handed over from the request preview, or
+        // opened from the library) fades in rather than snapping.
+        'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-500',
         hidden ? 'hidden' : 'flex',
       )}
     >

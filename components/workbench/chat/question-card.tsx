@@ -48,11 +48,15 @@ export const QUESTION_ANSWERED_LABEL = defaultWorkbenchTranslator('workbench.que
 /** The way back to the composer form, on the one card whose form was waved off. */
 export const QUESTION_REVIVE_LABEL = defaultWorkbenchTranslator('workbench.question.revive');
 
+/** Where the form that holds an open question sits, for the collapsed row's pointer. */
+export type QuestionPointer = 'below' | 'preview';
+
 export function QuestionCard({
   node,
   onAnswer,
   onRevive,
   collapsed = false,
+  pointer = 'below',
   t = defaultWorkbenchTranslator,
 }: {
   readonly node: ChatNode;
@@ -76,6 +80,8 @@ export function QuestionCard({
    * form is up, the other means it was waved off.
    */
   readonly collapsed?: boolean;
+  /** The form is the composer's (`below`) or the request preview's (`preview`). */
+  readonly pointer?: QuestionPointer;
   readonly t?: WorkbenchTranslator;
 }) {
   const answer = useQuestionAnswer(node, onAnswer, t);
@@ -104,7 +110,11 @@ export function QuestionCard({
         <span>{t(answered ? 'workbench.question.answered' : 'workbench.question.waiting')}</span>
         {summaryOnly ? (
           <span className={styles.questionCard.summaryPointer}>
-            {t('workbench.question.inFormBelow')}
+            {t(
+              pointer === 'preview'
+                ? 'workbench.question.inPreview'
+                : 'workbench.question.inFormBelow',
+            )}
           </span>
         ) : null}
       </div>

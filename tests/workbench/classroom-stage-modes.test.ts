@@ -215,4 +215,45 @@ describe('hosted Stage mode enforcement and playback lifecycle', () => {
     expect(has('learning')).toBe(true);
     vi.restoreAllMocks();
   });
+
+  it('remounts a torn-down learning surface when Learn is chosen before edit entry finishes', async () => {
+    let finish!: () => void;
+    probe.preload.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await render(false);
+    expect(probe.teardown).toHaveBeenCalledOnce();
+    await render(true);
+    // The stopped root is replaced by a fresh one, not left on screen.
+    expect(has('learning')).toBe(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    await act(async () => finish());
+    expect(has('edit')).toBe(false);
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+  });
+
+  it('remounts a torn-down learning surface when editor preload fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    probe.preload.mockRejectedValue(new Error('chunk failed'));
+    await render(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await render(false);
+    expect(probe.teardown).toHaveBeenCalledOnce();
+    expect(has('learning')).toBe(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    vi.restoreAllMocks();
+  });
+
+  it('does not remount learning when no teardown ran', async () => {
+    await render(true);
+    await act(async () => useStageStore.setState({ courseGenerating: true }));
+    await render(false);
+    expect(probe.teardown).not.toHaveBeenCalled();
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+  });
 });

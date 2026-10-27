@@ -35,6 +35,7 @@
     "submit": "إرسال",
     "dismiss": "تجاهل",
     "inFormBelow": "أجب في النموذج أدناه",
+    "inPreview": "أجب في المعاينة",
     "multiAnswerSeparator": "، "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "تدريب مهني",
       "workshop-style": "ورشة تفاعلية"
     }
+  },
+  "preview": {
+    "eyebrow": "قيد العمل",
+    "understanding": "فهم طلبك",
+    "understandingDesc": "نقرأ ما طلبته وما يحتاجه…",
+    "asking": "سؤال سريع",
+    "askingDesc": "يتابع الوكيل بعد إجابتك.",
+    "assembling": "تجهيز الفصل",
+    "assemblingDesc": "إنشاء المقرر واختيار المعلم والزملاء…",
+    "opening": "جارٍ فتح الفصل",
+    "page": "الصفحة {{order}}",
+    "pageCaption": "الصفحة {{order}} · {{title}}",
+    "skills": "المهارات المجهّزة",
+    "resting": "سيظهر مقررك هنا",
+    "restingDesc": "تابع المحادثة؛ عند إنشاء مقرر سيُفتح في هذه العلامة."
   },
   "thinking": {
     "active": "يفكّر…",

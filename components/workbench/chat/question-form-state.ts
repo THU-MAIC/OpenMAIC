@@ -73,7 +73,16 @@ export function composerTakeover(input: {
  */
 export type QuestionFormRow =
   | { readonly kind: 'option'; readonly id: string; readonly label: string }
-  | { readonly kind: 'other' };
+  /** `label` is the agent's own wording for it, when it supplied the row. */
+  | { readonly kind: 'other'; readonly label?: string };
+
+/**
+ * The option id the agent uses for its own free-text choice (`ask_user`'s
+ * schema says so). That option IS the form's "other…" row — with the agent's
+ * label — rather than a second free-text row beside it. Matched on the id,
+ * never on wording.
+ */
+export const FREE_TEXT_OPTION_ID = 'other';
 
 /** What is selected right now: envelope option ids, plus whether the "other" row is on. */
 export interface QuestionFormPicks {
@@ -90,9 +99,12 @@ export const NO_PICKS: QuestionFormPicks = { picked: [], otherPicked: false };
 export function questionFormRows(node: ChatNode): QuestionFormRow[] {
   const options = node.questionOptions ?? [];
   if (options.length === 0) return [];
+  const own = options.find((option) => option.id === FREE_TEXT_OPTION_ID);
   return [
-    ...options.map((option): QuestionFormRow => ({ kind: 'option', ...option })),
-    { kind: 'other' },
+    ...options
+      .filter((option) => option !== own)
+      .map((option): QuestionFormRow => ({ kind: 'option', ...option })),
+    own ? { kind: 'other', label: own.label } : { kind: 'other' },
   ];
 }
 

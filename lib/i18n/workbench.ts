@@ -68,6 +68,7 @@ export const workbenchEn = {
      * answer goes instead of repeating them.
      */
     inFormBelow: 'Answer it in the form below',
+    inPreview: 'Answer it in the preview',
     /**
      * How several picked labels become one message. It ends up in the user's own
      * bubble, so it follows the language of the surface: a CJK enumeration
@@ -161,6 +162,21 @@ export const workbenchEn = {
       vocational: 'Vocational training',
       'workshop-style': 'Interactive workshop',
     },
+  },
+  preview: {
+    eyebrow: 'Working on it',
+    understanding: 'Understanding your request',
+    understandingDesc: 'Reading what you asked for and what it needs…',
+    asking: 'A quick question',
+    askingDesc: 'The agent continues once you answer.',
+    assembling: 'Assembling the classroom',
+    assemblingDesc: 'Creating the course and casting its teacher and classmates…',
+    opening: 'Opening the classroom',
+    page: 'Page {{order}}',
+    pageCaption: 'Page {{order}} · {{title}}',
+    skills: 'Equipped skills',
+    resting: 'Your course will appear here',
+    restingDesc: 'Keep talking in the conversation; when a course is built, it opens in this tab.',
   },
   thinking: {
     active: 'Thinking…',
@@ -417,6 +433,7 @@ export const workbenchZh = {
     submit: '提交',
     dismiss: '放弃',
     inFormBelow: '在下方表单里回答',
+    inPreview: '在右侧预览中回答',
     multiAnswerSeparator: '、',
   },
   material: {
@@ -488,6 +505,21 @@ export const workbenchZh = {
       vocational: '职业实训',
       'workshop-style': '互动工作坊',
     },
+  },
+  preview: {
+    eyebrow: '正在进行',
+    understanding: '理解你的需求',
+    understandingDesc: '正在阅读你的要求和相关资料…',
+    asking: '需要你确认一下',
+    askingDesc: '回答后继续。',
+    assembling: '搭建课堂',
+    assemblingDesc: '正在创建课程，安排老师和同学…',
+    opening: '正在打开课堂',
+    page: '第 {{order}} 页',
+    pageCaption: '第 {{order}} 页 · {{title}}',
+    skills: '已装备的技能',
+    resting: '课程会出现在这里',
+    restingDesc: '在对话里继续；生成课程后会在这个标签页打开。',
   },
   thinking: {
     active: '思考中…',

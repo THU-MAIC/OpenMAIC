@@ -1,0 +1,572 @@
+[
+  [
+    0,
+    "user_message",
+    { "text": "Research a trending AI topic, then build a lesson", "delivery": "queued" }
+  ],
+  [559, "session_resumed", { "reason": "follow_up" }],
+  [589, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    2845,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "(agent text)" },
+          {
+            "type": "toolCall",
+            "id": "call_00_VQ1pNjuqgjOMGYAiZyDc2289",
+            "name": "web_search",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "call_01_1uUlcv1SmIWBM0sIoDpE4598",
+            "name": "web_search",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    2846,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_VQ1pNjuqgjOMGYAiZyDc2289",
+      "toolName": "web_search",
+      "args": { "query": "topic query 1" }
+    }
+  ],
+  [
+    3632,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_VQ1pNjuqgjOMGYAiZyDc2289",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    3632,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_01_1uUlcv1SmIWBM0sIoDpE4598",
+      "toolName": "web_search",
+      "args": { "query": "topic query 2" }
+    }
+  ],
+  [
+    3758,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_1uUlcv1SmIWBM0sIoDpE4598",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [3758, "turn_end", {}],
+  [3766, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    6371,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_vMXZpOfOMs2m0pDHF0Rt0332",
+            "name": "web_search",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "call_01_WlUtd3dyxoewxNBWm5df9145",
+            "name": "web_search",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    6371,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_vMXZpOfOMs2m0pDHF0Rt0332",
+      "toolName": "web_search",
+      "args": { "query": "topic query 3" }
+    }
+  ],
+  [
+    6502,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_vMXZpOfOMs2m0pDHF0Rt0332",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    6502,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_01_WlUtd3dyxoewxNBWm5df9145",
+      "toolName": "web_search",
+      "args": { "query": "topic query 4" }
+    }
+  ],
+  [
+    6635,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_WlUtd3dyxoewxNBWm5df9145",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [6635, "turn_end", {}],
+  [6637, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    8800,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_3sX3xPfcASkALYhdA62r6140",
+            "name": "web_search",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "call_01_1C93AvIWyALL5EAhKDVy8928",
+            "name": "web_search",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    8800,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_3sX3xPfcASkALYhdA62r6140",
+      "toolName": "web_search",
+      "args": { "query": "topic query 5" }
+    }
+  ],
+  [
+    8943,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_3sX3xPfcASkALYhdA62r6140",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    8943,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_01_1C93AvIWyALL5EAhKDVy8928",
+      "toolName": "web_search",
+      "args": { "query": "topic query 6" }
+    }
+  ],
+  [
+    9042,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_1C93AvIWyALL5EAhKDVy8928",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [9042, "turn_end", {}],
+  [9044, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    11345,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_2xPKfGBQ7zy7zSgYY3x36034",
+            "name": "fetch_url",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    11345,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_2xPKfGBQ7zy7zSgYY3x36034",
+      "toolName": "fetch_url",
+      "args": { "url": "https://example.com/6" }
+    }
+  ],
+  [
+    11349,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_2xPKfGBQ7zy7zSgYY3x36034",
+      "toolName": "fetch_url",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [11349, "turn_end", {}],
+  [11351, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    13586,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_POLQT7bOGalr3l54oetH5222",
+            "name": "web_search",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    13586,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_POLQT7bOGalr3l54oetH5222",
+      "toolName": "web_search",
+      "args": { "query": "topic query 7" }
+    }
+  ],
+  [
+    13761,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_POLQT7bOGalr3l54oetH5222",
+      "toolName": "web_search",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [13761, "turn_end", {}],
+  [13769, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    15648,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_UBOuwSjFp5jX56v8lbBM1934",
+            "name": "fetch_url",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    15648,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_UBOuwSjFp5jX56v8lbBM1934",
+      "toolName": "fetch_url",
+      "args": { "url": "https://example.com/7" }
+    }
+  ],
+  [
+    24889,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_UBOuwSjFp5jX56v8lbBM1934",
+      "toolName": "fetch_url",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [24890, "turn_end", {}],
+  [24892, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    27410,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_BlMpaDTqi71GVqPd4qfS4578",
+            "name": "read_material",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    27410,
+    "tool_execution_start",
+    { "toolCallId": "call_00_BlMpaDTqi71GVqPd4qfS4578", "toolName": "read_material", "args": {} }
+  ],
+  [
+    27417,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_BlMpaDTqi71GVqPd4qfS4578",
+      "toolName": "read_material",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [27418, "turn_end", {}],
+  [27420, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    29193,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_T64rFTk7GAlenJuqXeWi4718",
+            "name": "read_material",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    29193,
+    "tool_execution_start",
+    { "toolCallId": "call_00_T64rFTk7GAlenJuqXeWi4718", "toolName": "read_material", "args": {} }
+  ],
+  [
+    29195,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_T64rFTk7GAlenJuqXeWi4718",
+      "toolName": "read_material",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [29195, "turn_end", {}],
+  [29198, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    30724,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_wjukDRnbWLEUZR0bZyjx0733",
+            "name": "read_skill",
+            "arguments": {}
+          },
+          {
+            "type": "toolCall",
+            "id": "call_01_Yfh3KPFX1zeOz1NiTshU5714",
+            "name": "read_skill",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    30725,
+    "tool_execution_start",
+    { "toolCallId": "call_00_wjukDRnbWLEUZR0bZyjx0733", "toolName": "read_skill", "args": {} }
+  ],
+  [
+    30730,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_wjukDRnbWLEUZR0bZyjx0733",
+      "toolName": "read_skill",
+      "isError": true,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    30730,
+    "tool_execution_start",
+    { "toolCallId": "call_01_Yfh3KPFX1zeOz1NiTshU5714", "toolName": "read_skill", "args": {} }
+  ],
+  [
+    30732,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_Yfh3KPFX1zeOz1NiTshU5714",
+      "toolName": "read_skill",
+      "isError": true,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [30732, "turn_end", {}],
+  [30734, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    32691,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_V7OU7kzf8UvKaJ2XgPkQ2852",
+            "name": "read",
+            "arguments": { "path": "/skills/agent-runtime/stage-design/SKILL.md" }
+          },
+          {
+            "type": "toolCall",
+            "id": "call_01_9tcyT5S1EI4jqbsTKqEL8964",
+            "name": "read",
+            "arguments": { "path": "/skills/agent-runtime/stage-design/SKILL.md" }
+          }
+        ]
+      }
+    }
+  ],
+  [
+    32692,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_V7OU7kzf8UvKaJ2XgPkQ2852",
+      "toolName": "read",
+      "args": { "path": "/skills/agent-runtime/stage-design/SKILL.md" }
+    }
+  ],
+  [
+    32695,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_V7OU7kzf8UvKaJ2XgPkQ2852",
+      "toolName": "read",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [
+    32695,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_01_9tcyT5S1EI4jqbsTKqEL8964",
+      "toolName": "read",
+      "args": { "path": "/skills/agent-runtime/stage-design/SKILL.md" }
+    }
+  ],
+  [
+    32696,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_01_9tcyT5S1EI4jqbsTKqEL8964",
+      "toolName": "read",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [32696, "turn_end", {}],
+  [32698, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    34357,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_NbWX6omojbCxhQXE7Ij79520",
+            "name": "list_voices",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    34357,
+    "tool_execution_start",
+    { "toolCallId": "call_00_NbWX6omojbCxhQXE7Ij79520", "toolName": "list_voices", "args": {} }
+  ],
+  [
+    34358,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_NbWX6omojbCxhQXE7Ij79520",
+      "toolName": "list_voices",
+      "isError": false,
+      "result": { "content": [], "details": {} }
+    }
+  ],
+  [34358, "turn_end", {}],
+  [34359, "message_start", { "message": { "role": "assistant", "content": [] } }],
+  [
+    37210,
+    "message_end",
+    {
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "toolCall",
+            "id": "call_00_EIKuvTQTZoINz87diIPF1925",
+            "name": "create_stage",
+            "arguments": {}
+          }
+        ]
+      }
+    }
+  ],
+  [
+    37210,
+    "tool_execution_start",
+    {
+      "toolCallId": "call_00_EIKuvTQTZoINz87diIPF1925",
+      "toolName": "create_stage",
+      "args": { "title": "A lesson" }
+    }
+  ],
+  [37248, "stage_link", { "stageId": "stage-new" }],
+  [
+    37249,
+    "tool_execution_end",
+    {
+      "toolCallId": "call_00_EIKuvTQTZoINz87diIPF1925",
+      "toolName": "create_stage",
+      "isError": false,
+      "result": { "content": [], "details": { "stageId": "stage-new" } }
+    }
+  ],
+  [37249, "turn_end", {}],
+  [37251, "message_start", { "message": { "role": "assistant", "content": [] } }]
+]

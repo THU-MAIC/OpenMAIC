@@ -61,6 +61,23 @@ describe('questionFormRows', () => {
     // No options means no rows to navigate: the form degrades to one box.
     expect(questionFormRows(question())).toEqual([]);
   });
+
+  it("uses the agent's own 'other' option as the free-text row, not a second one", () => {
+    const rows = questionFormRows(
+      question({
+        questionOptions: [{ id: 'other', label: '其他（我来补充说明）' }, ...options],
+      }),
+    );
+    expect(rows).toEqual([
+      { kind: 'option', id: 'plan-a', label: '按章节' },
+      { kind: 'option', id: 'plan-b', label: '按项目' },
+      { kind: 'other', label: '其他（我来补充说明）' },
+    ]);
+    // Matched on the id only: wording alone never removes a row.
+    expect(
+      questionFormRows(question({ questionOptions: [{ id: 'misc', label: '其他' }] })),
+    ).toEqual([{ kind: 'option', id: 'misc', label: '其他' }, { kind: 'other' }]);
+  });
 });
 
 describe('picking', () => {

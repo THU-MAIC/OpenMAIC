@@ -35,6 +35,7 @@
     "submit": "Envoyer",
     "dismiss": "Abandonner",
     "inFormBelow": "Répondez dans le formulaire ci-dessous",
+    "inPreview": "Répondez dans l’aperçu",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Formation professionnelle",
       "workshop-style": "Atelier interactif"
     }
+  },
+  "preview": {
+    "eyebrow": "En cours",
+    "understanding": "Compréhension de votre demande",
+    "understandingDesc": "Lecture de votre demande et de ce qu’elle requiert…",
+    "asking": "Une petite question",
+    "askingDesc": "L’agent continue dès votre réponse.",
+    "assembling": "Mise en place de la classe",
+    "assemblingDesc": "Création du cours et choix de l’enseignant et des camarades…",
+    "opening": "Ouverture de la classe",
+    "page": "Page {{order}}",
+    "pageCaption": "Page {{order}} · {{title}}",
+    "skills": "Compétences équipées",
+    "resting": "Votre cours apparaîtra ici",
+    "restingDesc": "Poursuivez la conversation ; une fois un cours créé, il s’ouvre dans cet onglet."
   },
   "thinking": {
     "active": "Réflexion…",

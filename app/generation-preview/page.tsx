@@ -31,7 +31,7 @@ import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/pr
 import { visibleOutlines } from '@/lib/generation-run-client/reducer';
 import { useGenerationRun } from '@/lib/generation-run-client/use-generation-run';
 import { ALL_STEPS } from './types';
-import { StepVisualizer } from './components/visualizers';
+import { StepVisualizer } from '@/components/generation/step-visualizers';
 
 const log = createLogger('GenerationPreview');
 

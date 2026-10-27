@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
   Search,
   Globe,
@@ -47,17 +47,30 @@ export function StepVisualizer({
 }
 
 // Web Search: Miniature search engine results page with animated query + result rows
-function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url: string }> }) {
+export function WebSearchVisualizer({
+  sources,
+  scrollable = false,
+}: {
+  sources: Array<{ title: string; url: string }>;
+  /**
+   * Show every source in a scrolling list (soft edges, following the newest
+   * unless scrolled up, the newest highlighted) instead of the first four with
+   * a cycling highlight. The classic page keeps the default.
+   */
+  scrollable?: boolean;
+}) {
   const [activeResult, setActiveResult] = useState(0);
 
   // Cycle through result highlight when we have sources
   useEffect(() => {
-    if (sources.length === 0) return;
+    if (scrollable || sources.length === 0) return;
     const timer = setInterval(() => {
       setActiveResult((prev) => (prev + 1) % Math.min(sources.length, 4));
     }, 1400);
     return () => clearInterval(timer);
-  }, [sources.length]);
+  }, [scrollable, sources.length]);
+
+  if (scrollable && sources.length > 0) return <ScrollingSources sources={sources} />;
 
   // Placeholder results for skeleton state
   const skeletonResults = [
@@ -142,7 +155,7 @@ function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url:
                 const isActive = i === activeResult;
                 return (
                   <motion.div
-                    key={source.url}
+                    key={`${source.url}-${i}`}
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.08, duration: 0.25 }}
@@ -200,8 +213,121 @@ function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url:
   );
 }
 
+/** How far from the bottom still counts as following the newest entry. */
+const FOLLOW_SLACK_PX = 12;
+
+/**
+ * Every source of a long research run in a scrolling list: soft fades at the
+ * edges that have more, the newest entry highlighted, and the list following
+ * the newest as entries arrive unless the reader has scrolled up.
+ */
+function ScrollingSources({ sources }: { sources: Array<{ title: string; url: string }> }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+  const [edges, setEdges] = useState({ top: false, bottom: false });
+  const reduced = useReducedMotion();
+
+  const measure = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const fromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    followRef.current = fromBottom <= FOLLOW_SLACK_PX;
+    setEdges({ top: el.scrollTop > 2, bottom: fromBottom > 2 });
+  }, []);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    if (followRef.current) {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+    measure();
+  }, [sources.length, measure, reduced]);
+
+  const fade =
+    edges.top && edges.bottom
+      ? 'linear-gradient(to bottom, transparent, #000 22px, #000 calc(100% - 22px), transparent)'
+      : edges.top
+        ? 'linear-gradient(to bottom, transparent, #000 22px)'
+        : edges.bottom
+          ? 'linear-gradient(to bottom, #000 calc(100% - 22px), transparent)'
+          : undefined;
+  const newest = sources.length - 1;
+
+  return (
+    // Sized for reading, not as a thumbnail: the list is the scene's content.
+    // The count badge sits on the card's own corner, so it centres with it.
+    <div className="relative w-80 max-w-full">
+      <motion.div
+        className="absolute -inset-6 blur-3xl rounded-full bg-teal-500/8"
+        animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0.5, 0.3] }}
+        transition={{ duration: 3.5, repeat: Infinity }}
+      />
+      <div className="w-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden relative text-left">
+        <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
+          <Search className="size-3.5 text-teal-500 shrink-0" />
+          <div className="flex-1 h-5 bg-slate-50 dark:bg-slate-700/50 rounded-full overflow-hidden flex items-center px-2">
+            <div className="h-1.5 w-[70%] bg-teal-500/25 rounded-full" />
+          </div>
+        </div>
+        <div
+          ref={listRef}
+          data-testid="web-search-sources"
+          onScroll={measure}
+          className="max-h-[208px] overflow-y-auto overscroll-contain p-2 space-y-0.5 [scrollbar-width:thin]"
+          style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
+        >
+          {sources.map((source, i) => {
+            const isNewest = i === newest;
+            return (
+              <motion.div
+                key={`${source.url}-${source.title}-${i}`}
+                data-newest={isNewest ? 'true' : undefined}
+                initial={reduced ? false : { opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.25 }}
+                className={cn(
+                  'relative rounded-lg px-2 py-1.5 space-y-0.5 transition-colors duration-300',
+                  isNewest && 'bg-teal-500/[0.06] dark:bg-teal-400/[0.08]',
+                )}
+              >
+                <div
+                  className={cn(
+                    'text-xs font-semibold truncate leading-snug',
+                    isNewest
+                      ? 'text-teal-600 dark:text-teal-400'
+                      : 'text-slate-600 dark:text-slate-400',
+                  )}
+                >
+                  {source.title}
+                </div>
+                <div className="text-[10px] text-teal-600/60 dark:text-teal-400/60 truncate leading-snug">
+                  {source.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 48)}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+      <motion.div
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+        className="absolute -top-2 -right-2 h-6 px-2 rounded-full bg-teal-500 text-white text-[10px] font-bold flex items-center justify-center shadow-lg shadow-teal-500/25 z-20 gap-0.5"
+      >
+        <Globe className="size-2.5" />
+        {sources.length}
+      </motion.div>
+    </div>
+  );
+}
+
 // Outline: Streams real outline data as it arrives from SSE
-function StreamingOutlineVisualizer({
+export function StreamingOutlineVisualizer({
   outlines,
   onExpand,
 }: {
@@ -341,7 +467,7 @@ function StreamingOutlineVisualizer({
 }
 
 // Content: Cycles through distinct representations of Slides, Quiz, PBL, Interactive
-function AgentGenerationVisualizer() {
+export function AgentGenerationVisualizer() {
   return (
     <div className="w-60 h-40 mx-auto flex items-center justify-center">
       <div className="flex gap-3">
@@ -367,7 +493,7 @@ function AgentGenerationVisualizer() {
   );
 }
 
-function ContentVisualizer() {
+export function ContentVisualizer() {
   const [index, setIndex] = useState(0);
 
   // 0: Slide (Blue)
@@ -670,7 +796,7 @@ function ContentVisualizer() {
 }
 
 // Actions: Timeline of speech, spotlight, and interactions being orchestrated
-function ActionsVisualizer() {
+export function ActionsVisualizer() {
   const [activeIdx, setActiveIdx] = useState(0);
 
   const actionItems = [
