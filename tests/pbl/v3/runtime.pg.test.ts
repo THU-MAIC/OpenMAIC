@@ -2152,6 +2152,360 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it.each(['succeeded', 'failed', 'cancelled'] as const)(
+    'reconciles an already persisted %s terminal frame without publishing it twice',
+    async (status) => {
+      const { study, sessionId } = await executionFixture();
+      const claim = await agents.claimNextSession('flushed-terminal', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const error =
+        status === 'failed' ? '[MODEL_REQUEST_FAILED] A durable request failure.' : undefined;
+      await agents.appendRunEvent(sessionId, 'flushed-terminal', {
+        ts: Date.now(),
+        attempt: claim!.attempt,
+        type: 'session_end',
+        data: { status, ...(error ? { error } : {}) },
+      });
+      await expireExecution(sessionId);
+      const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+      await Promise.all([expireStalledTeachingTurns(), expireStalledTeachingTurns()]);
+      expect(await agents.getSession(sessionId)).toMatchObject({ status });
+      expect((await agents.getSession(sessionId))?.error).toBe(error);
+      expect(
+        (await agents.readEventsAfter(sessionId, 0, 100)).filter((e) => e.type === 'session_end'),
+      ).toHaveLength(1);
+      if (status !== 'succeeded') {
+        await study.send('retry');
+        const next = await agents.claimNextSession('retried-terminal', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        expect(next!.attempt).toBe(claim!.attempt);
+        await expireExecution(sessionId);
+        await expireStalledTeachingTurns();
+        expect(await agents.getSession(sessionId)).toMatchObject({
+          status: 'failed',
+          error: expect.stringContaining('AGENT_EXECUTION_IDLE_TIMEOUT'),
+        });
+        expect(
+          (await agents.readEventsAfter(sessionId, 0, 100)).filter((e) => e.type === 'session_end'),
+        ).toHaveLength(2);
+      }
+    },
+  );
+
+  it('forwards progress after a committed anonymous-owner claim without reviving an old grant', async () => {
+    const { study, sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('claimed-owner', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const formerOwner = `anon:${randomUUID()}`;
+    // The committed claim has moved these rows to the account; the live runner still has its old owner.
+    await pool.query('INSERT INTO owner_merges(from_owner_id,to_owner_id) VALUES($1,$2)', [
+      formerOwner,
+      principal.ownerId,
+    ]);
+    await pool.query(
+      "UPDATE sandbox_session_grants SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1",
+      [sessionId],
+    );
+    const { recordTeachingProgress, expireStalledTeachingTurns } =
+      await import('@/lib/server/pbl-v3/execution-watchdog');
+    const input = {
+      sessionId,
+      ownerId: formerOwner,
+      workerId: 'claimed-owner',
+      attempt: claim!.attempt,
+    };
+    await pool.query(
+      "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '14 minutes' WHERE session_id=$1",
+      [sessionId],
+    );
+    expect(await recordTeachingProgress(input)).toBe(true);
+    const grant = (
+      await pool.query(
+        'SELECT grant_id,owner_id,expires_at>clock_timestamp() AS renewed FROM sandbox_session_grants WHERE session_id=$1',
+        [sessionId],
+      )
+    ).rows[0];
+    expect(grant).toMatchObject({ owner_id: principal.ownerId, renewed: true });
+    await expireStalledTeachingTurns();
+    expect((await agents.getSession(sessionId))!.status).toBe('running');
+    await pool.query('DELETE FROM sandbox_session_grants WHERE session_id=$1', [sessionId]);
+    expect(await recordTeachingProgress(input)).toBe(true);
+    expect(
+      (await pool.query('SELECT 1 FROM sandbox_session_grants WHERE session_id=$1', [sessionId]))
+        .rows,
+    ).toHaveLength(0);
+    await agents.finishSession(sessionId, 'claimed-owner', {
+      status: 'succeeded',
+      expectedAttempt: claim!.attempt,
+    });
+    expect((await store.get(study.id, principal.ownerId)).owner_id).toBe(principal.ownerId);
+  });
+
+  it('honors short waits both at owner fencing and at grant renewal', async () => {
+    const { sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('short-progress', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const { recordTeachingProgress } = await import('@/lib/server/pbl-v3/execution-watchdog');
+    const { ownerIdentityLockKey, OwnerBusyError } = await import('@/lib/persistence/owner-merges');
+    const held = await pool.connect();
+    try {
+      await held.query('BEGIN');
+      await held.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+        ownerIdentityLockKey(principal.ownerId).toString(),
+      ]);
+      await expect(
+        recordTeachingProgress({
+          sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'short-progress',
+          attempt: claim!.attempt,
+        }),
+      ).rejects.toBeInstanceOf(OwnerBusyError);
+      await held.query('ROLLBACK');
+      await held.query('BEGIN');
+      await held.query(
+        'SELECT session_id FROM sandbox_session_grants WHERE session_id=$1 FOR UPDATE',
+        [sessionId],
+      );
+      await expect(
+        recordTeachingProgress({
+          sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'short-progress',
+          attempt: claim!.attempt,
+        }),
+      ).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await held.query('ROLLBACK');
+      held.release();
+    }
+  });
+
+  it('advances past a deferred hundred candidates and revisits them on the next pass', async () => {
+    const { study, sessionId: seed } = await executionFixture();
+    await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [seed]);
+    const ids: string[] = [];
+    for (let i = 0; i < 101; i++) {
+      const id = `pbl-role-${randomUUID()}`;
+      ids.push(id);
+      await agents.createSession({
+        id,
+        ownerId: principal.ownerId,
+        stageId: (await store.get(study.id, principal.ownerId)).stage_id,
+        prompt: 'watchdog fairness',
+        status: 'queued',
+      });
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key,execution_progress_at)
+        SELECT $1,$2,'mentor',$1,stage_key,clock_timestamp()-interval '20 minutes'+$3::integer*interval '1 millisecond'
+        FROM pbl_v3_roles WHERE session_id=$4`,
+        [id, study.id, i, seed],
+      );
+      await pool.query(
+        `INSERT INTO sandbox_session_grants(session_id,owner_id,environment_id,grant_id,allow_writes,allow_commands,expires_at)
+        SELECT $1,owner_id,environment_id,$2,allow_writes,allow_commands,expires_at FROM sandbox_session_grants WHERE session_id=$3`,
+        [id, randomUUID(), seed],
+      );
+    }
+    const held = await pool.connect();
+    const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+    try {
+      await held.query('BEGIN');
+      await held.query(
+        'SELECT session_id FROM sandbox_session_grants WHERE session_id=ANY($1::text[]) FOR UPDATE',
+        [ids.slice(0, 100)],
+      );
+      // Keep the real 250 ms lock policy: a full deferred batch must still yield to the next page.
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(ids[100]!))!.status).toBe('queued');
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(ids[100]!))!.status).toBe('failed');
+      await held.query('ROLLBACK');
+      await expireStalledTeachingTurns();
+      expect(
+        (
+          await pool.query(
+            "SELECT count(*)::int AS count FROM agent_sessions WHERE id=ANY($1::text[]) AND status='failed'",
+            [ids],
+          )
+        ).rows[0].count,
+      ).toBe(101);
+    } finally {
+      await held.query('ROLLBACK');
+      held.release();
+    }
+  }, 45000);
+
+  it.each(['start', 'collect-missing', 'collect-finished', 'collect-source-limit'] as const)(
+    'fences a late %s build commit after watchdog failure and explicit retry',
+    async (phase) => {
+      const previous = project.buildCommand;
+      project.buildCommand = 'python3 -m py_compile greeting.py';
+      onTestFinished(() => {
+        project.buildCommand = previous;
+      });
+      const study = await freshStudy();
+      onTestFinished(async () => {
+        const own = await store.get(study.id, principal.ownerId);
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          own.environment_id,
+        ]);
+      });
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      const claim = await agents.claimNextSession('late-build', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const controller = new AbortController();
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'late-build',
+        attempt: claim!.attempt,
+        signal: controller.signal,
+      });
+      await invoke(config, 'read_next_skill');
+      if (phase === 'collect-missing') {
+        const current = await store.get(study.id, principal.ownerId);
+        current.evaluation = {
+          id: randomUUID(),
+          fingerprint: 'missing',
+          stageKey: stageKey(current),
+          startedAt: new Date().toISOString(),
+          purpose: 'compile',
+        };
+        await store.transaction((db) =>
+          store.commit(db, current, { state: current.state, events: [] }),
+        );
+      } else if (phase !== 'start') await invoke(config, 'run_build');
+      const before = (await store.get(study.id, principal.ownerId)).evaluation;
+      let release!: () => void,
+        entered = false;
+      const pause = async () => {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      };
+      let io: { mockRestore(): void };
+      if (phase === 'collect-missing') {
+        const original = pool.query;
+        io = vi.spyOn(pool, 'query').mockImplementation((async (...args: unknown[]) => {
+          const result = await Reflect.apply(original, pool, args);
+          if (String(args[0]).includes('SELECT 1 FROM sandbox_commands')) await pause();
+          return result;
+        }) as typeof pool.query);
+      } else {
+        const original = E2BCompatibleSandboxProvider.prototype.readText;
+        io = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'readText')
+          .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+            const result = await original.apply(this, args);
+            if (args[2].endsWith('greeting.py')) {
+              await pause();
+              if (phase === 'collect-source-limit') return 'x'.repeat(1_048_577);
+            }
+            return result;
+          });
+      }
+      const compilation = await import('@/lib/server/pbl-v3/compilation');
+      const originalStart = compilation.startBuild,
+        originalCollect = compilation.collectBuild;
+      let underlying!: Promise<unknown>;
+      const helper =
+        phase === 'start'
+          ? vi.spyOn(compilation, 'startBuild').mockImplementation((...args) => {
+              const work = originalStart(...args);
+              underlying = work;
+              void work.catch(() => {});
+              return work;
+            })
+          : vi.spyOn(compilation, 'collectBuild').mockImplementation((...args) => {
+              const work = originalCollect(...args);
+              underlying = work;
+              void work.catch(() => {});
+              return work;
+            });
+      const pending = invoke(config, phase === 'start' ? 'run_build' : 'collect_build').catch(
+        (error) => error,
+      );
+      try {
+        await vi.waitFor(() => expect(entered).toBe(true));
+        await expireExecution(sessionId);
+        await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
+        expect((await agents.getSession(sessionId))!.status).toBe('failed');
+        controller.abort();
+        await pending;
+        await study.send('retry');
+        release();
+        await expect(underlying).rejects.toThrow();
+        expect((await store.get(study.id, principal.ownerId)).evaluation).toEqual(before);
+        expect((await agents.getSession(sessionId))!.status).toBe('queued');
+        expect(
+          (
+            await pool.query(
+              "SELECT 1 FROM pbl_v3_commands WHERE study_id=$1 AND id LIKE 'build:%'",
+              [study.id],
+            )
+          ).rows,
+        ).toHaveLength(0);
+        if (phase === 'start')
+          expect(
+            (
+              await pool.query('SELECT 1 FROM sandbox_commands WHERE environment_id=$1', [
+                row.environment_id,
+              ])
+            ).rows,
+          ).toHaveLength(0);
+        io.mockRestore();
+        helper.mockRestore();
+        const next = await agents.claimNextSession('recovered-build', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        const resumed = await teachingRunnerConfig({
+          sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'recovered-build',
+          attempt: next!.attempt,
+          signal: new AbortController().signal,
+        });
+        await invoke(resumed, 'read_next_skill');
+        if (phase === 'start') await invoke(resumed, 'run_build');
+        await invoke(resumed, 'collect_build');
+        expect((await store.get(study.id, principal.ownerId)).evaluation).toBeNull();
+        await agents.finishSession(sessionId, 'recovered-build', {
+          status: 'succeeded',
+          expectedAttempt: next!.attempt,
+        });
+      } finally {
+        release?.();
+        io.mockRestore();
+        helper.mockRestore();
+        await pending;
+      }
+    },
+    15000,
+  );
+
   it('keeps healthy long execution active and renews only its existing bound grant', async () => {
     const { study, sessionId } = await executionFixture();
     const { expireStalledTeachingTurns, recordTeachingProgress } =

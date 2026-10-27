@@ -573,6 +573,11 @@ export async function commandStudy(
             'UPDATE pbl_v3_roles SET turn_started_at=clock_timestamp(),execution_progress_at=clock_timestamp() WHERE session_id=$1',
             [binding.session_id],
           );
+          await sessionStore.appendControlEvent(binding.session_id, {
+            ts: Date.now(),
+            type: 'pbl_turn_retried',
+            data: {},
+          });
           // Reuse the actual student turn: retrying is not new feedback or approval.
           result = { sessionId: binding.session_id };
         } else {

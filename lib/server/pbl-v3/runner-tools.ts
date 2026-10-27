@@ -1,4 +1,5 @@
 import 'server-only';
+import type { PoolClient } from 'pg';
 import { recordLearningEvidence } from './evidence';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import {
@@ -101,6 +102,11 @@ export async function teachingRunnerConfig(input: {
         bound.completion?.userMessageSeq === latest?.seq));
   const assertActive = (signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Teaching run cancelled.');
+  };
+  const buildFence = (signal: AbortSignal) => async (db: PoolClient) => {
+    assertActive(signal);
+    await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+    assertActive(signal);
   };
   const service = async (signal: AbortSignal) => {
     assertActive(signal);
@@ -328,7 +334,9 @@ export async function teachingRunnerConfig(input: {
         async (current, _params, callId, signal) => {
           const raw = digest(`${input.sessionId}:${callId}`);
           const id = `${raw.slice(0, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}-${raw.slice(16, 20)}-${raw.slice(20, 32)}`;
-          return { value: await startBuild(store, current, await service(signal), id) };
+          return {
+            value: await startBuild(store, current, await service(signal), id, buildFence(signal)),
+          };
         },
       ),
       tool(
@@ -336,7 +344,7 @@ export async function teachingRunnerConfig(input: {
         'Collect the pending build. Running or unknown results are not success.',
         Type.Object({}),
         async (current, _params, _callId, signal) => ({
-          value: await collectBuild(store, current, await service(signal)),
+          value: await collectBuild(store, current, await service(signal), buildFence(signal)),
         }),
       ),
     );

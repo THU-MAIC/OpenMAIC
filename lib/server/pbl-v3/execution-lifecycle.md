@@ -77,7 +77,10 @@ loss or learner inactivity must not itself fail execution.
 
 `execution-watchdog.ts` installs a separate process schedule even if the Agent
 runner is disabled or all its slots are occupied. Every 30 seconds it checks at
-most 100 eligible teaching bindings. The durable `execution_progress_at` clock
+most 100 eligible teaching bindings. Each pass advances past deferred candidates
+within a fixed expiry cutoff, then wraps to revisit them, so a locked first batch
+cannot starve later work. Owner fencing and subsequent lock waits both use the
+short 250 ms maintenance policy. The durable `execution_progress_at` clock
 starts on an admitted learner message, automatic opening or explicit retry.
 Worker claims/reclaims, lease heartbeats, SSE heartbeats, maintenance renewals,
 status reads and repeated identical tool updates do not reset it.
@@ -96,12 +99,20 @@ Once the last progress is at least 15 minutes old, the next successful scan:
    already terminal state cannot be overwritten.
 2. Commits `failed` with `AGENT_EXECUTION_IDLE_TIMEOUT`, clears the worker lease
    and revokes the session grant in the same transaction. An explicit pending
-   cancellation retains `cancelled` semantics. Owner status and `session_end`
-   events publish the verdict through the existing durable notification path.
+   cancellation retains `cancelled` semantics. If this turn/attempt already has
+   a durable `session_end`, reconcile that existing verdict instead of publishing
+   a contradictory duplicate. Explicit retry records a control-only admission
+   marker, so reused attempt numbers cannot select an earlier turn's terminal.
+   Owner status and any new `session_end` publish atomically through the existing
+   durable notification path; teaching completion still requires its own receipt.
 3. The old worker observes lease loss, aborts its request/tool scope, drops its
    timers/subscriptions and frees its local concurrency slot even when the
    underlying promise ignores abort. Late results cannot commit or erase a newer
    local claim. Retry admits the same real learner input with a fresh clock/grant.
+   Every build reservation/result commit rechecks the current teaching lease.
+   File writes/file management and new command dispatch recheck the active scope
+   after asynchronous admission. A command cancelled before provider dispatch
+   leaves a collectable cancelled reservation, rather than an orphan writer.
 
 This covers unclaimed/admission-blocked or over-attempt queues; hung setup/tools
 or settlement despite live worker heartbeats; dead workers without a replacement;
@@ -118,7 +129,9 @@ safety checks still gate environment release. This watchdog never deletes comput
 
 Actual progress also extends an existing session grant for a healthy long turn.
 It never creates a missing/revoked grant, changes its identity/permissions, or
-revives a discarded/releasing environment. This closes the one-hour access gap
+revives a discarded/releasing environment. Progress resolves a retired anonymous
+owner through the existing background-write fence after an account claim; lease
+and grant checks still require the current owner. This closes the one-hour access gap
 without using lease or browser heartbeats as evidence of execution health.
 
 Remaining lifecycle validation and integration:

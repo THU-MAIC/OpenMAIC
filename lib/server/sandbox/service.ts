@@ -432,6 +432,7 @@ export class SandboxService {
       throw new SandboxError('SANDBOX_FILE_TOO_LARGE', 413, 'Text files are limited to 1 MiB.');
     }
     const row = await this.running(id);
+    assertWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write');
     await this.provider.writeText(row.resource_id, row.id, path, text);
   }
 
@@ -491,6 +492,7 @@ export class SandboxService {
           'WORKSPACE_FILE_CONFLICT',
         );
       await beforeWrite();
+      assertWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write');
       await this.provider.mutateFile(row.resource_id!, row.id, { ...input, path, destination });
       return { changed: true };
     });
@@ -535,6 +537,20 @@ export class SandboxService {
     const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const created = await this.store.reserveCommand(row, input.id, hash, epoch);
     if (created) {
+      try {
+        assertWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'command');
+      } catch (error) {
+        // No provider dispatch happened; leave a collectable terminal command, not an orphan writer.
+        await this.store.saveCommand(row, {
+          id: input.id,
+          state: 'cancelled',
+          stdout: '',
+          stderr: '',
+          exitCode: null,
+          truncated: false,
+        });
+        throw error;
+      }
       try {
         await this.provider.startCommand(row.resource_id, row.id, input);
       } catch {
