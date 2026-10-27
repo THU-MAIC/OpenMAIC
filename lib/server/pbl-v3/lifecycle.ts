@@ -8,7 +8,6 @@ import {
   learningWorkspaceId,
 } from '@/lib/server/sandbox/managed-workspace';
 import { SandboxError } from '@/lib/sandbox/errors';
-import { fenceOwnerWrite } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
   collectStudyExecution,
@@ -116,6 +115,9 @@ async function renewDeferredStudy(
   const withinRetention =
     now.getTime() - row.last_used_at.getTime() < pblIdleTimeoutMs() + pblArchiveFailureGraceMs();
   if (!withinRetention) {
+    // Recent completion is not learner activity: it only keeps the lease until the deferred
+    // checkpoint/release obtains admission, so unarchived turn output outlives congestion.
+    // It never moves the inactivity clock.
     const work = await store.pool.query(
       `SELECT 1 FROM sandbox_commands WHERE environment_id=$1 AND (
          ((result_json IS NULL OR result_json->>'state' IN ('starting','running','unknown'))
@@ -123,7 +125,7 @@ async function renewDeferredStudy(
          OR (result_json->>'state' IN ('exited','failed','cancelled','timed_out') AND updated_at >= $3))
        UNION ALL
        SELECT 1 FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
-         WHERE r.study_id=$4 AND a.status IN ('succeeded','failed') AND a.updated_at >= $3
+         WHERE r.study_id=$4 AND a.status IN ('succeeded','failed','cancelled') AND a.updated_at >= $3
        LIMIT 1`,
       [
         environmentId,
@@ -300,24 +302,12 @@ export async function maintainStudy(
               await handleUnsettledWriter(store, row, service, 'execution');
             return;
           }
+          // Inactivity counts from the learner's last real input. Settled writers and finished
+          // Agent turns end their protection only; they do not start another idle interval.
           if (!row.idle_turn_cleanup && row.checkpoint_failure?.stage === 'execution') {
-            await store.recordActivity(id, ownerId);
-            await store.recordLifecycleError(id, ownerId, null);
+            await store.clearCheckpointFailure(row, 'execution');
+            row = await store.get(id, ownerId);
           }
-          // Terminal rows have stable updated_at values; repeated polls never extend inactivity.
-          await store.transaction(async (db) => {
-            await fenceOwnerWrite(db, ownerId);
-            await db.query(
-              `UPDATE pbl_v3_studies s SET last_used_at=GREATEST(s.last_used_at,
-              (SELECT max(a.updated_at) FROM pbl_v3_roles r JOIN agent_sessions a ON a.id=r.session_id
-               WHERE r.study_id=s.id AND a.status IN ('succeeded','failed')),
-              (SELECT max(c.updated_at) FROM sandbox_commands c WHERE c.environment_id=$2
-               AND c.result_json->>'state' IN ('exited','failed','cancelled','timed_out')))
-             WHERE s.id=$1 AND s.owner_id=$3 AND s.idle_turn_cleanup IS NULL`,
-              [id, environmentId, ownerId],
-            );
-          });
-          row = await store.get(id, ownerId);
           if (row.evaluation) {
             if (archiveGraceExpired(row, await store.now())) {
               await releaseWithoutArchive(store, row, service);
@@ -348,8 +338,8 @@ export async function maintainStudy(
             }
             if ('pending' in collected.result) return;
             row = await store.transaction((db) => store.commit(db, row, collected.transition));
-            if (!row.idle_turn_cleanup && !('interrupted' in collected.result))
-              await store.recordActivity(id, ownerId);
+            if (!row.idle_turn_cleanup && row.checkpoint_failure?.stage === 'collection')
+              await store.clearCheckpointFailure(row, 'collection');
             row = await store.get(id, ownerId);
           }
           const now = await store.now();

@@ -51,6 +51,8 @@ export interface Study extends Record<string, unknown> {
     requestId: string;
     checkpointRevision?: number;
     progressReset?: boolean;
+    /** Database time of the latest restore that rewound progress; earlier turns keep their verdict. */
+    progressResetAt?: string;
     savedPosition?: {
       revision: number;
       milestoneIndex: number;
@@ -238,6 +240,22 @@ export class LearningStore {
            AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
            AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'`,
         [row.id, row.owner_id, row.environment_id, JSON.stringify(failure), row.last_used_at],
+      );
+    });
+  }
+
+  /** A settled writer or collection ends its failure cycle without counting as learner activity. */
+  async clearCheckpointFailure(row: Study, stage: ArchiveFailure['stage']) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      // A returning learner already cleared checkpoint_failure but not its notice; clear both.
+      await db.query(
+        `UPDATE pbl_v3_studies SET checkpoint_failure=NULL,lifecycle_error=NULL
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND (checkpoint_failure IS NULL OR checkpoint_failure->>'stage'=$4)
+           AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
+           AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'`,
+        [row.id, row.owner_id, row.environment_id, stage],
       );
     });
   }

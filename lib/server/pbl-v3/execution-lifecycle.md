@@ -57,11 +57,24 @@ Reclaim still requires an available worker; neither a live heartbeat nor a
 
 This PR includes the merged #2011 foundation and removes its inactivity-only
 Agent cancellation and active-turn renewal cutoff. The default learner idle
-window is 15 minutes, configurable via `OPENMAIC_PBL_IDLE_TIMEOUT_MS`. Execution
-completion can still start a fresh reading window, as in #2011. Environment
-release requires **both** normal inactivity eligibility and no queued/running
-Agent. Existing collection, terminal shutdown, checkpoint and writer fences still
-apply; `failed` does not authorize destroying a live writer.
+window is 30 minutes, configurable via `OPENMAIC_PBL_IDLE_TIMEOUT_MS`, measured
+from the last real learner input. Environment release requires **both** that
+inactivity and no queued/running Agent. Execution completion is not learner
+activity and grants no further reading window: once the turn is `succeeded`,
+`failed` or `cancelled` past the idle deadline, the next pass checkpoints and
+releases. Work that stays silent is ended by the watchdog below (15 minutes
+without execution progress), so departed silent work releases after at most
+the later of the two windows plus the scan cadence. Existing collection,
+terminal shutdown, checkpoint and writer fences still apply; `failed` does not
+authorize destroying a live writer.
+
+Release and replacement preparation never write `agent_sessions` or role
+bindings: the same session ids keep their status and error. A `failed` or
+`cancelled` turn remains retryable after the learner returns and `prepare`
+restores the checkpoint. When a restore rewinds progress, turns that finished
+before it keep their own verdict instead of reading as unfinished. A committed
+release reports the environment as not ready to passive views before deletion
+completes, so the next learner input restores it.
 
 Explicit release/discard intent remains irreversible once published: old worker
 writes, late checkpoints and stale commands cannot revive that environment. The
