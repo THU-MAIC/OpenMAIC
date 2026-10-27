@@ -469,14 +469,14 @@ test.describe('touch folder dialogs', () => {
 
 test.describe('phone rotation', () => {
   test.use({ hasTouch: true, isMobile: true });
-  test('phone rotation resets the keyboard baseline and desktop settings has its own label', async ({
+  test('phone rotation retains mobile layout and desktop settings has its own label', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
-    await expect(page.getByTestId('home-page')).toHaveAttribute('data-keyboard', 'false');
+    await expect(page.getByTestId('home-page')).toHaveAttribute('data-mobile', 'true');
     await page.setViewportSize({ width: 844, height: 390 });
-    await expect(page.getByTestId('home-page')).toHaveAttribute('data-keyboard', 'false');
+    await expect(page.getByTestId('home-page')).toHaveAttribute('data-mobile', 'true');
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page.locator('.home-desktop-settings button')).toHaveAccessibleName('Settings');
   });
@@ -602,4 +602,83 @@ test.describe('phone portal safe areas', () => {
       }
     });
   }
+});
+
+test('phone home keeps its layout unchanged when only the keyboard viewport changes', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const viewport = new EventTarget();
+    Object.assign(viewport, { width: 390, height: 844, offsetTop: 0, offsetLeft: 0, scale: 1 });
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    (
+      window as unknown as { setKeyboardViewport: (height: number, offsetTop: number) => void }
+    ).setKeyboardViewport = (height, offsetTop) => {
+      Object.assign(viewport, { height, offsetTop });
+      viewport.dispatchEvent(new Event('resize'));
+      viewport.dispatchEvent(new Event('scroll'));
+    };
+  });
+  await page.goto('/');
+  const home = page.getByTestId('home-page');
+  await expect(home).toHaveAttribute('data-mobile', 'true');
+  await page.getByTestId('home-requirement').fill('Keep my draft');
+  const before = await home.boundingBox();
+  for (const [height, offsetTop] of [
+    [430, 0],
+    [430, 110],
+    [490, 60],
+    [844, 0],
+  ]) {
+    await page.evaluate(
+      ({ height, offsetTop }) => {
+        (
+          window as unknown as { setKeyboardViewport: (height: number, offsetTop: number) => void }
+        ).setKeyboardViewport(height, offsetTop);
+      },
+      { height, offsetTop },
+    );
+    // Let the shared viewport event queue flush before checking for unwanted mutations.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(home).not.toHaveAttribute('data-keyboard');
+    expect(await home.boundingBox()).toEqual(before);
+    await expect(page.locator('.home-mobile-heading')).toBeVisible();
+    await expect(page.locator('.home-brand img')).toHaveCSS('width', '190px');
+    await expect(page.locator('.home-slogan')).toHaveCSS('font-size', '14px');
+    expect(
+      await home.evaluate((element) => {
+        const touch = (type: string, y: number) => {
+          const event = new Event(type, { bubbles: true, cancelable: true });
+          Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+          element.dispatchEvent(event);
+          return event.defaultPrevented;
+        };
+        touch('touchstart', 200);
+        return touch('touchmove', 250);
+      }),
+    ).toBe(true);
+  }
+  await expect(page.getByTestId('home-requirement')).toHaveValue('Keep my draft');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(home).toHaveAttribute('data-mobile', 'false');
+  expect(
+    await home.evaluate((element) => {
+      for (const [type, y] of [
+        ['touchstart', 200],
+        ['touchmove', 250],
+      ] as const) {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+        element.dispatchEvent(event);
+        if (type === 'touchmove') return event.defaultPrevented;
+      }
+      return false;
+    }),
+  ).toBe(false);
 });

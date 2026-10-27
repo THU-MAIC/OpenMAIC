@@ -19,7 +19,9 @@ The root viewport enables `viewport-fit=cover`. Four CSS variables expose safe-a
 
 ## Homepage integration
 
-The homepage retains one form, material upload flow, generation action and course library. Phones use a compact composer, a course-options dialog and a library drawer; desktops keep the inline library. Drafts stay in the page while these containers open and close. Touch-accessible course actions replace hover and double-click interactions on phones. Mobile homepage dialogs opt into visible-viewport sizing and 16px input text.
+The homepage retains one form, material upload flow, generation action and course library. Phones use a compact composer, a course-options dialog and a library drawer; desktops keep the inline library. Drafts stay in the page while these containers open and close. Touch-accessible course actions replace hover and double-click interactions on phones. Mobile homepage dialogs use responsive CSS dimensions, horizontal safe-area bounds and 16px input text. The homepage does not detect a keyboard or subscribe to VisualViewport to change its height, top position, typography or content visibility.
+
+`installPageScrollBoundary(document)` is installed for the lifetime of the phone homepage, independent of keyboard state. It contains single-touch page panning while allowing nested scroll containers to scroll in the requested direction and retaining two-finger zoom. Its listeners are removed on desktop-layout changes or unmount. It does not fix `html`/`body` or modify viewport geometry.
 
 This change does not implement a mobile classroom, editor or multi-pane workbench. The workspace only adopts the shared media-query subscription with its existing 1024px threshold.
 

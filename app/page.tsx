@@ -42,11 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { HomeLibrary } from '@/components/home/home-library';
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
-import { useVisualViewport } from '@/lib/hooks/use-visual-viewport';
-import {
-  keyboardViewportState,
-  type KeyboardViewportState,
-} from '@/lib/adaptive/keyboard-viewport';
+import { installPageScrollBoundary } from '@/lib/adaptive/page-scroll-boundary';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -165,32 +161,13 @@ function HomePage() {
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const mobile = useMobileLayout();
-  const visibleViewport = useVisualViewport();
+  useEffect(() => {
+    if (!mobile) return;
+    return installPageScrollBoundary(document);
+  }, [mobile]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const mobileOptionsTitleRef = useRef<HTMLHeadingElement>(null);
-  const keyboardViewport = useRef<KeyboardViewportState | null>(null);
-  if (mobile && visibleViewport) {
-    keyboardViewport.current = keyboardViewportState(keyboardViewport.current, visibleViewport);
-  } else if (!mobile) {
-    keyboardViewport.current = null;
-  }
-  const keyboardOpen = mobile && (keyboardViewport.current?.keyboardOpen ?? false);
-  // Dialogs are portaled outside the homepage, so expose visible geometry there too.
-  useEffect(() => {
-    if (!mobile || (visibleViewport && visibleViewport.scale !== 1)) return;
-    const style = document.documentElement.style;
-    style.setProperty(
-      '--home-visible-height',
-      `${visibleViewport?.height ?? window.innerHeight}px`,
-    );
-    style.setProperty('--home-visible-top', `${visibleViewport?.offsetTop ?? 0}px`);
-    return () => {
-      style.removeProperty('--home-visible-height');
-      style.removeProperty('--home-visible-top');
-    };
-  }, [mobile, visibleViewport]);
-
   // Do not replay the classic hero's entrance after the route handoff already
   // carried the lockup and composer into place. The entrance is CSS, not a
   // JS-driven animation, so the server-rendered hero is painted (and fades in)
@@ -728,12 +705,6 @@ function HomePage() {
     <div
       data-testid="home-page"
       data-mobile={mobile}
-      data-keyboard={keyboardOpen}
-      style={
-        mobile && visibleViewport?.scale === 1
-          ? { height: visibleViewport.height, top: visibleViewport.offsetTop }
-          : undefined
-      }
       className="home-page min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden"
     >
       <input
