@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useEffect } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import {
   AlertCircle,
   Bot,
@@ -42,11 +42,7 @@ import { serviceEntries, slotThinking, thinkingChange } from '@/lib/model-settin
 import { canChangeDefaultModel, settingsSections, slotEditable } from '@/lib/model-settings/shape';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { modelSettingsClient } from '@/lib/model-settings/client';
-import {
-  getAcceptStringForProviders,
-  getFormatLabelsForProviders,
-  isMimeSupportedByProviders,
-} from '@/lib/document/mime';
+import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
 import { MAX_DOCUMENT_BUNDLE_FILES } from '@/lib/document/bundle';
 import {
   combinedTruncation,
@@ -56,31 +52,18 @@ import {
 import { ModelPicker } from '@/components/settings/model-picker';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
+import {
+  courseMaterialFormatList,
+  unsupportedCourseMaterialMessage,
+  type Translate,
+} from '@/lib/generation-run-client/course-material-formats';
+export {
+  courseMaterialFormatList,
+  unsupportedCourseMaterialMessage,
+} from '@/lib/generation-run-client/course-material-formats';
+
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
-
-type Translate = (key: string, options?: Record<string, unknown>) => string;
-
-/**
- * The formats the active extractors accept, as a localized list ("PDF, TXT,
- * MD"). The format labels are file-type names shared by every locale; only
- * the separator is localized.
- */
-export function courseMaterialFormatList(t: Translate, providerIds: readonly string[]): string {
-  return getFormatLabelsForProviders(providerIds).join(t('upload.formatListSeparator'));
-}
-
-/** The "this file type is unsupported" message, naming the extractor and what it accepts. */
-export function unsupportedCourseMaterialMessage(
-  t: Translate,
-  extractorName: string,
-  providerIds: readonly string[],
-): string {
-  return t('upload.unsupportedCourseMaterial', {
-    parser: extractorName,
-    formats: courseMaterialFormatList(t, providerIds),
-  });
-}
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -203,28 +186,6 @@ export function GenerationToolbar({
   const extractorName = PDF_PROVIDERS[documentProviderId]?.name ?? documentProviderId;
   const unsupportedMessage = () =>
     unsupportedCourseMaterialMessage(t, extractorName, activeDocumentProviderIds);
-
-  // If the user switches to a provider that doesn't support already attached
-  // materials, drop only the incompatible files so the eventual extraction
-  // request matches the current provider capability.
-  useEffect(() => {
-    const unsupportedMaterials = courseMaterials.filter(
-      (file) =>
-        !isMimeSupportedByProviders(
-          { mimeType: file.type, fileName: file.name },
-          activeDocumentProviderIds,
-        ),
-    );
-    if (unsupportedMaterials.length === 0) return;
-
-    for (const file of unsupportedMaterials) {
-      onCourseMaterialRemove(file.id);
-    }
-    onPdfError(unsupportedMessage());
-    // Intentionally omit callbacks/t from deps: adding them would re-run this
-    // provider capability cleanup on unrelated parent re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocumentProviderIds, courseMaterials]);
 
   const handleFilesSelect = (incomingFiles: File[]) => {
     // Belt-and-braces mirror of the parent's freeze guard: while generate-prep

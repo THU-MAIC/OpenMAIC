@@ -43,6 +43,10 @@ import {
 import { HomeLibrary } from '@/components/home/home-library';
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useVisualViewport } from '@/lib/hooks/use-visual-viewport';
+import {
+  keyboardViewportState,
+  type KeyboardViewportState,
+} from '@/lib/adaptive/keyboard-viewport';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -73,6 +77,7 @@ import {
   useCourseMaterials,
   type CourseMaterialMessage,
 } from '@/lib/generation-run-client/use-course-materials';
+import { useCourseMaterialCapabilities } from '@/lib/generation-run-client/use-course-material-capabilities';
 import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
 import {
   courseRunHref,
@@ -164,11 +169,13 @@ function HomePage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const mobileOptionsTitleRef = useRef<HTMLHeadingElement>(null);
-  const fullMobileHeight = useRef(0);
-  if (mobile && visibleViewport?.scale === 1)
-    fullMobileHeight.current = Math.max(fullMobileHeight.current, visibleViewport.height);
-  const keyboardOpen =
-    mobile && !!visibleViewport && visibleViewport.height < fullMobileHeight.current * 0.78;
+  const keyboardViewport = useRef<KeyboardViewportState | null>(null);
+  if (mobile && visibleViewport) {
+    keyboardViewport.current = keyboardViewportState(keyboardViewport.current, visibleViewport);
+  } else if (!mobile) {
+    keyboardViewport.current = null;
+  }
+  const keyboardOpen = mobile && (keyboardViewport.current?.keyboardOpen ?? false);
   // Dialogs are portaled outside the homepage, so expose visible geometry there too.
   useEffect(() => {
     if (!mobile || (visibleViewport && visibleViewport.scale !== 1)) return;
@@ -583,6 +590,12 @@ function HomePage() {
 
   // Attached materials upload and extract at once; Generate waits for them.
   const courseMaterials = useCourseMaterials();
+  useCourseMaterialCapabilities(
+    courseMaterials.materials,
+    courseMaterials.remove,
+    setError,
+    preparingGenerate,
+  );
   const materialMessage = (message: CourseMaterialMessage) =>
     message.text ?? (message.key ? t(message.key, message.values) : '');
 
@@ -827,7 +840,7 @@ function HomePage() {
         {/* Settings Button */}
         <div className="home-desktop-settings relative">
           <button
-            aria-label={t('home.courseOptions')}
+            aria-label={t('settings.title')}
             onClick={() => setSettingsOpen(true)}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
           >

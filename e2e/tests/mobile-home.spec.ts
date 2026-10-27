@@ -466,3 +466,18 @@ test.describe('touch folder dialogs', () => {
     });
   }
 });
+
+test.describe('phone rotation', () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test('phone rotation resets the keyboard baseline and desktop settings has its own label', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await expect(page.getByTestId('home-page')).toHaveAttribute('data-keyboard', 'false');
+    await page.setViewportSize({ width: 844, height: 390 });
+    await expect(page.getByTestId('home-page')).toHaveAttribute('data-keyboard', 'false');
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('.home-desktop-settings button')).toHaveAccessibleName('Settings');
+  });
+});
