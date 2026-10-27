@@ -5,7 +5,7 @@ import {
   boundConversation,
   latestMessagePartIds,
 } from './conversation';
-import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
+import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
@@ -275,7 +275,7 @@ export async function queueRole(
     ).rows[0]!;
   }
   await db.query(
-    'UPDATE pbl_v3_roles SET guided=CASE WHEN stage_key=$2 THEN guided ELSE NULL END,feedback_seq=CASE WHEN stage_key=$2 THEN feedback_seq+1 ELSE 1 END,stage_key=$2,turn_started_at=clock_timestamp() WHERE session_id=$1',
+    'UPDATE pbl_v3_roles SET guided=CASE WHEN stage_key=$2 THEN guided ELSE NULL END,feedback_seq=CASE WHEN stage_key=$2 THEN feedback_seq+1 ELSE 1 END,stage_key=$2,turn_started_at=clock_timestamp(),execution_progress_at=clock_timestamp() WHERE session_id=$1',
     [binding.session_id, stageKey(row)],
   );
   if (row.environment_id)
@@ -570,7 +570,7 @@ export async function commandStudy(
           if (!(await sessionStore.requeueSession(binding.session_id)))
             throw sandboxConflict('The teaching turn changed. Refresh before retrying.');
           await db.query(
-            'UPDATE pbl_v3_roles SET turn_started_at=clock_timestamp() WHERE session_id=$1',
+            'UPDATE pbl_v3_roles SET turn_started_at=clock_timestamp(),execution_progress_at=clock_timestamp() WHERE session_id=$1',
             [binding.session_id],
           );
           // Reuse the actual student turn: retrying is not new feedback or approval.
@@ -873,7 +873,7 @@ export async function learningView(
     roleRun = {
       status: unclosed ? 'failed' : (meta?.status ?? 'missing'),
       canRetry: !!meta && (unclosed || ['failed', 'cancelled'].includes(meta.status)),
-      failureCode: meta?.status === 'failed' ? modelRequestFailureCode(meta.error) : null,
+      failureCode: meta?.status === 'failed' ? executionFailureCode(meta.error) : null,
       // Never expose raw provider errors, URLs, or credentials to the browser.
       failure: unclosed
         ? 'incomplete'

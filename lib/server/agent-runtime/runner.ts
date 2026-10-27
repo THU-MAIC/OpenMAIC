@@ -19,6 +19,7 @@ import {
   type ClaimedAgentSession,
 } from '@openmaic/storage';
 
+import { abortable } from './abortable';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
@@ -962,25 +963,61 @@ function leaseMatches(
   return session?.lease?.workerId === workerId && session.attempt === attempt;
 }
 
+interface RunCleanup {
+  add(release: () => void): void;
+  delete(release: () => void): boolean;
+}
+
 // Session execution is intentionally one large state machine: its nested
 // finally blocks pair every timer, subscription, and agent listener with the
 // exact lifetime in which it can fire.
 export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Promise<void> {
+  const abort = new AbortController();
+  const retired = new AbortController();
+  const running = { abort };
+  const releases = new Set<() => void>();
+  let closed = false;
+  const cleanup: RunCleanup = {
+    add(release) {
+      if (closed) release();
+      else releases.add(release);
+    },
+    delete(release) {
+      return releases.delete(release);
+    },
+  };
+  ctx.running.set(meta.id, running);
+  try {
+    await abortable(
+      executeSession(ctx, meta, abort, () => retired.abort(), cleanup),
+      retired.signal,
+    );
+  } catch (error) {
+    if (!retired.signal.aborted) throw error;
+  } finally {
+    closed = true;
+    for (const release of releases) {
+      releases.delete(release);
+      release();
+    }
+    if (ctx.running.get(meta.id) === running) ctx.running.delete(meta.id);
+  }
+}
+
+async function executeSession(
+  ctx: RunContext,
+  meta: ClaimedAgentSession,
+  abort: AbortController,
+  retire: () => void,
+  cleanup: RunCleanup,
+): Promise<void> {
   // Attempts reset on attended retry; the lease identity must still distinguish old work.
   const WORKER_ID = meta.lease?.workerId ?? PROCESS_WORKER_ID;
   const id = meta.id;
   const attempt = meta.attempt;
   const claimSeq = meta.claimSeq;
-  const abort = new AbortController();
-  ctx.running.set(id, { abort });
 
-  let store: Awaited<ReturnType<typeof getAgentSessionStore>>;
-  try {
-    store = await getAgentSessionStore();
-  } catch (error) {
-    ctx.running.delete(id);
-    throw error;
-  }
+  const store = await getAgentSessionStore();
   let leaseLost = false;
   let cancelled = false;
   let cancelRequestedAt: number | null = null;
@@ -992,6 +1029,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   const markLeaseLost = () => {
     leaseLost = true;
     abort.abort();
+    if (id.startsWith('pbl-role-')) retire();
   };
   const enqueue = (write: () => Promise<void>, critical = false): void => {
     chain = chain.then(async () => {
@@ -1031,6 +1069,33 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     });
   };
 
+  let progressPending = false,
+    lastProgressWrite = 0;
+  const progress = () => {
+    if (
+      !id.startsWith('pbl-role-') ||
+      abort.signal.aborted ||
+      progressPending ||
+      Date.now() - lastProgressWrite < 1000
+    )
+      return;
+    progressPending = true;
+    lastProgressWrite = Date.now();
+    void import('@/lib/server/pbl-v3/execution-watchdog')
+      .then(({ recordTeachingProgress }) =>
+        recordTeachingProgress({
+          sessionId: id,
+          ownerId: meta.ownerId,
+          workerId: WORKER_ID,
+          attempt,
+        }),
+      )
+      .catch((error) => log.warn(`session ${id}: progress publication failed`, error))
+      .finally(() => {
+        progressPending = false;
+      });
+  };
+  const toolUpdates = new Map<string, string>();
   let runEventEmitted = false;
   let tripwireViolated = false;
   let lastMessageUpdateAt = 0;
@@ -1065,6 +1130,28 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   };
 
   const emit = (type: string, data: unknown): void => {
+    if (id.startsWith('pbl-role-')) {
+      try {
+        if (type === 'tool_execution_start' || type === 'tool_execution_end') {
+          progress();
+          toolUpdates.delete(String((data as { toolCallId?: string })?.toolCallId));
+        } else if (type === 'tool_execution_update') {
+          const update = data as {
+            toolCallId?: string;
+            progress?: unknown;
+            partialResult?: unknown;
+          };
+          const key = String(update.toolCallId),
+            value = JSON.stringify(update.progress ?? update.partialResult);
+          if (value !== undefined && toolUpdates.get(key) !== value) {
+            toolUpdates.set(key, value);
+            progress();
+          }
+        }
+      } catch {
+        /* Unserializable tool hints are not execution progress. */
+      }
+    }
     if (!markRunEventEmitted(runEventEmitted, type)) {
       if (!tripwireViolated) {
         tripwireViolated = true;
@@ -1150,6 +1237,21 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     }
   };
 
+  const heartbeatTimer = setInterval(() => {
+    store
+      .heartbeat(id, WORKER_ID)
+      .then((held) => {
+        if (!held && !leaseLost) {
+          log.warn(`session ${id}: lease lost; aborting local run`);
+          markLeaseLost();
+        }
+      })
+      .catch((error) => log.warn(`session ${id}: heartbeat failed`, error));
+  }, config.heartbeatIntervalMs);
+  heartbeatTimer.unref?.();
+
+  cleanup.add(() => clearInterval(heartbeatTimer));
+
   // A verdict claim never executes the model. A message posted after the
   // claim still receives one attended redemption through the common check.
   if (isOverAttemptCap(meta)) {
@@ -1168,22 +1270,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       return;
     } finally {
       await flushAll(false);
-      ctx.running.delete(id);
     }
   }
-
-  const heartbeatTimer = setInterval(() => {
-    store
-      .heartbeat(id, WORKER_ID)
-      .then((held) => {
-        if (!held && !leaseLost) {
-          log.warn(`session ${id}: lease lost; aborting local run`);
-          markLeaseLost();
-        }
-      })
-      .catch((error) => log.warn(`session ${id}: heartbeat failed`, error));
-  }, config.heartbeatIntervalMs);
-  heartbeatTimer.unref?.();
 
   // ── NOTIFY wakeup + low-frequency fallback ───────────────────────────────
   //
@@ -1222,6 +1310,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
 
   const cancelPoll = setInterval(checkCancel, SESSION_WAKEUP_FALLBACK_MS);
   cancelPoll.unref?.();
+  cleanup.add(() => clearInterval(cancelPoll));
+  cleanup.add(unsubscribeWakeup);
 
   try {
     const recovery = await loadEntryHistory();
@@ -1367,6 +1457,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
       unbounded: !!teaching,
       responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
+      onProgress: teaching ? progress : undefined,
       source: 'agent-runtime',
       abortSignal: abort.signal,
     });
@@ -1631,6 +1722,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       })());
     const askUserLatch = createAskUserTerminateLatch();
     let toolCalls = 0;
+    if (leaseLost) throw new AgentSessionLeaseLostError(id, WORKER_ID, attempt);
     const agent = buildAgent({
       streamFn: teaching
         ? (await import('@/lib/server/pbl-v3/runner-tools')).withTeachingTurnBoundary(
@@ -1722,6 +1814,8 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     };
     const abortAgent = () => agent.abort();
     abort.signal.addEventListener('abort', abortAgent);
+    cleanup.add(unsubscribe);
+    cleanup.add(() => abort.signal.removeEventListener('abort', abortAgent));
 
     // Same-run steering needs a guard because steer() accepts a message before
     // its eventual message_end has reached the durable tree.
@@ -1792,6 +1886,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     drainOnWake = requestDrain;
     const messagePoll = setInterval(() => void requestDrain(), SESSION_WAKEUP_FALLBACK_MS);
     messagePoll.unref?.();
+    cleanup.add(() => clearInterval(messagePoll));
 
     let repairedTeachingStop = false;
     const repairTeachingStop = async () => {
@@ -2017,7 +2112,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       }
     } finally {
       abort.signal.removeEventListener('abort', abortAgent);
-      unsubscribe();
+      if (cleanup.delete(unsubscribe)) unsubscribe();
       clearInterval(messagePoll);
     }
   } catch (error) {
@@ -2056,10 +2151,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   } finally {
     clearInterval(heartbeatTimer);
     clearInterval(cancelPoll);
-    unsubscribeWakeup();
+    if (cleanup.delete(unsubscribeWakeup)) unsubscribeWakeup();
     drainOnWake = null;
     await flushAll(false);
-    ctx.running.delete(id);
   }
 }
 

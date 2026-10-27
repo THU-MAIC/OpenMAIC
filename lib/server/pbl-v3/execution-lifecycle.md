@@ -1,6 +1,6 @@
 # PBL execution and lifecycle contract
 
-The Agent runner owns request termination. Sandbox lifecycle maintenance consumes
+The Agent runner owns model-request termination; the independent execution watchdog settles stalled teaching work. Sandbox lifecycle maintenance consumes
 persisted session state; learner inactivity, browser SSE connectivity and worker
 heartbeats are not evidence of model-request progress or failure.
 
@@ -30,20 +30,21 @@ but completely silent inference can also exceed this policy window.
 
 The runner persists `status: failed` under the current claim fence, releases its
 worker slot and emits `session_end.errorCode`. `AgentSessionMeta.error` carries a
-stable prefix readable with `modelRequestFailureCode` from
+stable prefix readable with `executionFailureCode` from
 `lib/agent/runtime/request-failure.ts`; no schema migration is required.
 
 | Code | Meaning |
 | --- | --- |
 | `MODEL_REQUEST_IDLE_TIMEOUT` | No upstream stream feedback within the request silence window. |
 | `MODEL_REQUEST_FAILED` | Model request/stream failed for another reason. |
+| `AGENT_EXECUTION_IDLE_TIMEOUT` | No recorded execution progress for 15 minutes, including queued work, setup, tools, crash recovery and settlement. |
 
 `LearningView.roleRun.failureCode` exposes only the safe code. The learner sees
 existing timeout/authentication/unavailable feedback and can retry the same real
 input. Retry does not fabricate feedback, readiness, artifact approval, test
 results or stage completion. A queued retry/new message protects the environment
 again. Other failures, such as setup authorization or an incomplete teaching
-receipt, still use `failed`; consumers must not require one of these two codes to
+receipt, still use `failed`; consumers must not require one of these codes to
 recognize every terminal failure.
 
 A dead worker is handled by the existing durable lease/reclaim/attempt mechanism.
@@ -67,45 +68,64 @@ writes, late checkpoints and stale commands cannot revive that environment. The
 archive-failure grace is retained for failed archive/terminal/command cleanup;
 it is not a five-minute deadline for healthy Agent work.
 
-The lifecycle owner can use `agent_sessions.status` / `getSession()` directly and
-optionally parse the failure prefix for diagnostics. Do not add another model
-silence timer or cancel work based on `turn_started_at`, event age or user age.
-No separate `stalled` top-level status is necessary: the request owner first
-settles a failed request, then maintenance observes the terminal status.
+The lifecycle owner consumes `agent_sessions.status` / `getSession()` directly;
+error codes are optional diagnostics. `queued`/`running` remain protected until a
+terminal verdict commits. No additional top-level status is needed. Browser SSE
+loss or learner inactivity must not itself fail execution.
 
-## Required lifecycle follow-up before real course integration
+## Independent execution watchdog
 
-Active-turn protection is a safety rule, **not a complete stalled-work recovery
-policy**. The model silence guard does not cover an unclaimed queue entry or a
-hung tool. Those cases can currently retain an environment indefinitely. The
-follow-up was accepted in the [maintainer review](https://github.com/THU-MAIC/OpenMAIC/pull/2003#pullrequestreview-5649817140)
-and the [lifecycle owner's response](https://github.com/THU-MAIC/OpenMAIC/pull/2003#issuecomment-6413001789).
+`execution-watchdog.ts` installs a separate process schedule even if the Agent
+runner is disabled or all its slots are occupied. Every 30 seconds it checks at
+most 100 eligible teaching bindings. The durable `execution_progress_at` clock
+starts on an admitted learner message, automatic opening or explicit retry.
+Worker claims/reclaims, lease heartbeats, SSE heartbeats, maintenance renewals,
+status reads and repeated identical tool updates do not reset it.
 
-The lifecycle owner must coordinate execution recovery with the runner and
-deliver a finite outcome for failed/abandoned work, covering:
+Nonempty upstream reasoning/text/tool-input data, completed model calls and tool
+starts/results or changed progress reports publish progress under the current
+worker/attempt fence. Publication is coalesced to at most one write per second;
+there is no overall turn duration, output-size or tool-count cap. A silent tool
+has the same 15-minute no-feedback fallback as a silent model: this is a policy
+for ending unobservable execution, not proof the remote process crashed.
 
-- Queued work that never receives a claim: unavailable workers, exhausted
-  attempts or blocked admission. Distinguish actual orphaned work from valid
-  scheduling or learner-input waits; age alone is not a failure verdict.
-- A hung tool while its worker continues heartbeating. Worker heartbeats and
-  browser connection health are not tool progress. Preserve legitimately slow
-  model/tool work; do not substitute a total-turn deadline or tool-count cap.
-- Repeated worker crashes/reclaims, including a worker that crashes before
-  persisting the existing over-attempt terminal verdict. Lease expiry alone
-  cannot guarantee completion if no worker can finish recovery.
-- Long healthy execution beyond the session grant's one-hour lifetime. Provider
-  lease renewal does not refresh that grant; keep authorized workspace access
-  valid without reviving an explicitly released or discarded environment.
+Once the last progress is at least 15 minutes old, the next successful scan:
 
-Any terminal verdict must use the existing claim/write fences and persisted
-session state before normal inactivity/archive/release can proceed. Do not
-destroy a sandbox merely because a row looks old while a writer may still run.
-This PR does not yet establish a finite outcome for all of the cases above.
+1. Locks the session without waiting on the study/provider lock, then rechecks
+   progress and current status. Healthy progress, a new explicit retry or an
+   already terminal state cannot be overwritten.
+2. Commits `failed` with `AGENT_EXECUTION_IDLE_TIMEOUT`, clears the worker lease
+   and revokes the session grant in the same transaction. An explicit pending
+   cancellation retains `cancelled` semantics. Owner status and `session_end`
+   events publish the verdict through the existing durable notification path.
+3. The old worker observes lease loss, aborts its request/tool scope, drops its
+   timers/subscriptions and frees its local concurrency slot even when the
+   underlying promise ignores abort. Late results cannot commit or erase a newer
+   local claim. Retry admits the same real learner input with a fresh clock/grant.
+
+This covers unclaimed/admission-blocked or over-attempt queues; hung setup/tools
+or settlement despite live worker heartbeats; dead workers without a replacement;
+and repeated crash/reclaim without actual execution feedback. The existing
+attempt verdict may fail repeated crashes earlier; reclaim never extends this
+progress clock. Valid learner-input waits are terminal handoffs, not expired work.
+
+The schedule requires a functioning application instance and database. Database
+outages/held transactions can delay a verdict; checks retry after recovery. The
+15-minute threshold is checked on the scan cadence, not an exact wall-clock SLA.
+A committed Agent failure does not prove an already-issued remote command stopped:
+normal command collection/cancellation, workspace locking, archive and writer
+safety checks still gate environment release. This watchdog never deletes compute.
+
+Actual progress also extends an existing session grant for a healthy long turn.
+It never creates a missing/revoked grant, changes its identity/permissions, or
+revives a discarded/releasing environment. This closes the one-hour access gap
+without using lease or browser heartbeats as evidence of execution health.
 
 Remaining lifecycle validation and integration:
 
-- Review these merged changes and consume terminal state without reinstating the
-  former ten-minute cancellation plus five-minute forced-release policy.
+- Consume persisted terminal state without reinstating the former ten-minute
+  cancellation plus five-minute forced-release policy or a second inactivity-based
+  execution watchdog.
 - Validate provider lease renewal during long active model/tool work, then
   inactivity archive/release and subsequent restoration with the real provider.
 - Validate acknowledged/uncertain deletion, archive failures and lease-loss

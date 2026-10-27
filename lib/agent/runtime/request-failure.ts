@@ -15,3 +15,11 @@ export function modelRequestFailureCode(error: unknown): ModelRequestFailureCode
 export function modelRequestFailure(error: string): string {
   return modelRequestFailureCode(error) ? error : `[${MODEL_REQUEST_FAILED}] ${error}`;
 }
+
+export const AGENT_EXECUTION_IDLE_TIMEOUT = 'AGENT_EXECUTION_IDLE_TIMEOUT';
+export type ExecutionFailureCode = ModelRequestFailureCode | typeof AGENT_EXECUTION_IDLE_TIMEOUT;
+export function executionFailureCode(error: unknown): ExecutionFailureCode | null {
+  return typeof error === 'string' && error.startsWith(`[${AGENT_EXECUTION_IDLE_TIMEOUT}]`)
+    ? AGENT_EXECUTION_IDLE_TIMEOUT
+    : modelRequestFailureCode(error);
+}

@@ -43,6 +43,7 @@ import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
 import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
+import { abortable } from '@/lib/server/agent-runtime/abortable';
 import { LEARNER_HANDOFF_EVENT } from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
@@ -152,91 +153,103 @@ export async function teachingRunnerConfig(input: {
         assertActive(signal);
         return store.waitForExclusive(
           row.id,
-          async () => {
-            assertActive(signal);
-            const current = await store.get(row.id, input.ownerId);
-            if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
-              throw sandboxConflict('The teaching stage changed.');
-            await agents.assertActiveLease(
-              input.sessionId,
-              input.workerId,
-              input.attempt,
-              store.pool,
-            );
-            const result = await review.withRollback(async () => {
-              const result = await withLearningWorkspaceAccess(
-                {
-                  ownerId: current.owner_id,
-                  workspaceId: learningWorkspaceId(current.id),
-                  environmentIds: () => [current.environment_id],
-                  operations:
-                    name === 'write_file' || name === 'manage_file'
-                      ? ['write']
-                      : name === 'run_build'
-                        ? ['command']
-                        : name === 'complete_stage'
-                          ? ['checkpoint']
-                          : [],
-                },
-                () => execute(current, params, _id, signal),
-              );
-              assertActive(signal);
-              await store.transaction(async (db) => {
-                await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
+          () =>
+            abortable(
+              (async () => {
                 assertActive(signal);
-                if (result.evidence)
-                  await recordLearningEvidence(
-                    db,
-                    current,
-                    bound.role,
-                    name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
-                    result.evidence,
-                  );
-                if (result.transition) await store.commit(db, current, result.transition);
-                await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+                const current = await store.get(row.id, input.ownerId);
+                if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+                  throw sandboxConflict('The teaching stage changed.');
+                await agents.assertActiveLease(
                   input.sessionId,
-                  JSON.stringify(review.state),
-                ]);
-                if (name === 'request_learner_help') {
-                  // Commit the visible question with the handoff, before the SDK
-                  // emits its tool result. Recovery never has to invent that event.
-                  const sequence = await store
-                    .agentStore(db)
-                    .appendRunEvent(input.sessionId, input.workerId, {
-                      ts: Date.now(),
-                      attempt: input.attempt,
-                      type: LEARNER_HANDOFF_EVENT,
-                      data: { ...review.state.handoff!, toolCallId: _id },
-                    });
-                  if (sequence === null) throw sandboxConflict('The teaching claim changed.');
-                }
-                if (name === 'complete_stage')
-                  await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
-                    input.sessionId,
-                    JSON.stringify({
-                      stageKey: bound.stage_key,
-                      feedbackSeq: bound.feedback_seq,
-                      userMessageSeq: latest?.seq ?? 0,
-                    }),
-                  ]);
-              });
-              return result;
-            });
-            completionRecorded =
-              name === 'complete_stage' ||
-              hasStageCompletion(
-                { ...current, state: result.transition?.state ?? current.state },
-                stage,
-                bound,
-              );
-            if (name === 'complete_stage') review.finishRun();
-            if (['request_skill_review', 'request_learner_help', 'complete_stage'].includes(name))
-              turnComplete = true;
-            return {
-              content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
-              details: {},
-            };
-          },
+                  input.workerId,
+                  input.attempt,
+                  store.pool,
+                );
+                const result = await review.withRollback(async () => {
+                  const result = await withLearningWorkspaceAccess(
+                    {
+                      ownerId: current.owner_id,
+                      signal,
+                      workspaceId: learningWorkspaceId(current.id),
+                      environmentIds: () => [current.environment_id],
+                      operations:
+                        name === 'write_file' || name === 'manage_file'
+                          ? ['write']
+                          : name === 'run_build'
+                            ? ['command']
+                            : name === 'complete_stage'
+                              ? ['checkpoint']
+                              : [],
+                    },
+                    () => execute(current, params, _id, signal),
+                  );
+                  assertActive(signal);
+                  await store.transaction(async (db) => {
+                    await agents.assertActiveLease(
+                      input.sessionId,
+                      input.workerId,
+                      input.attempt,
+                      db,
+                    );
+                    assertActive(signal);
+                    if (result.evidence)
+                      await recordLearningEvidence(
+                        db,
+                        current,
+                        bound.role,
+                        name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
+                        result.evidence,
+                      );
+                    if (result.transition) await store.commit(db, current, result.transition);
+                    await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
+                      input.sessionId,
+                      JSON.stringify(review.state),
+                    ]);
+                    if (name === 'request_learner_help') {
+                      // Commit the visible question with the handoff, before the SDK
+                      // emits its tool result. Recovery never has to invent that event.
+                      const sequence = await store
+                        .agentStore(db)
+                        .appendRunEvent(input.sessionId, input.workerId, {
+                          ts: Date.now(),
+                          attempt: input.attempt,
+                          type: LEARNER_HANDOFF_EVENT,
+                          data: { ...review.state.handoff!, toolCallId: _id },
+                        });
+                      if (sequence === null) throw sandboxConflict('The teaching claim changed.');
+                    }
+                    if (name === 'complete_stage')
+                      await db.query('UPDATE pbl_v3_roles SET completion=$2 WHERE session_id=$1', [
+                        input.sessionId,
+                        JSON.stringify({
+                          stageKey: bound.stage_key,
+                          feedbackSeq: bound.feedback_seq,
+                          userMessageSeq: latest?.seq ?? 0,
+                        }),
+                      ]);
+                  });
+                  return result;
+                });
+                completionRecorded =
+                  name === 'complete_stage' ||
+                  hasStageCompletion(
+                    { ...current, state: result.transition?.state ?? current.state },
+                    stage,
+                    bound,
+                  );
+                if (name === 'complete_stage') review.finishRun();
+                if (
+                  ['request_skill_review', 'request_learner_help', 'complete_stage'].includes(name)
+                )
+                  turnComplete = true;
+                return {
+                  content: [{ type: 'text' as const, text: JSON.stringify(result.value) }],
+                  details: {},
+                };
+              })(),
+              signal,
+            ),
           signal,
         );
       },

@@ -120,6 +120,13 @@ UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_a
       transaction: true,
       up: 'ALTER TABLE pbl_v3_studies ADD COLUMN idle_turn_cleanup JSONB;',
     },
+    {
+      version: 10,
+      name: 'execution-progress-watchdog',
+      transaction: true,
+      up: `ALTER TABLE pbl_v3_roles ADD COLUMN execution_progress_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
+      CREATE INDEX pbl_v3_roles_execution_progress ON pbl_v3_roles(execution_progress_at);`,
+    },
   ],
 };
 

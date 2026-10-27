@@ -2050,6 +2050,394 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(JSON.stringify(pages)).toBe(cached);
   });
 
+  async function executionFixture() {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('begin')) as { sessionId: string };
+    return { study, sessionId };
+  }
+  const expireExecution = async (sessionId: string) =>
+    pool.query(
+      "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '16 minutes' WHERE session_id=$1",
+      [sessionId],
+    );
+  it.each(['queued', 'exhausted', 'live-worker', 'orphaned', 'reclaimed'] as const)(
+    'settles a stalled %s execution without requiring a runner or learner departure',
+    async (kind) => {
+      const { study, sessionId } = await executionFixture();
+      const { expireStalledTeachingTurns, recordTeachingProgress } =
+        await import('@/lib/server/pbl-v3/execution-watchdog');
+      const { AGENT_EXECUTION_IDLE_TIMEOUT } = await import('@/lib/agent/runtime/request-failure');
+      let attempt = 0,
+        workerId = 'stalled-worker';
+      if (!['queued', 'exhausted'].includes(kind)) {
+        const claim = await agents.claimNextSession(workerId, process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        expect(claim).toBeTruthy();
+        attempt = claim!.attempt;
+      }
+      if (kind === 'exhausted')
+        await pool.query('UPDATE agent_sessions SET attempt=999 WHERE id=$1', [sessionId]);
+      await expireExecution(sessionId);
+      if (kind === 'live-worker') await agents.heartbeat(sessionId, workerId);
+      if (kind === 'orphaned') await agents.releaseLease(sessionId, workerId);
+      if (kind === 'reclaimed') {
+        await pool.query('UPDATE agent_sessions SET lease_heartbeat_at=0 WHERE id=$1', [sessionId]);
+        workerId = 'replacement-worker';
+        const replacement = await agents.claimNextSession(workerId, process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        expect(replacement).toBeTruthy();
+        attempt = replacement!.attempt;
+      }
+      const input = await agents.listUserMessages(sessionId);
+      const position = (await store.get(study.id, principal.ownerId)).state.position;
+      await Promise.all([expireStalledTeachingTurns(), expireStalledTeachingTurns()]);
+      const ended = await agents.getSession(sessionId);
+      expect(ended).toMatchObject({
+        status: 'failed',
+        error: expect.stringContaining(AGENT_EXECUTION_IDLE_TIMEOUT),
+      });
+      expect(ended!.lease).toBeUndefined();
+      expect(
+        (await agents.readEventsAfter(sessionId, 0, 100)).filter(
+          (event) => event.type === 'session_end',
+        ),
+      ).toHaveLength(1);
+      expect(await agents.heartbeat(sessionId, workerId)).toBe(false);
+      expect(
+        await agents.appendRunEvent(sessionId, workerId, {
+          ts: Date.now(),
+          attempt,
+          type: 'message_end',
+          data: {},
+        }),
+      ).toBeNull();
+      expect(
+        await agents.finishSession(sessionId, workerId, {
+          status: 'succeeded',
+          expectedAttempt: attempt,
+        }),
+      ).toBe(false);
+      expect(
+        await recordTeachingProgress({ sessionId, ownerId: principal.ownerId, workerId, attempt }),
+      ).toBe(false);
+      expect(
+        (await pool.query('SELECT 1 FROM sandbox_session_grants WHERE session_id=$1', [sessionId]))
+          .rows,
+      ).toHaveLength(0);
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.roleRun).toMatchObject({
+        status: 'failed',
+        failureCode: AGENT_EXECUTION_IDLE_TIMEOUT,
+        failure: 'timeout',
+        canRetry: true,
+      });
+      expect(view.state.position).toEqual(position);
+      await study.send('retry');
+      expect((await agents.getSession(sessionId))!.status).toBe('queued');
+      expect(await agents.listUserMessages(sessionId)).toEqual(input);
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('queued');
+    },
+  );
+
+  it('keeps healthy long execution active and renews only its existing bound grant', async () => {
+    const { study, sessionId } = await executionFixture();
+    const { expireStalledTeachingTurns, recordTeachingProgress } =
+      await import('@/lib/server/pbl-v3/execution-watchdog');
+    const claim = await agents.claimNextSession('healthy-worker', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const input = {
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'healthy-worker',
+      attempt: claim!.attempt,
+    };
+    await pool.query(
+      "UPDATE pbl_v3_roles SET turn_started_at=clock_timestamp()-interval '2 hours' WHERE session_id=$1",
+      [sessionId],
+    );
+    await pool.query(
+      "UPDATE sandbox_session_grants SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1",
+      [sessionId],
+    );
+    const original = (
+      await pool.query('SELECT grant_id FROM sandbox_session_grants WHERE session_id=$1', [
+        sessionId,
+      ])
+    ).rows[0].grant_id;
+    for (let i = 0; i < 3; i++) {
+      await pool.query(
+        "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '14 minutes' WHERE session_id=$1",
+        [sessionId],
+      );
+      expect(await recordTeachingProgress(input)).toBe(true);
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('running');
+    }
+    expect(
+      await (await SandboxStore.open()).sessionGrant(sessionId, principal.ownerId),
+    ).toMatchObject({ grant_id: original });
+    // Explicit revocation cannot be undone by later progress.
+    await pool.query('DELETE FROM sandbox_session_grants WHERE session_id=$1', [sessionId]);
+    expect(await recordTeachingProgress(input)).toBe(true);
+    expect(await (await SandboxStore.open()).sessionGrant(sessionId, principal.ownerId)).toBeNull();
+    const row = await store.get(study.id, principal.ownerId);
+    expect(row.state.position.stageIndex).toBe(0);
+  });
+
+  it('expires without the study lock, preserves explicit cancellation, and ignores terminal/unbound sessions', async () => {
+    const { study, sessionId } = await executionFixture();
+    const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+    const claim = await agents.claimNextSession('hung-worker', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    expect(claim).toBeTruthy();
+    await agents.requestCancel(sessionId);
+    await expireExecution(sessionId);
+    let release!: () => void;
+    const locked = store.exclusive(
+      study.id,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    try {
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('cancelled');
+    } finally {
+      release();
+      await locked;
+    }
+    const ordinary = await agents.createSession({
+      ownerId: principal.ownerId,
+      prompt: 'ordinary',
+      stageId: 'ordinary',
+    });
+    await expireStalledTeachingTurns();
+    expect((await agents.getSession(ordinary.id))!.status).toBe('queued');
+    const ended = await agents.getSession(sessionId);
+    await expireStalledTeachingTurns();
+    expect(await agents.getSession(sessionId)).toEqual(ended);
+  });
+
+  it.each(['setup', 'tool', 'settlement'] as const)(
+    'retires a stalled %s claim, frees admission and refuses late completion',
+    async (phase) => {
+      const { study, sessionId } = await executionFixture();
+      const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+      let release!: () => void;
+      let entered = false;
+      const paused = () => {
+        entered = true;
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      };
+      let restore: () => void;
+      if (phase === 'setup') {
+        const driver = await import('@/lib/server/agent-runtime/agent-driver-model');
+        const original = driver.resolveAgentDriverModel;
+        const hook = vi
+          .spyOn(driver, 'resolveAgentDriverModel')
+          .mockImplementation(async (...args) => {
+            await paused();
+            return original(...args);
+          });
+        restore = () => hook.mockRestore();
+      } else if (phase === 'tool') {
+        const row = await store.get(study.id, principal.ownerId);
+        row.state.position.stageIndex = 3;
+        row.state.milestones[0]!.stageIndex = 3;
+        await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+        // Replace the welcome binding with the actual coding role.
+        await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [sessionId]);
+        const queued = (await study.send('chat')) as { sessionId: string };
+        return stalledCodingTool(study, queued.sessionId);
+      } else {
+        const original = agents.appendRunEvent.bind(agents);
+        const hook = vi.spyOn(agents, 'appendRunEvent').mockImplementation(async (...args) => {
+          if (args[2].type === 'session_end') await paused();
+          return original(...args);
+        });
+        restore = () => hook.mockRestore();
+      }
+      const claim = await agents.claimNextSession('blocked-execution', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      mocked.responses = [
+        toolResponse([{ name: 'request_skill_review', input: { question: 'Ready to learn?' } }]),
+      ];
+      const ctx = { running: new Map(), shuttingDown: false };
+      const run = runSession(ctx, claim!);
+      try {
+        await vi.waitFor(() => expect(entered).toBe(true), { timeout: 5000 });
+        await expireExecution(sessionId);
+        await vi.waitFor(
+          async () => {
+            await expireStalledTeachingTurns();
+            expect((await agents.getSession(sessionId))!.status).toBe('failed');
+          },
+          { timeout: 5000 },
+        );
+        await vi.waitFor(() => expect(ctx.running.size).toBe(0), { timeout: 5000 });
+        await run;
+        expect((await agents.getSession(sessionId))!.status).toBe('failed');
+        await study.send('retry');
+        release();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect((await agents.getSession(sessionId))!.status).toBe('queued');
+      } finally {
+        release?.();
+        restore!();
+        await run;
+        mocked.responses = [];
+      }
+    },
+    20000,
+  );
+
+  async function stalledCodingTool(
+    study: Awaited<ReturnType<typeof freshStudy>>,
+    sessionId: string,
+  ) {
+    const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+    let release!: () => void,
+      entered = false;
+    const original = E2BCompatibleSandboxProvider.prototype.readText;
+    const hook = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'readText')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[2].endsWith('greeting.py')) {
+          entered = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return original.apply(this, args);
+      });
+    const claim = await agents.claimNextSession('blocked-code', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    mocked.responses = [
+      toolResponse([{ name: 'read_next_skill', input: {} }]),
+      toolResponse([{ name: 'read_file', input: { path: 'greeting.py' } }]),
+    ];
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, claim!);
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true), { timeout: 5000 });
+      await expireExecution(sessionId);
+      // The scan skips short progress-publication locks instead of blocking.
+      await vi.waitFor(
+        async () => {
+          await expireStalledTeachingTurns();
+          expect((await agents.getSession(sessionId))!.status).toBe('failed');
+        },
+        { timeout: 5000 },
+      );
+      await vi.waitFor(() => expect(ctx.running.size).toBe(0), { timeout: 5000 });
+      await run;
+      expect((await agents.getSession(sessionId))!.status).toBe('failed');
+      await study.send('retry'); // The hung tool must have released the study lock.
+      release();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect((await agents.getSession(sessionId))!.status).toBe('queued');
+    } finally {
+      release?.();
+      hook.mockRestore();
+      await run;
+      mocked.responses = [];
+    }
+  }
+
+  it('does not expire a claim while fresh progress is being committed', async () => {
+    const { sessionId } = await executionFixture();
+    const { expireStalledTeachingTurns } = await import('@/lib/server/pbl-v3/execution-watchdog');
+    await agents.claimNextSession('progress-race', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await expireExecution(sessionId);
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query('SELECT id FROM agent_sessions WHERE id=$1 FOR SHARE', [sessionId]);
+      await db.query(
+        'UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp() WHERE session_id=$1',
+        [sessionId],
+      );
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('running');
+      await db.query('COMMIT');
+      await expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('running');
+    } finally {
+      await db.query('ROLLBACK');
+      db.release();
+    }
+  });
+
+  it.each(['discarded', 'releasing'] as const)(
+    'never renews a grant for a %s environment even if an old worker reports progress',
+    async (intent) => {
+      const { study, sessionId } = await executionFixture();
+      const { recordTeachingProgress } = await import('@/lib/server/pbl-v3/execution-watchdog');
+      const claim = await agents.claimNextSession('retired-environment', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const row = await store.get(study.id, principal.ownerId);
+      await pool.query(
+        "UPDATE sandbox_session_grants SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1",
+        [sessionId],
+      );
+      if (intent === 'discarded')
+        await pool.query('UPDATE pbl_v3_studies SET archive_discard=$2 WHERE id=$1', [
+          study.id,
+          JSON.stringify({ environmentId: row.environment_id }),
+        ]);
+      else
+        await pool.query('UPDATE pbl_v3_studies SET idle_turn_cleanup=$2 WHERE id=$1', [
+          study.id,
+          JSON.stringify({ environmentId: row.environment_id, releasing: true }),
+        ]);
+      await recordTeachingProgress({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'retired-environment',
+        attempt: claim!.attempt,
+      });
+      expect(
+        await (await SandboxStore.open()).sessionGrant(sessionId, principal.ownerId),
+      ).toBeNull();
+    },
+  );
+
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
     const study = await freshStudy();
     onTestFinished(async () => {

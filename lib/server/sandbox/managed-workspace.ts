@@ -1,5 +1,6 @@
 import 'server-only';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { abortable } from '@/lib/server/agent-runtime/abortable';
 import { SandboxError } from '@/lib/sandbox/errors';
 
 export type WorkspaceMutation =
@@ -19,6 +20,7 @@ interface WorkspaceAccess {
   workspaceId: string;
   environmentIds: () => readonly (string | null | undefined)[];
   operations: readonly WorkspaceMutation[];
+  signal?: AbortSignal;
 }
 const access = new AsyncLocalStorage<WorkspaceAccess & { active: boolean }>();
 
@@ -42,7 +44,7 @@ export async function withLearningWorkspaceAccess<T>(
   const current = { ...scope, active: true };
   return access.run(current, async () => {
     try {
-      return await run();
+      return await (scope.signal ? abortable(run(), scope.signal) : run());
     } finally {
       current.active = false;
     }
@@ -59,6 +61,7 @@ export function assertWorkspaceMutation(
   const current = access.getStore();
   if (
     current?.active &&
+    !current.signal?.aborted &&
     current.ownerId === ownerId &&
     current.workspaceId === workspaceId &&
     environmentId !== null &&

@@ -578,6 +578,31 @@ describe('runSession NOTIFY wakeup wiring', () => {
     },
   );
 
+  it('releases a revoked teaching claim and its timers even when Agent abort never settles its prompt', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, { ...SESSION, id: 'pbl-role-uncooperative' });
+    await waitForReady();
+    const agent = fake.current.instance!;
+    const abort = vi.spyOn(agent, 'abort').mockImplementation(() => {});
+    mocks.store.heartbeat.mockResolvedValueOnce(false);
+    try {
+      await vi.waitFor(() => expect(ctx.running.size).toBe(0), { timeout: 4000 });
+      await run;
+      expect(abort).toHaveBeenCalled();
+      expect(mocks.bus.unsubscribeWakeup).toHaveBeenCalledOnce();
+      const replacement = { abort: new AbortController() };
+      ctx.running.set('pbl-role-uncooperative', replacement);
+      agent.releasePrompt();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(ctx.running.get('pbl-role-uncooperative')).toBe(replacement);
+      expect(mocks.store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      agent.releasePrompt();
+      abort.mockRestore();
+      await run;
+    }
+  });
+
   it('still unsubscribes when setup fails before the agent is built', async () => {
     // A driver-model failure kills the run during setup — the wakeup
     // subscription created before the try must still be cleaned up.

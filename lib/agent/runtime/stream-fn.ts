@@ -158,6 +158,8 @@ export interface CallLlmStreamFnOptions {
   unbounded?: boolean;
   /** Per-request silence guard, reset by upstream stream parts; never a total turn deadline. */
   responseIdleTimeoutMs?: number;
+  /** Upstream execution feedback, before presentation throttling; never a local heartbeat. */
+  onProgress?: () => void;
   source?: string;
   /** Optional abort signal forwarded to the underlying streamLLM call. */
   abortSignal?: AbortSignal;
@@ -456,6 +458,16 @@ async function pump(
     for await (const part of result.fullStream as AsyncIterable<Record<string, unknown>>) {
       if (settled) break;
       armIdleTimer();
+      const delta = part.text ?? part.delta ?? part.textDelta;
+      const feedback =
+        (['text-delta', 'text', 'reasoning-delta', 'reasoning', 'tool-input-delta'].includes(
+          String(part.type),
+        ) &&
+          typeof delta === 'string' &&
+          delta.length > 0) ||
+        part.type === 'tool-call' ||
+        part.type === 'finish';
+      if (feedback) opts.onProgress?.();
       if (part.type === 'finish') {
         settleFinish(
           part.finishReason as FinishReason | undefined,
