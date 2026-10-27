@@ -3017,34 +3017,46 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       (_, index) => `Message ${index}: ` + 'x'.repeat(index === 15 ? 1_200_000 : 14_000),
     );
     bodies.push('Current complete reply: ' + 'y'.repeat(700_000));
-    for (const [index, text] of bodies.entries()) {
-      for (const [type, content] of [
-        ['message_start', ''],
-        ['message_update', text.slice(0, 30)],
-        [index === bodies.length - 1 ? 'message_update' : 'message_end', text],
-      ])
-        await agents.appendControlEvent(queued.sessionId, {
-          ts: Date.now(),
-          type,
-          data: { message: { role: 'assistant', content: [{ type: 'text', text: content }] } },
-        });
-    }
     const largeToolResult = { content: [{ type: 'text', text: 'tool output '.repeat(60_000) }] };
-    await agents.appendControlEvent(queued.sessionId, {
-      ts: Date.now(),
-      type: 'tool_execution_end',
-      data: { toolName: 'read_file', toolCallId: 'large-history-tool', result: largeToolResult },
+    // This contract measures history reads, not per-event commit throughput. Keep the
+    // real append/sequence path, but commit each fixture phase once rather than 1,389 times.
+    await store.transaction(async (db) => {
+      const events = new PgAgentSessionStore(db, { withTransaction: (body) => body(db) });
+      for (const [index, text] of bodies.entries()) {
+        for (const [type, content] of [
+          ['message_start', ''],
+          ['message_update', text.slice(0, 30)],
+          [index === bodies.length - 1 ? 'message_update' : 'message_end', text],
+        ])
+          await events.appendControlEvent(queued.sessionId, {
+            ts: Date.now(),
+            type,
+            data: { message: { role: 'assistant', content: [{ type: 'text', text: content }] } },
+          });
+      }
+      await events.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_end',
+        data: { toolName: 'read_file', toolCallId: 'large-history-tool', result: largeToolResult },
+      });
     });
     const initial = await learningView(principal, study.id, { passive: true });
     const initialPart = initial.conversation
       ?.flatMap((entry) => entry.parts)
       .findLast((part) => part.kind === 'text');
-    for (let index = 0; index < 1040; index++)
-      await agents.appendControlEvent(queued.sessionId, {
-        ts: Date.now(),
-        type: 'tool_execution_update',
-        data: { toolName: 'list_files', toolCallId: 'many-tool-events', partialResult: { index } },
-      });
+    await store.transaction(async (db) => {
+      const events = new PgAgentSessionStore(db, { withTransaction: (body) => body(db) });
+      for (let index = 0; index < 1040; index++)
+        await events.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'tool_execution_update',
+          data: {
+            toolName: 'list_files',
+            toolCallId: 'many-tool-events',
+            partialResult: { index },
+          },
+        });
+    });
     const through = await agents.lastEventSeq(queued.sessionId);
     const live = await readConversationHistory(pool, queued.sessionId, through, 30);
     expect(live.length).toBeLessThanOrEqual(32); // durable learner and current-message anchors
@@ -3168,7 +3180,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
       row.environment_id,
     ]);
-  });
+  }, 15000);
 
   it('keeps the last snapshot of every interrupted message across retry attempts', async () => {
     const study = await freshStudy();
