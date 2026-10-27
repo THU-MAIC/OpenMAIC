@@ -38,7 +38,7 @@ export function useLearnerMessage(
     if (!view) return;
     const saved = readPendingMessage(view.id);
     if (saved && (current.current?.id !== saved.id || current.current.studyId !== view.id)) {
-      if (!recoverPendingMessage(view.id, saved.id, true)) onStorageError();
+      if (!recoverPendingMessage(view.id, saved.id)) onStorageError();
     }
   }, [view, observe, onStorageError]);
   const begin = useCallback(

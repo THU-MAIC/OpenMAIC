@@ -88,7 +88,7 @@ it.each([false, true])(
     await act(async () => current.begin(view(['earlier']), 'command', 'Ready'));
     await act(async () => current.setText('New draft'));
     await act(async () => current.finish('command', success, view(['earlier'])));
-    expect(current.text).toBe('New draft');
+    expect(current.text).toBe(success ? 'New draft' : 'Ready\n\nNew draft');
     expect(current.entry).toBeNull();
   },
 );
@@ -204,5 +204,62 @@ it('retains a newly typed identical draft after recovery when acknowledgement ar
   expect(current.text).toBe('Ready');
   await act(async () => current.setText('Ready'));
   await act(async () => current.observe(view(['command'])));
+  expect(current.text).toBe('Ready');
+});
+
+it('surfaces failed text beside newer typing before a normal send can replace its recovery record', async () => {
+  await act(async () => current.begin(view(), 'first', 'Ready'));
+  await act(async () => current.setText('New draft'));
+  await act(async () => current.finish('first', false, view()));
+  expect(current.text).toBe('Ready\n\nNew draft');
+  expect(readPendingMessage(study)).toMatchObject({
+    id: 'first',
+    text: 'Ready',
+    recovery: { remainder: 'New draft' },
+  });
+  await act(async () => current.begin(view(), 'second', current.text));
+  expect(current.text).toBe('');
+  expect(readPendingMessage(study)).toEqual({ id: 'second', text: 'Ready\n\nNew draft' });
+  await act(async () => current.finish('second', false, view()));
+  expect(current.text).toBe('Ready\n\nNew draft');
+  await remount(view(), true);
+  expect(current.text).toBe('Ready\n\nNew draft');
+});
+
+it.each([false, true])(
+  'keeps newer text when the original recovered command is retried (success: %s)',
+  async (success) => {
+    await act(async () => current.begin(view(), 'first', 'Ready'));
+    await act(async () => current.setText('New draft'));
+    await act(async () => current.finish('first', false, view()));
+    expect(current.text).toBe('Ready\n\nNew draft');
+    await act(async () => current.begin(view(), 'first', 'Ready'));
+    expect(current.text).toBe('New draft');
+    await act(async () => current.finish('first', success, view()));
+    expect(current.text).toBe(success ? 'New draft' : 'Ready\n\nNew draft');
+  },
+);
+
+it('removes only the failed text on a late receipt, preserving newer text through reload', async () => {
+  await act(async () => current.begin(view(), 'first', 'Ready'));
+  await act(async () => current.setText('New draft'));
+  await act(async () => current.finish('first', false, view()));
+  expect(current.text).toBe('Ready\n\nNew draft');
+  await remount(view());
+  await act(async () => current.observe(view(['first'])));
+  expect(current.text).toBe('New draft');
+  expect(readPendingMessage(study)).toBeUndefined();
+  await remount(view(['first']), true);
+  expect(current.text).toBe('New draft');
+});
+
+it('does not erase new identical typing when retrying a recovered command', async () => {
+  await act(async () => current.begin(view(), 'first', 'Ready'));
+  await act(async () => current.setText('Ready'));
+  await act(async () => current.finish('first', false, view()));
+  expect(current.text).toBe('Ready\n\nReady');
+  await act(async () => current.begin(view(), 'first', 'Ready'));
+  expect(current.text).toBe('Ready');
+  await act(async () => current.finish('first', true, view()));
   expect(current.text).toBe('Ready');
 });

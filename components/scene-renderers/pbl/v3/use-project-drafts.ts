@@ -93,9 +93,17 @@ export const readPendingMessage = (id: string) => read(id, 'ui', uiSchema, empty
 /** Keep unconfirmed text with the draft; never persist a request for automatic replay. */
 export function beginPendingMessage(studyId: string, id: string, text: string) {
   const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  // Retrying the same command sends only that original text. If failure/reentry
+  // had restored it ahead of a newer draft, keep the newer remainder in place.
+  const pending = draft.pendingMessage;
+  const recoveredRetry =
+    pending?.id === id &&
+    pending.text === text &&
+    pending.recovery?.revision === draft.textRevision;
+  const remaining = recoveredRetry ? pending.recovery!.remainder : draft.text;
   return write(studyId, 'ui', {
     ...draft,
-    text: draft.text === text ? '' : draft.text,
+    text: remaining === text && !recoveredRetry ? '' : remaining,
     textRevision: draft.textRevision + 1,
     pendingMessage: { id, text },
   });
@@ -112,10 +120,11 @@ export function acknowledgePendingMessage(studyId: string, id: string) {
     pendingMessage: undefined,
   });
 }
-export function recoverPendingMessage(studyId: string, id: string, reopening = false) {
+export function recoverPendingMessage(studyId: string, id: string) {
   const draft = read(studyId, 'ui', uiSchema, emptyUi);
   const pending = draft.pendingMessage;
-  if (pending?.id !== id || pending.recovery || (!reopening && draft.text)) return true;
+  if (pending?.id !== id || pending.recovery) return true;
+  // Surface both texts before another send can replace the single pending record.
   const text = draft.text ? `${pending.text}\n\n${draft.text}` : pending.text;
   return write(studyId, 'ui', {
     ...draft,

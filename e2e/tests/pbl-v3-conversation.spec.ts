@@ -151,6 +151,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   let chatRequests = 0;
   let delayChatAcceptance = false;
   let failChatAck = false;
+  let rejectChat = false;
   let streamRequests = 0;
   let openRequests = 0;
   page.on('request', (request) => {
@@ -197,9 +198,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     if (command?.type === 'chat') {
       chatRequests++;
       const delayed = delayChatAcceptance,
-        failAck = failChatAck;
+        failAck = failChatAck,
+        rejected = rejectChat;
       delayChatAcceptance = false;
       failChatAck = false;
+      rejectChat = false;
       const accept = () => {
         view.conversation!.push({
           id: `user-${command.id}`,
@@ -209,13 +212,15 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
         });
         view.activitySequence!++;
       };
-      if (!delayed) accept();
+      if (!delayed && !rejected) accept();
       if (chatGate) {
         const gate = chatGate;
         chatGate = null;
         chatEntered();
         await gate;
       }
+      if (rejected)
+        return route.fulfill({ status: 503, json: { error: { code: 'SANDBOX_UNAVAILABLE' } } });
       if (delayed) accept();
       // The server preserves a completed review while answering a follow-up.
       view.activitySequence!++;
@@ -579,6 +584,25 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   publishLearning();
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
   await expect(page.getByText('Recover my pending message', { exact: true })).toHaveCount(1);
+  // A failed send must be visible alongside newer typing before another send
+  // replaces its pending record. This request never reaches server acceptance.
+  await page.getByLabel('Your message', { exact: true }).fill('Failed original explanation');
+  rejectChat = true;
+  chatGate = new Promise<void>((resolve) => (releaseChat = resolve));
+  const rejectedChat = new Promise<void>((resolve) => (chatEntered = resolve));
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await rejectedChat;
+  await page.getByLabel('Your message', { exact: true }).fill('Newer unsent explanation');
+  releaseChat();
+  const recoveredText = 'Failed original explanation\n\nNewer unsent explanation';
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue(recoveredText);
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
+  await expect(page.getByText(recoveredText, { exact: true })).toHaveCount(1);
+  await expect(page.locator('[data-testid="pbl-pending-action"][data-action="chat"]')).toHaveCount(
+    0,
+  );
   // Teaching has no drawer; decisions expose only the actual current task.
   await expect(task.getByRole('button', { name: /Current task details/ })).toHaveCount(0);
   await expect(details).toHaveCount(0);

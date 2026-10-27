@@ -104,6 +104,12 @@ not a live course or a comparison against a historical build.
 | --- | --- |
 | ![Draft before sending](screenshots/before-send.png) | ![Learner bubble before Agent wait](screenshots/after-send.png) |
 
+If a send fails while the learner has typed a newer draft, both texts are restored
+visibly in the composer before another send can replace the pending record. An
+explicit retry of the original command leaves the newer draft in place; a late
+acknowledgement removes only untouched recovered text. Recovery never replays a
+request automatically.
+
 The existing expandable tool card names assistance clearly:
 
 ![Expanded Answer your question card](screenshots/assistance-card.png)
