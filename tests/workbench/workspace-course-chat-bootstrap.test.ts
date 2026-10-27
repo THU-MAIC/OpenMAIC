@@ -1782,6 +1782,35 @@ describe('the knowledge base page', () => {
       expect(name()).toBe('Light and lenses');
     });
 
+    it('keeps a close to its own conversation when request keys collide', async () => {
+      mocks.sessionRows = [
+        { id: 'session-1', stageId: 'stage-1', updatedAt: 9 },
+        { id: 'session-2', stageId: 'stage-2', updatedAt: 8 },
+      ];
+      await previewRun();
+      const close = previewPane()?.querySelector<HTMLButtonElement>(
+        '[data-testid="workspace-course-tab-close-request-preview"]',
+      );
+      await act(async () => close?.click());
+      await render();
+      expect(previewPane()).toBeNull();
+      // Another conversation whose request has the same per-session key.
+      await act(async () => {
+        History.prototype.replaceState.call(
+          window.history,
+          null,
+          '',
+          '/workspace?session=session-2',
+        );
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      });
+      mocks.searchParams = new URLSearchParams('session=session-2');
+      mocks.store.sessionId = 'session-2';
+      await previewRun();
+      expect(previewPane()).not.toBeNull();
+      expect(previewPane()?.getAttribute('aria-hidden')).not.toBe('true');
+    });
+
     it("folds with the pane's own fold, leaving the run and the tab", async () => {
       await previewRun();
       const fold = previewPane()?.querySelector<HTMLButtonElement>(

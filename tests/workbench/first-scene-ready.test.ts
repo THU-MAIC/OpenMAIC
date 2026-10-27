@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hasReadableFirstScene, watchFirstScene } from '@/lib/workbench/first-scene-ready';
+import {
+  FIRST_SCENE_RETRY_DELAYS_MS,
+  hasReadableFirstScene,
+  watchFirstScene,
+} from '@/lib/workbench/first-scene-ready';
 
 const manifest = { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] };
 function respond(scenes: unknown[], currentManifest = manifest) {
@@ -74,5 +78,81 @@ describe('first persisted scene handoff', () => {
     await vi.advanceTimersByTimeAsync(9000);
     expect(fetch).toHaveBeenCalledTimes(2);
     cancel();
+  });
+
+  it('retries a read that failed, and hands off once a retry finds the scene', async () => {
+    vi.useFakeTimers();
+    let failures = 1;
+    const read = vi.fn(async (url: string) => {
+      if (url.includes('/manifest')) {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error('offline');
+        }
+        return { ok: true, status: 200, json: async () => manifest };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ scenes: [{ id: 'first', stageId: 'course' }] }),
+      };
+    });
+    vi.stubGlobal('fetch', read);
+    const open = vi.fn();
+    const cancel = watchFirstScene(['course'], open);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(open).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(FIRST_SCENE_RETRY_DELAYS_MS[0]);
+    expect(open).toHaveBeenCalledExactlyOnceWith('course');
+    cancel();
+  });
+
+  it('retries a failed scene read too, not only the manifest', async () => {
+    vi.useFakeTimers();
+    let sceneFailures = 1;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/manifest')) return { ok: true, status: 200, json: async () => manifest };
+        if (sceneFailures > 0) {
+          sceneFailures -= 1;
+          return { ok: false, status: 503, json: async () => ({}) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ scenes: [{ id: 'first', stageId: 'course' }] }),
+        };
+      }),
+    );
+    const open = vi.fn();
+    const cancel = watchFirstScene(['course'], open);
+    await vi.advanceTimersByTimeAsync(FIRST_SCENE_RETRY_DELAYS_MS[0]);
+    expect(open).toHaveBeenCalledExactlyOnceWith('course');
+    cancel();
+  });
+
+  it('stops retrying after the bound', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const open = vi.fn();
+    const cancel = watchFirstScene(['course'], open);
+    const total = FIRST_SCENE_RETRY_DELAYS_MS.reduce((sum, delay) => sum + delay, 0);
+    await vi.advanceTimersByTimeAsync(total + 60_000);
+    // The first read plus one per retry, each failing at the manifest.
+    expect(fetch).toHaveBeenCalledTimes(1 + FIRST_SCENE_RETRY_DELAYS_MS.length);
+    expect(open).not.toHaveBeenCalled();
+    cancel();
+  });
+
+  it('cancels a pending retry', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    const cancel = watchFirstScene(['course'], vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    cancel();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

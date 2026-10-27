@@ -1062,11 +1062,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
   );
 
-  const [closedPreviewKey, setClosedPreviewKey] = useState<string | null>(null);
+  // Request keys come from per-session event sequences and collide across
+  // conversations, so the close is remembered with the conversation it was for.
+  const [closedPreview, setClosedPreview] = useState<{
+    readonly sessionId: string | null;
+    readonly key: string;
+  } | null>(null);
+  const closedPreviewKey =
+    closedPreview && closedPreview.sessionId === attachedSessionId ? closedPreview.key : null;
   const closePreview = useCallback(
     (requestKey: string) => {
       rememberPreviewClosed(attachedSessionId, requestKey);
-      setClosedPreviewKey(requestKey);
+      setClosedPreview({ sessionId: attachedSessionId, key: requestKey });
       setPreviewFocus((current) => ({ ...current, active: false }));
     },
     [attachedSessionId],
