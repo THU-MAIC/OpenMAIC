@@ -24,6 +24,11 @@ on:
         integration/material-library,
         integration/workbench-home,
       ]
+  # The merge queue builds each entry on top of main and the entries queued
+  # ahead of it, so a pull request no longer has to be brought up to date with
+  # main by hand before it merges. The required check must report here too, or
+  # a queued entry waits until it times out.
+  merge_group:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -79,10 +84,10 @@ jobs:
           cache: pnpm
 
       - name: Package version bumps
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: node scripts/check-package-version-bumps.mjs "$BASE_SHA"
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
 
       # A branch creation or a force push reports an unusable `before`. Fail
       # rather than substituting HEAD^: a force push can replace many commits at
@@ -420,11 +425,14 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "pull_request" ]; then base="$PR_BASE"; else base="$PUSH_BEFORE"; fi
+          case "$EVENT_NAME" in
+            pull_request | merge_group) base="$PR_BASE" ;;
+            *) base="$PUSH_BEFORE" ;;
+          esac
           if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
