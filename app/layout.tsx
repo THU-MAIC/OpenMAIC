@@ -43,10 +43,11 @@ import '@fontsource-variable/inter';
  */
 const THEME_INIT_SCRIPT = `try{var t=localStorage.getItem('theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`;
 
+// Keep the browser's default cutout avoidance: full-screen routes such as
+// classroom do not yet pad their controls for edge-to-edge rendering.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  viewportFit: 'cover',
 };
 
 export const metadata: Metadata = {
