@@ -59,7 +59,7 @@ describe('render-service container contract', () => {
   it('runs an init process as PID 1 so exited Chromium processes are reaped', () => {
     const dockerfile = read('Dockerfile');
 
-    expect(dockerfile).toContain('TINI_VERSION=0.19.0-1');
+    expect(dockerfile).toContain('TINI_VERSION=0.19.0-1+b3');
     expect(dockerfile).toContain('"tini=${TINI_VERSION}"');
     expect(dockerfile).toContain(
       'ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]',
