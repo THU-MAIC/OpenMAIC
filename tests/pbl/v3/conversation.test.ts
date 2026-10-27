@@ -736,7 +736,7 @@ describe('general teaching protocols', () => {
       ),
     ).toBe(false);
     expect(prompt(0, 6)).toContain(
-      'The learner uses the task bar above the chat input to enter the next step.',
+      'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar above the chat input to enter the next step.',
     );
     expect(
       isFinalProjectRecap(
@@ -749,7 +749,7 @@ describe('general teaching protocols', () => {
       'The final recap complete_stage tool completes the project and reveals the report button.',
     );
     expect(prompt(lastIndex, 6)).not.toContain(
-      'The learner uses the task bar above the chat input to enter the next step.',
+      'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar above the chat input to enter the next step.',
     );
   });
   it('does not mistake a named pre-decision skill for mentor reflection', () => {

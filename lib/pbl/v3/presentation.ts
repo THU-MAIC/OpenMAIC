@@ -1,5 +1,14 @@
 import type { LearningView } from './types';
 
+/** Hosted activity UI capabilities, shared with teaching guidance. */
+export const learningWorkbenchFeatures = { executionConsole: false, applicationPreview: false };
+
+export function hasTaskDrawer(view: Pick<LearningView, 'state' | 'stage'>): boolean {
+  return (
+    view.state.status !== 'completed' && ['dialogue', 'produce', 'check'].includes(view.stage.kind)
+  );
+}
+
 /** Labels follow authoritative progress; they never authorize a transition. */
 export function learningStep(view: Pick<LearningView, 'state' | 'stage'>): string {
   return stageStep(view.stage);

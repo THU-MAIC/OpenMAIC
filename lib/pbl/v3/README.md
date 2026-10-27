@@ -6,6 +6,8 @@ For self-contained `.maic.zip` delivery, see
 [Project packages, permissions and verification](PROJECT-PACKAGES.md).
 For the pre-course scope audit and its verification boundaries, see
 [Course readiness checklist](READINESS.md).
+For product-aware Agent guidance, assistance receipts and the course-content
+handoff, see [Teaching guidance and FS checklist](TEACHING-GUIDANCE.md).
 
 This slice opens an installed programming project in the normal classroom, runs
 four teaching roles in the existing Agent runner, and persists learning progress

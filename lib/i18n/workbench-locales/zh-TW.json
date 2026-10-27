@@ -197,7 +197,8 @@
       "collectBuild": "收集建置結果",
       "readTeachingSkill": "閱讀教學步驟",
       "requestReview": "提出審閱問題",
-      "completeTeachingStage": "完成當前教學環節"
+      "completeTeachingStage": "完成當前教學環節",
+      "respondToLearner": "回答你的問題"
     },
     "chip": {
       "seconds": "{{count}} 秒",

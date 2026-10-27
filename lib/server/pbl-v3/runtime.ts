@@ -10,6 +10,7 @@ import { readConversationHistory, CONVERSATION_BYTES } from './conversation-hist
 import 'server-only';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
+import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
@@ -1043,19 +1044,15 @@ export async function learningView(
     }
   }
 
-  const actions: string[] =
-    row.state.status === 'completed'
-      ? []
-      : [...transitions.allowedStudentActions(project.definition, row.state)];
-  if (
-    actions.includes('edit') &&
-    stage.kind === 'produce' &&
-    stage.writes === 'code' &&
-    project.buildCommand
-  )
-    actions.push('compile');
-  const guided = stage.kind === 'mentor_say' || stage.kind === 'produce';
   const approvalCurrent = hasStageCompletion(row, stage, binding);
+  const actions = learnerActions({
+    definition: project.definition,
+    state: row.state,
+    stage,
+    evaluation: row.evaluation,
+    completionRecorded: approvalCurrent,
+    buildAvailable: !!project.buildCommand,
+  });
   return {
     id,
     revision: row.revision,
@@ -1082,10 +1079,7 @@ export async function learningView(
       optional: !!m.optional,
       stages: m.stages.map(stageStep),
     })),
-    actions:
-      row.evaluation || (guided && !approvalCurrent)
-        ? actions.filter((action) => action !== 'next')
-        : actions,
+    actions,
     files,
     busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
     messages: messages.slice(-60),

@@ -10,6 +10,43 @@ const protocol = {
 const artifact = 'a'.repeat(64);
 
 describe('guided review boundaries', () => {
+  it('can end assistance before the first lesson without inventing readiness or a new step', () => {
+    const review = new GuidedSkillReview(protocol, undefined, true);
+    review.beginRun('intro:0', [{ seq: 1, text: 'Where are my files?' }], false);
+    review.support('Open the project file tree in the IDE.');
+    expect(review.state.activeFile).toBe('');
+    expect(review.state.welcome).toBe('pending');
+    expect(review.state.pending).toBeUndefined();
+    const restored = new GuidedSkillReview(protocol, review.state, true);
+    restored.beginRun('intro:0', [{ seq: 1, text: 'Where are my files?' }], false);
+    expect(restored.state.handoff?.kind).toBe('support');
+    expect(() => restored.advance('A-teach.md', undefined, artifact)).toThrow();
+    restored.beginRun('intro:0', [{ seq: 2, text: 'Please introduce the project.' }], true);
+    restored.checkpoint('Ready to begin?', artifact);
+    expect(restored.state.welcome).toBe('pending');
+  });
+
+  it('preserves the pending approval during assistance and rolls back a failed support receipt', async () => {
+    const review = new GuidedSkillReview(protocol, undefined, false, true);
+    review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], false);
+    review.advance('A-teach.md', undefined, artifact);
+    review.checkpoint('Approve this plan?', artifact, true);
+    review.beginRun('plan:2', [{ seq: 3, text: 'Where is PLAN.md?' }], true);
+    const before = structuredClone(review.state);
+    await expect(
+      review.withRollback(async () => {
+        review.support('Open PLAN.md from Project files.');
+        throw new Error('event commit failed');
+      }),
+    ).rejects.toThrow('event commit failed');
+    expect(review.state).toEqual(before);
+    review.support('Open PLAN.md from Project files.');
+    expect(review.state.pending).toEqual(before.pending);
+    expect(review.state.coverage).toBeUndefined();
+    expect(review.state.approval).toBeUndefined();
+    expect(() => review.advance('B-review.md', 'Help is approval.', artifact)).toThrow();
+  });
+
   it('rolls back local progression and terminal flags only when a tool transaction fails', async () => {
     const review = new GuidedSkillReview(protocol);
     review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
