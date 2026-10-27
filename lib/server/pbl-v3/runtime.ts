@@ -10,6 +10,8 @@ import { readConversationHistory, CONVERSATION_BYTES } from './conversation-hist
 import 'server-only';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
+import { learnerActions } from '@/lib/pbl/v3/learner-actions';
+import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
@@ -244,6 +246,7 @@ export async function queueRole(
   row: Study,
   text: string,
   opening = false,
+  commandId?: string,
 ) {
   await fenceOwnerWrite(db, row.owner_id);
   const role = roleFor(row);
@@ -316,7 +319,19 @@ export async function queueRole(
     });
     await agents.requeueSession(binding.session_id);
   } else {
-    await agents.postUserMessage(binding.session_id, { text }, { expectedOwnerId: row.owner_id });
+    const input = await agents.postUserMessage(
+      binding.session_id,
+      { text },
+      { expectedOwnerId: row.owner_id },
+    );
+    // Annotate the staged input in this same transaction, before either the input
+    // or its wakeup becomes visible. No historical events are rewritten.
+    if (commandId)
+      await db.query(
+        `UPDATE agent_session_events SET data=data || jsonb_build_object('pblCommandId',$3::text)
+         WHERE session_id=$1 AND seq=$2`,
+        [binding.session_id, input.seq, commandId],
+      );
   }
   return binding.session_id;
 }
@@ -595,6 +610,7 @@ export async function commandStudy(
                 ? 'System stage entry: open the current learning step using its teaching protocol. This is not learner feedback. Introduce the project when entering its first step, and wait for the learner.'
                 : command.text!,
               command.type === 'begin',
+              command.id,
             ),
           };
         }
@@ -879,7 +895,14 @@ export async function learningView(
     milestone = currentMilestone(project.definition, row.state)!;
   const bindings = await store.roles(id);
   const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
-  const messages: LearningView['messages'] = [];
+  const messages: Array<
+    LearningView['messages'][number] & {
+      scope: string;
+      inputId?: number;
+      messageId?: number;
+      handoff: boolean;
+    }
+  > = [];
   let conversation: LearningView['conversation'] = [];
   const conversationHistory: NonNullable<LearningView['conversationHistory']> = [];
   let activitySequence = 0;
@@ -938,10 +961,18 @@ export async function learningView(
         isError?: boolean;
         result?: { content?: { type: string; text?: string }[] };
         message?: { role?: string; content?: unknown };
+        pblInputId?: number;
+        pblMessageId?: number;
       };
       const question = questions.get(event.id);
       if (question !== undefined) {
-        messages.push({ role: 'assistant', text: question });
+        messages.push({
+          role: 'assistant',
+          text: question,
+          scope: binding.session_id,
+          inputId: data.pblInputId,
+          handoff: true,
+        });
         if (
           event.id > (latestUserSeq ?? 0) &&
           question === (binding.guided?.handoff?.question ?? binding.guided?.pending?.question)
@@ -953,7 +984,7 @@ export async function learningView(
         !(event.data as { pblOpening?: boolean }).pblOpening &&
         typeof data.text === 'string'
       ) {
-        messages.push({ role: 'user', text: data.text });
+        messages.push({ role: 'user', text: data.text, scope: binding.session_id, handoff: false });
       }
       if (
         event.type === 'message_end' &&
@@ -967,7 +998,15 @@ export async function learningView(
           )
           .map((p) => p.text)
           .join('\n');
-        if (text) messages.push({ role: 'assistant', text });
+        if (text)
+          messages.push({
+            role: 'assistant',
+            text,
+            scope: binding.session_id,
+            inputId: data.pblInputId,
+            messageId: data.pblMessageId ?? event.id,
+            handoff: false,
+          });
       }
     }
   }
@@ -1007,14 +1046,31 @@ export async function learningView(
   // The review transaction can commit before the runner persists its display event.
   const pendingReview = binding?.guided?.handoff ?? binding?.guided?.pending;
   if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
-    messages.push({ role: 'assistant', text: pendingReview.question });
+    messages.push({
+      role: 'assistant',
+      text: pendingReview.question,
+      scope: binding!.session_id,
+      inputId: latestUserSeq,
+      handoff: true,
+    });
     conversation.push({
       id: `pending-${pendingReview.runId}`,
       speaker: binding!.role,
-      parts: [{ kind: 'text', id: 'pending-question', text: pendingReview.question }],
+      inputId: latestUserSeq,
+      parts: [
+        {
+          kind: 'text',
+          id: `question-pending-${pendingReview.runId}`,
+          text: pendingReview.question,
+        },
+      ],
     });
   }
-  conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES, currentPartIds);
+  conversation = boundConversation(
+    deduplicateHandoffs(conversation),
+    4 * CONVERSATION_BYTES,
+    currentPartIds,
+  );
   const cached =
     options.observation?.revision === row.revision &&
     options.observation.environmentId === row.environment_id
@@ -1071,19 +1127,16 @@ export async function learningView(
     }
   }
 
-  const actions: string[] =
-    row.state.status === 'completed'
-      ? []
-      : [...transitions.allowedStudentActions(project.definition, row.state)];
-  if (
-    actions.includes('edit') &&
-    stage.kind === 'produce' &&
-    stage.writes === 'code' &&
-    project.buildCommand
-  )
-    actions.push('compile');
-  const guided = stage.kind === 'mentor_say' || stage.kind === 'produce';
   const approvalCurrent = hasStageCompletion(row, stage, binding);
+  const actions = learnerActions({
+    definition: project.definition,
+    state: row.state,
+    stage,
+    evaluation: row.evaluation,
+    completionRecorded: approvalCurrent,
+    buildAvailable: !!project.buildCommand,
+  });
+  const duplicateMessages = handoffEchoes(messages);
   return {
     id,
     revision: row.revision,
@@ -1110,13 +1163,13 @@ export async function learningView(
       optional: !!m.optional,
       stages: m.stages.map(stageStep),
     })),
-    actions:
-      row.evaluation || (guided && !approvalCurrent)
-        ? actions.filter((action) => action !== 'next')
-        : actions,
+    actions,
     files,
     busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
-    messages: messages.slice(-60),
+    messages: messages
+      .filter((message) => !duplicateMessages.has(message))
+      .slice(-60)
+      .map(({ role, text }) => ({ role, text })),
     conversation,
     conversationHistory,
     activitySequence,

@@ -197,7 +197,8 @@
       "collectBuild": "Collect build result",
       "readTeachingSkill": "Read teaching section",
       "requestReview": "Ask for review",
-      "completeTeachingStage": "Complete teaching step"
+      "completeTeachingStage": "Complete teaching step",
+      "respondToLearner": "Answer your question"
     },
     "chip": {
       "seconds": "{{count}} Sek.",

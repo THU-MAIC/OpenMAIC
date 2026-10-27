@@ -18,7 +18,13 @@ export const guidedSkillStateSchema = z
     activeFile: z.string(),
     reviewedFiles: z.array(z.string()).max(16),
     pending: receiptSchema.optional(),
-    handoff: z.object({ runId: z.string(), question: z.string().min(1) }).optional(),
+    handoff: z
+      .object({
+        runId: z.string(),
+        question: z.string().min(1),
+        kind: z.literal('support').optional(),
+      })
+      .optional(),
     welcome: z.enum(['pending', 'ready']).optional(),
     approval: z
       .object({
@@ -63,8 +69,12 @@ export class GuidedSkillReview {
     const valid =
       restored !== undefined &&
       restored.protocolDigest === protocol.digest &&
-      index >= 0 &&
-      JSON.stringify(restored.reviewedFiles) === JSON.stringify(files.slice(0, index)) &&
+      ((index >= 0 &&
+        JSON.stringify(restored.reviewedFiles) === JSON.stringify(files.slice(0, index))) ||
+        (restored.activeFile === '' &&
+          restored.reviewedFiles.length === 0 &&
+          !restored.pending &&
+          restored.handoff?.kind === 'support')) &&
       (!restored.pending || restored.pending.file === restored.activeFile) &&
       (!projectWelcome || restored.welcome !== undefined);
     this.state = valid
@@ -112,6 +122,15 @@ export class GuidedSkillReview {
     delete this.state.pending;
     delete this.state.coverage;
     this.state.handoff = { runId: this.runId, question };
+    this.finishRun();
+  }
+
+  /** Answer a help-only turn without replacing a pending review or creating learner evidence. */
+  support(response: string): void {
+    if (!response.trim()) throw new Error('A learner-facing response is required.');
+    if (this.ended || this.advanced)
+      throw new Error('Answer assistance before opening/advancing a section and end this turn.');
+    this.state.handoff = { runId: this.runId, question: response, kind: 'support' };
     this.finishRun();
   }
 

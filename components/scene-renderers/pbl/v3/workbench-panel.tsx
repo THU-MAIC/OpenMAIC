@@ -27,9 +27,7 @@ import type { LearningWorkbench } from '@/lib/pbl/v3/workbench';
 import { ProjectTerminal } from '@/components/sandbox/project-terminal';
 import { sandboxErrorMessage } from '@/lib/sandbox/error-message';
 import { SandboxRequestError } from '@/components/sandbox/client';
-// The current hosted activity does not expose learner shell controls.
-// Keep the existing workbench capability available for a later general v3 release.
-const ACTIVITY_SHELL_ENABLED = false;
+import { learningWorkbenchFeatures } from '@/lib/pbl/v3/presentation';
 
 export async function workbenchRequest<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -433,7 +431,7 @@ export function LearningWorkbenchPanel({
           </Panel>
         </Group>
       </div>
-      {ACTIVITY_SHELL_ENABLED && (
+      {learningWorkbenchFeatures.executionConsole && (
         <div
           className="shrink-0 border-t bg-muted/10"
           style={{ height: consoleOpen ? '38%' : undefined }}
@@ -449,7 +447,7 @@ export function LearningWorkbenchPanel({
             >
               {t('pblV3.ide.output')}
             </button>
-            {ACTIVITY_SHELL_ENABLED && (
+            {learningWorkbenchFeatures.executionConsole && (
               <button
                 className={button}
                 aria-pressed={consoleOpen && consoleTab === 'terminal'}
@@ -463,7 +461,7 @@ export function LearningWorkbenchPanel({
               </button>
             )}
 
-            {ACTIVITY_SHELL_ENABLED && (
+            {learningWorkbenchFeatures.executionConsole && (
               <button
                 className={`${button} ml-auto`}
                 disabled={!view.environmentId || operation === 'stop'}
@@ -485,7 +483,7 @@ export function LearningWorkbenchPanel({
           </div>
           <div hidden={!consoleOpen} className="h-[calc(100%_-_38px)] overflow-auto p-2">
             <div hidden={consoleTab !== 'output'} className="space-y-2">
-              {ACTIVITY_SHELL_ENABLED && (
+              {learningWorkbenchFeatures.executionConsole && (
                 <>
                   <p className="text-xs text-muted-foreground">
                     {t('pblV3.workbench.executionNotice')}
@@ -528,7 +526,7 @@ export function LearningWorkbenchPanel({
                 </>
               )}
             </div>
-            {ACTIVITY_SHELL_ENABLED && (
+            {learningWorkbenchFeatures.executionConsole && (
               <div hidden={consoleTab !== 'terminal'}>
                 <button
                   className={button}

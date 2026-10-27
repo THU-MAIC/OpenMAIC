@@ -11,6 +11,11 @@ import { buildSystemPrompt } from '@/lib/pbl/v3/domain/orchestration/prompts';
 import { isFinalProjectRecap } from './stage-progress';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import {
+  teachingProductContext,
+  productHelpRules,
+  type TeachingWorkspaceFacts,
+} from './product-context';
+import {
   teachingRules,
   interactionRules,
   assessmentRules,
@@ -48,6 +53,7 @@ export interface TeachingPromptInput {
     studentResponses: readonly { seq: number; text: string }[];
   } | null;
   pendingRun?: string | null;
+  workspace?: TeachingWorkspaceFacts;
 }
 
 /** The same course section representation is validated and returned by read_next_skill. */
@@ -86,7 +92,7 @@ export function teachingSection(
       section === skill.progression[1]
         ? stageOpeningRules + '\n'
         : '') +
-      'Platform pacing policy takes precedence over any course instruction to repeat a covered question. Check earlier learner replies before asking. If this section is already satisfied by verified same-version feedback, use reuseFeedback with a concrete explanation to continue without another question. Otherwise record one necessary question with request_skill_review and wait for a real reply. Explicit confident understanding is sufficient absent unresolved errors; never invent learner feedback.',
+      'Platform product/assistance policy overrides course UI instructions: reference materials are Agent references, not automatically learner files or controls. Platform pacing policy takes precedence over any course instruction to repeat a covered question. Check earlier learner replies before asking. If this section is already satisfied by verified same-version feedback, use reuseFeedback with a concrete explanation to continue without another question. Otherwise record one necessary question with request_skill_review and wait for a real reply. Explicit confident understanding is sufficient absent unresolved errors; never invent learner feedback.',
     goal: milestone.goal ?? milestone.title,
     stage: stage.kind === 'mentor_say' ? stage.say : stage.kind === 'produce' ? stage.writes : '',
   };
@@ -112,11 +118,15 @@ function buildTeachingPrompt({
   reviewedSectionCount = 0,
   pendingReview,
   pendingRun = null,
+  workspace,
 }: TeachingPromptInput) {
   const finalRecap = isFinalProjectRecap(definition, { milestoneIndex, stageIndex }, stage);
-  const confirmation = finalRecap
-    ? 'The final recap complete_stage tool completes the project and reveals the report button. Do not ask for another Continue click or append another milestone.'
-    : 'The learner uses the task bar above the chat input to enter the next step.';
+  const confirmation =
+    welcome === 'pending'
+      ? 'Project readiness is a chat reply, not a Continue button. After that reply, read_next_skill opens formal teaching inside this same first step; do not send the learner to another step.'
+      : finalRecap
+        ? 'The final recap complete_stage tool completes the project and reveals the report button. Do not ask for another Continue click or append another milestone.'
+        : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar above the chat input to enter the next step.';
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
   const repairing = stage.kind === 'check' && stage.checker === 'tests' && !!collected.remediation;
   const recapping =
@@ -131,10 +141,18 @@ function buildTeachingPrompt({
     state: { decisions: collected.decisions, plan: planText, code: collected.code?.value },
     decisionCatalog: definition.decisions,
   });
+  const { current: _entryState, ...productGuide } = teachingProductContext({
+    definition,
+    stage,
+    role,
+    completionRecorded,
+    workspace,
+  });
   return (
     buildSystemPrompt({
       role: role,
       seed: {
+        productContext: productGuide,
         referenceMaterials: welcome === 'pending' ? [] : skill.documents,
         ...(!guided && packaged ? { teachingInstructions: skill.content } : {}),
         ...(welcome === 'pending' ? {} : seed),
@@ -251,7 +269,7 @@ function buildTeachingPrompt({
     }) +
     '\n' +
     teachingRules +
-    (stage.kind === 'check' ? assessmentRules : interactionRules) +
+    (guided ? interactionRules : stage.kind === 'check' ? assessmentRules : '') +
     (welcome === 'pending' ? '\n' + projectWelcomeRules : '') +
     (welcome !== 'pending' && stage.kind === 'mentor_say' && stage.agent === 'discussion'
       ? '\n' + stageOpeningRules
@@ -260,19 +278,16 @@ function buildTeachingPrompt({
     (completionRecorded
       ? '\nThe current stage is ALREADY complete for the recorded evidence. Answer any follow-up directly. Do not restart teaching, invent a new required question, or require complete_stage again just because the learner sent another message. Actual artifact changes invalidate the affected review and require reviewing that new version before completion.'
       : '') +
-    (stage.kind === 'mentor_say' || stage.kind === 'dialogue'
-      ? '\nThe current classroom stage is read-only: the learner can discuss concepts or record offered decisions, but cannot edit files or run commands. Ask for conceptual explanations and predicted results. Never require an edit, terminal action or newly executed output to finish this stage. Implementation and test execution belong to their dedicated stages; use only recorded evidence during reflection.'
-      : stage.kind === 'produce' && stage.writes === 'plan'
-        ? '\nPlanning permits changes to PLAN.md only. Source editing, commands and terminals are unavailable. Review the plan and the learner’s reasoning; do not require code implementation or execution for plan approval.'
-        : '') +
     (guided
-      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion; request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. Otherwise, when activeSection is null, read_next_skill first, then read sections in order. New unanswered goals require one request_skill_review and real new feedback; already satisfied goals may reuse verified same-version learner feedback using reuseFeedback, including answers that anticipated the next section. State exactly what prior reply covers the goal; never reuse assistant reasoning as learner evidence. A correct answer or clear confident understanding suffices when no error or question remains. Do not add another example or boundary question merely to prolong review. Actual current-version plan/code approval is still required. When requesting that approval before the final section, set request_skill_review.approval; only replies to an approval request can supply reusable artifact approval. The final plan/code section requests approval automatically. An already explicit same-version approval need not be repeated. If a required build is blocked and learner input is genuinely needed, request_learner_help hands control back without recording review or approval. Only complete_stage records completion; then follow learningRoadmap.confirmation. ' +
+      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion; request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. For normal teaching, when activeSection is null, read_next_skill first, then read sections in order. Assistance-only turns use respond_to_learner without opening or advancing a section. New unanswered goals require one request_skill_review and real new feedback; already satisfied goals may reuse verified same-version learner feedback using reuseFeedback, including answers that anticipated the next section. State exactly what prior reply covers the goal; never reuse assistant reasoning as learner evidence. A correct answer or clear confident understanding suffices when no error or question remains. Do not add another example or boundary question merely to prolong review. Actual current-version plan/code approval is still required. When requesting that approval before the final section, set request_skill_review.approval; only replies to an approval request can supply reusable artifact approval. The final plan/code section requests approval automatically. An already explicit same-version approval need not be repeated. If a required build is blocked and learner input is genuinely needed, request_learner_help hands control back without recording review or approval. Only complete_stage records completion; then follow learningRoadmap.confirmation. ' +
         confirmation
       : repairing
         ? '\nHelp the learner diagnose the observed test failure. Read the current code before making a focused repair. Explain the change and ask the learner to run tests again using the project controls. Never claim the repair passed without a new test result.'
         : stage.kind === 'check'
-          ? '\nBriefly introduce the current test or quiz and point to its task drawer above the composer. Do not give answers, run checks, or claim results. Wait for the learner to use the controls.'
-          : '\nDiscuss only the current decisions. The learner records choices using the project controls.')
+          ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
+          : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
+    '\n' +
+    productHelpRules
   );
 }
 
@@ -287,29 +302,35 @@ function teachingReview(review: TeachingPromptInput['pendingReview']) {
     : null;
 }
 
-/** The runner refreshes this state at every model-call boundary after tool mutations. */
+/** Only changing state is repeated; the product guide is already in the system prompt. */
 export function teachingLiveContext(input: TeachingPromptInput): string {
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
-  if (!guided) return '';
   return JSON.stringify({
+    productContext: { current: teachingProductContext(input).current },
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
-    welcome: input.welcome,
-    welcomePresented: input.welcomePresented,
-    activeSection: input.activeSection || null,
-    nextSection:
-      (input.welcome === 'pending' && input.activeSection
-        ? input.activeSection
-        : input.skill.progression[
-            (input.reviewedSectionCount ?? 0) + (input.activeSection ? 2 : 1)
-          ]) ?? null,
-    finalSection: input.skill.progression.at(-1)!,
-    currentReview: teachingReview(input.pendingReview),
+    ...(guided
+      ? {
+          welcome: input.welcome,
+          welcomePresented: input.welcomePresented,
+          activeSection: input.activeSection || null,
+          nextSection:
+            (input.welcome === 'pending' && input.activeSection
+              ? input.activeSection
+              : input.skill.progression[
+                  (input.reviewedSectionCount ?? 0) + (input.activeSection ? 2 : 1)
+                ]) ?? null,
+          finalSection: input.skill.progression.at(-1)!,
+          currentReview: teachingReview(input.pendingReview),
+        }
+      : {}),
   });
 }
 
 export function teachingLiveSuffix(live: string): string {
-  return live ? `\nAuthoritative live teaching state (overrides the entry snapshot): ${live}` : '';
+  return live
+    ? `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${live}`
+    : '';
 }
 
 /** Include the complete system prompt and every guided section's course-authored payload.

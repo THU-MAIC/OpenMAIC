@@ -45,7 +45,7 @@ import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-c
 import { hasStageCompletion, isFinalProjectRecap } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
-import { LEARNER_HANDOFF_EVENT } from './review-question';
+import { LEARNER_HANDOFF_EVENT, supportTurnSequences } from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -85,9 +85,10 @@ export async function teachingRunnerConfig(input: {
     stage.kind === 'produce' && stage.reviewRequired,
   );
   const runId = `${bound.stage_key}:${latest?.seq ?? 0}`;
+  const supportTurns = await supportTurnSequences(store.pool, input.sessionId, bound.stage_key);
   review.beginRun(
     bound.stage_key,
-    userMessages.filter((message) => !message.pblOpening),
+    userMessages.filter((message) => !message.pblOpening && !supportTurns.has(message.seq)),
     bound.feedback_seq > 1 && !latest?.pblOpening,
     latest?.seq ?? 0,
   );
@@ -100,6 +101,18 @@ export async function teachingRunnerConfig(input: {
       (completionRecorded &&
         bound.completion?.feedbackSeq === bound.feedback_seq &&
         bound.completion?.userMessageSeq === latest?.seq));
+  let observedStudy = row;
+  const observedFiles = new Set<string>();
+  let completeFileList = false;
+  const environment = row.environment_id
+    ? await (await SandboxStore.open()).get(row.owner_id, row.environment_id).catch(() => null)
+    : null;
+  let observedEnvironment = environment
+    ? {
+        state: environment.state,
+        ready: environment.state === 'running' && environment.workspace_ready,
+      }
+    : null;
   const assertActive = (signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Teaching run cancelled.');
   };
@@ -142,6 +155,7 @@ export async function teachingRunnerConfig(input: {
       throw sandboxConflict('The project environment changed. Start a new teaching turn.');
     assertActive(signal);
     assertEnvironmentReady(await touchEnvironment(store, current, sandbox));
+    observedEnvironment = { state: 'running', ready: true };
     assertActive(signal);
     return sandbox;
   };
@@ -227,21 +241,27 @@ export async function teachingRunnerConfig(input: {
                         name === 'write_file' || name === 'manage_file' ? 'file-edit' : 'artifact',
                         result.evidence,
                       );
-                    if (result.transition) await store.commit(db, current, result.transition);
+                    if (result.transition)
+                      Object.assign(current, await store.commit(db, current, result.transition));
                     await db.query('UPDATE pbl_v3_roles SET guided=$2 WHERE session_id=$1', [
                       input.sessionId,
                       JSON.stringify(review.state),
                     ]);
-                    if (name === 'request_learner_help') {
-                      // Commit the visible question with the handoff, before the SDK
-                      // emits its tool result. Recovery never has to invent that event.
+                    if (name === 'request_learner_help' || name === 'respond_to_learner') {
+                      // Publish the learner-facing handoff atomically with its turn receipt.
                       const sequence = await store
                         .agentStore(db)
                         .appendRunEvent(input.sessionId, input.workerId, {
                           ts: Date.now(),
                           attempt: input.attempt,
                           type: LEARNER_HANDOFF_EVENT,
-                          data: { ...review.state.handoff!, toolCallId: _id },
+                          data: {
+                            ...review.state.handoff!,
+                            toolCallId: _id,
+                            ...(name === 'respond_to_learner'
+                              ? { stageKey: bound.stage_key, sourceUserSeq: latest!.seq }
+                              : {}),
+                          },
                         });
                       if (sequence === null) throw sandboxConflict('The teaching claim changed.');
                     }
@@ -257,6 +277,7 @@ export async function teachingRunnerConfig(input: {
                   });
                   return result;
                 });
+                observedStudy = current;
                 completionRecorded =
                   name === 'complete_stage' ||
                   hasStageCompletion(
@@ -266,7 +287,12 @@ export async function teachingRunnerConfig(input: {
                   );
                 if (name === 'complete_stage') review.finishRun();
                 if (
-                  ['request_skill_review', 'request_learner_help', 'complete_stage'].includes(name)
+                  [
+                    'request_skill_review',
+                    'request_learner_help',
+                    'respond_to_learner',
+                    'complete_stage',
+                  ].includes(name)
                 )
                   turnComplete = true;
                 return {
@@ -298,6 +324,7 @@ export async function teachingRunnerConfig(input: {
             throw sandboxInvalid('This file is outside the learning project.');
           assertProjectSource(project, p.path);
           const text = await (await service(signal)).readText(current.environment_id!, p.path);
+          observedFiles.add(p.path);
           return { value: { path: p.path, text, hash: digest(text) } };
         },
       ),
@@ -336,6 +363,7 @@ export async function teachingRunnerConfig(input: {
               Object.assign(current, invalid);
             },
           );
+          observedFiles.add(p.path);
           return {
             value: { written: true, changed, hash: digest(p.text) },
             ...(changed
@@ -374,11 +402,13 @@ export async function teachingRunnerConfig(input: {
         'list_files',
         'List the current project source paths, including learner-created files.',
         Type.Object({}),
-        async (current, _params, _callId, signal) => ({
-          value: {
-            files: await projectFiles(await service(signal), current.environment_id!, project),
-          },
-        }),
+        async (current, _params, _callId, signal) => {
+          const files = await projectFiles(await service(signal), current.environment_id!, project);
+          observedFiles.clear();
+          for (const path of files) observedFiles.add(path);
+          completeFileList = true;
+          return { value: { files } };
+        },
       ),
     );
   if (row.environment_id && bound.role === 'coder' && project.sourceRoots?.length)
@@ -422,11 +452,27 @@ export async function teachingRunnerConfig(input: {
             });
             Object.assign(current, invalid);
           });
+          if (p.action !== 'create') observedFiles.delete(p.path);
+          if (p.action === 'create') observedFiles.add(p.path);
+          if (p.destination) observedFiles.add(p.destination);
           return { value, evidence: { ...p } };
         },
       ),
     );
   if (guided) {
+    tools.push(
+      tool(
+        'respond_to_learner',
+        'Answer an assistance-only product, background or project-knowledge question, or ask the necessary clarification. Preserve the pending teaching/review question and end this turn without advancing, crediting understanding or approving an artifact. Use before opening/advancing a Skill; do not repeat the response in prose. For a mixed review answer plus help request, use normal review tools for the actual review evidence instead.',
+        Type.Object({ response: Type.String({ minLength: 1 }) }),
+        async (_current, p) => {
+          if (!latest || latest.pblOpening)
+            throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
+          review.support(p.response);
+          return { value: { response: p.response, waitForStudent: true, advancesProgress: false } };
+        },
+      ),
+    );
     tools.push(
       tool(
         'read_next_skill',
@@ -633,8 +679,10 @@ export async function teachingRunnerConfig(input: {
     );
   }
   let planText: string | undefined;
-  if (row.environment_id && 'reads' in stage && stage.reads.includes('plan'))
+  if (row.environment_id && 'reads' in stage && stage.reads.includes('plan')) {
     planText = await (await service(input.signal)).readText(row.environment_id, 'PLAN.md');
+    observedFiles.add('PLAN.md');
+  }
   const promptInput: TeachingPromptInput = {
     definition: project.definition,
     stage,
@@ -652,6 +700,18 @@ export async function teachingRunnerConfig(input: {
   };
   const currentPromptInput = (): TeachingPromptInput => ({
     ...promptInput,
+    collected: observedStudy.state.collected[milestone.id]!,
+    pendingRun: observedStudy.evaluation?.id ?? null,
+    workspace: {
+      state: observedStudy.state,
+      revision: observedStudy.revision,
+      evaluation: observedStudy.evaluation,
+      environment: observedEnvironment,
+      observedFiles: [...observedFiles].sort(),
+      completeFileList,
+      buildAvailable: !!project.buildCommand,
+      tools: tools.map((tool) => tool.name),
+    },
     completionRecorded,
     welcome: review.state.welcome,
     welcomePresented: review.state.welcome === 'pending' ? !!review.state.pending : undefined,
@@ -676,7 +736,46 @@ export async function teachingRunnerConfig(input: {
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
-    liveContext: () => teachingLiveContext(currentPromptInput()),
+    liveContext: () =>
+      abortable(
+        (async () => {
+          // Read persisted facts, not the provider: learner autosaves and control-driven
+          // assessments can commit between model calls without using this Agent's tools.
+          assertActive(input.signal);
+          await agents.assertActiveLease(
+            input.sessionId,
+            input.workerId,
+            input.attempt,
+            store.pool,
+          );
+          assertActive(input.signal);
+          const current = await store.get(row.id, input.ownerId);
+          if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+            throw sandboxConflict('The teaching stage changed.');
+          if (current.environment_id !== row.environment_id)
+            throw sandboxConflict('The project environment changed. Start a new teaching turn.');
+          const environment = current.environment_id
+            ? await (await SandboxStore.open()).get(current.owner_id, current.environment_id)
+            : null;
+          assertActive(input.signal);
+          if (current.revision !== observedStudy.revision) completeFileList = false;
+          observedStudy = current;
+          observedEnvironment = environment
+            ? {
+                state: environment.state,
+                ready: environment.state === 'running' && environment.workspace_ready,
+              }
+            : null;
+          completionRecorded = hasStageCompletion(
+            current,
+            stage,
+            (await store.binding(input.sessionId)) ?? undefined,
+          );
+          assertActive(input.signal);
+          return teachingLiveContext(currentPromptInput());
+        })(),
+        input.signal,
+      ),
     historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
   };
 }
@@ -690,9 +789,9 @@ export function withTeachingTurnBoundary(
   streamFn: StreamFn,
   isComplete: () => boolean,
   historyWindow?: TeachingHistoryWindow,
-  liveContext?: (systemPrompt?: string) => string,
+  liveContext?: () => string | Promise<string>,
 ): StreamFn {
-  return (model, context, options) => {
+  return async (model, context, options) => {
     if (!isComplete()) {
       // Empty stop frames are local control receipts, not model conversation.
       // Keep them in durable history for recovery; omit only this shape from
@@ -705,7 +804,7 @@ export function withTeachingTurnBoundary(
             message.content.length === 0
           ),
       );
-      const live = liveContext?.(context.systemPrompt ?? '');
+      const live = await liveContext?.();
       const current = {
         ...context,
         messages,
@@ -779,7 +878,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. If it contains a question, copy that question verbatim into request_skill_review (or request_learner_help for a blocked required build) and output only the tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy it verbatim into request_skill_review (or request_learner_help for a blocked required build). Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
   if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }

@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ChevronUp, Settings, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { learningProgress, learningStep } from '@/lib/pbl/v3/presentation';
+import { hasTaskDrawer, learningProgress, learningStep } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 /** Task details float over the transcript; they never push the composer out of view. */
@@ -24,8 +24,7 @@ export function TaskDock({
   const toggle = useRef<HTMLButtonElement>(null);
   const key = `${view.id}:${view.state.position.milestoneId}:${view.state.position.stageIndex}`;
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const hasDrawer =
-    view.state.status !== 'completed' && ['dialogue', 'produce', 'check'].includes(view.stage.kind);
+  const hasDrawer = hasTaskDrawer(view);
   const open = hasDrawer && openKey === key;
   const progress = learningProgress(view);
   const step = learningStep(view);

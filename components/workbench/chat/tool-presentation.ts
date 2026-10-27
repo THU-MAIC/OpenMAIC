@@ -277,6 +277,7 @@ const teachingToolLabels = {
   collect_build: 'workbench.tool.label.collectBuild',
   read_next_skill: 'workbench.tool.label.readTeachingSkill',
   request_skill_review: 'workbench.tool.label.requestReview',
+  respond_to_learner: 'workbench.tool.label.respondToLearner',
   complete_stage: 'workbench.tool.label.completeTeachingStage',
 } as const;
 

@@ -323,7 +323,13 @@ vi.mock('@/lib/ai/llm', () => ({
     };
   },
 }));
-import { runSession, startAgentRunner } from '@/lib/server/agent-runtime/runner';
+import {
+  runSession,
+  startAgentRunner,
+  tagDurableUserMessage,
+} from '@/lib/server/agent-runtime/runner';
+import { Session } from '@earendil-works/pi-agent-core';
+import { AgentSessionEntryStorage } from '@/lib/server/agent-runtime/entry-tree-storage';
 import { ensureOwnerMergeSchema } from '@/lib/persistence/owner-merges';
 import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import {
@@ -1255,7 +1261,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
         await runTools('Will an Agent help with the implementation?', async (next) => {
           expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
-          expect(next.liveContext()).toContain('"welcomePresented":true');
+          expect(await next.liveContext()).toContain('"welcomePresented":true');
           expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
           await invoke(next, 'request_skill_review', {
             question: 'Yes, you work together and review it. Ready to start?',
@@ -1273,9 +1279,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             }),
           );
           expect(lesson).not.toContain('Welcome only');
-          expect(next.liveContext()).toContain('"welcome":"ready"');
+          expect(await next.liveContext()).toContain('"welcome":"ready"');
           expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
-          expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+          expect(await next.liveContext()).toContain('"activeSection":"A-teach.md"');
           await expect(
             invoke(next, 'read_next_skill', {
               studentFeedback: 'Readiness is not understanding.',
@@ -2083,6 +2089,144 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const { sessionId } = (await study.send('begin')) as { sessionId: string };
     return { study, sessionId };
   }
+  it('refreshes teaching context from external commits without probing the sandbox', async () => {
+    const { study, sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('live-context', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'live-context',
+      attempt: claim!.attempt,
+      signal: new AbortController().signal,
+    });
+    const inspect = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect');
+    const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+    try {
+      const before = JSON.parse(await config.liveContext()).productContext.current;
+      const current = await store.get(study.id, principal.ownerId);
+      current.state.collected[current.state.position.milestoneId!]!.teachingCompleted = true;
+      current.evaluation = {
+        id: 'external-build',
+        purpose: 'compile',
+        fingerprint: 'current',
+        stageKey: stageKey(current),
+        startedAt: new Date().toISOString(),
+      };
+      await store.transaction((db) =>
+        store.commit(db, current, { state: current.state, events: [] }),
+      );
+      await pool.query('UPDATE sandbox_environments SET workspace_ready=false WHERE id=$1', [
+        current.environment_id,
+      ]);
+      const after = JSON.parse(await config.liveContext()).productContext.current;
+      expect(after.revision).toBeGreaterThan(before.revision);
+      expect(after.recorded.teachingCompleted).toBe(true);
+      expect(after.environment).toEqual({ state: 'running', ready: false });
+      expect(after.editing.afterAssistantReply.reason).toBe('building');
+      expect(inspect).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      inspect.mockRestore();
+      read.mockRestore();
+    }
+  });
+
+  it.each(['stage', 'environment', 'lease', 'abort'] as const)(
+    'does not issue a model request after the %s changes during teaching context refresh',
+    async (change) => {
+      const { sessionId, study } = await executionFixture();
+      const claim = await agents.claimNextSession('context-fence', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const controller = new AbortController();
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'context-fence',
+        attempt: claim!.attempt,
+        signal: controller.signal,
+      });
+      if (change === 'stage') {
+        const current = await store.get(study.id, principal.ownerId);
+        current.state.position.stageIndex++;
+        await store.transaction((db) =>
+          store.commit(db, current, { state: current.state, events: [] }),
+        );
+      } else if (change === 'environment') {
+        const original = await store.get(study.id, principal.ownerId);
+        onTestFinished(async () => {
+          await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+            original.environment_id,
+          ]);
+        });
+        await pool.query('UPDATE pbl_v3_studies SET environment_id=NULL WHERE id=$1', [study.id]);
+      } else if (change === 'lease') await agents.requestCancel(sessionId);
+      else controller.abort();
+      const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+      const modelCall = vi.fn();
+      const stream = withTeachingTurnBoundary(
+        modelCall,
+        config.isTurnComplete,
+        config.historyWindow,
+        config.liveContext,
+      );
+      await expect(stream({} as never, { messages: [] })).rejects.toThrow();
+      expect(modelCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cancels a suspended teaching context refresh without issuing a model request', async () => {
+    const { sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('context-cancel', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const controller = new AbortController();
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'context-cancel',
+      attempt: claim!.attempt,
+      signal: controller.signal,
+    });
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lease = vi.spyOn(agents, 'assertActiveLease').mockImplementationOnce(async () => {
+      entered();
+      await gate;
+    });
+    try {
+      const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+      const modelCall = vi.fn();
+      const stream = withTeachingTurnBoundary(
+        modelCall,
+        config.isTurnComplete,
+        config.historyWindow,
+        config.liveContext,
+      );
+      const pending = stream({} as never, { messages: [] });
+      await ready;
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(modelCall).not.toHaveBeenCalled();
+    } finally {
+      release();
+      lease.mockRestore();
+    }
+  });
+
   const expireExecution = async (sessionId: string) =>
     pool.query(
       "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '16 minutes' WHERE session_id=$1",
@@ -2173,6 +2317,244 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect((await agents.getSession(sessionId))!.status).toBe('queued');
     },
   );
+
+  it.each([4, 5])(
+    'rejects chat in ordinary assessment step %s and exposes its real control actions',
+    async (stageIndex) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      row.state.position.stageIndex = stageIndex;
+      row.state.milestones[0]!.stageIndex = stageIndex;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.actions).not.toContain('chat');
+      expect(view.actions).toContain(stageIndex === 4 ? 'evaluate' : 'quiz');
+      await expect(
+        commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: view.revision,
+          type: 'chat',
+          text: 'Open assessment chat.',
+        }),
+      ).rejects.toThrow('This action is not available at the current stage.');
+    },
+  );
+
+  it.each([0, 2, 3, 6])(
+    'records assistance in guided step %s without losing the pending review or crediting its input',
+    async (stageIndex) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      row.state.position.stageIndex = stageIndex;
+      row.state.milestones[0]!.stageIndex = stageIndex;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      async function claim(workerId: string) {
+        const claimed = await agents.claimNextSession(workerId, process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        const lastInput = (await agents.listUserMessages(sessionId)).at(-1)!;
+        await agents.markUserMessageDelivered(sessionId, workerId, claimed!.attempt, lastInput.seq);
+        return {
+          claimed: claimed!,
+          config: await teachingRunnerConfig({
+            sessionId,
+            ownerId: principal.ownerId,
+            workerId,
+            attempt: claimed!.attempt,
+            signal: new AbortController().signal,
+          }),
+        };
+      }
+      async function send(text: string) {
+        await commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, principal.ownerId)).revision,
+          type: 'chat',
+          text,
+        });
+      }
+      const first = await claim('before-support');
+      await invoke(first.config, 'read_next_skill');
+      await invoke(first.config, 'request_skill_review', {
+        question:
+          stageIndex === 0 ? 'Ready to begin?' : 'Review this artifact or explain this step.',
+        approval: stageIndex === 2 || stageIndex === 3,
+      });
+      await agents.finishSession(sessionId, 'before-support', {
+        status: 'succeeded',
+        expectedAttempt: first.claimed.attempt,
+      });
+      const pending = structuredClone((await store.binding(sessionId))!.guided!.pending);
+      const position = structuredClone(
+        (await store.get(study.id, principal.ownerId)).state.position,
+      );
+      await send('Where is the file? I cannot find the control.');
+      const help = await claim('support-worker');
+      const response =
+        'Use the Project files tree in the IDE. If the IDE is hidden, use its workspace toggle. The task bar is not a contract editor.';
+      if (stageIndex === 2) {
+        await pool.query(
+          `CREATE FUNCTION reject_support() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'support commit failed'; END $$`,
+        );
+        await pool.query(
+          `CREATE TRIGGER reject_support BEFORE INSERT ON agent_session_events FOR EACH ROW WHEN (NEW.type='pbl_learner_handoff') EXECUTE FUNCTION reject_support()`,
+        );
+        try {
+          await expect(invoke(help.config, 'respond_to_learner', { response })).rejects.toThrow(
+            'support commit failed',
+          );
+          expect(help.config.isTurnComplete()).toBe(false);
+          expect((await store.binding(sessionId))!.guided!.handoff).toBeUndefined();
+          expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
+        } finally {
+          await pool.query('DROP TRIGGER reject_support ON agent_session_events');
+          await pool.query('DROP FUNCTION reject_support()');
+        }
+      }
+      await invoke(help.config, 'respond_to_learner', { response });
+      const guided = (await store.binding(sessionId))!.guided!;
+      expect(guided.pending).toEqual(pending);
+      expect(guided.coverage).toBeUndefined();
+      expect(guided.approval).toBeUndefined();
+      expect(help.config.isTurnComplete()).toBe(true);
+      expect(help.config.needsTurnReceipt()).toBe(false);
+      await expect(
+        invoke(help.config, 'complete_stage', {
+          studentFeedback: 'A navigation request is approval.',
+          reuseFeedback: true,
+        }),
+      ).rejects.toThrow();
+      expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(position);
+      const event = (await agents.readEventsAfter(sessionId, 0, 1000)).find(
+        (e) => e.type === 'pbl_learner_handoff',
+      )!;
+      expect(event.data).toMatchObject({
+        kind: 'support',
+        stageKey: `${project.definition.milestones[0]!.id}:${stageIndex}`,
+        sourceUserSeq: expect.any(Number),
+      });
+      const beforeDisplay = await learningView(principal, study.id, { passive: true });
+      expect(
+        beforeDisplay
+          .conversation!.flatMap((e) => e.parts)
+          .filter((p) => p.kind === 'text' && p.text === response),
+      ).toHaveLength(1);
+      await agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_end',
+        data: {
+          toolName: 'respond_to_learner',
+          toolCallId: (event.data as { toolCallId: string }).toolCallId,
+          result: { content: [{ type: 'text', text: JSON.stringify({ response }) }] },
+        },
+      });
+      expect(
+        (await learningView(principal, study.id, { passive: true }))
+          .conversation!.flatMap((e) => e.parts)
+          .filter((p) => p.kind === 'text' && p.text === response),
+      ).toHaveLength(1);
+      await agents.releaseLease(sessionId, 'support-worker');
+      const recovered = await claim('support-recovery');
+      expect(recovered.config.isTurnComplete()).toBe(true);
+      expect(
+        JSON.parse(await recovered.config.liveContext()).currentReview.studentResponseCount,
+      ).toBe(0);
+      const calls = mocked.modelCalls;
+      await runSession({ running: new Map(), shuttingDown: false }, recovered.claimed);
+      expect(mocked.modelCalls).toBe(calls);
+      expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
+      expect((await learningView(principal, study.id, { passive: true })).roleRun).toMatchObject({
+        status: 'succeeded',
+        canRetry: false,
+      });
+      await send(
+        stageIndex === 0
+          ? 'Ready to begin teaching.'
+          : 'I have now reviewed this version and approve it.',
+      );
+      const next = await claim('after-support');
+      expect(JSON.parse(await next.config.liveContext()).currentReview.studentResponseCount).toBe(
+        1,
+      );
+      await invoke(next.config, 'read_next_skill', {
+        studentFeedback:
+          stageIndex === 0
+            ? 'The learner is ready.'
+            : 'The learner reviewed and approved this version.',
+      });
+      const nextState = (await store.binding(sessionId))!.guided!;
+      if (stageIndex === 0) expect(nextState.welcome).toBe('ready');
+      else {
+        expect(nextState.coverage!.studentSeq).not.toBe(
+          (event.data as { sourceUserSeq: number }).sourceUserSeq,
+        );
+        if (stageIndex === 2 || stageIndex === 3) expect(nextState.approval).toBeTruthy();
+      }
+      await agents.finishSession(sessionId, 'after-support', {
+        status: 'succeeded',
+        expectedAttempt: next.claimed.attempt,
+      });
+    },
+    30_000,
+  );
+
+  it('answers pre-lesson assistance without opening a Skill or a fake readiness review', async () => {
+    const study = await freshStudy();
+    const row = await store.get(study.id, principal.ownerId);
+    onTestFinished(async () => {
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        row.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('chat')) as { sessionId: string };
+    const claimed = await agents.claimNextSession('early-support', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const request = {
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'early-support',
+      attempt: claimed!.attempt,
+      signal: new AbortController().signal,
+    };
+    const config = await teachingRunnerConfig(request);
+    await invoke(config, 'respond_to_learner', {
+      response: 'Files are in the project IDE; edits save automatically.',
+    });
+    const guided = (await store.binding(sessionId))!.guided!;
+    expect(guided.activeFile).toBe('');
+    expect(guided.welcome).toBe('pending');
+    expect(guided.pending).toBeUndefined();
+    expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
+    expect(
+      (await store.get(study.id, principal.ownerId)).state.collected[
+        row.state.position.milestoneId!
+      ]!.teachingCompleted,
+    ).not.toBe(true);
+    await agents.finishSession(sessionId, 'early-support', {
+      status: 'succeeded',
+      expectedAttempt: claimed!.attempt,
+    });
+    expect((await learningView(principal, study.id, { passive: true })).roleRun).toMatchObject({
+      status: 'succeeded',
+      canRetry: false,
+    });
+  }, 30_000);
 
   it.each(['succeeded', 'failed', 'cancelled'] as const)(
     'reconciles an already persisted %s terminal frame without publishing it twice',
@@ -3785,6 +4167,216 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(view.actions).not.toContain('next');
     expect(view.state.position.stageIndex).toBe(0);
   });
+  it.each([false, true])(
+    'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: %s)',
+    async (crash) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      const first = await agents.claimNextSession('support-opener', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'support-opener',
+        attempt: first!.attempt,
+        signal: new AbortController().signal,
+      });
+      await invoke(config, 'request_skill_review', {
+        question: 'Any background questions? Ready to begin?',
+      });
+      const pending = structuredClone((await store.binding(sessionId))!.guided!.pending);
+      await agents.finishSession(sessionId, 'support-opener', {
+        status: 'succeeded',
+        expectedAttempt: first!.attempt,
+      });
+      const chatCommandId = randomUUID();
+      await commandStudy(principal, study.id, {
+        id: chatCommandId,
+        revision: (await store.get(study.id, principal.ownerId)).revision,
+        type: 'chat',
+        text: 'Where do I see project files?',
+      });
+      expect(
+        (await learningView(principal, study.id, { passive: true })).conversation,
+      ).toContainEqual(expect.objectContaining({ speaker: 'user', commandId: chatCommandId }));
+      const handle = startAgentRunner();
+      await handle.stop();
+      let claimed = await agents.claimNextSession(handle.workerId, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const inputs = await agents.listUserMessages(sessionId);
+      await agents.markUserMessageDelivered(
+        sessionId,
+        handle.workerId,
+        claimed!.attempt,
+        inputs.at(-2)!.seq,
+      );
+      const response = 'Use Project files in the IDE. Allowed edits save automatically.';
+      let originalTextId: string | undefined;
+      if (crash) {
+        const session = new Session(
+          await AgentSessionEntryStorage.open({
+            sessionId,
+            workerId: handle.workerId,
+            attempt: claimed!.attempt,
+          }),
+        );
+        await session.appendMessage(
+          tagDurableUserMessage(
+            { role: 'user', content: inputs.at(-1)!.text, timestamp: Date.now() },
+            inputs.at(-1)!.seq,
+          ),
+        );
+        const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
+          role: 'assistant',
+          content: [{ type: 'text', text: response }],
+          api: 'openai-completions',
+          provider: 'openai',
+          model: 'test-model',
+          stopReason: 'stop',
+          timestamp: Date.now(),
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        await agents.appendRunEvent(sessionId, handle.workerId, {
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          type: 'message_start',
+          data: { message: { ...delivered, content: [] } },
+        });
+        // A long streamed reply puts both its user and message-start anchors outside
+        // the next turn's raw-event window. Preserve ownership and original text identity.
+        await pool.query(
+          `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+           SELECT $1,$2+g,$3,$4,'message_update',$5::jsonb FROM generate_series(1,10000) g`,
+          [
+            sessionId,
+            await agents.lastEventSeq(sessionId),
+            Date.now(),
+            claimed!.attempt,
+            JSON.stringify({ message: { role: 'assistant', content: [] } }),
+          ],
+        );
+        await agents.appendRunEvent(sessionId, handle.workerId, {
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          type: 'message_end',
+          data: { message: delivered },
+        });
+        await session.appendMessage(delivered);
+        await agents.markUserMessageDelivered(
+          sessionId,
+          handle.workerId,
+          claimed!.attempt,
+          inputs.at(-1)!.seq,
+        );
+        originalTextId = (await learningView(principal, study.id, { passive: true }))
+          .conversation!.flatMap((e) => e.parts)
+          .find((p) => p.kind === 'text' && p.text === response)!.id;
+        // Put the source and recovered receipt on different history pages.
+        for (let i = 0; i < 90; i++)
+          await agents.appendControlEvent(sessionId, {
+            ts: Date.now(),
+            type: 'trace',
+            data: { message: 'Awaiting recovery' },
+          });
+        await agents.releaseLease(sessionId, handle.workerId);
+        claimed = await agents.claimNextSession('assistance-takeover', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+      }
+      mocked.responses = [
+        ...(crash ? [] : [textResponse(response)]),
+        toolResponse([{ name: 'respond_to_learner', input: { response } }]),
+      ];
+      const calls = mocked.modelCalls;
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        { ...claimed!, ...(await agents.getSession(sessionId))! },
+      );
+      expect(mocked.modelCalls - calls).toBe(crash ? 1 : 2);
+      expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
+      expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
+      expect(mocked.modelSystems.at(-1)).toContain(
+        'For an assistance-only answer or product clarification',
+      );
+      if (crash)
+        await agents.appendControlEvent(sessionId, {
+          ts: Date.now(),
+          type: 'user_message',
+          data: { text: 'Thanks, I can see the files now.' },
+        });
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(
+        view
+          .conversation!.flatMap((entry) => entry.parts)
+          .filter((part) => part.kind === 'text' && part.text === response),
+      ).toHaveLength(1);
+      expect(
+        view.messages.filter((m) => m.role === 'assistant' && m.text === response),
+      ).toHaveLength(1);
+      expect(
+        (await learningEvidence(principal, study.id)).conversations
+          .flatMap((c) => c.messages)
+          .filter((m) => m.role === 'assistant' && m.text === response),
+      ).toHaveLength(1);
+      if (crash) {
+        expect(
+          view
+            .conversation!.flatMap((e) => e.parts)
+            .find((p) => p.kind === 'text' && p.text === response)!.id,
+        ).toBe(originalTextId);
+        const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+        const { mergeConversationHistory } = await import('@/lib/pbl/v3/conversation');
+        const through = await agents.lastEventSeq(sessionId);
+        const pages = [];
+        let before: number | null = null;
+        for (let i = 0; i < 10; i++) {
+          const page = await conversationPage(
+            principal,
+            new URLSearchParams({
+              id: study.id,
+              sessionId,
+              through: String(through),
+              ...(before ? { before: String(before) } : {}),
+            }),
+          );
+          pages.unshift(page.conversation);
+          if (!page.nextBefore) break;
+          before = page.nextBefore;
+          if (i === 9) throw new Error('History did not terminate');
+        }
+        expect(pages.length).toBeGreaterThan(1);
+        expect(
+          mergeConversationHistory(pages)
+            .flatMap((e) => e.parts)
+            .filter((p) => p.kind === 'text' && p.text === response),
+        ).toHaveLength(1);
+      }
+      expect(view.actions).not.toContain('next');
+      expect(view.state.position.stageIndex).toBe(0);
+    },
+    30_000,
+  );
   it('settles the automatic welcome when requesting readiness is the first tool call', async () => {
     const study = await freshStudy();
     const handle = startAgentRunner();
@@ -5963,7 +6555,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               const longReply = 'My explanation of this course section. '.repeat(1500);
               await turn(longReply, async (config) => {
                 expect(config.systemPrompt).not.toContain(longReply);
-                expect(config.liveContext()).toContain('"studentResponseCount":1');
+                expect(await config.liveContext()).toContain('"studentResponseCount":1');
               });
               longReplyChecked = true;
             }

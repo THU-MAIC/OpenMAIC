@@ -18,6 +18,16 @@ const editorSchema = z
 const uiSchema = z
   .object({
     text: z.string(),
+    textRevision: z.number().int().nonnegative().default(0),
+    pendingMessage: z
+      .object({
+        id: z.string(),
+        text: z.string(),
+        recovery: z
+          .object({ revision: z.number().int().nonnegative(), remainder: z.string() })
+          .optional(),
+      })
+      .optional(),
     quizAnswers: z.object({
       key: z.string(),
       values: z.array(z.number().int().nonnegative().nullable()).max(256),
@@ -32,6 +42,7 @@ type StudyDraft = z.infer<typeof uiSchema>;
 const emptyEditor = (): EditorDraft => ({ path: 'PLAN.md', tabs: ['PLAN.md'], buffers: {} });
 const emptyUi = (): StudyDraft => ({
   text: '',
+  textRevision: 0,
   quizAnswers: { key: '', values: [] },
   showWorkspace: true,
   showAssistant: true,
@@ -77,6 +88,54 @@ export function saveEditorDraft(id: string, draft: EditorDraft) {
 export function hasEditorDraft(id: string) {
   return Object.values(readEditorDraft(id).buffers).some((b) => b.text !== b.saved);
 }
+export const readPendingMessage = (id: string) => read(id, 'ui', uiSchema, emptyUi).pendingMessage;
+
+/** Keep unconfirmed text with the draft; never persist a request for automatic replay. */
+export function beginPendingMessage(studyId: string, id: string, text: string) {
+  const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  // Retrying the same command sends only that original text. If failure/reentry
+  // had restored it ahead of a newer draft, keep the newer remainder in place.
+  const pending = draft.pendingMessage;
+  const recoveredRetry =
+    pending?.id === id &&
+    pending.text === text &&
+    pending.recovery?.revision === draft.textRevision;
+  const remaining = recoveredRetry ? pending.recovery!.remainder : draft.text;
+  return write(studyId, 'ui', {
+    ...draft,
+    text: remaining === text && !recoveredRetry ? '' : remaining,
+    textRevision: draft.textRevision + 1,
+    pendingMessage: { id, text },
+  });
+}
+export function acknowledgePendingMessage(studyId: string, id: string) {
+  const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  if (draft.pendingMessage?.id !== id) return true;
+  const recovery = draft.pendingMessage.recovery;
+  const restoreRemainder = recovery?.revision === draft.textRevision;
+  return write(studyId, 'ui', {
+    ...draft,
+    text: restoreRemainder ? recovery!.remainder : draft.text,
+    textRevision: draft.textRevision + (restoreRemainder ? 1 : 0),
+    pendingMessage: undefined,
+  });
+}
+export function recoverPendingMessage(studyId: string, id: string) {
+  const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  const pending = draft.pendingMessage;
+  if (pending?.id !== id || pending.recovery) return true;
+  // Surface both texts before another send can replace the single pending record.
+  const text = draft.text ? `${pending.text}\n\n${draft.text}` : pending.text;
+  return write(studyId, 'ui', {
+    ...draft,
+    text,
+    textRevision: draft.textRevision + 1,
+    pendingMessage: {
+      ...pending,
+      recovery: { revision: draft.textRevision + 1, remainder: draft.text },
+    },
+  });
+}
 export function useStudyDraft(id: string | undefined, onStorageError: () => void) {
   const [state, setState] = useState<{ id?: string; value: StudyDraft }>({ value: emptyUi() });
   useEffect(() => {
@@ -93,7 +152,6 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     (change: (previous: StudyDraft) => StudyDraft) => {
       if (!id) return;
       const next = change(read(id, 'ui', uiSchema, emptyUi));
-      // A late successful send clears only its submitted text, including after scene return.
       if (!write(id, 'ui', next)) onStorageError();
     },
     [id, onStorageError],
@@ -103,6 +161,7 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
       update((previous) => ({
         ...previous,
         text: typeof next === 'function' ? next(previous.text) : next,
+        textRevision: previous.textRevision + 1,
       })),
     [update],
   );

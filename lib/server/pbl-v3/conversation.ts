@@ -2,6 +2,7 @@ import 'server-only';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
+import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
@@ -72,6 +73,7 @@ export function projectConversation(
   let assistant: LearningConversationEntry | undefined;
   let attempt: number | undefined;
   let messageId: number | undefined;
+  let inputId: number | undefined;
   const blocks = new Map<number, Extract<Part, { kind: 'text' | 'thinking' }>>();
   const tools = new Map<string, ToolPart>();
   const questions = reviewQuestions(events);
@@ -99,6 +101,7 @@ export function projectConversation(
       assistant = {
         id: `turn-${event.id}`,
         at: event.ts,
+        inputId,
         speaker: role,
         status: 'running',
         parts: [],
@@ -126,11 +129,18 @@ export function projectConversation(
   };
   for (const event of events) {
     const data = record(event.data);
+    if (
+      typeof data.pblInputId === 'number' &&
+      Number.isSafeInteger(data.pblInputId) &&
+      data.pblInputId > 0
+    )
+      inputId = data.pblInputId;
     if (data.pblContentOmitted) getAssistant(event).omitted = true;
     if (event.type === 'pbl_stage_entered') {
       settle(event.ts);
       assistant = undefined;
       attempt = undefined;
+      inputId = undefined;
       entries.push({
         id: `stage-${event.id}`,
         at: event.ts,
@@ -141,6 +151,7 @@ export function projectConversation(
       continue;
     }
     if (event.type === 'user_message') {
+      inputId = event.id;
       settle(event.ts);
       if (assistant?.status === 'running') assistant.status = 'succeeded';
       assistant = undefined;
@@ -148,6 +159,7 @@ export function projectConversation(
       if (!data.pblOpening && typeof data.text === 'string')
         entries.push({
           id: `user-${event.id}`,
+          commandId: typeof data.pblCommandId === 'string' ? data.pblCommandId : undefined,
           at: event.ts,
           speaker: 'user',
           parts: [{ kind: 'text', id: `${event.id}`, text: data.text }],
@@ -307,7 +319,7 @@ export function projectConversation(
     const last = events.at(-1);
     getAssistant({ id: (last?.id ?? 0) + 1, ts: (last?.ts ?? 0) + 1 });
   }
-  const visible = entries.filter(
+  const visible = deduplicateHandoffs(entries).filter(
     (e) =>
       e.boundary ||
       e.omitted ||

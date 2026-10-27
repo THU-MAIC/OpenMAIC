@@ -10,17 +10,13 @@ const visibleContent = (alias: string) => `${alias}.data->'message'->'content' @
 
 // Compact snapshots before pagination, against a fixed high-water mark. Applying
 // the cursor first would replay older snapshots of the same message on each page.
+// Seed the input window with its preceding durable user anchor once. Looking up
+// the owner of every raw update separately makes a long streamed turn quadratic.
 const historyWindow = (live = false) => `WITH boundary AS (
   SELECT COALESCE((SELECT seq FROM agent_session_events
     WHERE session_id=$1 AND seq<=$2 AND type='user_message' ORDER BY seq DESC LIMIT 1),0) AS first
-), framed AS (
-  SELECT e.seq,e.attempt,e.type,
-    GREATEST(
-      COALESCE(max(e.seq) FILTER (WHERE e.type='message_start') OVER (
-        PARTITION BY e.attempt ORDER BY e.seq),0),
-      COALESCE(max(e.seq+1) FILTER (WHERE e.type='message_end') OVER (
-        PARTITION BY e.attempt ORDER BY e.seq ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0)
-    ) AS message_id
+), raw AS (
+  SELECT e.seq,e.attempt,e.type
   FROM agent_session_events e JOIN agent_sessions a ON a.id=e.session_id
   ${live ? 'CROSS JOIN boundary b' : ''}
   WHERE e.session_id=$1 AND e.seq<=$2 AND a.deleted_at IS NULL
@@ -30,6 +26,25 @@ const historyWindow = (live = false) => `WITH boundary AS (
     WHERE session_id=$1 AND seq<b.first ORDER BY seq DESC LIMIT $3))`
       : ''
   }
+), input_anchor AS (
+  SELECT COALESCE((SELECT seq FROM agent_session_events
+    WHERE session_id=$1 AND seq<(SELECT min(seq) FROM raw) AND type='user_message'
+    ORDER BY seq DESC LIMIT 1),0) AS seq
+), message_anchor AS (
+  SELECT seq,attempt,type FROM agent_session_events
+  WHERE session_id=$1 AND seq<(SELECT min(seq) FROM raw)
+    AND type IN ('message_start','message_end') ORDER BY seq DESC LIMIT 1
+), framed AS (
+  SELECT e.*,
+    COALESCE(max(e.seq) FILTER (WHERE e.type='user_message') OVER (ORDER BY e.seq),
+      ${live ? 'anchor.seq' : '0'}) AS input_id,
+    GREATEST(
+      COALESCE(max(e.seq) FILTER (WHERE e.type='message_start') OVER (
+        PARTITION BY e.attempt ORDER BY e.seq),${live ? "CASE WHEN m.attempt=e.attempt AND m.type='message_start' THEN m.seq ELSE 0 END" : '0'}),
+      COALESCE(max(e.seq+1) FILTER (WHERE e.type='message_end') OVER (
+        PARTITION BY e.attempt ORDER BY e.seq ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),${live ? "CASE WHEN m.attempt=e.attempt AND m.type='message_end' THEN m.seq+1 ELSE 0 END" : '0'})
+    ) AS message_id
+  FROM raw e ${live ? 'CROSS JOIN input_anchor anchor LEFT JOIN message_anchor m ON true' : ''}
 ), snapshots AS (
   SELECT DISTINCT ON (attempt,message_id) seq FROM framed
   WHERE type IN ('message_start','message_update','message_end')
@@ -87,6 +102,7 @@ export async function readConversationHistory(
          'toolCallId',left(data->>'toolCallId',200),'isError',data->'isError',
          'status',data->'status','pblOpening',data->'pblOpening') END)
        || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END,
+         'pblInputId',input_id,
          'pblHistoryBefore',seq=(SELECT min(seq) FROM sized)
            AND EXISTS(SELECT 1 FROM agent_session_events
              WHERE session_id=$1 AND seq<(SELECT min(seq) FROM recent))) AS data
@@ -111,7 +127,8 @@ export async function readConversationPage(
      ), selected AS (
        SELECT * FROM budgeted WHERE n<=$6 AND (n=1 OR total<=$4)
      ) SELECT seq AS id,ts,attempt,type,
-       data || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END) AS data,
+       data || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END,
+         'pblInputId',input_id) AS data,
        CASE WHEN EXISTS(SELECT 1 FROM budgeted WHERE seq<(SELECT min(seq) FROM selected))
          THEN (SELECT min(seq) FROM selected) ELSE NULL END AS next_before
      FROM selected ORDER BY seq`,
