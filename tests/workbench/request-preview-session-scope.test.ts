@@ -128,4 +128,54 @@ describe('preview memory across conversations', () => {
       ),
     ).toHaveLength(0);
   });
+
+  it('reveals the cast after a question the late viewer landed on is answered', async () => {
+    const rosterAt = frames.find(
+      ([, type, data]) =>
+        type === 'tool_execution_end' && (data as { toolName?: string }).toolName === 'set_roster',
+    )![0];
+    let state = foldUntil(rosterAt);
+    let id = frames.length;
+    const add = (ts: number, type: string, data: unknown) => {
+      state = foldEvent(state, { id: ++id, ts, attempt: 1, type, data });
+    };
+    // After set_roster the agent asks, and the run stops on the question.
+    add(rosterAt + 100, 'user_question', {
+      question: 'Which grade?',
+      options: [{ id: 'g7', label: 'Grade 7' }],
+    });
+    add(rosterAt + 150, 'agent_end', {});
+    add(rosterAt + 200, 'session_end', { status: 'succeeded' });
+    // A viewer attaches later and finds the question waiting.
+    const attachedAt = rosterAt + 10_000;
+    vi.setSystemTime(attachedAt);
+    const attach = (status: string) =>
+      act(async () => {
+        useWorkbenchStore.setState({
+          ...state,
+          sessionId: 'session-ask',
+          status,
+          replaying: false,
+        } as never);
+      });
+    await attach('succeeded');
+    await act(async () =>
+      root.render(createElement(WorkspaceRequestActivity, { closedKey: null, onClose: () => {} })),
+    );
+    expect(scene()).toBe('asking');
+    // The answer takes longer than the reveal would have.
+    await act(async () => vi.advanceTimersByTime(rosterRevealMs(3) + 10_000));
+    const answeredAt = Date.now();
+    add(answeredAt, 'user_message', { text: 'Grade 7', delivery: 'queued' });
+    add(answeredAt + 10, 'tool_execution_start', {
+      toolCallId: 'page-1',
+      toolName: 'generate_scene',
+      args: { order: 1, type: 'slide' },
+    });
+    await act(async () => vi.advanceTimersByTime(20));
+    await attach('running');
+    await act(async () => vi.advanceTimersByTime(300));
+    // The cast has never been on screen: it is revealed now.
+    expect(scene()).toBe('assembling');
+  });
 });

@@ -266,9 +266,19 @@ export function WorkbenchChat({
    * a NEW question takes the composer over again on its own — there is no flag to
    * remember to reset.
    */
-  const [dismissedQuestionKey, setDismissedQuestionKey] = useState<string | null>(null);
+  // Node keys repeat across conversations and this component outlives a
+  // switch, so both question markers are held with their conversation
+  // (`sessionScopedKey`) and read back only for the attached one.
+  const [dismissedQuestion, setDismissedQuestion] = useState<string | null>(null);
   // The question whose form was brought back to write a free-text answer.
-  const [freeTextQuestionKey, setFreeTextQuestionKey] = useState<string | null>(null);
+  const [freeTextQuestion, setFreeTextQuestion] = useState<string | null>(null);
+  const questionMark = (key: string) => sessionScopedKey(sessionId, key);
+  const setDismissedQuestionKey = (key: string | null) =>
+    setDismissedQuestion(key === null ? null : questionMark(key));
+  // Only the waiting question can have been waved off.
+  const waiting = pendingQuestion(chat);
+  const dismissedQuestionKey =
+    waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
@@ -337,17 +347,18 @@ export function WorkbenchChat({
         node.toolName !== 'create_skill' ||
         node.toolState !== 'done' ||
         !node.toolDetails ||
-        refreshedCreateCalls.current.has(node.key)
+        refreshedCreateCalls.current.has(sessionScopedKey(sessionId, node.key))
       ) {
         continue;
       }
-      refreshedCreateCalls.current.add(node.key);
+      // Keyed with the conversation: a tool call's key repeats in another one.
+      refreshedCreateCalls.current.add(sessionScopedKey(sessionId, node.key));
       void invalidateAgentSkills().catch(() => {
         // The durable success card remains the receipt. Menus expose their own
         // retry state if this refresh fails.
       });
     }
-  }, [chat]);
+  }, [chat, sessionId]);
 
   const { scrollRef, contentRef, isNearBottom, scrollToBottom } =
     useWorkbenchAutoscroll(displayedChat);
@@ -941,7 +952,11 @@ export function WorkbenchChat({
                     onAnswer={answerQuestion}
                     dismissedQuestionKey={dismissedQuestionKey}
                     onReviveQuestion={(freeText) => {
-                      setFreeTextQuestionKey(freeText ? dismissedQuestionKey : null);
+                      setFreeTextQuestion(
+                        freeText && dismissedQuestionKey
+                          ? questionMark(dismissedQuestionKey)
+                          : null,
+                      );
                       setDismissedQuestionKey(null);
                     }}
                     takenOverQuestionKey={
@@ -1005,7 +1020,7 @@ export function WorkbenchChat({
               <QuestionForm
                 node={takeover}
                 onAnswer={answerQuestion}
-                startInFreeText={freeTextQuestionKey === takeover.key}
+                startInFreeText={freeTextQuestion === questionMark(takeover.key)}
                 onDismiss={() => setDismissedQuestionKey(takeover.key)}
                 t={t}
               />

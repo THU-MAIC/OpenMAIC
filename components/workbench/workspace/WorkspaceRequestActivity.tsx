@@ -145,7 +145,17 @@ export function WorkspaceRequestActivity({
     : null;
   // Only a viewer looking at the preview has seen the cast: one on a course
   // tab, or with the pane folded, gets the reveal when the preview comes back.
-  if (rosterKey !== null && view?.roster && rosterSeenAt === null && !hidden) {
+  // Nor has one whose preview is showing a question instead: the cast is
+  // revealed once the scene can turn to it (`asking` always wins over the
+  // reveal, see the scheduler), so it is recorded then.
+  if (
+    rosterKey !== null &&
+    view?.roster &&
+    rosterSeenAt === null &&
+    !hidden &&
+    view.mode === 'scene' &&
+    view.scene !== 'asking'
+  ) {
     setRosterSeen({ key: rosterKey, at: now });
   }
   // Has any request of this conversation done something (a tool call, a

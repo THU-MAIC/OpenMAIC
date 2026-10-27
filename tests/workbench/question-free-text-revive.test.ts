@@ -268,4 +268,36 @@ describe('one answer in progress per question, across its surfaces', () => {
     expect(useQuestionDrafts.getState().drafts).toEqual({});
     expect(container).toBeTruthy();
   });
+
+  it("does not carry one conversation's question markers into another with the same key", async () => {
+    const container = await mount(question, 'ses-a');
+    // In A: wave the form off, then reopen it on its free-text row.
+    await click(q(container, 'workbench-question-form-dismiss'));
+    await click(q(container, 'workbench-question-option-other'));
+    expect(q(container, 'workbench-question-form-other-input')).not.toBeNull();
+    await click(q(container, 'workbench-question-form-dismiss'));
+    // Switch to B (the chat stays mounted) with a question under the same key.
+    await act(async () => {
+      useWorkbenchStore.getState().attach('ses-b', 'stage-1');
+      useWorkbenchStore.setState({
+        replaying: false,
+        status: 'succeeded',
+        chat: [{ key: 'u', kind: 'user', text: 'Another course' }, question],
+      });
+    });
+    // B's question takes the composer over, fresh: not dismissed, not on its text row.
+    expect(q(container, 'workbench-question-form')).not.toBeNull();
+    expect(q(container, 'workbench-question-form-other-input')).toBeNull();
+    // And B's own free-text revival does not leak back into A.
+    await click(q(container, 'workbench-question-form-dismiss'));
+    await act(async () => {
+      useWorkbenchStore.getState().attach('ses-a', 'stage-1');
+      useWorkbenchStore.setState({
+        replaying: false,
+        status: 'succeeded',
+        chat: [{ key: 'u', kind: 'user', text: 'Make a course' }, question],
+      });
+    });
+    expect(q(container, 'workbench-question-form')).not.toBeNull();
+  });
 });
