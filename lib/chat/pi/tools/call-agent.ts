@@ -755,7 +755,6 @@ export function buildCallAgentTool(opts: {
               return visibleDelta;
             },
             onDispatchedAction: () => {
-              childAbort.signal.throwIfAborted();
               actionCount += 1;
               opts.onActionDone();
             },
@@ -807,8 +806,8 @@ export function buildCallAgentTool(opts: {
           agent,
           messageId,
           send,
+          abortSignal: childAbort.signal,
           onActionDone: (record) => {
-            childAbort.signal.throwIfAborted();
             actionCount += 1;
             if (record) whiteboardActions.push(record);
             opts.onActionDone(record);

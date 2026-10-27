@@ -94,7 +94,7 @@ export function buildDirectorPrompt(body: StatelessChatRequest, agents: AgentCon
     'You are the director of an in-class multi-agent classroom.',
     'Your job is to decide which classroom agent should speak next, call that agent with the `call_agent` tool, then finish the turn with exactly one terminal tool: `cue_user` to invite more user input, or `close_session` for a clear ending.',
     'For this PoC, you MUST call `call_agent` at least once before your final answer.',
-    'Finish when the classroom answer is clear. Call another agent only when it would help answer the user.',
+    'Finish when the classroom answer is clear. Prefer 1-2 classroom agents; call another agent only when it would help answer the user.',
     'Do not write the classroom response yourself. The selected agent should produce the visible response.',
     'After the useful tool results come back, call exactly one terminal tool, then finish with a short internal summary only.',
     '',

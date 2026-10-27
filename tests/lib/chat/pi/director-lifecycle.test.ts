@@ -10,6 +10,10 @@ vi.mock('@/lib/web-search', async (original) => ({
   searchWeb: mocks.searchWeb,
 }));
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
+import {
+  buildChildActionTools,
+  createPiWhiteboardRuntimeState,
+} from '@/lib/chat/pi/tools/classroom-actions';
 const teacher: AgentConfig = {
   id: 'teacher-1',
   name: 'Teacher',
@@ -96,6 +100,24 @@ async function run(
     },
   });
 }
+async function runRoute(events: StatelessEvent[], mode: 'native' | 'legacy' = 'legacy') {
+  vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', String(mode === 'native'));
+  mocks.resolveModel.mockResolvedValue({ model, apiKey: 'offline', providerId: 'openai' });
+  const { POST } = await import('@/app/api/chat/pi/route');
+  const request = body();
+  request.config.piEnableWhiteboardTools = true;
+  const response = await POST(
+    new Request('http://localhost/api/chat/pi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    }) as NextRequest,
+  );
+  expect(response.status).toBe(200);
+  for (const frame of (await response.text()).split('\n\n')) {
+    if (frame.startsWith('data: ')) events.push(JSON.parse(frame.slice(6)));
+  }
+}
 function done(events: StatelessEvent[]) {
   const e = events.find((e) => e.type === 'done');
   if (e?.type !== 'done') throw Error('missing done');
@@ -110,7 +132,7 @@ describe('Pi Director completion and request cancellation', () => {
   });
   afterEach(() => vi.unstubAllEnvs());
   it.each(['legacy', 'native'] as const)(
-    'lets the Director complete eight %s delegations',
+    'lets the route complete eight %s delegations under default settings',
     async (mode) => {
       let directorCalls = 0;
       let childCalls = 0;
@@ -126,13 +148,13 @@ describe('Pi Director completion and request cancellation', () => {
         ]);
       });
       const events: StatelessEvent[] = [];
-      await run(events, new AbortController(), mode);
+      await runRoute(events, mode);
       expect(childCalls).toBe(8);
       expect(done(events).totalAgents).toBe(8);
       expect(done(events).cueUserReceived).toBe(true);
     },
   );
-  it('allows twenty Director tools before the model finishes naturally', async () => {
+  it('allows twenty Director tools through the route under default settings', async () => {
     let n = 0;
     mocks.streamLLM.mockImplementation(() =>
       ++n <= 20
@@ -140,12 +162,12 @@ describe('Pi Director completion and request cancellation', () => {
         : speech('Finished'),
     );
     const events: StatelessEvent[] = [];
-    await run(events);
+    await runRoute(events);
     expect(n).toBe(21);
     expect(done(events).directorToolTrace).toHaveLength(20);
     expect(done(events).totalAgents).toBe(0);
   });
-  it('delivers nine valid Legacy actions and subsequent speech', async () => {
+  it('delivers nine valid Legacy actions and subsequent speech through the route under default settings', async () => {
     let n = 0;
     const actions = [
       { type: 'action', name: 'wb_open', params: {} },
@@ -162,7 +184,7 @@ describe('Pi Director completion and request cancellation', () => {
         : speech(JSON.stringify(actions)),
     );
     const events: StatelessEvent[] = [];
-    await run(events);
+    await runRoute(events);
     expect(events.filter((e) => e.type === 'action')).toHaveLength(9);
     expect(done(events).totalActions).toBe(9);
     expect(
@@ -353,9 +375,125 @@ describe('Pi Director completion and request cancellation', () => {
         expect(events.some((e) => e.type === 'done')).toBe(false);
       } else {
         expect(done(events).totalAgents).toBe(0);
+        expect(done(events).totalActions).toBe(1);
+        expect(done(events).directorState?.whiteboardLedger).toEqual([
+          expect.objectContaining({ actionName: 'wb_open' }),
+        ]);
         expect(done(events).directorToolTrace?.[0]).toMatchObject({ isError: true });
         expect(directorCalls).toBe(2);
       }
+    },
+  );
+  it.each(['before next child', 'after next child starts'])(
+    'retains a timed-out dispatched draw for the next child when delivery resumes %s',
+    async (releaseWhen) => {
+      vi.stubEnv('OPENMAIC_AGENT_TOOL_TIMEOUT_MS', '50');
+      const release = deferred();
+      const events: StatelessEvent[] = [];
+      let directorCalls = 0;
+      let childCalls = 0;
+      let secondChildPrompt = '';
+      mocks.streamLLM.mockImplementation((params, source) => {
+        if (source === 'pi-chat-director') {
+          directorCalls++;
+          if (directorCalls === 2 && releaseWhen === 'before next child') release.resolve();
+          return result([
+            directorCalls <= 2 ? invoke('d' + directorCalls) : call('cue_user', 'cue', {}),
+            finish('tool-calls'),
+          ]);
+        }
+        childCalls++;
+        if (childCalls === 2) {
+          secondChildPrompt = JSON.stringify(params);
+          if (releaseWhen === 'after next child starts') release.resolve();
+        }
+        return speech(
+          JSON.stringify(
+            childCalls === 1
+              ? [
+                  {
+                    type: 'action',
+                    name: 'wb_draw_text',
+                    params: { elementId: 'el-1', content: 'drawn before timeout', x: 20, y: 40 },
+                  },
+                  { type: 'action', name: 'wb_clear', params: {} },
+                  { type: 'text', content: 'must not be delivered' },
+                ]
+              : [
+                  { type: 'action', name: 'wb_delete', params: { elementId: 'el-1' } },
+                  { type: 'text', content: 'Removed it' },
+                ],
+          ),
+        );
+      });
+      const controller = new AbortController();
+      try {
+        await runPiDirectorLoop({
+          body: body(),
+          agentConfigs: [{ ...teacher, allowedActions: ['wb_draw_text', 'wb_clear', 'wb_delete'] }],
+          send: async (event) => {
+            events.push(event);
+            if (event.type === 'action' && event.data.actionName === 'wb_draw_text')
+              await release.promise;
+          },
+          languageModel: model as never,
+          thinkingConfig: { mode: 'disabled', enabled: false },
+          abortSignal: controller.signal,
+          signal: controller.signal,
+          enableWhiteboardTools: true,
+          childRuntimeMode: 'legacy',
+        });
+      } finally {
+        release.resolve();
+      }
+      expect(events.filter((e) => e.type === 'action').map((e) => e.data.actionName)).toEqual([
+        'wb_draw_text',
+        'wb_delete',
+      ]);
+      expect(secondChildPrompt).toContain('el-1');
+      expect(done(events).totalActions).toBe(2);
+      expect(done(events).totalAgents).toBe(1);
+      expect(
+        done(events).directorState?.whiteboardLedger?.map((action) => action.actionName),
+      ).toEqual(['wb_draw_text', 'wb_delete']);
+      expect(done(events).directorToolTrace?.[0]).toMatchObject({ isError: true });
+      expect(events.filter((e) => e.type === 'agent_end')).toHaveLength(1);
+      expect(
+        events.some(
+          (e) => e.type === 'text_delta' && e.data.content.includes('must not be delivered'),
+        ),
+      ).toBe(false);
+    },
+  );
+  it.each(['pre-aborted', 'synchronous failure', 'asynchronous failure'])(
+    'does not bookkeep an action on %s before accepted delivery',
+    async (failure) => {
+      const controller = new AbortController();
+      if (failure === 'pre-aborted') controller.abort();
+      const send = vi.fn(() => {
+        if (failure === 'synchronous failure') throw new Error('send failed');
+        return Promise.reject(new Error('send failed'));
+      });
+      const request = body();
+      const state = createPiWhiteboardRuntimeState(request);
+      const onActionDone = vi.fn();
+      const tool = buildChildActionTools({
+        body: request,
+        agent: teacher,
+        messageId: 'message-1',
+        send,
+        onActionDone,
+        abortSignal: controller.signal,
+        enableWhiteboardTools: true,
+        whiteboardState: state,
+      }).find((tool) => tool.name === 'wb_draw_text')!;
+      await expect(
+        tool.execute('action-1', { elementId: 'el-1', content: 'text', x: 20, y: 40 }),
+      ).rejects.toBeDefined();
+      expect(send).toHaveBeenCalledTimes(failure === 'pre-aborted' ? 0 : 1);
+      expect(onActionDone).not.toHaveBeenCalled();
+      expect(state.visibleElementCount).toBe(0);
+      expect(state.knownElementIds.size).toBe(0);
     },
   );
   it.each(['legacy', 'native'] as const)(

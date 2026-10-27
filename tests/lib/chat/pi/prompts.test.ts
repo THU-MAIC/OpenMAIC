@@ -346,6 +346,7 @@ describe('Pi director prompt closure routing', () => {
     const prompt = buildDirectorPrompt(makeBody(), agents);
 
     expect(prompt).not.toMatch(/at most \d+ classroom agent turns/);
+    expect(prompt).toContain('Prefer 1-2 classroom agents');
     expect(prompt).not.toContain('classroom agent turn limit');
     expect(prompt).toContain('finish the turn with exactly one terminal tool');
     expect(prompt).not.toContain('turnKind');
