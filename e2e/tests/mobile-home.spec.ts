@@ -527,3 +527,79 @@ test.describe('phone horizontal safe areas', () => {
     });
   }
 });
+
+test.describe('phone portal safe areas', () => {
+  test.use({ hasTouch: true, isMobile: true });
+  for (const direction of ['ltr', 'rtl'] as const) {
+    test(`keeps options and nested phone panels inside physical safe bounds (${direction})`, async ({
+      page,
+    }) => {
+      await page.route('**/api/folders', (route) =>
+        route.fulfill({
+          json: {
+            folders: [
+              { id: 'safe-folder', name: 'Safe folder', order: 0, createdAt: 1, updatedAt: 1 },
+            ],
+          },
+        }),
+      );
+      await page.route('**/api/stages', (route) => route.fulfill({ json: { stages: [] } }));
+      for (const [width, height, left, right] of [
+        [844, 390, 59, 34],
+        [844, 390, 34, 59],
+        [844, 390, 0, 0],
+        [390, 844, 59, 34],
+        [390, 844, 0, 0],
+      ]) {
+        await page.setViewportSize({ width, height });
+        await page.goto('/');
+        await expect(page.getByTestId('home-page')).toHaveAttribute('data-mobile', 'true');
+        await page.evaluate(
+          ({ direction, left, right }) => {
+            document.documentElement.dir = direction;
+            document.documentElement.style.setProperty('--safe-area-left', `${left}px`);
+            document.documentElement.style.setProperty('--safe-area-right', `${right}px`);
+          },
+          { direction, left, right },
+        );
+        const assertBounds = async (panel: ReturnType<typeof page.locator>, gutter = 0) => {
+          await expect(panel).toBeVisible();
+          await expect
+            .poll(async () => (await panel.boundingBox())!.x)
+            .toBeGreaterThanOrEqual(Math.max(gutter, left));
+          await expect
+            .poll(async () => {
+              const box = (await panel.boundingBox())!;
+              return box.x + box.width;
+            })
+            .toBeLessThanOrEqual(width - Math.max(gutter, right) + 1);
+          expect(await panel.evaluate((e) => e.scrollWidth - e.clientWidth)).toBeLessThanOrEqual(1);
+        };
+        await page.getByTestId('home-options-open').click();
+        const options = page.getByTestId('home-mobile-options');
+        await assertBounds(options, 12);
+        await options.getByRole('button', { name: 'All settings', exact: true }).click();
+        const settings = page.locator('.home-settings-dialog');
+        await assertBounds(settings);
+        await settings.locator('button[aria-label="Close"]').click();
+        await page.getByTestId('home-history-open').click();
+        const drawer = page.getByTestId('home-library-drawer');
+        await assertBounds(drawer);
+        await page.getByTestId('home-new-folder').click();
+        const folderDialog = page.locator(
+          '[data-slot="dialog-content"]:not(.home-library-drawer):not(.home-mobile-options):not(.home-settings-dialog)',
+        );
+        await assertBounds(folderDialog, 12);
+        await folderDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await page.getByTestId('home-folder-row').locator('.home-folder-more').click();
+        await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
+        await assertBounds(page.getByRole('alertdialog'), 12);
+        await page
+          .getByRole('alertdialog')
+          .getByRole('button', { name: 'Cancel', exact: true })
+          .click();
+        await drawer.locator('[data-slot="dialog-close"]').click();
+      }
+    });
+  }
+});

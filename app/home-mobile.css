@@ -241,8 +241,8 @@
   flex-direction: column;
   gap: 0;
   position: fixed;
-  inset: 0 auto 0 0;
-  width: min(90vw, 420px);
+  inset: 0 auto 0 var(--safe-area-left);
+  width: min(90vw, 420px, calc(100vw - var(--safe-area-left) - var(--safe-area-right)));
   max-width: none;
   height: 100dvh;
   padding: 0;
@@ -290,8 +290,8 @@
 .home-mobile-options[data-slot='dialog-content'] {
   top: auto;
   bottom: max(12px, var(--safe-area-bottom));
-  left: 12px;
-  width: calc(100vw - 24px);
+  left: var(--home-dialog-left);
+  width: var(--home-dialog-width);
   max-width: 480px;
   max-height: calc(100dvh - 80px);
   transform: none;
@@ -480,8 +480,11 @@
     animation: none;
   }
 }
-/* The phone shell scrolls its drawer, not the document; don't reserve a desktop scrollbar. */
+/* Body-level portals need physical bounds: they cannot inherit the page's inset mapping. */
 html:has(.home-page[data-mobile='true']) {
+  --home-dialog-left: max(12px, var(--safe-area-left));
+  --home-dialog-right: max(12px, var(--safe-area-right));
+  --home-dialog-width: calc(100vw - var(--home-dialog-left) - var(--home-dialog-right));
   scrollbar-gutter: auto;
   overflow-y: hidden;
 }
@@ -578,8 +581,9 @@ html:has(.home-page[data-mobile='true'])
   [data-slot='dialog-content']:not(.home-library-drawer):not(.home-mobile-options):not(
     .home-settings-dialog
   ) {
-  width: min(480px, calc(100vw - 24px));
-  max-width: calc(100vw - 24px);
+  left: calc(var(--home-dialog-left) + var(--home-dialog-width) / 2);
+  width: min(480px, var(--home-dialog-width));
+  max-width: var(--home-dialog-width);
   max-height: calc(var(--home-visible-height, 100dvh) - 24px);
   top: calc(var(--home-visible-top, 0px) + var(--home-visible-height, 100dvh) / 2);
   grid-template-columns: minmax(0, 1fr);
@@ -592,8 +596,8 @@ html:has(.home-page[data-mobile='true']) [data-slot='dialog-content'] > * {
 }
 html:has(.home-page[data-mobile='true']) .home-settings-dialog {
   top: var(--home-visible-top, 0px);
-  left: 0;
-  width: 100vw;
+  left: var(--safe-area-left);
+  width: calc(100vw - var(--safe-area-left) - var(--safe-area-right));
   max-width: none;
   height: var(--home-visible-height, 100dvh);
   max-height: var(--home-visible-height, 100dvh);
@@ -609,6 +613,10 @@ html:has(.home-page[data-mobile='true']) .home-mobile-options {
 html:has(.home-page[data-mobile='true']) .home-library-drawer {
   top: var(--home-visible-top, 0px);
   height: var(--home-visible-height, 100dvh);
+}
+html:has(.home-page[data-mobile='true']) [data-slot='alert-dialog-content'] {
+  left: calc(var(--home-dialog-left) + var(--home-dialog-width) / 2);
+  width: min(calc(100vw - 32px), var(--home-dialog-width));
 }
 html:has(.home-page[data-mobile='true'])
   [data-slot='dialog-content']
