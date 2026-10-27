@@ -292,6 +292,50 @@
 .home-mobile-options [data-slot='dialog-title'] {
   padding-right: 28px;
 }
+.home-mobile-options.home-materials-view[data-slot='dialog-content'] {
+  display: flex;
+  flex-direction: column;
+  max-height: min(
+    600px,
+    calc(100dvh - max(12px, var(--safe-area-top)) - max(12px, var(--safe-area-bottom)))
+  );
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.home-materials-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.home-mobile-options.home-materials-view [data-slot='dialog-title'] {
+  padding: 0;
+  font-size: 16px;
+}
+.home-materials-view [data-slot='dialog-close'] {
+  top: 10px;
+  right: auto;
+  inset-inline-end: 8px;
+  width: 44px;
+  height: 44px;
+}
+.home-materials-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 4px 8px;
+}
+.home-materials-footer {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
 @keyframes home-drawer-in {
   from {
     transform: translateX(-100%);
