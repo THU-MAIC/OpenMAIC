@@ -33,6 +33,7 @@ import {
   checkpointPolicy,
   checkpointArchiveLimit,
   CHECKPOINT_TIMEOUT_MS,
+  CHECKPOINT_MIN_LIFETIME_MS,
 } from '../checkpoint-policy';
 import { checkpointIO } from '../checkpoint-errors';
 import { Readable } from 'node:stream';
@@ -722,13 +723,20 @@ export class E2BCompatibleSandboxProvider implements SandboxProvider {
         requestTimeoutMs: 120_000,
         signal: AbortSignal.timeout(120_000),
       });
+      // Upload and extraction each allow 120 seconds. Refresh between them so
+      // a valid slow upload cannot exhaust extraction's remaining lease.
+      await this.renew(
+        resourceId,
+        operationId,
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+      );
       await sandbox.commands.run(
         `python3 -c ${shellQuote(CHECKPOINT_RUNNER)} import ${shellQuote(path)} ${shellQuote(encoded)} ${shellQuote(hash)}`,
         { timeoutMs: 120_000, requestTimeoutMs: 125_000 },
       );
     } finally {
       source.destroy();
-      await sandbox.files.remove(path).catch(() => {});
+      await this.removeTransfer(sandbox, path);
     }
   }
 
