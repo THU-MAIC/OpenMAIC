@@ -333,6 +333,13 @@ const SHIPPED: readonly (readonly [
     true,
     '0452ede8a64ee73615cf243bbd8e0af7ce32c7f772999079c52fde86c9042e8c',
   ],
+  [
+    'pbl-v3',
+    10,
+    'execution-progress-watchdog',
+    true,
+    'b22190bcbe99cda7b0bf29a1f593233b641a529fffd0756017e2f9d53f6eab91',
+  ],
 ];
 
 /**

@@ -10,6 +10,10 @@ import type { AssetCollectorSchedule } from '@/lib/persistence/asset-collector-s
 vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
   startLearningLifecycle: vi.fn(),
 }));
+const startTeachingExecutionWatchdog = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/server/pbl-v3/execution-watchdog', () => ({
+  startTeachingExecutionWatchdog,
+}));
 vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
   startCheckpointCollector: vi.fn(),
 }));
@@ -539,12 +543,14 @@ describe('asset collector schedule', () => {
 
 describe('instrumentation registration', () => {
   beforeEach(() => {
+    startTeachingExecutionWatchdog.mockClear();
     vi.resetModules();
     vi.unstubAllEnvs();
     // Model routing is independent of scheduling and must not read local deployment files.
     vi.doMock('@/lib/server/model-config/runtime', () => ({ deploymentConfig: vi.fn() }));
     // register() refuses to boot without a database; these cases start past it.
     vi.stubEnv('DATABASE_URL', 'postgres://collector-registration/openmaic');
+    vi.stubEnv('OPENMAIC_AGENT_RUNTIME_ENABLED', 'false');
   });
 
   it('starts the schedule on the Node.js server runtime', async () => {
@@ -558,6 +564,7 @@ describe('instrumentation registration', () => {
     await register();
 
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
+    expect(startTeachingExecutionWatchdog).toHaveBeenCalledOnce();
   });
 
   it('refuses to start on a malformed pending TTL, before anything is scheduled', async () => {
@@ -578,6 +585,7 @@ describe('instrumentation registration', () => {
     await expect(register()).rejects.toThrow(/ASSET_PENDING_TTL_MS/);
     expect(exitOnBootFailure).toHaveBeenCalledOnce();
     expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
+    expect(startTeachingExecutionWatchdog).not.toHaveBeenCalled();
   });
 
   it('does nothing on the Edge runtime', async () => {
@@ -591,6 +599,7 @@ describe('instrumentation registration', () => {
     await register();
 
     expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
+    expect(startTeachingExecutionWatchdog).not.toHaveBeenCalled();
   });
 
   it.each(['OPENMAIC_PBL_IDLE_TIMEOUT_MS', 'OPENMAIC_PBL_ARCHIVE_FAILURE_GRACE_MS'])(
@@ -614,6 +623,7 @@ describe('instrumentation registration', () => {
       );
       expect(startLegacyClassroomImport).not.toHaveBeenCalled();
       expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
+      expect(startTeachingExecutionWatchdog).not.toHaveBeenCalled();
     },
   );
 });
