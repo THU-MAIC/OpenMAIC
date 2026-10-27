@@ -5,6 +5,7 @@ import {
   learningRunFailure,
   boundConversation,
 } from '@/lib/server/pbl-v3/conversation';
+import { mergeConversationHistory } from '@/lib/pbl/v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
@@ -30,6 +31,138 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it.each([false, true])(
+    'keeps original reply identity across crash recovery (SDK receipt: %s)',
+    (sdk) => {
+      const response = 'Use Project files in the IDE.';
+      const before = [
+        event(1, 'user_message', { text: 'Where are my files?' }),
+        event(2, 'message_start', message('')),
+        event(3, 'message_end', message(response)),
+      ];
+      const original = projectConversation(before, 'discussion', false)
+        .flatMap((e) => e.parts)
+        .find((p) => p.kind === 'text' && p.text === response)!;
+      const entries = projectConversation(
+        [
+          ...before,
+          event(4, 'session_resumed', {}, 2),
+          event(
+            5,
+            'pbl_learner_handoff',
+            { question: response, kind: 'support', toolCallId: 'recovered' },
+            2,
+          ),
+          ...(sdk
+            ? [
+                event(
+                  6,
+                  'tool_execution_end',
+                  {
+                    toolName: 'respond_to_learner',
+                    toolCallId: 'recovered',
+                    result: { content: [{ type: 'text', text: JSON.stringify({ response }) }] },
+                  },
+                  2,
+                ),
+              ]
+            : []),
+          event(7, 'session_end', { status: 'succeeded' }, 2),
+        ],
+        'discussion',
+        false,
+      );
+      const replies = entries
+        .flatMap((e) => e.parts)
+        .filter((p) => p.kind === 'text' && p.text === response);
+      expect(replies).toEqual([original]);
+      if (sdk)
+        expect(entries.flatMap((e) => e.parts)).toContainEqual(
+          expect.objectContaining({
+            kind: 'tool',
+            name: 'respond_to_learner',
+            status: 'succeeded',
+          }),
+        );
+    },
+  );
+
+  it('deduplicates recovered handoffs when older history pages arrive without losing a later identical reply', () => {
+    const response = 'Use Project files in the IDE.';
+    const older = projectConversation(
+      [event(2, 'message_end', { ...message(response), pblMessageId: 2, pblInputId: 1 })],
+      'discussion',
+      false,
+      undefined,
+      true,
+    );
+    const newer = projectConversation(
+      [
+        event(
+          5,
+          'pbl_learner_handoff',
+          { question: response, toolCallId: 'recovered', pblInputId: 1 },
+          2,
+        ),
+        event(6, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+        event(7, 'user_message', { text: 'Please remind me.' }),
+        event(
+          8,
+          'pbl_learner_handoff',
+          { question: response, toolCallId: 'new-answer', pblInputId: 7 },
+          3,
+        ),
+      ],
+      'discussion',
+      false,
+      undefined,
+      true,
+    );
+    const pages = [older, newer];
+    const saved = structuredClone(pages);
+    const parts = mergeConversationHistory(pages)
+      .flatMap((e) => e.parts)
+      .filter((p) => p.kind === 'text' && p.text === response);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]!.id).toBe(older[0]!.parts[0]!.id);
+    expect(pages).toEqual(saved);
+  });
+
+  it('deduplicates a multi-block answer across attempts without suppressing independent model replies', () => {
+    const content = [
+      { type: 'text', text: 'First explanation.' },
+      { type: 'text', text: 'Second explanation.' },
+    ];
+    const entries = projectConversation(
+      [
+        event(1, 'user_message', { text: 'Help me navigate.' }),
+        event(2, 'message_end', { message: { role: 'assistant', content } }),
+        event(
+          3,
+          'pbl_learner_handoff',
+          { question: 'First explanation.\nSecond explanation.', toolCallId: 'recovery' },
+          2,
+        ),
+        event(4, 'message_end', message('A genuine later model reply.'), 2),
+        event(5, 'message_end', message('A genuine later model reply.'), 2),
+      ],
+      'discussion',
+      false,
+    );
+    expect(
+      entries
+        .flatMap((e) => e.parts)
+        .filter((p) => p.kind === 'text')
+        .map((p) => p.text),
+    ).toEqual([
+      'Help me navigate.',
+      'First explanation.',
+      'Second explanation.',
+      'A genuine later model reply.',
+      'A genuine later model reply.',
+    ]);
+  });
+
   it('deduplicates a committed handoff and its SDK receipt by call identity across learner turns', () => {
     const question = 'Which build requirement should we clarify?';
     const receipt = {

@@ -15,6 +15,7 @@ const historyWindow = (live = false) => `WITH boundary AS (
     WHERE session_id=$1 AND seq<=$2 AND type='user_message' ORDER BY seq DESC LIMIT 1),0) AS first
 ), framed AS (
   SELECT e.seq,e.attempt,e.type,
+    COALESCE(max(e.seq) FILTER (WHERE e.type='user_message') OVER (ORDER BY e.seq),0) AS input_id,
     GREATEST(
       COALESCE(max(e.seq) FILTER (WHERE e.type='message_start') OVER (
         PARTITION BY e.attempt ORDER BY e.seq),0),
@@ -87,6 +88,7 @@ export async function readConversationHistory(
          'toolCallId',left(data->>'toolCallId',200),'isError',data->'isError',
          'status',data->'status','pblOpening',data->'pblOpening') END)
        || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END,
+         'pblInputId',input_id,
          'pblHistoryBefore',seq=(SELECT min(seq) FROM sized)
            AND EXISTS(SELECT 1 FROM agent_session_events
              WHERE session_id=$1 AND seq<(SELECT min(seq) FROM recent))) AS data
@@ -111,7 +113,8 @@ export async function readConversationPage(
      ), selected AS (
        SELECT * FROM budgeted WHERE n<=$6 AND (n=1 OR total<=$4)
      ) SELECT seq AS id,ts,attempt,type,
-       data || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END) AS data,
+       data || jsonb_build_object('pblMessageId',CASE WHEN assistant THEN message_id ELSE NULL END,
+         'pblInputId',input_id) AS data,
        CASE WHEN EXISTS(SELECT 1 FROM budgeted WHERE seq<(SELECT min(seq) FROM selected))
          THEN (SELECT min(seq) FROM selected) ELSE NULL END AS next_before
      FROM selected ORDER BY seq`,

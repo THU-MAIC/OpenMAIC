@@ -24,7 +24,7 @@ features to both the learner view and Agent guidance. These projections do not
 grant authority. Host tools still enforce permissions, versions and completion.
 
 The live context refreshes after tools. It includes the current role/step, task
-contents, available actions, stage editing permissions, pending evaluation,
+contents, available actions and learner chat support, stage editing permissions, pending evaluation,
 recorded environment readiness, registered tools and files actually observed in
 this turn. A file list is marked complete only after a successful list operation.
 The Agent cannot see pane visibility, selected tabs, viewport or neighboring
@@ -47,10 +47,16 @@ observation, not a fresh provider inspection on every model request.
   the pending review, section, coverage and approval. Its source input remains in
   conversation/report history but is excluded from later understanding/approval
   candidates. Recovery recognizes the committed receipt without generating again.
-- Decision and assessment stages answer help directly. Decisions, tests and quizzes
-  still require their controls; help does not create another oral review gate or
-  reveal quiz answers.
-- Project-related conceptual questions can go beyond the current Skill question.
+  Replies retain their durable learner-input and model-message identities across
+  worker attempts. Synthesized handoff echoes are removed from the live transcript,
+  merged history pages and report evidence without merging different learner turns.
+- Decision discussion and existing Coder repair chat after test failure answer help
+  directly when the host actions include chat. Ordinary test/quiz steps hide the
+  composer and reject chat; they introduce controls without inviting messages.
+  Adding ordinary assessment chat is deferred to a separate platform PR. Decisions,
+  tests and quizzes still require their controls; help does not create another
+  oral review gate or reveal quiz answers.
+- Where chat is supported, project-related conceptual questions can go beyond the current Skill question.
   Unrelated requests are redirected briefly. Missing/ambiguous UI information calls
   for an explicit uncertainty statement and necessary clarification, not an invented
   button, tool result or staff notification.
@@ -128,10 +134,12 @@ These are course-specific follow-ups, not requirements to redesign the shared ho
    Skill/tool payloads. Verify exported/imported packages and role bindings. Check
    the complete authored model input against the selected model's actual capacity
    during real FS integration; do not add arbitrary teaching reply/tool/time limits.
-8. **Acceptance conversations.** Across all roles, test absent controls, hidden
+8. **Acceptance conversations.** Where chat is supported, test all roles for absent controls, hidden
    panes, editing locks, save problems, early report requests, requirement/test
    mismatch, deep relevant questions, unrelated questions, and mixed review/help.
-   Run each course from Hero to final report, including test failures, repair,
+   Verify ordinary test/quiz steps remain controls-only and reject chat; do not
+   author a task requiring learners to send messages there. Run each course from
+   Hero to final report, including test failures, repair,
    current-version reapproval, re-entry and returning from the report. Confirm
    help does not restart the lesson or advance learning. Coordinate live provider
    lifecycle acceptance separately with its owner; this PR changes no reclamation

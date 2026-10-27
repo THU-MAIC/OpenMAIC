@@ -323,7 +323,13 @@ vi.mock('@/lib/ai/llm', () => ({
     };
   },
 }));
-import { runSession, startAgentRunner } from '@/lib/server/agent-runtime/runner';
+import {
+  runSession,
+  startAgentRunner,
+  tagDurableUserMessage,
+} from '@/lib/server/agent-runtime/runner';
+import { Session } from '@earendil-works/pi-agent-core';
+import { AgentSessionEntryStorage } from '@/lib/server/agent-runtime/entry-tree-storage';
 import { ensureOwnerMergeSchema } from '@/lib/persistence/owner-merges';
 import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import {
@@ -2152,6 +2158,33 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it.each([4, 5])(
+    'rejects chat in ordinary assessment step %s and exposes its real control actions',
+    async (stageIndex) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      row.state.position.stageIndex = stageIndex;
+      row.state.milestones[0]!.stageIndex = stageIndex;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.actions).not.toContain('chat');
+      expect(view.actions).toContain(stageIndex === 4 ? 'evaluate' : 'quiz');
+      await expect(
+        commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: view.revision,
+          type: 'chat',
+          text: 'Open assessment chat.',
+        }),
+      ).rejects.toThrow('This action is not available at the current stage.');
+    },
+  );
+
   it.each([0, 2, 3, 6])(
     'records assistance in guided step %s without losing the pending review or crediting its input',
     async (stageIndex) => {
@@ -3957,80 +3990,193 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(view.actions).not.toContain('next');
     expect(view.state.position.stageIndex).toBe(0);
   });
-  it('repairs a prose-only assistance reply without replacing readiness or duplicating its answer', async () => {
-    const study = await freshStudy();
-    const row = await store.get(study.id, principal.ownerId);
-    onTestFinished(async () => {
-      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
-        row.environment_id,
-      ]);
-    });
-    const { sessionId } = (await study.send('chat')) as { sessionId: string };
-    const first = await agents.claimNextSession('support-opener', process.pid, {
-      sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const config = await teachingRunnerConfig({
-      sessionId,
-      ownerId: principal.ownerId,
-      workerId: 'support-opener',
-      attempt: first!.attempt,
-      signal: new AbortController().signal,
-    });
-    await invoke(config, 'request_skill_review', {
-      question: 'Any background questions? Ready to begin?',
-    });
-    const pending = structuredClone((await store.binding(sessionId))!.guided!.pending);
-    await agents.finishSession(sessionId, 'support-opener', {
-      status: 'succeeded',
-      expectedAttempt: first!.attempt,
-    });
-    await commandStudy(principal, study.id, {
-      id: randomUUID(),
-      revision: (await store.get(study.id, principal.ownerId)).revision,
-      type: 'chat',
-      text: 'Where do I see project files?',
-    });
-    const handle = startAgentRunner();
-    await handle.stop();
-    const claimed = await agents.claimNextSession(handle.workerId, process.pid, {
-      sessionId,
-      leaseTtlMs: 10000,
-      maxAttempts: 5,
-    });
-    const inputs = await agents.listUserMessages(sessionId);
-    await agents.markUserMessageDelivered(
-      sessionId,
-      handle.workerId,
-      claimed!.attempt,
-      inputs.at(-2)!.seq,
-    );
-    const response = 'Use Project files in the IDE. Allowed edits save automatically.';
-    mocked.responses = [
-      textResponse(response),
-      toolResponse([{ name: 'respond_to_learner', input: { response } }]),
-    ];
-    const calls = mocked.modelCalls;
-    await runSession(
-      { running: new Map(), shuttingDown: false },
-      { ...claimed!, ...(await agents.getSession(sessionId))! },
-    );
-    expect(mocked.modelCalls - calls).toBe(2);
-    expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
-    expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
-    expect(mocked.modelSystems.at(-1)).toContain(
-      'For an assistance-only answer or product clarification',
-    );
-    const view = await learningView(principal, study.id, { passive: true });
-    expect(
-      view
-        .conversation!.flatMap((entry) => entry.parts)
-        .filter((part) => part.kind === 'text' && part.text === response),
-    ).toHaveLength(1);
-    expect(view.actions).not.toContain('next');
-    expect(view.state.position.stageIndex).toBe(0);
-  }, 30_000);
+  it.each([false, true])(
+    'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: %s)',
+    async (crash) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      const first = await agents.claimNextSession('support-opener', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'support-opener',
+        attempt: first!.attempt,
+        signal: new AbortController().signal,
+      });
+      await invoke(config, 'request_skill_review', {
+        question: 'Any background questions? Ready to begin?',
+      });
+      const pending = structuredClone((await store.binding(sessionId))!.guided!.pending);
+      await agents.finishSession(sessionId, 'support-opener', {
+        status: 'succeeded',
+        expectedAttempt: first!.attempt,
+      });
+      await commandStudy(principal, study.id, {
+        id: randomUUID(),
+        revision: (await store.get(study.id, principal.ownerId)).revision,
+        type: 'chat',
+        text: 'Where do I see project files?',
+      });
+      const handle = startAgentRunner();
+      await handle.stop();
+      let claimed = await agents.claimNextSession(handle.workerId, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const inputs = await agents.listUserMessages(sessionId);
+      await agents.markUserMessageDelivered(
+        sessionId,
+        handle.workerId,
+        claimed!.attempt,
+        inputs.at(-2)!.seq,
+      );
+      const response = 'Use Project files in the IDE. Allowed edits save automatically.';
+      let originalTextId: string | undefined;
+      if (crash) {
+        const session = new Session(
+          await AgentSessionEntryStorage.open({
+            sessionId,
+            workerId: handle.workerId,
+            attempt: claimed!.attempt,
+          }),
+        );
+        await session.appendMessage(
+          tagDurableUserMessage(
+            { role: 'user', content: inputs.at(-1)!.text, timestamp: Date.now() },
+            inputs.at(-1)!.seq,
+          ),
+        );
+        const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
+          role: 'assistant',
+          content: [{ type: 'text', text: response }],
+          api: 'openai-completions',
+          provider: 'openai',
+          model: 'test-model',
+          stopReason: 'stop',
+          timestamp: Date.now(),
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        await agents.appendRunEvent(sessionId, handle.workerId, {
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          type: 'message_start',
+          data: { message: { ...delivered, content: [] } },
+        });
+        await agents.appendRunEvent(sessionId, handle.workerId, {
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          type: 'message_end',
+          data: { message: delivered },
+        });
+        await session.appendMessage(delivered);
+        await agents.markUserMessageDelivered(
+          sessionId,
+          handle.workerId,
+          claimed!.attempt,
+          inputs.at(-1)!.seq,
+        );
+        originalTextId = (await learningView(principal, study.id, { passive: true }))
+          .conversation!.flatMap((e) => e.parts)
+          .find((p) => p.kind === 'text' && p.text === response)!.id;
+        // Put the source and recovered receipt on different history pages.
+        for (let i = 0; i < 90; i++)
+          await agents.appendControlEvent(sessionId, {
+            ts: Date.now(),
+            type: 'trace',
+            data: { message: 'Awaiting recovery' },
+          });
+        await agents.releaseLease(sessionId, handle.workerId);
+        claimed = await agents.claimNextSession('assistance-takeover', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+      }
+      mocked.responses = [
+        ...(crash ? [] : [textResponse(response)]),
+        toolResponse([{ name: 'respond_to_learner', input: { response } }]),
+      ];
+      const calls = mocked.modelCalls;
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        { ...claimed!, ...(await agents.getSession(sessionId))! },
+      );
+      expect(mocked.modelCalls - calls).toBe(crash ? 1 : 2);
+      expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
+      expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
+      expect(mocked.modelSystems.at(-1)).toContain(
+        'For an assistance-only answer or product clarification',
+      );
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(
+        view
+          .conversation!.flatMap((entry) => entry.parts)
+          .filter((part) => part.kind === 'text' && part.text === response),
+      ).toHaveLength(1);
+      expect(
+        view.messages.filter((m) => m.role === 'assistant' && m.text === response),
+      ).toHaveLength(1);
+      expect(
+        (await learningEvidence(principal, study.id)).conversations
+          .flatMap((c) => c.messages)
+          .filter((m) => m.role === 'assistant' && m.text === response),
+      ).toHaveLength(1);
+      if (crash) {
+        expect(
+          view
+            .conversation!.flatMap((e) => e.parts)
+            .find((p) => p.kind === 'text' && p.text === response)!.id,
+        ).toBe(originalTextId);
+        const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+        const { mergeConversationHistory } = await import('@/lib/pbl/v3/conversation');
+        const through = await agents.lastEventSeq(sessionId);
+        const pages = [];
+        let before: number | null = null;
+        for (let i = 0; i < 10; i++) {
+          const page = await conversationPage(
+            principal,
+            new URLSearchParams({
+              id: study.id,
+              sessionId,
+              through: String(through),
+              ...(before ? { before: String(before) } : {}),
+            }),
+          );
+          pages.unshift(page.conversation);
+          if (!page.nextBefore) break;
+          before = page.nextBefore;
+          if (i === 9) throw new Error('History did not terminate');
+        }
+        expect(pages.length).toBeGreaterThan(1);
+        expect(
+          mergeConversationHistory(pages)
+            .flatMap((e) => e.parts)
+            .filter((p) => p.kind === 'text' && p.text === response),
+        ).toHaveLength(1);
+      }
+      expect(view.actions).not.toContain('next');
+      expect(view.state.position.stageIndex).toBe(0);
+    },
+    30_000,
+  );
   it('settles the automatic welcome when requesting readiness is the first tool call', async () => {
     const study = await freshStudy();
     const handle = startAgentRunner();

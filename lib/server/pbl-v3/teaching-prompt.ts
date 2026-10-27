@@ -283,7 +283,7 @@ function buildTeachingPrompt({
       : repairing
         ? '\nHelp the learner diagnose the observed test failure. Read the current code before making a focused repair. Explain the change and ask the learner to run tests again using the project controls. Never claim the repair passed without a new test result.'
         : stage.kind === 'check'
-          ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls; answer voluntary project/product questions.'
+          ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
           : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
     '\n' +
     productHelpRules
