@@ -194,6 +194,13 @@ describe('authoritative product guidance', () => {
     expect(renderTeachingPrompt(input).systemPrompt).toContain(
       'only when productContext.current.chatSupported is true',
     );
+    const repairPrompt = renderTeachingPrompt(input).systemPrompt;
+    expect(repairPrompt).toContain('obtain actual learner confirmation of the revised rule');
+    expect(repairPrompt).toContain('Preserve the original decision');
+    expect(repairPrompt).not.toContain('"correctAnswer"');
+    expect(renderTeachingPrompt(fixture(3)).systemPrompt).not.toContain(
+      'obtain actual learner confirmation of the revised rule',
+    );
     expect(teachingProductContext(fixture(5)).current.chatSupported).toBe(false);
   });
 
