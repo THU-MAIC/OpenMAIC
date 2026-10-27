@@ -945,6 +945,13 @@ export class SandboxService {
       if (row.restore_hash && row.restore_hash !== hash)
         throw sandboxConflict('This environment is bound to another checkpoint.');
       if (row.workspace_ready && row.restore_hash === hash) return publicEnvironment(row);
+      // A discovered or interrupted allocation may have almost no lease left.
+      // Protect initialization and checkpoint import before the first file I/O;
+      // keep the same allocation identity and retain the environment lock.
+      await this.renewUnlocked(
+        { ...row, resource_id: row.resource_id },
+        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+      );
       // Initialization and restore are retryable; cloud allocation is not repeated.
       await this.store.restoreState(row, hash, false);
       await this.provider.initializeWorkspace(row.resource_id, row.id);

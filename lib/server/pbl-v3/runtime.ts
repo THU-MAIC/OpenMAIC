@@ -634,21 +634,44 @@ export async function commandStudy(
           learningWorkspaceId(row.id),
         );
         env = await service.reconcile(env.id);
-        if (env.state === 'destroyed') {
-          row.environment_recovery = { ...row.environment_recovery, requestId: randomUUID() };
-          await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
-          throw sandboxConflict(
-            'The replacement expired before preparation completed. Retry preparation.',
+        for (let replacements = 0; env.state === 'destroyed'; replacements++) {
+          // Only confirmed expiry permits a new allocation. Continue the same
+          // preparation instead of requiring another learner click, but do not
+          // loop indefinitely if replacements themselves keep expiring.
+          const requestId = randomUUID();
+          row.environment_recovery = { ...row.environment_recovery, requestId };
+          row = await store.transaction((db) =>
+            store.commit(db, row, { state: row.state, events: [] }),
           );
+          if (replacements >= 1)
+            throw sandboxConflict(
+              'The replacement expired before preparation completed. Retry preparation.',
+            );
+          env = await service.create(requestId, learningWorkspaceId(row.id));
+          env = await service.reconcile(env.id);
         }
         assertEnvironmentReady(env);
+        // Pending allocations are not renewed by background maintenance. The
+        // foreground preparation protects its own I/O, including retries of an
+        // already-initialized allocation and larger starter packages.
+        let renewedAt = 0;
+        const renewPreparation = async (force = false) => {
+          if (!force && Date.now() - renewedAt < 20_000) return;
+          await service.renewForCheckpoint(env.id);
+          renewedAt = Date.now();
+        };
+        await renewPreparation(true);
         const checkpoint = await service.checkpoint(env.id);
         // Seed only a new workspace. A restored checkpoint must never be silently patched with starters.
         if (!checkpoint) {
           const existing = new Set((await service.listFiles(env.id)).map((file) => file.path));
-          for (const [path, text] of Object.entries(project.files))
-            if (!existing.has(path)) await service.writeText(env.id, path, text);
+          for (const [path, text] of Object.entries(project.files)) {
+            if (existing.has(path)) continue;
+            await renewPreparation();
+            await service.writeText(env.id, path, text);
+          }
         }
+        await renewPreparation(true);
         row.environment_id = env.id;
         row.lifecycle_error = null;
         // Old dirty edits belonged to the lost resource; restored bytes are the durable version.
@@ -656,7 +679,7 @@ export async function commandStudy(
         const restored = recoveredProgress(
           row,
           project,
-          await readFiles(service, row),
+          await readFiles(service, row, project, AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS)),
           checkpoint?.revision ?? 0,
         );
         transition = { state: restored.state, events: [] };

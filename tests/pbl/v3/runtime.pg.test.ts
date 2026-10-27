@@ -381,7 +381,25 @@ async function command(type: string, payload: Record<string, unknown> = {}) {
     ...payload,
   });
 }
-async function freshStudy(definition = project) {
+// These extra concurrency fixtures must not consume the shared suite's active capacity.
+async function releasePreparationFixtures(ids: string[]) {
+  const workspaces = new Set(ids.map(learningWorkspaceId));
+  const environments = (await (await SandboxStore.open()).list(principal.ownerId)).filter((row) =>
+    workspaces.has(row.workspace_id),
+  );
+  const service = await SandboxService.forOwner(principal);
+  for (const row of environments)
+    await withLearningWorkspaceAccess(
+      {
+        ownerId: principal.ownerId,
+        workspaceId: row.workspace_id,
+        environmentIds: () => [row.id],
+        operations: ['destroy'],
+      },
+      () => service.destroy(row.id),
+    );
+}
+async function unpreparedStudy(definition = project) {
   const row = await store.create(
     {
       ownerId: principal.ownerId,
@@ -399,8 +417,12 @@ async function freshStudy(definition = project) {
       type,
       ...(type === 'chat' ? { text: 'Please start.' } : {}),
     });
-  await send('prepare');
   return { id: row.id, send };
+}
+async function freshStudy(definition = project) {
+  const study = await unpreparedStudy(definition);
+  await study.send('prepare');
+  return study;
 }
 async function freshTeachingStudy() {
   const original = studyId;
@@ -4481,6 +4503,258 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       });
     }
   });
+  it.each(['initial', 'recovery'] as const)(
+    'does not let deferred maintenance renew an unbound %s preparation and block its files',
+    async (mode) => {
+      const study = mode === 'initial' ? await unpreparedStudy() : await freshStudy();
+      const fixtureIds = [study.id];
+      onTestFinished(() => releasePreparationFixtures(fixtureIds));
+      const previous = (await store.get(study.id, principal.ownerId)).environment_id;
+      if (previous) {
+        await study.send('checkpoint');
+        mocked.missing.add(previous);
+      }
+      let preparingEnvironment: string | undefined;
+      let enterList!: () => void,
+        releaseList!: () => void,
+        enterRenew!: () => void,
+        releaseRenew!: () => void;
+      const listing = new Promise<void>((resolve) => {
+        enterList = resolve;
+      });
+      const listGate = new Promise<void>((resolve) => {
+        releaseList = resolve;
+      });
+      const renewing = new Promise<void>((resolve) => {
+        enterRenew = resolve;
+      });
+      const renewGate = new Promise<void>((resolve) => {
+        releaseRenew = resolve;
+      });
+      const originalList = E2BCompatibleSandboxProvider.prototype.listWorkspace;
+      const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+      let listed = false,
+        maintenanceStarted = false,
+        renewalEntered = false;
+      const list = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'listWorkspace')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (!listed && args[0] !== previous) {
+            preparingEnvironment = args[0];
+            listed = true;
+            enterList();
+            await listGate;
+          }
+          return originalList.apply(this, args);
+        });
+      const renew = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] === preparingEnvironment && maintenanceStarted) {
+            renewalEntered = true;
+            enterRenew();
+            await renewGate;
+          }
+          return originalRenew.apply(this, args);
+        });
+      const safety = setTimeout(() => {
+        releaseList();
+        releaseRenew();
+      }, 5_000);
+      const preparation = study.send('prepare').then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      let maintenance: Promise<unknown> | undefined;
+      try {
+        await listing;
+        maintenanceStarted = true;
+        maintenance = maintainStudy(new LearningStore(pool), study.id, principal.ownerId)
+          .catch((error) => error)
+          .finally(() => {
+            maintenanceStarted = false;
+          });
+        await Promise.race([renewing, maintenance]);
+        // Another project remains independent while this project's preparation is paused.
+        const other = await freshStudy();
+        fixtureIds.push(other.id);
+        expect((await store.get(other.id, principal.ownerId)).environment_id).not.toBe(study.id);
+        releaseList();
+        expect(await preparation).not.toHaveProperty('error');
+        expect(renewalEntered).toBe(false);
+        expect((await store.get(study.id, principal.ownerId)).environment_id).toBe(
+          preparingEnvironment,
+        );
+      } finally {
+        clearTimeout(safety);
+        releaseList();
+        releaseRenew();
+        await Promise.allSettled([preparation, ...(maintenance ? [maintenance] : [])]);
+        list.mockRestore();
+        renew.mockRestore();
+      }
+    },
+    15000,
+  );
+
+  it.each([true, false])(
+    'renews an interrupted pending allocation before any file I/O (workspace ready: %s)',
+    async (ready) => {
+      const study = await unpreparedStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      row.environment_recovery = { requestId: row.id };
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const service = await SandboxService.forOwner(principal);
+      await withLearningWorkspaceAccess(
+        {
+          ownerId: principal.ownerId,
+          workspaceId: learningWorkspaceId(row.id),
+          environmentIds: () => [row.id],
+          operations: ['create', 'restore'],
+        },
+        () => service.create(row.id, learningWorkspaceId(row.id)),
+      );
+      await pool.query('UPDATE sandbox_environments SET workspace_ready=$2 WHERE id=$1', [
+        row.id,
+        ready,
+      ]);
+      let leased = false;
+      const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+      const originalInitialize = E2BCompatibleSandboxProvider.prototype.initializeWorkspace;
+      const originalList = E2BCompatibleSandboxProvider.prototype.listWorkspace;
+      const renew = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] === row.id) leased = true;
+          return originalRenew.apply(this, args);
+        });
+      const initialize = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'initializeWorkspace')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] === row.id && !leased)
+            throw new Error('Sandbox lease is expiring before initialization');
+          return originalInitialize.apply(this, args);
+        });
+      const list = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'listWorkspace')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] === row.id && !leased)
+            throw new Error('Sandbox lease is expiring before starter listing');
+          return originalList.apply(this, args);
+        });
+      const creates = mocked.creates.length;
+      try {
+        await expect(study.send('prepare')).resolves.toBeDefined();
+        expect((await store.get(study.id, principal.ownerId)).environment_id).toBe(row.id);
+        expect(mocked.creates.length).toBe(creates);
+      } finally {
+        renew.mockRestore();
+        initialize.mockRestore();
+        list.mockRestore();
+      }
+    },
+  );
+
+  it('replaces a confirmed expired pending allocation in the same preparation request', async () => {
+    const study = await unpreparedStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const row = await store.get(study.id, principal.ownerId);
+    row.environment_recovery = { requestId: row.id };
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const service = await SandboxService.forOwner(principal);
+    await withLearningWorkspaceAccess(
+      {
+        ownerId: principal.ownerId,
+        workspaceId: learningWorkspaceId(row.id),
+        environmentIds: () => [row.id],
+        operations: ['create', 'restore'],
+      },
+      () => service.create(row.id, learningWorkspaceId(row.id)),
+    );
+    mocked.missing.add(row.id);
+    const creates = mocked.creates.length;
+    await expect(study.send('prepare')).resolves.toBeDefined();
+    const recovered = await store.get(row.id, principal.ownerId);
+    expect(recovered.environment_id).not.toBe(row.id);
+    expect(mocked.creates.slice(creates)).toEqual([recovered.environment_id]);
+    expect((await learningView(principal, row.id)).environment?.ready).toBe(true);
+  });
+
+  it('bounds replacement attempts when newly allocated preparation environments keep expiring', async () => {
+    const study = await unpreparedStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const creates = mocked.creates.length;
+    const originalInspect = E2BCompatibleSandboxProvider.prototype.inspect;
+    const inspect = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (mocked.creates.slice(creates).includes(args[0])) return null;
+        return originalInspect.apply(this, args);
+      });
+    try {
+      await expect(study.send('prepare')).rejects.toThrow('replacement expired');
+      expect(mocked.creates.length - creates).toBe(2);
+      expect((await store.get(study.id, principal.ownerId)).environment_id).toBeNull();
+    } finally {
+      inspect.mockRestore();
+    }
+  });
+
+  it('keeps a long starter preparation leased and protects the final source snapshot', async () => {
+    const files = Object.fromEntries(
+      Array.from({ length: 10 }, (_, i) => [i ? `source-${i}.py` : 'PLAN.md', '# Starter\n']),
+    );
+    const selection = vi.spyOn(catalog, 'installedProject').mockReturnValue({ ...project, files });
+    const study = await unpreparedStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+    const originalWrite = E2BCompatibleSandboxProvider.prototype.writeText;
+    const originalRead = E2BCompatibleSandboxProvider.prototype.readText;
+    let elapsed = 0,
+      expiresAt = 60_000;
+    mocked.lifetimeMs = 60_000;
+    const base = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => base + elapsed);
+    const renew = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[0] === study.id) expiresAt = Math.max(expiresAt, elapsed + args[2]);
+        return originalRenew.apply(this, args);
+      });
+    const write = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'writeText')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[0] === study.id) {
+          elapsed += 30_000;
+          if (elapsed >= expiresAt) throw new Error('Lease expired during starter writes');
+        }
+        return originalWrite.apply(this, args);
+      });
+    const read = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'readText')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[0] === study.id) {
+          elapsed += 8_000;
+          if (elapsed >= expiresAt) throw new Error('Lease expired during source snapshot');
+        }
+        return originalRead.apply(this, args);
+      });
+    try {
+      await expect(study.send('prepare')).resolves.toBeDefined();
+      expect(elapsed).toBeGreaterThan(300_000);
+      expect((await store.get(study.id, principal.ownerId)).environment_id).toBe(study.id);
+      expect(renew.mock.calls.filter((args) => args[0] === study.id).length).toBeGreaterThan(2);
+    } finally {
+      selection.mockRestore();
+      renew.mockRestore();
+      write.mockRestore();
+      read.mockRestore();
+      clock.mockRestore();
+      mocked.lifetimeMs = 300_000;
+    }
+  });
+
   it('restores a checkpoint with one durable allocation across an interrupted restore, clearing old evaluation and grants', async () => {
     const study = await freshStudy();
     const original = await store.get(study.id, principal.ownerId);
@@ -7140,7 +7414,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it.each(['capacity', 'mutex'])(
-    'renews a restored replacement during slow validation despite expired predecessor cleanup and %s contention',
+    'protects a restored replacement during slow validation without deferred renewal under %s contention',
     async (contention) => {
       const previousMax = pool.options.max;
       pool.options.max = contention === 'capacity' ? 10 : 12;
@@ -7209,7 +7483,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         await expect(
           maintainStudy(store, fresh.id, principal.ownerId, replacement),
         ).rejects.toMatchObject({ reason: 'STUDY_BUSY' });
-        expect(mocked.renewals.slice(renewals)).toEqual([replacement]);
+        expect(mocked.renewals.slice(renewals)).toEqual([]);
+        // Foreground validation already owns enough lease for its bounded read.
+        expect(expiresAt - elapsed).toBeGreaterThanOrEqual(180_000);
         release();
         expect(await outcome).toEqual({ prepared: true });
         const restored = await store.get(fresh.id, principal.ownerId);
