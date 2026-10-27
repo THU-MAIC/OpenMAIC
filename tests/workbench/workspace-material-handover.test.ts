@@ -998,6 +998,42 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(textarea().value).toBe('');
   });
 
+  it('a released composer does not send until the store has attached B', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-S&course=stage-1');
+    mocks.store.sessionId = 'session-S';
+    await render();
+    await type(textarea(), 'About S');
+    await send();
+    // The pane moves to B at once; the store still holds S.
+    mocks.attach.mockImplementation(() => {});
+    await act(async () => (mocks.railProps!.onOpenSession as (id: string) => void)('session-B'));
+    expect(mocks.store.sessionId).toBe('session-S');
+
+    await type(textarea(), 'For B');
+    expect(sendButton()!.disabled).toBe(true);
+    await send();
+    await act(async () => {
+      textarea().dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(messageBodies.map((call) => call.url)).toEqual([
+      '/api/agent/sessions/session-S/messages',
+    ]);
+    expect(textarea().value).toBe('For B');
+
+    // B attaches: the same draft now goes to B.
+    mocks.store.sessionId = 'session-B';
+    await render();
+    expect(sendButton()!.disabled).toBe(false);
+    await send();
+    expect(messageBodies.map((call) => call.url)).toEqual([
+      '/api/agent/sessions/session-S/messages',
+      '/api/agent/sessions/session-B/messages',
+    ]);
+    expect(messageBodies.at(-1)!.body.text).toBe('For B');
+  });
+
   it("a late upload is kept in the library but never joins B's attachments", async () => {
     await render();
     await pick('a-upload.pdf');

@@ -167,7 +167,14 @@ export function WorkbenchChat({
    */
   const draftConversation = useWorkbenchDraftConversation();
   const composerOwnerId = sessionId ?? draftConversation?.ownerKey ?? null;
-  const canSend = sessionId !== null || draftConversation !== null;
+  /**
+   * Is the store on the conversation the pane was navigated to? Not for a
+   * moment after a switch: the workspace attaches the session in an effect,
+   * and until it does `sessionId` is still the conversation just left. A send
+   * or a stop then would reach that one, so the composer waits, draft kept.
+   */
+  const ownerAttached = conversation === undefined || conversation === composerOwnerId;
+  const canSend = ownerAttached && (sessionId !== null || draftConversation !== null);
   const chat = useWorkbenchStore((s) => s.chat);
   const replaying = useWorkbenchStore((s) => s.replaying);
   const status = useWorkbenchStore((s) => s.status);
@@ -743,7 +750,7 @@ export function WorkbenchChat({
   }, [pendingStop, status]);
 
   const stop = useCallback(async () => {
-    if (!sessionId || busy || pendingStop) return;
+    if (!sessionId || !ownerAttached || busy || pendingStop) return;
     const turnAtStop = conversationTurn.current;
     // The composer moved to another conversation meanwhile: its busy and
     // stopping state are not this cancel's (see `leaveConversation`).
@@ -771,10 +778,10 @@ export function WorkbenchChat({
         setBusy(false);
       }
     }
-  }, [busy, pendingStop, sessionId, t]);
+  }, [busy, ownerAttached, pendingStop, sessionId, t]);
 
   useDoubleEscapeStop({
-    generating: live && !busy && !pendingStop && !!sessionId && !covered,
+    generating: live && !busy && !pendingStop && !!sessionId && ownerAttached && !covered,
     onStop: () => {
       void stop();
     },
@@ -804,7 +811,7 @@ export function WorkbenchChat({
        */
       superseded?: true;
     }> => {
-      if (!sessionId && !draftConversation) {
+      if (!canSend) {
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       }
       if (busy) {
@@ -887,7 +894,7 @@ export function WorkbenchChat({
         }
       }
     },
-    [busy, draftConversation, sessionId, status, t],
+    [busy, canSend, draftConversation, sessionId, status, t],
   );
 
   /**
@@ -1256,7 +1263,7 @@ export function WorkbenchChat({
                       data-testid="workbench-stop"
                       data-stopping={pendingStop ? 'true' : undefined}
                       onClick={() => void stop()}
-                      disabled={busy || pendingStop}
+                      disabled={busy || pendingStop || !ownerAttached}
                       aria-busy={pendingStop}
                       title={t(pendingStop ? 'workbench.chat.stopping' : 'workbench.chat.stop')}
                       aria-label={t(
