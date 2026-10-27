@@ -401,10 +401,15 @@ async function transcribeOpenAIWhisper(
 ): Promise<ASRTranscriptionResult> {
   const modelId = config.modelId || ASR_PROVIDERS['openai-whisper'].defaultModelId;
   const baseUrl = config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
-  // The SDK assumes unknown model IDs support Whisper's verbose_json. Many
-  // compatible services only support plain JSON; we only consume their text.
-  // Reuse the JSON adapter and its guarded transport for those models.
-  if (!['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'].includes(modelId)) {
+  const isOfficialEndpoint =
+    baseUrl?.replace(/\/+$/, '') === ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
+  // Compatible endpoints may reject verbose_json even for whisper-1. Keep
+  // SDK behavior only for known models on the official OpenAI endpoint;
+  // otherwise reuse the JSON adapter and its guarded transport.
+  if (
+    !isOfficialEndpoint ||
+    !['whisper-1', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe'].includes(modelId)
+  ) {
     return transcribeCustomOpenAICompatibleASR({ ...config, modelId, baseUrl }, audioBuffer);
   }
 

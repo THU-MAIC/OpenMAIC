@@ -26,7 +26,13 @@ describe('OpenAI-compatible transcription response format', () => {
     mockFetch.mockReset();
   });
 
-  it('requests plain JSON for compatible model IDs instead of SDK verbose_json', async () => {
+  it.each([
+    'compatible-asr',
+    'whisper-1',
+    'gpt-4o-transcribe',
+    'gpt-4o-mini-transcribe',
+    undefined,
+  ])('requests plain JSON for compatible endpoints using model %s', async (modelId) => {
     mockFetch.mockImplementation(async (_url, init) => {
       if (init.body.get('response_format') !== 'json') {
         return new Response(
@@ -38,33 +44,38 @@ describe('OpenAI-compatible transcription response format', () => {
       }
       return success();
     });
-    const result = await transcribeAudio(
-      { ...baseConfig, modelId: 'compatible-asr', language: 'zh' },
-      audio,
-    );
+    const result = await transcribeAudio({ ...baseConfig, modelId, language: 'zh' }, audio);
     expect(result).toEqual({ text: '你好，这是语音测试。' });
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0];
     expect(String(url)).toBe('https://speech.example.com/v1/audio/transcriptions');
-    expect(init.body.get('model')).toBe('compatible-asr');
+    expect(init.body.get('model')).toBe(modelId || 'gpt-4o-mini-transcribe');
     expect(init.body.get('language')).toBe('zh');
     expect(await init.body.get('file').arrayBuffer()).toEqual(
       audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength),
     );
   });
 
-  it('keeps the SDK path and verbose format for the original Whisper model', async () => {
-    mockFetch.mockResolvedValueOnce(success());
-    await transcribeAudio({ ...baseConfig, modelId: 'whisper-1', language: 'en' }, audio);
-    expect(mockFetch.mock.calls[0][1].body.get('model')).toBe('whisper-1');
-    expect(mockFetch.mock.calls[0][1].body.get('response_format')).toBe('verbose_json');
-  });
-
-  it('keeps the SDK JSON path for known OpenAI transcription models', async () => {
-    mockFetch.mockResolvedValueOnce(success());
-    await transcribeAudio({ ...baseConfig, modelId: 'gpt-4o-transcribe' }, audio);
-    expect(mockFetch.mock.calls[0][1].body.get('response_format')).toBe('json');
-  });
+  describe.each([undefined, 'https://api.openai.com/v1', 'https://api.openai.com/v1/'])(
+    'official OpenAI endpoint %s',
+    (baseUrl) => {
+      it.each([
+        [undefined, 'gpt-4o-mini-transcribe', 'json'],
+        ['whisper-1', 'whisper-1', 'verbose_json'],
+        ['gpt-4o-transcribe', 'gpt-4o-transcribe', 'json'],
+        ['gpt-4o-mini-transcribe', 'gpt-4o-mini-transcribe', 'json'],
+      ])('preserves SDK behavior for model %s', async (modelId, expectedModel, format) => {
+        mockFetch.mockResolvedValueOnce(success());
+        await transcribeAudio({ ...baseConfig, baseUrl, modelId, language: 'en' }, audio);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const [url, init] = mockFetch.mock.calls[0];
+        expect(String(url)).toBe('https://api.openai.com/v1/audio/transcriptions');
+        expect(init.body.get('model')).toBe(expectedModel);
+        expect(init.body.get('response_format')).toBe(format);
+        expect(init.body.get('language')).toBe('en');
+      });
+    },
+  );
 
   it('omits automatic language and tolerates provider-specific response fields', async () => {
     mockFetch.mockResolvedValueOnce(
