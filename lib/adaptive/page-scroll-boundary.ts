@@ -1,24 +1,37 @@
 /** Contain touch scrolling in a fixed page shell while retaining nested scrolling and zoom. */
 export function installPageScrollBoundary(document: Document): () => void {
-  let lastY: number | null = null;
+  let lastTouch: { x: number; y: number } | null = null;
   const start = (event: TouchEvent) => {
-    lastY = event.touches.length === 1 ? event.touches[0].clientY : null;
+    lastTouch =
+      event.touches.length === 1
+        ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+        : null;
   };
   const move = (event: TouchEvent) => {
     if (event.touches.length !== 1) {
-      lastY = null;
+      lastTouch = null;
       return;
     }
-    const y = event.touches[0].clientY;
-    const delta = lastY === null ? 0 : y - lastY;
-    lastY = y;
+    const previous = lastTouch;
+    lastTouch = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+    if (!previous) return;
+    const deltaX = lastTouch.x - previous.x;
+    const deltaY = lastTouch.y - previous.y;
+    const horizontal = Math.abs(deltaX) > Math.abs(deltaY);
+    const delta = horizontal ? deltaX : deltaY;
     if (!delta) return;
     let element = event.target instanceof Element ? event.target : null;
     while (element && element !== document.body && element !== document.documentElement) {
       const style = getComputedStyle(element);
-      const remaining = element.scrollHeight - element.clientHeight;
-      if (/(auto|scroll)/.test(style.overflowY) && remaining > 1) {
-        if (delta < 0 ? element.scrollTop < remaining - 1 : element.scrollTop > 0) return;
+      const remaining = horizontal
+        ? element.scrollWidth - element.clientWidth
+        : element.scrollHeight - element.clientHeight;
+      if (/(auto|scroll)/.test(horizontal ? style.overflowX : style.overflowY) && remaining > 1) {
+        // RTL scrollLeft is zero at the right edge and negative towards the left.
+        const position = horizontal
+          ? element.scrollLeft + (style.direction === 'rtl' ? remaining : 0)
+          : element.scrollTop;
+        if (delta < 0 ? position < remaining - 1 : position > 0) return;
       }
       element = element.parentElement;
     }

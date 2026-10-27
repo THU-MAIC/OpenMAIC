@@ -662,7 +662,7 @@ test('phone home keeps its layout unchanged when only the keyboard viewport chan
       await home.evaluate((element) => {
         const touch = (type: string, y: number) => {
           const event = new Event(type, { bubbles: true, cancelable: true });
-          Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+          Object.defineProperty(event, 'touches', { value: [{ clientX: 100, clientY: y }] });
           element.dispatchEvent(event);
           return event.defaultPrevented;
         };
@@ -681,7 +681,7 @@ test('phone home keeps its layout unchanged when only the keyboard viewport chan
         ['touchmove', 250],
       ] as const) {
         const event = new Event(type, { bubbles: true, cancelable: true });
-        Object.defineProperty(event, 'touches', { value: [{ clientY: y }] });
+        Object.defineProperty(event, 'touches', { value: [{ clientX: 100, clientY: y }] });
         element.dispatchEvent(event);
         if (type === 'touchmove') return event.defaultPrevented;
       }
