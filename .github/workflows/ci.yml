@@ -376,16 +376,12 @@ jobs:
             fi
           done
 
-      # Incremental compilation artifacts only. Keyed on the lockfile plus
-      # next.config.ts so a dependency or webpack-rule change misses; source
-      # edits still reuse the restore-key prefix.
-      - name: Cache Next.js build
-        uses: actions/cache@v6
-        with:
-          path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('next.config.ts') }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('pnpm-lock.yaml') }}-
+      # No `.next/cache` restore: the build starts cold. The cache was keyed on
+      # the lockfile and next.config.ts only, so every run restored the
+      # Turbopack cache of an older commit, and builds from it shipped a stale
+      # app/globals.css (without the `--safe-area-*` variables the phone
+      # layout reads) while the rest of the CSS was current. The phone e2e
+      # specs then failed on every attempt and ran the job out of time.
 
       # Dedicated so a cold `next build` is not charged against Playwright's
       # webServer readiness budget (120s). NEXT_PUBLIC_MAIC_EDITOR_ENABLED is a
