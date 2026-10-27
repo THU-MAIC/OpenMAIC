@@ -2122,6 +2122,52 @@ describe('the knowledge base page', () => {
         expect(pane()?.getAttribute('aria-hidden')).toBeNull();
       });
 
+      it('hands an open question to the chat while a course tab is shown, and takes it back', async () => {
+        const { useQuestionHost } = await import('@/lib/workbench/question-host');
+        const { sessionScopedKey } = await import('@/lib/workbench/request-scope');
+        useQuestionHost.getState().setAnswer(vi.fn(async () => true));
+        mocks.store.status = 'succeeded';
+        mocks.store.chat = [
+          { key: 'u', kind: 'user', text: 'Make a course' },
+          { key: 't', kind: 'tool', text: '', toolName: 'web_search', toolState: 'done' },
+          {
+            key: 'q',
+            kind: 'question',
+            text: 'Who is it for?',
+            questionOptions: [{ id: 'a', label: 'Students' }],
+          },
+        ];
+        await render();
+        await render();
+        const hostedKey = sessionScopedKey(mocks.store.sessionId, 'q');
+        expect(browser().activeCourseId).toBe('request-preview');
+        expect(useQuestionHost.getState().previewKey).toBe(hostedKey);
+
+        // A course tab in front: the preview's form is not on screen, so the chat answers.
+        await act(async () => browser().onActivateCourse('stage-other'));
+        await render();
+        expect(pane()?.getAttribute('aria-hidden')).toBe('true');
+        expect(useQuestionHost.getState().previewKey).toBeNull();
+        expect(pane()?.querySelector('[data-testid="workbench-question-form"]')).toBeNull();
+
+        // Back to the preview: it hosts the question again.
+        await act(async () => browser().onActivateCourse('request-preview'));
+        await render();
+        expect(useQuestionHost.getState().previewKey).toBe(hostedKey);
+        expect(pane()?.querySelector('[data-testid="workbench-question-form"]')).not.toBeNull();
+
+        // Folded: hidden again, so the chat answers again.
+        await act(async () =>
+          pane()
+            ?.querySelector<HTMLButtonElement>('[data-testid="workspace-preview-fold"]')
+            ?.click(),
+        );
+        await render();
+        expect(pane()?.getAttribute('aria-hidden')).toBe('true');
+        expect(useQuestionHost.getState().previewKey).toBeNull();
+        useQuestionHost.getState().setAnswer(null);
+      });
+
       it('does not steal focus back on later events once a course tab was chosen', async () => {
         await runWithTool();
         await act(async () => browser().onActivateCourse('stage-other'));

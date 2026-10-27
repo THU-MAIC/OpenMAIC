@@ -143,7 +143,9 @@ export function WorkspaceRequestActivity({
   const view = track
     ? scheduleRequestPreview(track, now, DEFAULT_REQUEST_SCHEDULE, { rosterSeenAt })
     : null;
-  if (rosterKey !== null && view?.roster && rosterSeenAt === null) {
+  // Only a viewer looking at the preview has seen the cast: one on a course
+  // tab, or with the pane folded, gets the reveal when the preview comes back.
+  if (rosterKey !== null && view?.roster && rosterSeenAt === null && !hidden) {
     setRosterSeen({ key: rosterKey, at: now });
   }
   // Has any request of this conversation done something (a tool call, a
@@ -183,6 +185,7 @@ export function WorkspaceRequestActivity({
         view={view}
         prompt={track.prompt}
         hidden={hidden}
+        revealKey={rosterSeenAt ?? 'unseen'}
         onClose={() => onClose(track.key)}
         onCollapse={onCollapse}
         strip={strip}
@@ -198,7 +201,11 @@ export function WorkspaceRequestActivity({
  * inside an animated child, so the conversation hands its form over the moment
  * the question is on screen.
  */
-function useHostedQuestion(view: RequestPreviewView): {
+function useHostedQuestion(
+  view: RequestPreviewView,
+  /** The preview is not on screen (another tab, folded): the chat keeps the question. */
+  hidden: boolean,
+): {
   readonly node: ChatNode | null;
   readonly handBack: () => void;
 } {
@@ -209,7 +216,7 @@ function useHostedQuestion(view: RequestPreviewView): {
   const node = view.question?.node ?? null;
   // Question keys repeat across conversations: both memories carry the conversation.
   const nodeKey = node ? sessionScopedKey(sessionId, node.key) : null;
-  const hosted = node && answer !== null && handedBack !== nodeKey ? node : null;
+  const hosted = node && !hidden && answer !== null && handedBack !== nodeKey ? node : null;
   const hostedKey = hosted ? nodeKey : null;
   useEffect(() => {
     if (!hostedKey) return;
@@ -283,6 +290,7 @@ function RequestPreview({
   view,
   prompt,
   hidden,
+  revealKey,
   onClose,
   onCollapse,
   strip,
@@ -292,6 +300,11 @@ function RequestPreview({
   readonly view: RequestPreviewView;
   readonly prompt: string;
   readonly hidden: boolean;
+  /**
+   * When this viewer first saw the cast. A reveal that played while the
+   * preview was hidden restarts from face down once it is seen.
+   */
+  readonly revealKey: number | 'unseen';
   readonly onClose: () => void;
   readonly onCollapse?: () => void;
   readonly strip?: PreviewTabStrip;
@@ -299,7 +312,7 @@ function RequestPreview({
   readonly t: Translate;
 }) {
   const reduced = useReducedMotion();
-  const hosted = useHostedQuestion(view);
+  const hosted = useHostedQuestion(view, hidden);
   const copy = sceneCopy(view, t);
   const asking = view.scene === 'asking' && view.question !== null && view.mode === 'scene';
   // The cast's reveal owns the scene area while it plays, like the classic modal.
@@ -393,7 +406,7 @@ function RequestPreview({
                   className={cn(CARD, 'items-center px-6 pb-7 pt-5 text-center md:px-8')}
                 >
                   <EquippedSkills skills={view.skills} t={t} className="mb-4" />
-                  <RosterRevealVisualizer agents={view.roster} />
+                  <RosterRevealVisualizer key={revealKey} agents={view.roster} />
                 </div>
               ) : (
                 <SceneCard view={view} copy={copy} prompt={prompt} t={t} />

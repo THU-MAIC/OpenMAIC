@@ -101,4 +101,31 @@ describe('preview memory across conversations', () => {
     await act(async () => vi.advanceTimersByTime(300));
     expect(scene()).toBe('assembling');
   });
+
+  it('reveals the cast when a preview that was hidden through set_roster is shown', async () => {
+    const openedAt = firstPageAt + 20_000;
+    vi.setSystemTime(openedAt);
+    const fold = foldUntil(firstPageAt);
+    await act(async () => {
+      useWorkbenchStore.setState({
+        ...fold,
+        sessionId: 'session-hidden',
+        status: 'running',
+        replaying: false,
+      } as never);
+    });
+    const preview = (hidden: boolean) =>
+      createElement(WorkspaceRequestActivity, { closedKey: null, onClose: () => {}, hidden });
+    // Behind a course tab the whole time the cast would have played.
+    await act(async () => root.render(preview(true)));
+    await act(async () => vi.advanceTimersByTime(rosterRevealMs(3) + 5_000));
+    // Shown: this viewer has not seen the cast yet.
+    await act(async () => root.render(preview(false)));
+    expect(scene()).toBe('assembling');
+    expect(
+      container.querySelectorAll(
+        '[data-testid="request-preview-roster-card"][data-revealed="true"]',
+      ),
+    ).toHaveLength(0);
+  });
 });

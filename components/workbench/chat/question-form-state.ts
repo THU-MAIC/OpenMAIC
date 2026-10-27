@@ -24,7 +24,8 @@
  *    text is non-empty, so "disabled when nothing is picked or filled" needs no
  *    separate validity flag that could disagree with what would actually be sent.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { readQuestionDraft, writeQuestionDraft } from '@/lib/workbench/question-host';
 import type { ChatNode, QuestionOption } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import {
@@ -283,6 +284,8 @@ export function useQuestionForm(
   t: WorkbenchTranslator = defaultWorkbenchTranslator,
   /** Open on the free-text row, picked: the user asked to write the answer. */
   startInFreeText = false,
+  /** Where this question's half-written answer is kept across surfaces. */
+  draftKey: string | null = null,
 ): {
   mode: 'open' | 'single' | 'multi';
   rows: QuestionFormRow[];
@@ -307,12 +310,27 @@ export function useQuestionForm(
   const options = node.questionOptions ?? [];
   const rows = useMemo(() => questionFormRows(node), [node]);
   const startOther = startInFreeText && rows.length > 0;
-  const [picks, setPicks] = useState<QuestionFormPicks>(() =>
-    startOther ? pickOther(NO_PICKS, mode === 'multi') : NO_PICKS,
+  // Resume the answer this question had on the other surface, if any.
+  const [draft] = useState(() => (draftKey ? readQuestionDraft(draftKey) : null));
+  const [picks, setPicks] = useState<QuestionFormPicks>(() => {
+    const resumed = draft ? { picked: draft.picked, otherPicked: draft.otherPicked } : NO_PICKS;
+    return startOther && !resumed.otherPicked ? pickOther(resumed, mode === 'multi') : resumed;
+  });
+  const [highlight, setHighlight] = useState(() =>
+    startOther ? rows.length - 1 : (draft?.highlight ?? 0),
   );
-  const [highlight, setHighlight] = useState(() => (startOther ? rows.length - 1 : 0));
-  const [otherText, setOtherText] = useState('');
-  const [openText, setOpenText] = useState('');
+  const [otherText, setOtherText] = useState(draft?.otherText ?? '');
+  const [openText, setOpenText] = useState(draft?.openText ?? '');
+  useEffect(() => {
+    if (!draftKey) return;
+    writeQuestionDraft(draftKey, {
+      picked: picks.picked,
+      otherPicked: picks.otherPicked,
+      otherText,
+      openText,
+      highlight,
+    });
+  }, [draftKey, picks, otherText, openText, highlight]);
   const [sending, setSending] = useState(false);
 
   const locked = isQuestionLocked({

@@ -229,10 +229,31 @@ function ScrollingSources({ sources }: { sources: Array<{ title: string; url: st
 
   const measure = useCallback(() => {
     const el = listRef.current;
-    if (!el) return;
+    // Not laid out (a hidden ancestor): there is no position to read.
+    if (!el || el.clientHeight === 0) return;
     const fromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
     followRef.current = fromBottom <= FOLLOW_SLACK_PX;
     setEdges({ top: el.scrollTop > 2, bottom: fromBottom > 2 });
+  }, []);
+
+  // A hidden ancestor (the preview behind another tab, or folded) drops the
+  // list's layout and with it the scroll position. When the list is laid out
+  // again, put the reader back: at the newest when following, else where
+  // they had scrolled to.
+  const savedTopRef = useRef(0);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let laidOut = el.clientHeight > 0;
+    const observer = new ResizeObserver(() => {
+      const visible = el.clientHeight > 0;
+      if (visible && !laidOut) {
+        el.scrollTop = followRef.current ? el.scrollHeight : savedTopRef.current;
+      }
+      laidOut = visible;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -277,7 +298,13 @@ function ScrollingSources({ sources }: { sources: Array<{ title: string; url: st
         <div
           ref={listRef}
           data-testid="web-search-sources"
-          onScroll={measure}
+          onScroll={(event) => {
+            // A scroll while laid out is the reader's position; a hidden list reports 0.
+            if (event.currentTarget.clientHeight > 0) {
+              savedTopRef.current = event.currentTarget.scrollTop;
+              measure();
+            }
+          }}
           className="max-h-[208px] overflow-y-auto overscroll-contain p-2 space-y-0.5 [scrollbar-width:thin]"
           style={fade ? { maskImage: fade, WebkitMaskImage: fade } : undefined}
         >

@@ -144,4 +144,27 @@ describe("the transcript card's free-text option", () => {
     await click(container.querySelector('[data-testid="workbench-question-option-students"]'));
     expect(posts.some((url) => url.endsWith('/messages'))).toBe(true);
   });
+
+  it('keeps a half-written answer when the form steps aside and comes back', async () => {
+    const container = await mount();
+    await click(container.querySelector('[data-testid="workbench-question-form-other"]'));
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="workbench-question-form-other-input"]',
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'Parents of young children',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Away (the form dismissed, or the question moving to the preview), then back.
+    await click(container.querySelector('[data-testid="workbench-question-form-dismiss"]'));
+    await click(container.querySelector('[data-testid="workbench-question-revive"]'));
+    const back = container.querySelector<HTMLInputElement>(
+      '[data-testid="workbench-question-form-other-input"]',
+    );
+    expect(back?.value).toBe('Parents of young children');
+    expect(posts).toEqual([]);
+  });
 });

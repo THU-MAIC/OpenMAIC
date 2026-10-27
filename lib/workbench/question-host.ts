@@ -33,3 +33,29 @@ export const useQuestionHost = create<QuestionHostState>((set) => ({
   setAnswer: (answer) => set({ answer }),
   setPreviewKey: (previewKey) => set({ previewKey }),
 }));
+
+/**
+ * A half-written answer, kept per question (`sessionScopedKey(sessionId,
+ * node.key)`) so it survives the question moving between the chat's form and
+ * the preview's. In memory only: a draft is for this visit.
+ */
+export interface QuestionDraft {
+  readonly picked: readonly string[];
+  readonly otherPicked: boolean;
+  readonly otherText: string;
+  readonly openText: string;
+  readonly highlight: number;
+}
+
+const MAX_DRAFTS = 20;
+const drafts = new Map<string, QuestionDraft>();
+
+export function readQuestionDraft(key: string): QuestionDraft | null {
+  return drafts.get(key) ?? null;
+}
+
+export function writeQuestionDraft(key: string, draft: QuestionDraft): void {
+  drafts.delete(key);
+  drafts.set(key, draft);
+  while (drafts.size > MAX_DRAFTS) drafts.delete(drafts.keys().next().value as string);
+}
