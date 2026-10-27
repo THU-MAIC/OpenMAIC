@@ -108,6 +108,66 @@ beforeEach(() => {
   provider.renew.mockResolvedValue(undefined);
 });
 describe('sandbox recovery semantics', () => {
+  it.each(['missing', 'uncertain'])(
+    'checks a cached uninitialized allocation before restore when its resource is %s',
+    async (outcome) => {
+      row.workspace_ready = false;
+      store.reserve.mockImplementation(async () => ({ row: { ...row }, created: false }));
+      if (outcome === 'missing') {
+        provider.inspect.mockResolvedValue(null);
+        await expect(service().create(id, 'project')).resolves.toMatchObject({
+          state: 'destroyed',
+        });
+      } else {
+        provider.inspect.mockRejectedValue(new Error('provider unavailable'));
+        await expect(service().create(id, 'project')).rejects.toThrow('provider unavailable');
+        expect(row).toMatchObject({
+          state: 'running',
+          resource_id: 'cloud-id',
+          workspace_ready: false,
+        });
+      }
+      expect(provider.create).not.toHaveBeenCalled();
+      expect(provider.renew).not.toHaveBeenCalled();
+      expect(provider.initializeWorkspace).not.toHaveBeenCalled();
+      expect(provider.importWorkspace).not.toHaveBeenCalled();
+    },
+  );
+
+  it('renews between initialization, import and verification during a long restore', async () => {
+    row.workspace_ready = false;
+    saved = {
+      revision: 1,
+      archive_hash: archiveHash(bytes),
+      object_id: 'object',
+      created_at: new Date(),
+    };
+    let elapsed = 0,
+      expiresAt = 60_000;
+    provider.renew.mockImplementation(async (_resource, _operation, lifetimeMs) => {
+      expiresAt = Math.max(expiresAt, elapsed + lifetimeMs);
+    });
+    const advance = (duration: number) => {
+      elapsed += duration;
+      if (elapsed >= expiresAt) throw new Error('Restore lease expired');
+    };
+    provider.initializeWorkspace.mockImplementation(async () => advance(10_000));
+    provider.importWorkspace.mockImplementation(async () => advance(160_000));
+    provider.exportWorkspace.mockImplementation(async function* () {
+      advance(100_000);
+      yield bytes;
+    });
+    const target = Reflect.construct(SandboxService, [
+      'owner-a',
+      { ...config, lifetimeMs: 60_000 },
+      store,
+      provider,
+    ]) as SandboxService;
+    await expect(target.restoreWorkspace(id)).resolves.toMatchObject({ workspaceReady: true });
+    expect(elapsed).toBe(270_000);
+    expect(provider.renew).toHaveBeenCalledTimes(3);
+  });
+
   it.each([60_000, 300_000])(
     'protects checkpoint work with a sufficient lease when configured for %s ms',
     async (lifetimeMs) => {

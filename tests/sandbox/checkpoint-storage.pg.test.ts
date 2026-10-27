@@ -222,6 +222,7 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
     expect(await store.reconciliationCandidates('foreign-config')).toEqual([]);
     const provider = {
       initializeWorkspace: vi.fn().mockResolvedValue(undefined),
+      renew: vi.fn().mockResolvedValue(undefined),
       inspect: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockResolvedValue({ id: 'new-cloud', state: 'running' }),
     };
@@ -236,6 +237,7 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
     expect((await store.get('owner-expired', expiredId)).state).toBe('destroyed');
     expect(provider.inspect).toHaveBeenCalledWith('expired-cloud', expiredId);
     expect(provider.create).toHaveBeenCalledTimes(1);
+    expect(provider.renew).toHaveBeenCalledWith('new-cloud', newId, 300000, undefined);
     await store.transition(await store.get('owner-new', newId), ['running'], 'destroyed');
     const unknown = (await store.reserve({ ...reservation, id: randomUUID() })).row;
     await store.transition(unknown, ['creating'], 'unknown');
