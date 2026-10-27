@@ -1307,6 +1307,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           materialSeed={materialSeed}
           onMaterialSeedConsumed={consumeMaterialSeed}
           newConversation={composerReset}
+          conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
           draftConversation={draftConversation}
           onRename={
             // Only a conversation that exists can be named. A draft one has no

@@ -971,6 +971,33 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(textarea().value).toBe('Typing in B');
   });
 
+  it('a message that fails before the store has attached B never refills B', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-S&course=stage-1');
+    mocks.store.sessionId = 'session-S';
+    await render();
+    await type(textarea(), 'About S');
+    await send();
+    expect(messageBodies.map((call) => call.url)).toEqual([
+      '/api/agent/sessions/session-S/messages',
+    ]);
+    // The pane moves to B at once; the store still holds S.
+    mocks.attach.mockImplementation(() => {});
+    await act(async () => (mocks.railProps!.onOpenSession as (id: string) => void)('session-B'));
+    expect(mocks.store.sessionId).toBe('session-S');
+    expect(stopButton()).toBeNull();
+
+    await act(async () =>
+      messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
+    );
+    expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
+    expect(textarea().value).toBe('');
+
+    // Now the store attaches B: still nothing of S's in its composer.
+    mocks.store.sessionId = 'session-B';
+    await render();
+    expect(textarea().value).toBe('');
+  });
+
   it("a late upload is kept in the library but never joins B's attachments", async () => {
     await render();
     await pick('a-upload.pdf');

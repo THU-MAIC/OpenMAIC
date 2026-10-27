@@ -119,6 +119,7 @@ export function WorkbenchChat({
   materialSeed,
   onMaterialSeedConsumed,
   newConversation = 0,
+  conversation,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -147,6 +148,13 @@ export function WorkbenchChat({
    * empty the owner key stays the same, but it is still another conversation.
    */
   newConversation?: number;
+  /**
+   * The conversation the workspace has navigated this pane to: a session id,
+   * or the draft's owner key. It changes in the same commit as the teacher's
+   * click, while the store attaches the session only in a later effect.
+   * Without it, the composer's own owner is the fence.
+   */
+  conversation?: string | null;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -353,24 +361,28 @@ export function WorkbenchChat({
     }
     setPendingStop(false);
   };
-  const shownOwner = useRef(composerOwnerId);
+  // Fenced by where the pane was navigated, not by the store, which still
+  // holds the previous session until its attachment effect runs: a request
+  // failing in between would otherwise refill the next conversation.
+  const fenceOwner = conversation === undefined ? composerOwnerId : conversation;
+  const shownOwner = useRef(fenceOwner);
   useLayoutEffect(() => {
-    if (composerOwnerId === shownOwner.current) return;
-    if (composerOwnerId === null) {
+    if (fenceOwner === shownOwner.current) return;
+    if (fenceOwner === null) {
       // Between two conversations. Once a draft's session exists, this may be
       // the way to it: decide when the next one is known.
       if (createdHere.current !== null) return;
-    } else if (composerOwnerId === createdHere.current) {
+    } else if (fenceOwner === createdHere.current) {
       // The draft's own conversation, created and now open: the same one.
       createdHere.current = null;
-      shownOwner.current = composerOwnerId;
+      shownOwner.current = fenceOwner;
       return;
     }
-    shownOwner.current = composerOwnerId;
+    shownOwner.current = fenceOwner;
     leaveConversation();
     // Once per owner change; the helpers are read as they are then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [composerOwnerId]);
+  }, [fenceOwner]);
   // A new chat asked for on a draft keeps the draft's owner key, but the
   // shell no longer opens what the earlier draft creates: the same release.
   const shownNewConversation = useRef(newConversation);
