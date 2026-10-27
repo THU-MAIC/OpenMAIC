@@ -281,7 +281,6 @@ export function buildChildActionTools(opts: {
   messageId: string;
   send: SendEvent;
   onActionDone: (record?: WhiteboardActionRecord) => void;
-  maxActionsPerAgent: number;
   enableWhiteboardTools: boolean;
   whiteboardState?: PiWhiteboardRuntimeState;
   /** Present only for a selected-element-grounded turn. */
@@ -316,7 +315,6 @@ export function buildChildActionTools(opts: {
       piActionAllowlist.includes(name),
     ),
   );
-  let emittedActionCount = 0;
   const whiteboardState = opts.whiteboardState ?? createPiWhiteboardRuntimeState(opts.body);
 
   const makeActionTool = <
@@ -399,18 +397,6 @@ export function buildChildActionTools(opts: {
             },
           ],
           details: { skipped: true, reason: 'whiteboard_empty', actionName: name },
-        };
-      }
-
-      if (emittedActionCount >= opts.maxActionsPerAgent) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Action ${name} skipped because this agent turn already used the allowed action budget.`,
-            },
-          ],
-          details: { skipped: true, reason: 'action_budget', actionName: name },
         };
       }
 
@@ -590,7 +576,6 @@ export function buildChildActionTools(opts: {
       }
 
       const actionId = nanoid();
-      emittedActionCount += 1;
       await opts.send({
         type: 'action',
         data: {

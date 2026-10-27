@@ -263,11 +263,10 @@ describe('Pi Director post-compaction refetch', () => {
       onActionDone: () => {},
       thinkingConfig: { mode: 'disabled', enabled: false },
       abortSignal: new AbortController().signal,
-      maxAgentTurns: 2,
-      getAgentTurnCount: () => childTurns.length,
+
       getAgentResponses: () => childTurns,
       getWhiteboardLedger: () => [],
-      maxActionsPerAgent: 0,
+
       enableWhiteboardTools: false,
       takeSceneEvidence,
     });
