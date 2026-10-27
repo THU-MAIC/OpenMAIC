@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -169,6 +169,12 @@ function HomePage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const [mobileMaterialsOpen, setMobileMaterialsOpen] = useState(false);
+  const [materialNotice, setMaterialNotice] = useState<string | null>(null);
+  const materialNoticeVersion = useRef(0);
+  const clearMaterialNotice = useCallback(() => {
+    materialNoticeVersion.current += 1;
+    setMaterialNotice(null);
+  }, []);
   const [mobileViewMotion, setMobileViewMotion] = useState<'forward' | 'back' | null>(null);
   const mobileOptionsContentRef = useRef<HTMLDivElement>(null);
   const mobileOptionsTitleRef = useRef<HTMLHeadingElement>(null);
@@ -183,6 +189,7 @@ function HomePage() {
     requestAnimationFrame(() => mobileOptionsTitleRef.current?.focus());
   };
   const returnToMobileOptions = () => {
+    clearMaterialNotice();
     setMobileViewMotion('back');
     setMobileMaterialsOpen(false);
     requestAnimationFrame(() => {
@@ -592,10 +599,18 @@ function HomePage() {
 
   // Attached materials upload and extract at once; Generate waits for them.
   const courseMaterials = useCourseMaterials();
+  const reportRemovedMaterials = useCallback(
+    (message: string) => {
+      setMaterialNotice(message);
+      // Settings can change the parser while the material panel is unmounted.
+      if (!(mobile && mobileOptionsOpen && mobileMaterialsOpen)) toast.error(message);
+    },
+    [mobile, mobileOptionsOpen, mobileMaterialsOpen],
+  );
   useCourseMaterialCapabilities(
     courseMaterials.materials,
     courseMaterials.remove,
-    setError,
+    reportRemovedMaterials,
     preparingGenerate,
   );
   const materialMessage = (message: CourseMaterialMessage) =>
@@ -604,8 +619,11 @@ function HomePage() {
   const addCourseMaterials = async (files: File[]) => {
     // The set is frozen while a run is being started.
     if (preparingGenerate) return;
+    const version = materialNoticeVersion.current;
     const refusal = await courseMaterials.add(files);
-    setError(refusal ? materialMessage(refusal) : null);
+    if (version === materialNoticeVersion.current) {
+      setMaterialNotice(refusal ? materialMessage(refusal) : null);
+    }
   };
 
   const removeCourseMaterial = (id: string) => {
@@ -700,6 +718,9 @@ function HomePage() {
     }
   }, [mobile]);
   useEffect(() => {
+    if (!mobileOptionsOpen) clearMaterialNotice();
+  }, [mobileOptionsOpen, clearMaterialNotice]);
+  useEffect(() => {
     const input = textareaRef.current;
     if (!input) return;
     if (!mobile) {
@@ -720,7 +741,9 @@ function HomePage() {
       onCourseMaterialRetry={(id) => {
         if (!preparingGenerate) courseMaterials.retry(id);
       }}
-      onPdfError={setError}
+      onPdfError={setMaterialNotice}
+      materialNotice={materialNotice}
+      onMaterialClose={clearMaterialNotice}
       materialsLocked={preparingGenerate}
       onSettingsOpen={(section) => {
         setSettingsSection(section);

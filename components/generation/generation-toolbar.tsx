@@ -78,6 +78,8 @@ export interface GenerationToolbarProps {
   /** Upload or extract a failed material again. */
   onCourseMaterialRetry?: (id: string) => void;
   onPdfError: (error: string | null) => void;
+  materialNotice?: string | null;
+  onMaterialClose?: () => void;
   /**
    * When set, the course-material add/remove/Retry affordances and the
    * extractor Select are all disabled (the parent freezes the material set
@@ -101,6 +103,8 @@ export function GenerationToolbar({
   onCourseMaterialRemove,
   onCourseMaterialRetry,
   onPdfError,
+  materialNotice,
+  onMaterialClose,
   materialsLocked = false,
   onSettingsOpen,
 }: GenerationToolbarProps) {
@@ -351,6 +355,15 @@ export function GenerationToolbar({
             </p>
           </div>
 
+          {materialNotice && (
+            <p
+              role="status"
+              data-testid="course-material-notice"
+              className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+            >
+              {materialNotice}
+            </p>
+          )}
           {courseMaterials.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-[10px] text-muted-foreground/70">
@@ -444,7 +457,11 @@ export function GenerationToolbar({
       {materialView === 'entry' ? (
         materialTrigger
       ) : (
-        <Popover>
+        <Popover
+          onOpenChange={(open) => {
+            if (!open) onMaterialClose?.();
+          }}
+        >
           <PopoverTrigger asChild>{materialTrigger}</PopoverTrigger>
           <PopoverContent
             align="start"

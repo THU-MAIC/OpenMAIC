@@ -1,5 +1,9 @@
 import { test, expect } from '../fixtures/base';
 import type { Locator } from '@playwright/test';
+import {
+  createModelSettingsView,
+  DEFAULT_MODEL_SETTINGS,
+} from '../fixtures/test-data/model-settings';
 
 async function upwardTouchIsPrevented(panel: Locator) {
   return panel.evaluate((element) => {
@@ -189,4 +193,185 @@ test.describe('phone options motion', () => {
       ).toBeVisible();
     });
   }
+});
+
+test.describe('transient course material feedback', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  for (const dismissal of ['back', 'done', 'close', 'escape', 'outside'] as const) {
+    test(`unsupported upload stays in the material panel and clears on ${dismissal}`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+      await page.goto('/');
+      await page.getByTestId('home-options-open').click();
+      await page.getByTestId('course-material-button').click();
+      const options = page.getByTestId('home-mobile-options');
+      await options.locator('input[type="file"][multiple]').setInputFiles({
+        name: 'unsupported.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: Buffer.from('unsupported document'),
+      });
+      const notice = options.getByTestId('course-material-notice');
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText("unpdf can't read this file type");
+      await expect(page.locator('.home-error')).toHaveCount(0);
+      if (dismissal === 'back') {
+        await options.getByRole('button', { name: 'Back to course options', exact: true }).click();
+      } else if (dismissal === 'done') {
+        await options.getByRole('button', { name: 'Done', exact: true }).click();
+      } else {
+        if (dismissal === 'close') await options.locator('[data-slot="dialog-close"]').click();
+        if (dismissal === 'escape') await page.keyboard.press('Escape');
+        if (dismissal === 'outside') await page.mouse.click(2, 2);
+        await expect(options).not.toBeVisible();
+        await page.getByTestId('home-options-open').click();
+      }
+      await page.getByTestId('course-material-button').click();
+      await expect(notice).toHaveCount(0);
+      await expect(page.locator('.home-error')).toHaveCount(0);
+    });
+  }
+});
+
+test('parser changes while settings is open notify once and leave a transient material notice', async ({
+  page,
+  mockApi,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+  await mockApi.mockMaterials({ pollsUntilReady: 1 });
+  await page.route('**/api/generate-classroom/capabilities', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        materials: {
+          formats: [
+            {
+              mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              extensions: ['.docx'],
+            },
+            { mime: 'text/plain', extensions: ['.txt'] },
+            { mime: 'application/pdf', extensions: ['.pdf'] },
+          ],
+          maxCount: 5,
+          maxTotalBytes: 150 * 1024 * 1024,
+          maxDocumentBytes: 50 * 1024 * 1024,
+          maxMediaBytes: 200 * 1024 * 1024,
+        },
+      },
+    }),
+  );
+  let parser = 'mineru-cloud';
+  await page.route('**/api/model-config', (route) =>
+    route.fulfill({
+      json: createModelSettingsView({ ...DEFAULT_MODEL_SETTINGS, media: { document: parser } }),
+    }),
+  );
+  await page.goto('/');
+  await page.getByTestId('home-options-open').click();
+  await page.getByTestId('course-material-button').click();
+  const options = page.getByTestId('home-mobile-options');
+  await options.locator('input[type="file"][multiple]').setInputFiles([
+    {
+      name: 'lesson.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: Buffer.from('lesson'),
+    },
+    { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') },
+    { name: 'slides.pdf', mimeType: 'application/pdf', buffer: Buffer.from('slides') },
+  ]);
+  await expect(
+    page.locator('[data-testid="course-material-chip"][data-status="ready"]'),
+  ).toHaveCount(3);
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  // Settings reads the updated server view when its model section mounts.
+  parser = 'unpdf';
+  await options.getByRole('button', { name: 'All settings', exact: true }).click();
+  const toast = page.locator('[data-sonner-toast]');
+  await expect(toast).toHaveCount(1);
+  await expect(toast).toContainText("unpdf can't read this file type");
+  await expect(toast).toBeVisible();
+  await expect(page.locator('.home-error')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.getByTestId('home-options-open').click();
+  await page.getByTestId('course-material-pill').click();
+  await expect(options.getByTestId('course-material-chip')).toHaveCount(2);
+  await expect(
+    options.getByTestId('course-material-chip').filter({ hasText: 'lesson.docx' }),
+  ).toHaveCount(0);
+  await expect(options.getByTestId('course-material-notice')).toContainText(
+    "unpdf can't read this file type",
+  );
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByTestId('course-material-pill').click();
+  await expect(options.getByTestId('course-material-notice')).toHaveCount(0);
+});
+
+test('a supported upload clears the previous material notice', async ({ page, mockApi }) => {
+  await mockApi.mockMaterials({ pollsUntilReady: 1 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByTestId('home-options-open').click();
+  await page.getByTestId('course-material-button').click();
+  const options = page.getByTestId('home-mobile-options');
+  const input = options.locator('input[type="file"][multiple]');
+  await input.setInputFiles({
+    name: 'bad.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: Buffer.from('bad'),
+  });
+  await expect(options.getByTestId('course-material-notice')).toBeVisible();
+  await input.setInputFiles({
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('notes'),
+  });
+  await expect(options.getByTestId('course-material-notice')).toHaveCount(0);
+  await expect(options.getByTestId('course-material-chip')).toHaveAttribute('data-status', 'ready');
+});
+
+test('a late policy refusal does not restore a notice after returning from materials', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const responseGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/generate-classroom/capabilities', async (route) => {
+    await responseGate;
+    await route.fulfill({ status: 503, json: { error: 'Late policy refusal' } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByTestId('home-options-open').click();
+  await page.getByTestId('course-material-button').click();
+  const options = page.getByTestId('home-mobile-options');
+  const request = page.waitForRequest('**/api/generate-classroom/capabilities');
+  await options
+    .locator('input[type="file"][multiple]')
+    .setInputFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+  await request;
+  await options.getByRole('button', { name: 'Done', exact: true }).click();
+  release();
+  await expect(page.getByTestId('course-material-pill')).toHaveCount(0);
+  await page.getByTestId('course-material-button').click();
+  await expect(options.getByTestId('course-material-notice')).toHaveCount(0);
+  await expect(page.locator('.home-error')).toHaveCount(0);
+});
+
+test('desktop material feedback clears when its popover closes', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto('/');
+  await page.getByTestId('course-material-button').click();
+  await page.locator('input[type="file"][multiple]').setInputFiles({
+    name: 'bad.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: Buffer.from('bad'),
+  });
+  await expect(page.getByTestId('course-material-notice')).toBeVisible();
+  await expect(page.locator('.home-error')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.getByTestId('course-material-button').click();
+  await expect(page.getByTestId('course-material-notice')).toHaveCount(0);
 });
