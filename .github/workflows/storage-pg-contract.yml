@@ -34,14 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
 
       # Baseline, then the run, then the audit against that baseline. The
       # in-module STORAGE_PG_CONTRACT_REQUIRED guard only covers a missing

@@ -53,10 +53,15 @@ jobs:
           node-version: 22
       - run: node --test .github/scripts/*.test.mjs
 
-  check:
-    name: Lint, Typecheck & Unit Tests
+  # The required status check on main is the job *name* "Lint, Typecheck &
+  # Unit Tests". The work behind it runs as the parallel jobs below, and the
+  # `check` job at the end carries that name and passes only when every one of
+  # them passed. A job added here that must gate merges has to be added to its
+  # `needs` as well.
+  lint:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
@@ -75,13 +80,6 @@ jobs:
             echo 'ci-run-parallel.sh should have failed'
             exit 1
           fi
-
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
 
       - name: Package version bumps
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -115,11 +113,15 @@ jobs:
       - name: Internal dependency ranges
         run: node scripts/check-internal-dependency-ranges.mjs
 
-      - run: pnpm install --frozen-lockfile
+      # The real install, postinstall included: the verification below is
+      # about what installing does, so this job does not use the build cache.
+      - uses: ./.github/actions/setup-workspace
+        with:
+          build-cache: 'false'
 
-      # Root proxy integration tests load current and historical render-service
-      # sources. They need the standalone service's Node dependencies as well.
-      - name: Install render-service test dependencies
+      # The root tsc reaches tests that load render-service sources, which
+      # resolve the standalone service's own Node dependencies.
+      - name: Install render-service dependencies
         working-directory: render-service
         env:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
@@ -165,11 +167,41 @@ jobs:
             'tsc' 'npx tsc --noEmit' \
             'i18n' 'pnpm check:i18n-keys'
 
-      # Keep these sequential. Running root vitest alongside the storage
-      # package on a 4-core runner made 5s-timeout tests flake (CPU
-      # contention, not a product regression).
+  # The root suite was ~10 minutes serial. Each shard is its own runner, so
+  # shards never compete for CPU (running root vitest alongside the storage
+  # package on one 4-core runner made 5s-timeout tests flake).
+  unit:
+    name: Unit Tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+
+      # Root proxy integration tests load current and historical render-service
+      # sources. They need the standalone service's Node dependencies as well.
+      - name: Install render-service test dependencies
+        working-directory: render-service
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci
+
       - name: Unit Tests
-        run: pnpm test
+        run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
+
+  package-tests:
+    name: Unit Tests (packages)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
 
       - name: Unit Tests (importer)
         run: pnpm --filter @openmaic/importer test
@@ -221,6 +253,15 @@ jobs:
           printf '%s\n' "$output"
           node -e 'const value = JSON.parse(process.argv[1]); if (!Array.isArray(value.outlines) || value.outlines.length === 0 || !value.scene || value.sceneValidation?.valid !== true) process.exit(1)' "$output"
 
+  storage-tests:
+    name: Unit Tests (storage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/setup-workspace
+
       # Covers the package's own test tree, which the root tsc reaches only by an
       # incidental glob. The device-scope guard is written as `@ts-expect-error`
       # probes in those tests, and a probe nothing type-checks proves nothing.
@@ -229,6 +270,28 @@ jobs:
 
       - name: Unit Tests (storage)
         run: pnpm --filter @openmaic/storage test
+
+  # The required check. A job skipped because something it needs failed
+  # counts as passing for a required check, so this must not be skipped:
+  # `always()` makes it run and fail whenever any job above failed or was
+  # cancelled.
+  check:
+    name: Lint, Typecheck & Unit Tests
+    needs: [lint, unit, package-tests, storage-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every job to have passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if printf '%s' "$NEEDS" | jq -e 'to_entries | any(.value.result != "success")' >/dev/null; then
+            echo "::error::A job behind this check did not succeed."
+            exit 1
+          fi
 
   render-service:
     name: Render Service (typecheck + tests)
@@ -292,14 +355,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-workspace
 
       # Browser tarballs live under ~/.cache/ms-playwright. A cold download of
       # Chromium from the Playwright CDN has sat for 20+ minutes on this runner
