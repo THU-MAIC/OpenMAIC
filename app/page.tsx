@@ -184,8 +184,9 @@ function HomePage() {
     setMobileOptionsOpen(true);
   };
   const openMobileMaterials = () => {
-    setMobileViewMotion('forward');
+    setMobileViewMotion(mobileOptionsOpen ? 'forward' : null);
     setMobileMaterialsOpen(true);
+    setMobileOptionsOpen(true);
     requestAnimationFrame(() => mobileOptionsTitleRef.current?.focus());
   };
   const returnToMobileOptions = () => {
@@ -976,7 +977,7 @@ function HomePage() {
                 <button
                   type="button"
                   className="home-material-status"
-                  onClick={openMobileOptions}
+                  onClick={openMobileMaterials}
                   aria-label={t('toolbar.courseMaterialsSelected', {
                     n: courseMaterials.materials.length,
                   })}

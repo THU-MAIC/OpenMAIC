@@ -132,12 +132,18 @@ test.describe('course material navigation and scrolling', () => {
         await page.getByTestId('course-material-pill').tap();
         await options.locator('[data-slot="dialog-close"]').tap();
         await expect(options).not.toBeVisible();
+        // The composer attachment summary opens the file list directly.
+        await page.locator('.home-material-status').tap();
+        await expect(
+          options.getByRole('heading', { name: 'Course materials', exact: true }),
+        ).toBeVisible();
+        await expect(chips).toHaveCount(5);
+        await options.getByRole('button', { name: 'Back to course options', exact: true }).tap();
+        await options.locator('[data-slot="dialog-close"]').tap();
         await page.getByTestId('home-options-open').tap();
         await expect(
           options.getByRole('heading', { name: 'Course options', exact: true }),
         ).toBeVisible();
-        await page.getByTestId('course-material-pill').tap();
-        await expect(chips).toHaveCount(5);
       } else {
         await page.keyboard.press('Escape');
         await expect(panel).not.toBeVisible();
