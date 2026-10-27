@@ -721,6 +721,126 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
     if (mocked.root) await rm(mocked.root, { recursive: true, force: true });
   });
+  it('persists open-ended decision responses and rationales with idempotent commands and report evidence', async () => {
+    const bundle = packageBuiltin(project);
+    const descriptor: ProjectDescriptor = JSON.parse(bundle.files['project.json']);
+    descriptor.id = descriptor.definition.id = `open-response-${randomUUID()}`;
+    const decision = descriptor.definition.decisions[0]!;
+    decision.responseType = 'text';
+    decision.requiresRationale = true;
+    decision.options = [];
+    bundle.files['project.json'] = JSON.stringify(descriptor);
+    const ref = await installProjectPackage(
+      principal.ownerId,
+      indexProjectFiles(descriptor.id, descriptor.version, bundle.files),
+    );
+    const stageId = randomUUID();
+    const documents = new PgDocumentStore<
+      import('@/lib/types/stage').Scene,
+      import('@/lib/types/stage').Stage
+    >(pool, { withTransaction: (fn) => store.transaction(fn), trackAssetReferences: true });
+    await documents.saveDocument({
+      stage: { id: stageId, name: 'Decision response fixture', createdAt: 1, updatedAt: 1 },
+      scenes: [
+        {
+          id: 'response',
+          stageId,
+          type: 'pbl',
+          title: 'Project',
+          order: 0,
+          content: { type: 'pbl', projectV3: ref },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    await claimStageMeta(pool, stageId, principal.ownerId);
+    // Seed the decision step; this is response persistence coverage, not a teaching journey.
+    const initial = startOrchestration(descriptor.definition);
+    initial.state.position.stageIndex = 1;
+    const row = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId,
+        sceneId: 'response',
+        projectId: ref.id,
+        version: ref.version,
+        projectRef: ref,
+      },
+      initial,
+    );
+    const send = async (type: string, extra: Record<string, unknown> = {}) =>
+      commandStudy(principal, row.id, {
+        id: randomUUID(),
+        revision: (await store.get(row.id, principal.ownerId)).revision,
+        type,
+        ...extra,
+      });
+    await send('prepare');
+    const original = await store.get(row.id, principal.ownerId);
+    await expect(
+      send('decide', { decisionId: decision.id, chosen: 'My rule', rationale: '  ' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(
+      (await store.get(row.id, principal.ownerId)).state.collected.greeting!.decisions,
+    ).toEqual([]);
+    const chosen =
+      'If the requested item exists, remove it.\nOtherwise keep the collection unchanged.';
+    const rationale = 'Avoid changing an unrelated item.';
+    const request = {
+      id: randomUUID(),
+      revision: original.revision,
+      type: 'decide',
+      decisionId: decision.id,
+      chosen,
+      rationale,
+    };
+    // A refused attempt may record activity but must not alter the progress revision.
+    request.revision = (await store.get(row.id, principal.ownerId)).revision;
+    await commandStudy(principal, row.id, request);
+    await commandStudy(principal, row.id, request);
+    let current = await store.get(row.id, principal.ownerId);
+    expect(current.state.collected.greeting!.decisions).toEqual([
+      { id: decision.id, chosen, rationale, revision: 0 },
+    ]);
+    expect(
+      (
+        await pool.query(
+          "SELECT count(*)::int AS n FROM pbl_v3_events WHERE study_id=$1 AND event->>'type'='decision.recorded'",
+          [row.id],
+        )
+      ).rows[0].n,
+    ).toBe(1);
+    const view = await learningView(principal, row.id);
+    expect(view.decisions[0]).toMatchObject({
+      responseType: 'text',
+      requiresRationale: true,
+      options: [],
+    });
+    await send('decide', { decisionId: decision.id, chosen, rationale: 'A revised explanation.' });
+    current = await store.get(row.id, principal.ownerId);
+    current.state.position.stageIndex = 2;
+    await store.transaction((db) =>
+      store.commit(db, current, { state: current.state, events: [] }),
+    );
+    expect((await learningView(principal, row.id)).decisionSummary![0]).toMatchObject({
+      choice: chosen,
+      rationale: 'A revised explanation.',
+    });
+    current = await store.get(row.id, principal.ownerId);
+    current.state.status = 'completed';
+    await store.transaction((db) =>
+      store.commit(db, current, { state: current.state, events: [] }),
+    );
+    const { learningReport } = await import('@/lib/server/pbl-v3/report');
+    const report = await learningReport(principal, row.id);
+    expect(
+      report.evidence.some((e) => e.detail.includes(chosen) && e.detail.includes(rationale)),
+    ).toBe(true);
+    expect(report.facts!.decisionChanges).toBe(1);
+    await releasePreparationFixtures([row.id]);
+  });
+
   it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
     const previousMax = pool.options.max;
     pool.options.max = 10; // The production pool's default admits two study operations.

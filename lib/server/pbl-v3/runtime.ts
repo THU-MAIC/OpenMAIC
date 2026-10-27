@@ -33,6 +33,7 @@ import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
+import { isDecisionResponseValid } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import { assertLearningPlan } from './plan';
@@ -345,6 +346,7 @@ export interface LearningCommand {
   expectedHash?: string;
   decisionId?: string;
   chosen?: string;
+  rationale?: string;
   answers?: number[];
   evaluationId?: string;
 }
@@ -775,11 +777,12 @@ export async function commandStudy(
     } else if (command.type === 'decide') {
       check('decide');
       const decision = definition.decisions.find((d) => d.id === command.decisionId);
-      if (!decision?.options.some((o) => o.id === command.chosen))
-        throw sandboxInvalid('Choose one of the current decision options.');
+      if (!decision || !isDecisionResponseValid(decision, command))
+        throw sandboxInvalid('Provide a valid decision response and its required rationale.');
       transition = transitions.submitDecision(definition, row.state, {
         decisionId: decision.id,
         chosen: command.chosen!,
+        ...(command.rationale === undefined ? {} : { rationale: command.rationale }),
         recordId: command.id,
       });
     } else if (command.type === 'quiz') {
@@ -1201,6 +1204,7 @@ export async function learningView(
               choice:
                 definition?.options.find((option) => option.id === selected.chosen)?.label ??
                 selected.chosen,
+              ...(selected.rationale === undefined ? {} : { rationale: selected.rationale }),
             };
           })
         : [],
@@ -1211,6 +1215,10 @@ export async function learningView(
             .map((d) => ({
               id: d.id,
               prompt: d.decisionPrompt,
+              ...(d.responseType === undefined ? {} : { responseType: d.responseType }),
+              ...(d.requiresRationale === undefined
+                ? {}
+                : { requiresRationale: d.requiresRationale }),
               options: d.options.map((o) => ({ id: o.id, label: o.label })),
             }))
         : [],

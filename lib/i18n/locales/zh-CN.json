@@ -2903,6 +2903,11 @@
       "older": "加载更早记录",
       "failed": "历史记录加载失败，请重试。",
       "empty": "本页暂无对话内容。"
-    }
+    },
+    "decisionResponse": "你的决策",
+    "decisionRationale": "为什么这样决定？",
+    "submitDecision": "提交决策",
+    "decisionSaved": "回答已保存",
+    "decisionUnsaved": "修改尚未提交"
   }
 }

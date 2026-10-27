@@ -2903,6 +2903,11 @@
       "older": "Load earlier records",
       "failed": "Could not load history. Please retry.",
       "empty": "No saved messages in this page."
-    }
+    },
+    "decisionResponse": "Your decision",
+    "decisionRationale": "Why did you choose this?",
+    "submitDecision": "Submit decision",
+    "decisionSaved": "Response saved",
+    "decisionUnsaved": "Unsaved changes"
   }
 }

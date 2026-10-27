@@ -32,6 +32,9 @@ const uiSchema = z
       key: z.string(),
       values: z.array(z.number().int().nonnegative().nullable()).max(256),
     }),
+    decisionDrafts: z
+      .record(z.string(), z.object({ chosen: z.string(), rationale: z.string() }))
+      .default({}),
     showWorkspace: z.boolean(),
     showAssistant: z.boolean(),
   })
@@ -44,6 +47,7 @@ const emptyUi = (): StudyDraft => ({
   text: '',
   textRevision: 0,
   quizAnswers: { key: '', values: [] },
+  decisionDrafts: {},
   showWorkspace: true,
   showAssistant: true,
 });
@@ -183,6 +187,14 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     (value: boolean) => update((previous) => ({ ...previous, showWorkspace: value })),
     [update],
   );
+  const setDecisionDrafts = useCallback(
+    (next: SetStateAction<StudyDraft['decisionDrafts']>) =>
+      update((previous) => ({
+        ...previous,
+        decisionDrafts: typeof next === 'function' ? next(previous.decisionDrafts) : next,
+      })),
+    [update],
+  );
   const setShowAssistant = useCallback(
     (value: boolean) => update((previous) => ({ ...previous, showAssistant: value })),
     [update],
@@ -191,6 +203,7 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     ...(state.id === id ? state.value : emptyUi()),
     setText,
     setQuizAnswers,
+    setDecisionDrafts,
     setShowWorkspace,
     setShowAssistant,
   };

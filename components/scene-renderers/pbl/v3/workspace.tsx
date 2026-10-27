@@ -14,6 +14,7 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
+import { DecisionResponseForm } from './decision-response';
 import { useLearningObservation } from './use-learning-observation';
 import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -73,6 +74,8 @@ function PBLV3WorkspaceContent({
     pendingMessage: savedMessage,
     quizAnswers,
     setQuizAnswers,
+    decisionDrafts,
+    setDecisionDrafts,
     showWorkspace,
     setShowWorkspace,
     showAssistant,
@@ -753,41 +756,48 @@ function PBLV3WorkspaceContent({
                         pendingAction={pendingAction}
                       />
                     )}
-                    {view.decisions.map((decision) => (
-                      <fieldset key={decision.id}>
-                        <legend>{decision.prompt}</legend>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {decision.options.map((option) => (
-                            <button
-                              key={option.id}
-                              className={button}
-                              aria-busy={
-                                pendingDecision?.id === decision.id &&
-                                pendingDecision.chosen === option.id
-                              }
-                              aria-pressed={
-                                pendingDecision?.id === decision.id
-                                  ? pendingDecision.chosen === option.id
-                                  : view.state.collected[
-                                      view.state.position.milestoneId ?? ''
-                                    ]?.decisions.some(
-                                      (d) => d.id === decision.id && d.chosen === option.id,
-                                    )
-                              }
-                              disabled={disabled}
-                              onClick={() =>
-                                void command('decide', {
-                                  decisionId: decision.id,
-                                  chosen: option.id,
-                                })
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </fieldset>
-                    ))}
+                    {view.decisions.map((decision) => {
+                      const draftKey = `${view.state.position.milestoneId}:${decision.id}`;
+                      const selected = view.state.collected[
+                        view.state.position.milestoneId ?? ''
+                      ]?.decisions.find((d) => d.id === decision.id);
+                      return (
+                        <DecisionResponseForm
+                          key={`${view.id}:${draftKey}`}
+                          decision={decision}
+                          selected={selected}
+                          draft={decisionDrafts[draftKey]}
+                          disabled={disabled}
+                          pendingChosen={
+                            pendingDecision?.id === decision.id ? pendingDecision.chosen : undefined
+                          }
+                          onDraftChange={(draft) =>
+                            setDecisionDrafts((previous) => ({ ...previous, [draftKey]: draft }))
+                          }
+                          onSubmit={async (chosen, rationale) => {
+                            const saved = await command('decide', {
+                              decisionId: decision.id,
+                              chosen,
+                              ...(rationale === undefined ? {} : { rationale }),
+                            });
+                            if (saved)
+                              setDecisionDrafts((previous) => {
+                                const current = previous[draftKey];
+                                if (
+                                  !current ||
+                                  current.chosen !== chosen ||
+                                  current.rationale !== (rationale ?? '')
+                                )
+                                  return previous;
+                                const next = { ...previous };
+                                delete next[draftKey];
+                                return next;
+                              });
+                            return saved;
+                          }}
+                        />
+                      );
+                    })}
                     {view.questions.map((question, index) => (
                       <fieldset key={index}>
                         <legend>{question.q}</legend>

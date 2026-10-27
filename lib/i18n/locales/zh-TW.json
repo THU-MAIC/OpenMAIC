@@ -2903,6 +2903,11 @@
       "older": "載入更早記錄",
       "failed": "歷史記錄載入失敗，請重試。",
       "empty": "本頁暫無對話內容。"
-    }
+    },
+    "decisionResponse": "你的決策",
+    "decisionRationale": "為什麼這樣決定？",
+    "submitDecision": "提交決策",
+    "decisionSaved": "回答已儲存",
+    "decisionUnsaved": "修改尚未提交"
   }
 }

@@ -31,7 +31,12 @@ export function ProductionContext({ view }: { view: LearningView }) {
             {view.decisionSummary.map((decision) => (
               <li key={decision.id}>
                 <strong className="block font-semibold">{decision.prompt}</strong>
-                <span className="text-muted-foreground">{decision.choice}</span>
+                <span className="whitespace-pre-wrap text-muted-foreground">{decision.choice}</span>
+                {decision.rationale && (
+                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                    {t('pblV3.decisionRationale')}: {decision.rationale}
+                  </p>
+                )}
               </li>
             ))}
           </ol>

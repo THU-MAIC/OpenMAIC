@@ -63,6 +63,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       case 'decision.recorded': {
         const d = project.definition.decisions.find((d) => d.id === event.decisionId);
         detail = `${d?.decisionPrompt ?? event.decisionId}: ${d?.options.find((o) => o.id === event.chosen)?.label ?? event.chosen ?? ''}`;
+        if (event.rationale) detail += `\nRationale: ${event.rationale}`;
         break;
       }
       case 'artifact.recorded':
@@ -321,8 +322,8 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     await db.query<{ decisions: number; changes: number }>(
       `WITH choices AS (
        SELECT event->>'milestoneId' AS milestone,event->>'decisionId' AS decision,
-         event->>'chosen' AS chosen,
-         row_number() OVER w AS n,lag(event->>'chosen') OVER w AS previous
+         jsonb_build_array(event->>'chosen',event->>'rationale') AS chosen,
+         row_number() OVER w AS n,lag(jsonb_build_array(event->>'chosen',event->>'rationale')) OVER w AS previous
        FROM pbl_v3_events WHERE study_id=$1 AND sequence<=$2 AND event->>'type'='decision.recorded'
        WINDOW w AS (PARTITION BY event->>'milestoneId',event->>'decisionId' ORDER BY sequence)
      ) SELECT count(DISTINCT (milestone,decision))::int AS decisions,

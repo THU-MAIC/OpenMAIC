@@ -6,6 +6,8 @@ export interface DecisionQuestion {
   desc?: string;
   decisionPrompt?: string;
   options?: readonly unknown[];
+  responseType?: 'choice' | 'text';
+  requiresRationale?: boolean;
 }
 
 export interface ArtifactMilestone {
@@ -33,8 +35,10 @@ export interface ArtifactProjection {
     desc?: string;
     prompt?: string;
     options?: readonly unknown[];
+    responseType?: 'choice' | 'text';
+    requiresRationale?: boolean;
   }[];
-  decisionsChosen?: readonly Pick<DecisionRecord, 'id' | 'chosen'>[];
+  decisionsChosen?: readonly Pick<DecisionRecord, 'id' | 'chosen' | 'rationale'>[];
   plan?: string;
   code?: string;
 }
@@ -58,13 +62,20 @@ export function projectArtifacts({
           ...(definition.desc === undefined ? {} : { desc: definition.desc }),
           ...(definition.decisionPrompt === undefined ? {} : { prompt: definition.decisionPrompt }),
           ...(definition.options === undefined ? {} : { options: definition.options }),
+          ...(definition.responseType === undefined
+            ? {}
+            : { responseType: definition.responseType }),
+          ...(definition.requiresRationale === undefined
+            ? {}
+            : { requiresRationale: definition.requiresRationale }),
         };
       });
     }
     if (artifact === 'decisions.chosen') {
-      projection.decisionsChosen = (state.decisions ?? []).map(({ id, chosen }) => ({
+      projection.decisionsChosen = (state.decisions ?? []).map(({ id, chosen, rationale }) => ({
         id,
         chosen,
+        ...(rationale === undefined ? {} : { rationale }),
       }));
     }
     if (artifact === 'plan') projection.plan = state.plan ?? '';

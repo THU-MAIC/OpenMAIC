@@ -74,6 +74,28 @@ afterEach(async () => {
 });
 
 describe('study-scoped local drafts', () => {
+  it('restores unsent decision text and rationale only within the same study', async () => {
+    const id = `decision-${sequence++}`;
+    await mount(createElement(Ui, { id }));
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'stage:rule': { chosen: 'My rule\nwith two branches', rationale: 'My reason' },
+      }),
+    );
+    await leave();
+    await mount(createElement(Ui, { id: `${id}-other` }));
+    expect(ui.decisionDrafts).toEqual({});
+    await leave();
+    await mount(createElement(Ui, { id }));
+    expect(ui.decisionDrafts['stage:rule']).toEqual({
+      chosen: 'My rule\nwith two branches',
+      rationale: 'My reason',
+    });
+    await act(async () => ui.setText('Keep this independent chat draft.'));
+    await act(async () => ui.setDecisionDrafts({}));
+    expect(ui.text).toBe('Keep this independent chat draft.');
+  });
+
   it('retains dirty file tabs on scene return, isolates another study and refuses to save into a replaced environment', async () => {
     const id = `editor-${sequence++}`;
     await mount(createElement(Editor, { value: view(id) }));

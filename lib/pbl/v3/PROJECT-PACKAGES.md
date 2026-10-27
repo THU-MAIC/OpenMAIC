@@ -93,6 +93,25 @@ export. Their virtual requirements/pedagogy paths become `docs`/`skills`. A
 receiving installation needs no static registration. Re-export preserves stored
 resource bytes instead of reconstructing them from a later built-in definition.
 
+## Decision response forms
+
+Decision definitions may set `responseType: "text"` and `options: []` for an
+open-ended response. Omitting `responseType` keeps existing option buttons.
+`requiresRationale: true` adds a required explanation field to either format;
+choice forms then use an explicit Submit decision button. The server validates
+nonempty responses, required rationales and option membership. Saving a response
+records a learner proposal; it does not certify its engineering correctness.
+Teaching materials remain responsible for reviewing reasoning and explaining gaps.
+
+Responses and rationales remain together in study state, versioned decision events,
+role artifact projections, production summaries and report evidence. Unsubmitted
+form drafts use the existing study-scoped browser draft store and never replay a
+command automatically. Existing course packages and saved decisions remain valid;
+no database migration or new model/provider is required. Archives using either
+new response format declare `pbl-v3-decision-responses@1` alongside
+`pbl-v3-projects@1`, so older readers reject them before importing an unusable
+form. Export adds this requirement automatically.
+
 ## Runtime profiles and private resources
 
 Version 1 registers `python3` and `java`. The platform generates builds from
