@@ -207,12 +207,16 @@ it.skipIf(!enabled)(
   180_000,
 );
 
-it.skipIf(!enabled)(
-  'recovers a confirmed missing pending cloud allocation in one preparation request',
-  async () => {
+it.skipIf(!enabled).each([true, false])(
+  'recovers a missing pending cloud allocation in one request (workspace ready: %s)',
+  async (ready) => {
     const id = await fixture(),
       allocation = await pending(id);
     expect(await provider.inspect(allocation.resource_id!, id)).not.toBeNull();
+    await store.pool.query(
+      'UPDATE sandbox_environments SET workspace_ready=$2 WHERE id=$1 AND owner_id=$3',
+      [id, ready, principal.ownerId],
+    );
     // Only this author's fixture is removed, modelling the same confirmed absence as TTL expiry.
     await Sandbox.kill(allocation.resource_id!, options);
     expect(await provider.inspect(allocation.resource_id!, id)).toBeNull();
@@ -223,6 +227,7 @@ it.skipIf(!enabled)(
       expect(view.environmentId).not.toBe(id);
       (evidence.checks as unknown[]).push({
         kind: 'confirmed-missing-pending-allocation',
+        workspaceReadyBeforeExpiry: ready,
         studyId: id,
         recoveredEnvironmentId: view.environmentId,
         onePreparationRequest: true,

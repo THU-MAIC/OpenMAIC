@@ -269,7 +269,9 @@ export class SandboxService {
       if (row.state === 'destroyed') return publicEnvironment(row);
       const existing = await this.binding(row.id);
       if (existing.state === 'running' && !existing.workspace_ready)
-        return this.restoreWorkspace(row.id);
+        // A retry may arrive after provider TTL expiry. Confirm the resource
+        // before restoring; uncertainty must retain this allocation identity.
+        return this.reconcileResource(row.id, true);
       return publicEnvironment(existing);
     }
     let resource;
@@ -940,6 +942,7 @@ export class SandboxService {
       const row = await this.binding(id);
       if (row.state !== 'running' || !row.resource_id)
         throw sandboxConflict('Reconcile the sandbox before restoring.');
+      const resourceId = row.resource_id;
       const saved = await this.store.checkpoint(this.ownerId, row.workspace_id);
       const hash = saved?.archive_hash ?? null;
       if (row.restore_hash && row.restore_hash !== hash)
@@ -948,20 +951,26 @@ export class SandboxService {
       // A discovered or interrupted allocation may have almost no lease left.
       // Protect initialization and checkpoint import before the first file I/O;
       // keep the same allocation identity and retain the environment lock.
-      await this.renewUnlocked(
-        { ...row, resource_id: row.resource_id },
-        Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
-      );
+      const renewRestore = () =>
+        this.renewUnlocked(
+          { ...row, resource_id: resourceId },
+          Math.max(this.config.lifetimeMs, CHECKPOINT_MIN_LIFETIME_MS),
+        );
+      await renewRestore();
       // Initialization and restore are retryable; cloud allocation is not repeated.
       await this.store.restoreState(row, hash, false);
       await this.provider.initializeWorkspace(row.resource_id, row.id);
       if (saved) {
+        // Each stage has its own bounded I/O. Do not charge initialization or
+        // import time against the lease protecting the following stage.
+        await renewRestore();
         await this.provider.importWorkspace(
           row.resource_id,
           row.id,
           this.store.readCheckpoint(this.ownerId, saved),
           saved.archive_hash,
         );
+        await renewRestore();
         const digest = createHash('sha256');
         for await (const chunk of this.provider.exportWorkspace(row.resource_id, row.id))
           digest.update(chunk);

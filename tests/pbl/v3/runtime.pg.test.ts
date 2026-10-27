@@ -4656,30 +4656,37 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
-  it('replaces a confirmed expired pending allocation in the same preparation request', async () => {
-    const study = await unpreparedStudy();
-    onTestFinished(() => releasePreparationFixtures([study.id]));
-    const row = await store.get(study.id, principal.ownerId);
-    row.environment_recovery = { requestId: row.id };
-    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
-    const service = await SandboxService.forOwner(principal);
-    await withLearningWorkspaceAccess(
-      {
-        ownerId: principal.ownerId,
-        workspaceId: learningWorkspaceId(row.id),
-        environmentIds: () => [row.id],
-        operations: ['create', 'restore'],
-      },
-      () => service.create(row.id, learningWorkspaceId(row.id)),
-    );
-    mocked.missing.add(row.id);
-    const creates = mocked.creates.length;
-    await expect(study.send('prepare')).resolves.toBeDefined();
-    const recovered = await store.get(row.id, principal.ownerId);
-    expect(recovered.environment_id).not.toBe(row.id);
-    expect(mocked.creates.slice(creates)).toEqual([recovered.environment_id]);
-    expect((await learningView(principal, row.id)).environment?.ready).toBe(true);
-  });
+  it.each([true, false])(
+    'replaces a confirmed expired pending allocation in one request (workspace ready: %s)',
+    async (ready) => {
+      const study = await unpreparedStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      row.environment_recovery = { requestId: row.id };
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const service = await SandboxService.forOwner(principal);
+      await withLearningWorkspaceAccess(
+        {
+          ownerId: principal.ownerId,
+          workspaceId: learningWorkspaceId(row.id),
+          environmentIds: () => [row.id],
+          operations: ['create', 'restore'],
+        },
+        () => service.create(row.id, learningWorkspaceId(row.id)),
+      );
+      await pool.query('UPDATE sandbox_environments SET workspace_ready=$2 WHERE id=$1', [
+        row.id,
+        ready,
+      ]);
+      mocked.missing.add(row.id);
+      const creates = mocked.creates.length;
+      await expect(study.send('prepare')).resolves.toBeDefined();
+      const recovered = await store.get(row.id, principal.ownerId);
+      expect(recovered.environment_id).not.toBe(row.id);
+      expect(mocked.creates.slice(creates)).toEqual([recovered.environment_id]);
+      expect((await learningView(principal, row.id)).environment?.ready).toBe(true);
+    },
+  );
 
   it('bounds replacement attempts when newly allocated preparation environments keep expiring', async () => {
     const study = await unpreparedStudy();
