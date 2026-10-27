@@ -136,3 +136,27 @@ Remaining lifecycle validation and integration:
 
 This does not add course migration compatibility, resume an in-flight provider
 request after termination, or change private-test evidence rules.
+
+## Browser subscription recovery
+
+The browser subscription is independent of Agent execution and learner activity.
+It waits up to 90 seconds for a learning snapshot, an unchanged-observation
+confirmation, or incoming snapshot data. A transport ping alone does not extend
+this window. Successful passive projection reads send a small `observed` frame
+at most every 25 seconds when the full snapshot is unchanged; a hung projection
+cannot confirm its own health just because the socket still emits pings.
+
+A subscription timeout aborts only its HTTP request and reconnects with backoff
+from one to 30 seconds. After three consecutive failed subscriptions the UI
+shows interrupted live updates while still retrying; network restoration,
+returning to the visible page and manual refresh can reconnect immediately.
+Authentication/ownership refusal (401/403/404) stops automatic retries. Each new
+subscription starts with a replacement snapshot, including any execution result
+committed while the browser was disconnected. Large snapshots may transfer for
+longer than 90 seconds while new data continues to arrive.
+
+Subscription failures never write an Agent status, cancel an Agent, count as
+execution progress or learner activity, or authorize environment release. The
+lifecycle owner still consumes durable Agent state and recorded learner activity;
+a disconnected browser is not evidence of failed execution. Real proxy buffering
+and network interruption still need deployment acceptance.

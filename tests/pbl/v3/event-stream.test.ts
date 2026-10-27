@@ -20,6 +20,7 @@ vi.mock('@/lib/server/pbl-v3/store', () => ({
 vi.mock('@/lib/server/pbl-v3/runtime', () => ({ learningView: mocks.view }));
 vi.mock('@/lib/server/pbl-v3/workbench', () => ({ workbenchView: mocks.work }));
 import { learningEventResponse } from '@/lib/server/pbl-v3/event-stream';
+import { readLearningStream, LEARNING_STREAM_IDLE_MS } from '@/lib/pbl/v3/event-stream';
 import { openRunStreamsOf } from '@/lib/server/generation/run/sse';
 import { SandboxError } from '@/lib/sandbox/errors';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
@@ -177,5 +178,103 @@ describe('V3 learning SSE projection', () => {
     expect(text).toContain('event: retry');
     expect(text).not.toContain('secret');
     expect((await reader.read()).done).toBe(true);
+  });
+  it('confirms successful unchanged observations without resending the full transcript', async () => {
+    const { reader } = await attach();
+    expect(await frame(reader)).toContain('event: learning');
+    await vi.advanceTimersByTimeAsync(25_000);
+    let text = await frame(reader);
+    if (!text.includes('event: observed')) text += await frame(reader);
+    expect(text).toContain('event: observed\ndata: {"id":"study"}');
+    expect(text).not.toContain('event: learning');
+    expect(mocks.view).toHaveBeenCalledTimes(2);
+    expect(mocks.view).toHaveBeenLastCalledWith(
+      principal,
+      'study',
+      expect.objectContaining({ passive: true }),
+    );
+  });
+  it('does not confirm a hung observation merely because the transport still emits pings', async () => {
+    const { reader } = await attach();
+    await frame(reader);
+    let finish!: (value: typeof view) => void;
+    mocks.view.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mocks.subscriptions.get('role-one')!();
+    await settle();
+    await vi.advanceTimersByTimeAsync(100_000);
+    for (let i = 0; i < 4; i++) expect(await frame(reader)).toBe(': ping\n\n');
+    expect(mocks.view).toHaveBeenCalledTimes(2);
+    await reader.cancel();
+    streams.pop();
+    const calls = mocks.work.mock.calls.length;
+    finish(view);
+    await settle();
+    expect(mocks.work).toHaveBeenCalledTimes(calls);
+  });
+  it('replaces stale busy state on a fresh connection even when the prior stream was lost', async () => {
+    mocks.view.mockResolvedValue({ ...view, busy: true, roleRun: { status: 'running' } });
+    const first = await attach();
+    expect(await frame(first.reader)).toContain('"status":"running"');
+    await first.reader.cancel();
+    streams.pop();
+    mocks.view.mockResolvedValue({
+      ...view,
+      busy: false,
+      roleRun: { status: 'failed', canRetry: true },
+    });
+    const second = await attach();
+    const text = await frame(second.reader);
+    expect(text).toContain('"status":"failed"');
+    expect(text).toContain('"canRetry":true');
+    expect(mocks.view).toHaveBeenLastCalledWith(principal, 'study', {
+      passive: true,
+      checkHealth: true,
+    });
+  });
+  it('recovers a pinging but hung projection through the real client and reads the durable result on reconnect', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url, options) => learningEventResponse(principal, 'study', options.signal)),
+    );
+    let finish!: (value: typeof view) => void;
+    const receive = vi.fn();
+    const first = readLearningStream('study', new AbortController().signal, receive).catch(
+      (error) => error,
+    );
+    await settle();
+    expect(receive).toHaveBeenCalledOnce();
+    mocks.view.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    mocks.subscriptions.get('role-one')!();
+    await settle();
+    try {
+      await vi.advanceTimersByTimeAsync(LEARNING_STREAM_IDLE_MS);
+      expect(await first).toMatchObject({ status: 408 });
+      expect(openRunStreamsOf(principal.ownerId)).toBe(0);
+      expect(mocks.subscriptions.size).toBe(0);
+      const terminal = { ...view, roleRun: { status: 'succeeded' } };
+      mocks.view.mockResolvedValue(terminal);
+      const controller = new AbortController();
+      const next = readLearningStream('study', controller.signal, (snapshot) => {
+        receive(snapshot);
+        controller.abort();
+      }).catch(() => {});
+      await settle();
+      await next;
+      expect(receive).toHaveBeenLastCalledWith({ view: terminal, workbench: work });
+    } finally {
+      finish?.(view);
+      vi.unstubAllGlobals();
+      await settle();
+    }
   });
 });

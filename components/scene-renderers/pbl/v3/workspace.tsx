@@ -295,13 +295,15 @@ function PBLV3WorkspaceContent({
         <PendingAction action={pendingAction ?? (refreshing ? 'refresh' : null)} />
         {view && stream.status !== 'connected' && (
           <span role="status" className="flex items-center gap-1 text-xs text-muted-foreground">
-            {stream.status === 'connecting' && (
+            {stream.status !== 'unavailable' && (
               <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
             )}
             {t(
               stream.status === 'unavailable'
                 ? 'pblV3.updatesUnavailable'
-                : 'pblV3.connectingUpdates',
+                : stream.status === 'retrying'
+                  ? 'pblV3.reconnectingUpdates'
+                  : 'pblV3.connectingUpdates',
             )}
           </span>
         )}
