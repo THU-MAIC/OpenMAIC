@@ -9,7 +9,11 @@ import { putSceneBringingCurrent } from '../document-writes';
 import { createBlankScene } from './apply';
 import type { CourseToolDeps } from '../course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
-import { describeNarrationVoice, synthesizeSceneNarration } from '../scene-tts';
+import {
+  describeNarrationVoice,
+  formatTtsFailureTally,
+  synthesizeSceneNarration,
+} from '../scene-tts';
 import { runStageMutation } from '../mutation-fence';
 
 const Target = {
@@ -146,7 +150,7 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
       ].filter(Boolean);
       return result(
         [
-          `Narration audio: ${summary.generated} generated, ${summary.skipped} skipped, ${summary.failed.length} failed.`,
+          `Narration audio: ${summary.generated} generated, ${summary.skipped} skipped, ${formatTtsFailureTally(summary.failed)}.`,
           ...notes,
         ].join(' '),
         {

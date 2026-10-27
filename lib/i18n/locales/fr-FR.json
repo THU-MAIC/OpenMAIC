@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Retour",
     "you": "Vous",
     "confirm": "Confirmer",
     "cancel": "Annuler",
@@ -10,6 +11,22 @@
     "close": "Fermer"
   },
   "home": {
+    "resumeGeneration": "Poursuivre la génération",
+    "emptyLibraryTitle": "Vos cours commencent ici",
+    "emptyLibraryBody": "Créez un cours sur l’accueil et revenez ici pour le poursuivre.",
+    "mobileTitle": "Que voulez-vous apprendre ?",
+    "mobileSubtitle": "Indiquez un sujet et l’IA créera un cours interactif.",
+    "mobilePlaceholder": "Saisissez un sujet ou ajoutez des documents",
+    "courseOptions": "Options du cours",
+    "courseMaterials": "Supports de cours",
+    "courseMaterialsCount": "Supports de cours · {{n}}",
+    "backToCourseOptions": "Retour aux options du cours",
+    "materialsDone": "Terminé",
+    "allSettings": "Tous les paramètres",
+    "examplesLabel": "Exemples de sujets",
+    "examplePython": "Apprendre Python de zéro",
+    "exampleFourier": "Comprendre la transformée de Fourier par des exemples",
+    "desktopOnly": "Utilisez un ordinateur pour l’éditeur et le mode Pro.",
     "slogan": "L’apprentissage génératif en classe interactive multi-agents",
     "greetingWithName": "Bonjour, {{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "Ce document ne peut pas être déplacé",
         "gone": "Il n’existe plus",
         "save": "L’opération a échoué. Réessayez",
-        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord"
+        "notEmpty": "Ce dossier contient encore des documents. Déplacez-les d’abord",
+        "materialNotFound": "Document introuvable ou inaccessible.",
+        "folderNotFound": "Dossier introuvable ou inaccessible.",
+        "textUnavailable": "Le texte du document est indisponible.",
+        "derivative": "Un document dérivé porte le nom de sa source ; renommez la source.",
+        "moveTooMany": "Déplacez au maximum {{limit}} documents à la fois.",
+        "moveNotMovable": "Aucun document déplacé. Certains documents sélectionnés sont indisponibles ou ne peuvent pas être déplacés.",
+        "toolFolderNameTooLong": "Le nom du dossier est trop long (40 caractères demi-chasse ou 20 caractères pleine chasse maximum).",
+        "toolFolderLimit": "La base de connaissances a atteint la limite de {{limit}} dossiers.",
+        "mediaUnsupported": "Seuls les images, vidéos ou fichiers audio peuvent servir de médias du cours.",
+        "mediaStorageFull": "L’espace disponible ne suffit pas pour ce média. Libérez de l’espace, puis réessayez.",
+        "mediaNotFound": "Le document multimédia est introuvable ou ne contient aucun fichier multimédia disponible."
       },
       "actions": {
         "parse": "Analyser",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "Cette action est irréversible.",
         "folderTitle": "Supprimer le dossier « {{name}} » ?",
         "folderContents": "Fichiers déplacés au niveau supérieur : {{count}}. Aucun fichier ne sera supprimé."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à un administrateur d’en configurer un."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "Impossible de joindre {{name}} ({{reason}}). Ouvrez la base de connaissances pour voir pourquoi et relancer l’analyse.",
       "materialAttached": "Déjà dans cette conversation",
       "materialStaged": "Déjà dans ce message",
-      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner"
+      "materialsCapped": "Les {{count}} premiers documents — continuez à taper pour affiner",
+      "materialUnavailableGuidance": "Impossible de joindre {{name}}. {{guidance}} Vous pouvez gérer ce document sur la page de la base de connaissances."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

@@ -1,5 +1,5 @@
 /** A FIFO counting semaphore: at most `size` `run()` callbacks execute at once. */
-function createSemaphore(size: number) {
+export function createSemaphore(size: number) {
   const max = Math.max(1, Math.floor(size));
   let active = 0;
   const queue: Array<() => void> = [];

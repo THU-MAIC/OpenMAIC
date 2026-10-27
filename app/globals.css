@@ -576,3 +576,11 @@ body[data-maic-editor='true'] .editable-element-text li,
     -webkit-text-fill-color: var(--muted-foreground);
   }
 }
+
+/* Opt in at fixed edges; do not pad the body or double-count in nested panels. */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+}

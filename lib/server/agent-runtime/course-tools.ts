@@ -37,7 +37,11 @@ import { buildDslCourseTools, DSL_COURSE_TOOL_NAMES } from './dsl-tools';
 import { CURRICULUM_ALLOWLIST } from './curriculum-tools';
 import { buildGenerationTools, GENERATION_TOOL_NAMES } from './generation-tools';
 import { buildCourseAudioAndDeckTools, COURSE_AUDIO_DECK_TOOL_NAMES } from './course-edit/tools';
-import { buildMaterialMediaTool, MATERIAL_MEDIA_TOOL_NAME } from './material-media';
+import {
+  buildMaterialMediaTool,
+  MATERIAL_MEDIA_TOOL_NAME,
+  type MaterialMediaDeps,
+} from './material-media';
 import { RENDER_SCENE_PREVIEW_TOOL_NAME } from './scene-preview';
 import { buildImportPptxTool, IMPORT_PPTX_TOOL_NAME, type ImportPptxToolDeps } from './import-pptx';
 import {
@@ -208,6 +212,7 @@ export function withOwnerStageAuthorization(
  */
 export function buildDslCourseToolset(
   deps: CourseToolDeps &
+    Pick<MaterialMediaDeps, 'locale'> &
     Partial<ImportPptxToolDeps> &
     Partial<GenerateImageToolDeps> &
     Partial<GenerateVideoToolDeps>,
@@ -219,7 +224,13 @@ export function buildDslCourseToolset(
     ...(hasConfiguredVideoGeneration(deps) ? [buildGenerateVideoTool(deps)] : []),
     ...buildCourseAudioAndDeckTools(deps),
     ...(deps.sessionId
-      ? [buildMaterialMediaTool({ sessionId: deps.sessionId, ownerId: deps.ownerId })]
+      ? [
+          buildMaterialMediaTool({
+            sessionId: deps.sessionId,
+            ownerId: deps.ownerId,
+            locale: deps.locale,
+          }),
+        ]
       : []),
     ...buildDslCourseTools(deps),
   ] as unknown as AgentTool<never, never>[];
@@ -298,9 +309,9 @@ interface CoursePromptBlocks {
   /** Compatibility guidance for installed legacy skills and resumed transcripts. */
   dslTools?: string;
   /**
-   * Session-materials listing. Present only when the session actually has
-   * materials (reference semantics: the block must not appear for a session
-   * with nothing to read).
+   * Static materials and knowledge-base guidance. The runner always
+   * passes it, including when nothing is attached, so the model can
+   * still use the knowledge base. The text does not list the set.
    */
   materials?: string;
   /** Roster guidance (list_voices / set_roster; always registered). */

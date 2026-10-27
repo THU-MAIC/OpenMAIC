@@ -15,7 +15,10 @@ vi.mock('@/lib/server/model-config/media', async (original) => ({
   serverMediaConnection: (...args: unknown[]) => mocks.providers(...args),
 }));
 
-vi.mock('@/lib/audio/tts-providers', () => ({ generateTTS: mocks.generate }));
+vi.mock('@/lib/audio/tts-providers', async (original) => ({
+  ...(await original<typeof import('@/lib/audio/tts-providers')>()),
+  generateTTS: (...args: unknown[]) => mocks.generate(...args),
+}));
 
 vi.mock('@/lib/server/classroom-media-bytes', () => ({
   persistClassroomMediaBytes: mocks.persist,

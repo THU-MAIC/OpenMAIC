@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Voltar",
     "you": "Você",
     "confirm": "Confirmar",
     "cancel": "Cancelar",
@@ -10,6 +11,22 @@
     "close": "Fechar"
   },
   "home": {
+    "resumeGeneration": "Continuar geração",
+    "emptyLibraryTitle": "Suas aulas começam aqui",
+    "emptyLibraryBody": "Crie um curso na página inicial e volte aqui para continuar.",
+    "mobileTitle": "O que quer aprender?",
+    "mobileSubtitle": "Conte o tema e a IA criará uma aula interativa.",
+    "mobilePlaceholder": "Digite um tema ou envie materiais",
+    "courseOptions": "Opções da aula",
+    "courseMaterials": "Materiais do curso",
+    "courseMaterialsCount": "Materiais do curso · {{n}}",
+    "backToCourseOptions": "Voltar às opções da aula",
+    "materialsDone": "Concluir",
+    "allSettings": "Todas as configurações",
+    "examplesLabel": "Experimente um tema",
+    "examplePython": "Aprender Python do zero",
+    "exampleFourier": "Transformada de Fourier com exemplos intuitivos",
+    "desktopOnly": "Use um computador para o editor e o modo Pro.",
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "Este material não pode ser movido",
         "gone": "Ele não existe mais",
         "save": "Não deu certo. Tente novamente",
-        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro"
+        "notEmpty": "Esta pasta ainda tem materiais. Mova-os primeiro",
+        "materialNotFound": "Material não encontrado ou inacessível.",
+        "folderNotFound": "Pasta não encontrada ou inacessível.",
+        "textUnavailable": "O texto do material está indisponível.",
+        "derivative": "Um material derivado usa o nome da fonte; renomeie a fonte.",
+        "moveTooMany": "Mova no máximo {{limit}} materiais por vez.",
+        "moveNotMovable": "Nenhum material foi movido. Alguns materiais selecionados estão indisponíveis ou não podem ser movidos.",
+        "toolFolderNameTooLong": "O nome da pasta é longo demais (até 40 caracteres de meia largura ou 20 de largura completa).",
+        "toolFolderLimit": "A base de conhecimento atingiu o máximo de {{limit}} pastas.",
+        "mediaUnsupported": "Somente imagens, vídeos ou áudios podem ser usados como mídia do curso.",
+        "mediaStorageFull": "Não há espaço suficiente para esta mídia. Libere espaço e tente novamente.",
+        "mediaNotFound": "O material de mídia não foi encontrado ou não contém arquivos de mídia disponíveis."
       },
       "actions": {
         "parse": "Analisar",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "Esta ação não pode ser desfeita.",
         "folderTitle": "Excluir a pasta “{{name}}”?",
         "folderContents": "Arquivos movidos para o nível superior: {{count}}. Nenhum arquivo será excluído."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Não há um serviço de análise configurado para este tipo de arquivo. Peça a um administrador para configurá-lo."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "Não é possível anexar {{name}} ({{reason}}). Abra a base de conhecimento para ver o motivo e analisar de novo.",
       "materialAttached": "Já está nesta conversa",
       "materialStaged": "Já está nesta mensagem",
-      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar"
+      "materialsCapped": "Mostrando os primeiros {{count}} materiais — continue digitando para filtrar",
+      "materialUnavailableGuidance": "Não é possível anexar {{name}}. {{guidance}} Você pode gerenciá-lo na página da base de conhecimento."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

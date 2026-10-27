@@ -30,6 +30,12 @@ const mocks = vi.hoisted(() => ({
   searchWeb: vi.fn(),
   formatSearchResultsAsContext: vi.fn(),
   listSessionMaterials: vi.fn(async (_sessionId: string): Promise<AgentSessionMaterial[]> => []),
+  /** When set, the resolver returns these rows instead of session records. */
+  resolvedMaterials: vi.fn(
+    async (): Promise<
+      import('@/lib/server/agent-runtime/material-resolver').ResolvedMaterial[] | null
+    > => null,
+  ),
   extractionWatcher: undefined as
     | import('@/lib/server/agent-runtime/extraction-watcher').ExtractionWatcher
     | undefined,
@@ -65,9 +71,9 @@ vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: mocks.getServerPersistenceProvider,
 }));
 
-// The runner lists the session's materials to build the materials prompt
-// block. The mock defaults to no materials; individual tests override it to
-// observe the prompt block. The real tool builders stay loaded.
+// The runner resolves the session's materials when it builds the prompt.
+// That set must not change the prompt bytes. The mock defaults to none;
+// the stability test overrides it. The real tool builders stay loaded.
 vi.mock('@/lib/server/agent-runtime/session-materials', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/server/agent-runtime/session-materials')>();
@@ -80,11 +86,14 @@ vi.mock('@/lib/server/agent-runtime/material-resolver', async (importActual) => 
     await importActual<typeof import('@/lib/server/agent-runtime/material-resolver')>();
   return {
     ...actual,
-    listSessionScopeMaterials: async (sessionId: string) =>
-      (await mocks.listSessionMaterials(sessionId)).map((record) => ({
+    listSessionScopeMaterials: async (sessionId: string) => {
+      const resolved = await mocks.resolvedMaterials();
+      if (resolved) return resolved;
+      return (await mocks.listSessionMaterials(sessionId)).map((record) => ({
         origin: 'session' as const,
         record,
-      })),
+      }));
+    },
   };
 });
 
@@ -244,6 +253,7 @@ beforeEach(() => {
   mocks.readSettled.mockResolvedValue([]);
   setDeploymentConfigForTests({ layer: null, legacy: false, notices: [] });
   mocks.listSessionMaterials.mockResolvedValue([]);
+  mocks.resolvedMaterials.mockResolvedValue(null);
   mocks.resolveAgentDriverModel.mockResolvedValue({
     connection: { model: undefined, thinkingConfig: undefined },
     piModel: { api: 'openai-completions', provider: 'openai', id: 'driver-model' },
@@ -552,8 +562,12 @@ describe('web_search runner registration', () => {
     );
   });
 
-  it('lists the session materials in the system prompt so the model knows what it can read', async () => {
+  it('keeps the system prompt byte-identical when materials change between runs', async () => {
     mocks.resolveWebSearchCapability.mockReturnValue(null);
+
+    mocks.listSessionMaterials.mockResolvedValue([]);
+    const none = await runToBuildAgent();
+
     mocks.listSessionMaterials.mockResolvedValue([
       {
         id: 'mat_web1',
@@ -569,26 +583,74 @@ describe('web_search runner registration', () => {
         createdAt: new Date(0).toISOString(),
       },
     ]);
+    const web = await runToBuildAgent();
 
-    const options = await runToBuildAgent();
+    mocks.listSessionMaterials.mockResolvedValue([
+      {
+        id: 'mat_pdf',
+        sessionId: SESSION_ID,
+        kind: 'source',
+        title: 'lecture.pdf',
+        sourceUrl: null,
+        textAssetId: null,
+        rawAssetId: null,
+        textChars: 0,
+        derivedFrom: null,
+        extraction: { status: 'idle', attempts: 0 },
+        createdAt: new Date(0).toISOString(),
+      },
+    ]);
+    const attached = await runToBuildAgent();
 
+    const owner = (
+      status: 'idle' | 'done',
+    ): import('@/lib/server/agent-runtime/material-resolver').ResolvedMaterial => ({
+      origin: 'owner',
+      entry: {
+        id: 'src_lesson',
+        ownerId: 'user:alice',
+        kind: 'source',
+        derivedFrom: null,
+        mime: 'application/pdf',
+        bytes: 3,
+        originalName: 'lesson.pdf',
+        ossKey: 'objects/secret-key',
+        assetId: 'ast_secret_pool',
+        sha256: 'digest',
+        status: 'ready',
+        extraction: { status },
+        createdAt: 0,
+        deletedAt: null,
+        folderId: null,
+        displayName: null,
+        extractionError: null,
+        extractionResult: null,
+        lineage: null,
+      },
+    });
+    mocks.resolvedMaterials.mockResolvedValue([owner('idle')]);
+    const extractionIdle = await runToBuildAgent();
+    mocks.resolvedMaterials.mockResolvedValue([owner('done')]);
+    const extractionDone = await runToBuildAgent();
+
+    expect(web.systemPrompt).toBe(none.systemPrompt);
+    expect(attached.systemPrompt).toBe(none.systemPrompt);
+    expect(extractionIdle.systemPrompt).toBe(none.systemPrompt);
+    expect(extractionDone.systemPrompt).toBe(extractionIdle.systemPrompt);
+    expect(none.systemPrompt).toContain('## Materials and the knowledge base');
+    expect(none.systemPrompt).toContain('list_materials');
+    expect(none.systemPrompt).toContain('read_material');
+    expect(none.systemPrompt).toContain('search_material');
+    expect(none.systemPrompt).toContain("scope: 'library'");
+    expect(none.systemPrompt).not.toContain('Nothing is attached');
+    expect(none.systemPrompt).not.toContain('Example article');
+    expect(none.systemPrompt).not.toContain('lecture.pdf');
+    expect(none.systemPrompt).not.toContain('lesson.pdf');
+    expect(none.systemPrompt).not.toContain('mat_web1');
+    expect(none.systemPrompt).not.toContain('src_lesson');
+    expect(none.systemPrompt).not.toContain('extraction idle');
+    expect(none.systemPrompt).not.toContain('extraction done');
     expect(mocks.listSessionMaterials).toHaveBeenCalledWith(SESSION_ID);
-    expect(options.systemPrompt).toContain('## Materials and the knowledge base');
-    expect(options.systemPrompt).toContain('Example article');
-    expect(options.systemPrompt).toContain('list_materials');
-    expect(options.systemPrompt).toContain('read_material');
-    expect(options.systemPrompt).toContain('search_material');
-  });
-
-  it('still teaches the knowledge base when the session has no materials', async () => {
-    mocks.resolveWebSearchCapability.mockReturnValue(null);
-    mocks.listSessionMaterials.mockResolvedValue([]);
-
-    const options = await runToBuildAgent();
-
-    expect(options.systemPrompt).toContain('## Materials and the knowledge base');
-    expect(options.systemPrompt).toContain('Nothing is attached to this conversation yet.');
-    expect(options.systemPrompt).toContain("scope: 'library'");
   });
 });
 

@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "뒤로",
     "you": "나",
     "confirm": "확인",
     "cancel": "취소",
@@ -10,6 +11,22 @@
     "close": "닫기"
   },
   "home": {
+    "resumeGeneration": "생성 계속",
+    "emptyLibraryTitle": "여기서 수업을 시작하세요",
+    "emptyLibraryBody": "홈에서 수업을 만들면 여기서 학습을 이어갈 수 있습니다.",
+    "mobileTitle": "무엇을 배우고 싶으세요?",
+    "mobileSubtitle": "주제를 알려주시면 AI가 대화형 수업을 만듭니다.",
+    "mobilePlaceholder": "학습 주제를 입력하거나 자료를 업로드하세요",
+    "courseOptions": "수업 옵션",
+    "courseMaterials": "수업 자료",
+    "courseMaterialsCount": "수업 자료 · {{n}}개",
+    "backToCourseOptions": "수업 옵션으로 돌아가기",
+    "materialsDone": "완료",
+    "allSettings": "모든 설정",
+    "examplesLabel": "예시 주제",
+    "examplePython": "Python 기초부터 배우기",
+    "exampleFourier": "직관적인 예제로 푸리에 변환 배우기",
+    "desktopOnly": "편집기와 Pro 모드는 컴퓨터에서 이용하세요.",
     "slogan": "멀티 에이전트 인터랙티브 교실에서 펼치는 생성형 학습",
     "greetingWithName": "안녕하세요, {{name}}!"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "이 자료는 이동할 수 없습니다",
         "gone": "더 이상 존재하지 않습니다",
         "save": "처리하지 못했습니다. 다시 시도하세요",
-        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요"
+        "notEmpty": "폴더에 아직 자료가 있습니다. 먼저 옮기세요",
+        "materialNotFound": "자료를 찾을 수 없거나 접근할 수 없습니다.",
+        "folderNotFound": "폴더를 찾을 수 없거나 접근할 수 없습니다.",
+        "textUnavailable": "자료의 텍스트를 사용할 수 없습니다.",
+        "derivative": "파생 자료는 원본 이름을 사용합니다. 원본 자료의 이름을 변경하세요.",
+        "moveTooMany": "한 번에 최대 {{limit}}개의 자료를 이동할 수 있습니다.",
+        "moveNotMovable": "자료가 이동되지 않았습니다. 일부 선택한 자료를 사용할 수 없거나 이동할 수 없습니다.",
+        "toolFolderNameTooLong": "폴더 이름이 너무 깁니다(반각 40자 또는 전각 20자까지).",
+        "toolFolderLimit": "지식 베이스의 폴더 수가 최대 {{limit}}개에 도달했습니다.",
+        "mediaUnsupported": "이미지, 동영상 또는 오디오 자료만 수업 미디어로 사용할 수 있습니다.",
+        "mediaStorageFull": "이 미디어를 저장할 공간이 부족합니다. 공간을 확보한 후 다시 시도하세요.",
+        "mediaNotFound": "미디어 자료를 찾을 수 없거나 사용 가능한 미디어 파일이 없습니다."
       },
       "actions": {
         "parse": "분석",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "이 작업은 되돌릴 수 없습니다.",
         "folderTitle": "“{{name}}” 폴더를 삭제할까요?",
         "folderContents": "파일 {{count}}개가 최상위로 이동합니다. 파일은 삭제되지 않습니다."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "이 파일 형식에 맞는 분석 서비스가 설정되지 않았습니다. 관리자에게 설정을 요청하세요."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "{{name}}을(를) 첨부할 수 없습니다({{reason}}). 지식 베이스에서 이유를 확인하고 다시 분석하세요.",
       "materialAttached": "이 대화에 이미 있습니다",
       "materialStaged": "이 메시지에 이미 있습니다",
-      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요"
+      "materialsCapped": "처음 {{count}}개 자료만 표시 중 — 계속 입력해 범위를 좁히세요",
+      "materialUnavailableGuidance": "{{name}}을(를) 첨부할 수 없습니다. {{guidance}} 지식 베이스 페이지에서 처리할 수 있습니다."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",

@@ -392,7 +392,12 @@ export function presentTool(
           chips.push({ label: t('workbench.tool.chip.unchanged'), tone: 'neutral' });
         } else {
           if (moved !== undefined) {
-            chips.push({ label: t('workbench.tool.chip.materials', { count: moved }) });
+            chips.push({
+              label: t(
+                moved === 1 ? 'workbench.tool.chip.material' : 'workbench.tool.chip.materials',
+                { count: moved },
+              ),
+            });
           }
           // The action, not a state; the result names no source folder.
           if (d.folderId === null) {

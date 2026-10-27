@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Zurück",
     "you": "Du",
     "confirm": "Bestätigen",
     "cancel": "Abbrechen",
@@ -10,6 +11,22 @@
     "close": "Schließen"
   },
   "home": {
+    "resumeGeneration": "Generierung fortsetzen",
+    "emptyLibraryTitle": "Hier beginnen deine Kurse",
+    "emptyLibraryBody": "Erstelle einen Kurs auf der Startseite und lerne hier weiter.",
+    "mobileTitle": "Was möchtest du lernen?",
+    "mobileSubtitle": "Nenne dein Thema und die KI erstellt einen interaktiven Kurs.",
+    "mobilePlaceholder": "Lernthema eingeben oder Materialien hochladen",
+    "courseOptions": "Kursoptionen",
+    "courseMaterials": "Kursmaterialien",
+    "courseMaterialsCount": "Kursmaterialien · {{n}}",
+    "backToCourseOptions": "Zurück zu den Kursoptionen",
+    "materialsDone": "Fertig",
+    "allSettings": "Alle Einstellungen",
+    "examplesLabel": "Beispielthemen",
+    "examplePython": "Python von Grund auf lernen",
+    "exampleFourier": "Fourier-Transformation mit anschaulichen Beispielen",
+    "desktopOnly": "Verwende für den Editor und Pro-Modus einen Computer.",
     "slogan": "Generatives Lernen im interaktiven Lernraum mit mehreren KI-Agenten",
     "greetingWithName": "Hallo, {{name}}"
   },
@@ -2290,7 +2307,18 @@
         "notMovable": "Dieses Material kann nicht verschoben werden",
         "gone": "Es existiert nicht mehr",
         "save": "Das hat nicht geklappt. Versuche es erneut",
-        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst"
+        "notEmpty": "In diesem Ordner liegen noch Materialien. Verschiebe sie zuerst",
+        "materialNotFound": "Material nicht gefunden oder nicht zugänglich.",
+        "folderNotFound": "Ordner nicht gefunden oder nicht zugänglich.",
+        "textUnavailable": "Der Text des Materials ist nicht verfügbar.",
+        "derivative": "Ein abgeleitetes Material übernimmt den Namen der Quelle. Benenne die Quelle um.",
+        "moveTooMany": "Verschiebe höchstens {{limit}} Materialien auf einmal.",
+        "moveNotMovable": "Nichts wurde verschoben. Einige ausgewählte Materialien sind nicht verfügbar oder können nicht verschoben werden.",
+        "toolFolderNameTooLong": "Der Ordnername ist zu lang (höchstens 40 Zeichen mit halber oder 20 mit voller Breite).",
+        "toolFolderLimit": "Die Wissensdatenbank hat das Maximum von {{limit}} Ordnern erreicht.",
+        "mediaUnsupported": "Nur Bilder, Videos oder Audiodateien können als Kursmedien verwendet werden.",
+        "mediaStorageFull": "Für dieses Medium ist nicht genug Speicherplatz vorhanden. Gib Speicherplatz frei und versuche es erneut.",
+        "mediaNotFound": "Das Medienmaterial wurde nicht gefunden oder hat keine verfügbaren Mediendaten."
       },
       "actions": {
         "parse": "Analysieren",
@@ -2319,6 +2347,9 @@
         "cannotUndo": "Das lässt sich nicht rückgängig machen.",
         "folderTitle": "Ordner „{{name}}“ löschen?",
         "folderContents": "Dateien, die auf die oberste Ebene verschoben werden: {{count}}. Es werden keine Dateien gelöscht."
+      },
+      "conversationFailure": {
+        "serviceUnavailable": "Für diesen Dateityp ist kein Parser eingerichtet. Bitte einen Administrator, einen einzurichten."
       }
     },
     "untitledCourse": "未命名课堂",
@@ -2350,7 +2381,8 @@
       "materialUnavailable": "{{name}} kann nicht angehängt werden ({{reason}}). Öffnen Sie die Wissensbasis, um den Grund zu sehen und die Datei erneut zu analysieren.",
       "materialAttached": "Schon in dieser Unterhaltung",
       "materialStaged": "Schon in dieser Nachricht",
-      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen"
+      "materialsCapped": "Die ersten {{count}} Materialien — weiter tippen, um einzugrenzen",
+      "materialUnavailableGuidance": "{{name}} kann nicht angehängt werden. {{guidance}} Du kannst das Material auf der Seite der Wissensdatenbank verwalten."
     },
     "heroTitle": "What will you create today?",
     "heroSubtitle": "Share an idea and turn it into a learning journey people can step into",
