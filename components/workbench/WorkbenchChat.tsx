@@ -118,6 +118,7 @@ export function WorkbenchChat({
   covered = false,
   materialSeed,
   onMaterialSeedConsumed,
+  newConversation = 0,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -141,6 +142,11 @@ export function WorkbenchChat({
   /** A knowledge base hand-over; this composer takes the ones for its own owner key. */
   materialSeed?: MaterialSeed | null;
   onMaterialSeedConsumed?: (key: number) => void;
+  /**
+   * Bumped each time a new chat is asked for. On a draft that is already
+   * empty the owner key stays the same, but it is still another conversation.
+   */
+  newConversation?: number;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -279,6 +285,12 @@ export function WorkbenchChat({
     setPendingSend(false);
   };
   /**
+   * Bumped when the composer leaves a conversation; a stop in flight belongs
+   * to the one it was pressed in.
+   */
+  const conversationTurn = useRef(0);
+  const stopping = useRef(false);
+  /**
    * The one question whose form the user waved off, by node key. Local and
    * deliberately shallow: it is a "not now", not an answer, so nothing about it
    * is persisted and nothing about the question changes. Keying it by node means
@@ -327,6 +339,20 @@ export function WorkbenchChat({
   // state left over. What the send carried leaves the staging list with it.
   // Layout, so a completion arriving right after the switch already finds
   // itself fenced off.
+  const leaveConversation = () => {
+    createdHere.current = null;
+    conversationTurn.current += 1;
+    materials.leaveUploads();
+    if (sendingMaterials.current) {
+      materials.removeSent(sendingMaterials.current);
+      releaseSend();
+    }
+    if (stopping.current) {
+      stopping.current = false;
+      setBusy(false);
+    }
+    setPendingStop(false);
+  };
   const shownOwner = useRef(composerOwnerId);
   useLayoutEffect(() => {
     if (composerOwnerId === shownOwner.current) return;
@@ -341,15 +367,20 @@ export function WorkbenchChat({
       return;
     }
     shownOwner.current = composerOwnerId;
-    createdHere.current = null;
-    materials.leaveUploads();
-    if (sendingMaterials.current) {
-      materials.removeSent(sendingMaterials.current);
-      releaseSend();
-    }
+    leaveConversation();
     // Once per owner change; the helpers are read as they are then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [composerOwnerId]);
+  // A new chat asked for on a draft keeps the draft's owner key, but the
+  // shell no longer opens what the earlier draft creates: the same release.
+  const shownNewConversation = useRef(newConversation);
+  useLayoutEffect(() => {
+    if (newConversation === shownNewConversation.current) return;
+    shownNewConversation.current = newConversation;
+    leaveConversation();
+    // Once per request; the helpers are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newConversation]);
   // While the material handed over is waiting for the gate, a send would
   // leave without it: the button and Enter (via `send`) both wait.
   const awaitingMaterial = useMaterialSeed({
@@ -701,13 +732,18 @@ export function WorkbenchChat({
 
   const stop = useCallback(async () => {
     if (!sessionId || busy || pendingStop) return;
+    const turnAtStop = conversationTurn.current;
+    // The composer moved to another conversation meanwhile: its busy and
+    // stopping state are not this cancel's (see `leaveConversation`).
+    const left = () => turnAtStop !== conversationTurn.current;
+    stopping.current = true;
     setBusy(true);
     try {
       await cancelWorkbenchSession(sessionId);
       // 202: the runner has been ASKED. The terminal state still arrives through
       // the event stream, so the button says stopping until it does — silence
       // for tens of seconds is exactly what made stopping feel ignored.
-      setPendingStop(true);
+      if (!left()) setPendingStop(true);
     } catch (err) {
       if (recoverTerminalCancelStatus(sessionId, err)) {
         // The terminal event may have been fenced before this recovery path.
@@ -718,7 +754,10 @@ export function WorkbenchChat({
       // Nothing was accepted, so the button springs back to a pressable STOP.
       toast.error(err instanceof Error ? err.message : t('workbench.chat.stopFailed'));
     } finally {
-      setBusy(false);
+      if (!left()) {
+        stopping.current = false;
+        setBusy(false);
+      }
     }
   }, [busy, pendingStop, sessionId, t]);
 

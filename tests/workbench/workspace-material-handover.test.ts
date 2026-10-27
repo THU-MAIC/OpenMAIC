@@ -774,6 +774,7 @@ describe('a request still on its way when the teacher switches conversation', ()
   let uploads: Map<string, ReturnType<typeof deferred<Response>>>;
   let messageBodies: { url: string; body: { text?: string; materialIds?: string[] } }[];
   let messageAnswers: ReturnType<typeof deferred<Response>>[];
+  let cancelAnswers: ReturnType<typeof deferred<Response>>[];
 
   beforeEach(() => {
     // jsdom has none; the picker keeps its highlighted row in view.
@@ -781,6 +782,7 @@ describe('a request still on its way when the teacher switches conversation', ()
     uploads = new Map();
     messageBodies = [];
     messageAnswers = [];
+    cancelAnswers = [];
     mocks.attach.mockImplementation((sessionId: string) => {
       mocks.store.sessionId = sessionId;
     });
@@ -792,6 +794,11 @@ describe('a request still on its way when the teacher switches conversation', ()
       if (url.startsWith('/api/materials')) {
         const answer = deferred<Response>();
         uploads.set((init?.body as File).name, answer);
+        return answer.promise;
+      }
+      if (url.endsWith('/cancel')) {
+        const answer = deferred<Response>();
+        cancelAnswers.push(answer);
         return answer.promise;
       }
       if (url.endsWith('/messages')) {
@@ -827,6 +834,7 @@ describe('a request still on its way when the teacher switches conversation', ()
   afterEach(() => {
     mocks.attach.mockReset();
     mocks.detach.mockReset();
+    mocks.store.status = 'succeeded';
   });
 
   /** Beside classroom stage-1 with no conversation yet: attach a document and send about it. */
@@ -978,5 +986,70 @@ describe('a request still on its way when the teacher switches conversation', ()
     expect(container!.textContent).toContain('b-notes.pdf');
     expect(textarea().value).toBe('Typing in B');
     await sendInB();
+  });
+  describe('a new chat asked for on the draft whose first message is on its way', () => {
+    const newChat = () => act(async () => (mocks.railProps!.onNewSession as () => void)());
+
+    it('a late creation stays in the rail and leaves the new chat alone', async () => {
+      const sendingA = deferred<Started>();
+      await sendAboutA(() => sendingA.promise);
+      await newChat();
+      expect(stopButton()).toBeNull();
+      expect(container!.textContent).not.toContain('a-notes.pdf');
+      await type(textarea(), 'A new chat');
+      mocks.routerPush.mockClear();
+      mocks.routerReplace.mockClear();
+
+      await act(async () => sendingA.resolve(started('session-A')));
+      await followPanes();
+      expect(attachedTo('session-A')).toBe(false);
+      expect(textarea().value).toBe('A new chat');
+      expect(stopButton()).toBeNull();
+    });
+
+    it('a late failure is reported but never refills the new chat', async () => {
+      const sendingA = deferred<Started>();
+      await sendAboutA(() => sendingA.promise);
+      await newChat();
+      await type(textarea(), 'A new chat');
+
+      await act(async () => sendingA.reject(new Error('send A failed')));
+      expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
+      expect(textarea().value).toBe('A new chat');
+      expect(container!.textContent).not.toContain('a-notes.pdf');
+    });
+  });
+
+  it('a failed upload stays with the conversation it was picked in', async () => {
+    await render();
+    await pick('a-broken.pdf');
+    await act(async () =>
+      uploads.get('a-broken.pdf')!.resolve(Response.json({ error: 'nope' }, { status: 400 })),
+    );
+    expect(container!.textContent).toContain('a-broken.pdf');
+    await openB();
+    expect(container!.textContent).not.toContain('a-broken.pdf');
+  });
+
+  it('a stop still on its way never holds the next conversation', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-S&course=stage-1');
+    mocks.store.sessionId = 'session-S';
+    mocks.store.status = 'running';
+    await render();
+    await act(async () =>
+      container!.querySelector<HTMLButtonElement>('[data-testid="workbench-stop"]')!.click(),
+    );
+    expect(fetchCalls.some((call) => call.url === '/api/agent/sessions/session-S/cancel')).toBe(
+      true,
+    );
+    expect(stopButton()!.hasAttribute('disabled')).toBe(true);
+
+    // B is running too: its STOP is its own, pressable at once.
+    await openB();
+    expect(stopButton()!.hasAttribute('disabled')).toBe(false);
+
+    await act(async () => cancelAnswers[0].resolve(new Response(null, { status: 202 })));
+    expect(stopButton()!.hasAttribute('disabled')).toBe(false);
+    expect(stopButton()!.getAttribute('data-stopping')).toBeNull();
   });
 });

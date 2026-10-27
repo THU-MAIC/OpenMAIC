@@ -306,7 +306,8 @@ export interface ComposerMaterials {
    * The composer now shows another conversation. What is staged stays (one
    * staging list serves every conversation the pane shows), but an upload
    * still in flight was picked for the conversation before: it finishes into
-   * the library without becoming a pill here, as after `startOver`.
+   * the library without becoming a pill here, as after `startOver`. Failed
+   * uploads were that conversation's too, and go with it.
    */
   leaveUploads: () => void;
   /** True while any upload is in flight — submits should wait for it. */
@@ -522,6 +523,7 @@ export function useComposerMaterials(
       // the old ledger.
       slotLedger.current = new MaterialSlotLedger(stagedObjects.current.size);
       setUploading([]);
+      setFailed([]);
     },
     busy: uploading.length > 0,
   };

@@ -1306,6 +1306,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           navigation={courseNavigation}
           materialSeed={materialSeed}
           onMaterialSeedConsumed={consumeMaterialSeed}
+          newConversation={composerReset}
           draftConversation={draftConversation}
           onRename={
             // Only a conversation that exists can be named. A draft one has no
