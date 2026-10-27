@@ -32,5 +32,7 @@ it('runs every tracked app PostgreSQL suite in the database-backed CI step', () 
     .filter(Boolean)
     .sort();
   expect(suites.length).toBeGreaterThan(0);
-  expect(command.slice(4).sort()).toEqual(suites);
+  // Vitest options (such as timeouts) may precede the suite paths.
+  const listed = command.slice(4).filter((arg) => !arg.startsWith('-'));
+  expect(listed.sort()).toEqual(suites);
 });
