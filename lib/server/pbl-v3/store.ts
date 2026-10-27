@@ -548,9 +548,17 @@ export class LearningStore {
   }
 
   async commit(db: PoolClient, row: Study, transition: EngineTransition) {
+    // Build collection commits before its caller returns. End its failure cycle atomically
+    // with evaluation, so a later maintenance pass cannot discard successfully collected work.
+    const collectionSettled = `evaluation->>'id' IS NOT NULL AND $5::jsonb='null'::jsonb
+       AND environment_id=$4 AND checkpoint_failure->>'environmentId'=$4
+       AND checkpoint_failure->>'stage'='collection' AND idle_turn_cleanup IS NULL
+       AND archive_discard->>'environmentId' IS DISTINCT FROM environment_id`;
     const result = await db.query<Study>(
       `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
-       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,lifecycle_error=$8,
+       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,
+       lifecycle_error=CASE WHEN ${collectionSettled} THEN NULL ELSE $8 END,
+       checkpoint_failure=CASE WHEN ${collectionSettled} THEN NULL ELSE checkpoint_failure END,
        idle_turn_cleanup=CASE WHEN environment_id IS DISTINCT FROM $4::text THEN NULL ELSE idle_turn_cleanup END
       WHERE id=$1 AND revision=$2
         AND archive_discard IS NOT DISTINCT FROM $9::jsonb

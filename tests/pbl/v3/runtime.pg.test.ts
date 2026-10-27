@@ -6731,6 +6731,79 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(collected.evaluation).toBeNull();
     expect(collected.last_used_at).toEqual(idle.last_used_at);
   });
+  it.each(['compile', 'evaluate'] as const)(
+    'archives uncheckpointed edits after browser %s collection recovers',
+    async (type) => {
+      const lab = installedProject({ id: 'greeting-python-lab', version: '1.1.0' });
+      const fresh = await freshStudy(lab);
+      releaseStudyEnvironments(fresh.id);
+      await fresh.send('checkpoint');
+      let row = await store.get(fresh.id, principal.ownerId);
+      const environmentId = row.environment_id!;
+      const source = Object.keys(lab.files).find((path) => path.endsWith('.py'))!;
+      const original = await readFile(join(mocked.root, environmentId, source), 'utf8');
+      const edited = original + '\n# learner edit after the last checkpoint\n';
+      const codeStage = lab.definition.milestones[0]!.stages.findIndex(
+        (stage) => stage.kind === 'produce' && stage.writes === 'code',
+      );
+      row.state.position.stageIndex = codeStage;
+      row.state.milestones[0]!.stageIndex = codeStage;
+      row = await store.transaction((db) =>
+        store.commit(db, row, { state: row.state, events: [] }),
+      );
+      await commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        type: 'save',
+        revision: row.revision,
+        path: source,
+        text: edited,
+        expectedHash: digest(original),
+      });
+      if (type === 'evaluate') {
+        row = await store.get(fresh.id, principal.ownerId);
+        const testStage = lab.definition.milestones[0]!.stages.findIndex(
+          (stage) => stage.kind === 'check' && stage.checker === 'tests',
+        );
+        row.state.position.stageIndex = testStage;
+        row.state.milestones[0]!.stageIndex = testStage;
+        await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      }
+      await fresh.send(type);
+      const pending = await store.get(fresh.id, principal.ownerId);
+      await ageStudy(fresh.id);
+      const lookup = vi
+        .spyOn(SandboxService.prototype, 'command')
+        .mockRejectedValueOnce(new Error('Temporary command lookup failure'));
+      try {
+        await maintainStudy(store, fresh.id, principal.ownerId);
+      } finally {
+        lookup.mockRestore();
+      }
+      const failed = await store.get(fresh.id, principal.ownerId);
+      expect(failed.checkpoint_failure?.stage).toBe('collection');
+      // Browser collection succeeds near the failure deadline, before the next maintenance pass.
+      await expireArchiveGrace(fresh.id);
+      await commandStudy(principal, fresh.id, {
+        id: randomUUID(),
+        type: 'collect',
+        revision: failed.revision,
+        evaluationId: pending.evaluation!.id,
+      });
+      const collected = await store.get(fresh.id, principal.ownerId);
+      expect(collected.evaluation).toBeNull();
+      expect(collected.last_used_at).toEqual(failed.last_used_at);
+      await maintainStudy(store, fresh.id, principal.ownerId);
+      const service = await SandboxService.forOwner(principal);
+      expect((await service.get(environmentId)).state).toBe('destroyed');
+      await fresh.send('prepare');
+      const restored = await store.get(fresh.id, principal.ownerId);
+      expect(await service.readText(restored.environment_id!, source)).toBe(edited);
+      expect(collected.checkpoint_failure).toBeNull();
+      expect(collected.lifecycle_error).toBeNull();
+      expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
+      expect(await service.checkpoint(environmentId)).toMatchObject({ revision: 2 });
+    },
+  );
   it('clears a settled writer notice even when the learner returns during maintenance', async () => {
     const fresh = await freshStudy();
     const row = await store.get(fresh.id, principal.ownerId);
