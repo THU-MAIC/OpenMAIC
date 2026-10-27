@@ -704,6 +704,7 @@ export async function teachingRunnerConfig(input: {
     pendingRun: observedStudy.evaluation?.id ?? null,
     workspace: {
       state: observedStudy.state,
+      revision: observedStudy.revision,
       evaluation: observedStudy.evaluation,
       environment: observedEnvironment,
       observedFiles: [...observedFiles].sort(),
@@ -735,7 +736,46 @@ export async function teachingRunnerConfig(input: {
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
-    liveContext: () => teachingLiveContext(currentPromptInput()),
+    liveContext: () =>
+      abortable(
+        (async () => {
+          // Read persisted facts, not the provider: learner autosaves and control-driven
+          // assessments can commit between model calls without using this Agent's tools.
+          assertActive(input.signal);
+          await agents.assertActiveLease(
+            input.sessionId,
+            input.workerId,
+            input.attempt,
+            store.pool,
+          );
+          assertActive(input.signal);
+          const current = await store.get(row.id, input.ownerId);
+          if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+            throw sandboxConflict('The teaching stage changed.');
+          if (current.environment_id !== row.environment_id)
+            throw sandboxConflict('The project environment changed. Start a new teaching turn.');
+          const environment = current.environment_id
+            ? await (await SandboxStore.open()).get(current.owner_id, current.environment_id)
+            : null;
+          assertActive(input.signal);
+          if (current.revision !== observedStudy.revision) completeFileList = false;
+          observedStudy = current;
+          observedEnvironment = environment
+            ? {
+                state: environment.state,
+                ready: environment.state === 'running' && environment.workspace_ready,
+              }
+            : null;
+          completionRecorded = hasStageCompletion(
+            current,
+            stage,
+            (await store.binding(input.sessionId)) ?? undefined,
+          );
+          assertActive(input.signal);
+          return teachingLiveContext(currentPromptInput());
+        })(),
+        input.signal,
+      ),
     historyWindow: { stageKey: bound.stage_key, studentTurns: bound.feedback_seq },
   };
 }
@@ -749,9 +789,9 @@ export function withTeachingTurnBoundary(
   streamFn: StreamFn,
   isComplete: () => boolean,
   historyWindow?: TeachingHistoryWindow,
-  liveContext?: (systemPrompt?: string) => string,
+  liveContext?: () => string | Promise<string>,
 ): StreamFn {
-  return (model, context, options) => {
+  return async (model, context, options) => {
     if (!isComplete()) {
       // Empty stop frames are local control receipts, not model conversation.
       // Keep them in durable history for recovery; omit only this shape from
@@ -764,7 +804,7 @@ export function withTeachingTurnBoundary(
             message.content.length === 0
           ),
       );
-      const live = liveContext?.(context.systemPrompt ?? '');
+      const live = await liveContext?.();
       const current = {
         ...context,
         messages,

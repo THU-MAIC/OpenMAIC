@@ -141,17 +141,18 @@ function buildTeachingPrompt({
     state: { decisions: collected.decisions, plan: planText, code: collected.code?.value },
     decisionCatalog: definition.decisions,
   });
+  const { current: _entryState, ...productGuide } = teachingProductContext({
+    definition,
+    stage,
+    role,
+    completionRecorded,
+    workspace,
+  });
   return (
     buildSystemPrompt({
       role: role,
       seed: {
-        productContext: teachingProductContext({
-          definition,
-          stage,
-          role,
-          completionRecorded,
-          workspace,
-        }),
+        productContext: productGuide,
         referenceMaterials: welcome === 'pending' ? [] : skill.documents,
         ...(!guided && packaged ? { teachingInstructions: skill.content } : {}),
         ...(welcome === 'pending' ? {} : seed),
@@ -301,11 +302,11 @@ function teachingReview(review: TeachingPromptInput['pendingReview']) {
     : null;
 }
 
-/** The runner refreshes this state at every model-call boundary after tool mutations. */
+/** Only changing state is repeated; the product guide is already in the system prompt. */
 export function teachingLiveContext(input: TeachingPromptInput): string {
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
   return JSON.stringify({
-    productContext: teachingProductContext(input),
+    productContext: { current: teachingProductContext(input).current },
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
     ...(guided
@@ -327,7 +328,9 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
 }
 
 export function teachingLiveSuffix(live: string): string {
-  return live ? `\nAuthoritative live teaching state (overrides the entry snapshot): ${live}` : '';
+  return live
+    ? `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${live}`
+    : '';
 }
 
 /** Include the complete system prompt and every guided section's course-authored payload.

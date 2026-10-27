@@ -386,6 +386,38 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
   await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.getByTestId('pbl-v3-workspace')).toBeVisible();
+  // Show the actual help tool label and expandable payload, without a new UI.
+  view.conversation!.push({
+    id: 'assistance-preview',
+    speaker: 'discussion',
+    parts: [
+      {
+        kind: 'tool',
+        id: 'help-preview',
+        action: 'tool',
+        name: 'respond_to_learner',
+        status: 'succeeded',
+        args: { response: 'Open PLAN.md from Project files. Allowed edits save automatically.' },
+        result: {
+          response: 'Open PLAN.md from Project files. Allowed edits save automatically.',
+          advancesProgress: false,
+        },
+      },
+    ],
+  });
+  view.activitySequence!++;
+  publishLearning();
+  const helpCard = page
+    .getByTestId('workbench-tool-card')
+    .filter({ hasText: 'Answer your question' });
+  await expect(helpCard).toBeVisible();
+  await helpCard.getByRole('button').click();
+  await expect(helpCard).toContainText('advancesProgress');
+  await helpCard.screenshot({ path: 'test-results/pbl-v3-assistance-card.png' });
+  view.conversation!.pop();
+  view.activitySequence!++;
+  publishLearning();
+  await expect(helpCard).toHaveCount(0);
   await page.getByRole('button', { name: 'Learning path', exact: true }).click();
   const milestoneMenu = page.getByRole('navigation', { name: 'Learning path' });
   await expect(milestoneMenu.getByText('Implement a greeting', { exact: true })).toBeVisible();
@@ -438,6 +470,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   chatGate = new Promise<void>((resolve) => (releaseChat = resolve));
   failChatAck = true;
   const chatStarted = new Promise<void>((resolve) => (chatEntered = resolve));
+  await page.screenshot({ path: 'test-results/pbl-v3-before-send.png' });
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await chatStarted;
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
@@ -458,6 +491,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     ),
   ).toBe(true);
   await expect(waitingTurn).toHaveCount(1);
+  await page.screenshot({ path: 'test-results/pbl-v3-after-send.png' });
   // SSE can confirm persistence while the HTTP response remains held.
   publishLearning();
   await expect(pendingUser).toHaveCount(1);

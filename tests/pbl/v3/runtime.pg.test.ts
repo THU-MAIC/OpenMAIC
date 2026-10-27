@@ -1239,7 +1239,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
         await runTools('Will an Agent help with the implementation?', async (next) => {
           expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
-          expect(next.liveContext()).toContain('"welcomePresented":true');
+          expect(await next.liveContext()).toContain('"welcomePresented":true');
           expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
           await invoke(next, 'request_skill_review', {
             question: 'Yes, you work together and review it. Ready to start?',
@@ -1257,9 +1257,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             }),
           );
           expect(lesson).not.toContain('Welcome only');
-          expect(next.liveContext()).toContain('"welcome":"ready"');
+          expect(await next.liveContext()).toContain('"welcome":"ready"');
           expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
-          expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+          expect(await next.liveContext()).toContain('"activeSection":"A-teach.md"');
           await expect(
             invoke(next, 'read_next_skill', {
               studentFeedback: 'Readiness is not understanding.',
@@ -2067,6 +2067,144 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const { sessionId } = (await study.send('begin')) as { sessionId: string };
     return { study, sessionId };
   }
+  it('refreshes teaching context from external commits without probing the sandbox', async () => {
+    const { study, sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('live-context', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'live-context',
+      attempt: claim!.attempt,
+      signal: new AbortController().signal,
+    });
+    const inspect = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect');
+    const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readText');
+    try {
+      const before = JSON.parse(await config.liveContext()).productContext.current;
+      const current = await store.get(study.id, principal.ownerId);
+      current.state.collected[current.state.position.milestoneId!]!.teachingCompleted = true;
+      current.evaluation = {
+        id: 'external-build',
+        purpose: 'compile',
+        fingerprint: 'current',
+        stageKey: stageKey(current),
+        startedAt: new Date().toISOString(),
+      };
+      await store.transaction((db) =>
+        store.commit(db, current, { state: current.state, events: [] }),
+      );
+      await pool.query('UPDATE sandbox_environments SET workspace_ready=false WHERE id=$1', [
+        current.environment_id,
+      ]);
+      const after = JSON.parse(await config.liveContext()).productContext.current;
+      expect(after.revision).toBeGreaterThan(before.revision);
+      expect(after.recorded.teachingCompleted).toBe(true);
+      expect(after.environment).toEqual({ state: 'running', ready: false });
+      expect(after.editing.afterAssistantReply.reason).toBe('building');
+      expect(inspect).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      inspect.mockRestore();
+      read.mockRestore();
+    }
+  });
+
+  it.each(['stage', 'environment', 'lease', 'abort'] as const)(
+    'does not issue a model request after the %s changes during teaching context refresh',
+    async (change) => {
+      const { sessionId, study } = await executionFixture();
+      const claim = await agents.claimNextSession('context-fence', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const controller = new AbortController();
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'context-fence',
+        attempt: claim!.attempt,
+        signal: controller.signal,
+      });
+      if (change === 'stage') {
+        const current = await store.get(study.id, principal.ownerId);
+        current.state.position.stageIndex++;
+        await store.transaction((db) =>
+          store.commit(db, current, { state: current.state, events: [] }),
+        );
+      } else if (change === 'environment') {
+        const original = await store.get(study.id, principal.ownerId);
+        onTestFinished(async () => {
+          await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+            original.environment_id,
+          ]);
+        });
+        await pool.query('UPDATE pbl_v3_studies SET environment_id=NULL WHERE id=$1', [study.id]);
+      } else if (change === 'lease') await agents.requestCancel(sessionId);
+      else controller.abort();
+      const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+      const modelCall = vi.fn();
+      const stream = withTeachingTurnBoundary(
+        modelCall,
+        config.isTurnComplete,
+        config.historyWindow,
+        config.liveContext,
+      );
+      await expect(stream({} as never, { messages: [] })).rejects.toThrow();
+      expect(modelCall).not.toHaveBeenCalled();
+    },
+  );
+
+  it('cancels a suspended teaching context refresh without issuing a model request', async () => {
+    const { sessionId } = await executionFixture();
+    const claim = await agents.claimNextSession('context-cancel', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const controller = new AbortController();
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'context-cancel',
+      attempt: claim!.attempt,
+      signal: controller.signal,
+    });
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lease = vi.spyOn(agents, 'assertActiveLease').mockImplementationOnce(async () => {
+      entered();
+      await gate;
+    });
+    try {
+      const { withTeachingTurnBoundary } = await import('@/lib/server/pbl-v3/runner-tools');
+      const modelCall = vi.fn();
+      const stream = withTeachingTurnBoundary(
+        modelCall,
+        config.isTurnComplete,
+        config.historyWindow,
+        config.liveContext,
+      );
+      const pending = stream({} as never, { messages: [] });
+      await ready;
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(modelCall).not.toHaveBeenCalled();
+    } finally {
+      release();
+      lease.mockRestore();
+    }
+  });
+
   const expireExecution = async (sessionId: string) =>
     pool.query(
       "UPDATE pbl_v3_roles SET execution_progress_at=clock_timestamp()-interval '16 minutes' WHERE session_id=$1",
@@ -2309,7 +2447,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await agents.releaseLease(sessionId, 'support-worker');
       const recovered = await claim('support-recovery');
       expect(recovered.config.isTurnComplete()).toBe(true);
-      expect(JSON.parse(recovered.config.liveContext()).currentReview.studentResponseCount).toBe(0);
+      expect(
+        JSON.parse(await recovered.config.liveContext()).currentReview.studentResponseCount,
+      ).toBe(0);
       const calls = mocked.modelCalls;
       await runSession({ running: new Map(), shuttingDown: false }, recovered.claimed);
       expect(mocked.modelCalls).toBe(calls);
@@ -2324,7 +2464,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           : 'I have now reviewed this version and approve it.',
       );
       const next = await claim('after-support');
-      expect(JSON.parse(next.config.liveContext()).currentReview.studentResponseCount).toBe(1);
+      expect(JSON.parse(await next.config.liveContext()).currentReview.studentResponseCount).toBe(
+        1,
+      );
       await invoke(next.config, 'read_next_skill', {
         studentFeedback:
           stageIndex === 0
@@ -5943,7 +6085,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               const longReply = 'My explanation of this course section. '.repeat(1500);
               await turn(longReply, async (config) => {
                 expect(config.systemPrompt).not.toContain(longReply);
-                expect(config.liveContext()).toContain('"studentResponseCount":1');
+                expect(await config.liveContext()).toContain('"studentResponseCount":1');
               });
               longReplyChecked = true;
             }

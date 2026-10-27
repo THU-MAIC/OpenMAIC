@@ -23,10 +23,17 @@ transition gates, editing policy, task-drawer availability and disabled workbenc
 features to both the learner view and Agent guidance. These projections do not
 grant authority. Host tools still enforce permissions, versions and completion.
 
-The live context refreshes after tools. It includes the current role/step, task
+The product guide is included once in the system prompt, with localized labels and
+minimal control locations. Before each model request, the runner rereads persisted
+study/evaluation, completion and environment state, enforcing stage/environment and
+worker-lease fences. Only changing facts are appended as live context: task
 contents, available actions and learner chat support, stage editing permissions, pending evaluation,
 recorded environment readiness, registered tools and files actually observed in
-this turn. A file list is marked complete only after a successful list operation.
+this turn. A file list is marked complete only after a successful list operation, and loses
+that completeness claim if an external study revision changes. File paths and
+contents remain observations from past tools, not a live filesystem or screen feed;
+the Agent must reread before claiming current contents or writing by hash. Changes
+while a model request is generating are only observed at the next request boundary.
 The Agent cannot see pane visibility, selected tabs, viewport or neighboring
 classroom scenes. It must describe named controls conditionally, rather than
 claiming to see the learner's screen. Environment readiness is a recorded
@@ -64,7 +71,10 @@ observation, not a fresh provider inspection on every model request.
 The model still judges whether a natural-language turn is assistance-only or mixed.
 The host guarantees the consequences of a committed assistance receipt; it does not
 claim to perfectly classify arbitrary learner language. Assistance cannot be
-committed after advancing a section in the same turn.
+committed after advancing a section in the same turn. A misclassified mixed input
+is conservatively excluded; the learner must clarify/restate it. Do not silently
+re-credit assistance inputs or weaken current-version approval. Check ambiguous
+mixed messages with real models during course acceptance.
 
 ## Requirements, contracts and assertions
 
@@ -83,6 +93,20 @@ Skill/tool/thinking cards keep their existing expandable presentation. Returned
 Skill sections and reference documents are therefore learner-visible. A document
 being absent from the IDE does not make it secret. Do not place private answers in
 those payloads, or require a tool card as a substitute for a requirements panel.
+
+## UI verification
+
+The Chromium fixture holds the chat POST response while checking immediate local
+feedback. These are actual component screenshots with mocked teaching commands,
+not a live course or a comparison against a historical build.
+
+| Before sending | Immediately after sending, before HTTP acknowledgement |
+| --- | --- |
+| ![Draft before sending](screenshots/before-send.png) | ![Learner bubble before Agent wait](screenshots/after-send.png) |
+
+The existing expandable tool card names assistance clearly:
+
+![Expanded Answer your question card](screenshots/assistance-card.png)
 
 ## FS content PR checklist
 
