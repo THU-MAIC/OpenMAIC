@@ -32,19 +32,25 @@ export function hasStageCompletion(
   return false;
 }
 
-/** Current-run failures without a teaching receipt remain retryable; no progress is granted. */
+/**
+ * Current-run failures without a teaching receipt remain retryable; no progress is granted.
+ * A turn that finished before a checkpoint restore reset progress keeps its own verdict:
+ * the restore, not the turn, removed its receipt.
+ */
 export function succeededWithoutTeachingReceipt(
-  row: Pick<Study, 'state'>,
+  row: Pick<Study, 'state'> & Partial<Pick<Study, 'environment_recovery'>>,
   stage: StageDefinition,
   binding: RoleBinding | undefined,
   status: string | undefined,
   latestUserSeq: number | undefined,
 ): boolean {
   const key = `${row.state.position.milestoneId}:${row.state.position.stageIndex}`;
+  const resetAt = row.environment_recovery?.progressResetAt;
   return (
     status === 'succeeded' &&
     !!latestUserSeq &&
     binding?.stage_key === key &&
+    !(resetAt && binding.turn_started_at.getTime() <= Date.parse(resetAt)) &&
     (stage.kind === 'mentor_say' || stage.kind === 'produce') &&
     !hasStageCompletion(row, stage, binding) &&
     binding.guided?.pending?.runId !== `${key}:${latestUserSeq}` &&

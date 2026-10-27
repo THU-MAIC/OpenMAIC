@@ -36,8 +36,11 @@ Java/Maven projects, Python exercises and other course content remain consumers.
 
 ## PBL workspace lifecycle
 
-PBL uses one inactivity interval: `OPENMAIC_PBL_IDLE_TIMEOUT_MS` (default **600000**, allowed
-60000–86400000). This is independent of the provider's renewable `sandbox.lifetimeMs` lease;
+PBL uses one inactivity interval: `OPENMAIC_PBL_IDLE_TIMEOUT_MS` (default **1800000**, 30
+minutes; allowed 60000–86400000). It counts from the learner's last real input in any tab.
+Queued/running Agent work keeps the environment leased beyond it; once that work reaches a
+terminal status (`succeeded`, `failed` or `cancelled`), the next pass releases without
+another interval. This is independent of the provider's renewable `sandbox.lifetimeMs` lease;
 keep the cloud lease at least five minutes for normal hosted use. The application runs a
 30-second reconciliation schedule from `instrumentation.ts`. Replicas share the existing
 study/environment locks, and application restart does not reset durable usage timestamps.
@@ -58,7 +61,9 @@ leaves one admission slot for interactive work when the pool supports multiple s
 default ten-connection pool admits two study operations, of which maintenance may occupy
 one. The two scan workers still traverse other studies while an archive is slow. Deferred
 studies within the idle timeout plus failure grace, a command within its execution deadline,
-or a recent command/Agent completion receive only a lightweight lease renewal; checkpoint,
+or a command/Agent completion within the idle timeout receive only a lightweight lease
+renewal until the deferred checkpoint/release obtains admission, so unarchived turn output
+survives congestion; completion never moves the learner inactivity clock. Checkpoint,
 collection and release still require admission. Older idle/overdue-only studies, expired
 failure grace and durable discard intent do not gain extra retention through this path.
 A deferred archive is retried on a later scan. Injected pools with only one study slot retain
@@ -87,21 +92,25 @@ its explicit restore control opens the project files when wanted.
 After a preparation failure, further typing/scrolling does not automatically retry it;
 the learner uses the explicit setup retry control, preserving any draft input.
 
-Healthy teaching turns have no lifecycle age/silence cutoff while the learner is recently
-active. Normal task completion starts a fresh inactivity interval. Builds and assessments
-are collected through the same verdict path as browser collection, even with no browser open.
-After learner inactivity reaches the idle timeout, maintenance records a fixed departed-turn
-cleanup deadline at last use + idle timeout + archive failure grace, and requests cancellation.
-This reuses the two existing settings (ten plus five minutes by default). PostgreSQL stores
-the deadline in `idle_turn_cleanup`; scans, restarts and worker heartbeats cannot extend it.
-Automatic cancellation is not learner activity. Real input clears pending cleanup, but an
-already cancelled turn needs explicit retry and durable discard intent remains irreversible.
+Healthy queued/running teaching turns have no lifecycle age cutoff and keep the environment
+leased past learner inactivity; inactivity never cancels or fails them. The independent
+execution watchdog (`lib/server/pbl-v3/execution-lifecycle.md`) fails a turn after 15 minutes
+without execution progress. Agent, build and command completion ends protection but never
+starts a fresh inactivity interval, so a learner idle for 30 minutes is released at the first
+pass after the turn becomes `succeeded`, `failed` or `cancelled`. Builds and assessments are
+collected through the same verdict path as browser collection, even with no browser open;
+automatic browser collection is not learner activity either. Release and replacement
+preparation never rewrite Agent session status, so failed or cancelled turns stay retryable.
+Real input clears a pending failure cycle; durable discard intent remains irreversible.
 Activity reporting does not wait for the Study advisory lock held by a long teaching tool.
 After a safe checkpoint, a short transaction checks that no learner returned and commits
-normal release intent in the same cleanup record. Checkpoint success alone never erases
-the deadline. Once release is committed, returning input completes deletion/recovery rather
-than reversing it; deletion contention cannot restart renewal. Earlier return during archive
+normal release intent (`idle_turn_cleanup.releasing`). Checkpoint success alone never erases
+it. Once release is committed, returning input completes deletion/recovery rather than
+reversing it; deletion contention cannot restart renewal. Earlier return during archive
 I/O cancels release, including the archive-failure path.
+
+The rules below apply to an explicit release deadline recorded in `idle_turn_cleanup` by
+earlier versions, which inactivity no longer creates.
 
 At cleanup expiry, no maintenance path renews the binding. A still-running unacknowledged
 turn is durably cancelled and its lease revoked before recording discard intent and trying
@@ -165,8 +174,8 @@ for user activity or an explicit retry instead of repeatedly exporting unchanged
 and accepts 60000–86400000. For archive failures it starts on the first failed **idle
 reclamation**, not a periodic dirty checkpoint. The same setting bounds departed-turn
 cleanup starting at the learner inactivity deadline. Retries and polling never extend a
-started cycle. Real learner activity clears a pending failure cycle; normal task completion
-starts a fresh inactivity interval, while automatic cancellation does not.
+started cycle. Real learner activity clears a pending failure cycle. Agent, build and
+command completion only ends protection; it never starts a fresh inactivity interval.
 Both the idle timeout and archive failure grace are validated during fatal boot checks,
 before background workers start; malformed settings refuse startup.
 

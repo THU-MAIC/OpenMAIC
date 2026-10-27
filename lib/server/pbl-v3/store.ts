@@ -51,6 +51,8 @@ export interface Study extends Record<string, unknown> {
     requestId: string;
     checkpointRevision?: number;
     progressReset?: boolean;
+    /** Database time of the latest restore that rewound progress; earlier turns keep their verdict. */
+    progressResetAt?: string;
     savedPosition?: {
       revision: number;
       milestoneIndex: number;
@@ -238,6 +240,22 @@ export class LearningStore {
            AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
            AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'`,
         [row.id, row.owner_id, row.environment_id, JSON.stringify(failure), row.last_used_at],
+      );
+    });
+  }
+
+  /** A settled writer or collection ends its failure cycle without counting as learner activity. */
+  async clearCheckpointFailure(row: Study, stage: ArchiveFailure['stage']) {
+    await this.transaction(async (db) => {
+      await fenceOwnerWrite(db, row.owner_id);
+      // A returning learner already cleared checkpoint_failure but not its notice; clear both.
+      await db.query(
+        `UPDATE pbl_v3_studies SET checkpoint_failure=NULL,lifecycle_error=NULL
+         WHERE id=$1 AND owner_id=$2 AND environment_id=$3
+           AND (checkpoint_failure IS NULL OR checkpoint_failure->>'stage'=$4)
+           AND (archive_discard IS NULL OR archive_discard->>'environmentId'<>$3)
+           AND idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true'`,
+        [row.id, row.owner_id, row.environment_id, stage],
       );
     });
   }
@@ -530,9 +548,17 @@ export class LearningStore {
   }
 
   async commit(db: PoolClient, row: Study, transition: EngineTransition) {
+    // Build collection commits before its caller returns. End its failure cycle atomically
+    // with evaluation, so a later maintenance pass cannot discard successfully collected work.
+    const collectionSettled = `evaluation->>'id' IS NOT NULL AND $5::jsonb='null'::jsonb
+       AND environment_id=$4 AND checkpoint_failure->>'environmentId'=$4
+       AND checkpoint_failure->>'stage'='collection' AND idle_turn_cleanup IS NULL
+       AND archive_discard->>'environmentId' IS DISTINCT FROM environment_id`;
     const result = await db.query<Study>(
       `UPDATE pbl_v3_studies SET state=$3,revision=revision+1,environment_id=$4,evaluation=$5,environment_recovery=$6,
-       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,lifecycle_error=$8,
+       workspace_dirty_at=CASE WHEN $7::timestamptz IS NULL THEN NULL ELSE COALESCE(workspace_dirty_at,clock_timestamp()) END,
+       lifecycle_error=CASE WHEN ${collectionSettled} THEN NULL ELSE $8 END,
+       checkpoint_failure=CASE WHEN ${collectionSettled} THEN NULL ELSE checkpoint_failure END,
        idle_turn_cleanup=CASE WHEN environment_id IS DISTINCT FROM $4::text THEN NULL ELSE idle_turn_cleanup END
       WHERE id=$1 AND revision=$2
         AND archive_discard IS NOT DISTINCT FROM $9::jsonb

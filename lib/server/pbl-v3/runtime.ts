@@ -54,6 +54,7 @@ import {
 import {
   touchEnvironment,
   assertEnvironmentReady,
+  environmentReleaseCommitted,
   recoveredProgress,
   renewPreparationLease,
 } from './environment';
@@ -523,7 +524,10 @@ export async function commandStudy(
     if (alreadyStarted) return { alreadyStarted: true };
     if (await busy(store, row))
       throw sandboxConflict('Wait for the teaching response, or cancel it first.');
-    row = { ...row, ...(await store.recordActivity(id, row.owner_id)) };
+    // Browsers collect finished runs automatically; a manual collect click is already reported
+    // as frame input. Completion is not learner activity, as with background collection.
+    if (command.type !== 'collect')
+      row = { ...row, ...(await store.recordActivity(id, row.owner_id)) };
     const service = await SandboxService.forOwner(principal);
     if (command.type !== 'prepare')
       assertEnvironmentReady(await touchEnvironment(store, row, service));
@@ -710,6 +714,8 @@ export async function commandStudy(
           requestId: env.id,
           checkpointRevision: checkpoint?.revision ?? 0,
           progressReset: restored.reset,
+          // Database time, comparable with role turn starts; earlier turns keep their verdict.
+          ...(restored.reset ? { progressResetAt: (await store.now()).toISOString() } : {}),
         };
         // No role may keep a grant to the old environment, or a completion receipt for invalidated work.
         await store.transaction(async (db) => {
@@ -1076,7 +1082,12 @@ export async function learningView(
     options.observation.environmentId === row.environment_id
       ? options.observation
       : undefined;
-  let environment: LearningView['environment'] = cached?.environment ?? null;
+  // A committed release fences new work before the provider confirms deletion. Passive views
+  // must not offer it as ready, or retry is enabled only to fail and the next input cannot restore.
+  const released = !!row.environment_id && environmentReleaseCommitted(row, row.environment_id);
+  let environment: LearningView['environment'] = cached?.environment
+    ? { ...cached.environment, ready: cached.environment.ready && !released }
+    : null;
   let environmentService: SandboxService | undefined;
   let files = cached?.files ?? Object.keys(project.files);
   if (row.environment_id && !cached) {
@@ -1088,7 +1099,10 @@ export async function learningView(
           : await environmentService.reconcile(row.environment_id, false)
         : await touchEnvironment(store, row, environmentService, false);
       environment = observed
-        ? { state: observed.state, ready: observed.state === 'running' && observed.workspaceReady }
+        ? {
+            state: observed.state,
+            ready: !released && observed.state === 'running' && observed.workspaceReady,
+          }
         : null;
       if (environment?.ready)
         files = await projectFiles(environmentService, row.environment_id, project);
