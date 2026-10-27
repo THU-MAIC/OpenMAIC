@@ -37,6 +37,13 @@ export function RosterRevealVisualizer({ agents }: { readonly agents: readonly R
   // every card face down.
   const castKey = agents.map((agent) => agent.id).join('|');
   const count = agents.length;
+  // A new cast (set_roster again) is a new reveal: every card face down again.
+  const [revealedCast, setRevealedCast] = useState(castKey);
+  if (revealedCast !== castKey) {
+    setRevealedCast(castKey);
+    setRevealed(0);
+    setFlipsComplete(false);
+  }
   useEffect(() => {
     const timers = Array.from({ length: count }, (_, index) =>
       setTimeout(

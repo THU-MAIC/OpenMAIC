@@ -71,6 +71,22 @@ describe('the roster reveal in the preview', () => {
     expect(container.querySelector('img')?.getAttribute('src')).toBe('/avatars/t.png');
   });
 
+  it('reveals a second cast of the same size afresh', async () => {
+    const first = [agent('t', 'Ms Chen', 'teacher'), agent('a', 'Lin', 'student')];
+    await act(async () => root.render(createElement(RosterRevealVisualizer, { agents: first })));
+    await act(async () => vi.advanceTimersByTime(3000));
+    expect(revealed()).toEqual(['true', 'true']);
+    const second = [agent('t2', 'Mr Wu', 'teacher'), agent('b', 'Bo', 'student')];
+    await act(async () => root.render(createElement(RosterRevealVisualizer, { agents: second })));
+    // Face down again, then the classic pace from the start.
+    expect(revealed()).toEqual(['false', 'false']);
+    expect(container.textContent).toContain('Mr Wu');
+    await act(async () => vi.advanceTimersByTime(400));
+    expect(revealed()).toEqual(['true', 'false']);
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(revealed()).toEqual(['true', 'true']);
+  });
+
   it('keeps its pace when the preview re-derives the roster on every tick', async () => {
     const cast = () => [agent('t', 'Ms Chen', 'teacher'), agent('a', 'Lin', 'student')];
     const tick = async () =>
