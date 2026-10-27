@@ -15,9 +15,13 @@ description: >-
 # restores the packages' dist/ directories from a cache whose key covers every
 # input of that build: the tracked contents of packages/ (minus the separate
 # docs app), the root manifest (which defines `build:packages`), the lockfile,
-# the workspace file, the runner platform and the exact Node version. Any
+# the workspace file, the runner platform and the Node major version. Any
 # change to a package source, its build config or a dependency misses the
 # cache and runs the real `build:packages`, which then saves the result.
+# The outputs are plain JS, JSON and .d.ts from rollup and tsc, so the key
+# does not include the Node patch version: `node-version: 22` resolves to
+# whichever 22.x the runner image carries, and that differs between runners
+# in the same run.
 #
 # Skipping lifecycle scripts drops nothing else: pnpm 10 runs no dependency
 # build scripts unless they are allow-listed, and this workspace allow-lists
@@ -70,7 +74,7 @@ runs:
             | grep -v $'\tpackages/docs/' \
             | sha256sum | cut -d' ' -f1
         )"
-        echo "key=workspace-packages-v1-${RUNNER_OS}-${RUNNER_ARCH}-node$(node -p process.version)-${inputs_hash}" >> "$GITHUB_OUTPUT"
+        echo "key=workspace-packages-v1-${RUNNER_OS}-${RUNNER_ARCH}-node$(node -p 'process.versions.node.split(".")[0]')-${inputs_hash}" >> "$GITHUB_OUTPUT"
 
     - name: Restore package build
       if: inputs.build-cache == 'true'
