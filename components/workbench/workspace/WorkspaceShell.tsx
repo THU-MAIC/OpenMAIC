@@ -127,7 +127,7 @@ import {
   type PreviewTabState,
 } from './WorkspaceRequestActivity';
 import { rememberPreviewClosed } from '@/lib/workbench/preview-tab';
-import { requestStartIndex } from '@/lib/workbench/request-activity';
+import { requestEpisodeStart } from '@/lib/workbench/request-activity';
 import { anyCourseHasScene, watchFirstScene } from '@/lib/workbench/first-scene-ready';
 import {
   conversationTargetStageIds,
@@ -939,7 +939,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // scene reads. This is a derived value, not another lifecycle/store.
   const requestCreatedCourseIds = useWorkbenchStore((s) =>
     JSON.stringify(
-      s.chat?.slice(requestStartIndex(s.chat) + 1).flatMap((node) => {
+      s.chat?.slice(requestEpisodeStart(s.chat) + 1).flatMap((node) => {
         if (node.kind !== 'tool' || node.toolName !== 'create_stage' || node.toolState !== 'done')
           return [];
         // `reused` is a retry of this same call (the id derives from the call
@@ -962,14 +962,14 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // tabs — in the remembered tab set the handoff recovery already consults.
   const earlierRequestMadeScene = useWorkbenchStore((s) =>
     s.chat
-      .slice(0, requestStartIndex(s.chat) + 1)
+      .slice(0, requestEpisodeStart(s.chat) + 1)
       .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
   );
   // This request's own tool calls persisted a page (the fold stamps the
   // card's sceneId at its checkpoint).
   const thisRequestMadeScene = useWorkbenchStore((s) =>
     s.chat
-      .slice(requestStartIndex(s.chat) + 1)
+      .slice(requestEpisodeStart(s.chat) + 1)
       .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
   );
   const createdThisRequest = useMemo(
@@ -986,7 +986,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // This request is creating a course of its own (its create_stage has started).
   const creatingInRequest = useWorkbenchStore((s) =>
     s.chat
-      .slice(requestStartIndex(s.chat) + 1)
+      .slice(requestEpisodeStart(s.chat) + 1)
       .some((node) => node.kind === 'tool' && node.toolName === 'create_stage'),
   );
   const earlierCourseHasScene =

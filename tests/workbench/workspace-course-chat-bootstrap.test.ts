@@ -1547,6 +1547,86 @@ describe('the knowledge base page', () => {
       expect(window.location.search).toBe('?session=session-1');
     });
 
+    it('keeps a course created before a question with its request, and hands off after the answer', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a course' });
+      event('tool_execution_start', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        args: { title: 'Course' },
+      });
+      event('stage_link', { stageId: 'stage-1' });
+      event('tool_execution_end', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        result: { content: [], details: { stageId: 'stage-1', title: 'Course' } },
+      });
+      event('tool_execution_start', {
+        toolCallId: 'ask',
+        toolName: 'ask_user',
+        args: { question: 'Which audience?', options: [{ id: 'a', label: 'Students' }] },
+      });
+      event('tool_execution_end', {
+        toolCallId: 'ask',
+        toolName: 'ask_user',
+        isError: false,
+        result: { content: [], details: {} },
+      });
+      event('user_question', {
+        question: 'Which audience?',
+        options: [{ id: 'a', label: 'Students' }],
+      });
+      event('agent_end');
+      event('session_end', { status: 'succeeded' });
+      event('user_message', { text: 'Students', delivery: 'queued' });
+      event('tool_execution_start', {
+        toolCallId: 'scene',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 1, type: 'slide' },
+      });
+      // Attached late (a reload after the answer): every link so far is replayed.
+      Object.assign(mocks.store, folded, {
+        sessionId: 'session-1',
+        status: 'running',
+        replaying: false,
+        replayedStageLinkCount: 1,
+      });
+      let ready = false;
+      vi.mocked(fetch).mockImplementation(
+        async (input) =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () =>
+              String(input).includes('/manifest')
+                ? { rev: 1, scenes: ready ? [{ id: 'first', order: 0, rev: 1 }] : [] }
+                : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
+          }) as Response,
+      );
+      await render();
+      await render();
+      expect(window.location.search).toBe('?session=session-1');
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+      ready = true;
+      event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
+      Object.assign(mocks.store, folded, {
+        sessionId: 'session-1',
+        status: 'running',
+        replaying: false,
+        replayedStageLinkCount: 1,
+      });
+      await render();
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+    });
+
     it('hands off a replayed create_stage from the active request after the first checkpoint', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')
