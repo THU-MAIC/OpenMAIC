@@ -275,7 +275,7 @@
 }
 .home-mobile-options[data-slot='dialog-content'] {
   --home-options-height: min(
-    600px,
+    520px,
     calc(100dvh - max(12px, var(--safe-area-top)) - max(12px, var(--safe-area-bottom)))
   );
   display: flex;
