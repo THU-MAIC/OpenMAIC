@@ -70,6 +70,7 @@ function PBLV3WorkspaceContent({
   const {
     text,
     setText,
+    pendingMessage: savedMessage,
     quizAnswers,
     setQuizAnswers,
     showWorkspace,
@@ -81,7 +82,8 @@ function PBLV3WorkspaceContent({
     entry: pendingMessage,
     begin: beginMessage,
     finish: finishMessage,
-  } = useLearnerMessage(view, setText);
+    observe: observeMessage,
+  } = useLearnerMessage(view, storageError, savedMessage);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
     null,
@@ -99,15 +101,24 @@ function PBLV3WorkspaceContent({
     revision: number;
   } | null>(null);
   const studyId = view?.id;
-  const stream = useLearningStream(studyId, receive);
+  const receiveSnapshot = useCallback(
+    (snapshot: Parameters<typeof receive>[0]) => {
+      observeMessage(snapshot.view);
+      receive(snapshot);
+    },
+    [observeMessage, receive],
+  );
+  const stream = useLearningStream(studyId, receiveSnapshot);
   const refresh = useCallback(async () => {
     const baseline = latestView.current;
-    if (studyId)
-      updateView(
-        await pblRequest<LearningView>(`/api/pbl/v3?id=${encodeURIComponent(studyId)}`),
-        baseline,
+    if (studyId) {
+      const refreshed = await pblRequest<LearningView>(
+        `/api/pbl/v3?id=${encodeURIComponent(studyId)}`,
       );
-  }, [studyId, updateView, latestView]);
+      observeMessage(refreshed);
+      updateView(refreshed, baseline);
+    }
+  }, [studyId, updateView, latestView, observeMessage]);
   const openAttempt = useRef(0);
   const open = useCallback(async () => {
     if (!stageId) return;
@@ -122,6 +133,7 @@ function PBLV3WorkspaceContent({
         stageId,
         sceneId,
       });
+      observeMessage(opened);
       if (attempt !== openAttempt.current) return;
       setDirtyFiles(hasEditorDraft(opened.id));
       openView(opened, baseline);
@@ -133,7 +145,7 @@ function PBLV3WorkspaceContent({
         setPendingAction(null);
       }
     }
-  }, [stageId, sceneId, openView, latestView]);
+  }, [stageId, sceneId, openView, latestView, observeMessage]);
   useEffect(() => {
     void open();
   }, [open]);

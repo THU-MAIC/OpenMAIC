@@ -148,6 +148,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   let collectEntered = () => {};
   let chatGate: Promise<void> | null = null;
   let chatEntered = () => {};
+  let chatRequests = 0;
+  let delayChatAcceptance = false;
+  let failChatAck = false;
   let streamRequests = 0;
   let openRequests = 0;
   page.on('request', (request) => {
@@ -192,22 +195,36 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       return route.fulfill({ json: { view } });
     }
     if (command?.type === 'chat') {
-      view.conversation!.push({
-        id: `user-${command.id}`,
-        commandId: command.id,
-        speaker: 'user',
-        parts: [{ kind: 'text', id: command.id, text: command.text }],
-      });
-      view.activitySequence!++;
+      chatRequests++;
+      const delayed = delayChatAcceptance,
+        failAck = failChatAck;
+      delayChatAcceptance = false;
+      failChatAck = false;
+      const accept = () => {
+        view.conversation!.push({
+          id: `user-${command.id}`,
+          commandId: command.id,
+          speaker: 'user',
+          parts: [{ kind: 'text', id: command.id, text: command.text }],
+        });
+        view.activitySequence!++;
+      };
+      if (!delayed) accept();
       if (chatGate) {
         const gate = chatGate;
         chatGate = null;
         chatEntered();
         await gate;
       }
+      if (delayed) accept();
       // The server preserves a completed review while answering a follow-up.
       view.activitySequence!++;
-      return route.fulfill({ json: { view } });
+      // Reload may cancel the held request; acceptance and SSE are independent.
+      return (
+        failAck
+          ? route.fulfill({ status: 503, json: { error: { code: 'SANDBOX_UNAVAILABLE' } } })
+          : route.fulfill({ json: { view } })
+      ).catch(() => {});
     }
     if (command?.type === 'evaluate') {
       if (evaluateGate) {
@@ -419,6 +436,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   const opensBeforeFullscreen = openRequests;
   let releaseChat!: () => void;
   chatGate = new Promise<void>((resolve) => (releaseChat = resolve));
+  failChatAck = true;
   const chatStarted = new Promise<void>((resolve) => (chatEntered = resolve));
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await chatStarted;
@@ -443,6 +461,14 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   // SSE can confirm persistence while the HTTP response remains held.
   publishLearning();
   await expect(pendingUser).toHaveCount(1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (id) => JSON.parse(sessionStorage.getItem(`maic:pbl-draft:v1:${id}:ui`)!).pendingMessage,
+        view.id,
+      ),
+    )
+    .toBeUndefined();
   await expect(
     page.locator('[data-testid="pbl-pending-action"][data-action="chat"]'),
   ).toBeVisible();
@@ -469,12 +495,56 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).toBeVisible();
   expect(streamRequests).toBe(streamsBeforeFullscreen);
   expect(openRequests).toBe(opensBeforeFullscreen);
+  // Acknowledged text must not return to the draft if the learner leaves before
+  // the held HTTP acknowledgement fails.
+  await page.getByRole('button', { name: 'Back to project overview', exact: true }).click();
+  await page.getByTestId('scene-title').filter({ hasText: 'Course overview' }).click();
+  await expect(page.getByTestId('pbl-v3-workspace')).toHaveCount(0);
+  const failedChat = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.command?.type === 'chat' &&
+      response.status() === 503,
+  );
   releaseChat();
+  await failedChat;
+  await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
   await expect(page.locator('[data-testid="pbl-pending-action"][data-action="chat"]')).toHaveCount(
     0,
   );
   await expect(pendingUser).toHaveCount(1);
-  await page.getByLabel('Your message', { exact: true }).fill('');
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
+  // A full reload before server acceptance recovers the text without replaying
+  // the POST. A later SSE confirmation removes only the recovered submission.
+  await page.getByLabel('Your message', { exact: true }).fill('Recover my pending message');
+  delayChatAcceptance = true;
+  chatGate = new Promise<void>((resolve) => (releaseChat = resolve));
+  const delayedChat = new Promise<void>((resolve) => (chatEntered = resolve));
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await delayedChat;
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
+  const beforeReload = chatRequests;
+  await page.reload();
+  await page.getByTestId('scene-title').filter({ hasText: 'Practice project' }).click();
+  await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue(
+    'Recover my pending message',
+  );
+  expect(chatRequests).toBe(beforeReload);
+  releaseChat();
+  await expect
+    .poll(() =>
+      view.conversation!.some((entry) =>
+        entry.parts.some(
+          (part) => part.kind === 'text' && part.text === 'Recover my pending message',
+        ),
+      ),
+    )
+    .toBe(true);
+  publishLearning();
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
+  await expect(page.getByText('Recover my pending message', { exact: true })).toHaveCount(1);
   // Teaching has no drawer; decisions expose only the actual current task.
   await expect(task.getByRole('button', { name: /Current task details/ })).toHaveCount(0);
   await expect(details).toHaveCount(0);

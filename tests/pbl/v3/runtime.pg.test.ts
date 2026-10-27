@@ -4078,11 +4078,17 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
         };
-        // A long turn puts its owning input outside the next turn's live raw-event window.
-        // Compact these earlier model snapshots, keeping the final prose/recovery pair visible.
+        await agents.appendRunEvent(sessionId, handle.workerId, {
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          type: 'message_start',
+          data: { message: { ...delivered, content: [] } },
+        });
+        // A long streamed reply puts both its user and message-start anchors outside
+        // the next turn's raw-event window. Preserve ownership and original text identity.
         await pool.query(
           `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
-           SELECT $1,$2+g,$3,$4,'message_update',$5::jsonb FROM generate_series(1,1100) g`,
+           SELECT $1,$2+g,$3,$4,'message_update',$5::jsonb FROM generate_series(1,10000) g`,
           [
             sessionId,
             await agents.lastEventSeq(sessionId),
@@ -4091,12 +4097,6 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             JSON.stringify({ message: { role: 'assistant', content: [] } }),
           ],
         );
-        await agents.appendRunEvent(sessionId, handle.workerId, {
-          ts: Date.now(),
-          attempt: claimed!.attempt,
-          type: 'message_start',
-          data: { message: { ...delivered, content: [] } },
-        });
         await agents.appendRunEvent(sessionId, handle.workerId, {
           ts: Date.now(),
           attempt: claimed!.attempt,
