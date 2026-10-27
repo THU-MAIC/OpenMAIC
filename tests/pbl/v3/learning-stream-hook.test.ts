@@ -79,14 +79,43 @@ describe('learning subscription lifecycle', () => {
     await act(async () => document.dispatchEvent(new Event('visibilitychange')));
     expect(mocks.read.mock.calls[2]![0]).toBe('two');
   });
-  it('does not endlessly retry a permanent ownership refusal; manual refresh can reconnect', async () => {
-    mocks.read.mockRejectedValue(new LearningStreamError(404));
+  it.each([401, 403, 404])(
+    'keeps a %s refusal unavailable across automatic wakeups; manual refresh can reconnect',
+    async (status) => {
+      let visibility: DocumentVisibilityState = 'visible';
+      vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+      mocks.read.mockRejectedValue(new LearningStreamError(status));
+      await mount();
+      expect(current.status).toBe('unavailable');
+      await act(async () => vi.advanceTimersByTimeAsync(60_000));
+      await act(async () => window.dispatchEvent(new Event('online')));
+      visibility = 'hidden';
+      await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+      visibility = 'visible';
+      await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+      expect(mocks.read).toHaveBeenCalledTimes(1);
+      expect(current.status).toBe('unavailable');
+      mocks.read.mockImplementation((_id, _signal, callback) => {
+        callback({ view: { id: 'one', revision: 2 }, workbench: null });
+        return new Promise(() => {});
+      });
+      await act(async () => current.reconnect());
+      expect(mocks.read).toHaveBeenCalledTimes(2);
+      expect(current.status).toBe('connected');
+    },
+  );
+  it('does not carry an ownership refusal into a different study', async () => {
+    mocks.read.mockRejectedValueOnce(new LearningStreamError(403));
     await mount();
     expect(current.status).toBe('unavailable');
-    await act(async () => vi.advanceTimersByTimeAsync(60_000));
-    expect(mocks.read).toHaveBeenCalledTimes(1);
-    await act(async () => current.reconnect());
+    mocks.read.mockImplementation((_id, _signal, callback) => {
+      callback({ view: { id: 'two', revision: 1 }, workbench: null });
+      return new Promise(() => {});
+    });
+    await act(async () => root.render(createElement(Hook, { id: 'two' })));
     expect(mocks.read).toHaveBeenCalledTimes(2);
+    expect(mocks.read.mock.calls[1]![0]).toBe('two');
+    expect(current.status).toBe('connected');
   });
   it('shows interrupted updates after repeated failures and still reconnects to the latest snapshot', async () => {
     mocks.read.mockRejectedValue(new LearningStreamError(408));

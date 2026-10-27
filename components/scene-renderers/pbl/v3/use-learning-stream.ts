@@ -25,8 +25,9 @@ export function useLearningStream(
     let timer: ReturnType<typeof setTimeout> | undefined;
     let backoff = 1_000;
     let failures = 0;
+    let unavailable = false;
     const connect = async () => {
-      if (disposed || document.visibilityState === 'hidden') return;
+      if (disposed || unavailable || document.visibilityState === 'hidden') return;
       setStatus(failures >= 3 ? 'retrying' : 'connecting');
       controller = new AbortController();
       const current = controller;
@@ -41,6 +42,7 @@ export function useLearningStream(
       } catch (error) {
         if (disposed || current.signal.aborted) return;
         if (error instanceof LearningStreamError && [401, 403, 404].includes(error.status)) {
+          unavailable = true;
           setStatus('unavailable');
           return;
         }
