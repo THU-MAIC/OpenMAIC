@@ -2539,6 +2539,8 @@
     "inputBusy": "The workspace remained busy; this input was not sent. Reconnect the terminal before typing again."
   },
   "pblV3": {
+    "connectingUpdates": "Connecting live updates…",
+    "updatesUnavailable": "Live updates unavailable. Refresh to reconnect.",
     "title": "Programming projects · Preview",
     "refresh": "Refresh progress",
     "cancel": "Cancel response",
@@ -2893,6 +2895,13 @@
       "unavailable": "El almacenamiento o el entorno no está disponible, o la solicitud agotó el tiempo de espera.",
       "workspace-changed": "Los archivos cambiaron durante el archivado.",
       "execution-unsettled": "No se pudo confirmar que la tarea se detuvo."
+    },
+    "history": {
+      "title": "Conversation history",
+      "description": "Saved messages at the time you open this view. Earlier records load on demand.",
+      "older": "Load earlier records",
+      "failed": "Could not load history. Please retry.",
+      "empty": "No saved messages in this page."
     }
   }
 }

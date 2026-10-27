@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 vi.mock('server-only', () => ({}));
@@ -52,13 +52,69 @@ it.each([false, true])(
   },
 );
 
-it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
-  'locates a real javac error and passes after repair',
-  async () => {
+it
+  .runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')
+  .each([
+    'String value = null; System.out.println(value.length());',
+    'int[] values = {}; System.out.println(values[0]);',
+  ])(
+  'classifies Java runtime exceptions as execution failures and permits repair: %s',
+  async (body) => {
+    const root = await mkdtemp(join(tmpdir(), 'pbl-java-runtime-'));
+    const installed = {
+      prepare: ['javac', '-d', '{build}', 'Greeting.java'],
+      cases: [{ id: 'runtime', argv: ['java', '-cp', '{build}', 'Greeting'], stdout: 'hello\n' }],
+    };
+    const run = async () => {
+      const observed = await promisify(execFile)(
+        '/bin/sh',
+        ['-c', evaluationCommand(installed, 'runtime')],
+        { cwd: root },
+      );
+      return evaluationOutcome(
+        installed,
+        'runtime',
+        { state: 'exited', exitCode: 0, ...observed },
+        ['Greeting.java'],
+      );
+    };
+    try {
+      await writeFile(
+        join(root, 'Greeting.java'),
+        `public class Greeting { public static void main(String[] args) { ${body} } }`,
+      );
+      expect(await run()).toMatchObject({
+        status: 'failed',
+        failureKind: 'assertion',
+        publicDiagnostics: {
+          reportGenerated: true,
+          caseResults: [{ id: 'runtime', passed: false, reason: 'execution' }],
+        },
+      });
+      expect(JSON.stringify(await run())).not.toMatch(
+        /infrastructure|NullPointerException|IndexOutOfBoundsException|at Greeting|locations/,
+      );
+      await writeFile(
+        join(root, 'Greeting.java'),
+        'public class Greeting { public static void main(String[] args) { System.out.println("hello"); } }',
+      );
+      expect((await run()).status).toBe('passed');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+  15000,
+);
+
+it
+  .runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')
+  .each(['Greeting.java', 'at school/Greeting.java', 'at school(foo/Greeting.java'])(
+  'locates a real javac error in %s and passes after repair',
+  async (file) => {
     const root = await mkdtemp(join(tmpdir(), 'pbl-javac-'));
     const installed = {
       resources: { 'tests/future-stage.java': 'INVALID FUTURE API AND SOURCE' },
-      prepare: ['javac', '-d', '{build}', 'Greeting.java'],
+      prepare: ['javac', '-d', '{build}', file],
       cases: [{ id: 'greeting', argv: ['java', '-cp', '{build}', 'Greeting'], stdout: 'hello\n' }],
     };
     const run = async () => {
@@ -68,12 +124,13 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         { cwd: root },
       );
       return evaluationOutcome(installed, 'javac', { state: 'exited', exitCode: 0, ...observed }, [
-        'Greeting.java',
+        file,
       ]);
     };
     try {
+      await mkdir(dirname(join(root, file)), { recursive: true });
       await writeFile(
-        join(root, 'Greeting.java'),
+        join(root, file),
         'public class Greeting { public static void main(String[] args) { System.out.println(missing); } }',
       );
       expect(await run()).toMatchObject({
@@ -82,7 +139,7 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         publicDiagnostics: {
           locations: [
             {
-              file: 'Greeting.java',
+              file,
               line: 1,
               code: expect.stringMatching(/^(cannot_find_symbol|compile_error)$/),
             },
@@ -90,7 +147,7 @@ it.runIf(process.env.PBL_PACKAGE_TOOLCHAINS === '1')(
         },
       });
       await writeFile(
-        join(root, 'Greeting.java'),
+        join(root, file),
         'public class Greeting { public static void main(String[] args) { System.out.println("hello"); } }',
       );
       expect((await run()).status).toBe('passed');
@@ -341,4 +398,86 @@ it('never puts expected stdout or its digest in the sandbox command payload', ()
       forged,
     ),
   ).toBe(false);
+});
+
+it.each([
+  {
+    label: 'NPE frame',
+    file: 'Greeting.java',
+    stderr:
+      'Exception in thread "main" java.lang.NullPointerException\n\tat Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'module frame',
+    file: 'Greeting.java',
+    stderr: '\tat app/pkg.Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'prefixed module frame',
+    file: 'Greeting.java',
+    stderr: '[ERROR] \tat app/pkg.Greeting.greet(Greeting.java:3)\n',
+    expected: 'assertion',
+  },
+  {
+    label: 'Java path resembling a stack-frame prefix',
+    file: 'at school(foo/Greeting.java',
+    stderr: 'at school(foo/Greeting.java:3: error: incompatible types\n',
+    expected: 'compile',
+  },
+  {
+    label: 'prefixed Java path resembling a stack-frame prefix',
+    file: 'at school(foo/Greeting.java',
+    stderr: '[ERROR] at school(foo/Greeting.java:[3,2] incompatible types\n',
+    expected: 'compile',
+  },
+  {
+    label: 'Java path with spaces',
+    file: 'at school/Greeting.java',
+    stderr: 'at school/Greeting.java:3: error: incompatible types\n',
+    expected: 'compile',
+  },
+  {
+    label: 'Python path with spaces',
+    file: 'at school/greeting.py',
+    stderr: '  File "at school/greeting.py", line 3\nSyntaxError: invalid syntax\n',
+    expected: 'compile',
+  },
+])('parses $label without requiring a JDK', async ({ file, stderr, expected }) => {
+  const root = await mkdtemp(join(tmpdir(), 'pbl-diagnostics-'));
+  try {
+    await mkdir(dirname(join(root, file)), { recursive: true });
+    await writeFile(join(root, file), 'public learner source');
+    const installed = {
+      cases: [
+        {
+          id: 'error',
+          argv: [
+            'python3',
+            '-c',
+            `import sys; sys.stderr.write(${JSON.stringify(stderr)}); sys.exit(1)`,
+          ],
+          stdout: '',
+        },
+      ],
+    };
+    const observed = await promisify(execFile)(
+      '/bin/sh',
+      ['-c', evaluationCommand(installed, 'diagnostic')],
+      { cwd: root },
+    );
+    const outcome = evaluationOutcome(
+      installed,
+      'diagnostic',
+      { state: 'exited', exitCode: 0, ...observed },
+      [file],
+    );
+    expect(outcome).toMatchObject({ status: 'failed', failureKind: expected });
+    if (expected === 'compile')
+      expect(outcome.publicDiagnostics?.locations?.[0]).toMatchObject({ file, line: 3 });
+    else expect(outcome.publicDiagnostics?.locations).toBeUndefined();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

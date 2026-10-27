@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import {
@@ -48,14 +48,15 @@ export async function workbenchRequest<T>(url: string, body?: unknown): Promise<
 }
 export function LearningWorkbenchPanel({
   view,
+  workbench,
   pending,
   pendingAction,
   onRefresh,
   onSave,
   onDirtyChange,
-  children,
 }: {
   view: LearningView;
+  workbench: LearningWorkbench | null;
   pending: boolean;
   pendingAction: string | null;
   onRefresh: () => Promise<void>;
@@ -66,11 +67,13 @@ export function LearningWorkbenchPanel({
     request: FileSaveRequest,
   ) => Promise<FileSaveReceipt>;
   onDirtyChange: (dirty: boolean) => void;
-  children: ReactNode;
 }) {
   const { t } = useI18n();
-  const [work, setWork] = useState<LearningWorkbench | null>(null),
-    [error, setError] = useState(''),
+  const work =
+    workbench?.environmentId === view.environmentId && workbench.revision >= view.revision
+      ? workbench
+      : null;
+  const [error, setError] = useState(''),
     [operation, setOperation] = useState<string | null>(null);
   const working = operation !== null;
   const operationSequence = useRef(0);
@@ -80,14 +83,6 @@ export function LearningWorkbenchPanel({
   const [manage, setManage] = useState(false),
     [consoleOpen, setConsoleOpen] = useState(false),
     [consoleTab, setConsoleTab] = useState<'output' | 'terminal'>('output');
-  const showEvaluation =
-    view.stage.kind !== 'check' && (view.actions.includes('compile') || !!view.evaluation);
-  useEffect(() => {
-    if (showEvaluation) {
-      setConsoleOpen(true);
-      setConsoleTab('output');
-    }
-  }, [showEvaluation]);
   const explorer = usePanelRef();
   const [filesCollapsed, setFilesCollapsed] = useState(false);
   const executionSequence = useRef(0),
@@ -148,50 +143,11 @@ export function LearningWorkbenchPanel({
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
-  const refresh = useCallback(async () => {
-    if (!view.environment?.ready) return;
-    const id = view.environmentId;
-    let next: LearningWorkbench;
-    try {
-      next = await workbenchRequest<LearningWorkbench>(
-        `/api/pbl/v3/workspace?id=${encodeURIComponent(view.id)}`,
-      );
-    } catch (error) {
-      // Parent study polling presents inactivity/recovery. A late read from the retired
-      // environment must not paint a false failure over its healthy replacement.
-      if (
-        current.current.environmentId !== id ||
-        !current.current.environment?.ready ||
-        (error instanceof SandboxRequestError && error.reason === 'ENVIRONMENT_UNAVAILABLE')
-      )
-        return;
-      throw error;
-    }
-    if (current.current.environmentId === id)
-      setWork((prior) =>
-        !prior ||
-        prior.environmentId !== next.environmentId ||
-        (prior.revision <= next.revision && prior.epoch <= next.epoch)
-          ? next
-          : prior,
-      );
-  }, [view.id, view.environmentId, view.environment?.ready]);
   useEffect(() => {
     executionSequence.current++;
-    setWork(null);
     setTerminal('');
     setError('');
-  }, [refresh]);
-  useEffect(() => {
-    void refresh().catch((e) => setError(e.message));
-  }, [refresh, view.revision]);
-  useEffect(() => {
-    if (!view.environment?.ready) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === 'visible') void refresh().catch((e) => setError(e.message));
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [refresh, view.environment?.ready]);
+  }, [view.id, view.environmentId]);
   const run = async (action: string, payload: Record<string, unknown> = {}) => {
     // Stop invalidates earlier creation responses even when the provider finishes later.
     if (action === 'stop') executionSequence.current++;
@@ -237,7 +193,6 @@ export function LearningWorkbenchPanel({
       setError((e as Error).message);
     } finally {
       await onRefresh().catch(() => {});
-      await refresh().catch(() => {});
       if (operationTicket === operationSequence.current) setOperation(null);
     }
   };
@@ -478,7 +433,7 @@ export function LearningWorkbenchPanel({
           </Panel>
         </Group>
       </div>
-      {(ACTIVITY_SHELL_ENABLED || showEvaluation) && (
+      {ACTIVITY_SHELL_ENABLED && (
         <div
           className="shrink-0 border-t bg-muted/10"
           style={{ height: consoleOpen ? '38%' : undefined }}
@@ -492,7 +447,7 @@ export function LearningWorkbenchPanel({
                 setConsoleTab('output');
               }}
             >
-              {t(ACTIVITY_SHELL_ENABLED ? 'pblV3.ide.output' : 'pblV3.ide.buildOutput')}
+              {t('pblV3.ide.output')}
             </button>
             {ACTIVITY_SHELL_ENABLED && (
               <button
@@ -572,7 +527,6 @@ export function LearningWorkbenchPanel({
                   ))}
                 </>
               )}
-              {children}
             </div>
             {ACTIVITY_SHELL_ENABLED && (
               <div hidden={consoleTab !== 'terminal'}>

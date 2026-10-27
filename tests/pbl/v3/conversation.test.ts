@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
-import { projectConversation, learningRunFailure } from '@/lib/server/pbl-v3/conversation';
+import {
+  projectConversation,
+  learningRunFailure,
+  boundConversation,
+} from '@/lib/server/pbl-v3/conversation';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
@@ -11,6 +15,7 @@ import {
 } from '@/lib/pbl/v3/domain/orchestration/transition';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { StageDefinition } from '@/lib/pbl/v3/domain/project/project-schema';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 
 const event = (
   id: number,
@@ -25,6 +30,196 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it('deduplicates a committed handoff and its SDK receipt by call identity across learner turns', () => {
+    const question = 'Which build requirement should we clarify?';
+    const receipt = {
+      toolName: 'request_learner_help',
+      toolCallId: 'help-1',
+      isError: false,
+      result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+    };
+    const entries = projectConversation(
+      [
+        event(1, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(2, 'tool_execution_end', receipt),
+        event(3, 'user_message', { text: 'Please explain.' }),
+        event(4, 'pbl_learner_handoff', { question, toolCallId: 'help-2' }),
+        event(5, 'tool_execution_end', { ...receipt, toolCallId: 'help-2' }),
+      ],
+      'discussion',
+      false,
+    );
+    expect(
+      entries
+        .flatMap((entry) => entry.parts)
+        .filter((part) => part.kind === 'text' && part.text === question),
+    ).toHaveLength(2);
+  });
+
+  it('keeps the question after model prose even if the transactional event wins the append race', () => {
+    const question = 'What should we clarify?';
+    const entries = projectConversation(
+      [
+        event(1, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(2, 'message_end', message('Here is the build problem.')),
+        event(3, 'tool_execution_end', {
+          toolName: 'request_learner_help',
+          toolCallId: 'help-1',
+          isError: false,
+          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+        }),
+      ],
+      'discussion',
+      false,
+    );
+    expect(
+      entries
+        .flatMap((entry) => entry.parts)
+        .filter((part) => part.kind === 'text')
+        .map((part) => part.text),
+    ).toEqual(['Here is the build problem.', question]);
+  });
+
+  it('keeps the latest large model message whole when a host handoff follows it', () => {
+    const text = 'Long teaching explanation. '.repeat(30000);
+    const question = 'What should we clarify?';
+    const entries = projectConversation(
+      [
+        event(1, 'message_end', message(text)),
+        event(2, 'pbl_learner_handoff', { question, toolCallId: 'help-1' }),
+        event(3, 'tool_execution_end', {
+          toolName: 'request_learner_help',
+          toolCallId: 'help-1',
+          isError: false,
+          result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+        }),
+      ],
+      'discussion',
+      false,
+    );
+    const parts = entries.flatMap((entry) => entry.parts);
+    expect(parts.some((part) => part.kind === 'text' && part.text === text)).toBe(true);
+    expect(parts.filter((part) => part.kind === 'text' && part.text === question)).toHaveLength(1);
+  });
+
+  it('keeps thinking identity and duration when only the latest snapshot survives compaction', () => {
+    const track = createThinkingTimingTracker();
+    const frame = (thinking: string, text = '') => ({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking }, ...(text ? [{ type: 'text', text }] : [])],
+      },
+    });
+    const start = event(2, 'message_start', track('message_start', frame(''), 2));
+    const first = event(10, 'message_update', track('message_update', frame('Considering'), 10));
+    const original = projectConversation([start, first], 'discussion', true)[0]!.parts[0]!;
+    const updated = event(
+      20,
+      'message_update',
+      track('message_update', frame('Considering more'), 20),
+    );
+    const live = projectConversation([start, updated], 'discussion', true)[0]!.parts[0]!;
+    expect(live).toMatchObject({ id: original.id, startedAt: 10, streaming: true });
+    track('message_update', frame('Considering more', 'Answer'), 30);
+    const end = event(
+      50,
+      'message_end',
+      track('message_end', frame('Considering more', 'Answer'), 50),
+    );
+    const replay = projectConversation([start, end], 'discussion', false)[0]!.parts[0]!;
+    expect(replay).toMatchObject({ id: original.id, startedAt: 10, endedAt: 30, streaming: false });
+  });
+
+  it('tracks separate thinking blocks and resets anchors for the next message', () => {
+    const track = createThinkingTimingTracker();
+    const frame = (...content: unknown[]) => ({ message: { role: 'assistant', content } });
+    track('message_start', frame(), 1);
+    track('message_update', frame({ type: 'thinking', thinking: 'First' }), 5);
+    track(
+      'message_update',
+      frame({ type: 'thinking', thinking: 'First' }, { type: 'text', text: 'A' }),
+      9,
+    );
+    const second = frame(
+      { type: 'thinking', thinking: 'First' },
+      { type: 'text', text: 'A' },
+      { type: 'thinking', thinking: 'Second' },
+    );
+    track('message_update', second, 20);
+    expect(track('message_end', second, 25)).toMatchObject({
+      pblThinkingTimings: { 0: { startedAt: 5, endedAt: 9 }, 2: { startedAt: 20, endedAt: 25 } },
+    });
+    track('message_start', frame(), 40);
+    expect(track('message_end', frame({ type: 'thinking', thinking: 'New' }), 50)).toMatchObject({
+      pblThinkingTimings: { 0: { startedAt: 50, endedAt: 50 } },
+    });
+  });
+
+  it.each([true, false])(
+    'shows one question body while retaining the full review card (already spoken: %s)',
+    (spoken) => {
+      const question = 'What does the caller receive?';
+      const result = {
+        content: [{ type: 'text', text: JSON.stringify({ question, waitForStudent: true }) }],
+      };
+      const entries = projectConversation(
+        [
+          event(1, 'session_start', {}),
+          event(
+            2,
+            'message_end',
+            message('The goal is to add a task.' + (spoken ? ` ${question}` : '')),
+          ),
+          event(3, 'tool_execution_start', {
+            toolName: 'request_skill_review',
+            toolCallId: 'review',
+            args: { question },
+          }),
+          event(4, 'tool_execution_end', {
+            toolName: 'request_skill_review',
+            toolCallId: 'review',
+            isError: false,
+            result,
+          }),
+        ],
+        'discussion',
+        false,
+      );
+      const parts = entries.flatMap((entry) => entry.parts);
+      expect(
+        parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
+      ).toHaveLength(1);
+      expect(parts.find((part) => part.kind === 'tool')).toMatchObject({
+        args: { question },
+        result,
+        status: 'succeeded',
+      });
+    },
+  );
+  it('keeps the latest reply and thinking complete beyond the history byte budget', () => {
+    const text = 'Detailed explanation. '.repeat(60_000);
+    const thinking = 'Thinking. '.repeat(60_000);
+    const output = projectConversation(
+      [
+        event(1, 'user_message', { text: 'Please explain' }),
+        event(2, 'message_end', {
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking },
+              { type: 'text', text },
+            ],
+          },
+        }),
+      ],
+      'discussion',
+      false,
+    );
+    const parts = output.at(-1)!.parts;
+    expect(parts.find((p) => p.kind === 'text')).toMatchObject({ text });
+    expect(parts.find((p) => p.kind === 'thinking')).toMatchObject({ text: thinking });
+    expect(output.at(-1)!.omitted).not.toBe(true);
+  });
   it('bounds aggregate tool payloads in one turn while preserving the latest normal payload whole', () => {
     const events: PersistedAgentSessionEvent[] = [];
     const text = 'tool output '.repeat(4000);
@@ -161,9 +356,20 @@ describe('student conversation projection', () => {
       'interrupted',
       'succeeded',
       undefined,
-      'failed',
     ]);
     expect(output[1]?.parts[0]).toMatchObject({ text: 'Partial', streaming: false });
+  });
+  it('does not fabricate an empty failed reply and still shows a queued retry waiting', () => {
+    const history = [
+      event(1, 'pbl_stage_entered', { milestoneId: 'one' }),
+      event(2, 'user_message', { text: 'System opening', pblOpening: true }),
+      event(3, 'session_end', { status: 'failed', error: 'Provider unavailable' }),
+    ];
+    const failed = projectConversation(history, 'discussion', false, 'failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].boundary).toBeDefined();
+    const retrying = projectConversation(history, 'discussion', true, 'queued');
+    expect(retrying.at(-1)).toMatchObject({ status: 'running', parts: [] });
   });
   it('distinguishes a recovered tool gate from a stalled model turn without leaking diagnostics', () => {
     const recovered = projectConversation(
@@ -281,7 +487,8 @@ describe('student conversation projection', () => {
     expect(first[0]?.parts).toEqual([
       {
         kind: 'thinking',
-        id: 'thinking-3-0',
+        id: 'thinking-2-0',
+        messageId: 2,
         text: 'Consider the input.',
         startedAt: 3,
         streaming: true,
@@ -469,6 +676,42 @@ describe('general teaching protocols', () => {
     ).toContain('LESSON_RESOURCE_SENTINEL');
     expect(renderTeachingPrompt(input).sectionBytes).toBeGreaterThan(0);
   });
+  it.each([0, 1])(
+    'orders the formal opening and asks one question in milestone %s, including authored Skills',
+    (index) => {
+      const milestone = definition.milestones[index]!;
+      const stage = milestone.stages[0]!;
+      const skill = {
+        ...stageSkill(stage),
+        documents: [],
+      };
+      skill.content = { ...skill.content, [skill.progression[1]!]: 'Course-specific lesson.' };
+      const input = {
+        definition,
+        milestone,
+        stage,
+        role: 'discussion' as const,
+        stageKey: `${milestone.id}:0`,
+        packaged: true,
+        skill,
+        collected: startOrchestration(definition).state.collected[milestone.id]!,
+        welcome: index === 0 ? ('ready' as const) : undefined,
+      };
+      const policy = 'first state what the learner will accomplish';
+      const rendered = renderTeachingPrompt(input).systemPrompt;
+      const section = teachingSection(input, skill.progression[1]!);
+      expect(rendered).toContain(policy);
+      expect(section.delivery).toContain(policy);
+      expect(section.delivery).toContain('End with ONE focused question');
+      expect(section.instruction).toBe('Course-specific lesson.');
+      expect(renderTeachingPrompt({ ...input, welcome: 'pending' }).systemPrompt).not.toContain(
+        policy,
+      );
+      expect(
+        teachingSection({ ...input, welcome: 'pending' }, skill.progression[1]!).delivery,
+      ).not.toContain(policy);
+    },
+  );
   it('gives decision discussion neutral options and keeps a decision-free milestone immediately continuable', () => {
     const noDecisions = structuredClone(definition);
     noDecisions.milestones[0]!.decisions = [];
@@ -538,4 +781,35 @@ describe('general teaching protocols', () => {
     expect(interactionRules).toContain('先在当前边界内正面解释');
     expect(interactionRules).toContain('真实新回复');
   });
+});
+
+it('protects the current reply independently of a later pending question fallback', () => {
+  const text = 'Large current reply. '.repeat(120_000);
+  const entries = projectConversation([event(1, 'message_end', message(text))], 'coder', false);
+  const currentId = entries[0]!.id;
+  entries.push({
+    id: 'pending-question',
+    speaker: 'coder',
+    parts: [{ kind: 'text', id: 'q', text: 'Can you explain this?' }],
+  });
+  boundConversation(entries, 1024, new Set([`${currentId}:${entries[0]!.parts[0]!.id}`]));
+  expect(entries[0]!.parts).toMatchObject([{ text }]);
+});
+
+it('bounds earlier model messages in a single long Agent turn without limiting the latest message', () => {
+  const events = [event(1, 'user_message', { text: 'Please implement this.' })];
+  const old = 'Older explanation. '.repeat(40_000);
+  const current = 'Current reasoning and text. '.repeat(50_000);
+  for (let n = 0; n < 12; n++) {
+    events.push(event(2 + n * 3, 'message_start', message('')));
+    events.push(event(3 + n * 3, 'message_end', message(old + n)));
+  }
+  events.push(event(100, 'message_start', message('')));
+  events.push(event(101, 'message_update', message(current)));
+  const entries = projectConversation(events, 'coder', true);
+  expect(JSON.stringify(entries)).toContain(current);
+  expect(Buffer.byteLength(JSON.stringify(entries))).toBeLessThan(
+    Buffer.byteLength(current) + 550_000,
+  );
+  expect(entries.some((entry) => entry.omitted)).toBe(true);
 });

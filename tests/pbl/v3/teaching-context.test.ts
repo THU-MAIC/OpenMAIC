@@ -94,4 +94,23 @@ describe('teaching stage handoff', () => {
     const context: Context = { messages: [reflection] };
     expect(currentTeachingContext(context, { ...window, studentTurns: 3 })).toBe(context);
   });
+
+  it.each([true, false])(
+    'retains already delivered prose as recovery data, not learner feedback (history: %s)',
+    (history) => {
+      const reply =
+        'This milestone adds tasks. Append preserves order. What does the caller receive?';
+      const context: Context = {
+        systemPrompt: 'Current teaching policy',
+        messages: history ? [...earlier, reflection] : [reflection],
+      };
+      const result = currentTeachingContext(context, { ...window, deliveredReply: reply });
+      expect(result.messages).toEqual([reflection]);
+      expect(result.systemPrompt).toContain(JSON.stringify(reply));
+      expect(result.systemPrompt).toContain('record that SAME question');
+      expect(result.systemPrompt).toContain('never student feedback');
+      expect(result.messages.filter((message) => message.role === 'user')).toHaveLength(1);
+      expect(context.systemPrompt).toBe('Current teaching policy');
+    },
+  );
 });

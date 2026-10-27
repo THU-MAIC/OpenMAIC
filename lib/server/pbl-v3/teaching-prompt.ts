@@ -16,6 +16,7 @@ import {
   assessmentRules,
   decisionRules,
   projectWelcomeRules,
+  stageOpeningRules,
 } from './skills';
 
 export interface TeachingSkill {
@@ -43,6 +44,7 @@ export interface TeachingPromptInput {
   reviewedSectionCount?: number;
   pendingReview?: {
     question: string;
+    approval?: boolean;
     studentResponses: readonly { seq: number; text: string }[];
   } | null;
   pendingRun?: string | null;
@@ -79,6 +81,11 @@ export function teachingSection(
     ...(section === skill.progression[1] ? { teaching: milestone.teaching } : {}),
     referenceMaterials: skill.documents,
     delivery:
+      (stage.kind === 'mentor_say' &&
+      stage.agent === 'discussion' &&
+      section === skill.progression[1]
+        ? stageOpeningRules + '\n'
+        : '') +
       'Platform pacing policy takes precedence over any course instruction to repeat a covered question. Check earlier learner replies before asking. If this section is already satisfied by verified same-version feedback, use reuseFeedback with a concrete explanation to continue without another question. Otherwise record one necessary question with request_skill_review and wait for a real reply. Explicit confident understanding is sufficient absent unresolved errors; never invent learner feedback.',
     goal: milestone.goal ?? milestone.title,
     stage: stage.kind === 'mentor_say' ? stage.say : stage.kind === 'produce' ? stage.writes : '',
@@ -246,6 +253,9 @@ function buildTeachingPrompt({
     teachingRules +
     (stage.kind === 'check' ? assessmentRules : interactionRules) +
     (welcome === 'pending' ? '\n' + projectWelcomeRules : '') +
+    (welcome !== 'pending' && stage.kind === 'mentor_say' && stage.agent === 'discussion'
+      ? '\n' + stageOpeningRules
+      : '') +
     (stage.kind === 'dialogue' ? '\n' + decisionRules : '') +
     (completionRecorded
       ? '\nThe current stage is ALREADY complete for the recorded evidence. Answer any follow-up directly. Do not restart teaching, invent a new required question, or require complete_stage again just because the learner sent another message. Actual artifact changes invalidate the affected review and require reviewing that new version before completion.'
@@ -256,7 +266,7 @@ function buildTeachingPrompt({
         ? '\nPlanning permits changes to PLAN.md only. Source editing, commands and terminals are unavailable. Review the plan and the learner’s reasoning; do not require code implementation or execution for plan approval.'
         : '') +
     (guided
-      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening the review. When activeSection is null, read_next_skill first. While welcome is pending, deliver only the welcome and readiness discussion; a later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. Otherwise read sections in order. New unanswered goals require one request_skill_review and real new feedback; already satisfied goals may reuse verified same-version learner feedback using reuseFeedback, including answers that anticipated the next section. State exactly what prior reply covers the goal; never reuse assistant reasoning as learner evidence. A correct answer or clear confident understanding suffices when no error or question remains. Do not add another example or boundary question merely to prolong review. Actual current-version plan/code approval is still required, but an already explicit same-version approval need not be repeated. Only complete_stage records completion; then follow learningRoadmap.confirmation. ' +
+      ? '\nThe current teachingContext is authoritative. Earlier stages do not complete this stage. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion; request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. Otherwise, when activeSection is null, read_next_skill first, then read sections in order. New unanswered goals require one request_skill_review and real new feedback; already satisfied goals may reuse verified same-version learner feedback using reuseFeedback, including answers that anticipated the next section. State exactly what prior reply covers the goal; never reuse assistant reasoning as learner evidence. A correct answer or clear confident understanding suffices when no error or question remains. Do not add another example or boundary question merely to prolong review. Actual current-version plan/code approval is still required. When requesting that approval before the final section, set request_skill_review.approval; only replies to an approval request can supply reusable artifact approval. The final plan/code section requests approval automatically. An already explicit same-version approval need not be repeated. If a required build is blocked and learner input is genuinely needed, request_learner_help hands control back without recording review or approval. Only complete_stage records completion; then follow learningRoadmap.confirmation. ' +
         confirmation
       : repairing
         ? '\nHelp the learner diagnose the observed test failure. Read the current code before making a focused repair. Explain the change and ask the learner to run tests again using the project controls. Never claim the repair passed without a new test result.'
@@ -266,10 +276,14 @@ function buildTeachingPrompt({
   );
 }
 
-/** Learner text belongs to durable conversation history, outside the course-resource budget. */
+/** Learner text belongs to durable conversation history. */
 function teachingReview(review: TeachingPromptInput['pendingReview']) {
   return review
-    ? { question: review.question, studentResponseCount: review.studentResponses.length }
+    ? {
+        question: review.question,
+        studentResponseCount: review.studentResponses.length,
+        ...(review.approval ? { approval: true } : {}),
+      }
     : null;
 }
 

@@ -121,14 +121,14 @@ describe('self-contained PBL project packages', () => {
     expect(JSON.stringify(skill)).not.toContain('FUTURE REFERENCE');
     expect(() => packagedStageSkill(project, stage, 'greeting:0', 'coder')).toThrow('unavailable');
   });
-  it('rejects a stage whose bound documents overflow the teaching prompt budget', () => {
+  it('accepts bound teaching documents beyond the former prompt budget', () => {
     expect(() =>
       validateProjectPackage(
         revised((files) => {
           files['docs/1.md'] = 'large course reference\n'.repeat(8000);
         }),
       ),
-    ).toThrow('Teaching prompt exceeds');
+    ).not.toThrow();
   });
   it.each([
     'systemPrompt',
@@ -144,7 +144,7 @@ describe('self-contained PBL project packages', () => {
     'project title',
     'language',
     'milestone teaching',
-  ])('rejects oversized package-controlled %s in the complete teaching prompt', (field) => {
+  ])('accepts large package-controlled %s without an arbitrary teaching prompt budget', (field) => {
     const bundle = revised((files) => {
       const spec = JSON.parse(files['project.json']);
       const large = 'course-controlled text '.repeat(2000);
@@ -174,7 +174,7 @@ describe('self-contained PBL project packages', () => {
       }
       files['project.json'] = JSON.stringify(spec);
     });
-    expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
+    expect(() => validateProjectPackage(bundle)).not.toThrow();
   });
   it('counts package-derived evaluation feedback duplicated in failure tutoring', () => {
     const bundle = revised((files) => {
@@ -191,7 +191,7 @@ describe('self-contained PBL project packages', () => {
       files[name] = JSON.stringify(evaluation);
       files['project.json'] = JSON.stringify(spec);
     });
-    expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
+    expect(() => validateProjectPackage(bundle)).not.toThrow();
   });
   it('preserves large metadata that never enters a teaching prompt', () => {
     const bundle = revised((files) => {
@@ -223,35 +223,18 @@ describe('self-contained PBL project packages', () => {
         } else files['docs/1.md'] = kind === 'UTF-8' ? '课'.repeat(11_000) : '"\n'.repeat(9000);
         files['project.json'] = JSON.stringify(spec);
       });
-      expect(() => validateProjectPackage(bundle)).toThrow('Teaching prompt exceeds');
+      expect(() => validateProjectPackage(bundle)).not.toThrow();
     },
   );
-  it('accepts the exact teaching budget without truncation and rejects one extra byte', () => {
+  it('preserves large bound references while retaining package file-size validation', () => {
     const bundle = revised((files) => {
-      files['docs/1.md'] = '';
-      // Unbound resources remain portable without consuming this stage's prompt budget.
-      files['docs/unbound.md'] = 'x'.repeat(512 * 1024);
+      files['docs/1.md'] = 'x'.repeat(64 * 1024);
     });
-    const padded = (size: number) =>
-      indexProjectFiles(bundle.entry.id, bundle.entry.version, {
-        ...bundle.files,
-        'docs/1.md': 'x'.repeat(size),
-      });
-    let acceptedBytes = 0,
-      rejectedBytes = 32 * 1024;
-    expect(() => validateProjectPackage(padded(rejectedBytes))).toThrow('Teaching prompt exceeds');
-    while (rejectedBytes - acceptedBytes > 1) {
-      const candidate = Math.floor((acceptedBytes + rejectedBytes) / 2);
-      try {
-        validateProjectPackage(padded(candidate));
-        acceptedBytes = candidate;
-      } catch {
-        rejectedBytes = candidate;
-      }
-    }
-    const accepted = validateProjectPackage(padded(acceptedBytes));
-    expect(accepted.bundle.files['docs/1.md']).toBe('x'.repeat(acceptedBytes));
-    expect(() => validateProjectPackage(padded(rejectedBytes))).toThrow('Teaching prompt exceeds');
+    expect(validateProjectPackage(bundle).bundle.files['docs/1.md']).toHaveLength(64 * 1024);
+    const oversized = revised((files) => {
+      files['docs/1.md'] = 'x'.repeat(512 * 1024 + 1);
+    });
+    expect(() => validateProjectPackage(oversized)).toThrow();
   });
   it('rejects corrupt, missing, unsafe, excessive and unsupported resources before installation', () => {
     const bundle = packageBuiltin(source());

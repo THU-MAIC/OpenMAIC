@@ -593,6 +593,13 @@ describe('OpenAI provider defaults', () => {
   });
 
   it.each([
+    ['deepseek', 'deepseek-chat', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
+    [
+      'deepseek',
+      'deepseek-chat',
+      { mode: 'disabled', effort: 'low' },
+      { thinking: { type: 'disabled' } },
+    ],
     ['kimi', 'kimi-k3', { mode: 'enabled', effort: 'high' }, { reasoning_effort: 'high' }],
     ['grok', 'grok-4.6', { mode: 'enabled', effort: 'xhigh' }, { reasoning_effort: 'xhigh' }],
     ['grok', 'grok-4.5', { mode: 'enabled', effort: 'medium' }, { reasoning_effort: 'medium' }],

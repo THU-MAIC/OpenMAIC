@@ -75,7 +75,7 @@ export function useProjectEditor(
         )
           return;
         const existing = current.current.buffers[path];
-        // Polls and Agent writes refresh clean documents; a late read never erases typing.
+        // Server updates and Agent writes refresh clean documents; a late read never erases typing.
         if (!discard && existing && existing.text !== existing.saved) return;
         updateBuffers((previous) => ({
           ...previous,
@@ -243,7 +243,7 @@ export function useProjectEditor(
         b.text === text
       )
         return;
-      // A failed write is retried explicitly; edits and polling never loop a rejected command.
+      // A failed write is retried explicitly; edits and server updates never loop a rejected command.
       updateBuffers((previous) => ({ ...previous, [path]: { ...previous[path], text } }));
     },
   };

@@ -8,7 +8,7 @@ import type { OrchestrationEvent } from '@/lib/pbl/v3/domain/orchestration/event
 import type { LearningReport } from '@/lib/pbl/v3/report';
 import { LearningStore, type Study, type RoleBinding } from './store';
 import { projectFor } from './runtime';
-import { reviewQuestion } from './review-question';
+import { reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
 
 const HISTORY_LIMIT = 1000;
@@ -146,8 +146,9 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     const entries = await db.query<{ id: number; at: number; type: string; data: unknown }>(
       `SELECT seq AS id,ts::float8 AS at,type,CASE WHEN octet_length(data::text)<=$4 THEN data END AS data
        FROM agent_session_events WHERE session_id=$1 AND seq<=$2
-         AND (type IN ('user_message','message_end')
-           OR (type='tool_execution_end' AND data->>'toolName'='request_skill_review'))
+         AND (type IN ('user_message','message_end','pbl_learner_handoff')
+           OR (type='tool_execution_end' AND data->>'toolName' IN
+             ('request_skill_review','request_learner_help')))
        ORDER BY seq DESC LIMIT $3`,
       [binding.session_id, binding.last, eventsRemaining + 1, RECORD_BYTES],
     );
@@ -167,6 +168,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     };
     let latestInputSequence: number | undefined;
     let latestInputAt = 0;
+    const questions = reviewQuestions(selected);
     for (const entry of selected) {
       if (!entry.data) {
         conversationTruncated = true;
@@ -177,8 +179,8 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         pblOpening?: boolean;
         message?: { role?: string; content?: { type: string; text?: string }[] };
       };
-      const question = reviewQuestion(entry);
-      if (question !== null) pushMessage(entry.id, entry.at, 'assistant', question);
+      const question = questions.get(entry.id);
+      if (question !== undefined) pushMessage(entry.id, entry.at, 'assistant', question);
       if (entry.type === 'user_message') {
         // Review recovery follows the actual queued input, including automatic
         // openings. Only real learner messages belong in the visible transcript.
@@ -201,21 +203,24 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         if (text) pushMessage(entry.id, entry.at, 'assistant', text);
       }
     }
-    const pending = binding.guided?.pending;
-    if (
-      latestInputSequence !== undefined &&
-      pending?.runId === `${binding.stage_key}:${latestInputSequence}` &&
-      !messages.some(
-        (m) =>
-          m.sequence > latestInputSequence && m.role === 'assistant' && m.text === pending.question,
+    for (const pending of [binding.guided?.pending, binding.guided?.handoff]) {
+      if (
+        latestInputSequence !== undefined &&
+        pending?.runId === `${binding.stage_key}:${latestInputSequence}` &&
+        !messages.some(
+          (m) =>
+            m.sequence > latestInputSequence &&
+            m.role === 'assistant' &&
+            m.text === pending.question,
+        )
       )
-    )
-      pushMessage(
-        binding.last + 1,
-        selected[0]?.at ?? latestInputAt,
-        'assistant',
-        pending.question,
-      );
+        pushMessage(
+          binding.last + 1,
+          selected[0]?.at ?? latestInputAt,
+          'assistant',
+          pending.question,
+        );
+    }
     conversations.push({
       role: binding.role,
       milestone: binding.context_key,

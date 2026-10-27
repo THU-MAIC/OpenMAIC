@@ -29,6 +29,7 @@ vi.mock('@ai-sdk/google', () => ({
   createGoogleGenerativeAI: googleMock.createGoogleGenerativeAI,
 }));
 
+import { llmExecutionContext } from '@/lib/ai/thinking-context';
 import { getModel, LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 
 describe('Google proxy transport', () => {
@@ -38,6 +39,29 @@ describe('Google proxy transport', () => {
     proxyAgentMock.constructions.length = 0;
   });
 
+  it('keeps V3 proxy requests unbounded without changing other calls on the same model', async () => {
+    getModel({
+      providerId: 'google',
+      modelId: 'gemini-3.6-flash',
+      apiKey: 'test',
+      proxy: 'http://proxy.example:8080',
+    });
+    const options = googleMock.createGoogleGenerativeAI.mock.calls.at(-1)?.[0] as {
+      fetch: typeof fetch;
+    };
+    await llmExecutionContext.run({ unbounded: true }, () =>
+      options.fetch('https://example.com', { method: 'POST' }),
+    );
+    await options.fetch('https://example.com', { method: 'POST' });
+    expect(proxyAgentMock.constructions).toEqual([
+      { uri: 'http://proxy.example:8080', headersTimeout: 0, bodyTimeout: 0 },
+      {
+        uri: 'http://proxy.example:8080',
+        headersTimeout: LLM_FETCH_TIMEOUT_MS,
+        bodyTimeout: LLM_FETCH_TIMEOUT_MS,
+      },
+    ]);
+  });
   it('builds the proxy dispatcher with the extended LLM timeout budget', async () => {
     getModel({
       providerId: 'google',

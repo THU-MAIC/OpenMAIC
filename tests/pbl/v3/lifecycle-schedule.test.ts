@@ -9,9 +9,9 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it('defaults to ten minutes of inactivity while keeping the threshold configurable', () => {
+it('defaults to fifteen minutes of inactivity while keeping the threshold configurable', () => {
   vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', undefined);
-  expect(pblIdleTimeoutMs()).toBe(600_000);
+  expect(pblIdleTimeoutMs()).toBe(900_000);
   vi.stubEnv('OPENMAIC_PBL_IDLE_TIMEOUT_MS', '300000');
   expect(pblIdleTimeoutMs()).toBe(300_000);
 });

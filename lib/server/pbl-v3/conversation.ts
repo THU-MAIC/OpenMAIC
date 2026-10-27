@@ -2,12 +2,17 @@ import 'server-only';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
-import { reviewQuestion } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
+import {
+  modelRequestFailureCode,
+  MODEL_REQUEST_IDLE_TIMEOUT,
+} from '@/lib/agent/runtime/request-failure';
 
 /** Never send provider diagnostics, addresses or credentials to a learner. */
 export function learningRunFailure(error: unknown): LearningRunFailure {
   const message = typeof error === 'string' ? error : '';
+  if (modelRequestFailureCode(message) === MODEL_REQUEST_IDLE_TIMEOUT) return 'timeout';
   if (message.startsWith('Teaching turn ended without recording')) return 'incomplete';
   return /\b(401|403)\b|unauthori[sz]ed|authentication|api.?key/i.test(message)
     ? 'authentication'
@@ -41,6 +46,7 @@ const runEvents = new Set([
   'tool_execution_start',
   'tool_execution_update',
   'tool_execution_end',
+  LEARNER_HANDOFF_EVENT,
 ]);
 
 function record(value: unknown): Record<string, unknown> {
@@ -54,12 +60,15 @@ export function projectConversation(
   role: AgentRole,
   running: boolean,
   terminalStatus?: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'missing',
+  history = false,
 ): LearningConversationEntry[] {
   const entries: LearningConversationEntry[] = [];
   let assistant: LearningConversationEntry | undefined;
   let attempt: number | undefined;
+  let messageId: number | undefined;
   const blocks = new Map<number, Extract<Part, { kind: 'text' | 'thinking' }>>();
   const tools = new Map<string, ToolPart>();
+  const questions = reviewQuestions(events);
   const settleThinking = (ts: number) => {
     for (const part of blocks.values())
       if (part.kind === 'thinking') {
@@ -77,6 +86,7 @@ export function projectConversation(
       }
     blocks.clear();
     tools.clear();
+    messageId = undefined;
   };
   const getAssistant = (event: Pick<PersistedAgentSessionEvent, 'id' | 'ts'>) => {
     if (!assistant) {
@@ -90,6 +100,23 @@ export function projectConversation(
       entries.push(assistant);
     }
     return assistant;
+  };
+  const appendQuestion = (event: PersistedAgentSessionEvent) => {
+    const question = questions.get(event.id);
+    if (
+      question &&
+      !getAssistant(event).parts.some(
+        (part) => part.kind === 'text' && part.text.includes(question),
+      )
+    )
+      getAssistant(event).parts.push({
+        kind: 'text',
+        id:
+          typeof record(event.data).toolCallId === 'string'
+            ? `question-${event.attempt}-${record(event.data).toolCallId}`
+            : `question-${event.id}`,
+        text: question,
+      });
   };
   for (const event of events) {
     const data = record(event.data);
@@ -132,6 +159,10 @@ export function projectConversation(
       assistant = undefined;
     }
     attempt = event.attempt;
+    if (event.type === LEARNER_HANDOFF_EVENT) {
+      appendQuestion(event);
+      continue;
+    }
     if (event.type === 'session_start' || event.type === 'session_resumed') {
       getAssistant(event);
       continue;
@@ -157,11 +188,17 @@ export function projectConversation(
       ['message_start', 'message_update', 'message_end'].includes(event.type) &&
       message.role === 'assistant'
     ) {
-      if (event.type === 'message_start') {
+      const anchor =
+        typeof data.pblMessageId === 'number' && data.pblMessageId > 0
+          ? data.pblMessageId
+          : undefined;
+      if (event.type === 'message_start' || (anchor !== undefined && anchor !== messageId)) {
         settleThinking(event.ts);
         for (const part of blocks.values()) part.streaming = false;
         blocks.clear();
+        messageId = anchor ?? event.id;
       }
+      messageId ??= event.id;
       const content = Array.isArray(message.content) ? message.content : [];
       for (const [index, raw] of content.entries()) {
         const block = record(raw);
@@ -175,13 +212,19 @@ export function projectConversation(
             block.type === 'thinking'
               ? {
                   kind: 'thinking',
-                  id: `thinking-${event.id}-${index}`,
+                  id: `thinking-${messageId}-${index}`,
+                  messageId,
                   text,
                   startedAt: event.ts,
                 }
-              : { kind: 'text', id: `text-${event.id}-${index}`, text };
+              : { kind: 'text', id: `text-${messageId}-${index}`, messageId, text };
           blocks.set(index, part);
           getAssistant(event).parts.push(part);
+        }
+        if (part.kind === 'thinking') {
+          const timing = record(record(data.pblThinkingTimings)[index]);
+          if (typeof timing.startedAt === 'number') part.startedAt = timing.startedAt;
+          if (typeof timing.endedAt === 'number') part.endedAt = timing.endedAt;
         }
         part.text = text;
         part.streaming =
@@ -191,6 +234,7 @@ export function projectConversation(
         settleThinking(event.ts);
         for (const part of blocks.values()) part.streaming = false;
         blocks.clear();
+        messageId = undefined;
       }
     }
     if (
@@ -204,7 +248,7 @@ export function projectConversation(
         if (!tool) {
           tool = {
             kind: 'tool',
-            id: `tool-${event.attempt}-${event.id}-${data.toolCallId}`,
+            id: `tool-${event.attempt}-${data.toolCallId}`,
             name,
             action,
             status: 'running',
@@ -242,13 +286,7 @@ export function projectConversation(
           }
         }
       }
-      const question = reviewQuestion(event);
-      if (question)
-        getAssistant(event).parts.push({
-          kind: 'text',
-          id: `question-${event.id}`,
-          text: question,
-        });
+      appendQuestion(event);
     }
   }
   if (!running) {
@@ -263,19 +301,47 @@ export function projectConversation(
     const last = events.at(-1);
     getAssistant({ id: (last?.id ?? 0) + 1, ts: (last?.ts ?? 0) + 1 });
   }
-  return boundConversation(
-    entries
+  const visible = entries.filter(
+    (e) =>
+      e.boundary ||
+      e.omitted ||
+      e.parts.length ||
+      // Empty failures belong in the run banner, not in fabricated replies.
+      // Retain partial replies, active waiters and cancellation history.
+      e.status === 'running' ||
+      e.status === 'cancelled' ||
+      e.status === 'interrupted',
+  );
+  if (events.some((event) => record(event.data).pblHistoryBefore) && visible.length)
+    visible[0].omitted = true;
+  return history ? visible : boundConversation(visible.slice(-60));
+}
+
+/** One model message, rather than the whole multi-call Agent turn. */
+export function latestMessagePartIds(entries: LearningConversationEntry[]) {
+  const modelEntry = entries.findLast((item) =>
+    item.parts.some(
+      (part) => (part.kind === 'text' || part.kind === 'thinking') && part.messageId !== undefined,
+    ),
+  );
+  const entry =
+    modelEntry ??
+    entries.findLast((item) =>
+      item.parts.some((part) => part.kind === 'text' || part.kind === 'thinking'),
+    );
+  const message = entry?.parts.findLast(
+    (part) =>
+      (part.kind === 'text' || part.kind === 'thinking') &&
+      (!modelEntry || part.messageId !== undefined),
+  );
+  return new Set(
+    entry?.parts
       .filter(
-        (e) =>
-          e.boundary ||
-          e.omitted ||
-          e.parts.length ||
-          e.status === 'running' ||
-          e.status === 'failed' ||
-          e.status === 'cancelled' ||
-          e.status === 'interrupted',
+        (part) =>
+          (part.kind === 'text' || part.kind === 'thinking') &&
+          part.messageId === (message && 'messageId' in message ? message.messageId : undefined),
       )
-      .slice(-60),
+      .map((part) => `${entry.id}:${part.id}`),
   );
 }
 
@@ -283,13 +349,19 @@ export function projectConversation(
 export function boundConversation(
   entries: LearningConversationEntry[],
   budget = CONVERSATION_BYTES,
+  currentPartIds = latestMessagePartIds(entries),
 ) {
   let remaining = budget;
   for (const entry of entries.toReversed()) {
     const kept: Part[] = [];
     for (const part of entry.parts.toReversed()) {
       const size = Buffer.byteLength(JSON.stringify(part));
-      if (size <= remaining) {
+      if (
+        currentPartIds.has(`${entry.id}:${part.id}`) &&
+        (part.kind === 'text' || part.kind === 'thinking')
+      ) {
+        kept.push(part);
+      } else if (size <= remaining) {
         kept.push(part);
         remaining -= size;
       } else {

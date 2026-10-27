@@ -1778,6 +1778,7 @@ export interface ModelWithInfo {
  * two cannot drift apart again.
  */
 export function preservesReasoning(providerId: string, modelId: string): boolean {
+  if (providerId === 'deepseek') return true;
   if (providerId === 'kimi' && modelId === 'kimi-k3') return true;
   return getCatalogThinkingCapability(providerId, modelId)?.requestAdapter === 'deepseek';
 }
@@ -1813,6 +1814,16 @@ function getCompatThinkingBodyParams(
     };
   }
 
+  // Explicit modes also apply to provider aliases absent from the local catalogue.
+  if (providerId === 'deepseek') {
+    if (mode === 'disabled' || config.effort === 'none')
+      return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
+    if (config.effort === 'low')
+      return {
+        params: { thinking: { type: 'enabled' }, reasoning_effort: 'low' },
+        disablesThinking: false,
+      };
+  }
   const capability = getCatalogThinkingCapability(providerId, modelId);
   if (!capability || capability.control === 'none') return undefined;
 
@@ -1873,14 +1884,17 @@ function getCompatThinkingBodyParams(
       if (mode === 'disabled' || config.effort === 'none') {
         return { params: { thinking: { type: 'disabled' } }, disablesThinking: true };
       }
-      // A tool-carrying request may never set reasoning_effort (the transport
-      // rejects function tools combined with it), so the toggle goes alone;
-      // every other request keeps the historical effort (explicit value, else
-      // the default).
-      if (options.hasTools) {
+      // Current DeepSeek endpoints accept explicit low effort with tools.
+      // Preserve the existing toggle-only path for other tool requests.
+      if (options.hasTools && config.effort !== 'low') {
         return { params: { thinking: { type: 'enabled' } }, disablesThinking: false };
       }
-      const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
+      const effort =
+        config.effort === 'low'
+          ? 'low'
+          : config.effort === 'max' || config.effort === 'xhigh'
+            ? 'max'
+            : 'high';
       return {
         params: {
           thinking: { type: 'enabled' },
@@ -2167,10 +2181,29 @@ function openAIStreamErrorStatus(error: Record<string, unknown>): number {
  */
 export const LLM_FETCH_TIMEOUT_MS = 15 * 60 * 1000;
 
+/** V3 conversations opt out per call; other model requests keep their policy. */
+export function llmFetchTimeoutMs(): number {
+  const context = (
+    globalThis as typeof globalThis & {
+      __llmExecutionContext?: { getStore(): { unbounded: boolean } | undefined };
+    }
+  ).__llmExecutionContext;
+  return context?.getStore()?.unbounded ? 0 : LLM_FETCH_TIMEOUT_MS;
+}
+let unboundedDispatcherPromise: Promise<unknown> | undefined;
 let llmDispatcherPromise: Promise<unknown> | undefined;
 let warnedLlmDispatcherFailure = false;
 
 function getLlmDispatcher(): Promise<unknown> {
+  if (llmFetchTimeoutMs() === 0) {
+    unboundedDispatcherPromise ??= import(/* webpackIgnore: true */ 'undici')
+      .then(({ Agent }) => new Agent({ headersTimeout: 0, bodyTimeout: 0 }))
+      .catch((error: unknown) => {
+        unboundedDispatcherPromise = undefined;
+        throw error;
+      });
+    return unboundedDispatcherPromise;
+  }
   // `??=` caches whatever promise this produces — including a rejected one.
   // Drop the cache on failure so a single transient undici import (or Agent
   // construction) error can't brick every transportFetch call for the life
@@ -2469,8 +2502,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
       const deepseekAdapter =
+        config.providerId === 'deepseek' ||
         getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
-        'deepseek';
+          'deepseek';
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2693,7 +2727,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       };
       if (config.proxy) {
         const proxy = config.proxy;
-        let agent: unknown;
+        const agents = new Map<number, unknown>();
         googleOptions.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const { ProxyAgent, fetch: undiciFetch } = (await import(
             /* webpackIgnore: true */ 'undici'
@@ -2708,11 +2742,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           // LLM request whose headers may only arrive after minutes of thinking.
           // (http/https proxies only — undici's Socks5ProxyAgent drops these
           // options, so socks5:// proxies keep undici's default 300 s cap.)
-          agent ??= new ProxyAgent({
-            uri: proxy,
-            headersTimeout: LLM_FETCH_TIMEOUT_MS,
-            bodyTimeout: LLM_FETCH_TIMEOUT_MS,
-          });
+          const timeout = llmFetchTimeoutMs();
+          let agent = agents.get(timeout);
+          if (!agent) {
+            agent = new ProxyAgent({ uri: proxy, headersTimeout: timeout, bodyTimeout: timeout });
+            agents.set(timeout, agent);
+          }
           const response = await undiciFetch(input, {
             ...(init as Record<string, unknown>),
             dispatcher: agent,

@@ -163,23 +163,9 @@ export class LearningStore {
       if (!row.environment_id) return { row, active: turns.rows.length > 0, release: false };
       let cleanup = row.idle_turn_cleanup;
       if (cleanup?.environmentId !== row.environment_id) cleanup = null;
-      if (
-        !cleanup &&
-        turns.rows.length &&
-        now.getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs()
-      ) {
-        const idleAt = row.last_used_at.getTime() + pblIdleTimeoutMs();
-        cleanup = {
-          environmentId: row.environment_id,
-          idleAt: new Date(idleAt).toISOString(),
-          releaseAt: new Date(idleAt + pblArchiveFailureGraceMs()).toISOString(),
-        };
-        await db.query('UPDATE pbl_v3_studies SET idle_turn_cleanup=$2 WHERE id=$1', [
-          row.id,
-          JSON.stringify(cleanup),
-        ]);
-        row.idle_turn_cleanup = cleanup;
-      }
+      // Learner inactivity is not execution failure. The runner settles failed
+      // requests (including upstream silence); healthy queued/running work is protected.
+      // Explicit release/discard intents below still fence retired writers.
       const release = !!cleanup && now.getTime() >= Date.parse(cleanup.releaseAt);
       const releasing = cleanup?.releasing === true;
       const discarded = row.archive_discard?.environmentId === row.environment_id;
@@ -570,6 +556,7 @@ export class LearningStore {
     return { ...result.rows[0], ...(row.project ? { project: row.project } : {}) };
   }
   private async events(db: PoolClient, id: string, transition: EngineTransition) {
+    await notifyDurableAgentEvent(db, { kind: 'session', sessionId: id });
     const first = transition.state.lastSequence - transition.events.length + 1;
     for (const [i, event] of transition.events.entries())
       await db.query('INSERT INTO pbl_v3_events(study_id,sequence,event) VALUES($1,$2,$3)', [

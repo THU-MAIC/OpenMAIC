@@ -37,6 +37,7 @@ export interface LearningView {
   files: string[];
   busy: boolean;
   conversation?: import('./conversation').LearningConversationEntry[];
+  conversationHistory?: { sessionId: string; through: number; role: AgentRole }[];
   activitySequence?: number;
   task?: { title: string; goal: string };
   messages: { role: 'user' | 'assistant'; text: string }[];
@@ -44,6 +45,7 @@ export interface LearningView {
   roleRun: {
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'missing';
     failure: import('./conversation').LearningRunFailure | null;
+    failureCode?: import('@/lib/agent/runtime/request-failure').ModelRequestFailureCode | null;
     canRetry: boolean;
   } | null;
   decisions: { id: string; prompt: string; options: { id: string; label: string }[] }[];

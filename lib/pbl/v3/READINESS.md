@@ -92,6 +92,11 @@ Expected-output digests remove the known command-line disclosure, but shell acce
 remains a cooperative learning facility. Course authors must not put expected values
 inside sandbox-visible support scripts. This does not claim hostile-exam isolation.
 
+Java runtime stack frames are excluded from compiler-location parsing, so null and
+index exceptions retain their per-case execution failure instead of invalidating
+the whole receipt as infrastructure failure. Repair and passing reruns are covered
+with the local JDK.
+
 Compile feedback returns bounded public-source locations and error categories,
 without compiler source excerpts, private test paths, hidden expectations or raw
 tracebacks. ANSI decoration is removed before parsing. The host validates locations

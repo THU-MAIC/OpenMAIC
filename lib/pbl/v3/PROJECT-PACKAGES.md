@@ -164,19 +164,9 @@ Version 1 supports UTF-8 text resources only: at most 256 PBL scenes, 16 project
 512 files and 8 MiB per classroom; 512 KiB per file. Export applies the same
 aggregate limits as import, counting each content checksum once. The export
 response also serializes shared bundles once and maps scene references to them.
-Each stage's complete
-rendered system prompt plus its guided Skill replies must fit 32 KiB of UTF-8.
-Validation uses the runtime prompt builder, counting role templates, common rules,
-goals, contracts, projected decisions, all intro variants, bound documents/Skills,
-starter plans, package-derived evaluation feedback, teaching metadata,
-server instructions, live teaching-state suffixes and JSON escapes. It includes
-normal assessment introductions and test-failure tutoring even without a teaching binding.
-Oversized prompts are rejected before installation; resources are never silently
-truncated. Runtime checks the same budget again before model invocation, including
-later learner plan edits. Plan saves, approvals and progression also check downstream
-plan-reading contexts while the learner can still shorten the plan.
-Review questions are checked before their receipts are
-persisted, so an oversized question can be shortened without blocking the next turn.
+Teaching prompts, plan-derived teaching context and review questions have no
+application-defined token/character budget. Package file-count, archive-size and
+path validation remain in force independently of teaching generation.
 Conversation history has a separate teaching context window; learner replies remain
 there in full, while entry/live review metadata records only the eligible response count.
 Executable test support files total at most 24 KiB; evaluation descriptors, rubric

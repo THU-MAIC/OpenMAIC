@@ -80,7 +80,7 @@ export async function touchEnvironment(
   const deadline = Date.now() + 5_000;
   let reconciled = false;
   for (;;) {
-    // Polls and role tools use different service instances, possibly in different processes.
+    // Readers and role tools use different service instances, possibly in different processes.
     // A caller's Study snapshot may predate another caller's successful renewal.
     const current = await store.get(row.id, row.owner_id);
     if (current.environment_id !== row.environment_id)

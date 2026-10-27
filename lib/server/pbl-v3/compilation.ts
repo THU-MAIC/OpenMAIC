@@ -124,12 +124,16 @@ export async function collectBuild(store: LearningStore, row: Study, service: Sa
   return evidence;
 }
 export async function assertBuilt(store: LearningStore, row: Study, fingerprint: string) {
+  if (!(await isBuilt(store, row, fingerprint)))
+    throw sandboxConflict('Run and collect a successful build of the current files before review.');
+}
+
+export async function isBuilt(store: LearningStore, row: Study, fingerprint: string) {
   const stage = stageFor(row);
-  if (stage.kind !== 'produce' || !stage.compileBeforeReview) return;
+  if (stage.kind !== 'produce' || !stage.compileBeforeReview) return true;
   const result = await store.pool.query<{ passed: string }>(
     "SELECT result->>'passed' AS passed FROM pbl_v3_commands WHERE study_id=$1 AND stage_key=$2 AND result->>'kind'='compile' AND result->>'fingerprint'=$3 ORDER BY (result->>'revision')::integer DESC LIMIT 1",
     [row.id, stageKey(row), fingerprint],
   );
-  if (result.rows[0]?.passed !== 'true' || row.evaluation)
-    throw sandboxConflict('Run and collect a successful build of the current files before review.');
+  return result.rows[0]?.passed === 'true' && !row.evaluation;
 }

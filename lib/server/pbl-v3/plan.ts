@@ -2,16 +2,14 @@ import 'server-only';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import type { LearningStore, Study } from './store';
 import { digest, projectFor, stageFor } from './runtime';
-import { assertProjectPlanPromptBudget } from './project-package';
 
-/** Plans must fit downstream teaching contexts and preserve previously approved incremental chapters. */
+/** Plans preserve previously approved incremental chapters. */
 export async function assertLearningPlan(
   store: LearningStore,
   row: Study,
   text: string,
   completing = false,
 ) {
-  assertProjectPlanPromptBudget(projectFor(row), text);
   const stage = stageFor(row);
   if (stage.kind !== 'produce' || stage.writes !== 'plan' || stage.planUpdateMode !== 'incremental')
     return;

@@ -9,7 +9,8 @@ const receiptSchema = z.object({
   file: z.string(),
   artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),
   runId: z.string(),
-  question: z.string().min(1).max(2000),
+  question: z.string().min(1),
+  approval: z.boolean().optional(),
 });
 export const guidedSkillStateSchema = z
   .object({
@@ -17,7 +18,15 @@ export const guidedSkillStateSchema = z
     activeFile: z.string(),
     reviewedFiles: z.array(z.string()).max(16),
     pending: receiptSchema.optional(),
+    handoff: z.object({ runId: z.string(), question: z.string().min(1) }).optional(),
     welcome: z.enum(['pending', 'ready']).optional(),
+    approval: z
+      .object({
+        stageKey: z.string(),
+        artifactDigest: z.string(),
+        studentSeq: z.number().int().positive(),
+      })
+      .optional(),
     coverage: z
       .object({
         stageKey: z.string(),
@@ -47,6 +56,7 @@ export class GuidedSkillReview {
     readonly protocol: StageSkillProtocol,
     restored?: GuidedSkillState,
     projectWelcome = false,
+    private readonly requiresApproval = false,
   ) {
     const files = protocol.progression.slice(1);
     const index = restored ? files.indexOf(restored.activeFile) : -1;
@@ -75,7 +85,34 @@ export class GuidedSkillReview {
     this.eligible = eligible;
     this.advanced = false;
     // A retry is still the same student turn, not permission to revise their review.
-    this.ended = this.state.pending?.runId === this.runId;
+    this.ended =
+      this.state.pending?.runId === this.runId || this.state.handoff?.runId === this.runId;
+    if (this.state.handoff?.runId !== this.runId) delete this.state.handoff;
+  }
+
+  /** Keep local protocol flags aligned with a tool's committed database result. */
+  async withRollback<T>(work: () => Promise<T>): Promise<T> {
+    const state = structuredClone(this.state),
+      advanced = this.advanced,
+      ended = this.ended;
+    try {
+      return await work();
+    } catch (error) {
+      this.state = state;
+      this.advanced = advanced;
+      this.ended = ended;
+      throw error;
+    }
+  }
+
+  /** A blocked build can return control without creating review/approval evidence. */
+  handoff(question: string): void {
+    if (!question.trim()) throw new Error('A concrete learner question is required.');
+    this.assertWritable();
+    delete this.state.pending;
+    delete this.state.coverage;
+    this.state.handoff = { runId: this.runId, question };
+    this.finishRun();
   }
 
   /** The runner supplies durable user events, never model-authored quotes or assistant turns. */
@@ -158,6 +195,7 @@ export class GuidedSkillReview {
           artifactDigest: digest,
           studentSeq: this.studentResponses().at(-1)!.seq,
         };
+        if (this.state.pending?.approval) this.state.approval = { ...this.state.coverage };
       }
       this.state.reviewedFiles.push(this.state.activeFile);
     }
@@ -166,14 +204,20 @@ export class GuidedSkillReview {
     this.advanced = true;
   }
 
-  checkpoint(question: string, digest: string): GuidedSkillState {
+  checkpoint(question: string, digest: string, approval = false): GuidedSkillState {
+    if (!question.trim()) throw new Error('请给出当前段的具体检查任务');
+    // The welcome is already supplied by the host prompt. Recording readiness
+    // may be the model's first tool call; it must not depend on a redundant read.
+    // Keep it inside A, without opening the lesson or crediting any feedback.
+    if (this.state.welcome === 'pending' && !this.state.activeFile)
+      this.advance(this.protocol.progression[1]!, undefined, digest);
     this.assertWritable();
-    if (!question.trim() || question.length > 2000) throw new Error('请给出当前段的具体检查任务');
     this.state.pending = {
       file: this.state.activeFile,
       artifactDigest: digest,
       runId: this.runId,
       question,
+      ...(approval ? { approval: true } : {}),
     };
     this.ended = true;
     return structuredClone(this.state);
@@ -198,6 +242,16 @@ export class GuidedSkillReview {
     this.assertCompletable();
     if (reuseFeedback) this.assertCovered(feedback, digest);
     else this.assertFeedback(feedback, digest);
+    const prior = this.state.approval;
+    const approved =
+      (!reuseFeedback && this.state.pending?.approval) ||
+      (prior?.stageKey === this.stageKey &&
+        prior.artifactDigest === digest &&
+        this.messages.some((message) => message.seq === prior.studentSeq && message.text.trim()));
+    if (this.requiresApproval && !approved)
+      throw new Error(
+        'Request approval of the current artifact with request_skill_review and wait for the learner reply; understanding feedback cannot approve an artifact.',
+      );
   }
 
   complete(feedback: string | undefined, digest: string, reuseFeedback = false): void {

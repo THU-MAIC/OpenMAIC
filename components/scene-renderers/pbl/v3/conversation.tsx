@@ -19,6 +19,7 @@ import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
+import { ConversationHistory } from './conversation-history';
 import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -146,6 +147,32 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
     </article>
   );
 }
+function ConversationEntry({ entry }: { entry: LearningConversationEntry }) {
+  const { t } = useI18n();
+  return entry.boundary ? (
+    <div
+      key={entry.id}
+      role="separator"
+      className="flex items-center gap-3 py-2 text-[11px] text-muted-foreground"
+    >
+      <span className="h-px flex-1 bg-border" />
+      <Route size={13} />
+      <span>
+        M{entry.boundary.milestoneIndex + 1} · {entry.boundary.milestoneTitle} ·{' '}
+        {entry.boundary.stageIndex + 1}/{entry.boundary.total}{' '}
+        {t(`pblV3.journey.steps.${entry.boundary.step}`)}
+      </span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  ) : entry.speaker === 'user' ? (
+    <UserBubble
+      key={entry.id}
+      text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
+    />
+  ) : (
+    <AgentTurn key={entry.id} entry={entry} />
+  );
+}
 export function LearningConversation({
   view,
   sent,
@@ -167,6 +194,11 @@ export function LearningConversation({
     <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
       <FollowSend count={sent} />
       <ConversationContent className="gap-5 p-4">
+        <ConversationHistory
+          id={view.id}
+          sources={view.conversationHistory ?? []}
+          renderEntry={(entry) => <ConversationEntry entry={entry} />}
+        />
         {entries.some((entry) => entry.omitted) && (
           <p role="status" className="text-xs text-muted-foreground">
             {t('pblV3.conversationLimited')}
@@ -175,31 +207,9 @@ export function LearningConversation({
         {!entries.length && !view.busy && (
           <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
         )}
-        {entries.map((entry) =>
-          entry.boundary ? (
-            <div
-              key={entry.id}
-              role="separator"
-              className="flex items-center gap-3 py-2 text-[11px] text-muted-foreground"
-            >
-              <span className="h-px flex-1 bg-border" />
-              <Route size={13} />
-              <span>
-                M{entry.boundary.milestoneIndex + 1} · {entry.boundary.milestoneTitle} ·{' '}
-                {entry.boundary.stageIndex + 1}/{entry.boundary.total}{' '}
-                {t(`pblV3.journey.steps.${entry.boundary.step}`)}
-              </span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-          ) : entry.speaker === 'user' ? (
-            <UserBubble
-              key={entry.id}
-              text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
-            />
-          ) : (
-            <AgentTurn key={entry.id} entry={entry} />
-          ),
-        )}
+        {entries.map((entry) => (
+          <ConversationEntry key={entry.id} entry={entry} />
+        ))}
         {(requesting || view.busy) && !entries.some((e) => e.status === 'running') && (
           <AgentTurn
             entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}

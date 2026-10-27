@@ -49,6 +49,8 @@ export interface BuildAgentOptions {
   model?: Model<Api>;
   /** Tool names allowed for this agent. Callers must declare their boundary. */
   allowedToolNames: ReadonlySet<string>;
+  /** Zero disables elapsed-time limits while retaining caller cancellation. */
+  toolTimeoutMs?: number;
   /** Prior conversation turns to seed the agent with, so it has multi-turn memory. */
   history?: AgentMessage[];
   /** Optional Pi context transform, used by the Director's native compaction path. */
@@ -72,9 +74,8 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
     initialState: {
       systemPrompt: opts.systemPrompt,
       model: opts.model ?? STUB_MODEL,
-      // Every tool call is raced against a global execution timeout (and the
-      // caller's abort signal); see tool-timeout.ts.
-      tools: opts.tools.map((tool) => withAgentToolTimeout(tool)),
+      // Caller cancellation always applies; V3 opts out of elapsed-time bounds.
+      tools: opts.tools.map((tool) => withAgentToolTimeout(tool, opts.toolTimeoutMs)),
       // Seed prior turns so `agent.prompt(newMessage)` runs with the full
       // conversation in context — without this the agent is stateless per turn.
       ...(opts.history && opts.history.length > 0 ? { messages: opts.history } : {}),

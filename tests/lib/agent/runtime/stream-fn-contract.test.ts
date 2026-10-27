@@ -1,5 +1,5 @@
 import type { AssistantMessageEvent, SimpleStreamOptions } from '@earendil-works/pi-ai';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ streamLLM: vi.fn() }));
 
@@ -333,5 +333,90 @@ describe('createCallLlmStreamFn terminal contract', () => {
       1,
     );
     expect(events.at(-1)?.type).toBe('error');
+  });
+});
+
+describe('per-request upstream silence guard', () => {
+  afterEach(() => vi.useRealTimers());
+  const start = (timeout = 1000) =>
+    createCallLlmStreamFn({
+      languageModel: {} as never,
+      responseIdleTimeoutMs: timeout,
+    })({} as never, { messages: [], tools: [] });
+
+  it.each(['headers', 'body'] as const)(
+    'settles a silent %s request even when transport ignores abort',
+    async (phase) => {
+      vi.useFakeTimers();
+      let signal: AbortSignal | undefined;
+      mocks.streamLLM.mockImplementation((options) => {
+        signal = options.abortSignal;
+        return phase === 'headers'
+          ? new Promise(() => {})
+          : {
+              fullStream: (async function* () {
+                await new Promise(() => {});
+              })(),
+            };
+      });
+      const stream = await start();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(await stream.result()).toMatchObject({
+        stopReason: 'error',
+        errorMessage: expect.stringContaining('[MODEL_REQUEST_IDLE_TIMEOUT]'),
+      });
+      expect(signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('classifies an explicit provider failure without waiting for the silence window', async () => {
+    vi.useFakeTimers();
+    mocks.streamLLM.mockReturnValue(
+      resultFrom([{ type: 'error', error: new Error('upstream connection failed') }]),
+    );
+    const stream = await start();
+    expect(await stream.result()).toMatchObject({
+      stopReason: 'error',
+      errorMessage: '[MODEL_REQUEST_FAILED] upstream connection failed',
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps a progressing request alive beyond the window and clears the timer on completion', async () => {
+    vi.useFakeTimers();
+    mocks.streamLLM.mockReturnValue({
+      fullStream: (async function* () {
+        for (let i = 0; i < 5; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 900));
+          yield { type: i < 3 ? 'reasoning-delta' : 'text-delta', text: 'progress' };
+        }
+        yield finish('stop');
+      })(),
+    });
+    const stream = await start();
+    await vi.advanceTimersByTimeAsync(4500);
+    expect((await stream.result()).stopReason).toBe('stop');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps partial text on a later silence timeout and never executes a late tool call', async () => {
+    vi.useFakeTimers();
+    mocks.streamLLM.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: 'text-delta', text: 'Saved partial reply' };
+        yield toolCall();
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        yield finish('tool-calls');
+      })(),
+    });
+    const stream = await start();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await stream.result()).toMatchObject({
+      stopReason: 'error',
+      content: [{ type: 'text', text: 'Saved partial reply' }],
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect((await stream.result()).content).toHaveLength(1);
   });
 });

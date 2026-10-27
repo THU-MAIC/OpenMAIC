@@ -9,6 +9,7 @@ import { ModelAuthorizationError } from '@/lib/server/model-config/model-authori
 import { serverMediaConnection } from '@/lib/server/model-config/media';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 import { Session, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
 import {
   AgentSessionLeaseLostError,
@@ -19,8 +20,9 @@ import {
 } from '@openmaic/storage';
 
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
-import { teachingDeadline } from './teaching-deadline';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
+import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
+import { LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { createLogger } from '@/lib/logger';
 import { parseCourseRefs, type CourseRef } from '@/lib/workbench/course-refs';
@@ -970,17 +972,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   const attempt = meta.attempt;
   const claimSeq = meta.claimSeq;
   const abort = new AbortController();
-  let teachingTimedOut = false;
-  let teachingTimeoutError = '';
-  const deadline = meta.id.startsWith('pbl-role-')
-    ? teachingDeadline(abort.signal, (error) => {
-        if (abort.signal.aborted) return;
-        // Pi may exit normally on abort; persist the actual deadline outcome.
-        teachingTimedOut = true;
-        teachingTimeoutError = error.message;
-        abort.abort(error);
-      })
-    : undefined;
   ctx.running.set(id, { abort });
 
   let store: Awaited<ReturnType<typeof getAgentSessionStore>>;
@@ -988,7 +979,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     store = await getAgentSessionStore();
   } catch (error) {
     ctx.running.delete(id);
-    deadline?.dispose();
     throw error;
   }
   let leaseLost = false;
@@ -1047,6 +1037,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   let messageHadThinking = false;
   let thinkingEndPending = false;
   let thinkingEndEmitted = false;
+  const trackThinking = meta.id.startsWith('pbl-role-') ? createThinkingTimingTracker() : undefined;
 
   const appendEvent = (type: string, data: unknown, ts: number): void => {
     const snapshot = snapshotEventDataForLog(type, data, meta.id.startsWith('pbl-role-'));
@@ -1061,7 +1052,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         markLeaseLost();
         return;
       }
-      if (type === 'message_end') {
+      // V3 history cursors may point into an in-flight message. Keep those
+      // snapshots immutable; its read layer compacts them before pagination.
+      if (type === 'message_end' && !meta.id.startsWith('pbl-role-')) {
         try {
           await store.pruneMessageUpdates(id, seq);
         } catch (error) {
@@ -1090,6 +1083,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     if (leaseLost) return;
 
     const now = Date.now();
+    if (trackThinking) data = trackThinking(type, data, now);
     const endOwesThinkingEnd = type === 'message_end' && thinkingEndPending && !thinkingEndEmitted;
     if (type === 'message_start' || type === 'message_end') {
       lastMessageUpdateAt = 0;
@@ -1173,7 +1167,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (settled) await requeueIfUndelivered('over-cap verdict', true);
       return;
     } finally {
-      deadline?.dispose();
       await flushAll(false);
       ctx.running.delete(id);
     }
@@ -1277,7 +1270,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
           workerId: WORKER_ID,
           attempt,
           signal: abort.signal,
-          onActivity: () => deadline?.activity(),
         })
       : null;
     const installedSkills = teaching ? [] : await listSkills(meta.ownerId);
@@ -1318,13 +1310,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     );
     const idleAttach = meta.existingCourse;
 
-    if (teachingTimedOut) throw new Error(teachingTimeoutError);
     if (
       ((plan.kind === 'already-complete' && !teaching?.needsTurnReceipt()) ||
         teaching?.isTurnComplete()) &&
       pending.length === 0
     ) {
-      deadline?.dispose();
       emit(LIFECYCLE.sessionEnd, {
         status: 'succeeded',
         note: 'entry history already terminal',
@@ -1372,9 +1362,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
-      maxOutputTokens: driver.wireMaxOutputTokens,
-      omitMaxOutputTokens: driver.wireMaxOutputTokens === undefined,
-      thinkingConfig: driver.connection.thinkingConfig,
+      maxOutputTokens: teaching ? undefined : driver.wireMaxOutputTokens,
+      omitMaxOutputTokens: !!teaching || driver.wireMaxOutputTokens === undefined,
+      thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
+      unbounded: !!teaching,
+      responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
       source: 'agent-runtime',
       abortSignal: abort.signal,
     });
@@ -1651,6 +1643,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       systemPrompt: execution.systemPrompt,
       model: driver.piModel,
       tools: execution.tools,
+      ...(teaching ? { toolTimeoutMs: 0 } : {}),
       allowedToolNames: execution.allowedToolNames,
       ...(plan.kind === 'start' ? {} : { history: modelMessages }),
       afterToolCall: (toolContext) => {
@@ -1658,7 +1651,9 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         if (
           teaching &&
           !toolContext.isError &&
-          ['request_skill_review', 'complete_stage'].includes(toolContext.toolCall.name)
+          ['request_skill_review', 'request_learner_help', 'complete_stage'].includes(
+            toolContext.toolCall.name,
+          )
         ) {
           questionEmitted = true;
           return { terminate: true };
@@ -1675,18 +1670,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // failure aborts the loop and prevents a successful settlement.
     const inFlightToolCalls = new Map<string, PendingToolCall>();
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
-      // Only actual agent progress renews this deadline. Lease heartbeats and
-      // browser polling cannot keep a stalled model/tool alive.
-      if (event.type === 'tool_execution_start') deadline?.activity(`tool:${event.toolName}`);
-      else if (event.type === 'tool_execution_end' || event.type === 'agent_start')
-        deadline?.activity('model');
-      else if (
-        event.type === 'tool_execution_update' ||
-        (event.type === 'message_update' &&
-          'delta' in event.assistantMessageEvent &&
-          !!event.assistantMessageEvent.delta)
-      )
-        deadline?.activity();
       emit(event.type, event);
       if (event.type === 'message_end') {
         // A tool call becomes pending as soon as its assistant frame is
@@ -1743,13 +1726,16 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     // Same-run steering needs a guard because steer() accepts a message before
     // its eventual message_end has reached the durable tree.
     const acceptedMessageSeqs = new Set<number>();
+    const awaitingLearner = () =>
+      questionEmitted || askUserLatch.isCommitted() || !!teaching?.isTurnComplete();
     const drainMessages = async (): Promise<number> => {
-      if (questionEmitted || askUserLatch.isCommitted()) return 0;
+      if (awaitingLearner()) return 0;
       // These reads deliberately avoid a shared transaction: a message added
       // between them is left for the next serialized drain, while the lease
       // snapshot prevents steering after ownership has already changed.
       const all = await listAgentUserMessages(store, id);
       const current = await store.getSession(id);
+      if (awaitingLearner()) return 0;
       if (!leaseMatches(current, WORKER_ID, attempt)) {
         markLeaseLost();
         return 0;
@@ -1763,6 +1749,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
         // course's current name, not the pick-time snapshot.
         const courseResolved = await resolveCourseRefContext(meta.ownerId, followUp);
         const resolved = await resolveFollowUpElementContext(courseResolved);
+        if (awaitingLearner()) break;
         agent.steer(
           tagDurableUserMessage(
             {
@@ -1806,23 +1793,23 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     const messagePoll = setInterval(() => void requestDrain(), SESSION_WAKEUP_FALLBACK_MS);
     messagePoll.unref?.();
 
-    let teachingContinuationUsed = false;
+    let repairedTeachingStop = false;
     const repairTeachingStop = async () => {
       if (
+        repairedTeachingStop ||
         !teaching?.needsTurnReceipt() ||
-        teachingContinuationUsed ||
         abort.signal.aborted ||
         terminalLoopError(agent.state.messages, agent.state.errorMessage)
       )
         return false;
       const { prepareTeachingContinuation } = await import('@/lib/server/pbl-v3/runner-tools');
-      if (!prepareTeachingContinuation(agent)) return false;
-      teachingContinuationUsed = true;
+      if (!prepareTeachingContinuation(agent, teaching.historyWindow)) return false;
+      // This repairs an already-ended, malformed handoff once. It does not
+      // count normal model requests/tools or limit a healthy execution loop.
+      repairedTeachingStop = true;
       return true;
     };
     try {
-      // Setup may have outlived the deadline before the Agent subscribed.
-      if (teachingTimedOut) throw new Error(teachingTimeoutError);
       if (plannedStart.kind === 'prompt') {
         // A follow-up-driven prompt is already in the event log; here it
         // enters the transcript. Track its exact sequence immediately so the
@@ -1927,7 +1914,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       for (;;) {
         await agent.waitForIdle();
         if (abort.signal.aborted) break;
-        if (questionEmitted || askUserLatch.isCommitted()) break;
+        if (awaitingLearner()) break;
         if (await repairTeachingStop()) {
           await agent.continue();
           continue;
@@ -1945,13 +1932,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       queueInterruptedToolResults();
       await flushAll();
 
-      deadline?.dispose();
-      const loopError = teachingTimedOut
-        ? teachingTimeoutError
-        : terminalLoopError(agent.state.messages, agent.state.errorMessage) ||
-          (teaching?.needsTurnReceipt()
-            ? 'Teaching turn ended without recording a review question or stage completion. Retry to continue the current review.'
-            : undefined);
+      const loopError =
+        terminalLoopError(agent.state.messages, agent.state.errorMessage) ||
+        (teaching?.needsTurnReceipt()
+          ? 'Teaching turn ended without recording a review question or stage completion. Retry to continue the current review.'
+          : undefined);
       const shutdown = ctx.shuttingDown && abort.signal.aborted && !cancelled;
       if (shutdown || tripwireViolated || (leaseLost && abort.signal.aborted)) {
         emit(LIFECYCLE.sessionInterrupted, {
@@ -1973,7 +1958,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
       if (settledCancelled) abort.abort();
       const error = !settledCancelled && loopError ? loopError : undefined;
       const status = settledCancelled ? 'cancelled' : error ? 'failed' : 'succeeded';
-      emit(LIFECYCLE.sessionEnd, { status, toolCalls, ...(error ? { error } : {}) });
+      emit(LIFECYCLE.sessionEnd, {
+        status,
+        toolCalls,
+        ...(error ? { error, errorCode: modelRequestFailureCode(error) ?? undefined } : {}),
+      });
       await flushAll();
       const settled = await store.finishSession(id, WORKER_ID, {
         status,
@@ -1995,11 +1984,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     } catch (error) {
       queueInterruptedToolResults();
       if (isLeaseLostError(error)) markLeaseLost();
-      const message = teachingTimedOut
-        ? teachingTimeoutError
-        : error instanceof Error
-          ? error.message
-          : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       if (ctx.shuttingDown || leaseLost || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
           reason: tripwireViolated
@@ -2037,11 +2022,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     }
   } catch (error) {
     if (isLeaseLostError(error)) markLeaseLost();
-    const message = teachingTimedOut
-      ? teachingTimeoutError
-      : error instanceof Error
-        ? error.message
-        : String(error);
+    const message = error instanceof Error ? error.message : String(error);
     if (ctx.shuttingDown || leaseLost || tripwireViolated) {
       if (tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
@@ -2073,7 +2054,6 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
     }
     log.error(`session ${id} failed during setup`, error);
   } finally {
-    deadline?.dispose();
     clearInterval(heartbeatTimer);
     clearInterval(cancelPoll);
     unsubscribeWakeup();

@@ -1,10 +1,16 @@
 import { recordLearningEvidence } from './evidence';
-import { projectConversation, learningRunFailure, boundConversation } from './conversation';
+import {
+  projectConversation,
+  learningRunFailure,
+  boundConversation,
+  latestMessagePartIds,
+} from './conversation';
+import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
 import { readConversationHistory, CONVERSATION_BYTES } from './conversation-history';
 import 'server-only';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
-import { reviewQuestion } from './review-question';
+import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -91,7 +97,6 @@ export async function readFiles(
   row: Study,
   project = projectFor(row),
   signal?: AbortSignal,
-  onProgress?: () => void,
 ) {
   signal?.throwIfAborted();
   const result: Record<string, string> = {};
@@ -107,7 +112,6 @@ export async function readFiles(
     signal?.throwIfAborted();
     const text = await checkpointIO(() => service.readText(environmentId, path, signal), signal);
     signal?.throwIfAborted();
-    onProgress?.();
     bytes += Buffer.byteLength(text);
     if (bytes > 1_048_576)
       throw sandboxInvalid('Project source snapshots are limited to 1 MiB.', 'PBL_SOURCE_SIZE');
@@ -825,7 +829,15 @@ export async function commandStudy(
   );
 }
 
-export async function learningView(principal: OwnerPrincipal, id: string): Promise<LearningView> {
+export type LearningObservation = Pick<LearningView, 'environment' | 'files' | 'evaluation'> & {
+  revision: number;
+  environmentId: string | null;
+};
+export async function learningView(
+  principal: OwnerPrincipal,
+  id: string,
+  options: { passive?: boolean; checkHealth?: boolean; observation?: LearningObservation } = {},
+): Promise<LearningView> {
   const store = await LearningStore.open(),
     row = await store.get(id, principal.ownerId);
   const project = projectFor(row),
@@ -836,6 +848,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
   const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
   const messages: LearningView['messages'] = [];
   let conversation: LearningView['conversation'] = [];
+  const conversationHistory: NonNullable<LearningView['conversationHistory']> = [];
   let activitySequence = 0;
   let roleRun: LearningView['roleRun'] = null;
   let latestUserSeq: number | undefined;
@@ -860,6 +873,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     roleRun = {
       status: unclosed ? 'failed' : (meta?.status ?? 'missing'),
       canRetry: !!meta && (unclosed || ['failed', 'cancelled'].includes(meta.status)),
+      failureCode: meta?.status === 'failed' ? modelRequestFailureCode(meta.error) : null,
       // Never expose raw provider errors, URLs, or credentials to the browser.
       failure: unclosed
         ? 'incomplete'
@@ -869,6 +883,12 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     };
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
     const last = await agents.lastEventSeq(binding.session_id);
+    if (last)
+      conversationHistory.push({
+        sessionId: binding.session_id,
+        through: last,
+        role: binding.role,
+      });
     activitySequence = last;
     const events = await readConversationHistory(store.pool, binding.session_id, last, 1000);
     conversation = projectConversation(
@@ -877,6 +897,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
       meta?.status === 'running' || meta?.status === 'queued',
       roleRun.status,
     );
+    const questions = reviewQuestions(events);
     for (const event of events) {
       const data = event.data as {
         text?: string;
@@ -885,10 +906,13 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
         result?: { content?: { type: string; text?: string }[] };
         message?: { role?: string; content?: unknown };
       };
-      const question = reviewQuestion(event);
-      if (question !== null) {
+      const question = questions.get(event.id);
+      if (question !== undefined) {
         messages.push({ role: 'assistant', text: question });
-        if (event.id > (latestUserSeq ?? 0) && question === binding.guided?.pending?.question)
+        if (
+          event.id > (latestUserSeq ?? 0) &&
+          question === (binding.guided?.handoff?.question ?? binding.guided?.pending?.question)
+        )
           currentQuestionShown = true;
       }
       if (
@@ -921,14 +945,23 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     ...entry,
     id: `${binding?.session_id}:${entry.id}`,
   }));
+  // Capture identity before merging other roles and the pending-question fallback.
+  // Display order alone does not identify the current assistant response.
+  const currentPartIds = latestMessagePartIds(conversation);
   for (const previous of bindings.filter(
     (item) =>
       item.session_id !== binding?.session_id &&
       (item.context_key === milestone.id || item.context_key === 'project'),
   )) {
     const last = await agents.lastEventSeq(previous.session_id);
+    if (last)
+      conversationHistory.push({
+        sessionId: previous.session_id,
+        through: last,
+        role: previous.role,
+      });
     activitySequence += last;
-    const events = await readConversationHistory(store.pool, previous.session_id, last, 500);
+    const events = await readConversationHistory(store.pool, previous.session_id, last, 500, false);
     conversation.push(
       ...projectConversation(events, previous.role, false).map((entry) => ({
         ...entry,
@@ -939,7 +972,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
   conversation.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
   conversation = conversation.slice(-60);
   // The review transaction can commit before the runner persists its display event.
-  const pendingReview = binding?.guided?.pending;
+  const pendingReview = binding?.guided?.handoff ?? binding?.guided?.pending;
   if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
     messages.push({ role: 'assistant', text: pendingReview.question });
     conversation.push({
@@ -948,14 +981,23 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
       parts: [{ kind: 'text', id: 'pending-question', text: pendingReview.question }],
     });
   }
-  conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES);
-  let environment: LearningView['environment'] = null;
+  conversation = boundConversation(conversation, 4 * CONVERSATION_BYTES, currentPartIds);
+  const cached =
+    options.observation?.revision === row.revision &&
+    options.observation.environmentId === row.environment_id
+      ? options.observation
+      : undefined;
+  let environment: LearningView['environment'] = cached?.environment ?? null;
   let environmentService: SandboxService | undefined;
-  let files = Object.keys(project.files);
-  if (row.environment_id) {
+  let files = cached?.files ?? Object.keys(project.files);
+  if (row.environment_id && !cached) {
     try {
       environmentService = await SandboxService.forOwner(principal);
-      const observed = await touchEnvironment(store, row, environmentService, false);
+      const observed = options.passive
+        ? options.checkHealth === false
+          ? await environmentService.get(row.environment_id)
+          : await environmentService.reconcile(row.environment_id, false)
+        : await touchEnvironment(store, row, environmentService, false);
       environment = observed
         ? { state: observed.state, ready: observed.state === 'running' && observed.workspaceReady }
         : null;
@@ -971,8 +1013,8 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
       environment = { state: 'unknown', ready: false };
     }
   }
-  let evaluation: LearningView['evaluation'] = null;
-  if (row.evaluation && row.environment_id) {
+  let evaluation: LearningView['evaluation'] = cached?.evaluation ?? null;
+  if (row.evaluation && row.environment_id && !cached) {
     try {
       const observed = await environmentService?.command(row.environment_id, row.evaluation.id);
       if (observed)
@@ -1043,6 +1085,7 @@ export async function learningView(principal: OwnerPrincipal, id: string): Promi
     busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
     messages: messages.slice(-60),
     conversation,
+    conversationHistory,
     activitySequence,
     task: { title: milestone.title, goal: milestone.goal ?? milestone.title },
     roleRun,

@@ -67,12 +67,6 @@ async function renewForMaintenance(
     now.getTime() >= Date.parse(latest.idle_turn_cleanup.releaseAt)
   )
     return;
-  if (
-    now.getTime() - latest.last_used_at.getTime() >=
-      pblIdleTimeoutMs() + pblArchiveFailureGraceMs() &&
-    (await activeStudyTurns(store, id, latest.owner_id)).rows.length
-  )
-    return;
   // Do not endlessly renew compute when the control database cannot persist writes.
   await store.pool.query(
     'UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1 AND environment_id=$2',
@@ -138,7 +132,7 @@ async function renewDeferredStudy(
         id,
       ],
     );
-    if (!work.rows.length) return;
+    if (!work.rows.length && !(await activeStudyTurns(store, id, ownerId)).rows.length) return;
   }
   const service = await SandboxService.forLearningMaintenance(id, ownerId, environmentId);
   await renewForMaintenance(store, service, id, environmentId);

@@ -16,7 +16,6 @@ import { installProjectPackage } from '@/lib/server/pbl-v3/project-resolver';
 import {
   packageBuiltin,
   indexProjectFiles,
-  validateProjectPackage,
   type ProjectDescriptor,
 } from '@/lib/server/pbl-v3/project-package';
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
@@ -24,6 +23,7 @@ import { workbenchCommand, workbenchView } from '@/lib/server/pbl-v3/workbench';
 import { issuePreviewGrant } from '@/lib/server/sandbox/preview';
 import type { ModelMessage } from 'ai';
 import { PgAgentSessionStore, ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
+import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
 vi.mock('server-only', () => ({}));
 const mocked = vi.hoisted(() => ({
   pool: undefined as unknown,
@@ -44,6 +44,7 @@ const mocked = vi.hoisted(() => ({
   objects: new Map<string, Uint8Array>(),
   responses: [] as Array<Array<Record<string, unknown>>>,
   reportAnalysis: vi.fn(),
+  liveNotifications: false,
   modelCalls: 0,
   modelRequests: [] as ModelMessage[][],
   modelSystems: [] as (string | undefined)[],
@@ -298,10 +299,17 @@ vi.mock('@/lib/server/agent-runtime/owner-scoped-documents', async (importOrigin
   ...(await importOriginal<typeof import('@/lib/server/agent-runtime/owner-scoped-documents')>()),
   getBackgroundDocumentStore: async () => ({}),
 }));
-vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
-  notifyDurableAgentEvent: async () => {},
-  subscribeAgentEventWakeup: () => () => {},
-}));
+vi.mock('@/lib/server/agent-runtime/event-notify-bus', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/server/agent-runtime/event-notify-bus')>();
+  return {
+    ...actual,
+    notifyDurableAgentEvent: (...args: Parameters<typeof actual.notifyDurableAgentEvent>) =>
+      mocked.liveNotifications ? actual.notifyDurableAgentEvent(...args) : Promise.resolve(),
+    subscribeAgentEventWakeup: (...args: Parameters<typeof actual.subscribeAgentEventWakeup>) =>
+      mocked.liveNotifications ? actual.subscribeAgentEventWakeup(...args) : () => {},
+  };
+});
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: (options: { messages: ModelMessage[]; system?: string }) => {
     mocked.modelSystems.push(options.system);
@@ -342,6 +350,7 @@ import { teachingRunnerConfig } from '@/lib/server/pbl-v3/runner-tools';
 import { touchEnvironment } from '@/lib/server/pbl-v3/environment';
 import { recordLearningEvidence } from '@/lib/server/pbl-v3/evidence';
 import { reportConversationMessages } from '@/lib/pbl/v3/report';
+import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { SandboxService } from '@/lib/server/sandbox/service';
 import { SandboxStore } from '@/lib/server/sandbox/store';
@@ -392,6 +401,22 @@ async function freshStudy(definition = project) {
     });
   await send('prepare');
   return { id: row.id, send };
+}
+async function freshTeachingStudy() {
+  const original = studyId;
+  const study = await freshStudy();
+  studyId = study.id;
+  try {
+    await runTools('Introduce the project.', async (config) => {
+      await invoke(config, 'request_skill_review', { question: 'Ready to begin?' });
+    });
+    await runTools('Ready, please begin teaching.', async (config) => {
+      await invoke(config, 'read_next_skill', { studentFeedback: 'The learner is ready.' });
+    });
+  } finally {
+    studyId = original;
+  }
+  return study;
 }
 function modelFinish(finishReason: string) {
   return {
@@ -484,6 +509,7 @@ async function guided(role: 'teaching' | 'plan' | 'code') {
               ? { studentFeedback: 'The learner explicitly asks to begin teaching.' }
               : {}),
         });
+        expect(config.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
         if (index === 0 && role !== 'teaching') {
           const path = role === 'plan' ? 'PLAN.md' : 'greeting.py';
           const service = await SandboxService.forOwner(principal),
@@ -927,6 +953,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 await invoke(config, 'run_build');
                 await invoke(config, 'collect_build');
               }
+              if (stage.kind === 'produce' && part === parts - 1) {
+                await expect(
+                  invoke(config, 'complete_stage', {
+                    studentFeedback: 'Earlier understanding is not final approval.',
+                    reuseFeedback: true,
+                  }),
+                ).rejects.toThrow('understanding feedback');
+                expect(config.isTurnComplete()).toBe(false);
+              }
               await invoke(config, 'request_skill_review', {
                 question: 'Explain the current work and confirm what to change.',
               });
@@ -1154,94 +1189,105 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ).rejects.toThrow();
     });
   });
-  it('persists a welcome inside the first step, waits through process questions, then credits anticipated understanding', async () => {
-    const original = studyId;
-    const study = await freshStudy();
-    studyId = study.id;
-    try {
-      const opening = (await study.send('begin')) as { sessionId: string };
-      const claimed = await agents.claimNextSession('welcome-worker', process.pid, {
-        sessionId: opening.sessionId,
-        leaseTtlMs: 10000,
-        maxAttempts: 5,
-      });
-      const config = await teachingRunnerConfig({
-        sessionId: opening.sessionId,
-        ownerId: principal.ownerId,
-        workerId: 'welcome-worker',
-        attempt: claimed!.attempt,
-        signal: new AbortController().signal,
-      });
-      const result = await invoke(config, 'read_next_skill');
-      const welcome = JSON.stringify(result);
-      expect(welcome).toContain('Welcome only');
-      expect(welcome).toContain('how learning works');
-      expect(config.systemPrompt).not.toContain('"teaching":{');
-      await expect(
-        invoke(config, 'read_next_skill', {
-          studentFeedback: 'An automatic entry is not readiness.',
-        }),
-      ).rejects.toThrow();
-      await invoke(config, 'request_skill_review', {
-        question: 'Any process questions? Ready to begin?',
-      });
-      await agents.finishSession(opening.sessionId, 'welcome-worker', {
-        status: 'succeeded',
-        expectedAttempt: claimed!.attempt,
-      });
-      expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
-      await runTools('Will an Agent help with the implementation?', async (next) => {
-        expect(next.liveContext()).toContain('"welcomePresented":true');
-        expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
-        await invoke(next, 'request_skill_review', {
-          question: 'Yes, you work together and review it. Ready to start?',
+  it.each([true, false])(
+    'persists welcome and waits for readiness (read first: %s)',
+    async (readFirst) => {
+      const original = studyId;
+      const study = await freshStudy();
+      studyId = study.id;
+      try {
+        const opening = (await study.send('begin')) as { sessionId: string };
+        const claimed = await agents.claimNextSession('welcome-worker', process.pid, {
+          sessionId: opening.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
         });
-      });
-      const before = await learningView(principal, study.id);
-      expect(before.state.position.stageIndex).toBe(0);
-      expect(before.actions).not.toContain('next');
-      expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
-      await runTools('Ready, please begin the lesson.', async (next) => {
-        const lesson = JSON.stringify(
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The learner explicitly asks to begin.',
-          }),
-        );
-        expect(lesson).not.toContain('Welcome only');
-        expect(next.liveContext()).toContain('"welcome":"ready"');
-        expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+        const config = await teachingRunnerConfig({
+          sessionId: opening.sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'welcome-worker',
+          attempt: claimed!.attempt,
+          signal: new AbortController().signal,
+        });
+        expect(config.thinkingConfig()).toEqual({ mode: 'disabled' });
+        if (readFirst) {
+          const welcome = JSON.stringify(await invoke(config, 'read_next_skill'));
+          expect(welcome).toContain('Welcome only');
+          expect(welcome).toContain('how learning works');
+        }
+        expect(config.systemPrompt).not.toContain('"teaching":{');
+        await invoke(config, 'request_skill_review', {
+          question: 'Any process questions? Ready to begin?',
+        });
         await expect(
-          invoke(next, 'read_next_skill', {
-            studentFeedback: 'Readiness is not understanding.',
-            reuseFeedback: true,
+          invoke(config, 'read_next_skill', {
+            studentFeedback: 'An automatic entry is not readiness.',
           }),
         ).rejects.toThrow();
-        await invoke(next, 'request_skill_review', { question: 'Explain returning a value.' });
-      });
-      await runTools(
-        'Return sends the value to the caller; printing does not. I also understand the consequences and am ready to continue.',
-        async (next) => {
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The reply explains the concept and its consequences.',
+        expect(config.isTurnComplete()).toBe(true);
+        expect(config.needsTurnReceipt()).toBe(false);
+        await agents.finishSession(opening.sessionId, 'welcome-worker', {
+          status: 'succeeded',
+          expectedAttempt: claimed!.attempt,
+        });
+        expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
+        await runTools('Will an Agent help with the implementation?', async (next) => {
+          expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
+          expect(next.liveContext()).toContain('"welcomePresented":true');
+          expect(JSON.stringify(await invoke(next, 'read_next_skill'))).toContain('Welcome only');
+          await invoke(next, 'request_skill_review', {
+            question: 'Yes, you work together and review it. Ready to start?',
           });
-          await invoke(next, 'read_next_skill', {
-            studentFeedback: 'The same correct answer already covers the reflection goal.',
-            reuseFeedback: true,
-          });
-          await invoke(next, 'complete_stage', {
-            studentFeedback:
-              'The learner already explained the goal and confirms understanding without unresolved errors.',
-            reuseFeedback: true,
-          });
-        },
-      );
-      const finished = await learningView(principal, study.id);
-      expect(finished.state.position.stageIndex).toBe(0);
-      expect(finished.actions).toContain('next');
-    } finally {
-      studyId = original;
-    }
-  });
+        });
+        const before = await learningView(principal, study.id);
+        expect(before.state.position.stageIndex).toBe(0);
+        expect(before.actions).not.toContain('next');
+        expect((await store.binding(opening.sessionId))?.guided?.welcome).toBe('pending');
+        await runTools('Ready, please begin the lesson.', async (next) => {
+          expect(next.thinkingConfig()).toEqual({ mode: 'disabled' });
+          const lesson = JSON.stringify(
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The learner explicitly asks to begin.',
+            }),
+          );
+          expect(lesson).not.toContain('Welcome only');
+          expect(next.liveContext()).toContain('"welcome":"ready"');
+          expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
+          expect(next.liveContext()).toContain('"activeSection":"A-teach.md"');
+          await expect(
+            invoke(next, 'read_next_skill', {
+              studentFeedback: 'Readiness is not understanding.',
+              reuseFeedback: true,
+            }),
+          ).rejects.toThrow();
+          await invoke(next, 'request_skill_review', { question: 'Explain returning a value.' });
+        });
+        await runTools(
+          'Return sends the value to the caller; printing does not. I also understand the consequences and am ready to continue.',
+          async (next) => {
+            expect(next.thinkingConfig()).toEqual({ mode: 'enabled', effort: 'low', level: 'low' });
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The reply explains the concept and its consequences.',
+            });
+            await invoke(next, 'read_next_skill', {
+              studentFeedback: 'The same correct answer already covers the reflection goal.',
+              reuseFeedback: true,
+            });
+            await invoke(next, 'complete_stage', {
+              studentFeedback:
+                'The learner already explained the goal and confirms understanding without unresolved errors.',
+              reuseFeedback: true,
+            });
+          },
+        );
+        const finished = await learningView(principal, study.id);
+        expect(finished.state.position.stageIndex).toBe(0);
+        expect(finished.actions).toContain('next');
+      } finally {
+        studyId = original;
+      }
+    },
+  );
 
   it('accepts wrapped and multi-message review feedback from durable student turns', async () => {
     const original = studyId;
@@ -1788,6 +1834,505 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(stored.result.content[0].text.length).toBeGreaterThan(1000000);
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
   });
+  it('shows long current text and thinking whole while compacting repeated stream snapshots', async () => {
+    const study = await freshStudy();
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const text = 'Detailed explanation. '.repeat(40_000),
+      thinking = 'Reasoning. '.repeat(60_000);
+    const track = createThinkingTimingTracker();
+    const at = Date.now();
+    const snapshot = (text: string) => ({
+      message: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking }, ...(text ? [{ type: 'text', text }] : [])],
+      },
+    });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at,
+      type: 'message_start',
+      data: track('message_start', { message: { role: 'assistant', content: [] } }, at),
+    });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at + 10,
+      type: 'message_update',
+      data: track('message_update', snapshot(''), at + 10),
+    });
+    const firstView = await learningView(principal, study.id, { passive: true });
+    const firstThinking = firstView.conversation?.at(-1)?.parts.find((p) => p.kind === 'thinking');
+    for (let i = 0; i < 4; i++)
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: at + 20 + i,
+        type: 'message_update',
+        data: track('message_update', snapshot(text + ' ' + i), at + 20 + i),
+      });
+    const { readConversationHistory } = await import('@/lib/server/pbl-v3/conversation-history');
+    const events = await readConversationHistory(
+      pool,
+      queued.sessionId,
+      await agents.lastEventSeq(queued.sessionId),
+      1000,
+    );
+    expect(events.filter((event) => event.type === 'message_update')).toHaveLength(1);
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(view.conversation?.at(-1)?.parts.find((p) => p.kind === 'text')).toMatchObject({
+      text: text + ' 3',
+    });
+    expect(view.conversation?.at(-1)?.parts.find((p) => p.kind === 'thinking')).toMatchObject({
+      text: thinking,
+      id: firstThinking!.id,
+      startedAt: at + 10,
+      endedAt: at + 20,
+      streaming: false,
+    });
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: at + 30,
+      type: 'message_end',
+      data: track('message_end', snapshot(text + ' completed'), at + 30),
+    });
+    const completed = await learningView(principal, study.id, { passive: true });
+    expect(
+      completed.conversation?.at(-1)?.parts.find((part) => part.kind === 'thinking'),
+    ).toMatchObject({
+      id: firstThinking!.id,
+      startedAt: at + 10,
+      endedAt: at + 20,
+      streaming: false,
+    });
+    const compacted = await readConversationHistory(
+      pool,
+      queued.sessionId,
+      await agents.lastEventSeq(queued.sessionId),
+      1000,
+    );
+    expect(compacted.filter((event) => event.type === 'message_end')).toHaveLength(1);
+    expect(
+      compacted.some((event) => event.type === 'message_update' || event.type === 'message_start'),
+    ).toBe(false);
+    // Local stop receipts and tool-call-only messages must not displace visible text/thinking.
+    for (const content of [
+      [],
+      [
+        {
+          type: 'toolCall',
+          id: 'tool-only',
+          name: 'read_file',
+          arguments: { padding: 'z'.repeat(700000) },
+        },
+      ],
+    ]) {
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: at + 40,
+        type: 'message_start',
+        data: { message: { role: 'assistant', content: [] } },
+      });
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: at + 50,
+        type: 'message_end',
+        data: { message: { role: 'assistant', content, stopReason: 'stop' } },
+      });
+    }
+    const afterControl = await learningView(principal, study.id, { passive: true });
+    const visibleParts = afterControl.conversation!.flatMap((entry) => entry.parts);
+    expect(
+      visibleParts.some((part) => part.kind === 'text' && part.text === text + ' completed'),
+    ).toBe(true);
+    expect(visibleParts.some((part) => part.kind === 'thinking' && part.text === thinking)).toBe(
+      true,
+    );
+    expect(Buffer.byteLength(JSON.stringify(afterControl.conversation))).toBeLessThan(2_000_000);
+    const row = await store.get(study.id, principal.ownerId);
+    await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+      row.environment_id,
+    ]);
+  });
+
+  it('keeps frozen history retries and older cursors stable after a message ends', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('begin')) as { sessionId: string };
+    const { readConversationPage } = await import('@/lib/server/pbl-v3/conversation-history');
+    const append = (type: string, text: string) =>
+      agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type,
+        data: { message: { role: 'assistant', content: [{ type: 'text', text }] } },
+      });
+    await append('message_start', '');
+    await append('message_update', 'earlier snapshot');
+    await append('message_update', 'frozen snapshot:' + 'x'.repeat(600000));
+    const through = await agents.lastEventSeq(sessionId);
+    const page = await readConversationPage(pool, sessionId, through, null);
+    expect(page.events).toHaveLength(1);
+    expect(page.nextBefore).not.toBeNull();
+    const older = await readConversationPage(pool, sessionId, through, page.nextBefore);
+    await append('message_update', 'later snapshot');
+    await append('message_update', 'last snapshot');
+    await append('message_end', 'final message');
+    expect(digest(JSON.stringify(await readConversationPage(pool, sessionId, through, null)))).toBe(
+      digest(JSON.stringify(page)),
+    );
+    expect(JSON.stringify(page).includes('frozen snapshot')).toBe(true);
+    expect(
+      digest(JSON.stringify(await readConversationPage(pool, sessionId, through, page.nextBefore))),
+    ).toBe(digest(JSON.stringify(older)));
+  });
+
+  it('merges history tools and handoff questions across oversized page boundaries', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const { sessionId } = (await study.send('begin')) as { sessionId: string };
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const { mergeConversationHistory } = await import('@/lib/pbl/v3/conversation');
+    const question = 'Which requirement should we clarify?';
+    for (const [type, data] of [
+      [
+        'tool_execution_start',
+        { toolName: 'request_learner_help', toolCallId: 'split-help', args: { question } },
+      ],
+      ['pbl_learner_handoff', { toolCallId: 'split-help', question }],
+      [
+        'tool_execution_end',
+        {
+          toolName: 'request_learner_help',
+          toolCallId: 'split-help',
+          isError: false,
+          result: {
+            content: [
+              { type: 'text', text: JSON.stringify({ question, padding: 'x'.repeat(600000) }) },
+            ],
+          },
+        },
+      ],
+      ['session_end', { status: 'succeeded' }],
+    ] as const)
+      await agents.appendControlEvent(sessionId, { ts: Date.now(), type, data });
+    const through = await agents.lastEventSeq(sessionId);
+    const pages = [];
+    let before: number | null = null;
+    for (let i = 0; i < 10; i++) {
+      const page = await conversationPage(
+        principal,
+        new URLSearchParams({
+          id: study.id,
+          sessionId,
+          through: String(through),
+          ...(before ? { before: String(before) } : {}),
+        }),
+      );
+      pages.unshift(page.conversation);
+      if (!page.nextBefore) break;
+      before = page.nextBefore;
+      if (i === 9) throw new Error('History did not terminate');
+    }
+    expect(pages.length).toBeGreaterThan(1);
+    const cached = JSON.stringify(pages);
+    const parts = mergeConversationHistory(pages).flatMap((entry) => entry.parts);
+    const tools = parts.filter((part) => part.kind === 'tool');
+    expect(tools).toHaveLength(1);
+    expect(tools[0]).toMatchObject({
+      status: 'succeeded',
+      args: { question },
+      result: expect.any(Object),
+      startedAt: expect.any(Number),
+      endedAt: expect.any(Number),
+    });
+    expect(parts.filter((part) => part.kind === 'text' && part.text === question)).toHaveLength(1);
+    expect(JSON.stringify(pages)).toBe(cached);
+  });
+
+  it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const { readConversationHistory, readConversationPage, CONVERSATION_BYTES } =
+      await import('@/lib/server/pbl-v3/conversation-history');
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const bodies = Array.from(
+      { length: 115 },
+      (_, index) => `Message ${index}: ` + 'x'.repeat(index === 15 ? 1_200_000 : 14_000),
+    );
+    bodies.push('Current complete reply: ' + 'y'.repeat(700_000));
+    for (const [index, text] of bodies.entries()) {
+      for (const [type, content] of [
+        ['message_start', ''],
+        ['message_update', text.slice(0, 30)],
+        [index === bodies.length - 1 ? 'message_update' : 'message_end', text],
+      ])
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type,
+          data: { message: { role: 'assistant', content: [{ type: 'text', text: content }] } },
+        });
+    }
+    const largeToolResult = { content: [{ type: 'text', text: 'tool output '.repeat(60_000) }] };
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: Date.now(),
+      type: 'tool_execution_end',
+      data: { toolName: 'read_file', toolCallId: 'large-history-tool', result: largeToolResult },
+    });
+    const initial = await learningView(principal, study.id, { passive: true });
+    const initialPart = initial.conversation
+      ?.flatMap((entry) => entry.parts)
+      .findLast((part) => part.kind === 'text');
+    for (let index = 0; index < 1040; index++)
+      await agents.appendControlEvent(queued.sessionId, {
+        ts: Date.now(),
+        type: 'tool_execution_update',
+        data: { toolName: 'list_files', toolCallId: 'many-tool-events', partialResult: { index } },
+      });
+    const through = await agents.lastEventSeq(queued.sessionId);
+    const live = await readConversationHistory(pool, queued.sessionId, through, 30);
+    expect(live.length).toBeLessThanOrEqual(32); // durable learner and current-message anchors
+    expect(
+      live.some((event) => (event.data as { pblHistoryBefore?: boolean }).pblHistoryBefore),
+    ).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(live))).toBeLessThan(CONVERSATION_BYTES + 750_000);
+    expect(JSON.stringify(live).includes(bodies.at(-1)!)).toBe(true);
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(Buffer.byteLength(JSON.stringify(view.conversation))).toBeLessThan(
+      CONVERSATION_BYTES + 750_000,
+    );
+    expect(JSON.stringify(view.conversation).includes(bodies.at(-1)!)).toBe(true);
+    expect(
+      view.conversation?.flatMap((entry) => entry.parts).findLast((part) => part.kind === 'text')
+        ?.id,
+    ).toBe(initialPart?.id);
+    expect(view.conversationHistory).toContainEqual({
+      sessionId: queued.sessionId,
+      through,
+      role: 'discussion',
+    });
+
+    // New updates must not move the frozen history window or change its cursors.
+    await agents.appendControlEvent(queued.sessionId, {
+      ts: Date.now(),
+      type: 'message_update',
+      data: {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'NEWER_UPDATE_NOT_IN_SNAPSHOT' }],
+        },
+      },
+    });
+    const seen = new Set<number>();
+    const restored: string[] = [];
+    let before: number | null = null;
+    for (let count = 0; count < 40; count++) {
+      const page = await readConversationPage(pool, queued.sessionId, through, before);
+      expect(page.events.length).toBeGreaterThan(0);
+      expect(page.events.length).toBeLessThanOrEqual(80);
+      if (Buffer.byteLength(JSON.stringify(page.events)) > CONVERSATION_BYTES + 10_000)
+        expect(page.events).toHaveLength(1);
+      for (const event of page.events) {
+        expect(seen.has(event.id)).toBe(false);
+        seen.add(event.id);
+        const data = event.data as { message?: { role: string; content: { text: string }[] } };
+        if (data.message?.role === 'assistant') restored.push(data.message.content[0].text);
+      }
+      if (!page.nextBefore) break;
+      expect(page.nextBefore).toBeLessThan(before ?? through + 1);
+      before = page.nextBefore;
+      if (count === 39) throw new Error('History pagination did not terminate');
+    }
+    expect(restored.map(digest).sort()).toEqual(bodies.map(digest).sort());
+    const renewals = mocked.renewals.length,
+      creates = mocked.creates.length;
+    const params = new URLSearchParams({
+      id: study.id,
+      sessionId: queued.sessionId,
+      through: String(through),
+    });
+    const response = await conversationPage(principal, params);
+    expect(response.through).toBe(through);
+    expect(JSON.stringify(response)).not.toContain('NEWER_UPDATE_NOT_IN_SNAPSHOT');
+    expect(response.nextBefore).not.toBeNull();
+    const displayed: string[] = [];
+    let toolRestored = false;
+    let projected = response;
+    for (let count = 0; count < 40; count++) {
+      for (const entry of projected.conversation)
+        if (entry.speaker !== 'user')
+          for (const part of entry.parts) if (part.kind === 'text') displayed.push(part.text);
+      for (const entry of projected.conversation)
+        for (const part of entry.parts)
+          if (part.kind === 'tool' && part.id.includes('large-history-tool'))
+            toolRestored =
+              digest((part.result as typeof largeToolResult)?.content?.[0]?.text ?? '') ===
+              digest(largeToolResult.content[0].text);
+      if (!projected.nextBefore) break;
+      projected = await conversationPage(
+        principal,
+        new URLSearchParams({
+          ...Object.fromEntries(params),
+          before: String(projected.nextBefore),
+        }),
+      );
+      if (count === 39) throw new Error('Projected history pagination did not terminate');
+    }
+    expect(displayed.map(digest).sort()).toEqual(bodies.map(digest).sort());
+    expect(toolRestored).toBe(true);
+    await expect(
+      conversationPage({ ...principal, ownerId: 'another-learner' }, params),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(mocked.renewals).toHaveLength(renewals);
+    expect(mocked.creates).toHaveLength(creates);
+    await expect(
+      conversationPage(
+        principal,
+        new URLSearchParams({ ...Object.fromEntries(params), before: '-1' }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    const other = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId: randomUUID(),
+        sceneId: 'scene',
+        projectId: project.ref.id,
+        version: project.ref.version,
+      },
+      startOrchestration(project.definition),
+    );
+    await expect(
+      conversationPage(
+        principal,
+        new URLSearchParams({ ...Object.fromEntries(params), id: other.id }),
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    expect((await agents.getSession(queued.sessionId))!.status).toBe('queued');
+    const row = await store.get(study.id, principal.ownerId);
+    await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+      row.environment_id,
+    ]);
+  });
+
+  it('keeps the last snapshot of every interrupted message across retry attempts', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const queued = (await study.send('begin')) as { sessionId: string };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const worker = `snapshot-worker-${attempt}`;
+      const claimed = await agents.claimNextSession(worker, process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      for (let message = 0; message < 2; message++) {
+        await agents.appendRunEvent(queued.sessionId, worker, {
+          type: 'message_start',
+          ts: Date.now(),
+          attempt: claimed!.attempt,
+          data: { message: { role: 'assistant', content: [] } },
+        });
+        for (let frame = 0; frame < 3; frame++)
+          await agents.appendRunEvent(queued.sessionId, worker, {
+            type: 'message_update',
+            ts: Date.now(),
+            attempt: claimed!.attempt,
+            data: {
+              message: {
+                role: 'assistant',
+                content: [
+                  { type: 'thinking', thinking: `Reasoning ${attempt}:${message}:${frame}` },
+                  { type: 'text', text: `Partial ${attempt}:${message}:${frame}` },
+                ],
+              },
+            },
+          });
+      }
+      await agents.appendRunEvent(queued.sessionId, worker, {
+        type: 'session_end',
+        ts: Date.now(),
+        attempt: claimed!.attempt,
+        data: { status: 'failed', error: '[MODEL_REQUEST_IDLE_TIMEOUT] timed out' },
+      });
+      await agents.finishSession(queued.sessionId, worker, {
+        status: 'failed',
+        error: '[MODEL_REQUEST_IDLE_TIMEOUT] timed out',
+        expectedAttempt: claimed!.attempt,
+      });
+      if (!attempt) await study.send('retry');
+    }
+    const { readConversationHistory } = await import('@/lib/server/pbl-v3/conversation-history');
+    const events = await readConversationHistory(
+      pool,
+      queued.sessionId,
+      await agents.lastEventSeq(queued.sessionId),
+      1000,
+    );
+    expect(events.filter((e) => e.type === 'message_update')).toHaveLength(4);
+    const view = await learningView(principal, study.id, { passive: true });
+    for (let attempt = 0; attempt < 2; attempt++)
+      for (let message = 0; message < 2; message++) {
+        expect(JSON.stringify(view.conversation)).toContain(`Partial ${attempt}:${message}:2`);
+        expect(JSON.stringify(view.conversation)).toContain(`Reasoning ${attempt}:${message}:2`);
+      }
+    expect(view.roleRun).toMatchObject({
+      status: 'failed',
+      canRetry: true,
+      failure: 'timeout',
+      failureCode: 'MODEL_REQUEST_IDLE_TIMEOUT',
+    });
+  });
+
+  it('keeps a large reply whole while the committed review question awaits its display event', async () => {
+    const study = await freshStudy();
+    onTestFinished(async () => {
+      const own = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        own.environment_id,
+      ]);
+    });
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const claimed = await agents.claimNextSession('question-race-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId: queued.sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'question-race-worker',
+      attempt: claimed!.attempt,
+      signal: new AbortController().signal,
+    });
+    await invoke(config, 'request_skill_review', { question: 'Ready to continue?' });
+    const text = 'Current explanation. '.repeat(140000);
+    await agents.appendRunEvent(queued.sessionId, 'question-race-worker', {
+      type: 'message_update',
+      ts: Date.now(),
+      attempt: claimed!.attempt,
+      data: { message: { role: 'assistant', content: [{ type: 'text', text }] } },
+    });
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(
+      view.conversation?.flatMap((e) => e.parts).find((p) => p.kind === 'text' && p.text === text),
+    ).toBeDefined();
+    expect(JSON.stringify(view.conversation)).toContain('Ready to continue?');
+    await agents.finishSession(queued.sessionId, 'question-race-worker', {
+      status: 'succeeded',
+      expectedAttempt: claimed!.attempt,
+    });
+  });
   it('bounds long evidence histories and oversized records while retaining complete quantitative totals', async () => {
     const study = await freshStudy();
     const started = (await study.send('begin')) as { sessionId: string };
@@ -2092,7 +2637,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       error,
     });
     const view = await learningView(principal, study.id);
-    expect(view.roleRun).toEqual({ status: 'failed', failure, canRetry: true });
+    expect(view.roleRun).toMatchObject({ status: 'failed', failure, canRetry: true });
     expect(JSON.stringify(view)).not.toContain('SECRET');
     expect(view.messages.at(-1)?.text).toBe('Explain the return value.');
     const messages = await agents.listUserMessages(queued.sessionId);
@@ -2128,10 +2673,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       canRetry: true,
     });
   });
-  it('repairs a prose-only guided turn once, fails explicitly if still unclosed, and retries without a new learner reply', async () => {
+  it('repairs one ended prose-only turn then fails safely, preserving retry evidence', async () => {
     const original = studyId;
     const study = await freshStudy();
     studyId = study.id;
+    onTestFinished(() => {
+      studyId = original;
+    });
     const handle = startAgentRunner();
     await handle.stop();
     const claim = (id: string) =>
@@ -2155,7 +2703,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const before = mocked.modelCalls;
     mocked.responses = [textResponse('You can continue now.'), textResponse('Click Continue.')];
     await runSession({ running: new Map(), shuttingDown: false }, (await claim(queued.sessionId))!);
-    expect(mocked.modelCalls - before).toBe(2); // bounded, not an autonomous retry loop
+    expect(mocked.modelCalls - before).toBe(2); // One repair of an already-ended turn; normal tool loops remain unbounded.
     expect((await agents.getSession(queued.sessionId))?.status).toBe('failed');
     expect((await agents.getSession(queued.sessionId))?.error).toContain('without recording');
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
@@ -2194,6 +2742,85 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
+  it('repairs a prose-only lesson by recording its already delivered question without restarting teaching', async () => {
+    const study = await freshTeachingStudy();
+    const handle = startAgentRunner();
+    await handle.stop();
+    const queued = (await study.send('chat')) as { sessionId: string };
+    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const inputs = await agents.listUserMessages(queued.sessionId);
+    await agents.markUserMessageDelivered(
+      queued.sessionId,
+      handle.workerId,
+      meta!.attempt,
+      inputs.at(-2)!.seq,
+    );
+    const question = 'What does the caller receive after adding a task?';
+    const delivered = `This milestone adds a task. A list keeps order; append modifies it. ${question}`;
+    mocked.responses = [
+      toolResponse([{ name: 'read_next_skill', input: {} }]),
+      textResponse(delivered),
+      toolResponse([{ name: 'request_skill_review', input: { question } }]),
+    ];
+    const callsBefore = mocked.modelCalls;
+    await runSession(
+      { running: new Map(), shuttingDown: false },
+      { ...meta!, ...(await agents.getSession(queued.sessionId))! },
+    );
+    expect(mocked.modelCalls - callsBefore).toBe(3);
+    expect(mocked.modelSystems.at(-1)).toContain(delivered);
+    expect(mocked.modelSystems.at(-1)).toContain('record that SAME question');
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
+    expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
+    expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
+    const view = await learningView(principal, study.id);
+    const parts = view.conversation!.flatMap((entry) => entry.parts);
+    expect(
+      parts.filter((part) => part.kind === 'text' && part.text.includes(question)),
+    ).toHaveLength(1);
+    expect(
+      parts.filter((part) => part.kind === 'text' && part.text.includes('A list keeps order')),
+    ).toHaveLength(1);
+    expect(view.actions).not.toContain('next');
+    expect(view.state.position.stageIndex).toBe(0);
+  });
+  it('settles the automatic welcome when requesting readiness is the first tool call', async () => {
+    const study = await freshStudy();
+    const handle = startAgentRunner();
+    await handle.stop();
+    const queued = (await study.send('begin')) as { sessionId: string };
+    const meta = await agents.claimNextSession(handle.workerId, process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    mocked.responses = [
+      toolResponse([
+        { name: 'request_skill_review', input: { question: 'Any process questions? Ready?' } },
+      ]),
+    ];
+    const callsBefore = mocked.modelCalls;
+    await runSession({ running: new Map(), shuttingDown: false }, meta!);
+    expect(mocked.modelCalls - callsBefore).toBe(1);
+    expect(await agents.getSession(queued.sessionId)).toMatchObject({ status: 'succeeded' });
+    expect((await store.binding(queued.sessionId))?.guided).toMatchObject({
+      welcome: 'pending',
+      activeFile: 'A-teach.md',
+      reviewedFiles: [],
+      pending: { question: 'Any process questions? Ready?' },
+    });
+    const view = await learningView(principal, study.id);
+    expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false, failure: null });
+    expect(view.state.position.stageIndex).toBe(0);
+    expect(view.actions).not.toContain('next');
+    const messages = await listAgentUserMessages(agents, queued.sessionId);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.pblOpening).toBe(true);
+  });
   it.each(['mixed', 'invalid-tail', 'failed-review'] as const)(
     'stops teaching at a saved review in a %s batch through the real Pi loop',
     async (batch) => {
@@ -2232,9 +2859,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           totalTokens: 2,
         },
       };
+      const largeReply = 'Let us inspect the greeting. '.repeat(30000);
       mocked.responses = [
         [
-          { type: 'text-delta', text: 'Let us inspect the greeting.' },
+          { type: 'text-delta', text: largeReply },
           { type: 'tool-call', toolCallId: 'read-section', toolName: 'read_next_skill', input: {} },
           {
             type: 'tool-call',
@@ -2259,7 +2887,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'tool-call',
             toolCallId: 'early-review',
             toolName: 'request_skill_review',
-            input: { question: 'No section opened yet' },
+            input: { question: '' },
           },
           finish,
         ]);
@@ -2270,6 +2898,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const settled = await agents.getSession(queued.sessionId);
       expect(settled?.status, settled?.error).toBe('succeeded');
       const restored = await learningView(principal, studyId);
+      expect(
+        restored.conversation
+          ?.flatMap((entry) => entry.parts)
+          .some((part) => part.kind === 'text' && part.text === largeReply),
+      ).toBe(true);
+
       expect(
         restored.conversation?.filter((entry) => !entry.boundary && entry.speaker !== 'user'),
       ).toMatchObject([{ status: 'succeeded' }]);
@@ -2337,9 +2971,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const assistantParts = request.flatMap((m) =>
         m.role === 'assistant' && Array.isArray(m.content) ? m.content : [],
       );
+      expect(assistantParts.some((part) => part.type === 'text' && part.text === largeReply)).toBe(
+        true,
+      );
       expect(assistantParts).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ type: 'text', text: 'Let us inspect the greeting.' }),
           expect.objectContaining({ type: 'tool-call', toolCallId: 'read-section' }),
           expect.objectContaining({ type: 'tool-call', toolCallId: 'ask-review' }),
         ]),
@@ -2585,7 +3221,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }),
     ).rejects.toThrow('changed');
   });
-  it('renews on learner activity without changing progress and throttles repeated polls', async () => {
+  it('renews on learner activity without changing progress and throttles repeated active reads', async () => {
     const study = await freshStudy();
     const before = await store.get(study.id, principal.ownerId);
     const count = mocked.renewals.length;
@@ -2595,6 +3231,97 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(mocked.renewals.slice(count)).toEqual([before.environment_id]);
     expect((await store.get(study.id, principal.ownerId)).revision).toBe(before.revision);
   });
+  it('passively streams progress and workspace state without renewing or changing learner progress', async () => {
+    const study = await freshStudy();
+    const before = await store.get(study.id, principal.ownerId);
+    const count = mocked.renewals.length;
+    const observation = await learningView(principal, study.id, { passive: true });
+    expect(observation.environment?.ready).toBe(true);
+    const inspect = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'inspect');
+    const read = vi.spyOn(SandboxService.prototype, 'readText');
+    try {
+      await learningView(principal, study.id, { passive: true, observation });
+      const work = await workbenchView(principal, study.id, { passive: true });
+      expect(work.environmentId).toBe(before.environment_id);
+      expect(inspect).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(mocked.renewals.length).toBe(count);
+      const after = await store.get(study.id, principal.ownerId);
+      expect(after.revision).toBe(before.revision);
+      expect(after.state).toEqual(before.state);
+    } finally {
+      inspect.mockRestore();
+      read.mockRestore();
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        before.environment_id,
+      ]);
+    }
+  });
+
+  it('pushes a new role opening and runner text through real PG notifications without a browser poll', async () => {
+    const { learningEventResponse } = await import('@/lib/server/pbl-v3/event-stream');
+    const { startAgentEventNotifyBus } =
+      await import('@/lib/server/agent-runtime/event-notify-bus');
+    mocked.liveNotifications = true;
+    const bus = startAgentEventNotifyBus();
+    await bus.connecting;
+    const study = await freshStudy();
+    const response = await learningEventResponse(principal, study.id, new AbortController().signal);
+    const reader = response.body!.getReader();
+    const readUntil = async (marker: string) => {
+      let text = '';
+      const reading = (async () => {
+        while (!text.includes(marker)) {
+          const chunk = await reader.read();
+          if (chunk.done) throw new Error('Learning stream ended early');
+          text += new TextDecoder().decode(chunk.value);
+        }
+        return text;
+      })();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          reading,
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error('PG push missed its deadline')), 3_000);
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+    };
+    try {
+      await readUntil('event: learning');
+      const renewals = mocked.renewals.length;
+      const queued = (await study.send('begin')) as { sessionId: string };
+      await readUntil('"busy":true');
+      const count = mocked.renewals.length;
+      await store.transaction(async (db) => {
+        await store.agentStore(db).appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'message_update',
+          data: {
+            message: {
+              role: 'assistant',
+              content: [{ type: 'text', text: 'Live lesson notification proof.' }],
+            },
+          },
+        });
+      });
+      expect(await readUntil('Live lesson notification proof.')).toContain('event: learning');
+      expect(mocked.renewals.length).toBe(count);
+      expect(count).toBeGreaterThanOrEqual(renewals);
+    } finally {
+      await reader.cancel();
+      await bus.stop();
+      mocked.liveNotifications = false;
+      const final = await store.get(study.id, principal.ownerId);
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        final.environment_id,
+      ]);
+    }
+  }, 15_000);
+
   it('rejects teaching submissions to an expired environment without posting or allocating', async () => {
     const study = await freshStudy();
     const original = await store.get(study.id, principal.ownerId);
@@ -2617,7 +3344,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it('opens and rereads local protocol without cloud calls, while review still checks live evidence', async () => {
-    const study = await freshStudy();
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('protocol-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2663,7 +3390,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it('stops an aborted evidence read before another file or teaching receipt is written', async () => {
-    const study = await freshStudy();
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('abort-evidence-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2721,7 +3448,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   });
 
   it('keeps teaching tools available while lifecycle maintenance renews the same environment', async () => {
-    const study = await freshStudy();
+    const study = await freshTeachingStudy();
     const queued = (await study.send('chat')) as { sessionId: string };
     const meta = await agents.claimNextSession('renewal-worker', process.pid, {
       sessionId: queued.sessionId,
@@ -2767,7 +3494,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         entered();
         await gate;
       });
-    const polling = maintainStudy(store, study.id, principal.ownerId);
+    const refreshing = maintainStudy(store, study.id, principal.ownerId);
     try {
       await ready;
       const teaching = invoke(config, 'request_skill_review', {
@@ -2783,7 +3510,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect((await store.binding(queued.sessionId))?.guided).toBeTruthy();
     } finally {
       release();
-      await polling;
+      await refreshing;
       renew.mockRestore();
       attempt.mockRestore();
       await agents.finishSession(queued.sessionId, 'renewal-worker', {
@@ -2967,6 +3694,233 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(mocked.creates.length).toBe(creates + 1);
     expect((await learningView(principal, study.id)).environment?.ready).toBe(true);
   });
+
+  it.each(
+    (['missing', 'running', 'unknown'] as const).flatMap((buildState) =>
+      (['displayed', 'crash'] as const).map((receipt) => ({ buildState, receipt })),
+    ),
+  )(
+    'hands a $buildState build back with a $receipt receipt without unlocking advancement',
+    async ({ buildState, receipt }) => {
+      const codeStage = project.definition.milestones[0]!.stages[3]!;
+      if (codeStage.kind !== 'produce') throw new Error('Expected code stage');
+      const beforeRequired = codeStage.compileBeforeReview,
+        beforeBuild = project.buildCommand;
+      onTestFinished(() => {
+        codeStage.compileBeforeReview = beforeRequired;
+        project.buildCommand = beforeBuild;
+      });
+      codeStage.compileBeforeReview = true;
+      project.buildCommand = 'python3 -m py_compile greeting.py';
+      const study = await freshStudy();
+      onTestFinished(async () => {
+        const own = await store.get(study.id, principal.ownerId);
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          own.environment_id,
+        ]);
+      });
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const queued = (await study.send('chat')) as {
+        sessionId: string;
+      };
+      const claimed = await agents.claimNextSession('blocked-build-worker', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const request = {
+        sessionId: queued.sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'blocked-build-worker',
+        attempt: claimed!.attempt,
+        signal: new AbortController().signal,
+      };
+      const config = await teachingRunnerConfig(request);
+      await invoke(config, 'read_next_skill');
+      await expect(
+        invoke(config, 'request_skill_review', { question: 'Approve this code?' }),
+      ).rejects.toThrow('successful build');
+      let restoreCommand: (() => void) | undefined;
+      if (buildState !== 'missing') {
+        await invoke(config, 'run_build');
+        const pending = (await store.get(study.id, principal.ownerId)).evaluation!;
+        await pool.query(
+          "UPDATE sandbox_commands SET result_json=jsonb_set(result_json,'{state}',to_jsonb($3::text)) WHERE environment_id=$1 AND id=$2",
+          [row.environment_id, pending.id, buildState],
+        );
+        const original = E2BCompatibleSandboxProvider.prototype.readCommand;
+        const observation = vi
+          .spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand')
+          .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+            const result = await original.apply(this, args);
+            return args[2] === pending.id ? { ...result, state: buildState } : result;
+          });
+        restoreCommand = () => observation.mockRestore();
+        onTestFinished(restoreCommand);
+        const service = await SandboxService.forOwner(principal);
+        await expect(service.assertWorkspaceIdle(row.environment_id!)).rejects.toThrow();
+      }
+      const question = 'Which build requirement should we clarify?';
+      if (buildState === 'missing' && receipt === 'displayed') {
+        await pool.query(`CREATE FUNCTION reject_handoff_event() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'handoff event write failed'; END $$`);
+        await pool.query(`CREATE TRIGGER reject_handoff_event BEFORE INSERT ON agent_session_events
+          FOR EACH ROW WHEN (NEW.type='pbl_learner_handoff') EXECUTE FUNCTION reject_handoff_event()`);
+        try {
+          await expect(invoke(config, 'request_learner_help', { question })).rejects.toThrow(
+            'handoff event write failed',
+          );
+          expect((await store.binding(queued.sessionId))!.guided?.handoff).toBeUndefined();
+          expect(
+            (await agents.readEventsAfter(queued.sessionId, 0, 1000)).some(
+              (event) => event.type === 'pbl_learner_handoff',
+            ),
+          ).toBe(false);
+        } finally {
+          await pool.query('DROP TRIGGER reject_handoff_event ON agent_session_events');
+          await pool.query('DROP FUNCTION reject_handoff_event()');
+        }
+        expect(config.isTurnComplete()).toBe(false);
+        await invoke(config, 'read_next_skill');
+        expect((await store.binding(queued.sessionId))!.guided?.handoff).toBeUndefined();
+      }
+      await invoke(config, 'request_learner_help', {
+        question,
+      });
+      // The durable handoff precedes its tool display event, just like a review.
+      const beforeDisplay = await learningEvidence(principal, study.id);
+      expect(beforeDisplay.conversations.flatMap((c) => c.messages)).toContainEqual(
+        expect.objectContaining({ role: 'assistant', text: question }),
+      );
+      const handoff = (await agents.readEventsAfter(queued.sessionId, 0, 1000)).find(
+        (event) => event.type === 'pbl_learner_handoff',
+      )!;
+      expect(handoff.data).toMatchObject({ question, toolCallId: expect.any(String) });
+      if (receipt === 'displayed') {
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'tool_execution_end',
+          data: {
+            toolName: 'request_learner_help',
+            toolCallId: (handoff.data as { toolCallId: string }).toolCallId,
+            isError: false,
+            result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+          },
+        });
+        await agents.appendControlEvent(queued.sessionId, {
+          ts: Date.now(),
+          type: 'tool_execution_end',
+          data: {
+            toolName: 'request_learner_help',
+            isError: true,
+            result: {
+              content: [{ type: 'text', text: JSON.stringify({ question: 'FAILED QUESTION' }) }],
+            },
+          },
+        });
+      }
+      const displayed = await learningEvidence(principal, study.id);
+      expect(
+        displayed.conversations.flatMap((c) => c.messages).filter((m) => m.text === question),
+      ).toHaveLength(1);
+      expect(JSON.stringify(displayed)).not.toContain('FAILED QUESTION');
+      expect(config.isTurnComplete()).toBe(true);
+      expect(config.needsTurnReceipt()).toBe(false);
+      const guided = (await store.binding(queued.sessionId))!.guided!;
+      expect(guided.pending).toBeUndefined();
+      expect(guided.coverage).toBeUndefined();
+      expect(guided.handoff?.question).toContain('build requirement');
+      await expect(
+        invoke(config, 'complete_stage', {
+          studentFeedback: 'This is not approval.',
+          reuseFeedback: true,
+        }),
+      ).rejects.toThrow();
+      if (receipt === 'crash') {
+        await agents.releaseLease(queued.sessionId, 'blocked-build-worker');
+        const recovery = await agents.claimNextSession('handoff-recovery', process.pid, {
+          sessionId: queued.sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        expect(recovery).toBeTruthy();
+        const calls = mocked.modelCalls;
+        await runSession({ running: new Map(), shuttingDown: false }, recovery!);
+        expect(mocked.modelCalls).toBe(calls);
+        expect(
+          (await agents.readEventsAfter(queued.sessionId, 0, 1000)).some(
+            (event) => event.type === 'tool_execution_end',
+          ),
+        ).toBe(false);
+      } else {
+        await agents.finishSession(queued.sessionId, 'blocked-build-worker', {
+          status: 'succeeded',
+          expectedAttempt: claimed!.attempt,
+        });
+      }
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.roleRun).toMatchObject({ status: 'succeeded', canRetry: false });
+      expect(view.actions).not.toContain('next');
+      expect(JSON.stringify(view.conversation)).toContain('Which build requirement');
+      if (receipt === 'displayed')
+        expect((await teachingRunnerConfig(request)).isTurnComplete()).toBe(true);
+      const current = await (
+        await SandboxService.forOwner(principal)
+      ).readText(row.environment_id!, 'greeting.py');
+      const save = async () =>
+        commandStudy(principal, study.id, {
+          id: randomUUID(),
+          revision: (await store.get(study.id, principal.ownerId)).revision,
+          type: 'save',
+          path: 'greeting.py',
+          expectedHash: digest(current),
+          text: current + '\n# learner can still edit\n',
+        });
+      if (restoreCommand) {
+        await expect(save()).rejects.toThrow();
+        restoreCommand();
+        await study.send('collect');
+      }
+      await save();
+      await expect(study.send('next')).rejects.toThrow();
+      await study.send('chat');
+      const follow = await agents.claimNextSession('blocked-build-followup', process.pid, {
+        sessionId: queued.sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const resumed = await teachingRunnerConfig({
+        ...request,
+        workerId: 'blocked-build-followup',
+        attempt: follow!.attempt,
+      });
+      await expect(
+        invoke(resumed, 'read_next_skill', {
+          studentFeedback: 'Help is not review feedback.',
+          reuseFeedback: true,
+        }),
+      ).rejects.toThrow();
+      await invoke(resumed, 'run_build');
+      await invoke(resumed, 'collect_build');
+      await invoke(resumed, 'request_skill_review', { question: 'Now review the compiled code.' });
+      await agents.finishSession(queued.sessionId, 'blocked-build-followup', {
+        status: 'succeeded',
+        expectedAttempt: follow!.attempt,
+      });
+      const answered = await learningEvidence(principal, study.id);
+      const answeredMessages = answered.conversations.flatMap((c) => c.messages);
+      expect(answeredMessages.filter((message) => message.text === question)).toHaveLength(1);
+      expect(answeredMessages.findIndex((message) => message.text === question)).toBeLessThan(
+        answeredMessages.findLastIndex((message) => message.role === 'user'),
+      );
+      expect(answered.conversations.flatMap((c) => c.messages)).toContainEqual(
+        expect.objectContaining({ role: 'user', text: 'Please start.' }),
+      );
+    },
+  );
   it.each(['compile', 'infrastructure'] as const)(
     'keeps %s assessment failure repairable without abandoning the test step',
     async (kind) => {
@@ -3408,23 +4362,6 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       for (const milestone of descriptor.definition.milestones)
         descriptor.runtime.evaluations[milestone.id] = 'tests/private.json';
       bundle.files['project.json'] = JSON.stringify(descriptor);
-      // Build a valid course close to the actual 32 KiB budget, with room for a short question.
-      const introDoc = descriptor.teaching[0]!.documents[0]!,
-        introText = bundle.files[introDoc];
-      validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
-      let low = 0,
-        high = 4500;
-      while (low < high) {
-        const middle = Math.ceil((low + high) / 2);
-        bundle.files[introDoc] = introText + 'x'.repeat(middle);
-        try {
-          validateProjectPackage(indexProjectFiles(importedId, selected.ref.version, bundle.files));
-          low = middle;
-        } catch {
-          high = middle - 1;
-        }
-      }
-      bundle.files[introDoc] = introText + 'x'.repeat(Math.max(0, low - 256));
       const projectRef = await installProjectPackage(
         principal.ownerId,
         indexProjectFiles(importedId, selected.ref.version, bundle.files),
@@ -3528,9 +4465,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           const calls = mocked.modelCalls;
           try {
             await writeFile(path, 'Learner plan '.repeat(4000));
-            await expect(teachingRunnerConfig(request)).rejects.toMatchObject({
-              code: 'PBL_PROMPT_SIZE',
-            });
+            const expanded = await teachingRunnerConfig(request);
+            expect(expanded.systemPrompt).toContain('Learner plan '.repeat(4000));
             expect(mocked.modelCalls).toBe(calls);
             oversizedPlanChecked = true;
           } finally {
@@ -3574,8 +4510,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                 text: original + '\n' + 'Learner plan '.repeat(4000),
                 expectedHash: digest(original),
               }),
-            ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-            expect(await service.readText(environmentId, 'PLAN.md')).toBe(original);
+            ).resolves.toBeDefined();
+            const expanded = await service.readText(environmentId, 'PLAN.md');
+            expect(expanded).toContain('Learner plan '.repeat(4000));
+            await send('save', { path: 'PLAN.md', text: original, expectedHash: digest(expanded) });
             oversizedPlanSaveChecked = true;
           }
           const teaching = descriptor.teaching.find((binding) => binding.stage === key)!;
@@ -3631,8 +4569,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                         text: oversized,
                         expectedHash: digest(original),
                       }),
-                    ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-                    expect(await service.readText(environmentId, path)).toBe(original);
+                    ).resolves.toBeDefined();
+                    expect(await service.readText(environmentId, path)).toBe(oversized);
+                    await invoke(config, 'write_file', {
+                      path,
+                      text: original,
+                      expectedHash: digest(oversized),
+                    });
                     oversizedPlanWriteChecked = true;
                   }
                   await invoke(config, 'write_file', {
@@ -3651,14 +4594,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
                     await invoke(config, 'collect_build');
                   }
                 }
-                if (!oversizedQuestionChecked) {
-                  await expect(
-                    invoke(config, 'request_skill_review', { question: '请'.repeat(2000) }),
-                  ).rejects.toMatchObject({ code: 'PBL_PROMPT_SIZE' });
-                  expect(config.isTurnComplete()).toBe(false);
-                  oversizedQuestionChecked = true;
-                }
-                await invoke(config, 'request_skill_review', { question: 'Explain this section.' });
+                const question = !oversizedQuestionChecked
+                  ? 'Explain this section. '.repeat(250)
+                  : 'Explain this section.';
+                await invoke(config, 'request_skill_review', { question });
+                expect(config.isTurnComplete()).toBe(true);
+                oversizedQuestionChecked = true;
               },
             );
           }
@@ -3715,10 +4656,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       [id],
     );
   }
-  async function ageIntoTurnCleanup(id: string) {
+  // Explicit lifecycle-release intent fixture. Healthy inactivity never creates this intent.
+  async function stageExplicitCleanup(id: string, expired = false) {
     await pool.query(
-      "UPDATE pbl_v3_studies SET last_used_at=clock_timestamp()-($2::double precision*interval '1 millisecond') WHERE id=$1",
-      [id, pblIdleTimeoutMs() + 30_000],
+      `UPDATE pbl_v3_studies SET
+      last_used_at=clock_timestamp()-($2::double precision*interval '1 millisecond'),
+      idle_turn_cleanup=jsonb_build_object('environmentId',environment_id,
+        'idleAt',clock_timestamp()::text,
+        'releaseAt',(clock_timestamp()+($3::double precision*interval '1 millisecond'))::text)
+      WHERE id=$1`,
+      [id, pblIdleTimeoutMs() + 30_000, expired ? -60_000 : 300_000],
     );
   }
 
@@ -4825,9 +5772,17 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
   );
 
   it.each(['queued', 'running'] as const)(
-    'bounds a departed learner’s %s turn even without cancellation acknowledgement',
+    'protects a departed learner’s healthy %s turn without interpreting inactivity as failure',
     async (status) => {
       const fresh = await freshStudy();
+      onTestFinished(async () => {
+        for (const binding of await store.roles(fresh.id))
+          await agents.requestCancel(binding.session_id, { settle: true });
+        const own = await store.get(fresh.id, principal.ownerId);
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          own.environment_id,
+        ]);
+      });
       await fresh.send('checkpoint');
       const edited = await store.get(fresh.id, principal.ownerId);
       await writeFile(
@@ -4851,30 +5806,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const row = await store.get(fresh.id, principal.ownerId);
       const renewals = mocked.renewals.length;
       await maintainStudy(store, fresh.id, principal.ownerId);
-      expect(mocked.renewals).toHaveLength(renewals);
-      expect((await agents.getSession(queued.sessionId))?.status).toBe('cancelled');
+      expect(mocked.renewals.length).toBeGreaterThan(renewals);
+      expect((await agents.getSession(queued.sessionId))?.status).toBe(status);
+      expect(await agents.isCancelRequested(queued.sessionId)).toBe(false);
       expect(
         await (await SandboxService.forOwner(principal)).get(row.environment_id!),
-      ).toMatchObject({ state: 'destroyed' });
-      const saved = await (
-        await SandboxService.forOwner(principal)
-      ).checkpoint(row.environment_id!);
-      const after = await store.get(fresh.id, principal.ownerId);
-      if (status === 'queued') {
-        expect(saved?.revision).toBe(2);
-        expect(after.archive_discard).toBeNull();
-      } else {
-        expect(saved?.revision).toBe(1);
-        expect(after.archive_discard).toMatchObject({ checkpointRevision: 1 });
-      }
+      ).toMatchObject({ state: 'running' });
+      expect((await store.get(fresh.id, principal.ownerId)).idle_turn_cleanup).toBeNull();
       if (claimed)
-        await expect(
-          agents.assertActiveLease(queued.sessionId, 'departed-worker', claimed.attempt, pool),
-        ).rejects.toThrow();
+        await agents.assertActiveLease(queued.sessionId, 'departed-worker', claimed.attempt, pool);
     },
   );
 
-  it('does not turn automatic departure cancellation into new learner activity', async () => {
+  it('does not turn explicit cancellation into new learner activity', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
     const claimed = await agents.claimNextSession('departure-ack-worker', process.pid, {
@@ -4882,7 +5826,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     const before = await store.get(fresh.id, principal.ownerId);
     await maintainStudy(store, fresh.id, principal.ownerId);
     expect(await agents.isCancelRequested(queued.sessionId)).toBe(true);
@@ -4916,7 +5860,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     await agents.finishSession(queued.sessionId, 'acknowledged-worker', {
       status: 'cancelled',
@@ -4951,7 +5895,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       .spyOn(SandboxService.prototype, 'destroy')
       .mockImplementation(async (id) => service.get(id));
     try {
-      await ageStudy(fresh.id);
+      await stageExplicitCleanup(fresh.id, true);
       await maintainStudy(store, fresh.id, principal.ownerId);
       expect((await store.get(fresh.id, principal.ownerId)).revision).toBe(stale.revision);
       expect(await touchEnvironment(store, stale, service)).toMatchObject({
@@ -5019,7 +5963,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           throw new Error('Checkpoint did not enter archive.');
         }),
       ]);
-      await ageStudy(fresh.id);
+      await stageExplicitCleanup(fresh.id, true);
       await expect(maintainStudy(store, fresh.id, principal.ownerId)).rejects.toMatchObject({
         reason: 'ENVIRONMENT_BUSY',
       });
@@ -5038,7 +5982,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it('keeps one departed-turn deadline across maintenance instances and late heartbeats', async () => {
+  it('keeps an explicit release deadline across maintenance instances and late heartbeats', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
     await agents.claimNextSession('silent-worker', process.pid, {
@@ -5046,7 +5990,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     const first = (await store.get(fresh.id, principal.ownerId)).idle_turn_cleanup;
     expect(first).toBeTruthy();
@@ -5071,7 +6015,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     await store.recordActivity(fresh.id, principal.ownerId);
     const returned = await store.get(fresh.id, principal.ownerId);
@@ -5092,7 +6036,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await store.get(fresh.id, principal.ownerId)).archive_discard).toBeNull();
   });
 
-  it('fences and releases a departed turn while its teaching mutex is held', async () => {
+  it('fences explicit release while the cancelled turn teaching mutex is held', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };
     await agents.claimNextSession('locked-worker', process.pid, {
@@ -5100,7 +6044,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageStudy(fresh.id);
+    await stageExplicitCleanup(fresh.id, true);
     let entered!: () => void, release!: () => void;
     const ready = new Promise<void>((resolve) => {
       entered = resolve;
@@ -5138,7 +6082,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         leaseTtlMs: 10000,
         maxAttempts: 5,
       });
-      await ageIntoTurnCleanup(fresh.id);
+      await stageExplicitCleanup(fresh.id);
       await maintainStudy(store, fresh.id, principal.ownerId);
       await agents.finishSession(queued.sessionId, 'return-archive', {
         status: 'cancelled',
@@ -5196,7 +6140,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     await agents.finishSession(queued.sessionId, 'busy-delete', {
       status: 'cancelled',
@@ -5328,7 +6272,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       leaseTtlMs: 10000,
       maxAttempts: 5,
     });
-    await ageIntoTurnCleanup(fresh.id);
+    await stageExplicitCleanup(fresh.id);
     await maintainStudy(store, fresh.id, principal.ownerId);
     await agents.finishSession(queued.sessionId, 'crossing-deadline', {
       status: 'cancelled',
@@ -5452,9 +6396,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       await vi.waitFor(() => expect(entered).toBe(true), { timeout: 5000 });
       const old = await agents.getSession(queued.sessionId);
       expect(old?.lease).toBeTruthy();
-      await ageStudy(fresh.id);
-      await maintainStudy(store, fresh.id, principal.ownerId);
-      await fresh.send('prepare');
+      await agents.requestCancel(queued.sessionId, { settle: true });
       await fresh.send('retry');
       await vi.waitFor(
         () =>
@@ -5668,6 +6610,47 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     release();
     await held;
   });
+  it('archives a terminal model request failure after inactivity and restores progress for retry', async () => {
+    const fresh = await freshStudy();
+    const queued = (await fresh.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('failed-request-worker', process.pid, {
+      sessionId: queued.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    await agents.finishSession(queued.sessionId, 'failed-request-worker', {
+      status: 'failed',
+      error: '[MODEL_REQUEST_IDLE_TIMEOUT] no upstream feedback',
+      expectedAttempt: claim!.attempt,
+    });
+    const before = await store.get(fresh.id, principal.ownerId);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(before.environment_id!),
+    ).toMatchObject({ state: 'running' });
+    await pool.query(
+      "UPDATE agent_sessions SET updated_at=now()-interval '20 minutes' WHERE id=$1",
+      [queued.sessionId],
+    );
+    await ageStudy(fresh.id);
+    await maintainStudy(store, fresh.id, principal.ownerId);
+    expect(
+      await (await SandboxService.forOwner(principal)).get(before.environment_id!),
+    ).toMatchObject({ state: 'destroyed' });
+    expect((await store.get(fresh.id, principal.ownerId)).state).toEqual(before.state);
+    expect((await learningView(principal, fresh.id, { passive: true })).roleRun).toMatchObject({
+      status: 'failed',
+      canRetry: true,
+      failureCode: 'MODEL_REQUEST_IDLE_TIMEOUT',
+    });
+    await fresh.send('prepare');
+    await fresh.send('retry');
+    expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
+    const restored = await store.get(fresh.id, principal.ownerId);
+    expect(restored.state).toEqual(before.state);
+    expect(restored.environment_id).not.toBe(before.environment_id);
+  });
+
   it('records a retried turn start without inventing learner feedback', async () => {
     const fresh = await freshStudy();
     const queued = (await fresh.send('chat')) as { sessionId: string };

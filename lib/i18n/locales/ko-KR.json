@@ -2539,6 +2539,8 @@
     "inputBusy": "The workspace remained busy; this input was not sent. Reconnect the terminal before typing again."
   },
   "pblV3": {
+    "connectingUpdates": "Connecting live updates…",
+    "updatesUnavailable": "Live updates unavailable. Refresh to reconnect.",
     "title": "Programming projects · Preview",
     "refresh": "Refresh progress",
     "cancel": "Cancel response",
@@ -2893,6 +2895,13 @@
       "unavailable": "저장소 또는 작업 공간 서비스를 사용할 수 없거나 시간이 초과되었습니다.",
       "workspace-changed": "보관 중 파일이 변경되었습니다.",
       "execution-unsettled": "작업 중지를 확인할 수 없습니다."
+    },
+    "history": {
+      "title": "Conversation history",
+      "description": "Saved messages at the time you open this view. Earlier records load on demand.",
+      "older": "Load earlier records",
+      "failed": "Could not load history. Please retry.",
+      "empty": "No saved messages in this page."
     }
   }
 }

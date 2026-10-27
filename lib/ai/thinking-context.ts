@@ -25,3 +25,10 @@ const thinkingGlobal = globalThis as typeof globalThis & {
 export const thinkingContext = (thinkingGlobal.__thinkingContext ??= new AsyncLocalStorage<
   ThinkingConfig | undefined
 >());
+
+/** Per-call transport policy, independent of the model's thinking parameters. */
+const executionGlobal = globalThis as typeof globalThis & {
+  __llmExecutionContext?: AsyncLocalStorage<{ unbounded: boolean }>;
+};
+export const llmExecutionContext = (executionGlobal.__llmExecutionContext ??=
+  new AsyncLocalStorage<{ unbounded: boolean }>());

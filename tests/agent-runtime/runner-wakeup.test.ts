@@ -12,6 +12,7 @@
  *     the hundreds-of-ms range instead of on the 5s fallback poll;
  *  3. the 5s message/cancel polls stay as the lossy-NOTIFY backstop.
  */
+import type { AgentOptions } from '@earendil-works/pi-agent-core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
@@ -20,18 +21,21 @@ const mocks = vi.hoisted(() => {
   // (the runner passes WORKER_ID as its second argument) and hand it back
   // through getSession so `leaseMatches` sees a live, owned session.
   let workerId: string | undefined;
+  let sessionId = 'session-wake';
   let deliveredUserMessageSeq = 0;
   const store = {
     appendRunEvent: vi.fn(async (_id: string, worker: string, _event?: { type?: string }) => {
       workerId = worker;
+      sessionId = _id;
       return 1;
     }),
+    pruneMessageUpdates: vi.fn(async () => 0),
     clearCancel: vi.fn(async () => undefined),
     finishSession: vi.fn(async () => true),
     getSession: vi.fn(async () =>
       workerId
         ? {
-            id: 'session-wake',
+            id: sessionId,
             ownerId: 'owner-1',
             status: 'running',
             attempt: 1,
@@ -79,15 +83,33 @@ const mocks = vi.hoisted(() => {
   return {
     store,
     bus,
+    teachingClosed: false,
     resetWorker: () => {
       workerId = undefined;
       deliveredUserMessageSeq = 0;
+      store.appendRunEvent.mockImplementation(async (id, worker) => {
+        workerId = worker;
+        sessionId = id;
+        return 1;
+      });
     },
   };
 });
 
 vi.mock('@/lib/server/agent-runtime/store', () => ({
   getAgentSessionStore: vi.fn(async () => mocks.store),
+}));
+
+vi.mock('@/lib/server/pbl-v3/runner-tools', () => ({
+  teachingRunnerConfig: vi.fn(async () => ({
+    systemPrompt: 'Teaching test',
+    tools: [],
+    allowedToolNames: new Set(),
+    thinkingConfig: { enabled: true, effort: 'low' },
+    isTurnComplete: () => mocks.teachingClosed,
+    needsTurnReceipt: () => false,
+  })),
+  withTeachingTurnBoundary: (stream: unknown) => stream,
 }));
 
 vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
@@ -190,6 +212,7 @@ const fake = vi.hoisted(() => {
   class FakeAgent {
     state: { messages: unknown[]; errorMessage?: string } = { messages: [] };
     steerCalls: Array<{ role: string; content: unknown }> = [];
+    afterToolCall?: AgentOptions['afterToolCall'];
     promptCalls = 0;
     abortCalls = 0;
     private subscribers = new Set<(event: unknown) => void>();
@@ -274,8 +297,9 @@ const fake = vi.hoisted(() => {
 vi.mock('@earendil-works/pi-agent-core', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@earendil-works/pi-agent-core')>();
   class MockAgent extends fake.FakeAgent {
-    constructor() {
+    constructor(options?: AgentOptions) {
       super();
+      this.afterToolCall = options?.afterToolCall;
       // The runner constructs exactly one Agent per run; expose it so tests can
       // wait for the run to reach the prompt and observe its steer/abort.
       fake.current.instance = this;
@@ -326,6 +350,7 @@ describe('runSession NOTIFY wakeup wiring', () => {
     fake.current.instance?.reset();
     fake.current.instance = undefined;
     mocks.resetWorker();
+    mocks.teachingClosed = false;
     mocks.bus.route = undefined;
     mocks.bus.wake = undefined;
     mocks.store.listUserMessages.mockResolvedValue([]);
@@ -435,6 +460,123 @@ describe('runSession NOTIFY wakeup wiring', () => {
     expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
     expect(mocks.store.requeueForRetry).not.toHaveBeenCalled();
   });
+
+  const opening = { seq: 1, ts: 1, text: 'Build a lesson', delivery: 'queued', materials: [] };
+  const late = { seq: 2, ts: 2, text: 'My reply', delivery: 'steer', materials: [] };
+  const teachingSession = { ...SESSION, id: 'pbl-role-wake' };
+  function finishTool(name: string, isError = false) {
+    const toolCall = { type: 'toolCall' as const, id: 'handoff-tool', name, arguments: {} };
+    return fake.current.instance!.afterToolCall!({
+      assistantMessage: {
+        role: 'assistant',
+        content: [toolCall],
+        api: 'openai-completions',
+        provider: 'test',
+        model: 'wakeup-test',
+        timestamp: 1,
+        stopReason: 'toolUse',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+      toolCall,
+      args: {},
+      isError,
+      result: { content: [], details: {} },
+      context: { systemPrompt: 'Teaching test', messages: [], tools: [] },
+    });
+  }
+
+  it.each(['request_learner_help', 'request_skill_review', 'complete_stage'])(
+    'leaves a late learner reply undelivered after successful %s for the next claim',
+    async (name) => {
+      mocks.store.listUserMessages.mockResolvedValue([opening]);
+      const run = runSession({ running: new Map(), shuttingDown: false }, teachingSession);
+      try {
+        await waitForReady();
+        expect(await finishTool(name)).toMatchObject({ terminate: true });
+        mocks.store.listUserMessages.mockResolvedValue([opening, late]);
+        mocks.bus.wake?.();
+      } finally {
+        fake.current.instance?.releasePrompt();
+        await run;
+      }
+      expect(fake.current.instance?.steerCalls).toHaveLength(0);
+      expect(mocks.store.markUserMessageDelivered.mock.calls.some((call) => call[3] === 2)).toBe(
+        false,
+      );
+      expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('rechecks a committed teaching handoff after an in-flight message read before the SDK callback', async () => {
+    mocks.store.listUserMessages.mockResolvedValue([opening]);
+    const run = runSession({ running: new Map(), shuttingDown: false }, teachingSession);
+    let finishRead: ((messages: (typeof opening)[]) => void) | undefined;
+    try {
+      await waitForReady();
+      mocks.store.listUserMessages.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      mocks.bus.wake?.();
+      await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+      mocks.teachingClosed = true;
+      mocks.store.listUserMessages.mockResolvedValue([opening, late]);
+      finishRead!([opening, late]);
+    } finally {
+      finishRead?.([opening, late]);
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(fake.current.instance?.steerCalls).toHaveLength(0);
+    expect(mocks.store.markUserMessageDelivered.mock.calls.some((call) => call[3] === 2)).toBe(
+      false,
+    );
+    expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
+  });
+
+  it('keeps live steering available after a failed learner-help tool', async () => {
+    mocks.store.listUserMessages.mockResolvedValue([opening]);
+    const run = runSession({ running: new Map(), shuttingDown: false }, teachingSession);
+    try {
+      await waitForReady();
+      expect(await finishTool('request_learner_help', true)).toMatchObject({ terminate: false });
+      mocks.store.listUserMessages.mockResolvedValue([opening, late]);
+      mocks.bus.wake?.();
+      await vi.waitFor(() => expect(fake.current.instance?.steerCalls).toHaveLength(1));
+    } finally {
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.markUserMessageDelivered.mock.calls.some((call) => call[3] === 2)).toBe(
+      true,
+    );
+    expect(mocks.store.requeueSession).not.toHaveBeenCalled();
+  });
+
+  it.each(['session-wake', 'pbl-role-wake'])(
+    'preserves V3 frozen history while retaining ordinary snapshot pruning for %s',
+    async (id) => {
+      const run = runSession({ running: new Map(), shuttingDown: false }, { ...SESSION, id });
+      try {
+        await waitForReady();
+      } finally {
+        fake.current.instance?.releasePrompt();
+        await run;
+      }
+      if (id.startsWith('pbl-role-'))
+        expect(mocks.store.pruneMessageUpdates).not.toHaveBeenCalled();
+      else expect(mocks.store.pruneMessageUpdates).toHaveBeenCalled();
+    },
+  );
 
   it('still unsubscribes when setup fails before the agent is built', async () => {
     // A driver-model failure kills the run during setup — the wakeup

@@ -19,10 +19,11 @@ export interface LearningConversationEntry {
     total: number;
   };
   parts: (
-    | { kind: 'text'; id: string; text: string; streaming?: boolean }
+    | { kind: 'text'; id: string; messageId?: number; text: string; streaming?: boolean }
     | {
         kind: 'thinking';
         id: string;
+        messageId?: number;
         text: string;
         streaming?: boolean;
         startedAt?: number;
@@ -54,4 +55,28 @@ export interface LearningConversationEntry {
         status: 'running' | 'succeeded' | 'failed' | 'interrupted';
       }
   )[];
+}
+
+/** Fold loaded history fragments by durable identity, without altering cached pages. */
+export function mergeConversationHistory(pages: readonly (readonly LearningConversationEntry[])[]) {
+  const parts = new Map<string, LearningConversationEntry['parts'][number]>();
+  return pages.flatMap((page) =>
+    page.flatMap((entry) => {
+      const merged: LearningConversationEntry = { ...entry, parts: [] };
+      for (const part of entry.parts) {
+        const key = `${part.kind}:${part.id}`;
+        const earlier = parts.get(key);
+        if (earlier) {
+          // Pages arrive newest first but are folded chronologically. A later
+          // tool result supplies the verdict while retaining earlier arguments.
+          Object.assign(earlier, part);
+        } else {
+          const copy = { ...part };
+          parts.set(key, copy);
+          merged.parts.push(copy);
+        }
+      }
+      return entry.parts.length && !merged.parts.length ? [] : [merged];
+    }),
+  );
 }

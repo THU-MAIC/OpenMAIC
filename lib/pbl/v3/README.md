@@ -20,8 +20,10 @@ Use the application's existing configuration:
 - A configured shared sandbox provider and durable checkpoint storage.
 - Explicit single-user installation mode, or a host-verified user with `sandbox:use`.
 
-Open `/pbl-v3` and choose a Java or Python sample. Entering the project automatically
-prepares its hosted environment and opens the first teaching step. There is no
+Open `/pbl-v3` and choose a Java or Python sample. The classroom first shows the
+existing project Hero; Start/Continue uses the same web-fullscreen reveal as v2,
+with the v3 workbench inside. Entering the project automatically prepares its hosted
+environment and opens the first teaching step. There is no
 learner setup click or deployment choice. Setup failure offers an explicit retry.
 The configured sandbox template must have Python 3. Follow the teaching sections,
 record a decision, review the plan and implementation, run and collect tests,
@@ -38,16 +40,51 @@ scenes keep their existing renderer.
 
 A PBL project remains a scene inside an OpenMAIC course. Neighboring slides, quizzes
 and other scenes provide course teaching; this change does not embed another
-OpenMAIC course inside the project. Native workspace expansion retains the same
-component instance and returns to the host layout without resetting a draft reply.
+OpenMAIC course inside the project. The Hero and expansion layer are shared with
+v2, preserving its visual styling, fit scaling and animation. Expansion retains the
+same workspace instance; Back to project overview retains the durable study and
+local drafts. Hero metadata is an owner-scoped, read-only lookup of the installed
+project, using authored copy for Future Self and the two-milestone Python TodoList.
+It does not create a study, renew/provision a sandbox, run a model or invoke v2
+generation/teaching. Stage counts come from the installed definition.
 Scene re-entry reloads durable study state. Dirty file tabs, the unsent reply, quiz
 choices and pane visibility are retained per study in tab-local browser storage;
 these drafts are not submitted learning records or durable checkpoints.
 
+The project welcome and background/process questions before readiness disable
+thinking. Once the existing readiness tool opens formal teaching, all role requests
+use low effort, including later milestone openings, planning, coding, review and
+repair. The mode follows authoritative teaching state on each model request, so a
+readiness transition takes effect within the same turn; tools have no separate mode.
+Report analysis keeps thinking disabled, including on provider model aliases.
+
+V3 teaching has no application-level turn duration,
+inactivity, model-output-token or tool-call-count ceiling. Its tool wrapper retains
+explicit cancellation/lease-loss handling without a timer. Its model transport has
+no total turn deadline. Each model request has an upstream-silence guard using the
+existing 15-minute LLM transport window: received stream parts reset it; local
+worker heartbeats and browser SSE do not. Silence produces a retryable request
+failure, not proof that the model crashed. Continuous reasoning/output can run
+longer than that window. SOCKS5 retains Undici's existing 300-second transport
+fallback. A prose-only stop gets one receipt-repair continuation, then fails
+explicitly if still incomplete; normal tool/model loops have no count ceiling.
+A blocked required build can hand control back with `request_learner_help`, without
+creating review, coverage or approval evidence. The prior reply remains recovery context.
+Package size/path validation, history pagination, worker admission and writer fences
+are independent protections. Non-teaching model/tool policies remain unchanged.
+
 The teaching panel uses the host's existing OpenPBL-derived chat skin, Markdown
 renderer and sticky scrolling, with four role identities and ordered turn parts.
-Existing runner event snapshots update replies through the learning poll; no second
-stream, runner or chat database is introduced. The host's ThinkingBlock and WaitingBar
+One owner-scoped SSE connection updates the teaching conversation, progress and
+workbench together, using the existing durable runner log and PostgreSQL notification
+bus. Commands and learner messages remain HTTP requests. The browser no longer runs
+learning, workbench or environment refresh intervals. Reconnecting receives a current,
+bounded replacement snapshot; it never replays a teaching command or restarts a runner.
+The stream pauses while the page is hidden and reconnects with bounded backoff after
+transport failures. The existing SSE queue and per-owner stream limits remain in force.
+Server observation collects provider commands that lack completion callbacks; a slower
+idle reconciliation repairs lost notifications and checks environment health. Neither
+subscription nor passive observation renews a sandbox or records student feedback. The host's ThinkingBlock and WaitingBar
 and the OpenPBL-derived PBL tool cards render a one-line thinking
 preview, expandable full thinking text, pre-content waiting, ordered calls and elapsed
 times inside role turns. Tool groups start open and remain under manual fold control;
@@ -56,7 +93,9 @@ when prose or a tool takes over. Terminal and interrupted turns settle on replay
 Tool cards show the full emitted input, output, progress and display payloads, including
 failed results and loaded teaching sections, as plain text. Payloads are not interpreted
 as HTML or Markdown or filtered by tool name. Raw replay reads retain at most
-512 KiB of event payloads per role, plus bounded status metadata. Projected parts
+512 KiB of historical/tool payloads per role, plus bounded status metadata.
+Current assistant prose and thinking remain complete regardless of reply length;
+redundant intermediate text snapshots are compacted when reading. Projected parts
 share a 512 KiB per-role budget and a 2 MiB aggregate budget, with bounded
 turn envelopes and omission summaries outside those payload budgets. Recent payloads are kept whole. Oversized
 or older content outside the budget is explicitly marked as omitted, including in
@@ -195,11 +234,11 @@ bundles currently retain the English fallback for these additions.
   collection. Changed input invalidates the result; unknown execution is not a
   failed student test. Learning progress survives page refresh independently of
   the execution environment. File durability requires a successful checkpoint.
-- Learner commands, file access, tools and visible-workspace polling renew the
-  environment, throttled to once per 20 seconds. Polling never counts as student
-  feedback or changes the learning revision. Closed/hidden workspaces do not get
-  an indefinite keepalive. Provider uncertainty leaves progress readable and does
-  not authorize another allocation.
+- Learner commands, file access and tools renew the environment, throttled to
+  once per 20 seconds. Passive SSE snapshots do not renew it, count as student
+  feedback or change the learning revision. Provider uncertainty leaves progress
+  readable and does not authorize another allocation. Idle/close lifecycle policy
+  remains the provider lifecycle workstream.
 - Entry setup automatically reconciles an unavailable environment and restores
   the latest checkpoint into a new allocation for the same study/workspace. Its
   allocation ID is durable before provisioning, so retries reuse it. Old role
@@ -236,9 +275,10 @@ no tables, workers, provider, or configuration switches.
   periodic maintenance also enters a checkpoint-only scope: capture/upload uses a separate
   checkpoint mutex, while publication briefly locks the study and environment, revalidates
   the file generation and writers, and atomically commits the head and recovery metadata.
-  Departed-turn cleanup is short database control traffic outside Study admission. It locks
-  Agent rows before the Study row and, at expiry, fences unacknowledged workers and records
-  irreversible discard intent before its destroy-only scope. Fresh readiness, teaching
+  Execution reconciliation is short database control traffic outside Study admission. It locks
+  Agent rows before the Study row. Learner inactivity alone cannot cancel queued/running
+  Agents. Explicit release/discard intents still fence retired workers and record
+  irreversible discard intent before their destroy-only scope. Fresh readiness, teaching
   commits and checkpoint publication reject that discarded binding, including stale callers.
   Scope matches owner, workspace, current/recovery environment IDs and specific
   operations; it expires when the awaited action ends. Stage, role, feedback and
@@ -318,7 +358,13 @@ turn in the same stage. The teaching role can assess multiple replies together a
 quote or summarize them in `studentFeedback`; literal substring matching is not an
 authorization check. The role still assesses whether the answer addresses the
 question, while the server enforces real feedback or validated prior coverage, artifact versions and stage
-boundaries. Retries and assistant messages do not create student feedback.
+boundaries. Artifact stages additionally require an approval-request receipt for
+the current version. Conceptual coverage alone cannot approve a plan/code artifact.
+The final artifact section records an approval request; an earlier explicit request
+can set `request_skill_review.approval` and reuse its actual same-version reply
+without asking twice. The role still interprets whether that reply approves or
+requests changes; this is not a keyword-based consent classifier. Retries and
+assistant messages do not create student feedback.
 
 The source set, stage locks, writer-idle checks and ordinary sandbox restrictions
 remain the shared contract above. The merged workbench supplies file management and
@@ -448,3 +494,9 @@ staged descriptors; the cooperative shell remains unsuitable as a hostile-code e
 boundary. PBL thinking bars retain the full emitted text in both streaming and replay; their
 compact preview expands in place, matching OpenPBL. Replay presentation follows
 the aggregate bounds above without clipping the retained payloads.
+
+### Execution and lifecycle handoff
+
+See [the execution contract](../../server/pbl-v3/execution-lifecycle.md) for persisted
+request failure codes, retry semantics, active-turn protection and the lifecycle
+owner's remaining validation work. No new top-level Agent status or storage migration is needed.

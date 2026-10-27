@@ -10,6 +10,51 @@ const protocol = {
 const artifact = 'a'.repeat(64);
 
 describe('guided review boundaries', () => {
+  it('rolls back local progression and terminal flags only when a tool transaction fails', async () => {
+    const review = new GuidedSkillReview(protocol);
+    review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    const before = structuredClone(review.state);
+    await expect(
+      review.withRollback(async () => {
+        review.advance('A-teach.md', undefined, artifact);
+        review.handoff('Which build requirement?');
+        throw new Error('write failed');
+      }),
+    ).rejects.toThrow('write failed');
+    expect(review.state).toEqual(before);
+    review.advance('A-teach.md', undefined, artifact);
+    const active = structuredClone(review.state);
+    await expect(
+      review.withRollback(async () => {
+        review.handoff('Which build requirement?');
+        throw new Error('write failed again');
+      }),
+    ).rejects.toThrow('write failed again');
+    expect(review.state).toEqual(active);
+    expect(() => review.assertWritable()).not.toThrow();
+    await review.withRollback(async () => review.handoff('Which build requirement?'));
+    expect(() => review.assertWritable()).toThrow();
+    expect(review.state.handoff?.question).toBe('Which build requirement?');
+  });
+
+  it('persists a meaningful help handoff without crediting its reply as Skill review', () => {
+    const review = new GuidedSkillReview(protocol);
+    review.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    review.advance('A-teach.md', undefined, artifact);
+    expect(() => review.handoff('   ')).toThrow('concrete learner question');
+    review.handoff('Which build requirement needs clarification?');
+    const resumed = new GuidedSkillReview(protocol, review.state);
+    resumed.beginRun('code:3', [{ seq: 1, text: 'Start' }], false);
+    expect(() => resumed.assertWritable()).toThrow();
+    resumed.beginRun('code:3', [{ seq: 2, text: 'Here is the build requirement.' }], true);
+    expect(() => resumed.advance('B-review.md', 'The learner helped.', artifact)).toThrow();
+    resumed.checkpoint('Review the repaired artifact.', artifact);
+    resumed.beginRun('code:3', [{ seq: 3, text: 'I reviewed the repaired artifact.' }], true);
+    expect(() =>
+      resumed.advance('B-review.md', 'The artifact was reviewed.', artifact),
+    ).not.toThrow();
+  });
+
   it('requires a later real reply and refuses changed artifacts and fabricated feedback without a reply', () => {
     const review = new GuidedSkillReview(protocol);
     const start = { seq: 1, text: 'Start' };
@@ -94,33 +139,51 @@ describe('guided review boundaries', () => {
     expect(() => review.advance('B-review.md', 'The learner answered.', artifact)).toThrow();
   });
 
-  it('keeps welcome inside A, answers background questions, and requires later real readiness before teaching', () => {
-    const review = new GuidedSkillReview(protocol, undefined, true);
-    review.beginRun('first:0', [], false, 1);
-    review.advance('A-teach.md', undefined, artifact);
-    review.checkpoint('Any process questions? Ready to continue?', artifact);
-    expect(() => review.startTeaching('Ready', artifact)).toThrow();
-    const resumed = new GuidedSkillReview(protocol, review.state, true);
-    resumed.beginRun('first:0', [{ seq: 3, text: 'Will the Agent write code with me?' }], true);
-    resumed.checkpoint('Yes, you review it together. Ready to begin?', artifact);
-    resumed.beginRun('first:0', [{ seq: 3, text: 'Will the Agent write code with me?' }], true);
-    expect(() => resumed.startTeaching('Ready', artifact)).toThrow();
-    resumed.beginRun(
-      'first:0',
-      [
-        { seq: 3, text: 'Will the Agent write code with me?' },
-        { seq: 5, text: 'Ready, please begin.' },
-      ],
-      true,
-    );
-    resumed.startTeaching('The learner explicitly asks to begin.', artifact);
-    expect(resumed.state.activeFile).toBe('A-teach.md');
-    expect(resumed.state.reviewedFiles).toEqual([]);
-    expect(resumed.state.welcome).toBe('ready');
-    expect(() =>
-      resumed.advance('B-review.md', 'Readiness means understanding.', artifact, true),
-    ).toThrow();
-    resumed.checkpoint('Explain the new concept.', artifact);
+  it.each([true, false])(
+    'keeps welcome inside A and requires real readiness (read first: %s)',
+    (readFirst) => {
+      const review = new GuidedSkillReview(protocol, undefined, true);
+      review.beginRun('first:0', [], false, 1);
+      if (readFirst) review.advance('A-teach.md', undefined, artifact);
+      review.checkpoint('Any process questions? Ready to continue?', artifact);
+      expect(review.state.activeFile).toBe('A-teach.md');
+      expect(review.state.reviewedFiles).toEqual([]);
+      expect(() => review.startTeaching('Ready', artifact)).toThrow();
+      const resumed = new GuidedSkillReview(protocol, review.state, true);
+      resumed.beginRun('first:0', [{ seq: 3, text: 'Will the Agent write code with me?' }], true);
+      resumed.checkpoint('Yes, you review it together. Ready to begin?', artifact);
+      resumed.beginRun('first:0', [{ seq: 3, text: 'Will the Agent write code with me?' }], true);
+      expect(() => resumed.startTeaching('Ready', artifact)).toThrow();
+      resumed.beginRun(
+        'first:0',
+        [
+          { seq: 3, text: 'Will the Agent write code with me?' },
+          { seq: 5, text: 'Ready, please begin.' },
+        ],
+        true,
+      );
+      resumed.startTeaching('The learner explicitly asks to begin.', artifact);
+      expect(resumed.state.activeFile).toBe('A-teach.md');
+      expect(resumed.state.reviewedFiles).toEqual([]);
+      expect(resumed.state.welcome).toBe('ready');
+      expect(() =>
+        resumed.advance('B-review.md', 'Readiness means understanding.', artifact, true),
+      ).toThrow();
+      resumed.checkpoint('Explain the new concept.', artifact);
+    },
+  );
+
+  it('still requires a section read for lessons and rejects invalid or repeated welcome receipts', () => {
+    const lesson = new GuidedSkillReview(protocol);
+    lesson.beginRun('later:0', [], false, 1);
+    expect(() => lesson.checkpoint('Explain.', artifact)).toThrow();
+    const welcome = new GuidedSkillReview(protocol, undefined, true);
+    welcome.beginRun('first:0', [], false, 1);
+    expect(() => welcome.checkpoint(' ', artifact)).toThrow();
+    expect(welcome.state.activeFile).toBe('');
+    welcome.checkpoint('Ready?', artifact);
+    expect(() => welcome.checkpoint('Ready again?', artifact)).toThrow();
+    expect(() => welcome.complete('No student reply.', artifact)).toThrow();
   });
 
   it('requires the project welcome when a saved protocol is no longer valid', () => {
@@ -159,6 +222,57 @@ describe('guided review boundaries', () => {
     expect(() =>
       review.complete('Reuse that explicit current-version approval.', artifact, true),
     ).not.toThrow();
+  });
+
+  it('does not turn understanding into artifact approval, and recovers with a real approval reply', () => {
+    const review = new GuidedSkillReview(protocol, undefined, false, true);
+    review.beginRun('plan:2', [], false, 1);
+    review.advance('A-teach.md', undefined, artifact);
+    review.checkpoint('Explain the plan.', artifact);
+    review.beginRun('plan:2', [{ seq: 3, text: 'I understand the plan.' }], true);
+    review.advance('B-review.md', 'The learner understands.', artifact);
+    expect(() => review.complete('Reuse understanding.', artifact, true)).toThrow(
+      'understanding feedback',
+    );
+    review.checkpoint('Do you approve this current plan?', artifact, true);
+    expect(() => review.complete('The assistant approves.', artifact)).toThrow();
+    review.beginRun('plan:2', [{ seq: 3, text: 'I understand the plan.' }], true);
+    expect(() => review.complete('An older reply.', artifact)).toThrow();
+    review.beginRun('plan:2', [{ seq: 5, text: 'I approve this version.' }], true);
+    expect(() => review.complete('Actual approval.', 'b'.repeat(64))).toThrow();
+    expect(() => review.complete('Actual current-version approval.', artifact)).not.toThrow();
+  });
+
+  it('reuses explicit approval across sections and reload without another question', () => {
+    const review = new GuidedSkillReview(protocol, undefined, false, true);
+    review.beginRun('code:3', [], false, 1);
+    review.advance('A-teach.md', undefined, artifact);
+    review.checkpoint('Review and approve this code version for testing.', artifact, true);
+    const replies = [{ seq: 3, text: 'I understand it and approve it for testing.' }];
+    review.beginRun('code:3', replies, true);
+    review.advance('B-review.md', 'Actual approval.', artifact);
+    const restored = new GuidedSkillReview(protocol, review.state, false, true);
+    restored.beginRun('code:3', replies, true);
+    expect(() =>
+      restored.complete('Reuse unchanged approved version.', artifact, true),
+    ).not.toThrow();
+  });
+
+  it('retains current-version approval after a later answered understanding question', () => {
+    const extended = { ...protocol, progression: ['SKILL.md', 'A', 'B', 'C'], final: 'C' };
+    const review = new GuidedSkillReview(extended, undefined, false, true);
+    review.beginRun('code:3', [], false, 1);
+    review.advance('A', undefined, artifact);
+    review.checkpoint('Approve this version?', artifact, true);
+    const approval = { seq: 3, text: 'I approve this version.' };
+    review.beginRun('code:3', [approval], true);
+    review.advance('B', 'Approved.', artifact);
+    review.checkpoint('You asked about one risk. Is it clear now?', artifact);
+    const clarification = { seq: 5, text: 'Yes, the explanation resolved my question.' };
+    review.beginRun('code:3', [approval, clarification], true);
+    review.advance('C', 'The new question is answered.', artifact);
+    expect(() => review.complete('Reuse unchanged approval.', artifact, true)).not.toThrow();
+    expect(() => review.complete('Changed version.', 'b'.repeat(64), true)).toThrow();
   });
 
   it('rejects reused feedback from an opening, another stage, changed artifact or an unanswered new question', () => {
