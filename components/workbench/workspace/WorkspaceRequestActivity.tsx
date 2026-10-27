@@ -44,6 +44,7 @@ import { TextBlock } from '../chat/text-block';
 import { QuestionForm } from '../chat/question-form';
 import { cn } from '@/lib/utils/cn';
 import { closedPreviewRequest } from '@/lib/workbench/preview-tab';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { WorkspaceCourseTabs } from './WorkspaceCourseTabs';
 import { PaneFoldButton } from './PaneFoldButton';
 
@@ -66,6 +67,8 @@ export const PREVIEW_TAB_ID = 'request-preview';
 
 /** What the workspace needs to know about the preview tab. */
 export interface PreviewTabState {
+  /** The conversation this state belongs to; request keys are per conversation. */
+  readonly sessionId: string | null;
   /** The tab is open: in the strip, and on screen when it is the active tab. */
   readonly shown: boolean;
   /** The request it is showing. */
@@ -77,6 +80,7 @@ export interface PreviewTabState {
 }
 
 export const NO_PREVIEW_TAB: PreviewTabState = {
+  sessionId: null,
   shown: false,
   requestKey: null,
   live: false,
@@ -132,12 +136,16 @@ export function WorkspaceRequestActivity({
   const now = useRequestClock(track);
   // When this viewer first had the cast in hand: a page opened or reloaded
   // after set_roster still gets the reveal (see `RequestViewerMemory`).
+  // Keyed with the conversation: request keys repeat across conversations.
+  const rosterKey = track ? sessionScopedKey(sessionId, track.key) : null;
   const [rosterSeen, setRosterSeen] = useState<{ key: string; at: number } | null>(null);
-  const rosterSeenAt = track && rosterSeen?.key === track.key ? rosterSeen.at : null;
+  const rosterSeenAt = rosterKey !== null && rosterSeen?.key === rosterKey ? rosterSeen.at : null;
   const view = track
     ? scheduleRequestPreview(track, now, DEFAULT_REQUEST_SCHEDULE, { rosterSeenAt })
     : null;
-  if (track && view?.roster && rosterSeenAt === null) setRosterSeen({ key: track.key, at: now });
+  if (rosterKey !== null && view?.roster && rosterSeenAt === null) {
+    setRosterSeen({ key: rosterKey, at: now });
+  }
   // Has any request of this conversation done something (a tool call, a
   // question)? Then the conversation has a placeholder to keep.
   const conversationActive = chat.some(
@@ -163,8 +171,8 @@ export function WorkspaceRequestActivity({
   const requestKey = track?.key ?? null;
 
   useEffect(() => {
-    onStateChange?.({ shown, requestKey, live, label });
-  }, [onStateChange, shown, requestKey, live, label]);
+    onStateChange?.({ sessionId, shown, requestKey, live, label });
+  }, [onStateChange, sessionId, shown, requestKey, live, label]);
   useEffect(() => () => onStateChange?.(NO_PREVIEW_TAB), [onStateChange]);
 
   if (!track || !view || !shown) return null;
@@ -196,17 +204,21 @@ function useHostedQuestion(view: RequestPreviewView): {
 } {
   const answer = useQuestionHost((s) => s.answer);
   const setPreviewKey = useQuestionHost((s) => s.setPreviewKey);
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
   const [handedBack, setHandedBack] = useState<string | null>(null);
   const node = view.question?.node ?? null;
-  const hosted = node && answer !== null && handedBack !== node.key ? node : null;
+  // Question keys repeat across conversations: both memories carry the conversation.
+  const nodeKey = node ? sessionScopedKey(sessionId, node.key) : null;
+  const hosted = node && answer !== null && handedBack !== nodeKey ? node : null;
+  const hostedKey = hosted ? nodeKey : null;
   useEffect(() => {
-    if (!hosted) return;
-    setPreviewKey(hosted.key);
+    if (!hostedKey) return;
+    setPreviewKey(hostedKey);
     return () => {
-      if (useQuestionHost.getState().previewKey === hosted.key) setPreviewKey(null);
+      if (useQuestionHost.getState().previewKey === hostedKey) setPreviewKey(null);
     };
-  }, [hosted, setPreviewKey]);
-  return { node: hosted, handBack: () => node && setHandedBack(node.key) };
+  }, [hostedKey, setPreviewKey]);
+  return { node: hosted, handBack: () => nodeKey && setHandedBack(nodeKey) };
 }
 
 /** The scene's visual key, title and description. */

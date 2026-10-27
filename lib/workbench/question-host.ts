@@ -18,7 +18,10 @@ export type QuestionAnswerer = (text: string) => Promise<boolean>;
 interface QuestionHostState {
   /** The conversation's answer path, while a conversation is mounted. */
   readonly answer: QuestionAnswerer | null;
-  /** The key of the question the preview is showing as its form, if any. */
+  /**
+   * The question the preview is showing as its form, if any, as
+   * `sessionScopedKey(sessionId, node.key)` (`lib/workbench/request-scope.ts`).
+   */
   readonly previewKey: string | null;
   readonly setAnswer: (answer: QuestionAnswerer | null) => void;
   readonly setPreviewKey: (key: string | null) => void;

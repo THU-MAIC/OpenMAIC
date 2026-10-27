@@ -104,6 +104,7 @@ import { ChatTimeline } from './chat/chat-timeline';
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
 import { useQuestionHost } from '@/lib/workbench/question-host';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
 import { shouldShowWorkbenchEmptyState, WorkbenchChatEmptyState } from './chat/empty-state';
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
@@ -521,7 +522,8 @@ export function WorkbenchChat({
   // While the request preview shows this question as its form, the composer
   // stays a composer and the transcript row points across to it.
   const previewQuestionKey = useQuestionHost((s) => s.previewKey);
-  const previewHostsQuestion = pending !== null && pending.key === previewQuestionKey;
+  const previewHostsQuestion =
+    pending !== null && sessionScopedKey(sessionId, pending.key) === previewQuestionKey;
   const takeover = previewHostsQuestion
     ? null
     : composerTakeover({ pending, dismissedKey: dismissedQuestionKey });

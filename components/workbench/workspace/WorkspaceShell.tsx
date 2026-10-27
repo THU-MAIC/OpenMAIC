@@ -965,6 +965,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       .slice(0, requestStartIndex(s.chat) + 1)
       .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
   );
+  // This request's own tool calls persisted a page (the fold stamps the
+  // card's sceneId at its checkpoint).
+  const thisRequestMadeScene = useWorkbenchStore((s) =>
+    s.chat
+      .slice(requestStartIndex(s.chat) + 1)
+      .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
+  );
   const createdThisRequest = useMemo(
     () => JSON.parse(requestCreatedCourseIds) as string[],
     [requestCreatedCourseIds],
@@ -1002,7 +1009,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // Bound beside a course and looking through existing courses (and creating
   // none): the conversation is about existing courses; no placeholder.
   const onExistingCourses = useWorkbenchStore((s) => worksOnExistingCourses(s.chat, s.stageId));
-  const beforeFirstScene = !earlierCourseHasScene && !requestCourseHandedOff && !onExistingCourses;
+  // A finished request whose own course has a scene is history: reopened
+  // without tab memory, its replayed link does not navigate, and there is no
+  // handoff left to wait for. Like any finished conversation, no placeholder.
+  const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
+  const finishedRequestMadeScene =
+    !requestLive &&
+    (thisRequestMadeScene ||
+      anyCourseHasScene(createdThisRequest, courses.state === 'ready' ? courses.classrooms : []));
+  const beforeFirstScene =
+    !earlierCourseHasScene &&
+    !requestCourseHandedOff &&
+    !onExistingCourses &&
+    !finishedRequestMadeScene;
 
   /* ── The request preview tab ─────────────────────────────────────────────
      The placeholder for the course this conversation may produce, as a
@@ -1015,7 +1034,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
      (`lib/workbench/preview-tab.ts`); folding it is the pane's own fold. */
   const previewEligible =
     !render.library && !narrow && beforeFirstScene && panes.sessionId === attachedSessionId;
-  const [previewTab, setPreviewTab] = useState<PreviewTabState>(NO_PREVIEW_TAB);
+  const [reportedPreviewTab, setPreviewTab] = useState<PreviewTabState>(NO_PREVIEW_TAB);
+  // The preview reports a render behind; a report from the previous
+  // conversation (whose request keys may repeat here) is no report.
+  const previewTab =
+    reportedPreviewTab.sessionId === attachedSessionId ? reportedPreviewTab : NO_PREVIEW_TAB;
   const previewTabOpen = previewEligible && previewTab.shown;
   // Which tab of the strip the preview is relative to, per conversation: the
   // preview is the active tab, or a course tab is.

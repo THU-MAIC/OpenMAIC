@@ -1500,6 +1500,53 @@ describe('the knowledge base page', () => {
       expect(libraryShown()).toBe(true);
     });
 
+    it('retires the preview of a finished course-producing request reopened without tab memory', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a course' });
+      event('tool_execution_start', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        args: { title: 'Course' },
+      });
+      event('stage_link', { stageId: 'stage-1' });
+      event('tool_execution_end', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        result: { content: [], details: { stageId: 'stage-1', title: 'Course' } },
+      });
+      event('tool_execution_start', {
+        toolCallId: 'scene',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 1, type: 'slide' },
+      });
+      event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first' });
+      event('tool_execution_end', {
+        toolCallId: 'scene',
+        toolName: 'generate_scene',
+        result: { content: [], details: { stageId: 'stage-1', order: 1, sceneId: 'first' } },
+      });
+      // Reopened later: replayed, finished, no course tab remembered.
+      Object.assign(mocks.store, folded, {
+        sessionId: 'session-1',
+        status: 'succeeded',
+        replaying: false,
+        replayedStageLinkCount: 1,
+      });
+      await render();
+      await render();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+      // Historical links still do not navigate.
+      expect(window.location.search).toBe('?session=session-1');
+    });
+
     it('hands off a replayed create_stage from the active request after the first checkpoint', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')
@@ -2113,6 +2160,7 @@ describe('the knowledge base page', () => {
       ];
       // The conversation publishes its answer path; the preview answers through it.
       const { useQuestionHost } = await import('@/lib/workbench/question-host');
+      const { sessionScopedKey } = await import('@/lib/workbench/request-scope');
       const answer = vi.fn(async () => true);
       useQuestionHost.getState().setAnswer(answer);
       await render();
@@ -2124,7 +2172,9 @@ describe('the knowledge base page', () => {
       expect(plan?.textContent).toContain('Refraction');
       const form = pane?.querySelector('[data-testid="workbench-question-form"]');
       expect(form?.textContent).toContain('Shall I build this plan?');
-      expect(useQuestionHost.getState().previewKey).toBe('q');
+      expect(useQuestionHost.getState().previewKey).toBe(
+        sessionScopedKey(mocks.store.sessionId, 'q'),
+      );
 
       mocks.store.chat = [
         { key: 'u', kind: 'user', text: 'Make a course' },
