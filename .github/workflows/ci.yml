@@ -472,6 +472,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Pushes build unless only documentation changed, so every commit that
+      # lands is still built. Pull requests and merge queue entries build only
+      # when a file the deps or builder stage handles differently from the
+      # rest of CI changed:
+      #   - Dockerfile, .dockerignore: the stages and their build context.
+      #   - package.json (any), pnpm-lock.yaml, pnpm-workspace.yaml, .npmrc,
+      #     .pnpmfile.cjs: the deps stage installs them on Alpine (musl) with
+      #     native toolchains, which no other job does.
+      #   - packages/, scripts/: copied into the deps stage; the builder runs
+      #     build:packages under a 1 GiB V8 heap cap (#1526) and the build
+      #     scripts from scripts/.
+      #   - next.config.*, tsconfig*.json: the standalone output and the
+      #     production tsconfig the builder's `next build` uses.
+      #   - .github/workflows/ci.yml: this job itself.
+      # Other app sources go through the same `pnpm build` in the e2e job on
+      # every pull request. What that does not catch is an app source that
+      # starts depending on a path .dockerignore excludes (assets, docs, *.md);
+      # the build on push to main does.
       - name: Detect main-image changes
         id: changes
         shell: bash
@@ -482,17 +500,32 @@ jobs:
         run: |
           set -euo pipefail
           case "$EVENT_NAME" in
-            pull_request | merge_group) base="$PR_BASE" ;;
-            *) base="$PUSH_BEFORE" ;;
+            pull_request | merge_group) base="$PR_BASE"; scope=inputs ;;
+            *) base="$PUSH_BEFORE"; scope=all ;;
           esac
           if [ -z "$base" ] || ! git rev-parse --verify --quiet "$base^{commit}" >/dev/null; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          changed="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          if [ "$scope" = inputs ]; then
+            inputs="$(printf '%s\n' "$changed" | grep -E \
+              -e '^(Dockerfile|\.dockerignore|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.pnpmfile\.cjs)$' \
+              -e '^(next\.config\.[^/]+|tsconfig[^/]*\.json)$' \
+              -e '^(packages|scripts)/' \
+              -e '^\.github/workflows/ci\.yml$' \
+              -e '(^|/)package\.json$' || true)"
+            if [ -n "$inputs" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "Main-image inputs changed:"
+              printf '%s\n' "$inputs"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "No main-image input changed; skipping the image build."
+            fi
           # The builder stage copies the whole context (`COPY . .`), so almost any
           # file is an image input. Skip only when every changed file is docs.
-          changed="$(git diff --name-only "$base" "$GITHUB_SHA")"
-          if [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '(^docs/|\.md$)'; then
+          elif [ -n "$changed" ] && ! printf '%s\n' "$changed" | grep -qvE '(^docs/|\.md$)'; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Only documentation changed; skipping the image build."
           else
