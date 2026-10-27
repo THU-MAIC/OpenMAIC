@@ -7,7 +7,9 @@
  *   conversation clean: no text or source of the first comes along;
  * - a home conversation whose POST was in flight when the teacher opened the
  *   knowledge base attaches under the page instead of being dropped;
- * - Escapes on the page never stop the run of the conversation it covers.
+ * - Escapes on the page never stop the run of the conversation it covers;
+ * - a send or an upload still on its way when the teacher switches to another
+ *   conversation never pulls them back or lands in that conversation's composer.
  */
 
 import { act, createElement, type ReactNode } from 'react';
@@ -720,5 +722,261 @@ describe('a draft message still on its way when the next hand-over arrives', () 
     expect([...mocks.routerPush.mock.calls, ...mocks.routerReplace.mock.calls]).toEqual([]);
     expect(container!.textContent).toContain('B.pdf');
     expect(textarea().value).toBe('');
+  });
+});
+
+describe('a request still on its way when the teacher switches conversation', () => {
+  type Started = { sessionId: string; elementRefsAccepted: boolean; courseRefsAccepted: boolean };
+  type StartInput = {
+    text: string;
+    materials: { materialId: string }[];
+    onCreated?: (sessionId: string) => void;
+  };
+  const started = (sessionId: string): Started => ({
+    sessionId,
+    elementRefsAccepted: true,
+    courseRefsAccepted: true,
+  });
+  const textarea = () => container!.querySelector('textarea')!;
+  const sendButton = () =>
+    container!.querySelector<HTMLButtonElement>('[data-testid="workbench-send"]');
+  const stopButton = () => container!.querySelector('[data-testid="workbench-stop"]');
+  const send = () => act(async () => sendButton()!.click());
+  const attachedTo = (sessionId: string) =>
+    [...mocks.routerPush.mock.calls, ...mocks.routerReplace.mock.calls].some(([url]) =>
+      String(url).includes(`session=${sessionId}`),
+    );
+  const material = (id: string, name: string) =>
+    Response.json({ materialId: id, originalName: name, bytes: 3, mime: 'application/pdf' });
+  const pick = (name: string) =>
+    act(async () => {
+      const input = container!.querySelector<HTMLInputElement>('input[type="file"]')!;
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [new File(['x'], name, { type: 'application/pdf' })],
+      });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  /** The store follows the panes, as the real one does once it attaches. */
+  const followPanes = async () => {
+    await act(async () => {});
+    await render();
+  };
+  /** The teacher opens the existing conversation B from the rail. */
+  const openB = async () => {
+    await act(async () => (mocks.railProps!.onOpenSession as (id: string) => void)('session-B'));
+    await followPanes();
+    expect(mocks.store.sessionId).toBe('session-B');
+  };
+  const sentToB = () =>
+    fetchCalls.filter((call) => call.url === '/api/agent/sessions/session-B/messages');
+
+  let uploads: Map<string, ReturnType<typeof deferred<Response>>>;
+  let messageBodies: { url: string; body: { text?: string; materialIds?: string[] } }[];
+  let messageAnswers: ReturnType<typeof deferred<Response>>[];
+
+  beforeEach(() => {
+    // jsdom has none; the picker keeps its highlighted row in view.
+    Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+    uploads = new Map();
+    messageBodies = [];
+    messageAnswers = [];
+    mocks.attach.mockImplementation((sessionId: string) => {
+      mocks.store.sessionId = sessionId;
+    });
+    mocks.detach.mockImplementation(() => {
+      mocks.store.sessionId = null;
+    });
+    serve(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('/api/materials')) {
+        const answer = deferred<Response>();
+        uploads.set((init?.body as File).name, answer);
+        return answer.promise;
+      }
+      if (url.endsWith('/messages')) {
+        messageBodies.push({ url, body: JSON.parse(String(init?.body)) });
+        const answer = deferred<Response>();
+        messageAnswers.push(answer);
+        return answer.promise;
+      }
+      return new Response(null, { status: 202 });
+    });
+    // The library B's document is picked from.
+    const served = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).startsWith('/api/materials/library?')
+          ? Response.json({
+              materials: [
+                {
+                  materialId: 'B-doc',
+                  name: 'b-notes.pdf',
+                  bytes: 3,
+                  mime: 'application/pdf',
+                  extraction: { status: 'done' },
+                },
+              ],
+            })
+          : served(input, init),
+      ),
+    );
+  });
+
+  afterEach(() => {
+    mocks.attach.mockReset();
+    mocks.detach.mockReset();
+  });
+
+  /** Beside classroom stage-1 with no conversation yet: attach a document and send about it. */
+  async function sendAboutA(start: (input: StartInput) => Promise<Started>) {
+    mocks.startFirstMessage.mockImplementationOnce(start);
+    await render();
+    await pick('a-notes.pdf');
+    await act(async () => uploads.get('a-notes.pdf')!.resolve(material('A-doc', 'a-notes.pdf')));
+    expect(container!.textContent).toContain('a-notes.pdf');
+    await type(textarea(), 'About A');
+    await send();
+    expect(mocks.startFirstMessage).toHaveBeenCalledTimes(1);
+    const sent = mocks.startFirstMessage.mock.calls[0][0] as StartInput;
+    expect(sent.materials.map((item) => item.materialId)).toEqual(['A-doc']);
+    expect(stopButton()).not.toBeNull();
+  }
+
+  /** In B: type a draft and attach a document the library already holds. */
+  async function draftInB() {
+    expect(stopButton()).toBeNull();
+    await type(textarea(), 'Typing in B');
+    await act(async () =>
+      container!
+        .querySelector<HTMLButtonElement>('[data-testid="workbench-mention-button"]')!
+        .click(),
+    );
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 230)));
+    await act(async () =>
+      container!
+        .querySelector<HTMLButtonElement>('[data-testid="workbench-material-option-B-doc"]')!
+        .click(),
+    );
+    expect(container!.textContent).toContain('b-notes.pdf');
+    mocks.routerPush.mockClear();
+    mocks.routerReplace.mockClear();
+  }
+
+  /** B's own message carries B's draft and B's document, nothing of A's. */
+  async function sendInB() {
+    await send();
+    expect(sentToB()).toHaveLength(1);
+    expect(messageBodies.at(-1)!.body.text).toBe('Typing in B');
+    expect(messageBodies.at(-1)!.body.materialIds).toEqual(['B-doc']);
+  }
+
+  it('a late creation stays in the rail and leaves B, its draft and its document alone', async () => {
+    const sendingA = deferred<Started>();
+    await sendAboutA(() => sendingA.promise);
+    await openB();
+    // A's document went with A's message; it is not one of B's.
+    expect(container!.textContent).not.toContain('a-notes.pdf');
+    await draftInB();
+
+    mocks.requestFullFetch.mockClear();
+    await act(async () => sendingA.resolve(started('session-A')));
+    await followPanes();
+    expect(mocks.requestFullFetch).toHaveBeenCalled();
+    expect(attachedTo('session-A')).toBe(false);
+    expect(mocks.store.sessionId).toBe('session-B');
+    expect(textarea().value).toBe('Typing in B');
+    expect(container!.textContent).toContain('b-notes.pdf');
+    await sendInB();
+  });
+
+  it('the same once the session exists and only the first message is still on its way', async () => {
+    const sendingA = deferred<Started>();
+    await sendAboutA((input) => {
+      input.onCreated?.('session-A');
+      return sendingA.promise;
+    });
+    await openB();
+    await draftInB();
+
+    await act(async () => sendingA.resolve(started('session-A')));
+    await followPanes();
+    expect(attachedTo('session-A')).toBe(false);
+    expect(textarea().value).toBe('Typing in B');
+    expect(container!.textContent).toContain('b-notes.pdf');
+    await sendInB();
+  });
+
+  it('a late failure is reported but never refills B', async () => {
+    const sendingA = deferred<Started>();
+    await sendAboutA(() => sendingA.promise);
+    await openB();
+    await draftInB();
+
+    await act(async () => sendingA.reject(new Error('send A failed')));
+    await followPanes();
+    expect(mocks.toastError).toHaveBeenCalledWith('send A failed');
+    expect(attachedTo('session-A')).toBe(false);
+    expect(textarea().value).toBe('Typing in B');
+    expect(container!.textContent).toContain('b-notes.pdf');
+    expect(container!.textContent).not.toContain('a-notes.pdf');
+    await sendInB();
+  });
+
+  it('control: the conversation the draft created is the same one, so a pick made meanwhile joins it', async () => {
+    const sendingA = deferred<Started>();
+    await sendAboutA((input) => {
+      input.onCreated?.('session-A');
+      return sendingA.promise;
+    });
+    // The next message's document, picked while the first is on its way.
+    await pick('a-next.pdf');
+    await act(async () => sendingA.resolve(started('session-A')));
+    await followPanes();
+    expect(mocks.routerReplace).toHaveBeenLastCalledWith(
+      '/workspace?session=session-A&course=stage-1',
+    );
+    expect(mocks.store.sessionId).toBe('session-A');
+    await act(async () => uploads.get('a-next.pdf')!.resolve(material('A-next', 'a-next.pdf')));
+    expect(container!.textContent).toContain('a-next.pdf');
+    expect(container!.textContent).not.toContain('a-notes.pdf');
+  });
+
+  it('a message to an existing conversation that fails late never refills B', async () => {
+    mocks.searchParams = new URLSearchParams('session=session-S&course=stage-1');
+    mocks.store.sessionId = 'session-S';
+    await render();
+    await type(textarea(), 'About S');
+    await send();
+    expect(messageBodies.map((call) => call.url)).toEqual([
+      '/api/agent/sessions/session-S/messages',
+    ]);
+    await openB();
+    expect(stopButton()).toBeNull();
+    await type(textarea(), 'Typing in B');
+
+    await act(async () =>
+      messageAnswers[0].resolve(Response.json({ error: 'send S failed' }, { status: 500 })),
+    );
+    expect(mocks.toastError).toHaveBeenCalledWith('send S failed');
+    expect(textarea().value).toBe('Typing in B');
+  });
+
+  it("a late upload is kept in the library but never joins B's attachments", async () => {
+    await render();
+    await pick('a-upload.pdf');
+    expect(uploads.has('a-upload.pdf')).toBe(true);
+    await openB();
+    // Its spinner went with the conversation it was picked in, and does not
+    // hold B's send back.
+    expect(container!.textContent).not.toContain('a-upload.pdf');
+    await draftInB();
+
+    await act(async () => uploads.get('a-upload.pdf')!.resolve(material('A-up', 'a-upload.pdf')));
+    expect(container!.textContent).not.toContain('a-upload.pdf');
+    expect(container!.textContent).toContain('b-notes.pdf');
+    expect(textarea().value).toBe('Typing in B');
+    await sendInB();
   });
 });

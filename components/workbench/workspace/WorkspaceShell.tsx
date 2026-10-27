@@ -243,11 +243,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     window.addEventListener('popstate', dropMaterialSeed);
     return () => window.removeEventListener('popstate', dropMaterialSeed);
   }, []);
-  /**
-   * Bumped once per hand-over, so it also numbers them: a draft's first
-   * message that was already on its way when a hand-over started a new draft
-   * belongs to the draft before it (see `draftConversation`).
-   */
+  /** Bumped once per hand-over, so it also numbers them. */
   const materialSeedKeys = useRef(0);
   const consumeMaterialSeed = useCallback((key: number) => {
     setMaterialSeed((current) => (current?.key === key ? null : current));
@@ -525,6 +521,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     },
     [navigation, panes],
   );
+
+  /**
+   * Which visit to an empty conversation this is. Any other conversation or
+   * classroom in the column, or a new chat asked for (a hand-over is one),
+   * starts a new visit; the knowledge base page over it does not. A draft's
+   * first message answered after its visit ended belongs to the visit it was
+   * sent in (see `draftConversation`): the conversation it created stays in
+   * the rail, and the column stays where the teacher took it.
+   */
+  const draftVisit = useRef(0);
+  useLayoutEffect(() => {
+    draftVisit.current += 1;
+  }, [panes.sessionId, panes.courseId]);
 
   const persistCourseTabs = useCallback((next: typeof courseTabs) => {
     writeCourseTabsMemory(next);
@@ -865,6 +874,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * the empty composer already lives.
    */
   const startNewConversation = () => {
+    draftVisit.current += 1;
     setNewConversationRequested(true);
     collapse.expandChat();
     setMaterialSeed(null);
@@ -1041,8 +1051,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               readonly materials: readonly WorkbenchMaterial[];
               readonly elementRefs: readonly ElementRef[];
               readonly courseRefs: readonly CourseRef[];
+              readonly onCreated?: (sessionId: string) => void;
             }) => {
-              const handOverAtSend = materialSeedKeys.current;
+              const visitAtSend = draftVisit.current;
               const started = await startConversationWithFirstMessage({
                 stageId: draftCourseId,
                 ...message,
@@ -1050,25 +1061,20 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
               // The rail should show the conversation that just came into being,
               // and the URL is what attaches it.
               loadSessions();
-              // A hand-over started a new draft while this was on its way --
-              // often under the same `draft:<course>` key. This conversation
-              // stays in the rail; attaching it would carry the new draft's
-              // next message into it.
-              if (materialSeedKeys.current !== handOverAtSend) {
-                return {
-                  accepted: true,
-                  elementRefsAccepted: started.elementRefsAccepted,
-                  courseRefsAccepted: started.courseRefsAccepted,
-                };
-              }
               // Decided when the session exists, not when the message was
               // sent: the teacher may have opened the knowledge base since.
+              // Anything else -- another conversation, another classroom, a
+              // new draft (a hand-over's, often under the same
+              // `draft:<course>` key) -- ended this draft's visit: the
+              // conversation stays in the rail, and attaching it would pull
+              // the teacher back and carry whatever they are typing now into it.
               navigateInBackground(
-                (current) => ({
-                  ...current,
-                  sessionId: started.sessionId,
-                  courseId: draftCourseId,
-                }),
+                (current) =>
+                  draftVisit.current === visitAtSend &&
+                  current.sessionId === null &&
+                  current.courseId === draftCourseId
+                    ? { ...current, sessionId: started.sessionId, courseId: draftCourseId }
+                    : null,
                 'replace',
               );
               return {

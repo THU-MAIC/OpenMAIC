@@ -24,7 +24,7 @@
  * session. Enter still barges in.
  * Send/cancel failures surface as a sonner toast, not inline chrome.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, Loader2, Send, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -257,6 +257,27 @@ export function WorkbenchChat({
    * no settling of its picks, no busy or STOP state of its own.
    */
   const sendDraft = useRef(0);
+  /** What the send in flight carries, until it settles or is released. */
+  const sendingMaterials = useRef<readonly WorkbenchMaterial[] | null>(null);
+  /**
+   * The session a draft's first message created, once it exists and until
+   * the composer shows it: the one conversation change that is this draft
+   * carrying on rather than the teacher moving away from it.
+   */
+  const createdHere = useRef<string | null>(null);
+  /**
+   * Leave the send in flight to finish on its own: its completion no longer
+   * restores text, settles picks or holds the busy and STOP state (see
+   * `submit`). The message itself still goes where it was sent.
+   */
+  const releaseSend = () => {
+    sendDraft.current += 1;
+    sendingMaterials.current = null;
+    createdHere.current = null;
+    setBusy(false);
+    sendStartedStatus.current = null;
+    setPendingSend(false);
+  };
   /**
    * The one question whose form the user waved off, by node key. Local and
    * deliberately shallow: it is a "not now", not an answer, so nothing about it
@@ -286,10 +307,7 @@ export function WorkbenchChat({
     // A send still on its way belongs to the draft before this one: its
     // completion is fenced off (see `submit`), and the new draft is free to
     // send at once rather than waiting behind it.
-    sendDraft.current += 1;
-    setBusy(false);
-    sendStartedStatus.current = null;
-    setPendingSend(false);
+    releaseSend();
     replaceDraft('');
     setSlashDismissed(null);
     setMentionDismissed(null);
@@ -302,6 +320,36 @@ export function WorkbenchChat({
     // they are then (the same event-like reset as the home composer's).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handOverKey]);
+  // Another conversation in this composer: the teacher switched, or a
+  // background change moved the column. A send or an upload still on its way
+  // belongs to the conversation it was started in, so it must not land in
+  // this one -- no restored text, no settled or added pills, no busy or STOP
+  // state left over. What the send carried leaves the staging list with it.
+  // Layout, so a completion arriving right after the switch already finds
+  // itself fenced off.
+  const shownOwner = useRef(composerOwnerId);
+  useLayoutEffect(() => {
+    if (composerOwnerId === shownOwner.current) return;
+    if (composerOwnerId === null) {
+      // Between two conversations. Once a draft's session exists, this may be
+      // the way to it: decide when the next one is known.
+      if (createdHere.current !== null) return;
+    } else if (composerOwnerId === createdHere.current) {
+      // The draft's own conversation, created and now open: the same one.
+      createdHere.current = null;
+      shownOwner.current = composerOwnerId;
+      return;
+    }
+    shownOwner.current = composerOwnerId;
+    createdHere.current = null;
+    materials.leaveUploads();
+    if (sendingMaterials.current) {
+      materials.removeSent(sendingMaterials.current);
+      releaseSend();
+    }
+    // Once per owner change; the helpers are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [composerOwnerId]);
   // While the material handed over is waiting for the gate, a send would
   // leave without it: the button and Enter (via `send`) both wait.
   const awaitingMaterial = useMaterialSeed({
@@ -699,7 +747,10 @@ export function WorkbenchChat({
       accepted: boolean;
       elementRefsAccepted: boolean;
       courseRefsAccepted: boolean;
-      /** A hand-over started a new draft while this was on its way: leave that draft alone. */
+      /**
+       * A hand-over started a new draft, or the composer moved to another
+       * conversation, while this was on its way: leave what it shows alone.
+       */
       superseded?: true;
     }> => {
       if (!sessionId && !draftConversation) {
@@ -710,6 +761,7 @@ export function WorkbenchChat({
       }
       const draftAtSend = sendDraft.current;
       const superseded = () => draftAtSend !== sendDraft.current;
+      sendingMaterials.current = attachments;
       setBusy(true);
       // Optimistic: flip the composer to STOP right now. The fold's status only
       // moves once the runner claims the requeued row (`session_resumed`) — up
@@ -733,9 +785,13 @@ export function WorkbenchChat({
               materials: attachments,
               elementRefs: refs,
               courseRefs: courses,
+              onCreated: (createdId) => {
+                if (!superseded()) createdHere.current = createdId;
+              },
             });
-        // The busy and STOP state now belong to the new draft (the hand-over
-        // reset them); the message itself went where it went.
+        // The busy and STOP state now belong to the new draft or the other
+        // conversation (`releaseSend` reset them); the message itself went
+        // where it went.
         if (superseded()) {
           return {
             accepted: result.accepted,
@@ -766,12 +822,18 @@ export function WorkbenchChat({
             superseded: true,
           };
         }
+        // A session created for a message that did not go is not opened: the
+        // draft stays this composer's conversation.
+        createdHere.current = null;
         sendStartedStatus.current = null;
         setPendingSend(false);
         return { accepted: false, elementRefsAccepted: false, courseRefsAccepted: false };
       } finally {
         // A send the new draft started meanwhile owns `busy` now.
-        if (!superseded()) setBusy(false);
+        if (!superseded()) {
+          sendingMaterials.current = null;
+          setBusy(false);
+        }
       }
     },
     [busy, draftConversation, sessionId, status, t],
@@ -827,8 +889,8 @@ export function WorkbenchChat({
     setMentionOpen(false);
     const result = await submit(text, selectedMaterials, selectedRefs, selectedCourses);
     // A hand-over started a new draft meanwhile and already cleared this one's
-    // text, picks and references: nothing here is the new draft's to settle
-    // or restore.
+    // text, picks and references, or the composer moved to another
+    // conversation: nothing it shows now is this send's to settle or restore.
     if (result.superseded) return;
     if (result.accepted) {
       // One staging list serves every conversation this pane shows, so the
