@@ -965,13 +965,16 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       .slice(0, requestEpisodeStart(s.chat) + 1)
       .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
   );
-  // This request's own tool calls persisted a page (the fold stamps the
-  // card's sceneId at its checkpoint).
-  const thisRequestMadeScene = useWorkbenchStore((s) =>
+  // The pages this request's own tool calls persisted (the fold stamps the
+  // card's sceneId at its checkpoint), as a string so the selector is stable.
+  // A new one is when a course still waiting may have its first scene.
+  const thisRequestScenes = useWorkbenchStore((s) =>
     s.chat
       .slice(requestEpisodeStart(s.chat) + 1)
-      .some((node) => node.kind === 'tool' && Boolean(node.sceneId)),
+      .flatMap((node) => (node.kind === 'tool' && node.sceneId ? [node.sceneId] : []))
+      .join('|'),
   );
+  const thisRequestMadeScene = thisRequestScenes !== '';
   const createdThisRequest = useMemo(
     () => JSON.parse(requestCreatedCourseIds) as string[],
     [requestCreatedCourseIds],
@@ -1128,19 +1131,17 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       ...(rememberedTabs?.courseIds ?? []),
       ...(rememberedTabs?.closedCourseIds ?? []),
     ];
-    // The preview tab is (or is about to be) this request's placeholder: its
-    // tab state lags a render behind the stream, so a create_stage in flight
-    // with the preview available counts too.
-    const previewHolds = previewTabOpen || (previewEligible && creatingInRequest);
-    const activeRequestCreates =
-      (!panes.courseId || previewHolds) &&
-      !panes.library &&
-      !earlierCourseHasScene &&
-      ['running', 'queued', 'connecting'].includes(attachedSessionStatus)
+    // The courses this live request created and that are not reconciled yet
+    // (opened or closed as a tab, now or in tab memory). They stay this
+    // request's own whatever the pane shows, replayed links included, so a
+    // series restored after a reload keeps every course, not just the first.
+    const live = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
+    const ownCourses =
+      live && !panes.library && !earlierCourseHasScene
         ? createdThisRequest.filter((id) => !rememberedCourseIds.includes(id))
         : [];
     const eligibleLinks = stageLinkStageIds.filter(
-      (id, index) => index >= replayedStageLinkCount || activeRequestCreates.includes(id),
+      (id, index) => index >= replayedStageLinkCount || ownCourses.includes(id),
     );
     const open = createdCourseTabsToOpen({
       sessionId: attachedSessionId === panes.sessionId ? panes.sessionId : null,
@@ -1153,15 +1154,20 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       replaying: attachedSessionReplaying,
     });
     if (open.length === 0) return;
-    // Existing classroom and library background navigation retain their
-    // contract, and so does a conversation that already has a course.
-    if ((panes.courseId && !previewHolds) || panes.library || earlierCourseHasScene) {
+    // This request's own courses open at their first readable scene (the
+    // first replaces the preview tab), and so does a link that lands while the
+    // preview is the placeholder for a create_stage still in flight (its tab
+    // state lags a render behind the stream). Any other live link keeps the
+    // existing classroom and library background navigation.
+    const previewHolds = previewTabOpen || (previewEligible && creatingInRequest);
+    const others = previewHolds ? [] : open.filter((id) => !ownCourses.includes(id));
+    if (others.length > 0) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize the existing live course-link behavior
-      openCourses(open);
+      openCourses(others);
       return;
     }
-    // The preview tab is the placeholder: its course replaces it at the first
-    // readable scene.
+    // One at a time: a handoff changes the tab set, which re-runs this effect
+    // for the courses still waiting.
     return watchFirstScene(open, (courseId) => handOffPreview(courseId));
   }, [
     attachedSessionId,
@@ -1183,7 +1189,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     pageCount,
     attachedSessionStatus,
     panes.library,
-    panes.courseId,
+    thisRequestScenes,
   ]);
 
   useGeneratedCourseDiscoverySync({

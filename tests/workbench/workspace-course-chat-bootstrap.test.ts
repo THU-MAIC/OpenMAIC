@@ -1547,6 +1547,98 @@ describe('the knowledge base page', () => {
       expect(window.location.search).toBe('?session=session-1');
     });
 
+    it('opens every course of a replayed series at its first scene, not only the first', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a two-unit series' });
+      for (const stageId of ['stage-1', 'stage-2']) {
+        event('tool_execution_start', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          args: { title: stageId },
+        });
+        event('stage_link', { stageId });
+        event('tool_execution_end', {
+          toolCallId: `create-${stageId}`,
+          toolName: 'create_stage',
+          result: { content: [], details: { stageId, title: stageId } },
+        });
+      }
+      mocks.courses = {
+        ...mocks.courses!,
+        classrooms: [
+          { ...classroom('stage-1'), sceneCount: 0 },
+          { ...classroom('stage-2'), sceneCount: 0 },
+        ],
+      };
+      // Reloaded mid-run: both links are in the replay baseline.
+      const attach = () =>
+        Object.assign(mocks.store, folded, {
+          sessionId: 'session-1',
+          status: 'running',
+          replaying: false,
+          replayedStageLinkCount: 2,
+        });
+      attach();
+      const ready = new Set<string>();
+      vi.mocked(fetch).mockImplementation(async (input) => {
+        const url = String(input);
+        const stageId = url.includes('stage-2') ? 'stage-2' : 'stage-1';
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            url.includes('/manifest')
+              ? {
+                  rev: 1,
+                  scenes: ready.has(stageId) ? [{ id: `first-${stageId}`, order: 0, rev: 1 }] : [],
+                }
+              : { scenes: [{ id: `first-${stageId}`, stageId }] },
+        } as Response;
+      });
+      await render();
+      await render();
+      expect(window.location.search).toBe('?session=session-1');
+
+      ready.add('stage-1');
+      event('tool_execution_start', {
+        toolCallId: 'scene-stage-1',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 1, type: 'slide' },
+      });
+      event('checkpoint', { stageId: 'stage-1', order: 0, sceneId: 'first-stage-1' });
+      attach();
+      await render();
+      await render();
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+
+      ready.add('stage-2');
+      event('tool_execution_start', {
+        toolCallId: 'scene-stage-2',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-2', order: 1, type: 'slide' },
+      });
+      event('checkpoint', { stageId: 'stage-2', order: 0, sceneId: 'first-stage-2' });
+      attach();
+      await render();
+      await render();
+      // The second course opens as a tab beside the first, which stays active.
+      expect(window.location.search).toBe('?session=session-1&course=stage-1');
+      const tabs = mocks.classroomProps?.browser as {
+        tabs: readonly { id: string }[];
+        activeCourseId: string;
+      };
+      expect(tabs.tabs.map((tab) => tab.id)).toEqual(['stage-1', 'stage-2']);
+      expect(tabs.activeCourseId).toBe('stage-1');
+    });
+
     it('keeps a course created before a question with its request, and hands off after the answer', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')
