@@ -84,10 +84,17 @@ These are course-specific follow-ups, not requirements to redesign the shared ho
 
 1. **Course structure and starts.** Supply the independent introductory course and
    four FS project courses. Give each its own Hero metadata and final PBL scene.
+   The introductory course explains the activity, programming basics and learning
+   format, with an unrelated minimal practice project. The four FS courses cover
+   layering/interfaces, session state/concurrency, persistence, and simplified
+   fault tolerance/resource budgets. Put the relevant prerequisites in preceding
+   scenes, sized for learners who may have no programming experience.
    Each project must start from its authored starter snapshot; later projects use
    the preceding projects' correct baseline, regardless of a learner's other
    attempts. Each internal milestone keeps the supported seven-step sequence.
-   Keep project identity and completion records distinct for participation tracking.
+   Release order must not become a prerequisite requiring learners to complete
+   earlier projects first. Keep project identity and completion records distinct
+   for participation tracking; promotion/rewards are outside this teaching change.
 2. **Student-facing requirements.** For every milestone, write a concrete outcome,
    visible behavior, required interfaces and necessary constraints. Decide which
    explanations belong in preceding scenes, the opening, or an intentionally
