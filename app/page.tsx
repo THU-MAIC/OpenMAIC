@@ -169,13 +169,21 @@ function HomePage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mobileOptionsOpen, setMobileOptionsOpen] = useState(false);
   const [mobileMaterialsOpen, setMobileMaterialsOpen] = useState(false);
+  const [mobileViewMotion, setMobileViewMotion] = useState<'forward' | 'back' | null>(null);
   const mobileOptionsContentRef = useRef<HTMLDivElement>(null);
   const mobileOptionsTitleRef = useRef<HTMLHeadingElement>(null);
+  const openMobileOptions = () => {
+    setMobileViewMotion(null);
+    setMobileMaterialsOpen(false);
+    setMobileOptionsOpen(true);
+  };
   const openMobileMaterials = () => {
+    setMobileViewMotion('forward');
     setMobileMaterialsOpen(true);
     requestAnimationFrame(() => mobileOptionsTitleRef.current?.focus());
   };
   const returnToMobileOptions = () => {
+    setMobileViewMotion('back');
     setMobileMaterialsOpen(false);
     requestAnimationFrame(() => {
       mobileOptionsContentRef.current
@@ -945,7 +953,7 @@ function HomePage() {
                 <button
                   type="button"
                   className="home-material-status"
-                  onClick={() => setMobileOptionsOpen(true)}
+                  onClick={openMobileOptions}
                   aria-label={t('toolbar.courseMaterialsSelected', {
                     n: courseMaterials.materials.length,
                   })}
@@ -968,7 +976,7 @@ function HomePage() {
                   className="home-options-open"
                   data-testid="home-options-open"
                   aria-label={t('home.courseOptions')}
-                  onClick={() => setMobileOptionsOpen(true)}
+                  onClick={openMobileOptions}
                 >
                   <Plus size={22} />
                 </button>
@@ -1531,7 +1539,10 @@ function HomePage() {
           open={mobileOptionsOpen}
           onOpenChange={(open) => {
             setMobileOptionsOpen(open);
-            if (!open) setMobileMaterialsOpen(false);
+            if (open) {
+              setMobileViewMotion(null);
+              setMobileMaterialsOpen(false);
+            }
           }}
         >
           <DialogContent
@@ -1544,81 +1555,90 @@ function HomePage() {
             className={cn('home-mobile-options', mobileMaterialsOpen && 'home-materials-view')}
             aria-describedby={undefined}
           >
-            <div className={mobileMaterialsOpen ? 'home-materials-header' : 'home-options-header'}>
-              {mobileMaterialsOpen && (
-                <button
-                  type="button"
-                  className="flex h-11 min-w-0 items-center gap-1 text-xs"
-                  aria-label={t('home.backToCourseOptions')}
-                  onClick={returnToMobileOptions}
-                >
-                  <ChevronLeft size={18} className="shrink-0 rtl:rotate-180" />
-                  <span className="truncate">{t('home.courseOptions')}</span>
-                </button>
-              )}
-              <DialogTitle ref={mobileOptionsTitleRef} tabIndex={-1}>
-                {t(mobileMaterialsOpen ? 'home.courseMaterials' : 'home.courseOptions')}
-              </DialogTitle>
-              {mobileMaterialsOpen && <span aria-hidden="true" />}
-            </div>
             <div
-              className={
-                mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body space-y-4'
-              }
-              data-testid={mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body'}
+              key={mobileMaterialsOpen ? 'materials' : 'options'}
+              className="home-options-page"
+              data-view={mobileMaterialsOpen ? 'materials' : 'options'}
+              data-motion={mobileViewMotion ?? undefined}
             >
-              {!mobileMaterialsOpen && (
-                <div className="home-mobile-teaching-options flex flex-wrap items-start gap-3">
-                  <GreetingBar reserveSpace />
-                  <AgentBar />
-                </div>
-              )}
-              <div>{generationToolbar}</div>
-              {!mobileMaterialsOpen && (
-                <>
-                  <InteractiveModeButton
-                    pressed={form.interactiveMode}
-                    label={t('toolbar.interactiveModeLabel')}
-                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
-                  />
+              <div
+                className={mobileMaterialsOpen ? 'home-materials-header' : 'home-options-header'}
+              >
+                {mobileMaterialsOpen && (
                   <button
                     type="button"
-                    className="flex h-11 items-center gap-2 text-sm"
-                    onClick={() => {
-                      setMobileOptionsOpen(false);
-                      setSettingsOpen(true);
-                    }}
+                    className="flex h-11 min-w-0 items-center gap-1 text-xs"
+                    aria-label={t('home.backToCourseOptions')}
+                    onClick={returnToMobileOptions}
                   >
-                    <Settings size={18} />
-                    {t('home.allSettings')}
+                    <ChevronLeft size={18} className="shrink-0 rtl:rotate-180" />
+                    <span className="truncate">{t('home.courseOptions')}</span>
                   </button>
-                  <p className="text-xs text-muted-foreground">{t('home.examplesLabel')}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {['home.examplePython', 'home.exampleFourier'].map((key) => (
-                      <button
-                        key={key}
-                        type="button"
-                        className="rounded-full border border-border px-3 py-2 text-sm"
-                        onClick={() => {
-                          updateForm('requirement', t(key));
-                          setMobileOptionsOpen(false);
-                          requestAnimationFrame(() => textareaRef.current?.focus());
-                        }}
-                      >
-                        {t(key)}
-                      </button>
-                    ))}
+                )}
+                <DialogTitle ref={mobileOptionsTitleRef} tabIndex={-1}>
+                  {t(mobileMaterialsOpen ? 'home.courseMaterials' : 'home.courseOptions')}
+                </DialogTitle>
+                {mobileMaterialsOpen && <span aria-hidden="true" />}
+              </div>
+              <div
+                className={
+                  mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body space-y-4'
+                }
+                data-testid={mobileMaterialsOpen ? 'home-materials-body' : 'home-options-body'}
+              >
+                {!mobileMaterialsOpen && (
+                  <div className="home-mobile-teaching-options flex flex-wrap items-start gap-3">
+                    <GreetingBar reserveSpace />
+                    <AgentBar />
                   </div>
-                </>
+                )}
+                <div>{generationToolbar}</div>
+                {!mobileMaterialsOpen && (
+                  <>
+                    <InteractiveModeButton
+                      pressed={form.interactiveMode}
+                      label={t('toolbar.interactiveModeLabel')}
+                      onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                    />
+                    <button
+                      type="button"
+                      className="flex h-11 items-center gap-2 text-sm"
+                      onClick={() => {
+                        setMobileOptionsOpen(false);
+                        setSettingsOpen(true);
+                      }}
+                    >
+                      <Settings size={18} />
+                      {t('home.allSettings')}
+                    </button>
+                    <p className="text-xs text-muted-foreground">{t('home.examplesLabel')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {['home.examplePython', 'home.exampleFourier'].map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className="rounded-full border border-border px-3 py-2 text-sm"
+                          onClick={() => {
+                            updateForm('requirement', t(key));
+                            setMobileOptionsOpen(false);
+                            requestAnimationFrame(() => textareaRef.current?.focus());
+                          }}
+                        >
+                          {t(key)}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              {mobileMaterialsOpen && (
+                <div className="home-materials-footer">
+                  <Button type="button" className="h-11 w-full" onClick={returnToMobileOptions}>
+                    {t('home.materialsDone')}
+                  </Button>
+                </div>
               )}
             </div>
-            {mobileMaterialsOpen && (
-              <div className="home-materials-footer">
-                <Button type="button" className="h-11 w-full" onClick={returnToMobileOptions}>
-                  {t('home.materialsDone')}
-                </Button>
-              </div>
-            )}
           </DialogContent>
         </Dialog>
       )}

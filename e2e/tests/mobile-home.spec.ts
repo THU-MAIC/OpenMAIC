@@ -31,6 +31,13 @@ test('mobile home keeps generation compact and opens the shared library in a dra
       .getByTestId('home-mobile-options')
       .evaluate((element) => element.scrollWidth - element.clientWidth),
   ).toBeLessThanOrEqual(1);
+  await page
+    .getByTestId('home-mobile-options')
+    .evaluate((element) =>
+      Promise.all(
+        element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    );
   const optionsBefore = await page.getByTestId('home-mobile-options').boundingBox();
   await page
     .locator('.home-mobile-teaching-options > div')

@@ -37,6 +37,12 @@ test.describe('course material navigation and scrolling', () => {
       await page.goto('/');
       const options = page.getByTestId('home-mobile-options');
       if (size.mobile) await page.getByTestId('home-options-open').click();
+      if (size.mobile)
+        await options.evaluate((element) =>
+          Promise.all(
+            element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+          ),
+        );
       const optionsBox = size.mobile ? (await options.boundingBox())! : null;
       await page.getByTestId('course-material-button').click();
       if (optionsBox) {
@@ -135,6 +141,52 @@ test.describe('course material navigation and scrolling', () => {
       }
       expect(library.materials.size).toBe(5);
       expect(library.deleted).toEqual([]);
+    });
+  }
+});
+
+test.describe('phone options motion', () => {
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    test(`open and page transitions respect ${reducedMotion}`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ reducedMotion });
+      await page.addInitScript(() => localStorage.setItem('locale', 'en-US'));
+      await page.goto('/');
+      await page.getByTestId('home-options-open').click();
+      const options = page.getByTestId('home-mobile-options');
+      await expect(options).toHaveCSS(
+        'animation-name',
+        reducedMotion === 'reduce' ? 'none' : 'home-options-enter',
+      );
+      await options.evaluate((element) =>
+        Promise.all(
+          element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
+      const before = await options.boundingBox();
+      await page.getByTestId('course-material-button').click();
+      const frame = options.locator('.home-options-page');
+      await expect(frame).toHaveCSS(
+        'animation-name',
+        reducedMotion === 'reduce' ? 'none' : 'home-options-forward',
+      );
+      expect(await options.boundingBox()).toEqual(before);
+      expect(
+        await options.evaluate((element) =>
+          element.getAnimations().some((animation) => animation.playState === 'running'),
+        ),
+      ).toBe(false);
+      await options.getByRole('button', { name: 'Back to course options', exact: true }).click();
+      await expect(frame).toHaveCSS(
+        'animation-name',
+        reducedMotion === 'reduce' ? 'none' : 'home-options-back',
+      );
+      await options.locator('[data-slot="dialog-close"]').click();
+      await expect(options).not.toBeVisible();
+      await page.getByTestId('home-options-open').click();
+      await expect(
+        options.getByRole('heading', { name: 'Course options', exact: true }),
+      ).toBeVisible();
     });
   }
 });
