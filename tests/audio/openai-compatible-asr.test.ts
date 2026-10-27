@@ -56,6 +56,62 @@ describe('OpenAI-compatible transcription response format', () => {
     );
   });
 
+  describe.each(['openai-whisper', 'custom-asr-local'] as const)(
+    'multipart audio metadata for %s',
+    (providerId) => {
+      it.each([false, true])(
+        'uploads WAV buffers with matching MIME and filename (sliced: %s)',
+        async (sliced) => {
+          const wav = Buffer.alloc(46);
+          wav.write('RIFF', 0, 'ascii');
+          wav.writeUInt32LE(38, 4);
+          wav.write('WAVE', 8, 'ascii');
+          const input = sliced
+            ? Buffer.concat([Buffer.from('prefix'), wav, Buffer.from('suffix')]).subarray(6, 52)
+            : wav;
+          mockFetch.mockImplementation(async (_url, init) => {
+            const file = init.body.get('file') as File;
+            if (file.type !== 'audio/wav') {
+              return new Response('WAV content type required', { status: 415 });
+            }
+            return success();
+          });
+
+          const result = await transcribeAudio(
+            { ...baseConfig, providerId, modelId: 'whisper-1' },
+            input,
+          );
+
+          expect(result).toEqual({ text: '你好，这是语音测试。' });
+          expect(mockFetch).toHaveBeenCalledTimes(1);
+          const file = mockFetch.mock.calls[0][1].body.get('file') as File;
+          expect(file.type).toBe('audio/wav');
+          expect(file.name).toBe('audio.wav');
+          expect(Buffer.from(await file.arrayBuffer())).toEqual(wav);
+        },
+      );
+
+      it('keeps WebM buffer uploads labeled as WebM', async () => {
+        mockFetch.mockResolvedValueOnce(success());
+        await transcribeAudio({ ...baseConfig, providerId, modelId: 'whisper-1' }, audio);
+        const file = mockFetch.mock.calls[0][1].body.get('file') as File;
+        expect(file.type).toBe('audio/webm');
+        expect(file.name).toBe('audio.webm');
+        expect(Buffer.from(await file.arrayBuffer())).toEqual(audio);
+      });
+
+      it.each(['audio/wav', 'audio/x-wav'])('preserves an existing %s Blob', async (type) => {
+        const input = new Blob([new Uint8Array([1, 2, 3])], { type });
+        mockFetch.mockResolvedValueOnce(success());
+        await transcribeAudio({ ...baseConfig, providerId, modelId: 'whisper-1' }, input);
+        const file = mockFetch.mock.calls[0][1].body.get('file') as File;
+        expect(file.type).toBe(type);
+        expect(file.name).toBe('audio.wav');
+        expect(await file.arrayBuffer()).toEqual(await input.arrayBuffer());
+      });
+    },
+  );
+
   describe.each([undefined, 'https://api.openai.com/v1', 'https://api.openai.com/v1/'])(
     'official OpenAI endpoint %s',
     (baseUrl) => {

@@ -340,9 +340,11 @@ async function transcribeCustomOpenAICompatibleASR(
       audioBuffer.byteOffset,
       audioBuffer.byteOffset + audioBuffer.byteLength,
     ) as ArrayBuffer;
-    // Preserve existing type when converting from Buffer; fall back to webm
-    // (the default recording format used by the browser MediaRecorder API).
-    audioBlob = new Blob([arrayBuffer], { type: 'audio/webm' });
+    // Local media extraction supplies WAV chunks as Buffers. Match the MIME
+    // type to their RIFF/WAVE header; keep WebM as the recording fallback.
+    audioBlob = new Blob([arrayBuffer], {
+      type: detectWavBuffer(audioBuffer) ? 'audio/wav' : 'audio/webm',
+    });
   }
 
   // Most OpenAI-compatible transcription endpoints treat `model` as a
