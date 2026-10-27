@@ -80,7 +80,7 @@ function normalizeShell(script: string | undefined): string {
 }
 
 function assertMainPushVersionGate(workflow: Workflow): void {
-  const mainPush = step(workflow, 'check', 'Package version bumps (main push)');
+  const mainPush = step(workflow, 'lint', 'Package version bumps (main push)');
 
   expect(mainPush.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/main'");
   expect(mainPush.env).toEqual({ BEFORE_SHA: '${{ github.event.before }}' });
@@ -147,7 +147,7 @@ describe('CI video-export workflow contract', () => {
 
   it('preserves package version-bump gates for pull requests, merge queue entries and main pushes', () => {
     const workflow = parseWorkflow();
-    const pullRequest = step(workflow, 'check', 'Package version bumps');
+    const pullRequest = step(workflow, 'lint', 'Package version bumps');
 
     expect(workflow.on).toHaveProperty('merge_group');
     expect(pullRequest).toMatchObject({
