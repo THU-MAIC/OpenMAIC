@@ -192,6 +192,13 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       return route.fulfill({ json: { view } });
     }
     if (command?.type === 'chat') {
+      view.conversation!.push({
+        id: `user-${command.id}`,
+        commandId: command.id,
+        speaker: 'user',
+        parts: [{ kind: 'text', id: command.id, text: command.text }],
+      });
+      view.activitySequence!++;
       if (chatGate) {
         const gate = chatGate;
         chatGate = null;
@@ -344,7 +351,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
       });
     return route.fulfill({ json: view });
   });
-  await learningEvents(() => ({
+  const publishLearning = await learningEvents(() => ({
     view,
     workbench: {
       environmentId: view.environmentId!,
@@ -415,6 +422,27 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   const chatStarted = new Promise<void>((resolve) => (chatEntered = resolve));
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await chatStarted;
+  await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('');
+  // The temporary learner bubble precedes the waiting Agent before HTTP acknowledges.
+  const pendingUser = page.getByText('My unsent answer', { exact: true });
+  await expect(pendingUser).toHaveCount(1);
+  const waitingTurn = page
+    .getByTestId('pbl-agent-turn')
+    .filter({ has: page.getByTestId('workbench-waiting-bar') });
+  expect(
+    await pendingUser.evaluate(
+      (el) =>
+        !!(
+          el.compareDocumentPosition(
+            document.querySelector('[data-testid="pbl-agent-turn"][data-status="running"]')!,
+          ) & Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+    ),
+  ).toBe(true);
+  await expect(waitingTurn).toHaveCount(1);
+  // SSE can confirm persistence while the HTTP response remains held.
+  publishLearning();
+  await expect(pendingUser).toHaveCount(1);
   await expect(
     page.locator('[data-testid="pbl-pending-action"][data-action="chat"]'),
   ).toBeVisible();
@@ -445,6 +473,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(page.locator('[data-testid="pbl-pending-action"][data-action="chat"]')).toHaveCount(
     0,
   );
+  await expect(pendingUser).toHaveCount(1);
   await page.getByLabel('Your message', { exact: true }).fill('');
   // Teaching has no drawer; decisions expose only the actual current task.
   await expect(task.getByRole('button', { name: /Current task details/ })).toHaveCount(0);
@@ -456,9 +485,12 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   });
   await expect(enterDecisions).toHaveCount(0);
   view.actions = ['chat', 'next'];
-  view
-    .conversation!.at(-1)!
-    .parts.push({ kind: 'tool', id: 'completion', action: 'complete', status: 'succeeded' });
+  view.conversation![1]!.parts.push({
+    kind: 'tool',
+    id: 'completion',
+    action: 'complete',
+    status: 'succeeded',
+  });
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(enterDecisions).toBeVisible();

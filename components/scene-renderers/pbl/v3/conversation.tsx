@@ -177,10 +177,12 @@ export function LearningConversation({
   view,
   sent,
   requesting = false,
+  pendingMessage = null,
 }: {
   view: LearningView;
   sent: number;
   requesting?: boolean;
+  pendingMessage?: LearningConversationEntry | null;
 }) {
   const { t } = useI18n();
   const entries: LearningConversationEntry[] =
@@ -210,6 +212,7 @@ export function LearningConversation({
         {entries.map((entry) => (
           <ConversationEntry key={entry.id} entry={entry} />
         ))}
+        {pendingMessage && <ConversationEntry entry={pendingMessage} />}
         {(requesting || view.busy) && !entries.some((e) => e.status === 'running') && (
           <AgentTurn
             entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}

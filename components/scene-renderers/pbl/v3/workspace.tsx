@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
 import { useLearningObservation } from './use-learning-observation';
+import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
@@ -76,6 +77,11 @@ function PBLV3WorkspaceContent({
     showAssistant,
     setShowAssistant,
   } = useStudyDraft(view?.id, storageError);
+  const {
+    entry: pendingMessage,
+    begin: beginMessage,
+    finish: finishMessage,
+  } = useLearnerMessage(view, setText);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
     null,
@@ -149,6 +155,7 @@ function PBLV3WorkspaceContent({
           chosen: String(request.payload.chosen),
         });
       if (type === 'chat' && !repeat) setSent((n) => n + 1);
+      if (request.type === 'chat') beginMessage(view, request.id, String(request.payload.text));
       const baseline = latestView.current;
       try {
         const result = await pblRequest<{ view: LearningView; result?: { stale?: boolean } }>(
@@ -166,14 +173,14 @@ function PBLV3WorkspaceContent({
         updateView(result.view, baseline);
         if (result.result?.stale) setError(t('pblV3.testResult.stale'));
         retry.current = null;
-        if (request.type === 'chat')
-          setText((current) => (current === request.payload.text ? '' : current));
+        if (request.type === 'chat') finishMessage(request.id, true, latestView.current);
         return true;
       } catch (e) {
         if (e instanceof SandboxRequestError && e.status === 409 && e.reason === 'PROGRESS_CHANGED')
           retry.current = null;
         setError((e as Error).message);
         await refresh().catch(() => {});
+        if (request.type === 'chat') finishMessage(request.id, false, latestView.current);
         return false;
       } finally {
         commandInFlight.current = false;
@@ -182,7 +189,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, setText, latestView],
+    [view, updateView, refresh, t, beginMessage, finishMessage, latestView],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -570,6 +577,7 @@ function PBLV3WorkspaceContent({
                   <LearningConversation
                     view={view}
                     sent={sent}
+                    pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
                   />
                   <TaskDock

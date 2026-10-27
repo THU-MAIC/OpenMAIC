@@ -4021,12 +4021,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         status: 'succeeded',
         expectedAttempt: first!.attempt,
       });
+      const chatCommandId = randomUUID();
       await commandStudy(principal, study.id, {
-        id: randomUUID(),
+        id: chatCommandId,
         revision: (await store.get(study.id, principal.ownerId)).revision,
         type: 'chat',
         text: 'Where do I see project files?',
       });
+      expect(
+        (await learningView(principal, study.id, { passive: true })).conversation,
+      ).toContainEqual(expect.objectContaining({ speaker: 'user', commandId: chatCommandId }));
       const handle = startAgentRunner();
       await handle.stop();
       let claimed = await agents.claimNextSession(handle.workerId, process.pid, {
@@ -4074,6 +4078,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
           },
         };
+        // A long turn puts its owning input outside the next turn's live raw-event window.
+        // Compact these earlier model snapshots, keeping the final prose/recovery pair visible.
+        await pool.query(
+          `INSERT INTO agent_session_events(session_id,seq,ts,attempt,type,data)
+           SELECT $1,$2+g,$3,$4,'message_update',$5::jsonb FROM generate_series(1,1100) g`,
+          [
+            sessionId,
+            await agents.lastEventSeq(sessionId),
+            Date.now(),
+            claimed!.attempt,
+            JSON.stringify({ message: { role: 'assistant', content: [] } }),
+          ],
+        );
         await agents.appendRunEvent(sessionId, handle.workerId, {
           ts: Date.now(),
           attempt: claimed!.attempt,
@@ -4125,6 +4142,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(mocked.modelSystems.at(-1)).toContain(
         'For an assistance-only answer or product clarification',
       );
+      if (crash)
+        await agents.appendControlEvent(sessionId, {
+          ts: Date.now(),
+          type: 'user_message',
+          data: { text: 'Thanks, I can see the files now.' },
+        });
       const view = await learningView(principal, study.id, { passive: true });
       expect(
         view

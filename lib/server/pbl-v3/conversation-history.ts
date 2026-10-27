@@ -10,12 +10,16 @@ const visibleContent = (alias: string) => `${alias}.data->'message'->'content' @
 
 // Compact snapshots before pagination, against a fixed high-water mark. Applying
 // the cursor first would replay older snapshots of the same message on each page.
+// Resolve input identity against the durable log, not the bounded raw-event window:
+// a long previous turn can leave its reply in that window but its user anchor outside it.
 const historyWindow = (live = false) => `WITH boundary AS (
   SELECT COALESCE((SELECT seq FROM agent_session_events
     WHERE session_id=$1 AND seq<=$2 AND type='user_message' ORDER BY seq DESC LIMIT 1),0) AS first
 ), framed AS (
   SELECT e.seq,e.attempt,e.type,
-    COALESCE(max(e.seq) FILTER (WHERE e.type='user_message') OVER (ORDER BY e.seq),0) AS input_id,
+    COALESCE((SELECT input.seq FROM agent_session_events input
+      WHERE input.session_id=e.session_id AND input.seq<=e.seq AND input.type='user_message'
+      ORDER BY input.seq DESC LIMIT 1),0) AS input_id,
     GREATEST(
       COALESCE(max(e.seq) FILTER (WHERE e.type='message_start') OVER (
         PARTITION BY e.attempt ORDER BY e.seq),0),

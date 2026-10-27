@@ -8,6 +8,8 @@ export interface LearningConversationEntry {
   at?: number;
   /** Durable learner input owning this reply, independent of worker attempts and history pages. */
   inputId?: number;
+  /** Learner send command, used to reconcile its local acknowledgement with HTTP/SSE. */
+  commandId?: string;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
   omitted?: boolean;

@@ -241,6 +241,7 @@ export async function queueRole(
   row: Study,
   text: string,
   opening = false,
+  commandId?: string,
 ) {
   await fenceOwnerWrite(db, row.owner_id);
   const role = roleFor(row);
@@ -313,7 +314,19 @@ export async function queueRole(
     });
     await agents.requeueSession(binding.session_id);
   } else {
-    await agents.postUserMessage(binding.session_id, { text }, { expectedOwnerId: row.owner_id });
+    const input = await agents.postUserMessage(
+      binding.session_id,
+      { text },
+      { expectedOwnerId: row.owner_id },
+    );
+    // Annotate the staged input in this same transaction, before either the input
+    // or its wakeup becomes visible. No historical events are rewritten.
+    if (commandId)
+      await db.query(
+        `UPDATE agent_session_events SET data=data || jsonb_build_object('pblCommandId',$3::text)
+         WHERE session_id=$1 AND seq=$2`,
+        [binding.session_id, input.seq, commandId],
+      );
   }
   return binding.session_id;
 }
@@ -592,6 +605,7 @@ export async function commandStudy(
                 ? 'System stage entry: open the current learning step using its teaching protocol. This is not learner feedback. Introduce the project when entering its first step, and wait for the learner.'
                 : command.text!,
               command.type === 'begin',
+              command.id,
             ),
           };
         }

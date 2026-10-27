@@ -5,7 +5,7 @@ import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
 
 /** Keep the real browser stream/parser while commands use each spec's mutable fixtures. */
 export const test = base.extend<{
-  learningEvents: (snapshot: () => LearningSnapshot) => Promise<void>;
+  learningEvents: (snapshot: () => LearningSnapshot) => Promise<() => void>;
 }>({
   learningEvents: async ({ page }, use) => {
     const clients = new Set<ServerResponse>();
@@ -47,6 +47,7 @@ export const test = base.extend<{
         await page.route('**/api/pbl/v3/events?**', (route) =>
           route.continue({ url: `http://127.0.0.1:${port}/events` }),
         );
+        return publish;
       });
     } finally {
       page.off('response', changed);
