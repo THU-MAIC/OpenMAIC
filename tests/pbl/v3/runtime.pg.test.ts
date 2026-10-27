@@ -2348,6 +2348,214 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   }, 45000);
 
+  it.each(['write', 'manage', 'command'] as const)(
+    'fences %s dispatch after durable retirement before the worker observes abort',
+    async (operation) => {
+      const previous = project.buildCommand;
+      project.buildCommand = 'python3 -m py_compile greeting.py';
+      onTestFinished(() => {
+        project.buildCommand = previous;
+      });
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      onTestFinished(async () => {
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      const claim = await agents.claimNextSession('dispatch-race', process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const controller = new AbortController();
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId: 'dispatch-race',
+        attempt: claim!.attempt,
+        signal: controller.signal,
+      });
+      await invoke(config, 'read_next_skill');
+      const text = await (
+        await SandboxService.forOwner(principal)
+      ).readText(row.environment_id!, 'greeting.py');
+      const write = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'writeText');
+      const manage = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'mutateFile');
+      const command = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'startCommand');
+      const original = agents.assertActiveLease.bind(agents);
+      let release!: () => void,
+        entered = false,
+        checks = 0;
+      const fence = vi.spyOn(agents, 'assertActiveLease').mockImplementation(async (...args) => {
+        // Outer tool admission and evidence/build invalidation have already committed.
+        if (++checks === 3) {
+          entered = true;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return original(...args);
+      });
+      const pending = (
+        operation === 'write'
+          ? invoke(config, 'write_file', {
+              path: 'greeting.py',
+              text: '# retired',
+              expectedHash: digest(text),
+            })
+          : operation === 'manage'
+            ? invoke(config, 'manage_file', {
+                action: 'create',
+                path: 'src/retired.py',
+                text: '# retired',
+              })
+            : invoke(config, 'run_build')
+      ).catch((error) => error);
+      try {
+        await vi.waitFor(() => expect(entered).toBe(true));
+        await expireExecution(sessionId);
+        await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
+        expect((await agents.getSession(sessionId))!.status).toBe('failed');
+        expect(controller.signal.aborted).toBe(false);
+        release();
+        expect(await pending).toBeInstanceOf(Error);
+        expect(write).not.toHaveBeenCalled();
+        expect(manage).not.toHaveBeenCalled();
+        expect(command).not.toHaveBeenCalled();
+        expect(
+          await (
+            await SandboxService.forOwner(principal)
+          ).readText(row.environment_id!, 'greeting.py'),
+        ).toBe(text);
+        if (operation === 'command') {
+          expect(
+            (
+              await pool.query(
+                "SELECT result_json->>'state' AS state FROM sandbox_commands WHERE environment_id=$1",
+                [row.environment_id],
+              )
+            ).rows,
+          ).toEqual([{ state: 'cancelled' }]);
+        }
+        fence.mockRestore();
+        await study.send('retry');
+        const next = await agents.claimNextSession('dispatch-retry', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        const resumed = await teachingRunnerConfig({
+          sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'dispatch-retry',
+          attempt: next!.attempt,
+          signal: new AbortController().signal,
+        });
+        await invoke(resumed, 'read_next_skill');
+        if (operation === 'command') await invoke(resumed, 'collect_build');
+        await invoke(resumed, 'write_file', {
+          path: 'greeting.py',
+          text: '# fresh',
+          expectedHash: digest(text),
+        });
+        expect(write).toHaveBeenCalledTimes(1);
+        await agents.finishSession(sessionId, 'dispatch-retry', {
+          status: 'succeeded',
+          expectedAttempt: next!.attempt,
+        });
+      } finally {
+        release?.();
+        fence.mockRestore();
+        write.mockRestore();
+        manage.mockRestore();
+        command.mockRestore();
+      }
+    },
+  );
+
+  it('releases the dispatch lease before a slow provider responds while retaining the environment lock', async () => {
+    const study = await freshStudy();
+    const row = await store.get(study.id, principal.ownerId);
+    onTestFinished(async () => {
+      await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+        row.environment_id,
+      ]);
+    });
+    row.state.position.stageIndex = 3;
+    row.state.milestones[0]!.stageIndex = 3;
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    const { sessionId } = (await study.send('chat')) as { sessionId: string };
+    const claim = await agents.claimNextSession('slow-dispatch', process.pid, {
+      sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const controller = new AbortController();
+    const config = await teachingRunnerConfig({
+      sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'slow-dispatch',
+      attempt: claim!.attempt,
+      signal: controller.signal,
+    });
+    await invoke(config, 'read_next_skill');
+    const service = await SandboxService.forOwner(principal);
+    const text = await service.readText(row.environment_id!, 'greeting.py');
+    let release!: () => void,
+      entered = false,
+      underlying!: Promise<unknown>;
+    const originalWrite = E2BCompatibleSandboxProvider.prototype.writeText;
+    const writer = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'writeText')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return originalWrite.apply(this, args);
+      });
+    const originalCompare = SandboxService.prototype.compareAndWriteText;
+    const compare = vi
+      .spyOn(SandboxService.prototype, 'compareAndWriteText')
+      .mockImplementation(function (this: SandboxService, ...args) {
+        const work = originalCompare.apply(this, args);
+        underlying = work;
+        void work.catch(() => {});
+        return work;
+      });
+    const pending = invoke(config, 'write_file', {
+      path: 'greeting.py',
+      text: '# in flight',
+      expectedHash: digest(text),
+    }).catch((error) => error);
+    try {
+      await vi.waitFor(() => expect(entered).toBe(true));
+      await expireExecution(sessionId);
+      await (await import('@/lib/server/pbl-v3/execution-watchdog')).expireStalledTeachingTurns();
+      expect((await agents.getSession(sessionId))!.status).toBe('failed');
+      controller.abort();
+      await pending;
+      await expect(
+        (await SandboxStore.open()).exclusive(row.environment_id!, async () => {}),
+      ).rejects.toMatchObject({ reason: 'ENVIRONMENT_BUSY' });
+      release();
+      await underlying;
+      await expect(
+        (await SandboxStore.open()).exclusive(row.environment_id!, async () => true),
+      ).resolves.toBe(true);
+      expect((await agents.getSession(sessionId))!.status).toBe('failed');
+    } finally {
+      release?.();
+      writer.mockRestore();
+      compare.mockRestore();
+    }
+  });
+
   it.each(['start', 'collect-missing', 'collect-finished', 'collect-source-limit'] as const)(
     'fences a late %s build commit after watchdog failure and explicit retry',
     async (phase) => {

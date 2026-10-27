@@ -21,6 +21,7 @@ interface WorkspaceAccess {
   environmentIds: () => readonly (string | null | undefined)[];
   operations: readonly WorkspaceMutation[];
   signal?: AbortSignal;
+  dispatch?: <T>(start: () => Promise<T>) => Promise<T>;
 }
 const access = new AsyncLocalStorage<WorkspaceAccess & { active: boolean }>();
 
@@ -74,4 +75,21 @@ export function assertWorkspaceMutation(
     409,
     'This workspace is managed by a learning project. Use the learning workspace controls.',
   );
+}
+
+/** Revalidate a teaching claim at the provider boundary, after all asynchronous admission. */
+export function dispatchWorkspaceMutation<T>(
+  ownerId: string,
+  workspaceId: string,
+  environmentId: string,
+  operation: WorkspaceMutation,
+  start: () => Promise<T>,
+): Promise<T> {
+  const checked = () => {
+    assertWorkspaceMutation(ownerId, workspaceId, environmentId, operation);
+    return start();
+  };
+  assertWorkspaceMutation(ownerId, workspaceId, environmentId, operation);
+  const current = isLearningWorkspace(workspaceId) ? access.getStore() : undefined;
+  return current?.dispatch ? current.dispatch(checked) : checked();
 }

@@ -108,6 +108,25 @@ export async function teachingRunnerConfig(input: {
     await agents.assertActiveLease(input.sessionId, input.workerId, input.attempt, db);
     assertActive(signal);
   };
+  const dispatchWithLease =
+    (signal: AbortSignal) =>
+    async <T>(start: () => Promise<T>) => {
+      let pending: Promise<T> | undefined;
+      try {
+        await store.transaction(async (db) => {
+          await buildFence(signal)(db);
+          // Keep the session row locked through invocation, not the remote response.
+          // The environment lock remains held until that response settles, even after abort.
+          pending = start();
+          void pending.catch(() => {});
+        });
+      } catch (error) {
+        // A failed COMMIT cannot make an already-issued provider operation disappear.
+        if (pending) await pending.catch(() => {});
+        throw error;
+      }
+      return pending!;
+    };
   const service = async (signal: AbortSignal) => {
     assertActive(signal);
     const grant = await (await SandboxStore.open()).sessionGrant(input.sessionId, input.ownerId);
@@ -177,6 +196,7 @@ export async function teachingRunnerConfig(input: {
                     {
                       ownerId: current.owner_id,
                       signal,
+                      dispatch: dispatchWithLease(signal),
                       workspaceId: learningWorkspaceId(current.id),
                       environmentIds: () => [current.environment_id],
                       operations:

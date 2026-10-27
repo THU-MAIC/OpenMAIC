@@ -111,7 +111,14 @@ Once the last progress is at least 15 minutes old, the next successful scan:
    local claim. Retry admits the same real learner input with a fresh clock/grant.
    Every build reservation/result commit rechecks the current teaching lease.
    File writes/file management and new command dispatch recheck the active scope
-   after asynchronous admission. A command cancelled before provider dispatch
+   after asynchronous admission. Agent scopes also check the durable current
+   lease under a session row lock through provider invocation, covering the gap
+   before a worker heartbeat observes retirement. This lock is released without
+   waiting for the provider response, so a hung provider cannot block the
+   watchdog. The environment mutation lock still covers the in-flight operation,
+   including a dispatch transaction that fails after invocation; retirement does
+   not authorize a concurrent replacement writer or prove a remote write stopped.
+   A command cancelled before provider dispatch
    leaves a collectable cancelled reservation, rather than an orphan writer.
 
 This covers unclaimed/admission-blocked or over-attempt queues; hung setup/tools
