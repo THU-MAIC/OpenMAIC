@@ -75,6 +75,7 @@ export interface RenderEvent {
  */
 export type PreviewErrorCode =
   | 'deadline_exceeded'
+  | 'resource_mode_unsupported'
   | 'chromium_unconfigured'
   | 'browser_launch_failed'
   | 'browser_crashed'

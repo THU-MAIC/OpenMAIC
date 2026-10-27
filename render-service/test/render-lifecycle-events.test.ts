@@ -433,6 +433,31 @@ describe('admission and preview route events', () => {
     expect(JSON.stringify(preview)).not.toContain('scene secret');
   });
 
+  it('records resource_mode_unsupported when resource mode refuses every preview', async () => {
+    const emitted = captureEmitted();
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore().store;
+    const app = createApp({
+      jobs,
+      artifacts,
+      coordinator: new RenderCoordinator(
+        executor(async () => ({ status: 'succeeded', outputPath: 'out.mp4' })),
+        jobs,
+        artifacts,
+      ),
+      extractionGate: new Semaphore(1),
+      previewRenderer: { render: async () => new Uint8Array([1]) },
+      resourceMode: true,
+      onEvent: (event) => emitted.push(event),
+    });
+
+    expect((await app.fetch(previewRequest())).status).toBe(503);
+    expect(emitted.find((event) => event.event === 'preview_request')).toMatchObject({
+      status: 503,
+      errorCode: 'resource_mode_unsupported',
+    });
+  });
+
   it('records deadline_exceeded on a preview that overran its deadline', async () => {
     const emitted = captureEmitted();
     const jobs = createMemoryJobStore();

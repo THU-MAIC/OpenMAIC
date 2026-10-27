@@ -421,6 +421,7 @@ export function createApp(deps: AppDeps): Hono {
     // Resource mode cannot run Chromium here: this HTTP process is outside the
     // per-task cgroup. Reject before inspecting or buffering the request body.
     if (deps.resourceMode) {
+      previewFailures.set(c.req.raw, 'resource_mode_unsupported');
       return c.json(
         {
           error: 'Preview is unavailable while per-task resource budgets are enabled',
