@@ -481,3 +481,49 @@ test.describe('phone rotation', () => {
     await expect(page.locator('.home-desktop-settings button')).toHaveAccessibleName('Settings');
   });
 });
+
+test.describe('phone horizontal safe areas', () => {
+  test.use({ hasTouch: true, isMobile: true });
+  for (const direction of ['ltr', 'rtl'] as const) {
+    test(`keeps both primary controls inside asymmetric landscape insets (${direction})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 844, height: 390 });
+      await page.goto('/');
+      const home = page.getByTestId('home-page');
+      await expect(home).toHaveAttribute('data-mobile', 'true');
+      for (const [left, right] of [
+        [59, 34],
+        [34, 59],
+        [0, 0],
+      ]) {
+        await page.evaluate(
+          ({ direction, left, right }) => {
+            document.documentElement.dir = direction;
+            document.documentElement.style.setProperty('--safe-area-left', `${left}px`);
+            document.documentElement.style.setProperty('--safe-area-right', `${right}px`);
+          },
+          { direction, left, right },
+        );
+        const history = page.getByTestId('home-history-open');
+        const toolbar = page.locator('.home-top-tools');
+        const startInset = direction === 'ltr' ? left : right;
+        const endInset = direction === 'ltr' ? right : left;
+        await expect
+          .poll(async () => {
+            const box = (await history.boundingBox())!;
+            return direction === 'ltr' ? box.x : 844 - box.x - box.width;
+          })
+          .toBeCloseTo(Math.max(12, startInset), 0);
+        await expect
+          .poll(async () => {
+            const box = (await toolbar.boundingBox())!;
+            return direction === 'ltr' ? 844 - box.x - box.width : box.x;
+          })
+          .toBeCloseTo(Math.max(12, endInset), 0);
+        await expect(home).toHaveCSS('padding-left', `${Math.max(16, left)}px`);
+        await expect(home).toHaveCSS('padding-right', `${Math.max(16, right)}px`);
+      }
+    });
+  }
+});

@@ -1,20 +1,29 @@
 /* Phone-only presentation. Desktop structure and business controllers are shared. */
 .home-page[data-mobile='true'] {
+  --home-safe-inline-start: var(--safe-area-left);
+  --home-safe-inline-end: var(--safe-area-right);
   position: fixed;
   inset-inline: 0;
   top: 0;
   min-height: 0;
   height: 100dvh;
-  padding: max(12px, var(--safe-area-top)) 16px max(12px, var(--safe-area-bottom));
+  padding: max(12px, var(--safe-area-top)) max(16px, var(--safe-area-right))
+    max(12px, var(--safe-area-bottom)) max(16px, var(--safe-area-left));
   overflow: hidden;
   background: radial-gradient(ellipse at 10% 85%, #c5b2ff22, transparent 65%), #f6f7fc;
+}
+/* Safe-area insets are physical; mirror the logical navigation edges in RTL. */
+[dir='rtl'] .home-page[data-mobile='true'],
+.home-page[data-mobile='true'][dir='rtl'] {
+  --home-safe-inline-start: var(--safe-area-right);
+  --home-safe-inline-end: var(--safe-area-left);
 }
 .dark .home-page[data-mobile='true'] {
   background: radial-gradient(ellipse at 10% 85%, #36276622, transparent 65%), #080f20;
 }
 .home-history-open {
   position: absolute;
-  inset-inline-start: 12px;
+  inset-inline-start: max(12px, var(--home-safe-inline-start));
   top: max(12px, var(--safe-area-top));
   z-index: 40;
   display: grid;
@@ -34,7 +43,8 @@
 }
 .home-page[data-mobile='true'] .home-top-tools {
   top: max(12px, var(--safe-area-top));
-  right: 12px;
+  right: auto;
+  inset-inline-end: max(12px, var(--home-safe-inline-end));
   height: 44px;
   padding: 0;
   border: 0;
