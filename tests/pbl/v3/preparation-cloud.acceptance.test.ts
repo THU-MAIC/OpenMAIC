@@ -20,6 +20,7 @@ import {
 } from '@/lib/server/sandbox/managed-workspace';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
+import { SandboxError } from '@/lib/sandbox/errors';
 
 const enabled = process.env.RUN_PBL_PREPARATION_CLOUD === '1';
 const scope = 'preparation-cloud-' + randomUUID();
@@ -202,6 +203,113 @@ it.skipIf(!enabled)(
       listing.mockRestore();
       renew.mockRestore();
       await release([first, second]);
+    }
+  },
+  180_000,
+);
+
+it.skipIf(!enabled)(
+  'reuses the same real environment while deferred maintenance holds its renewal lock',
+  async () => {
+    const id = await fixture();
+    await send(id, 'prepare');
+    const before = await store.get(id, principal.ownerId),
+      env = before.environment_id!;
+    await store.pool.query('UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1', [
+      id,
+    ]);
+    let enterReconcile!: () => void, releaseReconcile!: () => void;
+    let enterRenew!: () => void, releaseRenew!: () => void, collide!: () => void;
+    const reconciled = new Promise<void>((r) => {
+      enterReconcile = r;
+    });
+    const reconcileGate = new Promise<void>((r) => {
+      releaseReconcile = r;
+    });
+    const renewing = new Promise<void>((r) => {
+      enterRenew = r;
+    });
+    const renewGate = new Promise<void>((r) => {
+      releaseRenew = r;
+    });
+    const contention = new Promise<void>((r) => {
+      collide = r;
+    });
+    const originalReconcile = SandboxService.prototype.reconcile;
+    const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+    const originalAttempt = SandboxService.prototype.renew;
+    let pausedReconcile = false,
+      pausedRenew = false;
+    const reconcile = vi
+      .spyOn(SandboxService.prototype, 'reconcile')
+      .mockImplementation(async function (this: SandboxService, ...args) {
+        const result = await originalReconcile.apply(this, args);
+        if (args[0] === env && !pausedReconcile) {
+          pausedReconcile = true;
+          enterReconcile();
+          await reconcileGate;
+        }
+        return result;
+      });
+    const renew = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+      .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        if (args[1] === env && !pausedRenew) {
+          pausedRenew = true;
+          enterRenew();
+          await renewGate;
+        }
+        return originalRenew.apply(this, args);
+      });
+    const attempt = vi.spyOn(SandboxService.prototype, 'renew').mockImplementation(async function (
+      this: SandboxService,
+      ...args
+    ) {
+      try {
+        return await originalAttempt.apply(this, args);
+      } catch (error) {
+        if (error instanceof SandboxError && error.reason === 'ENVIRONMENT_BUSY') collide();
+        throw error;
+      }
+    });
+    const safety = setTimeout(() => {
+      releaseReconcile();
+      releaseRenew();
+    }, 60_000);
+    const preparation = send(id, 'prepare').then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    let maintenance: Promise<unknown> | undefined;
+    try {
+      await reconciled;
+      maintenance = maintainStudy(new LearningStore(store.pool), id, principal.ownerId).catch(
+        (error) => error,
+      );
+      await renewing;
+      releaseReconcile();
+      await contention;
+      releaseRenew();
+      expect(await preparation).not.toHaveProperty('error');
+      await maintenance;
+      const after = await store.get(id, principal.ownerId);
+      expect(after.environment_id).toBe(env);
+      expect(after.state).toEqual(before.state);
+      expect(renew).toHaveBeenCalledTimes(1);
+      (evidence.checks as unknown[]).push({
+        kind: 'bound-reuse-with-deferred-renewal',
+        studyId: id,
+        sameEnvironmentId: env,
+      });
+    } finally {
+      clearTimeout(safety);
+      releaseReconcile();
+      releaseRenew();
+      await Promise.allSettled([preparation, ...(maintenance ? [maintenance] : [])]);
+      reconcile.mockRestore();
+      renew.mockRestore();
+      attempt.mockRestore();
+      await release([id]);
     }
   },
   180_000,

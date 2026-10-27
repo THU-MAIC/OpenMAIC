@@ -49,7 +49,12 @@ import {
   withLearningWorkspaceAccess,
   type WorkspaceMutation,
 } from '@/lib/server/sandbox/managed-workspace';
-import { touchEnvironment, assertEnvironmentReady, recoveredProgress } from './environment';
+import {
+  touchEnvironment,
+  assertEnvironmentReady,
+  recoveredProgress,
+  renewPreparationLease,
+} from './environment';
 
 export function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex');
@@ -613,7 +618,7 @@ export async function commandStudy(
         await service.destroy(previousId);
       const previous = previousId ? await service.reconcile(previousId) : null;
       if (previous?.state === 'running' && previous.workspaceReady) {
-        await service.renew(previous.id);
+        assertEnvironmentReady(await touchEnvironment(store, row, service));
       } else {
         if (previous && previous.state !== 'destroyed')
           throw sandboxConflict(
@@ -657,7 +662,7 @@ export async function commandStudy(
         let renewedAt = 0;
         const renewPreparation = async (force = false) => {
           if (!force && Date.now() - renewedAt < 20_000) return;
-          await service.renewForCheckpoint(env.id);
+          await renewPreparationLease(service, env.id);
           renewedAt = Date.now();
         };
         await renewPreparation(true);

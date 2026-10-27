@@ -3010,16 +3010,29 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           study.id,
           JSON.stringify({ environmentId: row.environment_id, releasing: true }),
         ]);
-      await recordTeachingProgress({
-        sessionId,
-        ownerId: principal.ownerId,
-        workerId: 'retired-environment',
-        attempt: claim!.attempt,
-      });
+      expect(
+        await recordTeachingProgress({
+          sessionId,
+          ownerId: principal.ownerId,
+          workerId: 'retired-environment',
+          attempt: claim!.attempt,
+        }),
+      ).toBe(true);
+      expect(
+        (
+          await pool.query(
+            'SELECT expires_at<=clock_timestamp() AS expired FROM sandbox_session_grants WHERE session_id=$1',
+            [sessionId],
+          )
+        ).rows[0]?.expired,
+      ).toBe(true);
       expect(
         await (await SandboxStore.open()).sessionGrant(sessionId, principal.ownerId),
       ).toBeNull();
     },
+    // Real PG fixture setup includes environment preparation and role admission.
+    // Keep the runtime's 250 ms SQL fences intact while allowing CI fixture contention.
+    15_000,
   );
 
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
@@ -4503,6 +4516,182 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       });
     }
   });
+  it.each(['succeeded', 'failed'] as const)(
+    'reuses a bound environment after deferred renewal %s without mistaking contention for success',
+    async (background) => {
+      const study = await freshStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      const env = row.environment_id!;
+      const creates = mocked.creates.length;
+      await pool.query('UPDATE pbl_v3_studies SET environment_checked_at=NULL WHERE id=$1', [
+        study.id,
+      ]);
+      let enterReconcile!: () => void, releaseReconcile!: () => void;
+      let enterRenew!: () => void, releaseRenew!: () => void, collide!: () => void;
+      const reconciled = new Promise<void>((r) => {
+        enterReconcile = r;
+      });
+      const reconcileGate = new Promise<void>((r) => {
+        releaseReconcile = r;
+      });
+      const renewing = new Promise<void>((r) => {
+        enterRenew = r;
+      });
+      const renewGate = new Promise<void>((r) => {
+        releaseRenew = r;
+      });
+      const contention = new Promise<void>((r) => {
+        collide = r;
+      });
+      const originalReconcile = SandboxService.prototype.reconcile;
+      const originalRenew = E2BCompatibleSandboxProvider.prototype.renew;
+      const originalAttempt = SandboxService.prototype.renew;
+      let pausedReconcile = false,
+        pausedRenew = false;
+      const reconcile = vi
+        .spyOn(SandboxService.prototype, 'reconcile')
+        .mockImplementation(async function (this: SandboxService, ...args) {
+          const result = await originalReconcile.apply(this, args);
+          if (args[0] === env && !pausedReconcile) {
+            pausedReconcile = true;
+            enterReconcile();
+            await reconcileGate;
+          }
+          return result;
+        });
+      const renew = vi
+        .spyOn(E2BCompatibleSandboxProvider.prototype, 'renew')
+        .mockImplementation(async function (this: E2BCompatibleSandboxProvider, ...args) {
+          if (args[0] === env && !pausedRenew) {
+            pausedRenew = true;
+            enterRenew();
+            await renewGate;
+            if (background === 'failed') throw new Error('Background renewal unavailable');
+          }
+          return originalRenew.apply(this, args);
+        });
+      const attempt = vi
+        .spyOn(SandboxService.prototype, 'renew')
+        .mockImplementation(async function (this: SandboxService, ...args) {
+          try {
+            return await originalAttempt.apply(this, args);
+          } catch (error) {
+            if (error instanceof SandboxError && error.reason === 'ENVIRONMENT_BUSY') collide();
+            throw error;
+          }
+        });
+      const safety = setTimeout(() => {
+        releaseReconcile();
+        releaseRenew();
+      }, 5_000);
+      const preparing = study.send('prepare').then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      let maintaining: Promise<unknown> | undefined;
+      try {
+        await reconciled;
+        maintaining = maintainStudy(new LearningStore(pool), study.id, principal.ownerId).catch(
+          (error) => error,
+        );
+        await renewing;
+        releaseReconcile();
+        await contention;
+        releaseRenew();
+        expect(await preparing).not.toHaveProperty('error');
+        await maintaining;
+        expect(renew).toHaveBeenCalledTimes(background === 'succeeded' ? 1 : 2);
+        const after = await store.get(study.id, principal.ownerId);
+        expect(after.environment_id).toBe(env);
+        expect(after.state).toEqual(row.state);
+        expect(mocked.creates.length).toBe(creates);
+      } finally {
+        clearTimeout(safety);
+        releaseReconcile();
+        releaseRenew();
+        await Promise.allSettled([preparing, ...(maintaining ? [maintaining] : [])]);
+        reconcile.mockRestore();
+        renew.mockRestore();
+        attempt.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it('finishes pending preparation after short process-wide renewal admission pressure', async () => {
+    const study = await unpreparedStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const sandboxStore = await SandboxStore.open();
+    const capacity = Math.floor((pool.options.max ?? 10) / 2);
+    let enterPreparation!: () => void, releasePreparation!: () => void;
+    let enterCapacity!: () => void, releaseCapacity!: () => void, collide!: () => void;
+    const preparing = new Promise<void>((r) => {
+      enterPreparation = r;
+    });
+    const preparationGate = new Promise<void>((r) => {
+      releasePreparation = r;
+    });
+    const saturated = new Promise<void>((r) => {
+      enterCapacity = r;
+    });
+    const capacityGate = new Promise<void>((r) => {
+      releaseCapacity = r;
+    });
+    const contention = new Promise<void>((r) => {
+      collide = r;
+    });
+    let entered = false,
+      held = 0;
+    const original = SandboxService.prototype.renewForCheckpoint;
+    const renew = vi
+      .spyOn(SandboxService.prototype, 'renewForCheckpoint')
+      .mockImplementation(async function (this: SandboxService, ...args) {
+        if (args[0] === study.id && !entered) {
+          entered = true;
+          enterPreparation();
+          await preparationGate;
+        }
+        try {
+          return await original.apply(this, args);
+        } catch (error) {
+          if (error instanceof SandboxError && error.code === 'SANDBOX_BUSY') collide();
+          throw error;
+        }
+      });
+    const safety = setTimeout(() => {
+      releasePreparation();
+      releaseCapacity();
+    }, 5_000);
+    const preparation = study.send('prepare').then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+    const holders: Promise<unknown>[] = [];
+    try {
+      await preparing;
+      for (let i = 0; i < capacity; i++)
+        holders.push(
+          sandboxStore.exclusive(randomUUID(), async () => {
+            if (++held === capacity) enterCapacity();
+            await capacityGate;
+          }),
+        );
+      await saturated;
+      releasePreparation();
+      await contention;
+      releaseCapacity();
+      expect(await preparation).not.toHaveProperty('error');
+      expect((await store.get(study.id, principal.ownerId)).environment_id).toBe(study.id);
+    } finally {
+      clearTimeout(safety);
+      releasePreparation();
+      releaseCapacity();
+      await Promise.allSettled([preparation, ...holders]);
+      renew.mockRestore();
+    }
+  }, 15_000);
+
   it.each(['initial', 'recovery'] as const)(
     'does not let deferred maintenance renew an unbound %s preparation and block its files',
     async (mode) => {
