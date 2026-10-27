@@ -40,6 +40,7 @@ export async function learningEventResponse(
   let work: LearningWorkbench | null = null;
   let workKey = '';
   let last = '';
+  let confirmedAt = 0;
   const subscribe = (sessionIds: string[]) => {
     const wanted = new Set([id, ...sessionIds]);
     for (const [key, unsubscribe] of subscriptions) {
@@ -83,7 +84,10 @@ export async function learningEventResponse(
       if (closed) return;
       try {
         const row = await store.get(id, principal.ownerId);
-        subscribe((await store.roles(id)).map((role) => role.session_id));
+        if (closed) return;
+        const roles = await store.roles(id);
+        if (closed) return;
+        subscribe(roles.map((role) => role.session_id));
         const now = Date.now();
         const checkHealth = !observation || now - checkedAt >= RECONCILE_MS;
         const observe =
@@ -111,11 +115,20 @@ export async function learningEventResponse(
           work = await workbenchView(principal, id, { passive: true });
           workKey = key;
         }
+        if (closed) return;
         executionPending =
           !!row.evaluation || !!work?.commands.some((cmd) => ACTIVE.has(cmd.state));
         const frame = sseFrame('learning', { view, workbench: work });
         // Never advance the replacement cursor when backpressure rejects a frame.
-        if (frame !== last && write(frame)) last = frame;
+        if (frame !== last) {
+          if (write(frame)) {
+            last = frame;
+            confirmedAt = Date.now();
+          }
+        } else if (Date.now() - confirmedAt >= RECONCILE_MS) {
+          // Confirm a successful projection, not just a live transport heartbeat.
+          if (write(sseFrame('observed', { id }))) confirmedAt = Date.now();
+        }
       } catch (error) {
         if (closed) return;
         if (error instanceof SandboxError && error.status === 404) {

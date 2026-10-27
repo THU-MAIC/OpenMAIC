@@ -2540,6 +2540,7 @@
   },
   "pblV3": {
     "connectingUpdates": "Connecting live updates…",
+    "reconnectingUpdates": "即時更新中斷，正在自動重新連線；也可點選重新整理。",
     "updatesUnavailable": "Live updates unavailable. Refresh to reconnect.",
     "title": "Programming projects · Preview",
     "refresh": "Refresh progress",

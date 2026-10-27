@@ -5,14 +5,20 @@ import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3
 import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
-  modelRequestFailureCode,
+  executionFailureCode,
+  AGENT_EXECUTION_IDLE_TIMEOUT,
   MODEL_REQUEST_IDLE_TIMEOUT,
 } from '@/lib/agent/runtime/request-failure';
 
 /** Never send provider diagnostics, addresses or credentials to a learner. */
 export function learningRunFailure(error: unknown): LearningRunFailure {
   const message = typeof error === 'string' ? error : '';
-  if (modelRequestFailureCode(message) === MODEL_REQUEST_IDLE_TIMEOUT) return 'timeout';
+  if (
+    [MODEL_REQUEST_IDLE_TIMEOUT, AGENT_EXECUTION_IDLE_TIMEOUT].includes(
+      executionFailureCode(message) ?? '',
+    )
+  )
+    return 'timeout';
   if (message.startsWith('Teaching turn ended without recording')) return 'incomplete';
   return /\b(401|403)\b|unauthori[sz]ed|authentication|api.?key/i.test(message)
     ? 'authentication'

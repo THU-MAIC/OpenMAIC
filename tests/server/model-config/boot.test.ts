@@ -9,6 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/server/pbl-v3/lifecycle-schedule', () => ({
   startLearningLifecycle: vi.fn(),
 }));
+vi.mock('@/lib/server/pbl-v3/execution-watchdog', () => ({
+  startTeachingExecutionWatchdog: vi.fn(),
+}));
 vi.mock('@/lib/server/sandbox/checkpoint-collector', () => ({
   startCheckpointCollector: vi.fn(),
 }));

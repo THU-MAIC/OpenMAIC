@@ -45,7 +45,7 @@ export interface LearningView {
   roleRun: {
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'missing';
     failure: import('./conversation').LearningRunFailure | null;
-    failureCode?: import('@/lib/agent/runtime/request-failure').ModelRequestFailureCode | null;
+    failureCode?: import('@/lib/agent/runtime/request-failure').ExecutionFailureCode | null;
     canRetry: boolean;
   } | null;
   decisions: { id: string; prompt: string; options: { id: string; label: string }[] }[];

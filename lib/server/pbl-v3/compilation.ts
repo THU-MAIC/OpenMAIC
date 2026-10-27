@@ -1,10 +1,13 @@
 import 'server-only';
+import type { PoolClient } from 'pg';
 import type { SandboxService } from '@/lib/server/sandbox/service';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import { fileSnapshot, projectFor, requireEnvironment, stageFor, stageKey } from './runtime';
 import type { LearningStore, Study } from './store';
 import { checkpointFailure } from '@/lib/server/sandbox/checkpoint-errors';
 import { invalidateWorkspace } from './runtime';
+
+type BuildFence = (db: PoolClient) => Promise<void>;
 
 /** Absence of a reservation is definitive; lost start acknowledgements have a command row. */
 export async function executionCommand(store: LearningStore, row: Study, service: SandboxService) {
@@ -29,6 +32,7 @@ export async function startBuild(
   row: Study,
   service: SandboxService,
   id: string,
+  fence?: BuildFence,
 ) {
   const stage = stageFor(row),
     command = projectFor(row).buildCommand;
@@ -61,7 +65,10 @@ export async function startBuild(
   };
   Object.assign(
     row,
-    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] })),
+    await store.transaction(async (db) => {
+      await fence?.(db);
+      return store.commit(db, row, { state: row.state, events: [] });
+    }),
   );
   return service.startCommand(requireEnvironment(row), {
     requestId: id,
@@ -69,7 +76,12 @@ export async function startBuild(
     timeoutMs: 60_000,
   });
 }
-export async function collectBuild(store: LearningStore, row: Study, service: SandboxService) {
+export async function collectBuild(
+  store: LearningStore,
+  row: Study,
+  service: SandboxService,
+  fence?: BuildFence,
+) {
   const execution = row.evaluation;
   if (execution?.purpose !== 'compile') throw sandboxConflict('No build is awaiting collection.');
   const result = await executionCommand(store, row, service);
@@ -77,7 +89,10 @@ export async function collectBuild(store: LearningStore, row: Study, service: Sa
     row.evaluation = null;
     Object.assign(
       row,
-      await store.transaction((db) => store.commit(db, row, invalidateWorkspace(row))),
+      await store.transaction(async (db) => {
+        await fence?.(db);
+        return store.commit(db, row, invalidateWorkspace(row));
+      }),
     );
     return { stale: true, interrupted: true };
   }
@@ -87,7 +102,10 @@ export async function collectBuild(store: LearningStore, row: Study, service: Sa
     row.evaluation = null;
     Object.assign(
       row,
-      await store.transaction((db) => store.commit(db, row, invalidateWorkspace(row))),
+      await store.transaction(async (db) => {
+        await fence?.(db);
+        return store.commit(db, row, invalidateWorkspace(row));
+      }),
     );
     return { stale: true, interrupted: true };
   }
@@ -108,6 +126,7 @@ export async function collectBuild(store: LearningStore, row: Study, service: Sa
   Object.assign(
     row,
     await store.transaction(async (db) => {
+      await fence?.(db);
       await db.query(
         'INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key) VALUES($1,$2,$3,$4,$5) ON CONFLICT(study_id,id) DO UPDATE SET result=EXCLUDED.result',
         [

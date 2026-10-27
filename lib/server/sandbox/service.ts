@@ -13,7 +13,11 @@ import {
   type DesktopAction,
 } from '@/lib/sandbox/types';
 
-import { assertWorkspaceMutation, type WorkspaceMutation } from './managed-workspace';
+import {
+  assertWorkspaceMutation,
+  dispatchWorkspaceMutation,
+  type WorkspaceMutation,
+} from './managed-workspace';
 import { issuePreviewGrant, previewConfig, verifyPreviewGrant } from './preview';
 import { WORKSPACE_ROOT, workspacePath } from './workspace-archive';
 import {
@@ -432,7 +436,9 @@ export class SandboxService {
       throw new SandboxError('SANDBOX_FILE_TOO_LARGE', 413, 'Text files are limited to 1 MiB.');
     }
     const row = await this.running(id);
-    await this.provider.writeText(row.resource_id, row.id, path, text);
+    await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write', () =>
+      this.provider.writeText(row.resource_id, row.id, path, text),
+    );
   }
 
   async mutateFile(
@@ -491,7 +497,9 @@ export class SandboxService {
           'WORKSPACE_FILE_CONFLICT',
         );
       await beforeWrite();
-      await this.provider.mutateFile(row.resource_id!, row.id, { ...input, path, destination });
+      await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'write', () =>
+        this.provider.mutateFile!(row.resource_id!, row.id, { ...input, path, destination }),
+      );
       return { changed: true };
     });
   }
@@ -535,9 +543,25 @@ export class SandboxService {
     const hash = createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const created = await this.store.reserveCommand(row, input.id, hash, epoch);
     if (created) {
+      let dispatched = false;
       try {
-        await this.provider.startCommand(row.resource_id, row.id, input);
-      } catch {
+        await dispatchWorkspaceMutation(this.ownerId, row.workspace_id, row.id, 'command', () => {
+          dispatched = true;
+          return this.provider.startCommand(row.resource_id, row.id, input);
+        });
+      } catch (error) {
+        if (!dispatched) {
+          // No provider dispatch happened; leave a collectable terminal command, not an orphan writer.
+          await this.store.saveCommand(row, {
+            id: input.id,
+            state: 'cancelled',
+            stdout: '',
+            stderr: '',
+            exitCode: null,
+            truncated: false,
+          });
+          throw error;
+        }
         // A lost start acknowledgement is unknown, never grounds for a second execution.
         return {
           id: input.id,

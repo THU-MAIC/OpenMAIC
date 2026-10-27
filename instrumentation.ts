@@ -72,6 +72,8 @@ export async function register(): Promise<void> {
   const checkpointSchedule = startCheckpointCollector();
   const { startLearningLifecycle } = await import('@/lib/server/pbl-v3/lifecycle-schedule');
   const learningLifecycle = startLearningLifecycle();
+  const { startTeachingExecutionWatchdog } = await import('@/lib/server/pbl-v3/execution-watchdog');
+  const teachingWatchdog = startTeachingExecutionWatchdog();
 
   // Warn-first boot-time validation of model routing config (MODEL_ROUTES,
   // DEFAULT_MODEL, <PREFIX>_MODELS). Cheap and non-throwing: broken config
@@ -181,6 +183,7 @@ export async function register(): Promise<void> {
       }
       await checkpointSchedule?.stop();
       await learningLifecycle?.stop();
+      await teachingWatchdog?.stop();
       const connectionString = process.env.DATABASE_URL?.trim();
       if (connectionString) {
         try {

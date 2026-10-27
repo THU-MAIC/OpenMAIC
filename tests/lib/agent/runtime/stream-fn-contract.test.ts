@@ -336,6 +336,28 @@ describe('createCallLlmStreamFn terminal contract', () => {
   });
 });
 
+it('reports real model feedback before presentation throttling, excluding transport hints and empty deltas', async () => {
+  const progress = vi.fn();
+  mocks.streamLLM.mockReturnValue(
+    resultFrom([
+      { type: 'raw', rawValue: 'heartbeat' },
+      { type: 'start' },
+      { type: 'text-delta', text: '' },
+      { type: 'reasoning-delta', text: 'Thinking' },
+      { type: 'text-delta', text: 'Reply' },
+      { type: 'tool-input-delta', delta: '{' },
+      toolCall(),
+      finish('tool-calls'),
+    ]),
+  );
+  const stream = await createCallLlmStreamFn({ languageModel: {} as never, onProgress: progress })(
+    {} as never,
+    { messages: [], tools: [] },
+  );
+  await stream.result();
+  expect(progress).toHaveBeenCalledTimes(5);
+});
+
 describe('per-request upstream silence guard', () => {
   afterEach(() => vi.useRealTimers());
   const start = (timeout = 1000) =>

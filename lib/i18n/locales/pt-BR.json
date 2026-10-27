@@ -2540,6 +2540,7 @@
   },
   "pblV3": {
     "connectingUpdates": "Connecting live updates…",
+    "reconnectingUpdates": "Live updates interrupted. Reconnecting automatically; you can also refresh.",
     "updatesUnavailable": "Live updates unavailable. Refresh to reconnect.",
     "title": "Programming projects · Preview",
     "refresh": "Refresh progress",

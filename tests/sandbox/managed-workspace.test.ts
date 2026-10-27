@@ -166,4 +166,76 @@ describe('learning workspace service boundary', () => {
       await expect(service().assertWorkspaceIdle(id)).rejects.toThrow('Stop and collect');
     },
   );
+  it.each(['write', 'compare', 'manage', 'command'] as const)(
+    'rechecks a revoked scope immediately before %s provider dispatch',
+    async (operation) => {
+      const row = await store.get('owner', id);
+      let release!: () => void;
+      let entered = false;
+      const pause = async () => {
+        entered = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      };
+      const mutateFile = vi.fn();
+      const reserveCommand = vi.fn(async () => {
+        await pause();
+        return true;
+      });
+      const saveCommand = vi.fn();
+      Object.assign(provider, {
+        mutateFile,
+        listWorkspace: vi.fn(async () => [{ path: 'PLAN.md' }]),
+      });
+      Object.assign(store, { reserveCommand, saveCommand });
+      if (operation === 'write') {
+        store.get.mockResolvedValueOnce(row).mockImplementationOnce(async () => {
+          await pause();
+          return row;
+        });
+      }
+      const controller = new AbortController();
+      let underlying!: Promise<unknown>;
+      const scoped = withLearningWorkspaceAccess(
+        {
+          ownerId: 'owner',
+          workspaceId,
+          environmentIds: () => [id],
+          operations: ['write', 'command'],
+          signal: controller.signal,
+        },
+        () => {
+          const current = service();
+          underlying =
+            operation === 'write'
+              ? current.writeText(id, 'PLAN.md', 'late')
+              : operation === 'compare'
+                ? current.compareAndWriteText(id, 'PLAN.md', 'late', hash(content), pause)
+                : operation === 'manage'
+                  ? current.mutateFile(
+                      id,
+                      { action: 'delete', path: 'PLAN.md', expectedHash: hash(content) },
+                      pause,
+                    )
+                  : current.startCommand(id, { requestId: retired, command: 'echo late' });
+          void underlying.catch(() => {});
+          return underlying;
+        },
+      ).catch((error) => error);
+      await vi.waitFor(() => expect(entered).toBe(true));
+      controller.abort();
+      await scoped;
+      release();
+      await expect(underlying).rejects.toMatchObject({ code: 'PBL_WORKSPACE_MANAGED' });
+      expect(provider.writeText).not.toHaveBeenCalled();
+      expect(provider.startCommand).not.toHaveBeenCalled();
+      expect(mutateFile).not.toHaveBeenCalled();
+      if (operation === 'command')
+        expect(saveCommand).toHaveBeenCalledWith(
+          row,
+          expect.objectContaining({ id: retired, state: 'cancelled' }),
+        );
+    },
+  );
 });
