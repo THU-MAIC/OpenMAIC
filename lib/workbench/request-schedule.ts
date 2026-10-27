@@ -311,10 +311,13 @@ export function scheduleRequestPreview(
   }
   let scene = changes[shown].scene;
 
-  // ── A viewer who has not seen the cast yet sees it now ───────────────────
+  // ── The cast's reveal runs from when this viewer first saw it ───────────
+  // The cards flip from the moment the preview shows them: a viewer who
+  // opened (or reopened a hidden preview) after set_roster, however soon,
+  // keeps the scene until that reveal has finished.
   if (roster && viewer.rosterSeenAt !== null && scene !== 'asking') {
     const revealEnds = viewer.rosterSeenAt + rosterRevealMs(roster.agents.length);
-    if (now < revealEnds && viewer.rosterSeenAt > roster.at + holdMs) {
+    if (now < revealEnds && viewer.rosterSeenAt >= roster.at) {
       scene = 'assembling';
       nextChangeAt = minDue(nextChangeAt, revealEnds);
     }

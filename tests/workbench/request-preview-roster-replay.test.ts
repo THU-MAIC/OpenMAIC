@@ -78,4 +78,34 @@ describe('the roster reveal on a real stream', () => {
     expect(reveal.nextChangeAt).toBe(openedAt + rosterRevealMs(3));
     expect(sceneAt(openedAt + rosterRevealMs(3), openedAt).scene).toBe('generating');
   });
+
+  it('holds the cast for a preview reopened just after set_roster until its reveal ends', () => {
+    // The same stream, with the first page starting half a second after the
+    // roster, so the live hold alone would end the scene at rosterAt + reveal.
+    const pageAt = rosterAt + 500;
+    let state: WorkbenchFold = createInitialSessionState();
+    frames.forEach(([ts, type, data], index) => {
+      if (ts <= rosterAt) state = foldEvent(state, { id: index + 1, ts, attempt: 1, type, data });
+    });
+    state = foldEvent(state, {
+      id: frames.length + 1,
+      ts: pageAt,
+      attempt: 1,
+      type: 'tool_execution_start',
+      data: {
+        toolCallId: 'page-1',
+        toolName: 'generate_scene',
+        args: { order: 1, type: 'slide' },
+      },
+    });
+    const track = requestTrack(state.chat, 'running', false)!;
+    const seenAt = rosterAt + 1000;
+    const at = (now: number) =>
+      scheduleRequestPreview(track, now, DEFAULT_REQUEST_SCHEDULE, { rosterSeenAt: seenAt });
+    const revealEnds = seenAt + rosterRevealMs(3);
+    for (let now = seenAt; now < revealEnds; now += 100) {
+      expect(at(now).scene).toBe('assembling');
+    }
+    expect(at(revealEnds + 100).scene).toBe('generating');
+  });
 });
