@@ -29,11 +29,12 @@ name: Publish @openmaic packages
 # REQUIRED REPOSITORY SETUP:
 #   - npm org `openmaic` created and owning the `@openmaic` scope
 #   - a GitHub Environment named `release` whose deployment branch rule allows
-#     ONLY `main`, holding NPM_TOKEN (an automation/granular token with publish
-#     rights to @openmaic/*, 2FA set to "auth only")
-#   - NPM_TOKEN must NOT also exist as a repository secret. A repository secret
-#     is readable by a workflow on any branch, which would let a branch-local
-#     edit of this file collect the token without the environment.
+#     ONLY `main`
+#   - npm trusted publishing on every @openmaic/* package: GitHub Actions,
+#     repository THU-MAIC/OpenMAIC, workflow `publish-packages.yml`, environment
+#     `release`. The publish job authenticates with a short-lived OIDC credential
+#     issued for that exact workflow and environment, so there is no long-lived
+#     npm token to store, rotate or leak.
 
 on:
   push:
@@ -64,7 +65,7 @@ jobs:
   # A full commit SHA is the only immutable GitHub Action reference. Version
   # comments beside each pin keep the selected release human-readable.
   # SECURITY BOUNDARY: package installation, builds and packing happen only in
-  # `validate`, before any job can read NPM_TOKEN. `publish` receives immutable
+  # `validate`, before any job can publish. `publish` receives immutable
   # tarballs and verifies their digests before giving those exact files to npm.
   # This structurally removes build-code tampering with the git index, validated
   # bytes differing from published bytes, and build code rewriting enforcement
@@ -237,9 +238,9 @@ jobs:
           RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
         run: pnpm test:package-tarballs -- "$RELEASE_ARTIFACTS"
 
-  # The only job that can reach NPM_TOKEN. It is separate so the environment,
-  # and therefore the token, is never attached to a run that is merely
-  # validating.
+  # The only job that can publish. It is separate so the environment, and
+  # therefore npm's trusted-publisher match, is never attached to a run that is
+  # merely validating.
   publish:
     name: Publish to npm
     needs: validate
@@ -250,7 +251,7 @@ jobs:
       published_versions: ${{ steps.publish.outputs.published_versions }}
     permissions:
       actions: read # required to read this commit's CI conclusion
-      id-token: write # required for npm provenance
+      id-token: write # npm trusted publishing and provenance
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -268,6 +269,10 @@ jobs:
           # declares `packageManager`, which requires pnpm on PATH. This job only
           # publishes prebuilt tarballs with npm and never installs pnpm.
           package-manager-cache: false
+
+      # Trusted publishing needs npm 11.5.1 or later; Node 22 ships npm 10.
+      - name: Install npm with trusted publishing support
+        run: npm install --global --ignore-scripts npm@11.6.2
 
       - name: Download validated package tarballs
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -364,7 +369,6 @@ jobs:
       - name: Registry preflight and publish validated tarballs
         id: publish
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
           RELEASE_PLAN_PATH: ${{ runner.temp }}/release-plan.json
           RELEASE_ARTIFACTS: ${{ runner.temp }}/openmaic-package-tarballs
