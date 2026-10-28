@@ -36,6 +36,7 @@ vi.mock('@/lib/workbench/session-store', () => ({
 }));
 
 import { WorkspaceClassroomPane } from '@/components/workbench/workspace/WorkspaceClassroomPane';
+import { warmEditor } from '@/lib/edit/use-editor-warmup';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -100,6 +101,9 @@ beforeEach(() => {
   probe.preload = () => Promise.resolve();
   localStorage.clear();
   vi.stubGlobal('requestIdleCallback', (callback: () => void) => {
+    // Only the warm-up's own requests: other modules the pane loads (such as the
+    // legacy browser import) may ask for idle time too, depending on timing.
+    if (callback !== warmEditor) return ++nextHandle;
     // A fresh wrapper per request, so the same function scheduled twice is two entries.
     const pending = () => callback();
     idle.push(pending);
