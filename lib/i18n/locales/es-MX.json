@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "El archivo restaurado difiere de la versión base de tu borrador. El borrador se conserva. Cópialo antes de recargar para comparar los cambios.",
+      "copyDraft": "Copiar borrador conservado",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

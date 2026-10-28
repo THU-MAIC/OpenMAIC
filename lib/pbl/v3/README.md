@@ -126,6 +126,8 @@ handoffs until saved or explicitly discarded; changing environments preserves dr
 and verifies each dirty tab against the recovered file before resuming saves. A
 matching base hash or an observed submitted value can reconnect the draft; a real
 file conflict keeps the draft and never silently rebases over recovered work.
+The editor names the recovered-base conflict and offers to copy the retained
+draft before the learner explicitly discards/reloads and reconciles the changes.
 Pending edits must finish saving before execution or an automatic recovery snapshot. Browser drafts
 survive scene return and same-tab refresh; closing the tab, clearing browser storage
 or using another browser is not a save. If storage is unavailable, a visible warning

@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "Tệp được khôi phục khác với phiên bản gốc của bản nháp. Bản nháp vẫn được giữ lại. Hãy sao chép trước khi tải lại để đối chiếu thay đổi.",
+      "copyDraft": "Sao chép bản nháp đã giữ",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

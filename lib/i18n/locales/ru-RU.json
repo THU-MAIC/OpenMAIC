@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "Восстановленный файл отличается от исходной версии черновика. Черновик сохранён. Скопируйте его перед перезагрузкой, чтобы сверить изменения.",
+      "copyDraft": "Копировать сохранённый черновик",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

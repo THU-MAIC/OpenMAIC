@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "O arquivo restaurado difere da versão base do seu rascunho. O rascunho foi mantido. Copie-o antes de recarregar para comparar as alterações.",
+      "copyDraft": "Copiar rascunho mantido",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

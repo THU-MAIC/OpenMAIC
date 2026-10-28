@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "Le fichier restauré diffère de la version de base de votre brouillon. Celui-ci est conservé. Copiez-le avant de recharger pour comparer les modifications.",
+      "copyDraft": "Copier le brouillon conservé",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

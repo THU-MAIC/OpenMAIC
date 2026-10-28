@@ -247,8 +247,12 @@ describe('study-scoped local drafts', () => {
     await act(async () => vi.advanceTimersByTimeAsync(2000));
     expect(editor.stale).toBe(true);
     expect(editor.buffer?.text).toBe('My retained source');
+    expect(editor.recoveryConflict).toBe(true);
     expect(readEditorDraft(id).buffers['PLAN.md']?.text).toBe('My retained source');
     expect(save).not.toHaveBeenCalled();
+    await act(async () => editor.reload());
+    expect(editor.recoveryConflict).toBe(false);
+    expect(editor.stale).toBe(false);
   });
 
   it('recovers all dirty tabs while respecting current editing permissions', async () => {

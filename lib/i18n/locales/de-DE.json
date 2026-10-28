@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "Die wiederhergestellte Datei unterscheidet sich von der Grundlage Ihres Entwurfs. Der Entwurf bleibt erhalten. Kopieren Sie ihn vor dem Neuladen, um die Änderungen abzugleichen.",
+      "copyDraft": "Aufbewahrten Entwurf kopieren",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

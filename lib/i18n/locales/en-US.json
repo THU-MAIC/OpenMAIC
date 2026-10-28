@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "The recovered file differs from your draft's base. Your draft is kept; copy it before reloading to reconcile the changes.",
+      "copyDraft": "Copy retained draft",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

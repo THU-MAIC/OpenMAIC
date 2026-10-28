@@ -29,6 +29,7 @@ export function useProjectEditor(
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
   const inFlight = useRef<Promise<void> | null>(null),
@@ -37,8 +38,17 @@ export function useProjectEditor(
     null,
   );
   const unavailableSave = useRef<{ name: string; environment: string } | null>(null);
-  const current = useRef({ view, buffers, read, onError, onSave, path, options });
-  current.current = { view, buffers, read, onError, onSave, path, options };
+  const current = useRef({
+    view,
+    buffers,
+    read,
+    onError,
+    onSave,
+    path,
+    options,
+    recoveryConflicts,
+  });
+  current.current = { view, buffers, read, onError, onSave, path, options, recoveryConflicts };
   const updateBuffers = useCallback(
     (update: (previous: Record<string, EditorBuffer>) => Record<string, EditorBuffer>) => {
       const next = update(current.current.buffers);
@@ -79,6 +89,26 @@ export function useProjectEditor(
         )
           return;
         const existing = current.current.buffers[path];
+        const clearRecoveredFailure = () => {
+          const rejected = unavailableSave.current,
+            retry = retrySave.current;
+          if (
+            (rejected?.name === path && rejected.environment === existing?.environment) ||
+            (retry?.name === path && retry.buffer.environment === existing?.environment)
+          ) {
+            unavailableSave.current = null;
+            retrySave.current = null;
+            failed.current = false;
+            setSaveError('');
+          }
+        };
+        const clearConflict = () =>
+          setRecoveryConflicts((previous) => {
+            if (!previous[path]) return previous;
+            const next = { ...previous };
+            delete next[path];
+            return next;
+          });
         // Server updates and Agent writes refresh clean documents; a late read never erases typing.
         if (!discard && existing && existing.text !== existing.saved) {
           const rejected = unavailableSave.current;
@@ -91,7 +121,16 @@ export function useProjectEditor(
               result.text === retry.buffer.text);
           // A replacement environment is not permission to rebase over another writer.
           // Reattach only a verified base or a submission observed in the restored file.
-          if (result.hash !== existing.hash && !savedSubmission) return;
+          if (result.hash !== existing.hash && !savedSubmission) {
+            setRecoveryConflicts((previous) =>
+              previous[path] === view.environmentId
+                ? previous
+                : { ...previous, [path]: view.environmentId! },
+            );
+            if (existing.environment !== view.environmentId) clearRecoveredFailure();
+            return;
+          }
+          clearConflict();
           updateBuffers((previous) => {
             const latest = previous[path];
             return latest?.environment === existing.environment && latest.hash === existing.hash
@@ -106,17 +145,10 @@ export function useProjectEditor(
                 }
               : previous;
           });
-          if (
-            (rejected?.name === path && rejected.environment === existing.environment) ||
-            (retry?.name === path && retry.buffer.environment === existing.environment)
-          ) {
-            unavailableSave.current = null;
-            retrySave.current = null;
-            failed.current = false;
-            setSaveError('');
-          }
+          clearRecoveredFailure();
           return;
         }
+        clearConflict();
         updateBuffers((previous) => ({
           ...previous,
           [path]: { ...result, saved: result.text, environment: view.environmentId! },
@@ -170,13 +202,14 @@ export function useProjectEditor(
     if (inFlight.current) return inFlight.current;
     const run = async () => {
       while (mounted.current && !failed.current) {
-        const { path: active, buffers, view, options, onSave } = current.current;
+        const { path: active, buffers, view, options, onSave, recoveryConflicts } = current.current;
         if (!options.enabled) return;
         const retry = retrySave.current;
         if (
           retry &&
           (retry.buffer.environment !== view.environmentId ||
             !view.files.includes(retry.name) ||
+            recoveryConflicts[retry.name] === view.environmentId ||
             !options.canEdit(retry.name))
         )
           return;
@@ -188,6 +221,7 @@ export function useProjectEditor(
               b &&
               b.text !== b.saved &&
               b.environment === view.environmentId &&
+              recoveryConflicts[p] !== view.environmentId &&
               view.files.includes(p) &&
               options.canEdit(p)
             );
@@ -296,11 +330,14 @@ export function useProjectEditor(
     loading,
     saving,
     saveError,
+    recoveryConflict: recoveryConflicts[path] === view.environmentId,
     dirty,
     anyDirty: Object.values(buffers).some((b) => b.text !== b.saved),
     stale:
       !!buffers[path] &&
-      (buffers[path].environment !== view.environmentId || !view.files.includes(path)),
+      (buffers[path].environment !== view.environmentId ||
+        !view.files.includes(path) ||
+        recoveryConflicts[path] === view.environmentId),
     select,
     close,
     reload: () => load(true),
@@ -310,13 +347,14 @@ export function useProjectEditor(
       return pump();
     },
     edit: (text: string) => {
-      const { path, view, options } = current.current;
+      const { path, view, options, recoveryConflicts } = current.current;
       const b = current.current.buffers[path];
       if (
         !options.enabled ||
         !options.canEdit(path) ||
         !b ||
         b.environment !== view.environmentId ||
+        recoveryConflicts[path] === view.environmentId ||
         b.text === text
       )
         return;

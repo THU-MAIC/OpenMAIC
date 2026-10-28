@@ -75,6 +75,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   let file = 'Write your plan here.';
   const savedFiles = new Map<string, { text: string; hash: string }>();
   let rejectAutosave = false;
+  let unavailableAutosave = false;
   let conflictAutosaveProgress = false;
   const saveAttempts: { id: string; revision: number; text: string; expectedHash: string }[] = [];
   let readGate: Promise<void> | null = null,
@@ -253,6 +254,15 @@ test('installed sample opens in the normal classroom and preserves progress afte
     if (body?.command) {
       if (body.command.type === 'save') {
         saveAttempts.push(body.command);
+        if (unavailableAutosave) {
+          unavailableAutosave = false;
+          view.environment = { state: 'destroyed', ready: false };
+          view.revision++;
+          return route.fulfill({
+            status: 409,
+            json: { error: { code: 'SANDBOX_CONFLICT', reason: 'ENVIRONMENT_UNAVAILABLE' } },
+          });
+        }
         if (conflictAutosaveProgress) {
           conflictAutosaveProgress = false;
           view.revision++;
@@ -759,10 +769,20 @@ test('installed sample opens in the normal classroom and preserves progress afte
     .toBeLessThan(ideBox.width);
   await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
+  // A genuinely different recovered base must remain protected. Changing only
+  // the environment ID with an unchanged base now correctly resumes editing.
+  const savesBeforeConflictingRestore = saveAttempts.length;
+  savedFiles.set('src/new.py', { text: 'print("Recovered code")', hash: 'd'.repeat(64) });
   view.environmentId = '22345678-1234-1234-1234-123456789012';
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   await expect(page.locator('.monaco-editor textarea').first()).not.toBeEditable();
+  await expect(page.getByRole('alert').filter({ hasText: 'recovered file differs' })).toBeVisible();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.getByRole('button', { name: 'Copy retained draft', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe('Unsaved learner work');
   await page.locator('.monaco-editor .view-lines .view-line').first().click();
   await page.keyboard.type('x');
   await expect(page.locator('.monaco-editor-overlaymessage')).toContainText(
@@ -770,10 +790,31 @@ test('installed sample opens in the normal classroom and preserves progress afte
   );
   await expect(page.locator('.monaco-editor .view-lines')).toHaveText('Unsaved learner work');
   await page.keyboard.press('Escape');
+  expect(saveAttempts).toHaveLength(savesBeforeConflictingRestore);
   page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Discard changes and reload' }).click();
-  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Current code")');
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Recovered code")');
   rejectAutosave = false;
+  // Real workbench/Monaco recovery: the rejected draft survives restore and
+  // saves against its verified base with a new request, without discarding it.
+  unavailableAutosave = true;
+  await page.locator('.monaco-editor .view-lines .view-line').first().click();
+  await page.keyboard.press('ControlOrMeta+A');
+  await page.keyboard.insertText('print("Draft after idle")');
+  await expect(retrySave).toBeVisible();
+  await expect(page.getByTestId('pbl-environment-setup')).toContainText('environment is inactive');
+  const unavailableRequest = saveAttempts.at(-1)!;
+  const beforeDraftRestore = calls.filter((c) => c.type === 'prepare').length;
+  await page.getByRole('button', { name: 'Restore project files', exact: true }).click();
+  await expect(saved).toBeVisible();
+  await expect(page.locator('.monaco-editor textarea').first()).toBeEditable();
+  await expect(page.locator('.monaco-editor .view-lines')).toHaveText('print("Draft after idle")');
+  expect(saveAttempts.at(-1)!.id).not.toBe(unavailableRequest.id);
+  expect(saveAttempts.at(-1)!.expectedHash).toBe(unavailableRequest.expectedHash);
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeDraftRestore + 1);
+  await expect(page.getByRole('button', { name: 'Copy retained draft', exact: true })).toHaveCount(
+    0,
+  );
   await page.getByLabel('Project-relative file path').fill('src/moved.py');
   await page.getByRole('button', { name: 'Rename / move file' }).click();
   await expect(page.getByRole('tab', { name: 'moved.py', exact: true })).toHaveAttribute(
@@ -884,6 +925,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     page.getByText('Quiz passed: 2/2 correct. You can continue.', { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /^Continue(?: to|$)/ })).toBeEnabled();
+  const beforeCompletedProject = calls.filter((c) => c.type === 'prepare').length;
   view.state.status = 'completed';
   view.reportAvailable = true;
   view.environment = { state: 'destroyed', ready: false };
@@ -903,7 +945,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(
     page.getByRole('button', { name: 'Restore project files', exact: true }),
   ).toBeVisible();
-  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeContentRestore + 1);
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeCompletedProject);
   if (
     await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
   )
@@ -944,5 +986,5 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByRole('button', { name: 'Learning report', exact: true }).click();
   await expect(report.getByText('A saved learning journey', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Return to learning' }).click();
-  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeContentRestore + 1);
+  expect(calls.filter((c) => c.type === 'prepare')).toHaveLength(beforeCompletedProject);
 });

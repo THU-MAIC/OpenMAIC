@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "يختلف الملف المستعاد عن النسخة الأصلية لمسودتك. تم الاحتفاظ بالمسودة. انسخها قبل إعادة التحميل لمراجعة التغييرات.",
+      "copyDraft": "نسخ المسودة المحفوظة",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

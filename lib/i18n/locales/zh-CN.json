@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "恢复的文件与草稿底稿不同。草稿仍保留；请先复制草稿，再重新加载并核对修改。",
+      "copyDraft": "复制保留的草稿",
       "workspace": "代码工作区",
       "resize": "调整工作区与助手宽度",
       "resizeFiles": "调整文件目录宽度",

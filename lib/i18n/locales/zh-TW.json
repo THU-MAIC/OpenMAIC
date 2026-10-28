@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "恢復的檔案與草稿底稿不同。草稿仍保留；請先複製草稿，再重新載入並核對修改。",
+      "copyDraft": "複製保留的草稿",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",

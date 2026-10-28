@@ -2763,6 +2763,8 @@
       }
     },
     "ide": {
+      "recoveryConflict": "復元されたファイルは下書きの元の内容と異なります。下書きは保持されています。再読み込み前にコピーして変更を確認してください。",
+      "copyDraft": "保持された下書きをコピー",
       "workspace": "Code workspace",
       "resize": "Resize workspace and assistant",
       "resizeFiles": "Resize file explorer",
