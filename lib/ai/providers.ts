@@ -2330,9 +2330,13 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         config.providerId !== 'openai' ||
         (usesCustomOpenAIBaseUrl(config.baseUrl) && !usesOpenAIResponses);
       const roundTripProvider = preservesReasoning(config.providerId, config.modelId);
-      const deepseekAdapter =
-        getCatalogThinkingCapability(config.providerId, config.modelId)?.requestAdapter ===
-        'deepseek';
+      const catalogThinking = getCatalogThinkingCapability(config.providerId, config.modelId);
+      const deepseekAdapter = catalogThinking?.requestAdapter === 'deepseek';
+      // A model the catalog has no thinking metadata for (a custom provider, or
+      // an unlisted model behind a gateway) may still be a DeepSeek-style
+      // thinking model that rejects a prior tool-call turn without
+      // reasoning_content, e.g. a synthesized skill preload turn.
+      const uncataloguedThinking = !catalogThinking;
       if (usesCompatTransport) {
         const providerId = config.providerId;
         const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -2383,18 +2387,30 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             }
           }
 
-          if (roundTripProvider && init?.body && typeof init.body === 'string') {
+          // Uncatalogued models get an empty reasoning_content on assistant
+          // tool-call messages unless thinking is disabled on the wire. That is
+          // the turn shape DeepSeek-style thinking requires the field on, and
+          // OpenAI-compatible servers that do not know the field ignore it.
+          const fillsUncataloguedToolCalls = uncataloguedThinking && !thinkingDisabledOnWire;
+          if (
+            (roundTripProvider || fillsUncataloguedToolCalls) &&
+            init?.body &&
+            typeof init.body === 'string'
+          ) {
             try {
               const body = JSON.parse(init.body);
               if (thinkingDisabledOnWire) {
                 stripReasoningContentInRequestBody(body);
               } else {
-                restoreReasoningContentInRequestBody(body);
-                if (deepseekAdapter) {
-                  for (const message of body.messages ?? []) {
-                    if (message?.role === 'assistant' && message.reasoning_content === undefined) {
-                      message.reasoning_content = '';
-                    }
+                if (roundTripProvider) restoreReasoningContentInRequestBody(body);
+                for (const message of body.messages ?? []) {
+                  if (message?.role !== 'assistant' || message.reasoning_content !== undefined) {
+                    continue;
+                  }
+                  const hasToolCalls =
+                    Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
+                  if (deepseekAdapter || (fillsUncataloguedToolCalls && hasToolCalls)) {
+                    message.reasoning_content = '';
                   }
                 }
               }

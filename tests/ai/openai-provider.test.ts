@@ -28,6 +28,7 @@ async function captureInjectedRequestBody(
   modelId: string,
   thinkingConfig?: Record<string, unknown>,
   baseUrl?: string,
+  request: { providerType?: 'openai'; messages?: Array<Record<string, unknown>> } = {},
 ) {
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
@@ -50,6 +51,7 @@ async function captureInjectedRequestBody(
       modelId,
       apiKey: 'sk-test',
       baseUrl,
+      providerType: request.providerType,
     });
 
     const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
@@ -59,7 +61,7 @@ async function captureInjectedRequestBody(
       method: 'POST',
       body: JSON.stringify({
         model: modelId,
-        messages: [{ role: 'user', content: 'hi' }],
+        messages: request.messages ?? [{ role: 'user', content: 'hi' }],
       }),
     });
 
@@ -750,6 +752,103 @@ describe('OpenAI provider defaults', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  describe('reasoning_content on uncatalogued thinking models', () => {
+    // The shape a leading skill handle produces: a synthesized assistant
+    // tool call (no reasoning) followed by its tool result.
+    const skillPreloadMessages = () => [
+      { role: 'user', content: '/deep-research topic' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [
+          {
+            id: 'call-skill',
+            type: 'function',
+            function: { name: 'read', arguments: '{"path":"SKILL.md"}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'call-skill', content: 'skill body' },
+      { role: 'assistant', content: 'Earlier plain answer.' },
+      { role: 'user', content: 'go on' },
+    ];
+
+    function assistants(body: Record<string, unknown>) {
+      return (body.messages as Array<Record<string, unknown>>).filter(
+        (message) => message.role === 'assistant',
+      );
+    }
+
+    it('fills an empty reasoning_content on a custom provider tool-call turn', async () => {
+      const body = await captureInjectedRequestBody(
+        'acme-gateway' as ProviderId,
+        'deepseek-v4-pro',
+        undefined,
+        'https://gateway.example/v1',
+        { providerType: 'openai', messages: skillPreloadMessages() },
+      );
+
+      const [toolCallTurn, plainTurn] = assistants(body);
+      expect(toolCallTurn).toMatchObject({
+        reasoning_content: '',
+        tool_calls: [{ id: 'call-skill' }],
+      });
+      expect(plainTurn).not.toHaveProperty('reasoning_content');
+    });
+
+    it('keeps an existing reasoning_content on a custom provider', async () => {
+      const messages = skillPreloadMessages();
+      (messages[1] as Record<string, unknown>).reasoning_content = 'read the skill first';
+      const body = await captureInjectedRequestBody(
+        'acme-gateway' as ProviderId,
+        'deepseek-v4-pro',
+        { enabled: true },
+        'https://gateway.example/v1',
+        { providerType: 'openai', messages },
+      );
+
+      expect(assistants(body)[0]).toMatchObject({ reasoning_content: 'read the skill first' });
+    });
+
+    it('fills it on an uncatalogued gateway model while the wire keeps thinking on', async () => {
+      const body = await captureInjectedRequestBody(
+        'openai',
+        'deepseek-v4-flash-vision-exp',
+        { enabled: true },
+        'https://gateway.example/v1',
+        { messages: skillPreloadMessages() },
+      );
+
+      expect(body).toMatchObject({ chat_template_kwargs: { thinking: true } });
+      expect(assistants(body)[0]).toMatchObject({ reasoning_content: '' });
+    });
+
+    it('does not fill it when the wire disables thinking', async () => {
+      const body = await captureInjectedRequestBody(
+        'openai',
+        'deepseek-v4-flash-vision-exp',
+        { enabled: false },
+        'https://gateway.example/v1',
+        { messages: skillPreloadMessages() },
+      );
+
+      expect(body).toMatchObject({ chat_template_kwargs: { thinking: false } });
+      for (const message of assistants(body)) {
+        expect(message).not.toHaveProperty('reasoning_content');
+      }
+    });
+
+    it('leaves catalogued non-DeepSeek models to their catalog behavior', async () => {
+      const body = await captureInjectedRequestBody('qwen', 'qwen3.7-max', undefined, undefined, {
+        messages: skillPreloadMessages(),
+      });
+
+      for (const message of assistants(body)) {
+        expect(message).not.toHaveProperty('reasoning_content');
+      }
+    });
   });
 
   it('omits a zero SiliconFlow thinking budget when thinking is disabled', async () => {
