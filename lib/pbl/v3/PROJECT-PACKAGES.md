@@ -97,6 +97,8 @@ resource bytes instead of reconstructing them from a later built-in definition.
 
 Decision definitions may set `responseType: "text"` and `options: []` for an
 open-ended response. Omitting `responseType` keeps existing option buttons.
+Text forms ignore any retained options and preserve the literal response; choice
+definitions should provide at least one option.
 `requiresRationale: true` adds a required explanation field to either format;
 choice forms then use an explicit Submit decision button. The server validates
 nonempty responses, required rationales and option membership. Saving a response
@@ -111,8 +113,10 @@ them. Existing stored responses remain readable without rewriting history. The
 HTTP route's separate total request-byte limit still applies.
 
 Responses and rationales remain together in study state, versioned decision events,
-role artifact projections, production summaries and report evidence. Unsubmitted
-form drafts use the existing study-scoped browser draft store and never replay a
+role artifact projections, production summaries and report evidence. Report
+decision-change totals count revisions to either the response or its rationale,
+including rationale-only edits. Unsubmitted form drafts use the existing
+study-scoped browser draft store and never replay a
 command automatically. A successful submission or explicit retry clears only its
 matching draft, preserving later edits. Dialogue Agents receive the current
 milestone's submitted responses and rationales in both their initial prompt and
