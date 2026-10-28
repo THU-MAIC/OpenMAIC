@@ -88,7 +88,7 @@ export function teachingProductContext(input: {
       progress: 'Header: milestones. Above composer: current milestone steps.',
       task: 'The current-step bar above the composer opens available task details, not a full contract or assertion editor. Build and quiz submission are in task details; formal tests and Continue use the task bar.',
       report:
-        'Available after the final project recap; supports returning to the workbench and reopening.',
+        'Available after the final committed project recap. A prominent completion banner and the top toolbar open it; the project overview also offers it after leaving or revisiting the course scene. The report shows saved facts before analysis and links back to the read-only workbench. Returning does not reopen editing or teaching. Do not claim the report is available before the completion receipt.',
       navigation:
         'Hero Start/Continue expands the workbench; Back returns to the project overview. Pane and expansion controls change presentation, not progress.',
       connection:

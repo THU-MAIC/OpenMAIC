@@ -1,5 +1,7 @@
 /** Owner-scoped, saved project report. Public evidence never contains course protocols or answer keys. */
 export interface LearningReport {
+  formatVersion?: number;
+  responseLocale?: string;
   studyId: string;
   project: { id: string; version: string; title: string };
   revision: number;
@@ -41,6 +43,18 @@ export interface LearningReport {
     quizAttempts: number;
     fileEdits: number;
     interruptedRuns: number;
+  };
+  summary?: {
+    completedMilestones: number;
+    totalMilestones: number;
+    completedSteps: number;
+    totalSteps: number;
+    /** Authored concepts practiced in completed milestones, never a mastery score. */
+    concepts: string[];
+    skills: {
+      id: 'decisions' | 'planReview' | 'codeReview' | 'verification' | 'reflection';
+      milestoneIds: string[];
+    }[];
   };
   analysis?: {
     status: 'not_generated' | 'generating' | 'ready' | 'failed';

@@ -2824,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "만든 결과물, 선택한 결정, 그리고 발전을 보여 주는 기록입니다.",
+      "completedMilestones": "완료한 단계",
+      "completedSteps": "완료한 절차",
+      "concepts": "실습한 개념",
+      "skills": "실습한 역량",
+      "practiceNotice": "이 기록은 실습 내용을 보여 주며 숙련도를 인증하지 않습니다.",
+      "viewWorkbench": "읽기 전용 작업 공간 보기",
+      "completedTitle": "프로젝트 완료",
+      "completionHint": "결과물과 학습 기록이 저장되었습니다. 보고서와 작업 공간에서 돌아볼 수 있습니다.",
+      "close": "보고서 닫기",
+      "finalizing": "마지막 응답을 저장 중입니다. 곧 보고서를 열 수 있습니다.",
+      "skillLabels": {
+        "decisions": "엔지니어링 의사 결정",
+        "planReview": "계획 검토",
+        "codeReview": "구현 검토",
+        "verification": "테스트로 동작 검증",
+        "reflection": "근거를 통한 회고"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

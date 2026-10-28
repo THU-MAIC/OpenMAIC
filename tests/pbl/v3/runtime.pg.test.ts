@@ -1953,6 +1953,34 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ).rejects.toMatchObject({ status: 404 });
     await agents.softDeleteSession(started.sessionId, principal.ownerId);
   });
+  it('counts tool-delivered reply turns once and keeps canonical report dialogue consistent with the workbench', async () => {
+    const study = await freshStudy();
+    const started = (await study.send('begin')) as { sessionId: string };
+    const question = 'Read the current plan, then tell me whether it matches your choice.';
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'message_end',
+      data: {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'A draft prelude which was superseded.' }],
+        },
+      },
+    });
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'pbl_learner_handoff',
+      data: { question, canonical: true, toolCallId: 'canonical-report-review' },
+    });
+    const report = await learningEvidence(principal, study.id);
+    expect(
+      report.conversations
+        .flatMap((c) => c.messages)
+        .filter((m) => m.role === 'assistant')
+        .map((m) => m.text),
+    ).toEqual([question]);
+    expect(report.facts).toMatchObject({ learnerTurns: 0, assistantTurns: 1 });
+  });
   it('generates only after completion, saves one report and safely retries a failed analysis', async () => {
     const { id } = await freshStudy();
     await expect(learningReport(principal, id)).rejects.toMatchObject({ status: 409 });
@@ -1985,6 +2013,18 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await learningReport(principal, id)).toEqual(ready);
     expect(await generateLearningReport(principal, id, signal)).toEqual(ready);
     expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
+    // An old-format cached report is rebuilt token-free; one explicit retry upgrades it.
+    await pool.query(
+      "UPDATE pbl_v3_reports SET document=document-'formatVersion' WHERE study_id=$1",
+      [id],
+    );
+    const upgradedFacts = await learningReport(principal, id);
+    expect(upgradedFacts.summary).toBeDefined();
+    expect(upgradedFacts.analysis?.status).toBe('not_generated');
+    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(2);
+    mocked.reportAnalysis.mockResolvedValueOnce({ findings: [], omitted: false });
+    expect((await generateLearningReport(principal, id, signal)).analysis?.status).toBe('ready');
+    expect(mocked.reportAnalysis).toHaveBeenCalledTimes(3);
     await expect(
       learningReport({ ...principal, ownerId: 'another-owner' }, id),
     ).rejects.toMatchObject({ status: 404 });
@@ -4191,7 +4231,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(report.counts['decision.recorded']).toBe(size);
     expect(report.facts).toMatchObject({
       learnerTurns: size,
-      assistantTurns: 2,
+      assistantTurns: 1,
       decisions: 1,
       decisionChanges: size - 1,
       fileEdits: size + 1,

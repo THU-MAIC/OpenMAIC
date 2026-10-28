@@ -2824,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "Dein Ergebnis, deine Entscheidungen und die Belege für deinen Fortschritt.",
+      "completedMilestones": "Abschnitte abgeschlossen",
+      "completedSteps": "Schritte abgeschlossen",
+      "concepts": "Geübte Konzepte",
+      "skills": "Geübte Fähigkeiten",
+      "practiceNotice": "Diese Aufzeichnungen zeigen deine Praxis und bestätigen keine Beherrschung.",
+      "viewWorkbench": "Arbeitsbereich schreibgeschützt öffnen",
+      "completedTitle": "Projekt abgeschlossen",
+      "completionHint": "Deine Arbeit ist gespeichert. Öffne den Bericht oder sieh im Arbeitsbereich nach.",
+      "close": "Bericht schließen",
+      "finalizing": "Die letzte Antwort wird gespeichert. Der Bericht ist gleich verfügbar.",
+      "skillLabels": {
+        "decisions": "Technische Entscheidungen treffen",
+        "planReview": "Einen Plan prüfen",
+        "codeReview": "Implementierung prüfen",
+        "verification": "Verhalten mit Tests prüfen",
+        "reflection": "Anhand von Belegen reflektieren"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

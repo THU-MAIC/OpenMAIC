@@ -2824,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "Sản phẩm bạn tạo, những lựa chọn và bằng chứng về tiến bộ của bạn.",
+      "completedMilestones": "Giai đoạn hoàn thành",
+      "completedSteps": "Bước hoàn thành",
+      "concepts": "Khái niệm đã thực hành",
+      "skills": "Kỹ năng đã thực hành",
+      "practiceNotice": "Các bản ghi cho thấy nội dung đã thực hành, không chứng nhận mức độ thành thạo.",
+      "viewWorkbench": "Xem không gian làm việc chỉ đọc",
+      "completedTitle": "Dự án đã hoàn thành",
+      "completionHint": "Công việc đã được lưu. Xem báo cáo hoặc quay lại không gian làm việc.",
+      "close": "Đóng báo cáo",
+      "finalizing": "Đang lưu phản hồi cuối. Báo cáo sẽ sớm sẵn sàng.",
+      "skillLabels": {
+        "decisions": "Đưa ra quyết định kỹ thuật",
+        "planReview": "Xem xét kế hoạch",
+        "codeReview": "Xem xét phần triển khai",
+        "verification": "Kiểm chứng bằng kiểm thử",
+        "reflection": "Suy ngẫm từ bằng chứng"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

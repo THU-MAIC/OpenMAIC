@@ -64,7 +64,13 @@ function groupParts(parts: Part[]) {
   }
   return groups;
 }
-function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
+function AgentTurn({
+  entry,
+  onOpenReport,
+}: {
+  entry: LearningConversationEntry;
+  onOpenReport?: () => void;
+}) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const role = entry.speaker === 'user' ? 'mentor' : entry.speaker;
@@ -103,6 +109,20 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
                   )}
                 </p>
               )}
+              {onOpenReport &&
+                part.some(
+                  (tool) =>
+                    tool.action === 'complete' &&
+                    tool.status === 'succeeded' &&
+                    tool.projectCompleted,
+                ) && (
+                  <button
+                    className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500"
+                    onClick={onOpenReport}
+                  >
+                    {t('pblV3.report')}
+                  </button>
+                )}
             </div>
           ) : part.kind === 'thinking' ? (
             <ThinkingBlock
@@ -148,7 +168,13 @@ function AgentTurn({ entry }: { entry: LearningConversationEntry }) {
     </article>
   );
 }
-function ConversationEntry({ entry }: { entry: LearningConversationEntry }) {
+function ConversationEntry({
+  entry,
+  onOpenReport,
+}: {
+  entry: LearningConversationEntry;
+  onOpenReport?: () => void;
+}) {
   const { t } = useI18n();
   return entry.boundary ? (
     <div
@@ -171,7 +197,7 @@ function ConversationEntry({ entry }: { entry: LearningConversationEntry }) {
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn key={entry.id} entry={entry} />
+    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} />
   );
 }
 export function LearningConversation({
@@ -180,8 +206,10 @@ export function LearningConversation({
   requesting = false,
   pendingMessage = null,
   onOpenFile,
+  onOpenReport,
 }: {
   view: LearningView;
+  onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   sent: number;
   requesting?: boolean;
@@ -213,7 +241,7 @@ export function LearningConversation({
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}
-          renderEntry={(entry) => <ConversationEntry entry={entry} />}
+          renderEntry={(entry) => <ConversationEntry entry={entry} onOpenReport={onOpenReport} />}
         />
         {entries.some((entry) => entry.omitted) && (
           <p role="status" className="text-xs text-muted-foreground">
@@ -224,7 +252,7 @@ export function LearningConversation({
           <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
         )}
         {entries.map((entry) => (
-          <ConversationEntry key={entry.id} entry={entry} />
+          <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
         ))}
         {pendingMessage && <ConversationEntry entry={pendingMessage} />}
         {(requesting || view.busy) && !entries.some((e) => e.status === 'running') && (

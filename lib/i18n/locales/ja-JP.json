@@ -2824,7 +2824,25 @@
       "quizAttempts": "Quiz attempts",
       "fileEdits": "Recorded file edits",
       "interruptedRuns": "Interrupted or failed assistant runs",
-      "completed": "Project completed. You can open your learning report."
+      "completed": "Project completed. You can open your learning report.",
+      "subtitle": "作ったもの、選んだこと、そして進歩を支える記録。",
+      "completedMilestones": "完了した段階",
+      "completedSteps": "完了したステップ",
+      "concepts": "実践した概念",
+      "skills": "実践したスキル",
+      "practiceNotice": "記録は実践の内容を示すもので、習熟を認定するものではありません。",
+      "viewWorkbench": "読み取り専用の作業画面",
+      "completedTitle": "プロジェクト完了",
+      "completionHint": "作品と学習記録を保存しました。レポートや作業画面で振り返れます。",
+      "close": "レポートを閉じる",
+      "finalizing": "最後の返信を保存中です。まもなくレポートを開けます。",
+      "skillLabels": {
+        "decisions": "設計の判断",
+        "planReview": "計画のレビュー",
+        "codeReview": "実装のレビュー",
+        "verification": "テストによる検証",
+        "reflection": "記録に基づく振り返り"
+      }
     },
     "draftStorageUnavailable": "Browser draft storage is unavailable. This page keeps your text; save files to the workspace and copy unsent text before leaving the page.",
     "pendingActions": {

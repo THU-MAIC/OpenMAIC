@@ -28,6 +28,8 @@ import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
+import { ProjectReport } from './project-report';
+import { FileText, CheckCircle2 } from 'lucide-react';
 import { LearningPanels } from './learning-panels';
 import { LearningConversation } from './conversation';
 import { WorkspaceFrame } from './workspace-frame';
@@ -67,6 +69,7 @@ function PBLV3WorkspaceContent({
   const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
+  const [reportOpen, setReportOpen] = useState(false);
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
@@ -356,6 +359,17 @@ function PBLV3WorkspaceContent({
         {view && (
           <>
             <LearningPanels key={view.id} view={view} />
+            {view.reportAvailable && (
+              <button
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
+                onClick={() => setReportOpen(true)}
+                disabled={view.busy}
+                aria-label={t('pblV3.report')}
+              >
+                <FileText size={14} />
+                {t('pblV3.report')}
+              </button>
+            )}
             <details className="relative text-xs">
               <summary
                 aria-label={t('pblV3.ide.environmentDetails')}
@@ -434,6 +448,16 @@ function PBLV3WorkspaceContent({
           {resolvedTheme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
         </button>
       </header>
+      {view?.reportAvailable && (
+        <ProjectReport
+          key={view.id}
+          studyId={view.id}
+          title={view.title}
+          open={reportOpen}
+          onClose={() => setReportOpen(false)}
+          onWorkbench={() => setReportOpen(false)}
+        />
+      )}
       {error && (
         <div
           role="alert"
@@ -524,6 +548,27 @@ function PBLV3WorkspaceContent({
             >
               {t('pblV3.restoredProgress')}
             </p>
+          )}
+          {view.reportAvailable && (
+            <div
+              data-testid="pbl-project-completed"
+              className="flex shrink-0 flex-wrap items-center gap-3 border-b border-violet-500/20 bg-violet-500/10 px-4 py-3"
+            >
+              <CheckCircle2 size={22} className="shrink-0 text-violet-500" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold">{t('pblV3.reportCopy.completedTitle')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {t(view.busy ? 'pblV3.reportCopy.finalizing' : 'pblV3.reportCopy.completionHint')}
+                </p>
+              </div>
+              <button
+                className="shrink-0 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+                onClick={() => setReportOpen(true)}
+                disabled={view.busy}
+              >
+                {t('pblV3.report')}
+              </button>
+            </div>
           )}
           <WorkbenchSplit
             showWorkspace={showWorkspace}
@@ -626,6 +671,9 @@ function PBLV3WorkspaceContent({
                       setShowWorkspace(true);
                       setFileTarget({ ...reference, studyId: view.id, requestId: Date.now() });
                     }}
+                    onOpenReport={
+                      view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
+                    }
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}

@@ -1,3 +1,4 @@
+import { canViewProjectReport } from '@/lib/server/pbl-v3/stage-progress';
 import { latestFileChanges } from '@/lib/server/pbl-v3/file-changes';
 import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 import { sandboxBody, sandboxPrincipalResponse } from '@/lib/server/sandbox/http';
@@ -54,7 +55,12 @@ export async function GET(request: Request) {
           sceneId,
         );
       }
-      return Response.json({ hero: projectHeroDetails(project.definition), started: !!existing });
+      return Response.json({
+        hero: projectHeroDetails(project.definition),
+        started: !!existing,
+        studyId: existing?.id ?? null,
+        reportAvailable: existing ? canViewProjectReport(existing.state) : false,
+      });
     }
     if (!id) throw sandboxInvalid('A learning session is required.');
     const path = params.get('file');
