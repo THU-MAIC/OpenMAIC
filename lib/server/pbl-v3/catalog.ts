@@ -13,6 +13,7 @@ export interface InstalledProject {
   /** Trusted deployment-owned commands, never read from browser scene content. */
   evaluations: Record<string, ProjectEvaluation>;
   buildCommand?: string;
+  application?: import('./project-package').ProjectDescriptor['runtime']['application'];
   coursePackage?: {
     bundle: import('@openmaic/dsl').PBLProjectPackage;
     descriptor: import('./project-package').ProjectDescriptor;

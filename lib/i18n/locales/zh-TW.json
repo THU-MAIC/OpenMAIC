@@ -2912,6 +2912,20 @@
     "decisionSaved": "回答已儲存",
     "decisionUnsaved": "修改尚未提交",
     "decisionTooLong": "回答和理由各最多 {max} 個字元，合計還需符合編碼後的大小限制。請縮短後再提交。",
-    "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。"
+    "decisionInvalidText": "回答或理由中含有無法儲存的字元，請替換這些字元後再提交。",
+    "application": {
+      "open": "Open application",
+      "restart": "Restart application",
+      "newTab": "Open in a new tab",
+      "saveFirst": "Wait for your edits to save before opening the application.",
+      "wait": "Wait for the environment, Agent or assessment to finish.",
+      "notice": "Runs your saved code. Edits, builds, tests and checkpoints may stop it; reopen afterwards. Restarting can clear temporary data.",
+      "changed": "Saved sources changed after this application started. Restart to try the current version.",
+      "expired": "Application access expired. Reopen to renew it.",
+      "reopen": "Reopen application",
+      "starting": "Starting your application…",
+      "failed": "The application exited. Read the output or ask your current assistant for help.",
+      "unavailable": "The application is not responding yet. Reopen, or share the error with your assistant."
+    }
   }
 }

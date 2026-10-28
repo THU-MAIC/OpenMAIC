@@ -61,6 +61,54 @@ beforeEach(() => {
 });
 
 describe('learning workspace service boundary', () => {
+  it('quiesces registered applications before source evidence, but never treats cancellation as proof', async () => {
+    const s = service();
+    store.listCommands.mockResolvedValue([{ id, purpose: 'application' }]);
+    const command = vi
+      .spyOn(s, 'command')
+      .mockResolvedValueOnce({
+        id,
+        state: 'running',
+        stdout: '',
+        stderr: '',
+        exitCode: null,
+        truncated: false,
+      })
+      .mockResolvedValue({
+        id,
+        state: 'cancelled',
+        stdout: '',
+        stderr: '',
+        exitCode: -15,
+        truncated: false,
+      });
+    const cancel = vi
+      .spyOn(s, 'cancelCommand')
+      .mockResolvedValue({ id, cancellationRequested: true });
+    await expect(s.assertWorkspaceIdle(id)).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledWith(id, id);
+    expect(command.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+  it('does not auto-cancel ordinary commands or authorize an application without both host permissions', async () => {
+    const s = service();
+    store.listCommands.mockResolvedValue([{ id, purpose: null }]);
+    vi.spyOn(s, 'command').mockResolvedValue({
+      id,
+      state: 'running',
+      stdout: '',
+      stderr: '',
+      exitCode: null,
+      truncated: false,
+    });
+    const cancel = vi.spyOn(s, 'cancelCommand');
+    await expect(s.assertWorkspaceIdle(id)).rejects.toMatchObject({
+      reason: 'WORKSPACE_COMMAND_ACTIVE',
+    });
+    expect(cancel).not.toHaveBeenCalled();
+    await expect(
+      s.startApplicationCommand(id, { requestId: id, command: 'python3 app.py' }, 0),
+    ).rejects.toMatchObject({ code: 'PBL_WORKSPACE_MANAGED' });
+  });
   it('blocks every generic mutation route, including grants, previews and pre-allocation workspace IDs', async () => {
     const s = service();
     const calls = [

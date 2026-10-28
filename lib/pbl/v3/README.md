@@ -114,7 +114,7 @@ evidence without claiming that old test results certify subsequently edited file
 The workbench places the IDE on the left and teaching assistant on the right,
 with adjustable panel widths. The IDE includes an authorized file tree, Monaco
 editor, per-file tabs and drafts, and build output. Shell controls are disabled for
-the current activity, and no application-preview pane is mounted. The assistant keeps its conversation scroll separate from stage controls and
+the current activity. Projects declaring `runtime.application` expose an isolated application dialog from the header. The assistant keeps its conversation scroll separate from stage controls and
 the message composer. Enter sends; Shift+Enter inserts a line. Workspace keystrokes
 do not trigger classroom shortcuts.
 
@@ -380,7 +380,7 @@ assistant messages do not create student feedback.
 The source set, stage locks, writer-idle checks and ordinary sandbox restrictions
 remain the shared contract above. The merged workbench supplies file management and
 execution/recovery primitives. The current activity hides learner shell controls and
-removes manual checkpoint and application-preview UI; automatic recovery snapshots
+removes manual checkpoint UI; optional application previews use only declared launch commands and ports. Automatic recovery snapshots
 remain internal. Both the shared workspace contract and workbench are now in
 `integration/shared-sandbox`. This learning change retains their access, version and
 recovery boundaries while adding the teaching journey. Repeat combined real-provider
@@ -511,3 +511,40 @@ the aggregate bounds above without clipping the retained payloads.
 See [the execution contract](../../server/pbl-v3/execution-lifecycle.md) for persisted
 request failure codes, retry semantics, active-turn protection and the lifecycle
 owner's remaining validation work. No new top-level Agent status or storage migration is needed.
+
+### Optional learner application
+
+A Python course package can declare `runtime.application` with `title`, a learner-facing
+`description`, `argv` (starting with `python3` and an existing relative `.py` starter
+entrypoint), `port` (1024–65535 except 49983), and a loopback-only `healthPath`.
+Export/import requires `pbl-v3-application@1`; earlier packages keep their existing UI.
+This is a runnable learner artifact, not a generated deployment service or a terminal.
+Keep its UI/protocol guide in role-bound course documents. Protect supplied entry/UI
+files when learners should change only their business functions.
+
+The header's **Open application** starts the saved code and opens the existing protected,
+isolated preview gateway. Deployment must configure the preview origin, app origin,
+backend origin and gateway key described in the sandbox README; no same-origin proxy
+or provider credential is exposed to the iframe. Native and SDK transports retain their
+existing provider requirements. App launch/inspection use study ownership, revision,
+environment generation, release admission and managed workspace scopes. Generic sandbox
+routes still cannot launch a managed project or mint its preview grants. Gateway grant
+resolution rechecks the owned study, current environment and declared port, including
+release/recovery; normal grant expiration and epoch revocation still apply.
+
+Application processes are recorded sandbox commands, not detached daemons. They remain
+writers until the supervisor confirms exit. Source evidence/checkpoints automatically
+cancel and collect them; file/assessment operations cannot mistake a cancellation request
+for a stopped writer. Idle maintenance stops them rather than granting another retention
+interval. Restarting or recovering an in-memory app can clear its data. Reopen after an
+edit/build/test/checkpoint; access tickets expire after five minutes and can be renewed
+without inventing a new learning prerequisite.
+
+All roles receive the declared interface description and can use `inspect_application`
+for a fixed read-only HTTP GET, command state and saved-source change observation. The
+tool never starts/restarts the application, clicks business actions or sees the learner's
+screen. It does not widen role file permissions. Runtime observations are untrusted learner
+output, separate from builds, formal tests, understanding and version-bound approvals.
+Reflection can invite learners to try their artifact after tests pass without adding an
+eighth stage or a completion gate. No course-specific UI, answers or private media belong
+in the platform repository.

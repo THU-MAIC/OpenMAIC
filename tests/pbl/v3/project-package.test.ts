@@ -58,6 +58,43 @@ async function archive(bundle: ReturnType<typeof packageBuiltin>) {
   return JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
 }
 describe('self-contained PBL project packages', () => {
+  it('opts into applications only through a profile-bound starter entrypoint', () => {
+    const app = {
+      title: 'My application',
+      description: 'Add and remove items.',
+      argv: ['python3', 'src/app.py', '--port', '8000'],
+      port: 8000,
+      healthPath: '/api/items',
+    };
+    const withApplication = (change: (application: typeof app) => void = () => {}) =>
+      revised((files) => {
+        files['skeleton/src/app.py'] = 'print("Application")\n';
+        const spec = JSON.parse(files['project.json']);
+        spec.runtime.application = structuredClone(app);
+        change(spec.runtime.application);
+        files['project.json'] = JSON.stringify(spec);
+      });
+    expect(validateProjectPackage(withApplication()).project.application).toEqual(app);
+    for (const change of [
+      (a: typeof app) => {
+        a.argv = ['python3', '-c', 'print("bypass")'];
+      },
+      (a: typeof app) => {
+        a.argv = ['sh', 'src/app.py'];
+      },
+      (a: typeof app) => {
+        a.argv = ['python3', '../outside.py'];
+      },
+      (a: typeof app) => {
+        a.port = 49983;
+      },
+      (a: typeof app) => {
+        a.healthPath = 'https://elsewhere.test';
+      },
+    ])
+      expect(() => validateProjectPackage(withApplication(change))).toThrow();
+    expect(validateProjectPackage(packageBuiltin(source())).project.application).toBeUndefined();
+  });
   it('installs only the current samples and rejects obsolete or incomplete learning structures', () => {
     for (const id of ['greeting-python-lab', 'greeting-java'])
       expect(() => installedProject({ id, version: '1.0.0' })).toThrow('not installed');

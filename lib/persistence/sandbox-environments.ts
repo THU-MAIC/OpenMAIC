@@ -170,6 +170,13 @@ CREATE TABLE IF NOT EXISTS sandbox_commands (
       CREATE INDEX sandbox_environments_maintenance_idx ON sandbox_environments(maintenance_checked_at,id)
         WHERE state<>'destroyed';`,
     },
+    {
+      version: 11,
+      name: 'managed-application-commands',
+      transaction: true,
+      up: `ALTER TABLE sandbox_commands ADD COLUMN purpose TEXT
+        CHECK (purpose IS NULL OR purpose='application');`,
+    },
   ],
 };
 

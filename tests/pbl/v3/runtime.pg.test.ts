@@ -9318,4 +9318,54 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(after!.turn_started_at.getTime()).toBeGreaterThan(Date.now() - 10000);
     expect((await agents.getSession(queued.sessionId))?.status).toBe('queued');
   });
+  it('gives each role read-only application diagnostics without shared chat or execution privileges', async () => {
+    const originalStudy = studyId,
+      originalApplication = project.application;
+    const ids: string[] = [];
+    project.application = {
+      title: 'Learner application',
+      description: 'An optional interactive artifact.',
+      argv: ['python3', 'greeting.py'],
+      port: 8000,
+      healthPath: '/',
+    };
+    try {
+      for (const index of [0, 2, 3, 6]) {
+        const fresh = await freshStudy();
+        ids.push(fresh.id);
+        studyId = fresh.id;
+        const row = await store.get(studyId, principal.ownerId);
+        row.state.position.stageIndex = index;
+        await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+        await runTools(
+          'What is Open application? Please inspect its state; this is only a help request.',
+          async (config) => {
+            expect(config.systemPrompt).toContain('Learner application');
+            expect(config.allowedToolNames.has('inspect_application')).toBe(true);
+            expect(config.allowedToolNames.has('run_command')).toBe(false);
+            const result = await invoke(config, 'inspect_application');
+            expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+              state: 'stopped',
+            });
+            expect(config.isTurnComplete()).toBe(false);
+            expect(config.allowedToolNames.has('read_file')).toBe(index !== 0);
+          },
+        );
+        const after = await store.get(studyId, principal.ownerId);
+        expect(after.state.position.stageIndex).toBe(index);
+        expect(after.state.status).not.toBe('completed');
+        expect(
+          (
+            await pool.query('SELECT id FROM sandbox_commands WHERE environment_id=$1', [
+              after.environment_id,
+            ])
+          ).rows,
+        ).toHaveLength(0);
+      }
+    } finally {
+      studyId = originalStudy;
+      project.application = originalApplication;
+      await releasePreparationFixtures(ids);
+    }
+  }, 15000);
 });

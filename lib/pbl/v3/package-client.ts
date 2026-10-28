@@ -10,6 +10,14 @@ import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
 import { projectSchema } from './domain/project/project-schema';
 
+import { APPLICATION_CAPABILITY } from './application';
+
+function needsApplication(projects: readonly PBLProjectPackage[]) {
+  return projects.some(
+    (project) => JSON.parse(project.files['project.json'])?.runtime?.application !== undefined,
+  );
+}
+
 export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
 function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
   return projects
@@ -61,7 +69,12 @@ export function validateClassroomPackageCompatibility(manifest: ClassroomManifes
     manifest.requiredCapabilities !== undefined &&
     (!Array.isArray(manifest.requiredCapabilities) ||
       manifest.requiredCapabilities.some(
-        (c) => ![PBL_PROJECT_PACKAGE_CAPABILITY, DECISION_RESPONSE_CAPABILITY].includes(c),
+        (c) =>
+          ![
+            PBL_PROJECT_PACKAGE_CAPABILITY,
+            DECISION_RESPONSE_CAPABILITY,
+            APPLICATION_CAPABILITY,
+          ].includes(c),
       ))
   )
     throw new Error('This classroom requires unsupported import capabilities.');
@@ -126,6 +139,7 @@ export async function attachClassroomProjects(
   manifest.requiredCapabilities = [PBL_PROJECT_PACKAGE_CAPABILITY];
   if (needsDecisionResponses(projects))
     manifest.requiredCapabilities.push(DECISION_RESPONSE_CAPABILITY);
+  if (needsApplication(projects)) manifest.requiredCapabilities.push(APPLICATION_CAPABILITY);
   for (const scene of scenes) {
     const content = scene.content as { type: 'pbl'; projectV3: PBLV3Reference };
     const { entry } = byRef.get(JSON.stringify(content.projectV3))!;
@@ -232,6 +246,11 @@ export async function installClassroomProjects(zip: JSZip, manifest: ClassroomMa
     !manifest.requiredCapabilities?.includes(DECISION_RESPONSE_CAPABILITY)
   )
     throw new Error('Decision response forms require pbl-v3-decision-responses@1.');
+  if (
+    needsApplication(projects) &&
+    !manifest.requiredCapabilities?.includes(APPLICATION_CAPABILITY)
+  )
+    throw new Error('Application previews require pbl-v3-application@1.');
   const { references }: { references: PBLV3Reference[] } = await call({
     action: 'install',
     projects,

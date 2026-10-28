@@ -269,6 +269,15 @@ export async function maintainStudy(
           if (!archiveGraceExpired(row, await store.now()))
             await renewForMaintenance(store, service, id, environmentId);
           const agents = await activeStudyTurns(store, id, ownerId);
+          // A preview must not extend idle retention or block the next dirty-file checkpoint.
+          if (
+            !agents.rows.length &&
+            ((await store.now()).getTime() - row.last_used_at.getTime() >= pblIdleTimeoutMs() ||
+              (row.workspace_dirty_at &&
+                (await store.now()).getTime() - row.workspace_dirty_at.getTime() >=
+                  PBL_DIRTY_CHECKPOINT_MS))
+          )
+            await service.stopApplications(environmentId);
           // A terminal result is persisted once by SandboxService.command, including lost start acknowledgements.
           const commands = await store.pool.query<{ id: string; created_at: Date }>(
             `SELECT id,created_at FROM sandbox_commands WHERE environment_id=$1
