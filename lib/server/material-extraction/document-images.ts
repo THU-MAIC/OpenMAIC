@@ -14,7 +14,8 @@
  *   (`metadata.path`), so a reference can be matched to its image. The
  *   markdown is parsed, not pattern-matched ({@link ownerDocumentOutcome}).
  *   A MinerU gateway that hosts the images answers each as a URL: it is
- *   downloaded here ({@link inlineRemoteImages}), and dropped if it cannot be.
+ *   downloaded here ({@link inlineRemoteImages}), and dropped if it cannot be;
+ *   its markdown names the image by that URL, matched exactly.
  * - The built-in PDF parser and AliDocMind return images beside text that
  *   names none of them: the images are kept, there is nothing to rewrite.
  * - Plain text and markdown uploads return no images and keep their own text.
@@ -105,13 +106,13 @@ async function keptImages(
   artifact: DocumentArtifact,
   signal?: AbortSignal,
 ): Promise<{
-  kept: Array<KeptImage & { path?: string }>;
+  kept: Array<KeptImage & { path?: string; url?: string }>;
   skipped: number;
   notDownloaded: number;
 }> {
   const candidates = artifact.assets.filter((asset) => asset.type === 'image' && asset.data);
   const { downloaded, retryable } = await downloadedImages(candidates, signal);
-  const kept: Array<KeptImage & { path?: string }> = [];
+  const kept: Array<KeptImage & { path?: string; url?: string }> = [];
   let skipped = 0;
   let notDownloaded = 0;
   for (const [index, asset] of candidates.entries()) {
@@ -120,8 +121,9 @@ async function keptImages(
       continue;
     }
     let prepared;
+    const url = remoteImageUrl(asset.data);
     try {
-      const remote = remoteImageUrl(asset.data) !== undefined;
+      const remote = url !== undefined;
       const data = remote ? downloaded.get(index) : asset.data;
       if (remote && !data && retryable.has(index)) notDownloaded += 1;
       prepared = data ? await prepareDerivedImage(decodeMediaAssetData(data)) : null;
@@ -137,6 +139,7 @@ async function keptImages(
     kept.push({
       key,
       ...(path ? { path } : {}),
+      ...(url ? { url } : {}),
       image: {
         data: prepared.buffer.toString('base64'),
         mimeType: prepared.mime,
@@ -152,15 +155,23 @@ async function keptImages(
 /**
  * Where each kept image's references may point: the provider's own path for
  * it first, then -- only when exactly one kept image has that file name -- its
- * bare file name, so one image's alias can never take another's path.
+ * bare file name, so one image's alias can never take another's path. A URL
+ * points to an image only when it is the one the image was downloaded from,
+ * or the provider named the image by it.
  */
 
 export function imagePathIndex(
-  images: ReadonlyArray<{ key: string; path?: string }>,
+  images: ReadonlyArray<{ key: string; path?: string; url?: string }>,
 ): ImagePathIndex {
   const exact = new Map<string, string>();
   const basenames = new Map<string, Set<string>>();
-  for (const { key, path } of images) {
+  const remote = new Map<string, string>();
+  for (const { key, path, url } of images) {
+    for (const target of [url, path]) {
+      if (target && remoteImageUrl(target) === target && !remote.has(target)) {
+        remote.set(target, key);
+      }
+    }
     if (!path) continue;
     const normalized = normalizePath(path);
     if (!exact.has(normalized)) exact.set(normalized, key);
@@ -179,7 +190,7 @@ export function imagePathIndex(
   for (const [name, keys] of basenames) {
     if (keys.size === 1) byBasename.set(name, [...keys][0]!);
   }
-  return { exact, byBasename };
+  return { exact, byBasename, ...(remote.size ? { remote } : {}) };
 }
 
 // A cache of derived reference positions, not owner text or derivative ids.

@@ -152,6 +152,23 @@ describe('imagePathIndex', () => {
     // An ambiguous file name alone matches neither.
     expect(rewriteImageReferences('![](elsewhere/fig.png)', two)).toBe(String.raw`\[image\]`);
   });
+
+  it('matches a kept image by the URL it was downloaded from, and no other URL', () => {
+    const linked = imagePathIndex([
+      { key: 'img-1', path: 'a.jpg', url: 'https://files.example.com/media/a' },
+      { key: 'img-2', path: 'https://files.example.com/media/b' },
+    ]);
+    expect(
+      rewriteImageReferences(
+        '![](https://files.example.com/media/a) <img src="https://files.example.com/media/b"> ' +
+          '![](images/a.jpg) ![](https://example.com/a.jpg)',
+        linked,
+      ),
+    ).toBe(
+      '![](openmaic-derivative:img-1) <img src="openmaic-derivative:img-2"> ' +
+        '![](openmaic-derivative:img-1) ![](https://example.com/a.jpg)',
+    );
+  });
 });
 
 describe('ownerDocumentOutcome', () => {
@@ -278,6 +295,35 @@ describe('ownerDocumentOutcome', () => {
       expect(outcome.stats.diagnostics).toEqual([
         '2 document image(s) not kept (limit 100, or unreadable)',
       ]);
+    });
+
+    it('rewrites the references that name an image by its URL', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(
+        async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+      );
+      const a = 'https://files.example.com/shares/media/a';
+      const b = 'https://files.example.com/shares/media/b';
+      const artifact = parsedPdfToDocumentArtifact(
+        extractMinerUResult({
+          md_content: `![](${a})\n\n<img src="${b}">\n\n![](https://example.com/logo.png)`,
+          images: { 'a.jpg': a, [b]: b },
+        }),
+        { buffer: Buffer.alloc(0), mimeType: 'application/pdf', config: { providerId: 'mineru' } },
+      );
+
+      const outcome = await ownerDocumentOutcome(artifact, provider);
+
+      expect(outcome.images.map((image) => image.key)).toEqual(['img-1', 'img-2']);
+      expect(outcome.text).toBe(
+        '![](openmaic-derivative:img-1)\n\n<img src="openmaic-derivative:img-2">\n\n' +
+          '![](https://example.com/logo.png)',
+      );
+      expect(outcome.imageRefs?.map((ref) => ref.key)).toEqual(['img-1', 'img-2']);
     });
   });
 });
