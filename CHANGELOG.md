@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Bug Fixes
 
+- Workbench: the request preview now opens the course even when a course read started before the first page landed answers after the run has finished; previously it could stay on "Opening the classroom" until the course card was clicked.
 - Workbench: the first switch from Learn to Edit no longer waits for the editor to download. The classroom pane loads the editor while the browser is idle (or when the pointer or focus reaches Edit) on courses you can edit, and the switch no longer waits for the font picker's stylesheets, which load in the background. A slide set in a picker font may briefly show the fallback face before it swaps in.
 - Google TTS: add Gemini 3.8 Flash-Lite (the new default) and Flash TTS ahead of the preview models' retirement. Preserve complete WAV responses instead of wrapping them in a second header; retain PCM conversion and explicit model selections. [#2033](https://github.com/THU-MAIC/OpenMAIC/issues/2033)
 - Speech recognition: OpenAI-compatible transcription models that reject `verbose_json` now receive plain JSON requests. Qwen3 ASR recordings are uploaded as WAV from both the composer and the settings preview, with a matching multipart filename. Known OpenAI transcription models retain their existing SDK path and provider requests retain the guarded transport.
