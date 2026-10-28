@@ -15,9 +15,16 @@ export async function POST(request: Request) {
     )
       return new Response(null, { status: 403, headers });
     const body = JSON.parse(text);
-    if (typeof body.ticket !== 'string' || typeof body.host !== 'string')
+    if (
+      typeof body.ticket !== 'string' ||
+      typeof body.host !== 'string' ||
+      (body.activity !== undefined && body.activity !== true)
+    )
       return new Response(null, { status: 403, headers });
-    return Response.json(await SandboxService.previewTarget(body.ticket, body.host), { headers });
+    return Response.json(
+      await SandboxService.previewTarget(body.ticket, body.host, body.activity === true),
+      { headers },
+    );
   } catch {
     return new Response(null, { status: 403, headers });
   }

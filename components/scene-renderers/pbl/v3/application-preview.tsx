@@ -23,6 +23,8 @@ export function ApplicationPreview({
   const [observation, setObservation] = useState<ApplicationObservation | null>(null);
   const [error, setError] = useState(''),
     [expired, setExpired] = useState(false);
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
   const attempt = useRef(0),
     controller = useRef<AbortController | null>(null);
   const disabled =
@@ -34,6 +36,14 @@ export function ApplicationPreview({
     },
     [],
   );
+  useEffect(() => {
+    ++attempt.current;
+    controller.current?.abort();
+    setOpen(false);
+    setPending(false);
+    setObservation(null);
+    setError('');
+  }, [view.id, workbench?.environmentId, workbench?.epoch]);
   useEffect(() => {
     if (!observation?.preview) return;
     const timer = setTimeout(
@@ -48,6 +58,10 @@ export function ApplicationPreview({
     controller.current?.abort();
     const abort = new AbortController();
     controller.current = abort;
+    setPortalContainer(
+      trigger.current?.closest<HTMLElement>('[data-pbl-v3-portal]') ??
+        (document.fullscreenElement as HTMLElement | null),
+    );
     setOpen(true);
     setPending(true);
     setError('');
@@ -88,6 +102,7 @@ export function ApplicationPreview({
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         data-testid="pbl-application-open"
         disabled={disabled}
@@ -116,7 +131,9 @@ export function ApplicationPreview({
         }}
       >
         <DialogContent
-          className="flex h-[88vh] max-w-[94vw] flex-col gap-3 p-4"
+          container={portalContainer}
+          overlayClassName="z-[140]"
+          className="z-[150] flex h-[88vh] max-w-[94vw] flex-col gap-3 p-4"
           onKeyDown={(event) => event.stopPropagation()}
         >
           <div className="flex shrink-0 items-start gap-3 pr-8">

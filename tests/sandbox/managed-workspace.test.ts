@@ -89,6 +89,38 @@ describe('learning workspace service boundary', () => {
     expect(cancel).toHaveBeenCalledWith(id, id);
     expect(command.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
+  it('checks optimistic hashes after application shutdown, including identical saves', async () => {
+    const s = service();
+    store.listCommands.mockResolvedValue([{ id, purpose: 'application' }]);
+    let stopped = false;
+    vi.spyOn(s, 'command').mockImplementation(async () => ({
+      id,
+      state: stopped ? 'cancelled' : 'running',
+      stdout: '',
+      stderr: '',
+      exitCode: stopped ? -15 : null,
+      truncated: false,
+    }));
+    vi.spyOn(s, 'cancelCommand').mockImplementation(async () => {
+      content = 'application shutdown saved this';
+      stopped = true;
+      return { id, cancellationRequested: true };
+    });
+    const invalidate = vi.fn();
+    await access(async () => {
+      await expect(
+        s.compareAndWriteText(id, 'PLAN.md', 'reviewed', hash('reviewed'), invalidate),
+      ).rejects.toMatchObject({ reason: 'WORKSPACE_FILE_CONFLICT' });
+      expect(content).toBe('application shutdown saved this');
+      expect(invalidate).not.toHaveBeenCalled();
+      expect(provider.writeText).not.toHaveBeenCalled();
+      expect(
+        await s.compareAndWriteText(id, 'PLAN.md', 'learner merged', hash(content), invalidate),
+      ).toBe(true);
+      expect(content).toBe('learner merged');
+      expect(invalidate).toHaveBeenCalledTimes(1);
+    });
+  });
   it('does not auto-cancel ordinary commands or authorize an application without both host permissions', async () => {
     const s = service();
     store.listCommands.mockResolvedValue([{ id, purpose: null }]);

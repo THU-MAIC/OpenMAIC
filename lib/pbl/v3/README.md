@@ -530,10 +530,19 @@ existing provider requirements. App launch/inspection use study ownership, revis
 environment generation, release admission and managed workspace scopes. Generic sandbox
 routes still cannot launch a managed project or mint its preview grants. Gateway grant
 resolution rechecks the owned study, current environment and declared port, including
-release/recovery; normal grant expiration and epoch revocation still apply.
+release/recovery; normal grant expiration and epoch revocation still apply. The dialog uses
+the existing workbench portal so it stays above expanded and native-fullscreen workbenches.
+The gateway's isolated shell observes trusted pointer/keyboard/wheel input inside the app,
+coalescing it through the signed gateway to the existing study activity clock (also in a
+separate tab). Loading, observing, authorization checks and silent viewing do not renew
+activity. Course HTML and response bodies are not rewritten.
 
 Application processes are recorded sandbox commands, not detached daemons. They remain
-writers until the supervisor confirms exit. Source evidence/checkpoints automatically
+writers until the supervisor confirms exit. Every launch advances the existing dirty/archive
+fence, including retries of an unacknowledged launch, so a completed short-lived writer
+cannot be hidden by an older upload. This does not invalidate teaching evidence or editor
+revisions just because the learner opened their app. Application processes remain in the
+writer/lifecycle registry but are excluded from one-shot workbench execution polling. Source evidence/checkpoints automatically
 cancel and collect them; file/assessment operations cannot mistake a cancellation request
 for a stopped writer. Idle maintenance stops them rather than granting another retention
 interval. Restarting or recovering an in-memory app can clear its data. Reopen after an
@@ -542,7 +551,9 @@ without inventing a new learning prerequisite.
 
 All roles receive the declared interface description and can use `inspect_application`
 for a fixed read-only HTTP GET, command state and saved-source change observation. The
-tool never starts/restarts the application, clicks business actions or sees the learner's
+probe uses isolated Python imports, so workspace modules cannot execute during inspection.
+Package validation and runtime dispatch both check the final UTF-8 command size after
+quoting/encoding. The tool never starts/restarts the application, clicks business actions or sees the learner's
 screen. It does not widen role file permissions. Runtime observations are untrusted learner
 output, separate from builds, formal tests, understanding and version-bound approvals.
 Reflection can invite learners to try their artifact after tests pass without adding an

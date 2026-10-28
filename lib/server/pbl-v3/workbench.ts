@@ -64,7 +64,9 @@ export async function workbenchView(
   const environmentId = requireEnvironment(row),
     policy = await permissions(store, row);
   const commands = [];
-  for (const command of (await service.listCommands(environmentId)).slice(0, 20))
+  for (const command of (await service.listCommands(environmentId))
+    .filter((command) => command.purpose !== 'application')
+    .slice(0, 20))
     commands.push(await service.command(environmentId, command.id));
   const terminals = [];
   for (const terminal of await service.listTerminals(environmentId))

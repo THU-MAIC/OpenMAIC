@@ -20,8 +20,9 @@ import {
   touchEnvironment,
 } from './environment';
 import { projectFiles } from './workspace-files';
+import { applicationLaunchCommand, applicationProbeCommand } from './application-command';
+export { applicationProbeCommand } from './application-command';
 
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const active = (state: string) => ['starting', 'running', 'unknown'].includes(state);
 export function applicationFingerprint(files: Record<string, string>) {
   const hash = createHash('sha256');
@@ -46,6 +47,17 @@ export async function assertLearningPreview(
     environmentReleaseCommitted(row, environmentId)
   )
     throw sandboxConflict('Application access was revoked.', 'ENVIRONMENT_CHANGED');
+}
+
+/** Only the authenticated gateway's coalesced, real-input signal calls this. Resolving/polling never does. */
+export async function recordLearningPreviewActivity(
+  ownerId: string,
+  workspaceId: string,
+  environmentId: string,
+  port: number,
+) {
+  await assertLearningPreview(ownerId, workspaceId, environmentId, port);
+  await (await LearningStore.open()).recordActivity(workspaceId.slice(4), ownerId);
 }
 
 interface ApplicationRun {
@@ -79,30 +91,6 @@ async function applicationCommand(
   return recorded.rows.length
     ? service.command(requireEnvironment(row), run.commandId, signal)
     : null;
-}
-
-/** A fixed read-only GET plus hashes of permitted sources; no browser-provided URL or shell. */
-export function applicationProbeCommand(paths: string[], port: number, healthPath: string) {
-  const config = Buffer.from(JSON.stringify({ paths, port, healthPath })).toString('base64');
-  const script = `import base64,hashlib,json,pathlib,urllib.request,urllib.error
-c=json.loads(base64.b64decode('${config}'))
-h=hashlib.sha256(); root=pathlib.Path.cwd().resolve(); total=0
-for name in c['paths']:
- p=root/name
- if not p.resolve().is_relative_to(root): raise ValueError('Source path escaped workspace')
- data=p.read_bytes(); total+=len(data)
- if total>1048576: raise ValueError('Source size limit exceeded')
- h.update(name.encode()+b'\\0'+data+b'\\0')
-class NoRedirect(urllib.request.HTTPRedirectHandler):
- def redirect_request(self,*args,**kwargs): return None
-out={'sourceHash':h.hexdigest()}
-try:
- with urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect()).open('http://127.0.0.1:'+str(c['port'])+c['healthPath'],timeout=1.5) as response:
-  out['httpStatus']=response.status
-except urllib.error.HTTPError as error: out['httpStatus']=error.code
-except (urllib.error.URLError,TimeoutError,OSError): pass
-print(json.dumps(out))`;
-  return `python3 -c ${quote(script)}`;
 }
 
 /** Called under the study lock and a narrow, lease-fenced command scope. Never starts an app. */
@@ -250,6 +238,8 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
                 sourceHash: applicationFingerprint(files),
                 startedAt: new Date().toISOString(),
               };
+            // Invalidate an in-flight archive even if this writer exits before publication.
+            await store.markWorkspaceWriter(row);
             await store.pool.query(
               'INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key) VALUES($1,$2,$3,$4,$5)',
               [row.id, receiptId, hash, JSON.stringify(run), stageKey(row)],
@@ -258,20 +248,23 @@ export async function applicationRequest(principal: OwnerPrincipal, input: unkno
               environmentId,
               {
                 requestId: run.commandId,
-                command: `exec ${application.argv.map(quote).join(' ')}`,
+                command: applicationLaunchCommand(application.argv),
               },
               request.epoch,
             );
           }
-          if (receipt && previous?.commandId === receipt.result.commandId)
+          if (receipt && previous?.commandId === receipt.result.commandId) {
+            // A committed intent may not have dispatched yet. Fence archive publication again.
+            await store.markWorkspaceWriter(row);
             await service.startApplicationCommand(
               environmentId,
               {
                 requestId: previous.commandId,
-                command: `exec ${application.argv.map(quote).join(' ')}`,
+                command: applicationLaunchCommand(application.argv),
               },
               request.epoch,
             );
+          }
           await store.recordActivity(row.id, row.owner_id);
         }
         const observation = await inspectApplication(store, row, service);

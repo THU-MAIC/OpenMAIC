@@ -7,8 +7,10 @@ import { once } from 'node:events';
 // UI acceptance; fetch alone does not implement SameSite or partitioning rules.
 describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) => {
   let revoked = false;
+  let activitySignals = 0;
   beforeEach(() => {
     revoked = false;
+    activitySignals = 0;
   });
   let backend: http.Server;
   let child: ChildProcess;
@@ -16,7 +18,10 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
   let host: string;
   let origin: string;
   beforeAll(async () => {
-    backend = http.createServer((_req, res) => {
+    backend = http.createServer(async (req, res) => {
+      let text = '';
+      for await (const chunk of req) text += String(chunk);
+      if (JSON.parse(text).activity === true && !revoked) activitySignals++;
       if (revoked) {
         res.writeHead(403);
         res.end();
@@ -127,6 +132,34 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
       (await request('/ws', { headers: { cookie, connection: 'Upgrade', upgrade: 'websocket' } }))
         .status,
     ).toBe(403);
+  });
+  it('reports only explicit protected preview input, not passive resolve requests', async () => {
+    const authorized = await request('/__openmaic_authorize', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ticket: 'input-grant' }),
+    });
+    expect(activitySignals).toBe(0);
+    const cookie = authorized.headers.get('set-cookie')!.split(';')[0];
+    expect(
+      (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
+    ).toBe(204);
+    expect(activitySignals).toBe(1);
+    expect(
+      (
+        await request('/__openmaic_activity', {
+          method: 'POST',
+          headers: { cookie, origin: 'https://foreign.example' },
+        })
+      ).status,
+    ).toBe(403);
+    expect((await request('/__openmaic_activity', { headers: { cookie } })).status).toBe(403);
+    expect((await request('/__openmaic_activity', { method: 'POST' })).status).toBe(403);
+    revoked = true;
+    expect(
+      (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
+    ).toBe(403);
+    expect(activitySignals).toBe(1);
   });
   it('still refuses unauthenticated document requests and foreign-origin exchange', async () => {
     expect((await request('/')).status).toBe(403);

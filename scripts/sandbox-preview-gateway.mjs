@@ -6,6 +6,7 @@ import {
   previewContentDisposition,
   validatePreviewTarget,
 } from './sandbox-preview-policy.mjs';
+import { previewShell } from './sandbox-preview-activity.mjs';
 import { previewAgent } from './sandbox-preview-transport.mjs';
 import { createHmac, randomBytes } from 'node:crypto';
 
@@ -67,8 +68,8 @@ function token(req) {
 }
 // Each request and WebSocket upgrade rechecks the current grant epoch.
 // Reusing a recently resolved target would allow writes after revocation.
-async function resolve(ticket, host) {
-  const body = JSON.stringify({ ticket, host });
+async function resolve(ticket, host, activity = false) {
+  const body = JSON.stringify({ ticket, host, ...(activity ? { activity: true } : {}) });
   const at = String(Date.now());
   const auth =
     at +
@@ -224,12 +225,9 @@ const server = http.createServer(async (req, res) => {
         'content-type': 'text/html; charset=utf-8',
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
-        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; frame-ancestors *`,
+        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; connect-src 'self'; frame-src 'self'; style-src 'nonce-${nonce}'; base-uri 'none'; frame-ancestors *`,
       });
-      res.end(`<!doctype html><title>Opening preview</title><p id="status">Opening preview…</p><script nonce="${nonce}">
-const ticket=location.hash.slice(1);history.replaceState(null,'','/__openmaic_preview');
-fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ticket})})
-.then(r=>{if(!r.ok)throw Error();location.replace('/')}).catch(()=>{document.getElementById('status').textContent='Access expired. Reopen from OpenMAIC.'});</script>`);
+      res.end(previewShell(nonce));
       return;
     }
     if (path.pathname === '/__openmaic_authorize') {
@@ -251,6 +249,14 @@ fetch('/__openmaic_authorize',{method:'POST',headers:{'content-type':'applicatio
         'cache-control': 'no-store',
         'set-cookie': previewAuthorizationCookies(cookieName, ticket, target.expiresAt),
       });
+      res.end();
+      return;
+    }
+    if (path.pathname === '/__openmaic_activity') {
+      checkOrigin(req, host);
+      if (req.method !== 'POST') throw new Error('Invalid activity signal');
+      await resolve(token(req), host, true);
+      res.writeHead(204, { 'cache-control': 'no-store' });
       res.end();
       return;
     }

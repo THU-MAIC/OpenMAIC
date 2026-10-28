@@ -1043,8 +1043,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           store.recordActivity(interactive.id, principal.ownerId),
         ),
       ).resolves.toMatchObject({ id: interactive.id });
-      await expect(interactive.send('checkpoint')).resolves.toBeDefined();
+      // Finish this environment's lightweight renewal before competing for its mutation lock.
+      // The unrelated archive remains blocked below, so admission isolation is still exercised.
       await scanning;
+      await expect(interactive.send('checkpoint')).resolves.toBeDefined();
       expect(mocked.renewals.slice(renewals)).toContain(interactiveEnvironment);
       expect(started.size).toBe(1);
       release();
@@ -7056,7 +7058,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it.each(['activity', 'edit', 'command'] as const)(
+  it.each(['activity', 'edit', 'command', 'application'] as const)(
     'keeps %s available during periodic upload and fences changed generations',
     async (action) => {
       const fresh = await freshStudy();
@@ -7079,9 +7081,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const archive = vi
         .spyOn(E2BCompatibleSandboxProvider.prototype, 'exportWorkspace')
         .mockImplementation(async function* (this: E2BCompatibleSandboxProvider, ...args) {
+          const chunks = [];
+          for await (const chunk of original.apply(this, args)) chunks.push(chunk);
           entered();
           await gate;
-          yield* original.apply(this, args);
+          yield* chunks;
         });
       const maintaining = maintainStudy(store, fresh.id, principal.ownerId);
       try {
@@ -7103,6 +7107,29 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             expectedHash: digest(text),
             text: text + '\n# concurrent editor save\n',
           });
+        } else if (action === 'application') {
+          // This writer finishes before archive publication, so the live-command guard alone cannot catch it.
+          await store.waitForExclusive(fresh.id, async () => {
+            const current = await store.get(fresh.id, principal.ownerId);
+            const revision = current.revision;
+            const evidence = structuredClone(current.state);
+            const dirty = current.workspace_dirty_at!.getTime();
+            await store.markWorkspaceWriter(current);
+            await store.markWorkspaceWriter(current);
+            const updated = await store.get(fresh.id, principal.ownerId);
+            expect(updated.workspace_dirty_at!.getTime()).toBeGreaterThan(dirty);
+            expect(updated.revision).toBe(revision);
+            expect(updated.state).toEqual(evidence);
+            const path = join(mocked.root, row.environment_id!, 'greeting.py');
+            await writeFile(
+              path,
+              (await readFile(path, 'utf8')) + '\n# saved by a short-lived application\n',
+            );
+            await pool.query(
+              "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint,purpose,result_json) VALUES($1,$2,'fixture','application',$3)",
+              [row.environment_id, randomUUID(), JSON.stringify({ state: 'exited', exitCode: 0 })],
+            );
+          });
         } else if (action === 'command')
           await pool.query(
             "INSERT INTO sandbox_commands(environment_id,id,request_fingerprint) VALUES($1,$2,'fixture')",
@@ -7121,6 +7148,20 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect((await store.get(fresh.id, principal.ownerId)).workspace_dirty_at === null).toBe(
           action === 'activity',
         );
+        if (action === 'application') {
+          archive.mockRestore();
+          await fresh.send('checkpoint');
+          mocked.missing.add(row.environment_id!);
+          await learningView(principal, fresh.id);
+          await fresh.send('prepare');
+          const recovered = await store.get(fresh.id, principal.ownerId);
+          expect(recovered.environment_id).not.toBe(row.environment_id);
+          expect(
+            await (
+              await SandboxService.forOwner(principal)
+            ).readText(recovered.environment_id!, 'greeting.py'),
+          ).toContain('saved by a short-lived application');
+        }
       } finally {
         release();
         await maintaining;
@@ -9396,6 +9437,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         );
       });
     try {
+      const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readCommand');
+      try {
+        const workbench = await workbenchView(principal, row.id, { passive: true });
+        expect(workbench.commands.some((entry) => entry.id === commandId)).toBe(false);
+        expect(read.mock.calls.some((args) => args.includes(commandId))).toBe(false);
+        expect(
+          (await (await SandboxService.forOwner(principal)).listCommands(row.environment_id!)).some(
+            (entry) => entry.id === commandId && entry.purpose === 'application',
+          ),
+        ).toBe(true);
+      } finally {
+        read.mockRestore();
+      }
       await maintainStudy(store, row.id, principal.ownerId);
       expect(cancel).not.toHaveBeenCalled();
       expect((await store.get(row.id, principal.ownerId)).checkpoint_failure).toBeNull();

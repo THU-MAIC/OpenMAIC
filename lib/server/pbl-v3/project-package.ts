@@ -13,6 +13,7 @@ import { MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 import type { InstalledProject } from './catalog';
 import { evaluationCommand } from './evaluation';
 import { stageSkill } from './skills';
+import { applicationLaunchCommand, applicationProbeCommand } from './application-command';
 import { validSourcePath } from './workspace-files';
 
 export { PROJECT_LIMITS, safeProjectPath } from '@/lib/pbl/v3/package-policy';
@@ -364,6 +365,10 @@ export function validateProjectPackage(input: unknown): {
       !Object.hasOwn(files, application.argv[1]))
   )
     return invalid('Applications require a Python starter entrypoint and the python3 profile.');
+  if (application) {
+    applicationLaunchCommand(application.argv);
+    applicationProbeCommand(Object.keys(files).sort(), application.port, application.healthPath);
+  }
   const buildSources = config.runtime.buildSources;
   if (
     buildSources?.some(

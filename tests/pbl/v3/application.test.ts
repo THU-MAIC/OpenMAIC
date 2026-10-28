@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { InstalledProject } from '@/lib/server/pbl-v3/catalog';
@@ -37,6 +37,7 @@ const mock = vi.hoisted(() => ({
   starts: [] as string[],
   exclusive: vi.fn(),
   activity: vi.fn(),
+  writer: vi.fn(),
   stop: vi.fn(),
   scope: vi.fn(),
   command: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('@/lib/server/pbl-v3/store', () => ({
       },
       exclusive: mock.exclusive,
       recordActivity: mock.activity,
+      markWorkspaceWriter: mock.writer,
       pool: {
         query: async (sql: string, args: string[]) => {
           if (sql.startsWith('SELECT id FROM sandbox_commands'))
@@ -117,6 +119,7 @@ import {
   applicationFingerprint,
   applicationProbeCommand,
   assertLearningPreview,
+  recordLearningPreviewActivity,
 } from '@/lib/server/pbl-v3/application';
 
 const study = '12345678-1234-4234-8234-123456789012',
@@ -205,6 +208,10 @@ describe('declared project applications', () => {
     await applicationRequest(owner, request());
     expect(mock.starts).toEqual([request().id, request().id]);
     expect(mock.receipts.size).toBe(1);
+    expect(mock.writer).toHaveBeenCalledTimes(2);
+    expect(mock.writer.mock.invocationCallOrder[0]).toBeLessThan(
+      mock.activity.mock.invocationCallOrder[0],
+    );
     expect(mock.scope).toHaveBeenCalledWith(
       expect.objectContaining({
         operations: ['command', 'preview'],
@@ -264,17 +271,41 @@ describe('declared project applications', () => {
       'revoked',
     );
   });
+  it('records preview input only after checking the current binding; passive authorization is not activity', async () => {
+    await assertLearningPreview('owner', 'pbl-' + study, env, 8000);
+    expect(mock.activity).not.toHaveBeenCalled();
+    await recordLearningPreviewActivity('owner', 'pbl-' + study, env, 8000);
+    expect(mock.activity).toHaveBeenCalledWith(study, 'owner');
+    mock.row.released = true;
+    await expect(recordLearningPreviewActivity('owner', 'pbl-' + study, env, 8000)).rejects.toThrow(
+      'revoked',
+    );
+    expect(mock.activity).toHaveBeenCalledTimes(1);
+  });
   it('uses a bounded loopback-only GET and compares the exact saved-source fingerprint', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pbl-app-probe-'));
     try {
       const files = { 'app.py': 'print("hello")\n', 'notes.txt': 'Hello 世界\n' };
       for (const [path, text] of Object.entries(files)) writeFileSync(join(dir, path), text);
+      // Neither cwd nor PYTHONPATH can turn an observation into workspace code execution.
+      for (const moduleName of ['json', 'hashlib', 'pathlib', 'base64', 'urllib'])
+        writeFileSync(
+          join(dir, moduleName + '.py'),
+          "open('imported-untrusted-module', 'w').write('bad')\nraise RuntimeError('shadowed')\n",
+        );
       const command = applicationProbeCommand(Object.keys(files).sort(), 65534, '/health');
       const output = JSON.parse(
-        execFileSync('/bin/sh', ['-c', command], { cwd: dir, encoding: 'utf8', timeout: 5000 }),
+        execFileSync('/bin/sh', ['-c', command], {
+          cwd: dir,
+          encoding: 'utf8',
+          timeout: 5000,
+          env: { ...process.env, PYTHONPATH: dir },
+        }),
       );
       expect(output.sourceHash).toBe(applicationFingerprint(files));
       expect(output.httpStatus).toBeUndefined();
+      expect(existsSync(join(dir, 'imported-untrusted-module'))).toBe(false);
+      expect(existsSync(join(dir, '__pycache__'))).toBe(false);
       expect(command).toContain('NoRedirect');
       expect(command).not.toContain('POST');
     } finally {

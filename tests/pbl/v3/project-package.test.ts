@@ -95,6 +95,27 @@ describe('self-contained PBL project packages', () => {
       expect(() => validateProjectPackage(withApplication(change))).toThrow();
     expect(validateProjectPackage(packageBuiltin(source())).project.application).toBeUndefined();
   });
+  it('rejects final application commands beyond provider bytes, including quoting and encoded paths', () => {
+    for (const oversized of ['argv', 'paths']) {
+      const bundle = revised((files) => {
+        files['skeleton/app.py'] = 'pass\n';
+        const spec = JSON.parse(files['project.json']);
+        spec.runtime.application = {
+          title: 'App',
+          description: 'Try the saved source.',
+          argv: ['python3', 'app.py', ...Array.from({ length: 30 }, () => "'".repeat(400))],
+          port: 8000,
+          healthPath: '/',
+        };
+        if (oversized === 'paths') {
+          spec.runtime.application.argv = ['python3', 'app.py'];
+          for (let i = 0; i < 180; i++) files[`skeleton/${'long'.repeat(50)}${i}.py`] = 'pass\n';
+        }
+        files['project.json'] = JSON.stringify(spec);
+      });
+      expect(() => validateProjectPackage(bundle)).toThrow('32 KiB command limit');
+    }
+  });
   it('installs only the current samples and rejects obsolete or incomplete learning structures', () => {
     for (const id of ['greeting-python-lab', 'greeting-java'])
       expect(() => installedProject({ id, version: '1.0.0' })).toThrow('not installed');

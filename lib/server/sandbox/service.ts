@@ -417,6 +417,8 @@ export class SandboxService {
   ) {
     await this.mutation(id, 'write');
     return this.store.exclusive(id, async () => {
+      const row = await this.running(id);
+      if (isLearningWorkspace(row.workspace_id)) await this.stopApplicationsUnlocked(row);
       const current = await this.readText(id, path);
       if (createHash('sha256').update(current).digest('hex') !== expectedHash)
         throw sandboxConflict(
@@ -1090,8 +1092,12 @@ export class SandboxService {
     return { row, grant, provider, expiresAt };
   }
 
-  static async previewTarget(ticket: string, host: string) {
+  static async previewTarget(ticket: string, host: string, activity = false) {
     const { row, grant, provider, expiresAt } = await this.resolvePreview(ticket, host);
+    if (activity && isLearningWorkspace(row.workspace_id)) {
+      const { recordLearningPreviewActivity } = await import('@/lib/server/pbl-v3/application');
+      await recordLearningPreviewActivity(grant.ownerId, row.workspace_id, row.id, grant.port);
+    }
     if (previewConfig().transport === 'sdk')
       return { transport: 'sdk', url: `http://127.0.0.1:${grant.port}`, expiresAt };
     return {
