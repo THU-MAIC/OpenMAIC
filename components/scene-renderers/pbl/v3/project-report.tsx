@@ -153,7 +153,7 @@ export function ProjectReport({
         }
       }}
     >
-      <nav className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 backdrop-blur sm:px-8">
+      <nav className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b bg-background/95 py-3 pl-4 pr-16 backdrop-blur sm:pl-8 sm:pr-20">
         <button className={button} onClick={onWorkbench}>
           <ArrowLeft size={15} />
           {t('pblV3.reportCopy.viewWorkbench')}
