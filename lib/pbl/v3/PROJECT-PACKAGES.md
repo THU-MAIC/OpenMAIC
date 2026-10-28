@@ -106,7 +106,12 @@ Teaching materials remain responsible for reviewing reasoning and explaining gap
 Responses and rationales remain together in study state, versioned decision events,
 role artifact projections, production summaries and report evidence. Unsubmitted
 form drafts use the existing study-scoped browser draft store and never replay a
-command automatically. Existing course packages and saved decisions remain valid;
+command automatically. A successful submission or explicit retry clears only its
+matching draft, preserving later edits. Dialogue Agents receive the current
+milestone's submitted responses and rationales in both their initial prompt and
+live context; other stages retain their declared artifact access. Text responses
+remain literal in summaries and reports even if an authored option has a matching
+ID. Existing course packages and saved decisions remain valid;
 no database migration or new model/provider is required. Archives using either
 new response format declare `pbl-v3-decision-responses@1` alongside
 `pbl-v3-projects@1`, so older readers reject them before importing an unusable

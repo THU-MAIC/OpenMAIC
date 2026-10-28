@@ -6,6 +6,7 @@ vi.mock('@/lib/i18n', () => ({ getClientTranslation: (key: string) => key }));
 import { useProjectEditor } from '@/components/scene-renderers/pbl/v3/use-project-editor';
 import { SandboxRequestError } from '@/components/sandbox/client';
 import {
+  acknowledgeDecisionDraft,
   readEditorDraft,
   useStudyDraft,
 } from '@/components/scene-renderers/pbl/v3/use-project-drafts';
@@ -74,6 +75,39 @@ afterEach(async () => {
 });
 
 describe('study-scoped local drafts', () => {
+  it('acknowledges only the submitted decision version in its original study and milestone', async () => {
+    const id = `decision-receipt-${sequence++}`;
+    const response = { chosen: 'Submitted rule', rationale: 'Submitted reason' };
+    await mount(createElement(Ui, { id }));
+    await act(async () => {
+      ui.setDecisionDrafts({ 'first:rule': response, 'second:rule': response });
+      ui.setText('Independent chat draft');
+    });
+    await leave();
+    await mount(createElement(Ui, { id: `${id}-other` }));
+    await act(async () => ui.setDecisionDrafts({ 'first:rule': response }));
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts).toEqual({ 'first:rule': response });
+    await leave();
+    await mount(createElement(Ui, { id }));
+    expect(ui.decisionDrafts).toEqual({ 'second:rule': response });
+    expect(ui.text).toBe('Independent chat draft');
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'first:rule': { ...response, rationale: 'Newer reason' },
+      }),
+    );
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts['first:rule']?.rationale).toBe('Newer reason');
+    await act(async () =>
+      ui.setDecisionDrafts({
+        'first:rule': { ...response, chosen: 'Newer rule' },
+      }),
+    );
+    await act(async () => acknowledgeDecisionDraft(id, 'first:rule', response));
+    expect(ui.decisionDrafts['first:rule']?.chosen).toBe('Newer rule');
+  });
+
   it('restores unsent decision text and rationale only within the same study', async () => {
     const id = `decision-${sequence++}`;
     await mount(createElement(Ui, { id }));

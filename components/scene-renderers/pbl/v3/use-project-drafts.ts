@@ -94,6 +94,25 @@ export function hasEditorDraft(id: string) {
 }
 export const readPendingMessage = (id: string) => read(id, 'ui', uiSchema, emptyUi).pendingMessage;
 
+/** Acknowledge the submitted version only, including receipts received after scene navigation. */
+export function acknowledgeDecisionDraft(
+  studyId: string,
+  draftKey: string,
+  response: { chosen: unknown; rationale?: unknown },
+) {
+  const draft = read(studyId, 'ui', uiSchema, emptyUi);
+  const current = draft.decisionDrafts[draftKey];
+  if (
+    !current ||
+    current.chosen !== response.chosen ||
+    current.rationale !== (response.rationale ?? '')
+  )
+    return true;
+  const next = { ...draft.decisionDrafts };
+  delete next[draftKey];
+  return write(studyId, 'ui', { ...draft, decisionDrafts: next });
+}
+
 /** Keep unconfirmed text with the draft; never persist a request for automatic replay. */
 export function beginPendingMessage(studyId: string, id: string, text: string) {
   const draft = read(studyId, 'ui', uiSchema, emptyUi);

@@ -11,6 +11,7 @@ import { LearningStore, type Study, type RoleBinding } from './store';
 import { projectFor } from './runtime';
 import { reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
+import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisions';
 
 const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
@@ -62,7 +63,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     switch (event.type) {
       case 'decision.recorded': {
         const d = project.definition.decisions.find((d) => d.id === event.decisionId);
-        detail = `${d?.decisionPrompt ?? event.decisionId}: ${d?.options.find((o) => o.id === event.chosen)?.label ?? event.chosen ?? ''}`;
+        detail = `${d?.decisionPrompt ?? event.decisionId}: ${decisionResponseLabel(d, event.chosen ?? '')}`;
         if (event.rationale) detail += `\nRationale: ${event.rationale}`;
         break;
       }

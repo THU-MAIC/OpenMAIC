@@ -9,6 +9,21 @@ export interface DecisionProgress<TChosen = string> {
   decisions: readonly DecisionRecord<TChosen>[];
 }
 
+/** Text responses remain literal even when their text matches an authored option ID. */
+export function decisionResponseLabel(
+  definition:
+    | {
+        responseType?: 'choice' | 'text';
+        options: readonly { id: string; label: string }[];
+      }
+    | undefined,
+  chosen: string,
+): string {
+  return definition?.responseType === 'text'
+    ? chosen
+    : (definition?.options.find((option) => option.id === chosen)?.label ?? chosen);
+}
+
 export function recordDecision<TChosen>(
   progress: DecisionProgress<TChosen>,
   decisionId: string,

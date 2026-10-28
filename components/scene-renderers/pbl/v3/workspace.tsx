@@ -18,7 +18,7 @@ import { DecisionResponseForm } from './decision-response';
 import { useLearningObservation } from './use-learning-observation';
 import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
-import { hasEditorDraft, useStudyDraft } from './use-project-drafts';
+import { acknowledgeDecisionDraft, hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -102,6 +102,7 @@ function PBLV3WorkspaceContent({
     payload: Record<string, unknown>;
     id: string;
     revision: number;
+    milestoneId: string | null;
   } | null>(null);
   const studyId = view?.id;
   const receiveSnapshot = useCallback(
@@ -161,7 +162,13 @@ function PBLV3WorkspaceContent({
       const request =
         repeat && retry.current
           ? retry.current
-          : { type, payload, id: crypto.randomUUID(), revision: view.revision };
+          : {
+              type,
+              payload,
+              id: crypto.randomUUID(),
+              revision: view.revision,
+              milestoneId: view.state.position.milestoneId,
+            };
       retry.current = request;
       setPendingAction(request.type);
       if (request.type === 'decide')
@@ -185,6 +192,15 @@ function PBLV3WorkspaceContent({
             },
           },
         );
+        if (
+          request.type === 'decide' &&
+          !acknowledgeDecisionDraft(
+            view.id,
+            `${request.milestoneId}:${request.payload.decisionId}`,
+            { chosen: request.payload.chosen, rationale: request.payload.rationale },
+          )
+        )
+          storageError();
         updateView(result.view, baseline);
         if (result.result?.stale) setError(t('pblV3.testResult.stale'));
         retry.current = null;
@@ -204,7 +220,7 @@ function PBLV3WorkspaceContent({
         setPending(false);
       }
     },
-    [view, updateView, refresh, t, beginMessage, finishMessage, latestView],
+    [view, updateView, refresh, t, beginMessage, finishMessage, latestView, storageError],
   );
   const [preparationFailed, setPreparationFailed] = useState(false);
   const preparationAttempt = useRef('');
@@ -774,27 +790,13 @@ function PBLV3WorkspaceContent({
                           onDraftChange={(draft) =>
                             setDecisionDrafts((previous) => ({ ...previous, [draftKey]: draft }))
                           }
-                          onSubmit={async (chosen, rationale) => {
-                            const saved = await command('decide', {
+                          onSubmit={(chosen, rationale) =>
+                            command('decide', {
                               decisionId: decision.id,
                               chosen,
                               ...(rationale === undefined ? {} : { rationale }),
-                            });
-                            if (saved)
-                              setDecisionDrafts((previous) => {
-                                const current = previous[draftKey];
-                                if (
-                                  !current ||
-                                  current.chosen !== chosen ||
-                                  current.rationale !== (rationale ?? '')
-                                )
-                                  return previous;
-                                const next = { ...previous };
-                                delete next[draftKey];
-                                return next;
-                              });
-                            return saved;
-                          }}
+                            })
+                          }
                         />
                       );
                     })}

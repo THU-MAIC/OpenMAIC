@@ -7,7 +7,10 @@ import {
   validateProjectPackage,
 } from '@/lib/server/pbl-v3/project-package';
 import { startOrchestration, submitDecision } from '@/lib/pbl/v3/domain/orchestration/transition';
-import { isDecisionResponseValid } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import {
+  decisionResponseLabel,
+  isDecisionResponseValid,
+} from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { projectArtifacts } from '@/lib/pbl/v3/domain/orchestration/artifacts';
 import { renderTeachingPrompt } from '@/lib/server/pbl-v3/teaching-prompt';
 
@@ -34,6 +37,17 @@ function fixture() {
 }
 
 describe('authored decision responses', () => {
+  it('renders literal text without option substitution while preserving legacy choice labels', () => {
+    const definition = { options: [{ id: 'format', label: 'Formatted string' }] };
+    expect(decisionResponseLabel({ ...definition, responseType: 'text' }, 'format')).toBe('format');
+    expect(decisionResponseLabel(definition, 'format')).toBe('Formatted string');
+    expect(decisionResponseLabel({ ...definition, responseType: 'choice' }, 'format')).toBe(
+      'Formatted string',
+    );
+    expect(decisionResponseLabel(definition, 'Retired option')).toBe('Retired option');
+    expect(decisionResponseLabel(undefined, 'Original response')).toBe('Original response');
+  });
+
   it('retains legacy choice validation and accepts required rationale without changing choice identity', () => {
     const decision = { options: [{ id: 'first' }] };
     expect(isDecisionResponseValid(decision, { chosen: 'first' })).toBe(true);

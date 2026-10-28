@@ -33,7 +33,10 @@ import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
-import { isDecisionResponseValid } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import {
+  decisionResponseLabel,
+  isDecisionResponseValid,
+} from '@/lib/pbl/v3/domain/orchestration/decisions';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
 import { assertLearningPlan } from './plan';
@@ -1201,9 +1204,7 @@ export async function learningView(
             return {
               id: selected.id,
               prompt: definition?.desc ?? selected.id,
-              choice:
-                definition?.options.find((option) => option.id === selected.chosen)?.label ??
-                selected.chosen,
+              choice: decisionResponseLabel(definition, selected.chosen),
               ...(selected.rationale === undefined ? {} : { rationale: selected.rationale }),
             };
           })

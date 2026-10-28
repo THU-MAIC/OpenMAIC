@@ -135,7 +135,9 @@ function buildTeachingPrompt({
     reads: repairing
       ? ['contract', 'decisions.chosen', 'code']
       : 'reads' in stage
-        ? stage.reads
+        ? stage.kind === 'dialogue'
+          ? [...stage.reads, 'decisions.chosen']
+          : stage.reads
         : [],
     milestone,
     state: { decisions: collected.decisions, plan: planText, code: collected.code?.value },
@@ -309,6 +311,14 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
     productContext: { current: teachingProductContext(input).current },
     stageKey: input.stageKey,
     completionRecorded: input.completionRecorded ?? false,
+    ...(input.stage.kind === 'dialogue'
+      ? projectArtifacts({
+          reads: ['decisions.chosen'],
+          milestone: input.milestone,
+          state: { decisions: input.collected.decisions },
+          decisionCatalog: input.definition.decisions,
+        })
+      : {}),
     ...(guided
       ? {
           welcome: input.welcome,

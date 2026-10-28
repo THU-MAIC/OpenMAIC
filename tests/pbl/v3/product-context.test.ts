@@ -47,6 +47,38 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it('provides saved dialogue responses initially and refreshes them at each model call', () => {
+    const input = fixture(1);
+    expect(input.stage).toMatchObject({ kind: 'dialogue', reads: ['contract', 'decisions'] });
+    expect(JSON.parse(teachingLiveContext(input)).decisionsChosen).toEqual([]);
+    input.collected.decisions = [
+      { id: 'format', chosen: 'My rule', rationale: 'My reason', revision: 0 },
+    ];
+    expect(renderTeachingPrompt(input).systemPrompt).toContain(
+      '"decisionsChosen":[{"id":"format","chosen":"My rule","rationale":"My reason"}]',
+    );
+    input.collected.decisions = [
+      { id: 'format', chosen: 'Revised rule', rationale: 'Revised reason', revision: 1 },
+    ];
+    expect(JSON.parse(teachingLiveContext(input)).decisionsChosen).toEqual([
+      { id: 'format', chosen: 'Revised rule', rationale: 'Revised reason' },
+    ]);
+    input.collected.decisions = [{ id: 'format', chosen: 'Legacy choice', revision: 2 }];
+    expect(JSON.parse(teachingLiveContext(input)).decisionsChosen).toEqual([
+      { id: 'format', chosen: 'Legacy choice' },
+    ]);
+  });
+
+  it('does not widen other roles artifact access through live context', () => {
+    for (const index of [0, 2, 3, 4, 5, 6]) {
+      const input = fixture(index);
+      input.collected.decisions = [{ id: 'format', chosen: 'Private proposal', revision: 0 }];
+      expect(JSON.parse(teachingLiveContext(input))).not.toHaveProperty('decisionsChosen');
+      if (!('reads' in input.stage) || !input.stage.reads.includes('decisions.chosen'))
+        expect(renderTeachingPrompt(input).systemPrompt).not.toContain('Private proposal');
+    }
+  });
+
   it.each([0, 1, 2, 3, 4, 5, 6])('uses existing UI and transition gates in step %s', (index) => {
     const input = fixture(index);
     const context = teachingProductContext(input);
