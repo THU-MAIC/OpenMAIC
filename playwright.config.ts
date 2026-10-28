@@ -8,7 +8,18 @@ export default defineConfig({
   // CI builds the production bundle in a dedicated workflow step, so this
   // process only drives Chromium. Two workers fit a 4-core runner.
   workers: process.env.CI ? 2 : undefined,
-  reporter: process.env.CI ? 'html' : 'list',
+  // CI names every test as it finishes (`list`): with `html` alone the run
+  // printed one unflushed line of dots, so a stall said nothing about which
+  // test it was.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // Every test, its hooks and fixtures included, gets 30 s (Playwright's
+  // default, stated so a spec that raises it does so explicitly).
+  timeout: 30_000,
+  // The whole run stops inside the job's 15-minute budget (a passing run takes
+  // about 6 minutes after a 4-minute setup): Playwright then reports the tests
+  // still running by name, and the report is uploaded, instead of the job
+  // being cancelled with neither.
+  globalTimeout: process.env.CI ? 9 * 60_000 : undefined,
   use: {
     baseURL: 'http://localhost:3002',
     trace: 'on-first-retry',

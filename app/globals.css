@@ -167,6 +167,15 @@
   cursor: text;
 }
 
+/* ProseMirror inserts this zero-size caret helper after inline atoms.
+   Tailwind preflight sets `img { display: block }`, which would open a new
+   line. Playback's text element does not use `.prosemirror-editor`. */
+.prosemirror-editor img.ProseMirror-separator {
+  display: inline !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
 /* The slide editor draws a text element's frame via the renderer's Operate
    layer. The focused contenteditable must not also paint a UA focus ring on
    top of it (the base `* { @apply outline-ring/50 }` rule gives every focused
@@ -575,4 +584,12 @@ body[data-maic-editor='true'] .editable-element-text li,
     color: var(--muted-foreground);
     -webkit-text-fill-color: var(--muted-foreground);
   }
+}
+
+/* Opt in at fixed edges; do not pad the body or double-count in nested panels. */
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
 }

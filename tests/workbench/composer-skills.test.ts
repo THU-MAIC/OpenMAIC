@@ -147,14 +147,21 @@ describe('writing a handle into the draft', () => {
  * handle that resolves to nothing. One Backspace at its end takes all of it.
  */
 describe('deleting a handle', () => {
+  // These names resolve, so a completed handle is still one Backspace.
+  // `k12-core` is included so a caret in the middle of it stays ordinary editing.
+  const installed = ['k12', 'stage-design', 'k12-core'];
+
   it('takes the handle and the space the insertion added', () => {
     const draft = '/k12 ';
-    expect(deleteSkillHandleBefore(draft, draft.length)).toEqual({ draft: '', caret: 0 });
+    expect(deleteSkillHandleBefore(draft, draft.length, installed)).toEqual({
+      draft: '',
+      caret: 0,
+    });
   });
 
   it('takes it from the end of a sentence, leaving the sentence', () => {
     const draft = '写一节课 /k12 ';
-    expect(deleteSkillHandleBefore(draft, draft.length)).toEqual({
+    expect(deleteSkillHandleBefore(draft, draft.length, installed)).toEqual({
       draft: '写一节课 ',
       caret: '写一节课 '.length,
     });
@@ -162,15 +169,15 @@ describe('deleting a handle', () => {
 
   it('takes only the one the caret is on', () => {
     const draft = '/stage-design /k12 ';
-    const after = deleteSkillHandleBefore(draft, draft.length);
+    const after = deleteSkillHandleBefore(draft, draft.length, installed);
     expect(after?.draft).toBe('/stage-design ');
     // …and again for the next one.
-    expect(deleteSkillHandleBefore(after!.draft, after!.draft.length)?.draft).toBe('');
+    expect(deleteSkillHandleBefore(after!.draft, after!.draft.length, installed)?.draft).toBe('');
   });
 
   it('keeps what follows the caret', () => {
     const draft = '/k12 写一节课';
-    expect(deleteSkillHandleBefore(draft, '/k12 '.length)).toEqual({
+    expect(deleteSkillHandleBefore(draft, '/k12 '.length, installed)).toEqual({
       draft: '写一节课',
       caret: 0,
     });
@@ -178,22 +185,69 @@ describe('deleting a handle', () => {
 
   it('does nothing anywhere else, leaving the browser its own behaviour', () => {
     // Mid-handle: ordinary editing.
-    expect(deleteSkillHandleBefore('/k12-core ', '/k12-c'.length)).toBeNull();
+    expect(deleteSkillHandleBefore('/k12-core ', '/k12-c'.length, installed)).toBeNull();
     // Prose.
-    expect(deleteSkillHandleBefore('写一节课', 4)).toBeNull();
+    expect(deleteSkillHandleBefore('写一节课', 4, installed)).toBeNull();
     // A handle that is part of a word, not a token.
-    expect(deleteSkillHandleBefore('a/k12', 5)).toBeNull();
+    expect(deleteSkillHandleBefore('a/k12', 5, installed)).toBeNull();
     // Start of the draft.
-    expect(deleteSkillHandleBefore('/k12 ', 0)).toBeNull();
+    expect(deleteSkillHandleBefore('/k12 ', 0, installed)).toBeNull();
     // Past the end.
-    expect(deleteSkillHandleBefore('/k12', 99)).toBeNull();
+    expect(deleteSkillHandleBefore('/k12', 99, installed)).toBeNull();
   });
 
   it('is the exact inverse of inserting one', () => {
     const inserted = insertSkillHandle('写一节课', 'k12', '写一节课'.length);
-    const deleted = deleteSkillHandleBefore(inserted.draft, inserted.caret);
+    const deleted = deleteSkillHandleBefore(inserted.draft, inserted.caret, installed);
     // The separator the insertion added stays, as the user's own text did.
     expect(deleted?.draft).toBe('写一节课 ');
+  });
+});
+
+/**
+ * Only a handle that resolves to an installed skill is one unit.
+ *
+ * The mirror paints a pill behind an installed name and leaves everything else
+ * as text (`segmentSkillHandles`). Backspace follows that same condition:
+ * `/deep-res` while `deep-research` is installed is still being typed, so the
+ * browser deletes one character. A completed `/deep-research` still goes in one
+ * press, space and all.
+ */
+describe('deleting a handle that may not resolve', () => {
+  const installed = ['deep-research'];
+
+  /** What the textarea does when this rule declines: one character. */
+  function backspace(draft: string, caret: number) {
+    return (
+      deleteSkillHandleBefore(draft, caret, installed) ?? {
+        draft: draft.slice(0, caret - 1) + draft.slice(caret),
+        caret: caret - 1,
+      }
+    );
+  }
+
+  it('deletes one character of a handle that is still being typed', () => {
+    const draft = '/deep-res';
+    expect(backspace(draft, draft.length)).toEqual({
+      draft: '/deep-re',
+      caret: '/deep-re'.length,
+    });
+  });
+
+  it('deletes one character of a token that names no installed skill', () => {
+    const draft = '/not-a-skill ';
+    expect(backspace(draft, draft.length)).toEqual({
+      draft: '/not-a-skill',
+      caret: '/not-a-skill'.length,
+    });
+  });
+
+  it('still takes a completed handle that resolves, and the space after it', () => {
+    const draft = '/deep-research ';
+    expect(deleteSkillHandleBefore(draft, draft.length, installed)).toEqual({
+      draft: '',
+      caret: 0,
+    });
   });
 });
 

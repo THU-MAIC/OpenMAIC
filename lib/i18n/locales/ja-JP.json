@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "戻る",
     "you": "あなた",
     "confirm": "確認",
     "cancel": "キャンセル",
@@ -10,6 +11,22 @@
     "close": "閉じる"
   },
   "home": {
+    "resumeGeneration": "生成を続ける",
+    "emptyLibraryTitle": "ここから学びが始まります",
+    "emptyLibraryBody": "ホームで授業を作成すると、ここから学習を再開できます。",
+    "mobileTitle": "今日は何を学びますか？",
+    "mobileSubtitle": "学びたいことを伝えると、AI が対話型授業を作ります。",
+    "mobilePlaceholder": "学習テーマを入力、または資料をアップロード",
+    "courseOptions": "授業オプション",
+    "courseMaterials": "授業資料",
+    "courseMaterialsCount": "授業資料 · {{n}} 件",
+    "backToCourseOptions": "授業オプションに戻る",
+    "materialsDone": "完了",
+    "allSettings": "すべての設定",
+    "examplesLabel": "テーマの例",
+    "examplePython": "Python を基礎から学ぶ",
+    "exampleFourier": "フーリエ変換を直感的に学ぶ",
+    "desktopOnly": "エディターと Pro モードはパソコンをご利用ください。",
     "slogan": "マルチエージェント対話型教室で生成的に学ぶ",
     "greetingWithName": "こんにちは、{{name}}さん"
   },

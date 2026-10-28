@@ -32,5 +32,9 @@ it('runs every tracked app PostgreSQL suite in the database-backed CI step', () 
     .filter(Boolean)
     .sort();
   expect(suites.length).toBeGreaterThan(0);
-  expect(command.slice(4).sort()).toEqual(suites);
+  // Only the timeout options may accompany the suite paths; any other option
+  // (such as --exclude) stays in the list and fails the comparison.
+  const timeoutOption = /^--(testTimeout|hookTimeout)=\d+$/;
+  const listed = command.slice(4).filter((arg) => !timeoutOption.test(arg));
+  expect(listed.sort()).toEqual(suites);
 });

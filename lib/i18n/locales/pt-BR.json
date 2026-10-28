@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Voltar",
     "you": "Você",
     "confirm": "Confirmar",
     "cancel": "Cancelar",
@@ -10,6 +11,22 @@
     "close": "Fechar"
   },
   "home": {
+    "resumeGeneration": "Continuar geração",
+    "emptyLibraryTitle": "Suas aulas começam aqui",
+    "emptyLibraryBody": "Crie um curso na página inicial e volte aqui para continuar.",
+    "mobileTitle": "O que quer aprender?",
+    "mobileSubtitle": "Conte o tema e a IA criará uma aula interativa.",
+    "mobilePlaceholder": "Digite um tema ou envie materiais",
+    "courseOptions": "Opções da aula",
+    "courseMaterials": "Materiais do curso",
+    "courseMaterialsCount": "Materiais do curso · {{n}}",
+    "backToCourseOptions": "Voltar às opções da aula",
+    "materialsDone": "Concluir",
+    "allSettings": "Todas as configurações",
+    "examplesLabel": "Experimente um tema",
+    "examplePython": "Aprender Python do zero",
+    "exampleFourier": "Transformada de Fourier com exemplos intuitivos",
+    "desktopOnly": "Use um computador para o editor e o modo Pro.",
     "slogan": "Aprendizagem Generativa em Sala de Aula Interativa Multi-Agente",
     "greetingWithName": "Olá, {{name}}"
   },
