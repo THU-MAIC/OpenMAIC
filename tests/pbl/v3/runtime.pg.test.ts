@@ -968,6 +968,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(retained.learnerText!.answer).toContain(`ANSWER-${i}`);
       expect(retained.learnerText!.rationale).toContain(`REASON-${i}`);
       expect(retained.detail).toContain(`REASON-${i}`);
+      expect(retained.decisionContext?.question).toBeTruthy();
+      expect(retained.decisionContext?.answerLabel).toContain(`ANSWER-${i}`);
       expect(retained.truncated).toBe(true);
       for (const text of [
         retained.detail,
@@ -982,7 +984,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           n +
           e.detail.length +
           (e.learnerText?.answer.length ?? 0) +
-          (e.learnerText?.rationale?.length ?? 0),
+          (e.learnerText?.rationale?.length ?? 0) +
+          (e.decisionContext?.question.length ?? 0) +
+          (e.decisionContext?.answerLabel.length ?? 0),
         0,
       ),
     ).toBeLessThanOrEqual(80_000);
@@ -4056,7 +4060,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           n +
           e.detail.length +
           (e.learnerText?.answer.length ?? 0) +
-          (e.learnerText?.rationale?.length ?? 0),
+          (e.learnerText?.rationale?.length ?? 0) +
+          (e.decisionContext?.question.length ?? 0) +
+          (e.decisionContext?.answerLabel.length ?? 0),
         0,
       ) + report.conversations.flatMap((c) => c.messages).reduce((n, m) => n + m.text.length, 0);
     expect(textSize).toBeLessThanOrEqual(240000);

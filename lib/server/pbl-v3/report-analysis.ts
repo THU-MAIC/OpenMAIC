@@ -32,12 +32,17 @@ export function reportSources(report: LearningReport) {
       version: e.version,
       text: e.detail,
       learnerText: e.kind === 'decision.recorded' ? e.learnerText : undefined,
+      decisionContext: e.kind === 'decision.recorded' ? e.decisionContext : undefined,
     })),
-    ...reportConversationMessages(report).map((m) => ({ ...m, learnerText: undefined })),
+    ...reportConversationMessages(report).map((m) => ({
+      ...m,
+      learnerText: undefined,
+      decisionContext: undefined,
+    })),
   ].sort((a, b) => a.at - b.at);
 }
 /** Bounds analysis, not storage. Sample every part of the journey instead of silently taking only the tail. */
-export function reportAnalysisInput(report: LearningReport) {
+function reportAnalysisProjection(report: LearningReport) {
   const sources = reportSources(report);
   const budget = 60_000;
   const sample = <T>(items: T[], count: number): T[] =>
@@ -56,25 +61,41 @@ export function reportAnalysisInput(report: LearningReport) {
     retained.add(source);
   const selected = sources.filter((s) => retained.has(s));
   const allowance = Math.min(4000, Math.floor(budget / Math.max(1, selected.length)));
-  const records = selected.map(({ learnerText, ...s }) => {
+  const learnerSources = new Map<string, string[]>();
+  const records = selected.map(({ learnerText, decisionContext, ...s }) => {
     const fieldBudget = Math.max(
       0,
-      Math.floor((allowance - 32) / (learnerText?.rationale ? 3 : 2)),
+      Math.floor(
+        (allowance - (decisionContext ? 40 : 32)) /
+          ((learnerText?.rationale ? 3 : 2) + (decisionContext ? 1 : 0)),
+      ),
     );
+    const answer = learnerText ? reportTextExcerpt(learnerText.answer, fieldBudget) : undefined;
+    const rationale = learnerText?.rationale
+      ? reportTextExcerpt(learnerText.rationale, fieldBudget)
+      : undefined;
+    const context = decisionContext
+      ? `Question: ${reportTextExcerpt(decisionContext.question, fieldBudget)}\nChoice: ${reportTextExcerpt(decisionContext.answerLabel, fieldBudget)}`
+      : `Context: ${reportTextExcerpt(s.text, fieldBudget)}`;
     const text = learnerText
-      ? `Context: ${reportTextExcerpt(s.text, fieldBudget)}\nAnswer: ${reportTextExcerpt(learnerText.answer, fieldBudget)}${learnerText.rationale ? `\nRationale: ${reportTextExcerpt(learnerText.rationale, fieldBudget)}` : ''}`
+      ? `${context}\nAnswer: ${answer}${rationale ? `\nRationale: ${rationale}` : ''}`
       : reportTextExcerpt(s.text, allowance);
+    if (learnerText) learnerSources.set(s.id, [answer!, rationale ?? '']);
+    else if ('role' in s && s.role === 'learner') learnerSources.set(s.id, [text]);
     return {
       ...s,
       text,
       truncated: learnerText
-        ? s.text.length > fieldBudget ||
+        ? (decisionContext
+            ? decisionContext.question.length > fieldBudget ||
+              decisionContext.answerLabel.length > fieldBudget
+            : s.text.length > fieldBudget) ||
           learnerText.answer.length > fieldBudget ||
           (learnerText.rationale?.length ?? 0) > fieldBudget
         : text.length < s.text.length,
     };
   });
-  return {
+  const input = {
     project: report.project,
     milestones: report.milestones,
     outcomes: report.outcomes,
@@ -83,6 +104,10 @@ export function reportAnalysisInput(report: LearningReport) {
     omitted:
       report.truncated || sources.length !== records.length || records.some((s) => s.truncated),
   };
+  return { input, learnerSources };
+}
+export function reportAnalysisInput(report: LearningReport) {
+  return reportAnalysisProjection(report).input;
 }
 export function validateReportFindings(text: string, report: LearningReport): ReportFinding[] {
   const clean = text
@@ -90,21 +115,8 @@ export function validateReportFindings(text: string, report: LearningReport): Re
     .replace(/^```(?:json)?\s*/, '')
     .replace(/\s*```$/, '');
   const parsed = narrative.parse(JSON.parse(jsonrepair(clean)));
-  const sources = new Map(reportAnalysisInput(report).records.map((s) => [s.id, s.text]));
-  const learnerSources = new Map<string, string[]>([
-    ...report.evidence
-      .filter((e) => e.kind === 'decision.recorded' && e.learnerText)
-      .map(
-        (e) =>
-          [`event:${e.sequence}`, [e.learnerText!.answer, e.learnerText!.rationale ?? '']] as [
-            string,
-            string[],
-          ],
-      ),
-    ...reportConversationMessages(report)
-      .filter((m) => m.role === 'learner')
-      .map((m) => [m.id, [m.text]] as [string, string[]]),
-  ]);
+  const { input, learnerSources } = reportAnalysisProjection(report);
+  const sources = new Set(input.records.map((s) => s.id));
   const validated = parsed.findings.filter(
     (f) =>
       f.evidence.every((id) => sources.has(id)) &&
@@ -113,7 +125,6 @@ export function validateReportFindings(text: string, report: LearningReport): Re
           f.evidence.some(
             (id) =>
               learnerSources.has(id) &&
-              sources.get(id)!.replace(/\s/g, '').includes(f.quote!.replace(/\s/g, '')) &&
               learnerSources
                 .get(id)!
                 .some((text) => text.replace(/\s/g, '').includes(f.quote!.replace(/\s/g, ''))),

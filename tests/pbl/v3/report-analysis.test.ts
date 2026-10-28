@@ -98,6 +98,88 @@ describe('grounded report analysis', () => {
     expect(text).toContain('Read new items first.');
   });
 
+  it('reserves option meaning independently of a long question in a crowded report', () => {
+    const crowded: LearningReport = {
+      ...report,
+      conversations: [],
+      evidence: [
+        {
+          sequence: 9,
+          at: 9,
+          kind: 'decision.recorded',
+          detail: 'Long question '.repeat(40) + ': At the beginning',
+          decisionContext: {
+            question: 'Long question '.repeat(40),
+            answerLabel: 'At the beginning',
+          },
+          learnerText: { answer: 'c1', rationale: 'Read new items first.' },
+        },
+        ...Array.from({ length: 199 }, (_, i) => ({
+          sequence: i + 10,
+          at: i + 10,
+          kind: 'artifact',
+          detail: 'Agent action',
+        })),
+      ],
+    };
+    const input = reportAnalysisInput(crowded);
+    const decision = input.records.find((r) => r.id === 'event:9')!;
+    expect(decision.text).toContain('At the beginning');
+    expect(decision.text).toContain('c1');
+    expect(decision.text).toContain('Read new items first.');
+    expect(decision.text.length).toBeLessThanOrEqual(300);
+    expect(input.records.reduce((n, r) => n + r.text.length, 0)).toBeLessThanOrEqual(60_000);
+    expect(JSON.stringify(input)).not.toContain('decisionContext');
+    expect(JSON.stringify(input)).not.toContain('learnerText');
+  });
+
+  it.each(['answer', 'rationale'] as const)(
+    'rejects a quote visible only in course context after the learner %s was clipped',
+    (field) => {
+      const phrase = 'consider invalid positions';
+      const clipped: LearningReport = {
+        ...report,
+        conversations: [],
+        evidence: [
+          {
+            sequence: 9,
+            at: 9,
+            kind: 'decision.recorded',
+            detail: `Should we ${phrase}?`,
+            learnerText: {
+              answer: 'visible answer',
+              rationale: 'visible reason',
+              [field]: 'x'.repeat(5000) + phrase,
+            },
+          },
+        ],
+      };
+      expect(reportAnalysisInput(clipped).records[0]!.text).toContain(phrase);
+      expect(() =>
+        validateReportFindings(
+          JSON.stringify({
+            findings: [{ ...finding, evidence: ['event:9'], quote: phrase }],
+          }),
+          clipped,
+        ),
+      ).toThrow('No supported');
+      expect(
+        validateReportFindings(
+          JSON.stringify({
+            findings: [
+              {
+                ...finding,
+                evidence: ['event:9'],
+                quote: field === 'answer' ? 'visible reason' : 'visible answer',
+              },
+            ],
+          }),
+          clipped,
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
   it.each(['journey', 'next'] as const)(
     'requires learner-only quotes in %s while allowing unquoted contextual facts',
     (category) => {

@@ -146,11 +146,15 @@ option labels and Agent prose cannot masquerade as learner-authored evidence.
 Raw tool output remains excluded from report analysis.
 Each retained decision revision receives an equal excerpt allowance before any
 revision spends the evidence budget; that budget includes literal quote-provenance
-fields as well as display text. The report model retains question/option context
-alongside literal answer/reason excerpts. All quote fields require learner-only
+fields and separately retained authored context as well as display text. Question
+and selected-option excerpts have independent space in the model input, so a long
+question cannot consume the selected option's allowance. Older saved reports fall
+back to their existing combined context. All quote fields require learner-only
 text visible in the actual model input, including journey/next findings; unquoted
 journey/next facts may still cite Agent actions/results. Omitted source IDs and
-clipped-away quotes cannot substantiate findings. Excerpts preserve surrogate pairs.
+clipped-away quotes cannot substantiate findings. Validation uses only the bounded
+learner segments, even if a clipped-away phrase is also visible in course context.
+Excerpts preserve surrogate pairs.
 
 ## Runtime profiles and private resources
 

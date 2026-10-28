@@ -72,11 +72,11 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         Number(a.event?.type === 'decision.recorded'),
     );
   const decisionCount = prioritized.filter((row) => row.event?.type === 'decision.recorded').length;
-  // Reserve equal space across retained revisions. Five fields account for the
-  // displayed question/label/reason plus literal answer/reason quote provenance.
+  // Reserve equal space across revisions, including display text, literal learner
+  // fields and separately retained question/label context for model projection.
   const decisionAllowance = Math.min(
     DECISION_FIELD_LIMIT,
-    Math.max(0, Math.floor((TEXT_LIMIT / 3 / Math.max(1, decisionCount) - 40) / 5)),
+    Math.max(0, Math.floor((TEXT_LIMIT / 3 / Math.max(1, decisionCount) - 40) / 7)),
   );
   for (const { sequence, at, event, clipped } of prioritized) {
     if (!event) {
@@ -85,6 +85,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     }
     let detail: string | undefined, version: string | undefined;
     let learnerText: LearningReport['evidence'][number]['learnerText'];
+    let decisionContext: LearningReport['evidence'][number]['decisionContext'];
     let recordClipped = clipped;
     let milestoneId = 'milestoneId' in event ? event.milestoneId : undefined;
     switch (event.type) {
@@ -99,7 +100,11 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
             : reportTextExcerpt(event.rationale, allowance);
         learnerText = { answer, ...(rationale ? { rationale } : {}) };
         const label = decisionResponseLabel(d, event.chosen ?? '');
-        detail = `${reportTextExcerpt(d?.decisionPrompt ?? event.decisionId, allowance)}: ${reportTextExcerpt(label, allowance)}`;
+        decisionContext = {
+          question: reportTextExcerpt(d?.decisionPrompt ?? event.decisionId, allowance),
+          answerLabel: reportTextExcerpt(label, allowance),
+        };
+        detail = `${decisionContext.question}: ${decisionContext.answerLabel}`;
         if (rationale) detail += `\nRationale: ${rationale}`;
         recordClipped ||=
           answer.length < (event.chosen?.length ?? 0) ||
@@ -139,6 +144,8 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     }
     if (detail !== undefined) {
       remaining -= (learnerText?.answer.length ?? 0) + (learnerText?.rationale?.length ?? 0);
+      remaining -=
+        (decisionContext?.question.length ?? 0) + (decisionContext?.answerLabel.length ?? 0);
       const text = boundedText(detail);
       if (!text && detail) continue;
       evidence.push({
@@ -148,6 +155,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         kind: event.type,
         detail: text,
         ...(learnerText ? { learnerText } : {}),
+        ...(decisionContext ? { decisionContext } : {}),
         ...(recordClipped ||
         text.length < detail.length ||
         (detail.length >= 12000 &&

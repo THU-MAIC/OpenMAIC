@@ -20,6 +20,8 @@ export interface LearningReport {
     detail: string;
     /** Retained literal learner input only; excludes course prompts and option labels. */
     learnerText?: { answer: string; rationale?: string };
+    /** Separately bounded authored context; never learner quote evidence. */
+    decisionContext?: { question: string; answerLabel: string };
     version?: string;
     truncated?: boolean;
   }[];
