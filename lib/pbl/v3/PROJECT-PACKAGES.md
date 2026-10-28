@@ -102,6 +102,13 @@ choice forms then use an explicit Submit decision button. The server validates
 nonempty responses, required rationales and option membership. Saving a response
 records a learner proposal; it does not certify its engineering correctness.
 Teaching materials remain responsible for reviewing reasoning and explaining gaps.
+Each submitted response and rationale is limited to 64,000 UTF-16 code units,
+matching chat input. The command boundary rejects oversized fields before any
+study activity, command receipt or decision event is written; direct domain
+transitions enforce the same limit. Forms use the shared rule and HTML `maxlength`,
+and retain oversized restored drafts for editing instead of silently truncating
+them. Existing stored responses remain readable without rewriting history. The
+HTTP route's separate total request-byte limit still applies.
 
 Responses and rationales remain together in study state, versioned decision events,
 role artifact projections, production summaries and report evidence. Unsubmitted

@@ -1,6 +1,7 @@
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { mkdtemp, readFile, writeFile, mkdir, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -780,6 +781,31 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         });
       await send('prepare');
       const original = await store.get(row.id, principal.ownerId);
+      const counts = async () =>
+        (
+          await pool.query(
+            `SELECT
+          (SELECT count(*)::int FROM pbl_v3_commands WHERE study_id=$1) AS commands,
+          (SELECT count(*)::int FROM pbl_v3_events WHERE study_id=$1) AS events`,
+            [row.id],
+          )
+        ).rows[0];
+      const beforeCounts = await counts();
+      for (const response of [
+        { chosen: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1), rationale: 'Reason' },
+        { chosen: 'Rule', rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1) },
+      ]) {
+        // Both payloads fit the route's 256 KB cap: enforce the field limits independently.
+        expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(256_000);
+        await expect(
+          send('decide', { decisionId: decision.id, ...response }),
+        ).rejects.toMatchObject({ status: 400 });
+        const unchanged = await store.get(row.id, principal.ownerId);
+        expect(unchanged.state).toEqual(original.state);
+        expect(unchanged.revision).toBe(original.revision);
+        expect(unchanged.last_used_at).toEqual(original.last_used_at);
+        expect(await counts()).toEqual(beforeCounts);
+      }
       await expect(
         send('decide', { decisionId: decision.id, chosen: 'My rule', rationale: '  ' }),
       ).rejects.toMatchObject({ status: 400 });

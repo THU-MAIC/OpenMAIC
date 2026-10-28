@@ -1,7 +1,12 @@
 'use client';
 
 import type { LearningView } from '@/lib/pbl/v3/types';
-import type { DecisionRecord } from '@/lib/pbl/v3/domain/orchestration/decisions';
+import {
+  DECISION_RESPONSE_MAX_LENGTH,
+  isDecisionResponseValid,
+  isDecisionResponseWithinLimits,
+  type DecisionRecord,
+} from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 export interface DecisionDraft {
@@ -30,11 +35,7 @@ export function DecisionResponseForm({
   const textResponse = decision.responseType === 'text';
   const hasForm = textResponse || decision.requiresRationale;
   const value = draft ?? { chosen: selected?.chosen ?? '', rationale: selected?.rationale ?? '' };
-  const valid =
-    (textResponse
-      ? value.chosen.trim().length > 0
-      : decision.options.some((o) => o.id === value.chosen)) &&
-    (!decision.requiresRationale || value.rationale.trim().length > 0);
+  const valid = isDecisionResponseValid(decision, value);
   const unchanged =
     selected?.chosen === value.chosen && (selected.rationale ?? '') === value.rationale;
   return (
@@ -46,6 +47,7 @@ export function DecisionResponseForm({
           <textarea
             className="min-h-28 w-full rounded-md border bg-background p-3 text-sm"
             rows={4}
+            maxLength={DECISION_RESPONSE_MAX_LENGTH}
             required
             value={value.chosen}
             onChange={(event) => onDraftChange({ ...value, chosen: event.target.value })}
@@ -79,6 +81,7 @@ export function DecisionResponseForm({
           <textarea
             className="min-h-20 w-full rounded-md border bg-background p-3 text-sm"
             rows={3}
+            maxLength={DECISION_RESPONSE_MAX_LENGTH}
             required
             value={value.rationale}
             onChange={(event) => onDraftChange({ ...value, rationale: event.target.value })}
@@ -102,6 +105,11 @@ export function DecisionResponseForm({
             </span>
           )}
         </div>
+      )}
+      {!isDecisionResponseWithinLimits(value) && (
+        <p role="alert" className="text-xs text-destructive">
+          {t('pblV3.decisionTooLong', { max: DECISION_RESPONSE_MAX_LENGTH })}
+        </p>
       )}
     </fieldset>
   );

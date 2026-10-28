@@ -9,6 +9,18 @@ export interface DecisionProgress<TChosen = string> {
   decisions: readonly DecisionRecord<TChosen>[];
 }
 
+/** Match chat input and HTML maxlength: UTF-16 code units, not serialized bytes. */
+export const DECISION_RESPONSE_MAX_LENGTH = 64_000;
+
+export function isDecisionResponseWithinLimits(response: {
+  chosen?: unknown;
+  rationale?: unknown;
+}): boolean {
+  return [response.chosen, response.rationale].every(
+    (value) => typeof value !== 'string' || value.length <= DECISION_RESPONSE_MAX_LENGTH,
+  );
+}
+
 /** Text responses remain literal even when their text matches an authored option ID. */
 export function decisionResponseLabel(
   definition:
@@ -65,6 +77,7 @@ export function isDecisionResponseValid(
   },
   response: { chosen?: unknown; rationale?: unknown },
 ): boolean {
+  if (!isDecisionResponseWithinLimits(response)) return false;
   if (typeof response.chosen !== 'string') return false;
   if (response.rationale !== undefined && typeof response.rationale !== 'string') return false;
   if (

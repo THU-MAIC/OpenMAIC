@@ -2908,6 +2908,7 @@
     "decisionRationale": "為什麼這樣決定？",
     "submitDecision": "提交決策",
     "decisionSaved": "回答已儲存",
-    "decisionUnsaved": "修改尚未提交"
+    "decisionUnsaved": "修改尚未提交",
+    "decisionTooLong": "回答和理由各最多 {max} 個字元，請縮短後再提交。"
   }
 }

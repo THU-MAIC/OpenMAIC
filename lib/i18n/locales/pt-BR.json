@@ -2908,6 +2908,7 @@
     "decisionRationale": "Why did you choose this?",
     "submitDecision": "Submit decision",
     "decisionSaved": "Response saved",
-    "decisionUnsaved": "Unsaved changes"
+    "decisionUnsaved": "Unsaved changes",
+    "decisionTooLong": "Responses and reasons can contain up to {max} characters each. Shorten the text to submit."
   }
 }

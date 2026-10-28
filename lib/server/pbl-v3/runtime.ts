@@ -34,8 +34,10 @@ import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestratio
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
 import {
+  DECISION_RESPONSE_MAX_LENGTH,
   decisionResponseLabel,
   isDecisionResponseValid,
+  isDecisionResponseWithinLimits,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import type { EngineTransition } from '@/lib/pbl/v3/domain/orchestration/events';
 import { assertProjectSource, projectFiles } from './workspace-files';
@@ -368,6 +370,10 @@ function validateCommand(command: LearningCommand) {
     (typeof command.text !== 'string' || command.text.length > 64_000)
   )
     throw sandboxInvalid('Text is limited to 64000 characters.');
+  if (command.type === 'decide' && !isDecisionResponseWithinLimits(command))
+    throw sandboxInvalid(
+      `Decision responses and rationales are limited to ${DECISION_RESPONSE_MAX_LENGTH} characters each.`,
+    );
   if (
     command.evaluationId !== undefined &&
     (typeof command.evaluationId !== 'string' || !/^[a-f0-9-]{36}$/.test(command.evaluationId))

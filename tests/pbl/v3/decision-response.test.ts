@@ -8,6 +8,7 @@ import {
 } from '@/lib/server/pbl-v3/project-package';
 import { startOrchestration, submitDecision } from '@/lib/pbl/v3/domain/orchestration/transition';
 import {
+  DECISION_RESPONSE_MAX_LENGTH,
   decisionResponseLabel,
   isDecisionResponseValid,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
@@ -37,6 +38,55 @@ function fixture() {
 }
 
 describe('authored decision responses', () => {
+  it('accepts boundary-length text without changing it and rejects overflow before a transition', () => {
+    const { definition, state, decision, milestone } = fixture();
+    const original = structuredClone(state);
+    const chosen = '学'.repeat(DECISION_RESPONSE_MAX_LENGTH);
+    const rationale = '🧠'.repeat(DECISION_RESPONSE_MAX_LENGTH / 2);
+    const saved = submitDecision(definition, state, {
+      decisionId: decision.id,
+      chosen,
+      rationale,
+      recordId: 'boundary',
+    });
+    expect(saved.state.collected[milestone.id]!.decisions[0]).toMatchObject({ chosen, rationale });
+    for (const response of [
+      { chosen: chosen + 'x', rationale: 'Reason' },
+      { chosen: 'Rule', rationale: rationale + 'x' },
+      { chosen: ' '.repeat(DECISION_RESPONSE_MAX_LENGTH) + 'x', rationale: 'Reason' },
+    ]) {
+      expect(() =>
+        submitDecision(definition, state, {
+          decisionId: decision.id,
+          ...response,
+          recordId: 'oversized',
+        }),
+      ).toThrow();
+      expect(state).toEqual(original);
+    }
+  });
+
+  it.each([
+    { responseType: 'text' as const },
+    { responseType: 'text' as const, requiresRationale: true },
+    {},
+    { requiresRationale: true },
+  ])('bounds required and optional rationale for either response format: %j', (format) => {
+    const definition = { ...format, options: [{ id: 'first' }] };
+    expect(
+      isDecisionResponseValid(definition, {
+        chosen: 'first',
+        rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH),
+      }),
+    ).toBe(true);
+    expect(
+      isDecisionResponseValid(definition, {
+        chosen: 'first',
+        rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1),
+      }),
+    ).toBe(false);
+  });
+
   it('renders literal text without option substitution while preserving legacy choice labels', () => {
     const definition = { options: [{ id: 'format', label: 'Formatted string' }] };
     expect(decisionResponseLabel({ ...definition, responseType: 'text' }, 'format')).toBe('format');

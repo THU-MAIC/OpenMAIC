@@ -8,13 +8,20 @@ import {
   type DecisionDraft,
 } from '@/components/scene-renderers/pbl/v3/decision-response';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root | undefined;
 let container: HTMLDivElement;
 const submit = vi.fn(async () => true);
-function Form({ decision }: { decision: LearningView['decisions'][number] }) {
-  const [draft, setDraft] = useState<DecisionDraft>();
+function Form({
+  decision,
+  initialDraft,
+}: {
+  decision: LearningView['decisions'][number];
+  initialDraft?: DecisionDraft;
+}) {
+  const [draft, setDraft] = useState<DecisionDraft | undefined>(initialDraft);
   return createElement(DecisionResponseForm, {
     decision,
     draft,
@@ -23,11 +30,11 @@ function Form({ decision }: { decision: LearningView['decisions'][number] }) {
     onSubmit: submit,
   });
 }
-async function mount(decision: LearningView['decisions'][number]) {
+async function mount(decision: LearningView['decisions'][number], initialDraft?: DecisionDraft) {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root!.render(createElement(Form, { decision })));
+  await act(async () => root!.render(createElement(Form, { decision, initialDraft })));
 }
 async function type(index: number, value: string) {
   const textarea = container.querySelectorAll('textarea')[index]!;
@@ -94,3 +101,41 @@ it('submits learner-authored multiline text and rationale without a prefilled an
     'A reason',
   );
 });
+
+it.each(['chosen', 'rationale'] as const)(
+  'preserves an oversized restored %s for correction without submitting or truncating it',
+  async (field) => {
+    const draft = {
+      chosen: 'Rule',
+      rationale: 'Reason',
+      [field]: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1),
+    };
+    await mount(
+      {
+        id: 'rule',
+        prompt: 'Explain your rule',
+        responseType: 'text',
+        requiresRationale: true,
+        options: [],
+      },
+      draft,
+    );
+    const fields = () => [...container.querySelectorAll('textarea')];
+    const index = field === 'chosen' ? 0 : 1;
+    const button = () => container.querySelector('button')!;
+    expect(fields().every((node) => node.maxLength === DECISION_RESPONSE_MAX_LENGTH)).toBe(true);
+    expect(fields()[index]!.value).toBe(draft[field]);
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(button().disabled).toBe(true);
+    await act(async () => button().click());
+    expect(submit).not.toHaveBeenCalled();
+    await type(index, 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(button().disabled).toBe(false);
+    await act(async () => button().click());
+    expect(submit).toHaveBeenCalledWith(
+      field === 'chosen' ? 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH) : draft.chosen,
+      field === 'rationale' ? 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH) : draft.rationale,
+    );
+  },
+);
