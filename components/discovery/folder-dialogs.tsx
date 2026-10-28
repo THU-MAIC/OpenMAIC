@@ -27,11 +27,13 @@ export function NewFolderDialog({
   onOpenChange,
   folders,
   onCreate,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   folders: FolderRecord[];
   onCreate: (name: string) => Promise<void>;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const { t } = useI18n();
   const [name, setName] = useState('');
@@ -46,8 +48,6 @@ export function NewFolderDialog({
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
-
-  const width = displayNameWidth(name.trim());
 
   const submit = async () => {
     if (submitting) return;
@@ -99,7 +99,7 @@ export function NewFolderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[400px]">
+      <DialogContent className="sm:max-w-[400px]" onCloseAutoFocus={onCloseAutoFocus}>
         <DialogHeader>
           <DialogTitle>{t('classroom.newFolderTitle')}</DialogTitle>
           <DialogDescription>{t('classroom.newFolderDesc')}</DialogDescription>
@@ -122,19 +122,9 @@ export function NewFolderDialog({
             maxLength={80}
             className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-[14px] outline-none focus:ring-2 focus:ring-violet-400/40 focus:border-violet-400"
           />
-          <div className="mt-1.5 flex items-center justify-between text-[11px]">
+          <div className="mt-1.5 text-[11px]">
             <span className={error ? 'text-destructive' : 'text-muted-foreground/70'}>
               {error ?? t('classroom.folderNameHint')}
-            </span>
-            <span
-              className={
-                width > FOLDER_NAME_MAX_WIDTH ? 'text-destructive' : 'text-muted-foreground/60'
-              }
-            >
-              {t('classroom.folderWidth', {
-                width: Math.max(0, width),
-                max: FOLDER_NAME_MAX_WIDTH,
-              })}
             </span>
           </div>
         </div>

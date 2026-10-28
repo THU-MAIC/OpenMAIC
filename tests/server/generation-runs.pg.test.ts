@@ -276,6 +276,23 @@ async function claim(runId: string, workerId = 'worker-a', leaseTtlMs = 60_000) 
   return claimNextGenerationRun(workerId, { leaseTtlMs, maxTakeovers: 3, runId });
 }
 
+/**
+ * Take a run over once its lease is stale (`leaseTtlMs` 1). The claim skips a
+ * row another transaction has locked at that instant (`FOR UPDATE SKIP
+ * LOCKED`), and the dead worker can still hold it: a step call it abandoned
+ * when it stopped (a narration clip, an image) keeps running and writes
+ * through the lease fence, which locks the run row. Its lease stays stale, so
+ * a later claim takes the run over, as the runner's next scan would.
+ */
+async function takeOver(runId: string, workerId = 'worker-b') {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const claimed = await claim(runId, workerId, 1);
+    if (claimed) return claimed;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return null;
+}
+
 async function drive(runId: string, services: RunStepServices, workerId = 'worker-a') {
   const claimed = await claim(runId, workerId);
   if (!claimed) return null;
@@ -1045,7 +1062,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
 
     // Worker A stops heartbeating; once its lease is stale, B takes over.
     await new Promise((resolve) => setTimeout(resolve, 10));
-    const takeover = await claim(run.id, 'worker-b', 1);
+    const takeover = await takeOver(run.id);
     expect(takeover).toMatchObject({ takeover: true });
     expect(takeover!.lease.generation).toBe(claimA.lease.generation + 1);
     expect(takeover!.run.takeovers).toBe(1);
@@ -2571,7 +2588,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
       abortA.abort();
       expect(await executionA).toBe('interrupted');
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      const takeover = (await takeOver(run.id))!;
       expect(takeover).toMatchObject({ takeover: true });
 
       const resumed = mediaServices();
@@ -2639,7 +2656,7 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
         },
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
-      const takeover = (await claim(run.id, 'worker-b', 1))!;
+      const takeover = (await takeOver(run.id))!;
       const resumed = mediaServices({
         mediaConnections: async () => ({ image: ready('seedream'), video: OFF }),
       });

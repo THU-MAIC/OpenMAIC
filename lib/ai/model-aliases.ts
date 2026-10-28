@@ -20,6 +20,34 @@ export function modelIdsMatch(providerId: string, left: string, right: string): 
   return getCanonicalModelId(providerId, left) === getCanonicalModelId(providerId, right);
 }
 
+/**
+ * Plan ids that are the same model as an existing catalog row, including its
+ * windows and vision. Catalog lookups only: thinking stays keyed by the plan
+ * id, and the id sent on the wire does not change.
+ */
+const CATALOG_MODEL_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['doubao:deepseek-v4-pro', 'deepseek-v4-pro'],
+  ['doubao:glm-5.3', 'glm-5.3'],
+  ['doubao:kimi-k3', 'kimi-k3'],
+  ['doubao:kimi-k2.7-code', 'kimi-k2.7-code'],
+  // Coding Plan `k3` is Kimi K3. Kept out of MODEL_ID_ALIASES so thinking
+  // stays stored under `kimi:k3`.
+  ['kimi:k3', 'kimi-k3'],
+]);
+
+/**
+ * Catalog id to borrow when this provider has no row of its own.
+ * Retired ids already in MODEL_ID_ALIASES are borrowed the same way.
+ * An id with no alias is not searched across providers, so `doubao` +
+ * `gpt-5.6` cannot pick up OpenAI's row.
+ */
+export function getCatalogAliasModelId(providerId: string, modelId: string): string | undefined {
+  const aliased = CATALOG_MODEL_ALIASES.get(`${providerId}:${modelId}`);
+  if (aliased) return aliased;
+  const canonical = getCanonicalModelId(providerId, modelId);
+  return canonical !== modelId ? canonical : undefined;
+}
+
 /** Find a model using canonical IDs without changing the model ID sent on the wire. */
 export function findModelById<T extends { id: string }>(
   providerId: string,

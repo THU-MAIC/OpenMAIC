@@ -514,14 +514,21 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
   it('times out an extraction at its budget, even when the extractor ignores the signal', async () => {
     const material = await upload('hang.pdf');
     const release = gate();
+    const overdue = gate();
     const job = runNextOwnerMaterialExtraction('worker-a', {
-      ...deps(async () => {
+      ...deps(async (_name, signal) => {
+        // Only watched, so the test finishes the extractor after the budget
+        // ran out: the extractor itself ignores it and finishes on release.
+        if (signal.aborted) overdue.release();
+        else signal.addEventListener('abort', () => overdue.release(), { once: true });
         await release.promise;
         return parsed('finished anyway');
       }),
       deadlineMs: 50,
     });
-    await new Promise((resolve) => setTimeout(resolve, 120));
+    // Not a fixed delay: the claim and the byte read before the budget starts
+    // can take longer than the budget itself on a busy database.
+    await overdue.promise;
     release.release();
     await job;
     expect((await read(material.id)).extraction).toMatchObject({

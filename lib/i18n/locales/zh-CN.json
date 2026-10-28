@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "you": "你",
     "confirm": "确定",
     "cancel": "取消",
@@ -10,6 +11,22 @@
     "close": "关闭"
   },
   "home": {
+    "resumeGeneration": "继续生成",
+    "emptyLibraryTitle": "你的课程，从这里开始",
+    "emptyLibraryBody": "在首页创建课程后，可以在这里继续学习。",
+    "mobileTitle": "今天想学什么？",
+    "mobileSubtitle": "说说你想学什么，AI 为你生成互动课堂",
+    "mobilePlaceholder": "输入学习主题，或上传资料",
+    "courseOptions": "课程选项",
+    "courseMaterials": "课程资料",
+    "courseMaterialsCount": "课程资料 · {{n}} 个文件",
+    "backToCourseOptions": "返回课程选项",
+    "materialsDone": "完成",
+    "allSettings": "全部设置",
+    "examplesLabel": "试试这些主题",
+    "examplePython": "零基础学习 Python",
+    "exampleFourier": "用直观的例子讲解傅里叶变换",
+    "desktopOnly": "编辑器和专业模式请在电脑上使用。",
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
     "greetingWithName": "嗨，{{name}}"
   },

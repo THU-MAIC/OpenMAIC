@@ -139,6 +139,8 @@ export interface WorkbenchDraftConversation {
     readonly materials: readonly WorkbenchMaterial[];
     readonly elementRefs: readonly ElementRef[];
     readonly courseRefs: readonly CourseRef[];
+    /** Called once the session exists, before its first message is delivered. */
+    readonly onCreated?: (sessionId: string) => void;
   }) => Promise<{
     readonly accepted: boolean;
     readonly elementRefsAccepted: boolean;

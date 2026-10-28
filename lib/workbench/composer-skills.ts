@@ -74,10 +74,16 @@ export interface SkillHandleInsertion {
 /**
  * Backspace over a whole handle.
  *
- * A handle is one thing to the reader and one thing to the model, so deleting it
- * one character at a time — leaving `/k12-core-literacy-plannin`, which resolves
- * to nothing — is the wrong unit. With the caret immediately after a handle (or
- * after the space that follows it) one Backspace takes the whole run.
+ * A handle that names an installed skill is one thing to the reader and one
+ * thing to the model, so deleting it one character at a time — leaving
+ * `/k12-core-literacy-plannin`, which resolves to nothing — is the wrong unit.
+ * With the caret immediately after such a handle (or after the space that
+ * follows it) one Backspace takes the whole run.
+ *
+ * A token that does not resolve — `/deep-res` while `deep-research` is what is
+ * installed — is still being typed. This returns null and the browser deletes
+ * one character. That is the same condition `segmentSkillHandles` uses to paint
+ * a pill.
  *
  * Deliberately narrow. It fires ONLY on a collapsed caret sitting at the END of a
  * handle token; anywhere else — mid-handle, with a selection, in the middle of
@@ -86,7 +92,11 @@ export interface SkillHandleInsertion {
  * composition would break Chinese input, which is the one thing this composer may
  * never regress.
  */
-export function deleteSkillHandleBefore(draft: string, caret: number): SkillHandleInsertion | null {
+export function deleteSkillHandleBefore(
+  draft: string,
+  caret: number,
+  installedNames: readonly string[],
+): SkillHandleInsertion | null {
   if (caret <= 0 || caret > draft.length) return null;
   // The insertion leaves a single trailing space, so the caret usually sits after
   // it rather than against the handle. Step over exactly one.
@@ -99,7 +109,10 @@ export function deleteSkillHandleBefore(draft: string, caret: number): SkillHand
    * mangling this exists to prevent, in the other direction.
    */
   if (token.end !== probe) return null;
-  if (!skillHandleName(token.text)) return null;
+  const name = skillHandleName(token.text);
+  // Same condition as the pill: only an installed skill is one unit. A handle
+  // still being typed does not resolve, so the browser deletes one character.
+  if (!name || !installedNames.includes(name)) return null;
   return { draft: draft.slice(0, token.start) + draft.slice(caret), caret: token.start };
 }
 

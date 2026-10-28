@@ -620,7 +620,7 @@ describe('import_pptx tool', () => {
 });
 
 describe('session material prompt', () => {
-  it('mentions import_pptx only when a pptx is attached', () => {
+  it('keeps import_pptx guidance whether or not a pptx is attached', () => {
     const pdf = materialsPromptBlock([
       {
         origin: 'session',
@@ -639,8 +639,6 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pdf).not.toContain('import_pptx');
-
     const pptx = materialsPromptBlock([
       {
         origin: 'session',
@@ -659,8 +657,14 @@ describe('session material prompt', () => {
         },
       },
     ]);
-    expect(pptx).toContain('import_pptx');
-    expect(pptx).toContain('layout-preserving');
+    const none = materialsPromptBlock([]);
+    expect(pdf).toBe(none);
+    expect(pptx).toBe(none);
+    expect(none).toContain('import_pptx');
+    expect(none).toContain('layout-preserving');
+    expect(none).not.toContain('lecture.pdf');
+    expect(none).not.toContain('deck.pptx');
+    expect(none).not.toContain('mat_ppt');
   });
 });
 
