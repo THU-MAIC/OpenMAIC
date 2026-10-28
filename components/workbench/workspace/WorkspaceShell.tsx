@@ -1087,6 +1087,12 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   }
   /** The preview is the tab on screen: it is active, or there is no course tab to show. */
   const previewShowing = previewTabOpen && (previewFocus.active || !panes.courseId);
+  const previewHandedOffRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!previewShowing) {
+      previewHandedOffRef.current = false;
+    }
+  }, [previewShowing]);
   /**
    * The conversation's first course replaces its preview tab. The preview is
    * always the strip's last tab and a new course tab joins at the end, so the
@@ -1095,19 +1101,30 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const handOffPreview = useCallback(
     (courseId: string) => {
-      const opened = openCourseTabs(courseTabs, [courseId]);
-      const focus = previewShowing || !courseTabs.activeCourseId;
+      const current = courseTabsRef.current;
+      if (
+        current.courseIds.includes(courseId) ||
+        (current.closedCourseIds ?? []).includes(courseId)
+      ) {
+        return;
+      }
+      const opened = openCourseTabs(current, [courseId]);
+      const focus = (previewShowing && !previewHandedOffRef.current) || !current.activeCourseId;
+      if (previewShowing) {
+        previewHandedOffRef.current = true;
+      }
       const next = focus
         ? activateCourseTab(opened, courseId)
-        : activateCourseTab(opened, courseTabs.activeCourseId as string);
+        : activateCourseTab(opened, current.activeCourseId as string);
+      courseTabsRef.current = next;
       setCourseTabs(next);
       persistCourseTabs(next);
       if (focus) {
         collapse.expandClassroom();
-        navigateInBackground((current) => withCourse(current, courseId), 'push');
+        navigateInBackground((panesNow) => withCourse(panesNow, courseId), 'push');
       }
     },
-    [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
+    [collapse, navigateInBackground, persistCourseTabs, previewShowing],
   );
   // The readiness reads outlive a render; they hand off through the latest
   // handoff, and skip a course the user has reconciled meanwhile.
