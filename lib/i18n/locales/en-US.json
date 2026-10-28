@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Your project environment is inactive. Interact with the project to restore it, or restore the files below.",
+    "environmentSleeping": "Your project environment is inactive. Click Restore project files below to continue. Unsaved drafts are kept in this browser.",
     "recoverWorkspace": "Restore project files",
     "checkpointUnavailable": "Your latest work could not be archived. Retry to save it. If left idle, this environment may be released and unarchived edits lost.",
     "checkpointSkipped": "Archiving failed persistently. Recovery may lose changes newer than the saved checkpoint.",

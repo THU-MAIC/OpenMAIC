@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Die Projektumgebung ist inaktiv. Arbeiten Sie weiter oder stellen Sie die Dateien unten wieder her.",
+    "environmentSleeping": "Die Projektumgebung ist inaktiv. Stellen Sie die Projektdateien über die Schaltfläche unten wieder her, um fortzufahren. Ungespeicherte Entwürfe bleiben in diesem Browser erhalten.",
     "recoverWorkspace": "Projektdateien wiederherstellen",
     "checkpointUnavailable": "Die letzten Änderungen konnten nicht archiviert werden. Versuchen Sie erneut zu speichern. Bei Inaktivität kann die Umgebung freigegeben werden und nicht archivierte Arbeit verloren gehen.",
     "checkpointSkipped": "Die Archivierung schlägt wiederholt fehl. Bei der Wiederherstellung können Änderungen seit der Sicherung verloren gehen.",

@@ -2877,7 +2877,7 @@
       "display": "展示",
       "stopped": "已停止"
     },
-    "environmentSleeping": "项目环境已休眠。继续操作即可恢复，也可以点击下方按钮恢复项目文件。",
+    "environmentSleeping": "项目环境已休眠。请点击下方“恢复项目文件”后继续，未保存的草稿会保留在当前浏览器中。",
     "recoverWorkspace": "恢复项目文件",
     "checkpointUnavailable": "最新修改未能归档，请重试保存。若持续空闲，环境可能被释放，未归档的修改可能丢失。",
     "checkpointSkipped": "归档持续失败，恢复时可能丢失已归档版本之后的修改。",

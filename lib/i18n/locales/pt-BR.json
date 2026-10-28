@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "O ambiente do projeto está inativo. Continue trabalhando ou restaure os arquivos abaixo.",
+    "environmentSleeping": "O ambiente do projeto está inativo. Restaure os arquivos do projeto pelo botão abaixo para continuar. Os rascunhos não salvos ficam neste navegador.",
     "recoverWorkspace": "Restaurar arquivos do projeto",
     "checkpointUnavailable": "Não foi possível arquivar as últimas alterações. Tente salvar novamente. Se ficar inativo, o ambiente poderá ser liberado e alterações não arquivadas poderão ser perdidas.",
     "checkpointSkipped": "O arquivamento falhou repetidamente. A recuperação pode perder alterações posteriores ao salvamento.",

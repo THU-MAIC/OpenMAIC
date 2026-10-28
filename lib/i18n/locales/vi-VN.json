@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "Môi trường dự án đang tạm nghỉ. Tiếp tục thao tác hoặc khôi phục tệp bằng nút bên dưới.",
+    "environmentSleeping": "Môi trường dự án đang tạm nghỉ. Hãy khôi phục tệp dự án bằng nút bên dưới để tiếp tục. Bản nháp chưa lưu vẫn được giữ trong trình duyệt này.",
     "recoverWorkspace": "Khôi phục tệp dự án",
     "checkpointUnavailable": "Không thể lưu trữ các thay đổi mới nhất. Hãy thử lưu lại. Nếu không hoạt động, môi trường có thể được giải phóng và các thay đổi chưa lưu trữ có thể bị mất.",
     "checkpointSkipped": "Việc lưu trữ liên tục thất bại. Khi khôi phục, các thay đổi mới hơn bản đã lưu có thể bị mất.",

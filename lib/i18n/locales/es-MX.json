@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "El entorno del proyecto está inactivo. Continúa trabajando o restaura los archivos con el botón de abajo.",
+    "environmentSleeping": "El entorno del proyecto está inactivo. Restaura los archivos del proyecto con el botón de abajo para continuar. Los borradores sin guardar se conservan en este navegador.",
     "recoverWorkspace": "Restaurar archivos del proyecto",
     "checkpointUnavailable": "No se pudieron archivar los últimos cambios. Intenta guardar de nuevo. Si permanece inactivo, el entorno puede liberarse y los cambios sin archivar pueden perderse.",
     "checkpointSkipped": "El archivado ha fallado repetidamente. Al recuperar, pueden perderse los cambios posteriores al respaldo.",

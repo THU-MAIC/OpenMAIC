@@ -2877,7 +2877,7 @@
       "display": "展示",
       "stopped": "已停止"
     },
-    "environmentSleeping": "專案環境已休眠。繼續操作即可恢復，也可以按下方按鈕恢復專案檔案。",
+    "environmentSleeping": "專案環境已休眠。請按下方「恢復專案檔案」後繼續，未儲存的草稿會保留在目前瀏覽器中。",
     "recoverWorkspace": "恢復專案檔案",
     "checkpointUnavailable": "最新修改未能封存，請重試儲存。若持續閒置，環境可能被釋放，未封存的修改可能遺失。",
     "checkpointSkipped": "封存持續失敗，復原時可能遺失已封存版本之後的修改。",

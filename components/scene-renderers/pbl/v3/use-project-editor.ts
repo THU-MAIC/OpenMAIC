@@ -36,6 +36,7 @@ export function useProjectEditor(
   const retrySave = useRef<{ name: string; buffer: EditorBuffer; request: FileSaveRequest } | null>(
     null,
   );
+  const unavailableSave = useRef<{ name: string; environment: string } | null>(null);
   const current = useRef({ view, buffers, read, onError, onSave, path, options });
   current.current = { view, buffers, read, onError, onSave, path, options };
   const updateBuffers = useCallback(
@@ -61,43 +62,103 @@ export function useProjectEditor(
   }, [view.id, path, tabs, buffers, onError]);
   const dirty = (name: string) => !!buffers[name] && buffers[name].text !== buffers[name].saved;
   const load = useCallback(
-    async (discard = false) => {
-      const { view, path, read } = current.current;
+    async (discard = false, name = current.current.path) => {
+      const { view, read } = current.current;
+      const path = name;
       if (!view.environment?.ready || !view.files.includes(path)) return;
-      const ticket = ++sequence.current;
-      setLoading(true);
+      const active = path === current.current.path;
+      const ticket = active ? ++sequence.current : sequence.current;
+      if (active) setLoading(true);
       try {
         const result = await read(path);
         if (
-          ticket !== sequence.current ||
+          !mounted.current ||
+          (active && ticket !== sequence.current) ||
           view.environmentId !== current.current.view.environmentId ||
-          path !== current.current.path
+          !current.current.view.files.includes(path)
         )
           return;
         const existing = current.current.buffers[path];
         // Server updates and Agent writes refresh clean documents; a late read never erases typing.
-        if (!discard && existing && existing.text !== existing.saved) return;
+        if (!discard && existing && existing.text !== existing.saved) {
+          const rejected = unavailableSave.current;
+          const retry = retrySave.current;
+          if (existing.environment === view.environmentId && rejected?.name !== path) return;
+          const savedSubmission =
+            result.text === existing.text ||
+            (retry?.name === path &&
+              retry.buffer.environment === existing.environment &&
+              result.text === retry.buffer.text);
+          // A replacement environment is not permission to rebase over another writer.
+          // Reattach only a verified base or a submission observed in the restored file.
+          if (result.hash !== existing.hash && !savedSubmission) return;
+          updateBuffers((previous) => {
+            const latest = previous[path];
+            return latest?.environment === existing.environment && latest.hash === existing.hash
+              ? {
+                  ...previous,
+                  [path]: {
+                    ...latest,
+                    saved: result.text,
+                    hash: result.hash,
+                    environment: view.environmentId!,
+                  },
+                }
+              : previous;
+          });
+          if (
+            (rejected?.name === path && rejected.environment === existing.environment) ||
+            (retry?.name === path && retry.buffer.environment === existing.environment)
+          ) {
+            unavailableSave.current = null;
+            retrySave.current = null;
+            failed.current = false;
+            setSaveError('');
+          }
+          return;
+        }
         updateBuffers((previous) => ({
           ...previous,
           [path]: { ...result, saved: result.text, environment: view.environmentId! },
         }));
-        if (discard) {
+        if (
+          discard ||
+          (unavailableSave.current?.name === path &&
+            unavailableSave.current.environment === existing?.environment)
+        ) {
           failed.current = false;
           retrySave.current = null;
+          unavailableSave.current = null;
           setSaveError('');
         }
       } catch (error) {
         current.current.onError((error as Error).message);
       } finally {
-        if (ticket === sequence.current) setLoading(false);
+        if (active && ticket === sequence.current) setLoading(false);
       }
     },
     [updateBuffers],
   );
   useEffect(() => {
-    const buffer = current.current.buffers[path];
-    if (!buffer || buffer.text === buffer.saved) void load();
+    const { buffers } = current.current;
+    const buffer = buffers[path];
+    if (
+      !buffer ||
+      buffer.text === buffer.saved ||
+      buffer.environment !== view.environmentId ||
+      unavailableSave.current?.name === path
+    )
+      void load();
     else setLoading(false);
+    // Recovery must include background tabs; otherwise their retained drafts
+    // would keep the study dirty even after the visible file resumed saving.
+    for (const [name, buffer] of Object.entries(buffers))
+      if (
+        name !== path &&
+        buffer.text !== buffer.saved &&
+        (buffer.environment !== view.environmentId || unavailableSave.current?.name === name)
+      )
+        void load(false, name);
     return () => {
       // Invalidate the current read ticket rather than a captured one.
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,10 +196,12 @@ export function useProjectEditor(
         const buffer = retry?.buffer ?? buffers[name];
         const request = retry?.request ?? { id: crypto.randomUUID() };
         retrySave.current = { name, buffer, request };
+        unavailableSave.current = null;
         setSaving(true);
         try {
           const receipt = await onSave(name, buffer.text, buffer.hash, request);
           retrySave.current = null;
+          unavailableSave.current = null;
           // Acknowledgements update the submitted base, never the newer local value.
           const cached = readEditorDraft(view.id);
           const draft = cached.buffers[name];
@@ -155,14 +218,24 @@ export function useProjectEditor(
               : previous;
           });
         } catch (error) {
+          // A late outcome from the released workspace cannot freeze its replacement.
+          if (buffer.environment !== current.current.view.environmentId) continue;
           // A confirmed precondition rejection did not write this draft. Unknown outcomes
           // still replay the exact request; fresh attempts retain the observed file hash.
           if (
             error instanceof SandboxRequestError &&
             error.status === 409 &&
-            ['PROGRESS_CHANGED', 'WORKSPACE_FILE_CONFLICT'].includes(error.reason ?? '')
-          )
+            [
+              'PROGRESS_CHANGED',
+              'WORKSPACE_FILE_CONFLICT',
+              'ENVIRONMENT_UNAVAILABLE',
+              'ENVIRONMENT_CHANGED',
+            ].includes(error.reason ?? '')
+          ) {
             retrySave.current = null;
+            if (['ENVIRONMENT_UNAVAILABLE', 'ENVIRONMENT_CHANGED'].includes(error.reason ?? ''))
+              unavailableSave.current = { name, environment: buffer.environment };
+          }
           if (mounted.current) {
             failed.current = true;
             setSaveError((error as Error).message);
@@ -189,9 +262,13 @@ export function useProjectEditor(
     setPath(name);
   };
   const close = (name: string) => {
-    if (retrySave.current?.name === name && !inFlight.current) {
+    if (
+      (retrySave.current?.name === name || unavailableSave.current?.name === name) &&
+      !inFlight.current
+    ) {
       retrySave.current = null;
       failed.current = false;
+      unavailableSave.current = null;
       setSaveError('');
     }
     if (tabs.length === 1 && name === 'PLAN.md') {

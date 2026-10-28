@@ -558,7 +558,11 @@ function PBLV3WorkspaceContent({
                     if (
                       error instanceof SandboxRequestError &&
                       error.status === 409 &&
-                      error.reason === 'PROGRESS_CHANGED'
+                      [
+                        'PROGRESS_CHANGED',
+                        'ENVIRONMENT_UNAVAILABLE',
+                        'ENVIRONMENT_CHANGED',
+                      ].includes(error.reason ?? '')
                     )
                       await refresh().catch(() => {});
                     throw error;

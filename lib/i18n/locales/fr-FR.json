@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "L’environnement du projet est inactif. Reprenez vos actions ou restaurez les fichiers ci-dessous.",
+    "environmentSleeping": "L’environnement du projet est inactif. Restaurez les fichiers du projet avec le bouton ci-dessous pour continuer. Les brouillons non enregistrés sont conservés dans ce navigateur.",
     "recoverWorkspace": "Restaurer les fichiers du projet",
     "checkpointUnavailable": "Les dernières modifications ne sont pas archivées. Réessayez de les enregistrer. En cas d’inactivité, l’environnement peut être libéré et les modifications non archivées perdues.",
     "checkpointSkipped": "L’archivage échoue de façon persistante. La restauration peut perdre les modifications plus récentes que la sauvegarde.",

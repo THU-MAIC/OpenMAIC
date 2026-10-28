@@ -2877,7 +2877,7 @@
       "display": "Display",
       "stopped": "Stopped"
     },
-    "environmentSleeping": "프로젝트 환경이 비활성 상태입니다. 작업을 계속하거나 아래 버튼으로 파일을 복원하세요.",
+    "environmentSleeping": "프로젝트 환경이 비활성 상태입니다. 아래 버튼으로 프로젝트 파일을 복원한 후 계속하세요. 저장하지 않은 초안은 이 브라우저에 유지됩니다.",
     "recoverWorkspace": "프로젝트 파일 복원",
     "checkpointUnavailable": "최신 변경 사항을 보관하지 못했습니다. 저장을 다시 시도하세요. 유휴 상태가 지속되면 환경이 해제되고 보관되지 않은 변경 사항이 손실될 수 있습니다.",
     "checkpointSkipped": "보관이 계속 실패했습니다. 복원 시 저장된 버전 이후의 변경 사항이 손실될 수 있습니다.",
