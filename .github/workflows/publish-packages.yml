@@ -33,9 +33,10 @@ name: Publish @openmaic packages
 #   - npm trusted publishing on every @openmaic/* package: GitHub Actions,
 #     repository THU-MAIC/OpenMAIC, workflow `publish-packages.yml`, environment
 #     `release`, with "Allow npm publish" enabled (this job runs `npm publish`;
-#     without it npm only accepts staged publishes). The publish job authenticates with a short-lived OIDC credential
-#     issued for that exact workflow and environment, so there is no long-lived
-#     npm token to store, rotate or leak.
+#     without it npm only accepts staged publishes). The publish job
+#     authenticates with a short-lived OIDC credential issued for that exact
+#     workflow and environment, so there is no long-lived npm token to store,
+#     rotate or leak.
 
 on:
   push:
