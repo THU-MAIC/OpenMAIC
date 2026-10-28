@@ -3,11 +3,34 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { InstalledProject } from '@/lib/server/pbl-v3/catalog';
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
+interface StudyFixture {
+  id: string;
+  owner_id: string;
+  environment_id: string;
+  revision: number;
+  evaluation: Record<string, never> | null;
+  state: { status: string };
+  released?: boolean;
+}
+interface RunFixture {
+  environmentId: string;
+  epoch: number;
+  commandId: string;
+  sourceHash: string;
+  startedAt: string;
+}
+interface ReceiptFixture {
+  hash: string;
+  result: RunFixture;
+}
+
 vi.mock('server-only', () => ({}));
 const mock = vi.hoisted(() => ({
-  row: {} as any,
-  receipts: new Map<string, any>(),
-  project: {} as any,
+  row: {} as StudyFixture,
+  receipts: new Map<string, ReceiptFixture>(),
+  project: {} as Pick<InstalledProject, 'application'>,
   busy: false,
   epoch: 0,
   state: 'running',
@@ -28,7 +51,7 @@ vi.mock('@/lib/server/pbl-v3/store', () => ({
       exclusive: mock.exclusive,
       recordActivity: mock.activity,
       pool: {
-        query: async (sql: string, args: any[]) => {
+        query: async (sql: string, args: string[]) => {
           if (sql.startsWith('SELECT id FROM sandbox_commands'))
             return { rows: mock.starts.includes(args[1]) ? [{ id: args[1] }] : [] };
           if (sql.startsWith('INSERT')) {
@@ -52,7 +75,7 @@ const service = {
   get: async () => ({ state: 'running', workspaceReady: true }),
   workspaceEpoch: async () => mock.epoch,
   stopApplications: mock.stop,
-  startApplicationCommand: async (_id: string, body: any) => {
+  startApplicationCommand: async (_id: string, body: { requestId: string }) => {
     mock.starts.push(body.requestId);
     return { state: mock.state };
   },
@@ -79,14 +102,14 @@ vi.mock('@/lib/server/pbl-v3/runtime', () => ({
   busy: async () => mock.busy,
   projectFor: () => mock.project,
   readFiles: async () => ({ 'app.py': 'pass\n' }),
-  requireEnvironment: (row: any) => row.environment_id,
+  requireEnvironment: (row: StudyFixture) => row.environment_id,
   stageKey: () => 'sample:0',
 }));
 vi.mock('@/lib/server/pbl-v3/environment', () => ({
   assertEnvironmentReady: vi.fn(),
   assertEnvironmentWritable: vi.fn(),
   touchEnvironment: async () => ({ state: 'running', workspaceReady: true }),
-  environmentReleaseCommitted: (row: any) => !!row.released,
+  environmentReleaseCommitted: (row: StudyFixture) => !!row.released,
 }));
 vi.mock('@/lib/server/pbl-v3/workspace-files', () => ({ projectFiles: async () => ['app.py'] }));
 import {
@@ -106,7 +129,12 @@ const request = (action = 'open', id = '12345678-1234-4234-8234-123456789014') =
   epoch: 0,
   action,
 });
-const owner = { ownerId: 'owner' } as any;
+const owner: OwnerPrincipal = {
+  ownerId: 'owner',
+  kind: 'user',
+  assurance: 'verified',
+  roles: new Set(['sandbox:use']),
+};
 beforeEach(() => {
   vi.clearAllMocks();
   mock.receipts.clear();
@@ -142,7 +170,7 @@ beforeEach(() => {
 
 describe('declared project applications', () => {
   it('refuses wrong owners, stale bindings, stopped epochs, undeclared apps and busy assessments before dispatch', async () => {
-    await expect(applicationRequest({ ownerId: 'other' } as any, request())).rejects.toThrow(
+    await expect(applicationRequest({ ...owner, ownerId: 'other' }, request())).rejects.toThrow(
       'not found',
     );
     await expect(
