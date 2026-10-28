@@ -125,9 +125,7 @@ export function validateReportFindings(text: string, report: LearningReport): Re
           f.evidence.some(
             (id) =>
               learnerSources.has(id) &&
-              learnerSources
-                .get(id)!
-                .some((text) => text.replace(/\s/g, '').includes(f.quote!.replace(/\s/g, ''))),
+              learnerSources.get(id)!.some((text) => text.includes(f.quote!)),
           )
         : ['journey', 'next'].includes(f.category)),
   );

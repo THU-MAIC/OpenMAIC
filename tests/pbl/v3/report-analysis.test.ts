@@ -52,6 +52,27 @@ const finding = {
 };
 
 describe('grounded report analysis', () => {
+  it('requires literal learner quotes without joining or rewriting whitespace', () => {
+    const literal: LearningReport = {
+      ...report,
+      conversations: [
+        {
+          ...report.conversations[0]!,
+          messages: [
+            { sequence: 2, at: 2, role: 'user', text: 'I kept a part.\nTwo  spaces matter.' },
+          ],
+        },
+      ],
+    };
+    for (const quote of ['apart', 'part.Two', 'Two spaces matter'])
+      expect(() =>
+        validateReportFindings(JSON.stringify({ findings: [{ ...finding, quote }] }), literal),
+      ).toThrow('No supported');
+    for (const quote of ['a part', 'part.\nTwo  spaces'])
+      expect(
+        validateReportFindings(JSON.stringify({ findings: [{ ...finding, quote }] }), literal),
+      ).toHaveLength(1);
+  });
   it('clips report and model excerpts without splitting emoji pairs', () => {
     expect(reportTextExcerpt('a🧠z', 2)).toBe('a');
     expect(reportTextExcerpt('a🧠z', 3)).toBe('a🧠');

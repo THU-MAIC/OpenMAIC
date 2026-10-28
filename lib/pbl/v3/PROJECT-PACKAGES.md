@@ -154,7 +154,14 @@ text visible in the actual model input, including journey/next findings; unquote
 journey/next facts may still cite Agent actions/results. Omitted source IDs and
 clipped-away quotes cannot substantiate findings. Validation uses only the bounded
 learner segments, even if a clipped-away phrase is also visible in course context.
-Excerpts preserve surrogate pairs.
+Quotes must match literally, including whitespace. Excerpts preserve surrogate pairs.
+
+The quoted learner-decision block is bounded to 64 KiB in both initial role prompts
+and live dialogue updates. Normal proposals remain verbatim. Oversized cumulative
+input becomes an explicitly incomplete, Unicode-safe excerpt; the Agent must ask
+for concise clarification before relying on missing behavior, rather than guess.
+Saved responses, revisions and approval/workflow gates are unchanged. This bounds
+one model-input component, not total teaching time, conversation or tool use.
 
 ## Runtime profiles and private resources
 

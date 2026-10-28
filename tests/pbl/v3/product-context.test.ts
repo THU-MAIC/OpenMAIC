@@ -47,6 +47,27 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it('bounds large decision context in both initial role prompts and live dialogue refreshes', () => {
+    for (const index of [1, 2, 3]) {
+      const input = fixture(index);
+      input.collected.decisions = Array.from({ length: 20 }, (_, i) => ({
+        id: `rule-${i}`,
+        chosen: '学🧠'.repeat(10000),
+        rationale: 'r'.repeat(60000),
+        revision: 0,
+      }));
+      const before = JSON.stringify(input.collected.decisions);
+      const initial = renderTeachingPrompt(input).systemPrompt;
+      expect(Buffer.byteLength(initial)).toBeLessThan(100000);
+      expect(initial).toContain('decisionsTruncated');
+      if (index === 1) {
+        const live = teachingLiveSuffix(teachingLiveContext(input));
+        expect(Buffer.byteLength(live)).toBeLessThan(70000);
+        expect(live).toContain('decisionsTruncated');
+      }
+      expect(JSON.stringify(input.collected.decisions)).toBe(before);
+    }
+  });
   it('provides saved dialogue responses initially and refreshes them at each model call', () => {
     const input = fixture(1);
     expect(input.stage).toMatchObject({ kind: 'dialogue', reads: ['contract', 'decisions'] });
