@@ -119,6 +119,8 @@ describe('inlineRemoteImages', () => {
 
     expect(result.skipped).toBe(2);
     expect(result.images.map((entry) => entry.id)).toEqual(['img_3']);
+    // Another attempt may download both.
+    expect(result.retryable).toEqual(['img_1', 'img_2']);
   });
 
   it('drops an image over the per-image limit, declared or streamed', async () => {
@@ -136,7 +138,7 @@ describe('inlineRemoteImages', () => {
       maxImageBytes: 32,
     });
 
-    expect(result).toEqual({ images: [], skipped: 2 });
+    expect(result).toEqual({ images: [], skipped: 2, retryable: [] });
   });
 
   it('stops downloading once the byte budget is spent', async () => {
@@ -151,6 +153,7 @@ describe('inlineRemoteImages', () => {
 
     expect(result.images.map((entry) => entry.id)).toEqual(['img_1']);
     expect(result.skipped).toBe(1);
+    expect(result.retryable).toEqual([]);
   });
 
   it('drops a response that is not an image', async () => {
@@ -160,13 +163,13 @@ describe('inlineRemoteImages', () => {
 
     const result = await inlineRemoteImages([image('img_1', JPEG_URL)]);
 
-    expect(result).toEqual({ images: [], skipped: 1 });
+    expect(result).toEqual({ images: [], skipped: 1, retryable: [] });
   });
 
   it('drops a source that is neither inline nor a URL, without a request', async () => {
     const result = await inlineRemoteImages([image('img_1', ''), image('img_2', 'images/abc.jpg')]);
 
-    expect(result).toEqual({ images: [], skipped: 2 });
+    expect(result).toEqual({ images: [], skipped: 2, retryable: [] });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -177,7 +180,7 @@ describe('inlineRemoteImages', () => {
       good,
     ]);
 
-    expect(result).toEqual({ images: [good], skipped: 1 });
+    expect(result).toEqual({ images: [good], skipped: 1, retryable: [] });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -193,6 +196,8 @@ describe('inlineRemoteImages', () => {
 
     expect(result.images.map((entry) => entry.id)).toEqual(['img_1', 'img_2']);
     expect(result.skipped).toBe(1);
+    // Over the limit again next time.
+    expect(result.retryable).toEqual([]);
     expect(transport).toHaveBeenCalledTimes(2);
   });
 
@@ -204,7 +209,7 @@ describe('inlineRemoteImages', () => {
   ])('never requests %s', async (url) => {
     const result = await inlineRemoteImages([image('img_1', url)]);
 
-    expect(result).toEqual({ images: [], skipped: 1 });
+    expect(result).toEqual({ images: [], skipped: 1, retryable: ['img_1'] });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -213,7 +218,7 @@ describe('inlineRemoteImages', () => {
 
     const result = await inlineRemoteImages([image('img_1', JPEG_URL)]);
 
-    expect(result).toEqual({ images: [], skipped: 1 });
+    expect(result).toEqual({ images: [], skipped: 1, retryable: ['img_1'] });
     expect(transport).not.toHaveBeenCalled();
   });
 
@@ -252,7 +257,12 @@ describe('inlineRemoteImages', () => {
       });
       await vi.advanceTimersByTimeAsync(60_000);
 
-      await expect(result).resolves.toEqual({ images: [inline], skipped: 6 });
+      // Running or never requested, each may download another time.
+      await expect(result).resolves.toEqual({
+        images: [inline],
+        skipped: 6,
+        retryable: links.map((link) => link.id),
+      });
       // Two were running when it fired; the rest were never requested.
       expect(transport).toHaveBeenCalledTimes(2);
     });
@@ -284,7 +294,7 @@ describe('inlineRemoteImages', () => {
     it('makes no request at all when it is empty', async () => {
       const result = await inlineRemoteImages(links(3), { maxTotalBytes: 0 });
 
-      expect(result).toEqual({ images: [], skipped: 3 });
+      expect(result).toEqual({ images: [], skipped: 3, retryable: [] });
       expect(transport).not.toHaveBeenCalled();
     });
 
@@ -301,6 +311,8 @@ describe('inlineRemoteImages', () => {
 
       expect(result.images.map((entry) => entry.id)).toEqual(['img_1']);
       expect(result.skipped).toBe(3);
+      // The stalled one was stopped by the budget, not by its host.
+      expect(result.retryable).toEqual([]);
       expect(transport.mock.calls.map(([url]) => url)).toEqual([
         'https://files.example.com/1',
         'https://files.example.com/2',
@@ -319,6 +331,7 @@ describe('inlineRemoteImages', () => {
 
       expect(result.images.map((entry) => entry.id)).toEqual(['img_1']);
       expect(result.skipped).toBe(1);
+      expect(result.retryable).toEqual([]);
     });
 
     it('once an image does not fit in what is left, stops the rest too', async () => {
@@ -332,7 +345,7 @@ describe('inlineRemoteImages', () => {
 
       const result = await inlineRemoteImages(links(4), { maxTotalBytes: 32, concurrency: 2 });
 
-      expect(result).toEqual({ images: [], skipped: 4 });
+      expect(result).toEqual({ images: [], skipped: 4, retryable: [] });
       expect(transport).toHaveBeenCalledTimes(2);
     });
   });
@@ -354,6 +367,7 @@ describe('inlineRemoteImages', () => {
       const settled = await result;
       expect(settled.images.map((entry) => entry.id)).toEqual(['img_2']);
       expect(settled.skipped).toBe(1);
+      expect(settled.retryable).toEqual(['img_1']);
     } finally {
       vi.useRealTimers();
     }

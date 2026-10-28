@@ -6,7 +6,7 @@
 
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
-import { isBase64Image } from '@/lib/utils/base64';
+import { base64ImageMimeType } from '@/lib/utils/base64';
 
 const log = createLogger('MinerUParser');
 
@@ -17,17 +17,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   let pageCount = 0;
 
   // Extract images from the images object (key → base64 string). Only bare
-  // base64 of an image is wrapped as a data URL: a MinerU gateway that hosts
-  // the images answers a URL instead, kept as is (the server downloads it when
-  // it stores the extraction), and any other value (a path, even one made of
-  // base64 characters) is kept as is too, to be dropped, never decoded into
-  // garbage bytes.
+  // base64 of an image is wrapped as a data URL, typed as what its bytes are:
+  // a MinerU gateway that hosts the images answers a URL instead, kept as is
+  // (the server downloads it when it stores the extraction), and any other
+  // value (a path, even one made of base64 characters) is kept as is too, to
+  // be dropped, never decoded into garbage bytes.
   if (fileResult.images && typeof fileResult.images === 'object') {
     Object.entries(fileResult.images as Record<string, string>).forEach(([key, value]) => {
-      imageData[key] =
-        value.startsWith('data:') || !isBase64Image(value)
-          ? value
-          : `data:image/png;base64,${value}`;
+      const mimeType = value.startsWith('data:') ? null : base64ImageMimeType(value);
+      imageData[key] = mimeType ? `data:${mimeType};base64,${value}` : value;
     });
   }
 

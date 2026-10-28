@@ -248,17 +248,18 @@ export function fitDownloadedImages(
  * The result of a parsed material with every image's bytes inline: images the
  * extractor answered as URLs are downloaded, as many as the stored result can
  * hold besides its text (the rest from the end are left out), and an image
- * that cannot be downloaded is left out; both are counted.
+ * that cannot be downloaded is left out; both are counted, and so are, apart,
+ * the ones left out that another attempt may download (`imagesRetryable`).
  */
 async function inlineResultOf(
   parsed: ParsedPdfContent,
   signal: AbortSignal,
   deadline: AbortSignal,
-): Promise<{ result: MaterialExtractionResult; imagesSkipped: number }> {
+): Promise<{ result: MaterialExtractionResult; imagesSkipped: number; imagesRetryable: number }> {
   const result = resultOf(parsed);
-  if (imagesAreInline(result.images)) return { result, imagesSkipped: 0 };
+  if (imagesAreInline(result.images)) return { result, imagesSkipped: 0, imagesRetryable: 0 };
   const maxBytes = maxExtractionResultBytes();
-  const { images, skipped } = await inlineRemoteImages(result.images, {
+  const { images, skipped, retryable } = await inlineRemoteImages(result.images, {
     signal,
     deadline,
     maxTotalBytes: remoteImageByteBudget(result, maxBytes),
@@ -266,8 +267,22 @@ async function inlineResultOf(
   // A downloaded image is a new object; an inline one is the extractor's own.
   const extracted = new Set<object>(result.images);
   const downloaded = new Set<object>(images.filter((image) => !extracted.has(image)));
+  // What did not fit is left out again next time: never retryable.
   const fitted = fitDownloadedImages({ ...result, images }, downloaded, maxBytes);
-  return { result: fitted.result, imagesSkipped: skipped + fitted.dropped };
+  return {
+    result: fitted.result,
+    imagesSkipped: skipped + fitted.dropped,
+    imagesRetryable: retryable.length,
+  };
+}
+
+/**
+ * Whether a ready extraction left out images another attempt may download.
+ * One stored before the two were told apart counts every image it left out.
+ */
+function leftOutRetryableImages(extraction: OwnerMaterialExtraction): boolean {
+  if (!extraction.imagesSkipped) return false;
+  return (extraction.imagesRetryable ?? extraction.imagesSkipped) > 0;
 }
 
 /**
@@ -382,8 +397,9 @@ export async function extractOwnerMaterial(
     try {
       const reused = await byteStore.get(reusable.extraction.resultKey);
       // Images left out may download next time (a deadline, a host error):
-      // such a result is not reused, the new upload extracts again.
-      if (!reusable.extraction.imagesSkipped && isSelfContainedResult(reused)) {
+      // such a result is not reused, the new upload extracts again. Images
+      // left out by a limit would be left out again: that result is reused.
+      if (!leftOutRetryableImages(reusable.extraction) && isSelfContainedResult(reused)) {
         const resultBytes = await store(reused);
         const {
           updatedAt: _updatedAt,
@@ -423,6 +439,7 @@ export async function extractOwnerMaterial(
   let parsed: ParsedPdfContent;
   let result: MaterialExtractionResult;
   let imagesSkipped: number;
+  let imagesRetryable: number;
   try {
     parsed = await (dependencies.analyze ?? analyzeMaterial)(
       {
@@ -439,7 +456,11 @@ export async function extractOwnerMaterial(
       { log, signal: callSignal },
     );
     // Within the budget too: images answered as URLs are downloaded now.
-    ({ result, imagesSkipped } = await inlineResultOf(parsed, callSignal, imagesDeadline.signal));
+    ({ result, imagesSkipped, imagesRetryable } = await inlineResultOf(
+      parsed,
+      callSignal,
+      imagesDeadline.signal,
+    ));
   } catch (error) {
     // Ended by the caller or the budget: say so, not how the extractor broke off.
     if (callSignal.aborted) throw callSignal.reason ?? error;
@@ -475,7 +496,7 @@ export async function extractOwnerMaterial(
     textChars: result.text.length,
     ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
     imageCount: result.images.length,
-    ...(imagesSkipped > 0 ? { imagesSkipped } : {}),
+    ...(imagesSkipped > 0 ? { imagesSkipped, imagesRetryable } : {}),
     ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
     ...(parsed.metadata?.parser ? { extractor: String(parsed.metadata.parser) } : {}),
     identityKey,

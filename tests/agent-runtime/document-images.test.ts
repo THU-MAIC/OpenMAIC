@@ -10,6 +10,7 @@ import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { DocumentArtifact, DocumentExtractorProvider } from '@/lib/document/types';
 import { textDocumentExtractorProvider } from '@/lib/document/extractors/text';
 import { parsedPdfToDocumentArtifact } from '@/lib/document/pdf-compat';
+import { MINERU_IMAGE_MIMES } from '@/lib/document/mime';
 import { extractMinerUResult } from '@/lib/pdf/mineru-parser';
 import * as providerResultFetch from '@/lib/server/provider-result-fetch';
 import {
@@ -242,6 +243,42 @@ describe('ownerDocumentOutcome', () => {
       ]);
       expect(outcome.imagesNotDownloaded).toBe(1);
     });
+
+    it('does not count as not downloaded what would be left out again', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) => {
+        if (url.endsWith('/login')) {
+          return new Response('<html>sign in</html>', { headers: { 'content-type': 'text/html' } });
+        }
+        if (url.endsWith('/huge')) {
+          return new Response(new Uint8Array(8), {
+            headers: { 'content-type': 'image/png', 'content-length': String(1024 ** 3) },
+          });
+        }
+        return new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } });
+      });
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'b.jpg': 'https://files.example.com/media/login',
+          'c.jpg': 'https://files.example.com/media/huge',
+        }),
+        provider,
+      );
+
+      expect(outcome.images).toHaveLength(1);
+      // Not an image, too large: the same answer drops them again, so the
+      // result stays cacheable.
+      expect(outcome.imagesNotDownloaded).toBeUndefined();
+      expect(outcome.stats.diagnostics).toEqual([
+        '2 document image(s) not kept (limit 100, or unreadable)',
+      ]);
+    });
   });
 });
 
@@ -278,7 +315,7 @@ describe('MinerU parser', () => {
     });
     expect(parsed.images).toEqual([
       url,
-      `data:image/png;base64,${JPEG_BASE64}`,
+      `data:image/jpeg;base64,${JPEG_BASE64}`,
       'data:image/jpeg;base64,BBBB',
     ]);
     expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({ src: url, path: 'abc.jpg' });
@@ -294,14 +331,45 @@ describe('MinerU parser', () => {
     expect(parsed.images).toEqual(paths);
   });
 
-  it.each([
-    ['PNG', PNG_BASE64],
-    ['JPEG', JPEG_BASE64],
-    ['GIF', Buffer.from('GIF89a\x01\x00\x01\x00', 'latin1').toString('base64')],
-    ['WebP', Buffer.from('RIFF\x24\x00\x00\x00WEBPVP8 ', 'latin1').toString('base64')],
-  ])('wraps bare base64 of a %s image', (_, base64) => {
+  const bytes = (...values: number[]) => Buffer.from([...values, 0, 0, 0, 0]).toString('base64');
+
+  // Every type MinerU accepts as an input image may come back as an extracted one.
+  const SIGNED: Array<[string, string, string]> = [
+    ['PNG', 'image/png', PNG_BASE64],
+    ['JPEG', 'image/jpeg', JPEG_BASE64],
+    ['GIF', 'image/gif', Buffer.from('GIF89a\x01\x00\x01\x00', 'latin1').toString('base64')],
+    [
+      'WebP',
+      'image/webp',
+      Buffer.from('RIFF\x24\x00\x00\x00WEBPVP8 ', 'latin1').toString('base64'),
+    ],
+    ['BMP', 'image/bmp', Buffer.from('BM\x46\x00\x00\x00', 'latin1').toString('base64')],
+    ['little-endian TIFF', 'image/tiff', bytes(0x49, 0x49, 0x2a, 0x00)],
+    ['big-endian TIFF', 'image/tiff', bytes(0x4d, 0x4d, 0x00, 0x2a)],
+    [
+      'boxed JPEG 2000',
+      'image/jp2',
+      bytes(0x00, 0x00, 0x00, 0x0c, 0x6a, 0x50, 0x20, 0x20, 0x0d, 0x0a, 0x87, 0x0a),
+    ],
+    ['JPEG 2000 codestream', 'image/jp2', bytes(0xff, 0x4f, 0xff, 0x51)],
+  ];
+
+  it.each(SIGNED)('wraps bare base64 of a %s image as %s', (_, mimeType, base64) => {
     expect(extractMinerUResult({ md_content: '', images: { 'a.jpg': base64 } }).images).toEqual([
-      `data:image/png;base64,${base64}`,
+      `data:${mimeType};base64,${base64}`,
+    ]);
+  });
+
+  it('covers every image type MinerU accepts', () => {
+    const covered = new Set(SIGNED.map(([, mimeType]) => mimeType));
+    expect(MINERU_IMAGE_MIMES.filter((mime) => !covered.has(mime))).toEqual([]);
+  });
+
+  it('does not take a JPEG 2000 box of another kind for an image', () => {
+    // A box of the same length that is not the JPEG 2000 signature.
+    const other = bytes(0x00, 0x00, 0x00, 0x0c, 0x66, 0x74, 0x79, 0x70, 0x0d, 0x0a, 0x87, 0x0a);
+    expect(extractMinerUResult({ md_content: '', images: { 'a.jpg': other } }).images).toEqual([
+      other,
     ]);
   });
 

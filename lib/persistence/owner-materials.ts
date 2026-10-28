@@ -101,6 +101,12 @@ export interface OwnerMaterialExtraction {
   imageCount?: number;
   /** Images the extractor found that could not be stored (left out of `imageCount`). */
   imagesSkipped?: number;
+  /**
+   * Of `imagesSkipped`, those another attempt may download (internal): a
+   * ready extraction that has any is not reused. Absent from extractions
+   * stored before it was recorded, which count every skipped image.
+   */
+  imagesRetryable?: number;
   truncated?: OwnerMaterialTruncation;
   /** The extractor that produced the result. */
   extractor?: string;
@@ -151,7 +157,10 @@ export interface OwnerMaterialView {
   originalName?: string;
   /** `media` for audio and video (transcribed), `document` for everything else. */
   mediaKind: 'document' | 'media';
-  extraction?: Omit<OwnerMaterialExtraction, 'identityKey' | 'resultKey' | 'claimedAt'>;
+  extraction?: Omit<
+    OwnerMaterialExtraction,
+    'identityKey' | 'resultKey' | 'claimedAt' | 'imagesRetryable'
+  >;
   createdAt: string;
 }
 
@@ -433,6 +442,7 @@ export function publicMaterial(record: OwnerMaterialRecord): OwnerMaterialView {
   delete extraction?.identityKey;
   delete extraction?.resultKey;
   delete extraction?.claimedAt;
+  delete extraction?.imagesRetryable;
   // Preserve the classic composer error contract; library views and tools
   // independently strip diagnostics from every source format.
   if (!usesClassicExtraction(record)) delete extraction?.error;

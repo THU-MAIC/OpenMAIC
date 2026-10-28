@@ -69,28 +69,37 @@ interface KeptImage {
 /**
  * The bytes of the images the provider answered as URLs, as data URLs by
  * index into `candidates`, downloaded within the extraction's time budget;
- * an image missing from the answer could not be downloaded. An abort of
- * `signal` (the extraction is cancelled) stops the downloads and fails this.
+ * an image missing from the answer could not be downloaded, and is in
+ * `retryable` when another attempt may download it (not when a limit, its
+ * size or its content left it out). An abort of `signal` (the extraction is
+ * cancelled) stops the downloads and fails this.
  */
 async function downloadedImages(
   candidates: ReadonlyArray<{ data?: string }>,
   signal?: AbortSignal,
-): Promise<Map<number, string>> {
+): Promise<{ downloaded: Map<number, string>; retryable: Set<number> }> {
   const remote = candidates.flatMap((asset, index) => {
     const url = remoteImageUrl(asset.data);
     return url ? [{ id: String(index), src: url }] : [];
   });
-  if (remote.length === 0) return new Map();
+  if (remote.length === 0) return { downloaded: new Map(), retryable: new Set() };
   const deadline = AbortSignal.timeout(STEP_DEADLINES_MS.materialAnalysis);
-  const { images } = await inlineRemoteImages(remote, { deadline, ...(signal ? { signal } : {}) });
-  return new Map(images.map((image) => [Number(image.id), image.src]));
+  const { images, retryable } = await inlineRemoteImages(remote, {
+    deadline,
+    ...(signal ? { signal } : {}),
+  });
+  return {
+    downloaded: new Map(images.map((image) => [Number(image.id), image.src])),
+    retryable: new Set(retryable.map(Number)),
+  };
 }
 
 /**
  * The document's images to keep, in provider order and within the bounds,
  * each prepared as WebP, keyed `img-<n>`. An image that cannot be downloaded,
  * decoded or prepared is skipped; `notDownloaded` counts the downloads that
- * failed, which may succeed another time.
+ * failed and may succeed another time (not the ones a limit, their size or
+ * their content left out, which would be again).
  */
 async function keptImages(
   artifact: DocumentArtifact,
@@ -101,7 +110,7 @@ async function keptImages(
   notDownloaded: number;
 }> {
   const candidates = artifact.assets.filter((asset) => asset.type === 'image' && asset.data);
-  const downloaded = await downloadedImages(candidates, signal);
+  const { downloaded, retryable } = await downloadedImages(candidates, signal);
   const kept: Array<KeptImage & { path?: string }> = [];
   let skipped = 0;
   let notDownloaded = 0;
@@ -114,7 +123,7 @@ async function keptImages(
     try {
       const remote = remoteImageUrl(asset.data) !== undefined;
       const data = remote ? downloaded.get(index) : asset.data;
-      if (remote && !data) notDownloaded += 1;
+      if (remote && !data && retryable.has(index)) notDownloaded += 1;
       prepared = data ? await prepareDerivedImage(decodeMediaAssetData(data)) : null;
     } catch {
       prepared = null;

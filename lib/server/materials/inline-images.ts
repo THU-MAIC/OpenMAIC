@@ -19,6 +19,11 @@
  * belongs to; an abort of `signal` does fail it. A `deadline` bounds the
  * downloads without failing them: once it fires, the downloads still running
  * are stopped and every image not yet downloaded is dropped and counted.
+ *
+ * A dropped image is retryable when another attempt may download it (the
+ * request failed, timed out or ran past the deadline), and not when the same
+ * answer drops it again (over the image limit or the byte budget, too large,
+ * not an image, or a source with no bytes and no URL).
  */
 import sharp from 'sharp';
 
@@ -71,6 +76,16 @@ export interface InlinedImages<T> {
   images: T[];
   /** How many images were dropped. */
   skipped: number;
+  /** The ids of the dropped images another attempt may download (a subset of `skipped`). */
+  retryable: string[];
+}
+
+/** A download answered something other than an image: it would again. */
+class NotAnImageError extends Error {
+  constructor() {
+    super('the response is not an image');
+    this.name = 'NotAnImageError';
+  }
 }
 
 /**
@@ -142,7 +157,7 @@ async function downloadAsDataUrl(
   });
   if (bytes.byteLength === 0) throw new Error('empty body');
   const mimeType = await imageMimeType(response, bytes);
-  if (!mimeType) throw new Error('the response is not an image');
+  if (!mimeType) throw new NotAnImageError();
   return { src: `data:${mimeType};base64,${bytes.toString('base64')}`, bytes };
 }
 
@@ -199,6 +214,7 @@ export async function inlineRemoteImages<
     isInlineImageSource(image.src) ? image : null,
   );
   const remote: Array<{ index: number; url: string }> = [];
+  const retryable = new Set<number>();
   images.forEach((image, index) => {
     if (results[index]) return;
     const url = remoteImageUrl(image.src);
@@ -235,6 +251,14 @@ export async function inlineRemoteImages<
         signal?.throwIfAborted();
         // It did not fit in what is left: the downloads still running stop too.
         if (error instanceof DownloadSizeLimitError && error.scope === 'aggregate') spend();
+        // Too large, not an image, or stopped once the budget was spent: the
+        // same answer drops it again. Anything else (an error status, a
+        // transport failure, a timeout, the deadline) may not recur.
+        const permanent =
+          error instanceof DownloadSizeLimitError ||
+          error instanceof NotAnImageError ||
+          (spent.signal.aborted && !options.deadline?.aborted && !timeout.signal.aborted);
+        if (!permanent) retryable.add(index);
         log.warn(
           `image ${image.id}: download of ${loggedUrl(url)} failed; dropped`,
           error instanceof Error ? error.message : error,
@@ -249,8 +273,16 @@ export async function inlineRemoteImages<
   if (next < remote.length) {
     const why = spent.signal.aborted ? 'once the byte budget was spent' : 'before the deadline';
     log.warn(`${remote.length - next} image(s) not requested ${why}; dropped`);
+    // Out of room is the same next time; out of time may not be.
+    if (!spent.signal.aborted) {
+      for (const { index } of remote.slice(next)) retryable.add(index);
+    }
   }
 
   const inlined = results.filter((image): image is T => image !== null);
-  return { images: inlined, skipped: images.length - inlined.length };
+  return {
+    images: inlined,
+    skipped: images.length - inlined.length,
+    retryable: [...retryable].sort((a, b) => a - b).map((index) => images[index]!.id),
+  };
 }
