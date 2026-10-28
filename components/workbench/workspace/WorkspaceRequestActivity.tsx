@@ -326,6 +326,7 @@ function RequestPreview({
   readonly t: Translate;
 }) {
   const reduced = useReducedMotion();
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
   const hosted = useHostedQuestion(view, hidden);
   const copy = sceneCopy(view, t);
   const asking = view.scene === 'asking' && view.question !== null && view.mode === 'scene';
@@ -392,7 +393,7 @@ function RequestPreview({
             <motion.div
               key={
                 asking && view.question
-                  ? `question-${view.question.node.key}`
+                  ? `question-${sessionScopedKey(sessionId, view.question.node.key)}`
                   : revealing
                     ? 'roster'
                     : 'scene'
@@ -570,6 +571,9 @@ function QuestionCard({
   readonly t: Translate;
 }) {
   const answer = useQuestionHost((s) => s.answer);
+  // Node keys repeat across sessions; keying the form by session keeps one
+  // conversation's in-flight form state off another's question.
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
   return (
     <div data-testid="request-preview-question" className={cn(CARD, 'text-left')}>
       {/* The same centered composition as the scene card: skills, mark, title, line. */}
@@ -590,7 +594,7 @@ function QuestionCard({
       <div className="wbchat border-t border-[var(--ws-line-soft)] px-8 pb-6 pt-5">
         {hosted && answer ? (
           <QuestionForm
-            key={hosted.key}
+            key={sessionScopedKey(sessionId, hosted.key)}
             node={hosted}
             onAnswer={answer}
             onDismiss={onHandBack}
