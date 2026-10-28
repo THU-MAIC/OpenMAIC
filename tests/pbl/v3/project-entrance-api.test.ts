@@ -44,8 +44,12 @@ it('reads authorized project metadata without creating a study or touching a san
   expect(mocks.sandbox).not.toHaveBeenCalled();
 });
 it('uses the retained study project after scene edits and never renews its environment', async () => {
-  mocks.find.mockResolvedValue({ project });
-  expect(await (await GET(request())).json()).toMatchObject({ started: true });
+  mocks.find.mockResolvedValue({ project, id: 'completed-study', state: { status: 'completed' } });
+  expect(await (await GET(request())).json()).toMatchObject({
+    started: true,
+    studyId: 'completed-study',
+    reportAvailable: true,
+  });
   expect(mocks.scene).not.toHaveBeenCalled();
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(mocks.sandbox).not.toHaveBeenCalled();
