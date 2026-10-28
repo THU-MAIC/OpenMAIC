@@ -470,7 +470,7 @@ function toolResponse(calls: { name: string; input: Record<string, unknown> }[])
       type: 'tool-call',
       toolCallId: randomUUID(),
       toolName: call.name,
-      input: call.input,
+      input: call.name === 'request_skill_review' ? { explanation: '', ...call.input } : call.input,
     })),
     modelFinish('tool-calls'),
   ];
@@ -742,9 +742,18 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           expectedHash: digest(text),
         });
         await invoke(config, 'request_skill_review', {
+          explanation: 'The plan follows the saved choice and describes how to check its result.',
           question: 'Review the current plan and any necessary changes.',
         });
       });
+      const delivered = await learningView(principal, study.id);
+      expect(
+        delivered.messages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message.text),
+      ).toContain(
+        'The plan follows the saved choice and describes how to check its result.\n\nReview the current plan and any necessary changes.',
+      );
       await runTools('我认可当前版本，没有需要改的，可以继续。', async (config) => {
         await invoke(config, 'read_next_skill', {
           studentFeedback:

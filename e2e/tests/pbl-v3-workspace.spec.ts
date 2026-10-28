@@ -852,7 +852,7 @@ test('installed sample opens in the normal classroom and preserves progress afte
     'aria-selected',
     'true',
   );
-  // Build feedback uses the existing task drawer without shrinking the editor.
+  // Build output uses the task drawer; only the explicit read-only notice takes editor space.
   const editorHeight = (await page.locator('.monaco-editor').first().boundingBox())!.height;
   view.actions.push('compile');
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
@@ -879,7 +879,8 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await page.getByRole('button', { name: 'Close task details', exact: true }).click();
   await expect(page.locator('.pbl-task-dock [data-action="compile"] .animate-spin')).toHaveCount(1);
   expect(
-    (await page.locator('.monaco-editor').first().boundingBox())!.height,
+    (await page.locator('.monaco-editor').first().boundingBox())!.height +
+      ((await page.getByTestId('pbl-editor-readonly').boundingBox())?.height ?? 0),
   ).toBeGreaterThanOrEqual(editorHeight - 1);
   view.evaluation.state = 'exited';
   view.evaluation.stderr = 'greeting.py:1: SyntaxError: expected a colon';

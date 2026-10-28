@@ -13,7 +13,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { reviewQuestions } from './review-question';
+import { canonicalReview, reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -942,6 +942,7 @@ export async function learningView(
       inputId?: number;
       messageId?: number;
       handoff: boolean;
+      canonical?: boolean;
     }
   > = [];
   let conversation: LearningView['conversation'] = [];
@@ -1013,10 +1014,14 @@ export async function learningView(
           scope: binding.session_id,
           inputId: data.pblInputId,
           handoff: true,
+          canonical: canonicalReview(event),
         });
         if (
           event.id > (latestUserSeq ?? 0) &&
-          question === (binding.guided?.handoff?.question ?? binding.guided?.pending?.question)
+          question ===
+            (binding.guided?.handoff?.question ??
+              binding.guided?.pending?.displayText ??
+              binding.guided?.pending?.question)
         )
           currentQuestionShown = true;
       }
@@ -1086,23 +1091,34 @@ export async function learningView(
   conversation = conversation.slice(-60);
   // The review transaction can commit before the runner persists its display event.
   const pendingReview = binding?.guided?.handoff ?? binding?.guided?.pending;
+  const pendingDisplay =
+    pendingReview &&
+    ('displayText' in pendingReview
+      ? (pendingReview.displayText ?? pendingReview.question)
+      : pendingReview.question);
+  const canonicalPending =
+    !!pendingReview &&
+    (('displayText' in pendingReview && !!pendingReview.displayText) ||
+      ('kind' in pendingReview && pendingReview.kind === 'support'));
   if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
     messages.push({
       role: 'assistant',
-      text: pendingReview.question,
+      text: pendingDisplay!,
       scope: binding!.session_id,
       inputId: latestUserSeq,
+      canonical: canonicalPending,
       handoff: true,
     });
     conversation.push({
-      id: `pending-${pendingReview.runId}`,
+      id: `${binding!.session_id}:pending-${pendingReview.runId}`,
       speaker: binding!.role,
       inputId: latestUserSeq,
       parts: [
         {
           kind: 'text',
           id: `question-pending-${pendingReview.runId}`,
-          text: pendingReview.question,
+          text: pendingDisplay!,
+          ...(canonicalPending ? { canonical: true as const } : {}),
         },
       ],
     });
@@ -1124,7 +1140,9 @@ export async function learningView(
     ? {
         ...cached.environment,
         ready: cached.environment.ready && !released,
-        ...(row.idle_turn_cleanup?.releasing && cached.environment.state !== 'destroyed'
+        ...(row.idle_turn_cleanup?.environmentId === row.environment_id &&
+        row.idle_turn_cleanup.releasing &&
+        cached.environment.state !== 'destroyed'
           ? { releasing: true }
           : { releasing: false }),
       }
@@ -1142,7 +1160,9 @@ export async function learningView(
       environment = observed
         ? {
             state: observed.state,
-            ...(row.idle_turn_cleanup?.releasing && observed.state !== 'destroyed'
+            ...(row.idle_turn_cleanup?.environmentId === row.environment_id &&
+            row.idle_turn_cleanup.releasing &&
+            observed.state !== 'destroyed'
               ? { releasing: true }
               : {}),
             ready: !released && observed.state === 'running' && observed.workspaceReady,

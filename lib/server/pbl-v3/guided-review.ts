@@ -10,6 +10,7 @@ const receiptSchema = z.object({
   artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),
   runId: z.string(),
   question: z.string().min(1),
+  displayText: z.string().min(1).optional(),
   approval: z.boolean().optional(),
 });
 export const guidedSkillStateSchema = z
@@ -233,7 +234,12 @@ export class GuidedSkillReview {
     this.advanced = true;
   }
 
-  checkpoint(question: string, digest: string, approval = false): GuidedSkillState {
+  checkpoint(
+    question: string,
+    digest: string,
+    approval = false,
+    displayText?: string,
+  ): GuidedSkillState {
     if (!question.trim()) throw new Error('请给出当前段的具体检查任务');
     // The welcome is already supplied by the host prompt. Recording readiness
     // may be the model's first tool call; it must not depend on a redundant read.
@@ -246,6 +252,7 @@ export class GuidedSkillReview {
       artifactDigest: digest,
       runId: this.runId,
       question,
+      ...(displayText ? { displayText } : {}),
       ...(approval ? { approval: true } : {}),
     };
     this.ended = true;

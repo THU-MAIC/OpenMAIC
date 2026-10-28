@@ -3,7 +3,7 @@ import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewQuestions, canonicalReview } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -114,9 +114,10 @@ export function projectConversation(
     const question = questions.get(event.id);
     if (
       question &&
-      !getAssistant(event).parts.some(
-        (part) => part.kind === 'text' && part.text.includes(question),
-      )
+      (canonicalReview(event) ||
+        !getAssistant(event).parts.some(
+          (part) => part.kind === 'text' && part.text.includes(question),
+        ))
     )
       getAssistant(event).parts.push({
         kind: 'text',
@@ -125,6 +126,7 @@ export function projectConversation(
             ? `question-${event.attempt}-${record(event.data).toolCallId}`
             : `question-${event.id}`,
         text: question,
+        ...(canonicalReview(event) ? { canonical: true } : {}),
       });
   };
   for (const event of events) {

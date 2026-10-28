@@ -264,7 +264,11 @@ export async function teachingRunnerConfig(input: {
                       input.sessionId,
                       JSON.stringify(review.state),
                     ]);
-                    if (name === 'request_learner_help' || name === 'respond_to_learner') {
+                    if (
+                      name === 'request_learner_help' ||
+                      name === 'respond_to_learner' ||
+                      (name === 'request_skill_review' && review.state.pending?.displayText)
+                    ) {
                       // Publish the learner-facing handoff atomically with its turn receipt.
                       const sequence = await store
                         .agentStore(db)
@@ -273,7 +277,16 @@ export async function teachingRunnerConfig(input: {
                           attempt: input.attempt,
                           type: LEARNER_HANDOFF_EVENT,
                           data: {
-                            ...review.state.handoff!,
+                            ...(name === 'request_skill_review'
+                              ? {
+                                  runId: review.state.pending!.runId,
+                                  question: review.state.pending!.displayText,
+                                  canonical: true,
+                                }
+                              : {
+                                  ...review.state.handoff!,
+                                  ...(name === 'respond_to_learner' ? { canonical: true } : {}),
+                                }),
                             toolCallId: _id,
                             ...(name === 'respond_to_learner'
                               ? { stageKey: bound.stage_key, sourceUserSeq: latest!.seq }
@@ -507,7 +520,14 @@ export async function teachingRunnerConfig(input: {
           if (!latest || latest.pblOpening)
             throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
           review.support(p.response);
-          return { value: { response: p.response, waitForStudent: true, advancesProgress: false } };
+          return {
+            value: {
+              response: p.response,
+              canonical: true,
+              waitForStudent: true,
+              advancesProgress: false,
+            },
+          };
         },
       ),
     );
@@ -597,10 +617,15 @@ export async function teachingRunnerConfig(input: {
         'request_skill_review',
         'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
         Type.Object({
+          explanation: Type.String({
+            maxLength: 32000,
+            description:
+              'The complete learner-facing explanation for this turn, excluding the closing question. Put the welcome/lesson/file guidance here, not also in ordinary prose. Empty only when no explanation is needed. If prose was already delivered before recovery, copy its explanation here verbatim. This committed message replaces earlier ordinary prose for this same learner input; preserve all relevant explanation.',
+          }),
           question: Type.String({
             minLength: 1,
             description:
-              'Only the learner-facing question or invitation. Exclude the lesson explanation, introduction and examples. If already asked in prose, copy that question verbatim.',
+              'Exactly one closing question or invitation, without the explanation. It is joined to explanation for a single learner-visible message.',
           }),
           approval: Type.Optional(Type.Boolean()),
         }),
@@ -611,8 +636,18 @@ export async function teachingRunnerConfig(input: {
             stage.kind === 'produce' &&
             stage.reviewRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          review.checkpoint(p.question, hash, approval);
-          return { value: { question: p.question, waitForStudent: true } };
+          const response =
+            typeof p.explanation === 'string'
+              ? [p.explanation.trim(), p.question].filter(Boolean).join('\n\n')
+              : undefined;
+          review.checkpoint(p.question, hash, approval, response);
+          return {
+            value: {
+              question: p.question,
+              ...(response ? { response, canonical: true } : {}),
+              waitForStudent: true,
+            },
+          };
         },
       ),
     );
@@ -943,7 +978,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy it verbatim into request_skill_review (or request_learner_help for a blocked required build). Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the explanation verbatim into request_skill_review.explanation and its single closing question into question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a Continue button exists before completion succeeds.';
   if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
   return true;
 }
