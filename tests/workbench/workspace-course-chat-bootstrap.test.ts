@@ -1621,6 +1621,119 @@ describe('the knowledge base page', () => {
       expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
     });
 
+    describe('a run that ends while its course is being read', () => {
+      const build = async () => {
+        const { createInitialSessionState, foldEvent } = await vi.importActual<
+          typeof import('@/lib/workbench/session-store')
+        >('@/lib/workbench/session-store');
+        let id = 0;
+        let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+          createInitialSessionState();
+        const event = (type: string, data: unknown = {}) => {
+          folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+        };
+        event('session_start', { prompt: 'Make a course' });
+        event('tool_execution_start', {
+          toolCallId: 'create',
+          toolName: 'create_stage',
+          args: { title: 'Course' },
+        });
+        event('stage_link', { stageId: 'stage-1' });
+        event('tool_execution_end', {
+          toolCallId: 'create',
+          toolName: 'create_stage',
+          result: { content: [], details: { stageId: 'stage-1', title: 'Course' } },
+        });
+        event('tool_execution_start', {
+          toolCallId: 'scene',
+          toolName: 'generate_scene',
+          args: { stageId: 'stage-1', order: 1, type: 'slide' },
+        });
+        const attach = (status: string) =>
+          Object.assign(mocks.store, folded, {
+            sessionId: 'session-1',
+            status,
+            replaying: false,
+            replayedStageLinkCount: 1,
+          });
+        // Every readiness read waits until the test releases it.
+        const held: Array<() => void> = [];
+        vi.mocked(fetch).mockImplementation(
+          (input) =>
+            new Promise((resolve) => {
+              held.push(() =>
+                resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () =>
+                    String(input).includes('/manifest')
+                      ? { rev: 1, scenes: [{ id: 'first', order: 0, rev: 1 }] }
+                      : { scenes: [{ id: 'first', stageId: 'stage-1' }] },
+                } as Response),
+              );
+            }),
+        );
+        const release = async () => {
+          for (let round = 0; round < 4; round += 1) {
+            await act(async () => {
+              held.splice(0).forEach((done) => done());
+              await new Promise((done) => setTimeout(done, 0));
+            });
+          }
+        };
+        // Attached mid-run: the course's link is already in the replay baseline.
+        attach('running');
+        await render();
+        await render();
+        expect(
+          container?.querySelector('[data-testid="workspace-request-activity"]'),
+        ).not.toBeNull();
+        expect(held.length).toBeGreaterThan(0);
+        // The page lands and the run ends before the read answers.
+        event('checkpoint', {
+          tool: 'generate_scene',
+          stageId: 'stage-1',
+          order: 1,
+          sceneId: 'first',
+        });
+        event('tool_execution_end', {
+          toolCallId: 'scene',
+          toolName: 'generate_scene',
+          result: {},
+        });
+        event('agent_end');
+        event('session_end', { status: 'succeeded' });
+        attach('succeeded');
+        await render();
+        await render();
+        return { release, held };
+      };
+
+      it('still opens the course once the read answers, and retires the preview then', async () => {
+        const { release } = await build();
+        // The placeholder waits for the handoff rather than vanishing first.
+        expect(
+          container?.querySelector('[data-testid="workspace-request-activity"]'),
+        ).not.toBeNull();
+        await release();
+        await render();
+        expect(window.location.search).toBe('?session=session-1&course=stage-1');
+        expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+      });
+
+      it('does not open a course whose tab the user closed meanwhile', async () => {
+        const { release } = await build();
+        localStorage.setItem(
+          COURSE_TABS_STORAGE_KEY,
+          JSON.stringify({ courseIds: [], closedCourseIds: ['stage-1'], activeCourseId: null }),
+        );
+        await render();
+        await release();
+        await render();
+        expect(window.location.search).toBe('?session=session-1');
+      });
+    });
+
     it('opens every course of a replayed series at its first scene, not only the first', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')

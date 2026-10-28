@@ -63,6 +63,8 @@ export const FIRST_SCENE_RETRY_DELAYS_MS: readonly number[] = [1000, 2000, 4000,
 export function watchFirstScene(
   courseIds: readonly string[],
   onReady: (id: string) => void,
+  /** Called once the probe stops on its own: ready, answered "not ready", or out of retries. */
+  onSettled?: () => void,
 ): () => void {
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -73,12 +75,16 @@ export function watchFirstScene(
       if (cancelled) return;
       if (probe === 'ready') {
         onReady(id);
+        onSettled?.();
         return;
       }
       if (probe === 'failed') failed = true;
     }
     const delay = FIRST_SCENE_RETRY_DELAYS_MS[attempt];
-    if (!failed || delay === undefined) return;
+    if (!failed || delay === undefined) {
+      onSettled?.();
+      return;
+    }
     timer = setTimeout(() => {
       timer = null;
       void check(attempt + 1);

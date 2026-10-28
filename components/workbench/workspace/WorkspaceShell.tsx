@@ -1012,12 +1012,29 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   // Bound beside a course and looking through existing courses (and creating
   // none): the conversation is about existing courses; no placeholder.
   const onExistingCourses = useWorkbenchStore((s) => worksOnExistingCourses(s.chat, s.stageId));
+  // The courses this request created that this visit saw it create while the
+  // run was live, and that are not reconciled as a tab yet (opened, closed, or
+  // remembered). They outlive the run: a run that ends before a course's first
+  // scene was read still hands it off. Per conversation.
+  const [pendingOwn, setPendingOwn] = useState<{
+    readonly sessionId: string | null;
+    readonly ids: readonly string[];
+  }>({ sessionId: null, ids: [] });
+  const isReconciled = (id: string) =>
+    [courseTabs, rememberedTabs].some(
+      (tabs) => tabs?.courseIds.includes(id) || (tabs?.closedCourseIds ?? []).includes(id),
+    );
+  const pendingHandoff =
+    pendingOwn.sessionId === attachedSessionId && pendingOwn.ids.some((id) => !isReconciled(id));
   // A finished request whose own course has a scene is history: reopened
   // without tab memory, its replayed link does not navigate, and there is no
-  // handoff left to wait for. Like any finished conversation, no placeholder.
+  // handoff left to wait for. Like any finished conversation, no placeholder —
+  // unless this visit is still handing one of its courses off: then the
+  // handoff retires the placeholder, not the end of the run.
   const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
   const finishedRequestMadeScene =
     !requestLive &&
+    !pendingHandoff &&
     (thisRequestMadeScene ||
       anyCourseHasScene(createdThisRequest, courses.state === 'ready' ? courses.classrooms : []));
   const beforeFirstScene =
@@ -1087,6 +1104,19 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     },
     [collapse, courseTabs, navigateInBackground, persistCourseTabs, previewShowing],
   );
+  // The readiness reads outlive a render; they hand off through the latest
+  // handoff, and skip a course the user has reconciled meanwhile.
+  const handOffRef = useRef(handOffPreview);
+  useLayoutEffect(() => {
+    handOffRef.current = (courseId: string) => {
+      const tabs = courseTabsRef.current;
+      if (tabs.courseIds.includes(courseId) || (tabs.closedCourseIds ?? []).includes(courseId)) {
+        return;
+      }
+      handOffPreview(courseId);
+    };
+  });
+  const firstSceneWatchers = useRef(new Map<string, () => void>());
 
   // Request keys come from per-session event sequences and collide across
   // conversations, so the close is remembered with the conversation it was for.
@@ -1136,10 +1166,33 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     // request's own whatever the pane shows, replayed links included, so a
     // series restored after a reload keeps every course, not just the first.
     const live = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
-    const ownCourses =
+    const unreconciled = (id: string) =>
+      !rememberedCourseIds.includes(id) &&
+      !courseTabs.courseIds.includes(id) &&
+      !(courseTabs.closedCourseIds ?? []).includes(id);
+    const liveOwn =
       live && !panes.library && !earlierCourseHasScene
-        ? createdThisRequest.filter((id) => !rememberedCourseIds.includes(id))
+        ? createdThisRequest.filter(unreconciled)
         : [];
+    // Admitted while live, kept until reconciled, through the end of the run.
+    const keptOwn =
+      pendingOwn.sessionId === attachedSessionId ? pendingOwn.ids.filter(unreconciled) : [];
+    const ownCourses = [...new Set([...keptOwn, ...liveOwn])];
+    const pendingChanged =
+      pendingOwn.sessionId !== attachedSessionId ||
+      ownCourses.length !== pendingOwn.ids.length ||
+      ownCourses.some((id) => !pendingOwn.ids.includes(id));
+    if (pendingChanged) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the kept set follows the durable facts above
+      setPendingOwn({ sessionId: attachedSessionId, ids: ownCourses });
+    }
+    // A reconciled course needs no more reading.
+    for (const [id, cancel] of firstSceneWatchers.current) {
+      if (!unreconciled(id)) {
+        cancel();
+        firstSceneWatchers.current.delete(id);
+      }
+    }
     const eligibleLinks = stageLinkStageIds.filter(
       (id, index) => index >= replayedStageLinkCount || ownCourses.includes(id),
     );
@@ -1162,13 +1215,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     const previewHolds = previewTabOpen || (previewEligible && creatingInRequest);
     const others = previewHolds ? [] : open.filter((id) => !ownCourses.includes(id));
     if (others.length > 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronize the existing live course-link behavior
+      // Synchronize the existing live course-link behavior.
       openCourses(others);
       return;
     }
-    // One at a time: a handoff changes the tab set, which re-runs this effect
-    // for the courses still waiting.
-    return watchFirstScene(open, (courseId) => handOffPreview(courseId));
+    // Each waiting course has one readiness read in flight at most. It is not
+    // cancelled when this effect re-runs (the run ending is one such change):
+    // only a conversation switch, unmount or the course being reconciled stops
+    // it. A read that settles without a scene frees the slot for the next
+    // trigger (a checkpoint, the course list).
+    for (const id of open) {
+      if (firstSceneWatchers.current.has(id)) continue;
+      const cancel = watchFirstScene(
+        [id],
+        (courseId) => handOffRef.current(courseId),
+        () => {
+          if (firstSceneWatchers.current.get(id) === cancel) firstSceneWatchers.current.delete(id);
+        },
+      );
+      firstSceneWatchers.current.set(id, cancel);
+    }
   }, [
     attachedSessionId,
     attachedSessionReplaying,
@@ -1190,7 +1256,17 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     attachedSessionStatus,
     panes.library,
     thisRequestScenes,
+    pendingOwn,
   ]);
+
+  // The readiness reads belong to the attached conversation.
+  useEffect(() => {
+    const watchers = firstSceneWatchers.current;
+    return () => {
+      for (const cancel of watchers.values()) cancel();
+      watchers.clear();
+    };
+  }, [attachedSessionId]);
 
   useGeneratedCourseDiscoverySync({
     sessionId: attachedSessionId,
