@@ -4,6 +4,7 @@ import { installPreviewActivity, previewShell } from '../../scripts/sandbox-prev
 const listeners = new Map<string, (event: { isTrusted: boolean }) => void>();
 let loaded: () => void;
 let visible: () => void;
+let appDocument: { addEventListener: ReturnType<typeof vi.fn> } | null;
 let documentState: { visibilityState: string; addEventListener: ReturnType<typeof vi.fn> };
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -19,21 +20,45 @@ beforeEach(() => {
   };
   vi.stubGlobal('document', documentState);
   vi.stubGlobal('fetch', fetchMock);
+  appDocument = {
+    addEventListener: vi.fn((name: string, fn: (event: { isTrusted: boolean }) => void) =>
+      listeners.set(name, fn),
+    ),
+  };
   installPreviewActivity({
     addEventListener: (_name: string, fn: () => void) => {
       loaded = fn;
     },
-    contentDocument: {
-      addEventListener: (name: string, fn: (event: { isTrusted: boolean }) => void) =>
-        listeners.set(name, fn),
+    get contentDocument() {
+      return appDocument;
     },
   });
-  loaded();
 });
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it('tracks input before iframe load, follows document replacement and does not duplicate listeners', async () => {
+  // The first document is usable while resources are still pending; no load event.
+  listeners.get('keydown')!({ isTrusted: true });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  loaded();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(appDocument!.addEventListener).toHaveBeenCalledTimes(3);
+
+  // Navigating replaces the Document before the next iframe load event, too.
+  appDocument = null;
+  await vi.advanceTimersByTimeAsync(100);
+  listeners.clear();
+  appDocument = { addEventListener: vi.fn((name, fn) => listeners.set(name, fn)) };
+  await vi.advanceTimersByTimeAsync(100);
+  expect(appDocument.addEventListener).toHaveBeenCalledTimes(3);
+  listeners.get('pointerdown')!({ isTrusted: true });
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 it('coalesces real iframe input and never reports load, synthetic events, quiet time or hidden input', async () => {
@@ -61,16 +86,19 @@ it('coalesces real iframe input and never reports load, synthetic events, quiet 
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
-it('retains genuine unsent input after transient failures, but stops retrying a revoked grant', async () => {
-  fetchMock.mockResolvedValueOnce({ ok: false, status: 502 });
-  listeners.get('keydown')!({ isTrusted: true });
-  await vi.advanceTimersByTimeAsync(30_000);
-  expect(fetchMock).toHaveBeenCalledTimes(2);
-  fetchMock.mockResolvedValue({ ok: false, status: 403 });
-  listeners.get('keydown')!({ isTrusted: true });
-  await vi.advanceTimersByTimeAsync(120_000);
-  expect(fetchMock).toHaveBeenCalledTimes(3);
-});
+it.each([429, 500, 502, 503, 504])(
+  'retries input after HTTP %s but drops a revoked batch',
+  async (status) => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status });
+    listeners.get('keydown')!({ isTrusted: true });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    fetchMock.mockResolvedValue({ ok: false, status: 403 });
+    listeners.get('keydown')!({ isTrusted: true });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  },
+);
 
 it('uses an isolated shell in both iframe and new-tab modes, and drops the bootstrap ticket before mounting app HTML', () => {
   const html = previewShell('test-nonce');

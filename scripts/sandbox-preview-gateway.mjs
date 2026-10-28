@@ -68,6 +68,12 @@ function token(req) {
 }
 // Each request and WebSocket upgrade rechecks the current grant epoch.
 // Reusing a recently resolved target would allow writes after revocation.
+class PreviewResolveError extends Error {
+  constructor(statusCode) {
+    super('Preview resolution failed.');
+    this.statusCode = statusCode;
+  }
+}
 async function resolve(ticket, host, activity = false) {
   const body = JSON.stringify({ ticket, host, ...(activity ? { activity: true } : {}) });
   const at = String(Date.now());
@@ -77,17 +83,26 @@ async function resolve(ticket, host, activity = false) {
     createHmac('sha256', gatewayKey)
       .update(at + '.' + body)
       .digest('hex');
-  const r = await fetch(backendUrl, {
-    method: 'POST',
-    redirect: 'error',
-    signal: AbortSignal.timeout(30_000),
-    headers: { 'content-type': 'application/json', 'x-openmaic-preview-gateway': auth },
-    body,
-  });
-  if (!r.ok) throw new Error('Preview authorization refused');
-  const target = await r.json();
-  validatePreviewTarget(target);
-  return target;
+  let r;
+  try {
+    r = await fetch(backendUrl, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+      headers: { 'content-type': 'application/json', 'x-openmaic-preview-gateway': auth },
+      body,
+    });
+  } catch {
+    throw new PreviewResolveError(503);
+  }
+  if (!r.ok) throw new PreviewResolveError(r.status >= 500 || r.status === 429 ? r.status : 403);
+  try {
+    const target = await r.json();
+    validatePreviewTarget(target);
+    return target;
+  } catch {
+    throw new PreviewResolveError(502);
+  }
 }
 function watchAuthorization(ticket, host, close) {
   let stopped = false,
@@ -207,7 +222,9 @@ function fail(res, status = 403) {
   res.end(
     status === 429
       ? 'Preview connection limit reached. Close unused previews and retry.'
-      : 'Preview unavailable or access expired. Reopen it from OpenMAIC.',
+      : status >= 500
+        ? 'Preview temporarily unavailable. Please retry.'
+        : 'Preview unavailable or access expired. Reopen it from OpenMAIC.',
   );
 }
 const server = http.createServer(async (req, res) => {
@@ -313,8 +330,8 @@ const server = http.createServer(async (req, res) => {
     });
     req.on('aborted', () => upstream.destroy());
     req.pipe(upstream);
-  } catch {
-    fail(res);
+  } catch (error) {
+    fail(res, error instanceof PreviewResolveError ? error.statusCode : 403);
   }
 });
 server.on('upgrade', async (req, socket, head) => {
@@ -390,8 +407,9 @@ server.on('upgrade', async (req, socket, head) => {
     socket.on('error', () => upstream.destroy());
     socket.on('close', () => upstream.destroy());
     upstream.end();
-  } catch {
-    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+  } catch (error) {
+    const status = error instanceof PreviewResolveError ? error.statusCode : 403;
+    socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status]}\r\nConnection: close\r\n\r\n`);
   }
 });
 server.headersTimeout = 15_000;

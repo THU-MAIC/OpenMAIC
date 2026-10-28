@@ -8,9 +8,15 @@ import { once } from 'node:events';
 describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) => {
   let revoked = false;
   let activitySignals = 0;
+  let backendStatus = 200;
+  let disconnect = false;
+  let malformedTarget = false;
   beforeEach(() => {
     revoked = false;
     activitySignals = 0;
+    backendStatus = 200;
+    disconnect = false;
+    malformedTarget = false;
   });
   let backend: http.Server;
   let child: ChildProcess;
@@ -21,6 +27,15 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     backend = http.createServer(async (req, res) => {
       let text = '';
       for await (const chunk of req) text += String(chunk);
+      if (disconnect) {
+        req.socket.destroy();
+        return;
+      }
+      if (backendStatus !== 200) {
+        res.writeHead(backendStatus);
+        res.end('backend-only diagnostic');
+        return;
+      }
       if (JSON.parse(text).activity === true && !revoked) activitySignals++;
       if (revoked) {
         res.writeHead(403);
@@ -28,6 +43,10 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
         return;
       }
       res.setHeader('content-type', 'application/json');
+      if (malformedTarget) {
+        res.end('{}');
+        return;
+      }
       res.end(
         JSON.stringify({
           transport: 'native',
@@ -170,5 +189,39 @@ describe.each(['http:', 'https:'])('preview cookie exchange (%s)', (protocol) =>
     });
     expect(r.status).toBe(403);
     expect(r.headers.get('set-cookie')).toBeNull();
+  });
+  it.each([429, 500, 502, 503, 504])(
+    'preserves HTTP %s so failed input can retry',
+    async (status) => {
+      const authorized = await request('/__openmaic_authorize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ticket: 'retry-grant' }),
+      });
+      const cookie = authorized.headers.get('set-cookie')!.split(';')[0];
+      backendStatus = status;
+      expect(
+        (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
+      ).toBe(status);
+      expect(activitySignals).toBe(0);
+      expect(
+        (await request('/ws', { headers: { cookie, connection: 'Upgrade', upgrade: 'websocket' } }))
+          .status,
+      ).toBe(status);
+      backendStatus = 200;
+      expect(
+        (await request('/__openmaic_activity', { method: 'POST', headers: { cookie } })).status,
+      ).toBe(204);
+      expect(activitySignals).toBe(1);
+    },
+  );
+  it('fails closed with retryable status for network or invalid backend responses', async () => {
+    const headers = { cookie: `${protocol === 'https:' ? '__Host-' : ''}openmaic_preview=grant` };
+    disconnect = true;
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(503);
+    disconnect = false;
+    malformedTarget = true;
+    expect((await request('/__openmaic_activity', { method: 'POST', headers })).status).toBe(502);
+    expect(activitySignals).toBe(1);
   });
 });

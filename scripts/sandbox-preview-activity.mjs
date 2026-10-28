@@ -32,14 +32,23 @@ export function installPreviewActivity(frame) {
     changed = true;
     void flush();
   };
-  frame.addEventListener('load', () => {
+  const tracked = new WeakSet();
+  const trackDocument = () => {
     // The protected app and this shell share only the isolated preview origin.
     // Cross-origin navigation is not an activity signal.
     try {
+      const app = frame.contentDocument;
+      if (!app || tracked.has(app)) return;
+      tracked.add(app);
       for (const name of ['pointerdown', 'keydown', 'wheel'])
-        frame.contentDocument?.addEventListener(name, input, { capture: true, passive: true });
+        app.addEventListener(name, input, { capture: true, passive: true });
     } catch {}
-  });
+  };
+  // A usable document can precede iframe load by minutes (e.g. a pending image).
+  // Also observe document replacement on navigation; observing is never activity.
+  trackDocument();
+  setInterval(trackDocument, 100);
+  frame.addEventListener('load', trackDocument);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void flush();
     else clearTimeout(timer);
