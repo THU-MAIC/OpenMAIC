@@ -217,12 +217,10 @@ export function invalidateWorkspace(row: Study, changedPath?: string): EngineTra
   return { state, events: [] };
 }
 export async function openStudy(principal: OwnerPrincipal, stageId: string, sceneId: string) {
+  // Identity must be eligible for execution before any learning instance is created.
+  await SandboxService.forOwner(principal);
   const studies = await LearningStore.open();
   const existing = await studies.findForScene(principal.ownerId, stageId, sceneId);
-  // Existing completed work is owner-scoped read-only data; execution eligibility
-  // is still required before creating/resuming any unfinished learning instance.
-  if (existing?.state.status === 'completed') return existing;
-  await SandboxService.forOwner(principal);
   if (existing) return existing;
   const documents = await getOwnerScopedDocumentStore(principal);
   const scene = await documents.getScene(stageId, sceneId);
