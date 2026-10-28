@@ -3,12 +3,15 @@
  * rewritten to keys, how keys resolve to a source's own derivatives, and that
  * MinerU's parser keeps the file each image is named by.
  */
-import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 
 import type { DocumentArtifact, DocumentExtractorProvider } from '@/lib/document/types';
 import { textDocumentExtractorProvider } from '@/lib/document/extractors/text';
+import { parsedPdfToDocumentArtifact } from '@/lib/document/pdf-compat';
 import { extractMinerUResult } from '@/lib/pdf/mineru-parser';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
 import {
   imagePathIndex,
   ownerDocumentOutcome,
@@ -182,6 +185,60 @@ describe('ownerDocumentOutcome', () => {
       String.raw`Literal: \[image: x\]`,
     );
   });
+
+  describe('images a MinerU gateway answers as URLs', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const linked = (images: Record<string, string>) =>
+      parsedPdfToDocumentArtifact(
+        extractMinerUResult({
+          md_content: Object.keys(images)
+            .map((file) => `![](images/${file})`)
+            .join('\n\n'),
+          images,
+        }),
+        { buffer: Buffer.alloc(0), mimeType: 'application/pdf', config: { providerId: 'mineru' } },
+      );
+
+    it('keeps the downloaded images as derivatives, and drops one it cannot download', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      const fetchResult = vi
+        .spyOn(providerResultFetch, 'fetchProviderResultUrl')
+        .mockImplementation(async (url) =>
+          url.endsWith('/gone')
+            ? new Response('gone', { status: 404 })
+            : new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+        );
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'b.jpg': 'https://files.example.com/media/gone',
+        }),
+        provider,
+      );
+
+      expect(fetchResult.mock.calls.map(([url]) => url)).toEqual([
+        'https://files.example.com/media/a',
+        'https://files.example.com/media/gone',
+      ]);
+      expect(outcome.images).toEqual([
+        expect.objectContaining({ key: 'img-1', mimeType: 'image/webp' }),
+      ]);
+      const kept = await sharp(Buffer.from(outcome.images[0]!.data, 'base64')).metadata();
+      expect(kept).toMatchObject({ format: 'webp', width: 4, height: 2 });
+      expect(outcome.text).toBe(
+        String.raw`![](openmaic-derivative:img-1)` + '\n\n' + String.raw`\[image\]`,
+      );
+      expect(outcome.stats.diagnostics).toEqual([expect.stringContaining('1 document image(s)')]);
+    });
+  });
 });
 
 describe('resolveDerivativeRefs', () => {
@@ -204,6 +261,43 @@ describe('resolveDerivativeRefs', () => {
 });
 
 describe('MinerU parser', () => {
+  it('keeps an image a gateway answers as a URL, and wraps only bare base64', () => {
+    const url = 'https://files.example.com/media/abc';
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'abc.jpg': url, 'def.jpg': 'AAAA', 'ghi.jpg': 'data:image/jpeg;base64,BBBB' },
+    });
+    expect(parsed.images).toEqual([
+      url,
+      'data:image/png;base64,AAAA',
+      'data:image/jpeg;base64,BBBB',
+    ]);
+    expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({ src: url, path: 'abc.jpg' });
+  });
+
+  it('finds the metadata of an image content_list names by its URL', () => {
+    const url = 'https://files.example.com/media/abc';
+    const parsed = extractMinerUResult({
+      md_content: '',
+      images: { 'abc.jpg': url },
+      content_list: [
+        {
+          type: 'image',
+          img_path: url,
+          page_idx: 2,
+          bbox: [100, 200, 400, 500],
+          image_caption: ['Figure 1'],
+        },
+      ],
+    });
+    expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({
+      pageNumber: 3,
+      description: 'Figure 1',
+      width: 300,
+      height: 300,
+    });
+  });
+
   it('records the file the markdown names each image by', () => {
     const parsed = extractMinerUResult({
       md_content: '![](images/abc.jpg)',

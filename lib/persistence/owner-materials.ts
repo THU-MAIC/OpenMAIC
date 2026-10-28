@@ -99,6 +99,8 @@ export interface OwnerMaterialExtraction {
   textChars?: number;
   pageCount?: number;
   imageCount?: number;
+  /** Images the extractor found that could not be stored (left out of `imageCount`). */
+  imagesSkipped?: number;
   truncated?: OwnerMaterialTruncation;
   /** The extractor that produced the result. */
   extractor?: string;

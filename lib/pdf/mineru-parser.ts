@@ -15,10 +15,15 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   const imageData: Record<string, string> = {};
   let pageCount = 0;
 
-  // Extract images from the images object (key → base64 string)
+  // Extract images from the images object (key → base64 string). A MinerU
+  // gateway that hosts the images answers a URL instead: it is kept as is (the
+  // server downloads it when it stores the extraction), never wrapped as base64.
   if (fileResult.images && typeof fileResult.images === 'object') {
     Object.entries(fileResult.images as Record<string, string>).forEach(([key, value]) => {
-      imageData[key] = value.startsWith('data:') ? value : `data:image/png;base64,${value}`;
+      imageData[key] =
+        value.startsWith('data:') || /^https?:\/\//i.test(value)
+          ? value
+          : `data:image/png;base64,${value}`;
     });
   }
 
@@ -77,8 +82,12 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   Object.entries(imageData).forEach(([key, base64Url], index) => {
     const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
     imageMapping[imageId] = base64Url;
-    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
-    const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths).
+    // A gateway that hosts the images names them by their URL in content_list too.
+    const meta =
+      imageMetaLookup.get(key) ||
+      imageMetaLookup.get(`images/${key}`) ||
+      imageMetaLookup.get(base64Url);
     pdfImages.push({
       id: imageId,
       src: base64Url,

@@ -7,7 +7,7 @@
  * material step reads, waits for, starts or fails on the stored extractions.
  */
 import { Pool } from 'pg';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildDocumentBundle, type ParsedDocumentPart } from '@/lib/document/bundle';
 import {
@@ -24,8 +24,11 @@ import {
 } from '@/lib/persistence/owner-materials';
 import { agentRuntimeConfig } from '@/lib/server/agent-runtime/config';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
+import * as providerResultFetch from '@/lib/server/provider-result-fetch';
 import { decodeDataUrl } from '@/lib/server/provider-result-fetch';
+import { extractMinerUResult } from '@/lib/pdf/mineru-parser';
 import { defaultRunStepServices } from '@/lib/server/generation/run/services';
+import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import {
   deleteMaterialObjects,
@@ -108,6 +111,17 @@ function parsed(text: string, images = 0): ParsedPdfContent {
     },
   } as ParsedPdfContent;
 }
+
+/** A MinerU parse whose images are URLs, as a MinerU gateway that hosts them answers. */
+function parsedWithLinks(text: string, links: string[]): ParsedPdfContent {
+  return extractMinerUResult({
+    md_content: text,
+    images: Object.fromEntries(links.map((link, index) => [`fig-${index + 1}.jpg`, link])),
+  });
+}
+
+const BIG_IMAGE = Buffer.alloc(100_000, 7);
+const LINK = (name: string) => `https://files.example.com/media/${name}`;
 
 function gate() {
   let release!: () => void;
@@ -790,6 +804,229 @@ describe.skipIf(!contractUrl)('material extraction at upload on PostgreSQL', () 
         await pool.query('DROP TABLE generation_runs');
         await pool.query('DROP TABLE agent_session_materials');
       }
+    });
+  });
+
+  describe('images a MinerU gateway answers as URLs', () => {
+    let downloads: string[];
+    beforeEach(() => {
+      downloads = [];
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) => {
+        downloads.push(url);
+        if (url.endsWith('/broken')) return new Response('gone', { status: 404 });
+        if (url.includes('/big-')) {
+          return new Response(new Uint8Array(BIG_IMAGE), {
+            headers: { 'content-type': 'image/png' },
+          });
+        }
+        return new Response(new Uint8Array(PNG), { headers: { 'content-type': 'image/png' } });
+      });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    const storedImages = async (id: string) => {
+      const resultKey = (await read(id)).extraction!.resultKey!;
+      return JSON.parse(bytes.objects.get(resultKey)!.toString('utf8')).images as Array<{
+        id: string;
+        src: string;
+      }>;
+    };
+
+    it('stores their bytes inline, and a run generates from the real bytes', async () => {
+      const material = await upload('slides.pdf', { mime: 'application/pdf' });
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsedWithLinks('deck', [LINK('a'), LINK('b')])),
+      );
+      expect((await read(material.id)).extraction).toMatchObject({
+        status: 'ready',
+        imageCount: 2,
+      });
+      expect((await read(material.id)).extraction?.imagesSkipped).toBeUndefined();
+      expect(downloads).toEqual([LINK('a'), LINK('b')]);
+      expect((await storedImages(material.id)).map((image) => image.src)).toEqual([
+        `data:image/png;base64,${PNG.toString('base64')}`,
+        `data:image/png;base64,${PNG.toString('base64')}`,
+      ]);
+
+      const analyzedMaterials = await defaultRunStepServices.analyzeMaterials(
+        OWNER,
+        [material.id],
+        { log: console as never },
+      );
+      // The bytes the run stores as course assets are the image, not the URL decoded as base64.
+      expect(analyzedMaterials.images).toHaveLength(2);
+      expect(Buffer.from(analyzedMaterials.images[0]!.bytes)).toEqual(PNG);
+      // Read from the stored result: nothing downloaded again.
+      expect(downloads).toHaveLength(2);
+    });
+
+    it('leaves out an image it cannot download, and the extraction is still ready', async () => {
+      const material = await upload('partial.pdf', { mime: 'application/pdf' });
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsedWithLinks('deck', [LINK('broken'), LINK('ok')])),
+      );
+      expect((await read(material.id)).extraction).toMatchObject({
+        status: 'ready',
+        imageCount: 1,
+        imagesSkipped: 1,
+      });
+      expect((await storedImages(material.id)).map((image) => image.id)).toEqual(['img_2']);
+    });
+
+    it('downloads only what fits next to the text, and the extraction is still ready', async () => {
+      process.env.OPENMAIC_MATERIAL_EXTRACTION_MAX_RESULT_MB = '1';
+      const material = await upload('dense.pdf', { mime: 'application/pdf' });
+      const links = Array.from({ length: 5 }, (_, index) => LINK(`big-${index + 1}`));
+      // 600 KB of text: 1 MB holds three 100 KB images as base64 next to it, not five.
+      await runNextOwnerMaterialExtraction(
+        'worker-a',
+        deps(async () => parsedWithLinks('t'.repeat(600_000), links)),
+      );
+      const extraction = (await read(material.id)).extraction!;
+      expect(extraction).toMatchObject({ status: 'ready', imageCount: 3, imagesSkipped: 2 });
+      expect(extraction.resultBytes).toBeLessThanOrEqual(1024 * 1024);
+      // Within the room the text leaves: the last image is never requested.
+      expect(downloads).not.toContain(LINK('big-5'));
+      expect((await storedImages(material.id)).map((image) => image.id)).toEqual([
+        'img_1',
+        'img_2',
+        'img_3',
+      ]);
+    });
+
+    it('stores the text without the images a stalled host does not answer in its budget', async () => {
+      vi.mocked(providerResultFetch.fetchProviderResultUrl).mockImplementation(
+        () => new Promise<Response>(() => {}),
+      );
+      const material = await upload('stalled.pdf', { mime: 'application/pdf' });
+      await runNextOwnerMaterialExtraction('worker-a', {
+        ...deps(async () => parsedWithLinks('text survives', [LINK('s1'), LINK('s2')])),
+        deadlineMs: 400,
+      });
+      expect((await read(material.id)).extraction).toMatchObject({
+        status: 'ready',
+        textChars: 'text survives'.length,
+        imageCount: 0,
+        imagesSkipped: 2,
+      });
+    });
+
+    describe('a result stored before they were downloaded', () => {
+      /**
+       * A ready material whose stored result still holds the gateway's URLs:
+       * bare, or wrapped as a base64 data URL as the parser used to do.
+       */
+      async function linkedMaterial(name: string, srcs: string[], sha = name) {
+        const material = await upload(name, { mime: 'application/pdf', sha });
+        await runNextOwnerMaterialExtraction(
+          'worker-a',
+          deps(async () => parsedWithLinks('linked deck', [])),
+        );
+        const resultKey = (await read(material.id)).extraction!.resultKey!;
+        bytes.objects.set(
+          resultKey,
+          Buffer.from(
+            JSON.stringify({
+              version: 1,
+              text: 'linked deck',
+              pageCount: 1,
+              images: srcs.map((src, index) => ({ id: `img_${index + 1}`, src, pageNumber: 1 })),
+            }),
+          ),
+        );
+        return material;
+      }
+      const wrapped = (url: string) => `data:image/png;base64,${url}`;
+
+      it('a run downloads its images instead of decoding the URLs', async () => {
+        const material = await linkedMaterial('old.pdf', [
+          LINK('a'),
+          wrapped(LINK('b')),
+          LINK('broken'),
+          '',
+        ]);
+
+        const analyzedMaterials = await defaultRunStepServices.analyzeMaterials(
+          OWNER,
+          [material.id],
+          { log: console as never },
+        );
+
+        expect(analyzedMaterials.text).toContain('linked deck');
+        expect(analyzedMaterials.images.map((image) => image.id)).toEqual(['img_1', 'img_2']);
+        for (const image of analyzedMaterials.images) {
+          expect(image.mimeType).toBe('image/png');
+          expect(Buffer.from(image.bytes)).toEqual(PNG);
+        }
+        expect(downloads).toEqual([LINK('a'), LINK('b'), LINK('broken')]);
+      });
+
+      it('a run leaves out the images a stalled host does not answer in time', async () => {
+        // More stalled images than per-image timeouts fit in the budget.
+        const links = Array.from({ length: 60 }, (_, index) => LINK(`stall-${index + 1}`));
+        const material = await linkedMaterial('stalled.pdf', links);
+        vi.mocked(providerResultFetch.fetchProviderResultUrl).mockImplementation(
+          () => new Promise<Response>(() => {}),
+        );
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let settled = false;
+        const step = defaultRunStepServices
+          .analyzeMaterials(OWNER, [material.id], { log: console as never })
+          .finally(() => (settled = true));
+        await vi.waitFor(() =>
+          expect(providerResultFetch.fetchProviderResultUrl).toHaveBeenCalled(),
+        );
+        await vi.advanceTimersByTimeAsync(STEP_DEADLINES_MS.materialAnalysis);
+        await vi.waitFor(() => expect(settled).toBe(true));
+        const analyzedMaterials = await step;
+        expect(analyzedMaterials.text).toContain('linked deck');
+        expect(analyzedMaterials.images).toEqual([]);
+        expect(
+          vi.mocked(providerResultFetch.fetchProviderResultUrl).mock.calls.length,
+        ).toBeLessThan(links.length);
+      });
+
+      it('a caller abort still stops the run while images download', async () => {
+        const material = await linkedMaterial('aborted.pdf', [LINK('stall-1')]);
+        vi.mocked(providerResultFetch.fetchProviderResultUrl).mockImplementation(
+          () => new Promise<Response>(() => {}),
+        );
+        const caller = new AbortController();
+        const step = defaultRunStepServices.analyzeMaterials(OWNER, [material.id], {
+          log: console as never,
+          signal: caller.signal,
+        });
+        await vi.waitFor(() =>
+          expect(providerResultFetch.fetchProviderResultUrl).toHaveBeenCalled(),
+        );
+        caller.abort(new Error('run stopped'));
+        await expect(step).rejects.toThrow('run stopped');
+      });
+
+      it.each([
+        ['bare', LINK('a')],
+        ['wrapped', wrapped(LINK('a'))],
+      ])('is not reused for the same bytes (%s URL): they are extracted again', async (_, src) => {
+        await linkedMaterial('old.pdf', [src], 'same-linked');
+        const again = await upload('old-again.pdf', {
+          mime: 'application/pdf',
+          sha: 'same-linked',
+        });
+        await runNextOwnerMaterialExtraction(
+          'worker-a',
+          deps(async () => parsedWithLinks('fresh deck', [LINK('fresh')])),
+        );
+        expect(analyzed).toEqual(['old.pdf', 'old-again.pdf']);
+        expect((await read(again.id)).extraction).toMatchObject({ status: 'ready', imageCount: 1 });
+        expect((await storedImages(again.id))[0]!.src).toBe(
+          `data:image/png;base64,${PNG.toString('base64')}`,
+        );
+      });
     });
   });
 

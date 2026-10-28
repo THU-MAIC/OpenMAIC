@@ -64,6 +64,7 @@ import {
   type SceneContentResult,
 } from '@/lib/server/generation/steps/scene-content';
 import { getMaterialByteStore } from '@/lib/server/materials/bytes';
+import { imagesAreInline, inlineRemoteImages } from '@/lib/server/materials/inline-images';
 import {
   awaitOwnerMaterialExtractions,
   bundleTruncation,
@@ -87,6 +88,7 @@ import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import { DEFAULT_WEB_SEARCH_PROVIDER_ID } from '@/lib/web-search/constants';
 import { resolveWebSearchConnection } from '@/lib/server/web-search-config';
 
+import { STEP_DEADLINES_MS } from './deadline';
 import { ownerAssetExists } from './media';
 import type { RunNarrationTarget } from './narration-voice';
 
@@ -376,22 +378,49 @@ export const defaultRunStepServices: RunStepServices = {
     );
     const byteStore = getMaterialByteStore();
     const parts: ParsedDocumentPart[] = [];
-    for (const [order, record] of records.entries()) {
-      const fileName = record.originalName ?? record.id;
-      const result = await readMaterialExtractionResult(record, byteStore);
-      parts.push({
-        source: {
-          id: record.id,
-          name: fileName,
-          size: record.bytes,
-          ...(record.mime ? { mimeType: record.mime } : {}),
-          order,
-        },
-        text: result.text,
-        rawTextLength: result.text.length,
-        ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
-        images: result.images,
-      });
+    // The run gives this step no deadline of its own: the downloads of
+    // linked images below (all materials together) get the extraction's
+    // budget, past which the images not downloaded are left out.
+    const linkedImagesDeadline = new AbortController();
+    const linkedImagesTimer = setTimeout(
+      () => linkedImagesDeadline.abort(new Error('linked image downloads ran out of time')),
+      STEP_DEADLINES_MS.materialAnalysis,
+    );
+    linkedImagesTimer.unref?.();
+    try {
+      for (const [order, record] of records.entries()) {
+        const fileName = record.originalName ?? record.id;
+        const result = await readMaterialExtractionResult(record, byteStore);
+        // A result stored before extraction downloaded an extractor's image
+        // URLs: its images are downloaded now (or left out), never decoded.
+        if (!imagesAreInline(result.images)) {
+          const inlined = await inlineRemoteImages(result.images, {
+            signal: ctx.signal,
+            deadline: linkedImagesDeadline.signal,
+          });
+          if (inlined.skipped > 0) {
+            ctx.log.warn(
+              `Material ${record.id}: ${inlined.skipped} linked image(s) could not be downloaded; left out`,
+            );
+          }
+          result.images = inlined.images;
+        }
+        parts.push({
+          source: {
+            id: record.id,
+            name: fileName,
+            size: record.bytes,
+            ...(record.mime ? { mimeType: record.mime } : {}),
+            order,
+          },
+          text: result.text,
+          rawTextLength: result.text.length,
+          ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
+          images: result.images,
+        });
+      }
+    } finally {
+      clearTimeout(linkedImagesTimer);
     }
     const bundle = buildDocumentBundle(parts);
     const truncated: MaterialTruncation = bundleTruncation(bundle);

@@ -13,6 +13,8 @@
  *   `![](images/<file>)`; the parser records that file on each image
  *   (`metadata.path`), so a reference can be matched to its image. The
  *   markdown is parsed, not pattern-matched ({@link ownerDocumentOutcome}).
+ *   A MinerU gateway that hosts the images answers each as a URL: it is
+ *   downloaded here ({@link inlineRemoteImages}), and dropped if it cannot be.
  * - The built-in PDF parser and AliDocMind return images beside text that
  *   names none of them: the images are kept, there is nothing to rewrite.
  * - Plain text and markdown uploads return no images and keep their own text.
@@ -43,6 +45,8 @@ export type { ImagePathIndex } from './document-image-paths.mjs';
 
 import { MAX_DERIVED_IMAGES, prepareDerivedImage } from '@/lib/document/extractors/images';
 import type { DocumentArtifact, DocumentExtractorProvider } from '@/lib/document/types';
+import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
+import { inlineRemoteImages, remoteImageUrl } from '@/lib/server/materials/inline-images';
 
 import {
   decodeMediaAssetData,
@@ -63,24 +67,44 @@ interface KeptImage {
 }
 
 /**
+ * The bytes of the images the provider answered as URLs, as data URLs by
+ * index into `candidates`, downloaded within the extraction's time budget;
+ * an image missing from the answer could not be downloaded.
+ */
+async function downloadedImages(
+  candidates: ReadonlyArray<{ data?: string }>,
+): Promise<Map<number, string>> {
+  const remote = candidates.flatMap((asset, index) => {
+    const url = remoteImageUrl(asset.data);
+    return url ? [{ id: String(index), src: url }] : [];
+  });
+  if (remote.length === 0) return new Map();
+  const deadline = AbortSignal.timeout(STEP_DEADLINES_MS.materialAnalysis);
+  const { images } = await inlineRemoteImages(remote, { deadline });
+  return new Map(images.map((image) => [Number(image.id), image.src]));
+}
+
+/**
  * The document's images to keep, in provider order and within the bounds,
- * each prepared as WebP, keyed `img-<n>`. An image that cannot be decoded or
- * prepared is skipped.
+ * each prepared as WebP, keyed `img-<n>`. An image that cannot be downloaded,
+ * decoded or prepared is skipped.
  */
 async function keptImages(
   artifact: DocumentArtifact,
 ): Promise<{ kept: Array<KeptImage & { path?: string }>; skipped: number }> {
   const candidates = artifact.assets.filter((asset) => asset.type === 'image' && asset.data);
+  const downloaded = await downloadedImages(candidates);
   const kept: Array<KeptImage & { path?: string }> = [];
   let skipped = 0;
-  for (const asset of candidates) {
+  for (const [index, asset] of candidates.entries()) {
     if (kept.length >= MAX_DERIVED_IMAGES) {
       skipped += 1;
       continue;
     }
     let prepared;
     try {
-      prepared = await prepareDerivedImage(decodeMediaAssetData(asset.data!));
+      const data = remoteImageUrl(asset.data) ? downloaded.get(index) : asset.data;
+      prepared = data ? await prepareDerivedImage(decodeMediaAssetData(data)) : null;
     } catch {
       prepared = null;
     }

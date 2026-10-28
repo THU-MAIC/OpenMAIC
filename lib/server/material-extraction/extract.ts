@@ -28,6 +28,7 @@ import {
   resolveSessionMaterialRawAsset,
   storeSessionMaterialRawAsset,
 } from '@/lib/server/agent-runtime/session-materials';
+import { decodeBase64 } from '@/lib/server/provider-result-fetch';
 
 import { isTransientExtractionError, MaterialExtractionError } from './errors';
 
@@ -73,12 +74,12 @@ export function decodeMediaAssetData(data: string): Buffer {
     // Node's base64 decoder skips non-alphabet characters, so a malformed data
     // URL falling through here would decode to garbage bytes instead of failing.
     if (/^data:/i.test(value)) throw new Error('Malformed media asset data URL');
-    return Buffer.from(value, 'base64');
+    return decodeBase64(value);
   }
   if (!/;base64$/i.test(dataUrl[1])) {
     throw new Error('Unsupported media asset data URL encoding');
   }
-  const bytes = Buffer.from(dataUrl[2], 'base64');
+  const bytes = decodeBase64(dataUrl[2]);
   if (bytes.byteLength === 0) throw new Error('Empty media asset data URL payload');
   return bytes;
 }

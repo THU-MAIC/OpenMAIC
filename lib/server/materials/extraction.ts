@@ -14,6 +14,8 @@
  *   would have.
  * - The result (the text, and the images with their bytes inline) is one
  *   object next to the material's bytes (`materialExtractionResultKey`): it
+ *   carries no link to the extractor's own storage (images an extractor
+ *   answered as URLs are downloaded into it, see `./inline-images.ts`), and it
  *   lives as long as the material and is deleted with it. A run copies the
  *   images into course assets when it uses them, as before, so releasing a
  *   material never touches a course.
@@ -25,6 +27,7 @@ import { ModelAuthorizationError } from '@/lib/server/model-config/model-authori
 import { randomUUID } from 'node:crypto';
 
 import { buildDocumentBundle, type ParsedDocumentImage } from '@/lib/document/bundle';
+import { MAX_REMOTE_IMAGE_BATCH_BYTES } from '@/lib/server/bounded-download';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { createLogger } from '@/lib/logger';
@@ -76,6 +79,7 @@ import {
   wakeOwnerMaterialExtractor,
   type OwnerMaterialExtractorHandle,
 } from './extractor-wake';
+import { imagesAreInline, inlineRemoteImages, remoteImageUrl } from './inline-images';
 
 const log = createLogger('MaterialExtraction');
 
@@ -177,6 +181,109 @@ export function extractionIdentityKey(mimeType: string, services: ExtractionServ
   ]);
 }
 
+/** How long before the extraction's budget runs out its image downloads stop. */
+const IMAGE_DEADLINE_MARGIN_MS = 30_000;
+
+/** The bytes `value` takes in a stored result (UTF-8 JSON). */
+function serializedBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
+/**
+ * What one downloaded image adds besides its base64 payload: the `data:` URL's
+ * prefix (`data:image/jpeg;base64,` and the like) and base64's padding of the
+ * last 1-2 bytes.
+ */
+const INLINE_IMAGE_OVERHEAD_BYTES = 64;
+
+/**
+ * How many bytes the extractor's linked images may download together so the
+ * stored result still fits `maxBytes`: the room the result leaves with every
+ * linked image's entry in place but its source empty (the text, the metadata,
+ * the inline images), less each linked image's data-URL overhead, at 3 raw
+ * bytes for every 4 bytes of base64.
+ */
+export function remoteImageByteBudget(result: MaterialExtractionResult, maxBytes: number): number {
+  let linked = 0;
+  const base = serializedBytes({
+    ...result,
+    images: result.images.map((image) => {
+      if (!remoteImageUrl(image.src)) return image;
+      linked += 1;
+      return { ...image, src: '' };
+    }),
+  });
+  const room = maxBytes - base - linked * INLINE_IMAGE_OVERHEAD_BYTES;
+  return Math.max(0, Math.min(MAX_REMOTE_IMAGE_BATCH_BYTES, Math.floor((room * 3) / 4)));
+}
+
+/**
+ * `result` with its downloaded images (`downloaded`) dropped from the end
+ * until it serializes within `maxBytes`, and how many were dropped. Images the
+ * extractor answered inline are never dropped: a result over the limit without
+ * any downloaded image fails as it always has (`ExtractionResultTooLargeError`).
+ */
+export function fitDownloadedImages(
+  result: MaterialExtractionResult,
+  downloaded: ReadonlySet<object>,
+  maxBytes: number,
+): { result: MaterialExtractionResult; dropped: number } {
+  const images = [...result.images];
+  let size = serializedBytes(result);
+  let dropped = 0;
+  while (size > maxBytes) {
+    const index = images.findLastIndex((image) => downloaded.has(image));
+    if (index === -1) break;
+    // Its entry and the comma before or after it.
+    size -= serializedBytes(images[index]) + (images.length > 1 ? 1 : 0);
+    images.splice(index, 1);
+    dropped += 1;
+    // The arithmetic is exact for JSON.stringify; confirm before stopping.
+    if (size <= maxBytes) size = serializedBytes({ ...result, images });
+  }
+  return { result: dropped > 0 ? { ...result, images } : result, dropped };
+}
+
+/**
+ * The result of a parsed material with every image's bytes inline: images the
+ * extractor answered as URLs are downloaded, as many as the stored result can
+ * hold besides its text (the rest from the end are left out), and an image
+ * that cannot be downloaded is left out; both are counted.
+ */
+async function inlineResultOf(
+  parsed: ParsedPdfContent,
+  signal: AbortSignal,
+  deadline: AbortSignal,
+): Promise<{ result: MaterialExtractionResult; imagesSkipped: number }> {
+  const result = resultOf(parsed);
+  if (imagesAreInline(result.images)) return { result, imagesSkipped: 0 };
+  const maxBytes = maxExtractionResultBytes();
+  const { images, skipped } = await inlineRemoteImages(result.images, {
+    signal,
+    deadline,
+    maxTotalBytes: remoteImageByteBudget(result, maxBytes),
+  });
+  // A downloaded image is a new object; an inline one is the extractor's own.
+  const extracted = new Set<object>(result.images);
+  const downloaded = new Set<object>(images.filter((image) => !extracted.has(image)));
+  const fitted = fitDownloadedImages({ ...result, images }, downloaded, maxBytes);
+  return { result: fitted.result, imagesSkipped: skipped + fitted.dropped };
+}
+
+/**
+ * Whether a stored result can be reused as it is: every image carries its
+ * bytes. A result stored with an extractor's image URLs (before they were
+ * downloaded at extraction) is extracted again instead.
+ */
+function isSelfContainedResult(bytes: Buffer): boolean {
+  try {
+    const result = JSON.parse(bytes.toString('utf8')) as Partial<MaterialExtractionResult>;
+    return Array.isArray(result?.images) && imagesAreInline(result.images);
+  } catch {
+    return false;
+  }
+}
+
 /** The largest stored result one extraction may produce (its text and images). */
 export function maxExtractionResultBytes(): number {
   const raw = process.env.OPENMAIC_MATERIAL_EXTRACTION_MAX_RESULT_MB?.trim();
@@ -273,15 +380,21 @@ export async function extractOwnerMaterial(
   const reusable = await findReusableOwnerMaterialExtraction(pool, material, identityKey);
   if (reusable?.extraction?.resultKey) {
     try {
-      const resultBytes = await store(await byteStore.get(reusable.extraction.resultKey));
-      const {
-        updatedAt: _updatedAt,
-        claimedAt: _claimedAt,
-        resultKey: _resultKey,
-        ...extraction
-      } = reusable.extraction;
-      log.info(`material ${material.id}: reused the extraction of ${reusable.id}`);
-      return { ...extraction, resultKey, resultBytes };
+      const reused = await byteStore.get(reusable.extraction.resultKey);
+      if (isSelfContainedResult(reused)) {
+        const resultBytes = await store(reused);
+        const {
+          updatedAt: _updatedAt,
+          claimedAt: _claimedAt,
+          resultKey: _resultKey,
+          ...extraction
+        } = reusable.extraction;
+        log.info(`material ${material.id}: reused the extraction of ${reusable.id}`);
+        return { ...extraction, resultKey, resultBytes };
+      }
+      log.info(
+        `material ${material.id}: the extraction of ${reusable.id} links its images; extracting`,
+      );
     } catch (error) {
       if (error instanceof ExtractionResultTooLargeError) throw error;
       // The other material went in between: extract these bytes after all.
@@ -296,8 +409,18 @@ export async function extractOwnerMaterial(
     deadlineMs,
   );
   timer.unref?.();
+  // Image downloads stop a little before the budget runs out: the images not
+  // downloaded by then are left out and the text is still stored.
+  const imagesDeadline = new AbortController();
+  const imagesTimer = setTimeout(
+    () => imagesDeadline.abort(new Error('image downloads ran out of time')),
+    deadlineMs - Math.min(IMAGE_DEADLINE_MARGIN_MS, Math.floor(deadlineMs / 10)),
+  );
+  imagesTimer.unref?.();
   const callSignal = AbortSignal.any([signal, timeout.signal]);
   let parsed: ParsedPdfContent;
+  let result: MaterialExtractionResult;
+  let imagesSkipped: number;
   try {
     parsed = await (dependencies.analyze ?? analyzeMaterial)(
       {
@@ -313,16 +436,21 @@ export async function extractOwnerMaterial(
       },
       { log, signal: callSignal },
     );
+    // Within the budget too: images answered as URLs are downloaded now.
+    ({ result, imagesSkipped } = await inlineResultOf(parsed, callSignal, imagesDeadline.signal));
   } catch (error) {
     // Ended by the caller or the budget: say so, not how the extractor broke off.
     if (callSignal.aborted) throw callSignal.reason ?? error;
     throw error;
   } finally {
     clearTimeout(timer);
+    clearTimeout(imagesTimer);
   }
   // An extractor that ignored the signal finished anyway: the work is dropped.
   callSignal.throwIfAborted();
-  const result = resultOf(parsed);
+  if (imagesSkipped > 0) {
+    log.warn(`material ${material.id}: ${imagesSkipped} image(s) could not be stored; left out`);
+  }
   const resultBytes = await store(Buffer.from(JSON.stringify(result), 'utf8'));
   const alone = buildDocumentBundle([
     {
@@ -345,6 +473,7 @@ export async function extractOwnerMaterial(
     textChars: result.text.length,
     ...(result.pageCount !== undefined ? { pageCount: result.pageCount } : {}),
     imageCount: result.images.length,
+    ...(imagesSkipped > 0 ? { imagesSkipped } : {}),
     ...(Object.keys(truncated).length > 0 ? { truncated } : {}),
     ...(parsed.metadata?.parser ? { extractor: String(parsed.metadata.parser) } : {}),
     identityKey,

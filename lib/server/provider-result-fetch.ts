@@ -25,6 +25,19 @@ function dataUrlTooLarge(maxBytes: number): Error {
   return new Error(`Download failed: data URL exceeds the ${maxBytes}-byte limit`);
 }
 
+/** Base64 characters (standard or URL-safe alphabet), padding and whitespace. */
+const BASE64_PAYLOAD = /^[A-Za-z0-9+/=_\-\s]*$/;
+
+/**
+ * Decode a base64 payload, refusing one that is not base64. Node's decoder
+ * skips characters outside the alphabet, so a value that is something else
+ * (a URL, say) would decode to garbage bytes instead of failing.
+ */
+export function decodeBase64(payload: string): Buffer {
+  if (!BASE64_PAYLOAD.test(payload)) throw new Error('Invalid base64 payload');
+  return Buffer.from(payload, 'base64');
+}
+
 /**
  * Decode a `data:` URL into its bytes and declared MIME type, refusing a payload
  * over `maxBytes`. The size is estimated from the encoded length first, so an
@@ -45,9 +58,7 @@ export function decodeDataUrl(url: string, maxBytes: number): { bytes: Buffer; m
     ? Math.floor((rawData.length * 3) / 4) - (rawData.match(/=*$/)?.[0].length ?? 0)
     : Math.ceil(rawData.length / 3);
   if (estimated > maxBytes) throw dataUrlTooLarge(maxBytes);
-  const bytes = base64
-    ? Buffer.from(rawData, 'base64')
-    : Buffer.from(decodeURIComponent(rawData), 'utf8');
+  const bytes = base64 ? decodeBase64(rawData) : Buffer.from(decodeURIComponent(rawData), 'utf8');
   if (bytes.byteLength > maxBytes) throw dataUrlTooLarge(maxBytes);
   return { bytes, mimeType: params[0]?.trim().toLowerCase() || 'application/octet-stream' };
 }
