@@ -338,7 +338,11 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     if (new URL(route.request().url()).searchParams.has('file'))
       return route.fulfill({
         json: {
-          text: '## Greeting plan\nConnect input to a returned greeting.',
+          text:
+            new URL(route.request().url()).searchParams.get('file') === 'src/main.py'
+              ? Array.from({ length: 80 }, (_, i) => `line_${i + 1} = ${i + 1}`).join('\n')
+              : '## Greeting plan\nConnect input to a returned greeting.',
+          changes: [{ start: 30, end: 32, kind: 'added' }],
           hash: 'a'.repeat(64),
         },
       });
@@ -710,6 +714,40 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.actions = ['chat', 'edit'];
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  // Real Markdown links open the IDE file and range, including from a hidden pane.
+  view.files = ['PLAN.md', 'src/main.py'];
+  view.conversation!.push({
+    id: 'file-review',
+    speaker: 'coder',
+    parts: [
+      {
+        kind: 'text',
+        id: 'file-review-text',
+        text: 'Review [src/main.py:30–32](#pbl-file=src%2Fmain.py&line=30&end=32), then [PLAN.md:1–2](#pbl-file=PLAN.md&line=1&end=2). [Unavailable](#pbl-file=private%2Frubric.md).',
+      },
+    ],
+  });
+  view.revision++;
+  publishLearning();
+  const originalUrl = page.url();
+  const fileLink = page.getByRole('link', { name: 'src/main.py:30–32', exact: true });
+  await expect(fileLink).toBeVisible();
+  await fileLink.click();
+  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.locator('.monaco-editor .view-lines')).toContainText('line_30');
+  await expect(page.locator('.pbl-change-added').first()).toBeVisible();
+  await expect(page.locator('.pbl-change-gutter-added').first()).toBeVisible();
+  expect(await page.locator('.monaco-editor .selected-text').count()).toBeGreaterThan(0);
+  await page.getByRole('link', { name: 'Unavailable', exact: true }).click();
+  expect(page.url()).toBe(originalUrl);
+  await expect(page.getByRole('tab', { name: 'main.py', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('link', { name: 'PLAN.md:1–2', exact: true }).click();
   const planEditor = page.locator('.monaco-editor textarea').first();
   await expect(page.locator('.monaco-editor .view-lines')).toContainText('Greeting plan');
   await expect(planEditor).toBeEditable();

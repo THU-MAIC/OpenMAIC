@@ -1,3 +1,5 @@
+import { changedLineRanges } from './file-changes';
+import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
 import { responseLanguage, type ResponseLanguage } from './communication';
 import { supportedLocales } from '@/lib/i18n/locales';
@@ -112,6 +114,8 @@ export async function teachingRunnerConfig(input: {
         bound.completion?.userMessageSeq === latest?.seq));
   let observedStudy = row;
   const observedFiles = new Set<string>();
+  const observedText = new Map<string, string>();
+  const reviewBases = new Map<string, string>();
   let completeFileList = false;
   const environment = row.environment_id
     ? await (await SandboxStore.open()).get(row.owner_id, row.environment_id).catch(() => null)
@@ -376,7 +380,16 @@ export async function teachingRunnerConfig(input: {
           assertProjectSource(project, p.path);
           const text = await (await service(signal)).readText(current.environment_id!, p.path);
           observedFiles.add(p.path);
-          return { value: { path: p.path, text, hash: digest(text) } };
+          observedText.set(p.path, text);
+          return {
+            value: {
+              path: p.path,
+              text,
+              hash: digest(text),
+              reviewLink: fileReferenceHref(p.path),
+              lineCount: text.split('\n').length,
+            },
+          };
         },
       ),
     );
@@ -398,6 +411,9 @@ export async function teachingRunnerConfig(input: {
             throw sandboxConflict('Collect the running build or test before editing files.');
           if (guided) review.assertWritable();
           if (p.path === 'PLAN.md') await assertLearningPlan(store, current, p.text);
+          const previousText = observedText.get(p.path);
+          const validBase = previousText !== undefined && digest(previousText) === p.expectedHash;
+          const before = validBase ? (reviewBases.get(p.path) ?? previousText) : undefined;
           const changed = await (
             await service(signal)
           ).compareAndWriteText(
@@ -415,10 +431,19 @@ export async function teachingRunnerConfig(input: {
             },
           );
           observedFiles.add(p.path);
+          observedText.set(p.path, p.text);
+          if (before !== undefined) reviewBases.set(p.path, before);
+          const changes = before === undefined ? [] : changedLineRanges(before, p.text);
           return {
-            value: { written: true, changed, hash: digest(p.text) },
+            value: {
+              written: true,
+              changed,
+              hash: digest(p.text),
+              reviewLink: fileReferenceHref(p.path),
+              changes,
+            },
             ...(changed
-              ? { evidence: { path: p.path, text: p.text, previousHash: p.expectedHash } }
+              ? { evidence: { path: p.path, text: p.text, previousHash: p.expectedHash, changes } }
               : {}),
           };
         },
@@ -506,7 +531,13 @@ export async function teachingRunnerConfig(input: {
           if (p.action !== 'create') observedFiles.delete(p.path);
           if (p.action === 'create') observedFiles.add(p.path);
           if (p.destination) observedFiles.add(p.destination);
-          return { value, evidence: { ...p } };
+          return {
+            value,
+            evidence: {
+              ...p,
+              ...(p.action === 'create' ? { changes: changedLineRanges('', p.text ?? '') } : {}),
+            },
+          };
         },
       ),
     );

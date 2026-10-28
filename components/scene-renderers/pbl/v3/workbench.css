@@ -104,3 +104,30 @@
   line-height: 1.5;
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
 }
+
+/* Version-matched AI edits; selection itself remains Monaco's native selection. */
+.pbl-change-added {
+  background-color: rgb(34 197 94 / 15%);
+}
+.pbl-change-modified {
+  background-color: rgb(34 197 94 / 10%);
+}
+.pbl-change-gutter-added,
+.pbl-change-gutter-modified {
+  border-left: 3px solid #22c55e;
+}
+.pbl-change-gutter-added::after {
+  content: '+';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-modified::after {
+  content: '~';
+  color: #16a34a;
+  font-weight: 700;
+  padding-left: 2px;
+}
+.pbl-change-gutter-deleted {
+  border-top: 3px solid #ef4444;
+}

@@ -1,4 +1,5 @@
 'use client';
+import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { useEffect, useRef, useState } from 'react';
 import {
   Check,
@@ -178,8 +179,10 @@ export function LearningConversation({
   sent,
   requesting = false,
   pendingMessage = null,
+  onOpenFile,
 }: {
   view: LearningView;
+  onOpenFile?: (reference: FileReference) => void;
   sent: number;
   requesting?: boolean;
   pendingMessage?: LearningConversationEntry | null;
@@ -195,7 +198,18 @@ export function LearningConversation({
   return (
     <Conversation className="min-h-0 flex-1 bg-background" aria-label={t('pblV3.learning')}>
       <FollowSend count={sent} />
-      <ConversationContent className="gap-5 p-4">
+      <ConversationContent
+        className="gap-5 p-4"
+        onClick={(event) => {
+          const anchor = (event.target as Element).closest('a');
+          const href = anchor?.getAttribute('href') ?? '';
+          if (!href.startsWith('#pbl-file=')) return;
+          event.preventDefault();
+          const reference = parseFileReference(href);
+          // The current public file list remains authoritative, including old history links.
+          if (reference && view.files.includes(reference.path)) onOpenFile?.(reference);
+        }}
+      >
         <ConversationHistory
           id={view.id}
           sources={view.conversationHistory ?? []}

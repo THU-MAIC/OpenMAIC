@@ -1,3 +1,4 @@
+import { latestFileChanges } from '@/lib/server/pbl-v3/file-changes';
 import { isPBLV3Reference } from '@/lib/pbl/v3/types';
 import { sandboxBody, sandboxPrincipalResponse } from '@/lib/server/sandbox/http';
 import { SandboxService } from '@/lib/server/sandbox/service';
@@ -64,7 +65,9 @@ export async function GET(request: Request) {
       const service = await SandboxService.forOwner(principal);
       assertEnvironmentReady(await touchEnvironment(store, row, service, false));
       const text = await service.readText(requireEnvironment(row), path);
-      return Response.json({ text, hash: digest(text) });
+      const hash = digest(text);
+      const changes = await latestFileChanges(store.pool, row.id, path, hash);
+      return Response.json({ text, hash, changes });
     }
     return Response.json(await learningView(principal, id));
   });

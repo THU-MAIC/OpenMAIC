@@ -84,7 +84,7 @@ export function teachingProductContext(input: {
     layout: {
       projectFiles: 'IDE file tree, collapsible at its header; reopen from editor tabs.',
       editor:
-        'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan.',
+        'File tabs; allowed edits autosave with status feedback. PLAN.md is the cumulative plan. Chat file links open the public file, expand its pane and select a 1-based line range. Version-matched recent AI edits have green backgrounds and +/~ gutter marks; deleted lines have a red boundary mark. These are visual aids, not Git staging, test passes, approvals, or saved-status evidence.',
       progress: 'Header: milestones. Above composer: current milestone steps.',
       task: 'The current-step bar above the composer opens available task details, not a full contract or assertion editor. Build and quiz submission are in task details; formal tests and Continue use the task bar.',
       report:

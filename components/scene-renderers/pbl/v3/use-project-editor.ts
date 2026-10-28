@@ -1,4 +1,5 @@
 'use client';
+import type { FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readEditorDraft, saveEditorDraft, type EditorBuffer } from './use-project-drafts';
 import { getClientTranslation } from '@/lib/i18n';
@@ -12,7 +13,7 @@ const AUTOSAVE_DELAY_MS = 750;
 /** Same debounce/serial receipt model as OpenPBL, with hosted file-hash fencing. */
 export function useProjectEditor(
   view: LearningView,
-  read: (path: string) => Promise<{ text: string; hash: string }>,
+  read: (path: string) => Promise<{ text: string; hash: string; changes?: FileChangeRange[] }>,
   onSave: (
     path: string,
     text: string,
@@ -241,14 +242,28 @@ export function useProjectEditor(
           const draft = cached.buffers[name];
           if (draft?.environment === buffer.environment && draft.hash === buffer.hash) {
             if (draft.text === buffer.text) delete cached.buffers[name];
-            else cached.buffers[name] = { ...draft, saved: buffer.text, hash: receipt.hash };
+            else
+              cached.buffers[name] = {
+                ...draft,
+                saved: buffer.text,
+                hash: receipt.hash,
+                changes: undefined,
+              };
             saveEditorDraft(view.id, cached);
           }
           if (!mounted.current) return;
           updateBuffers((previous) => {
             const existing = previous[name];
             return existing?.environment === buffer.environment && existing.hash === buffer.hash
-              ? { ...previous, [name]: { ...existing, saved: buffer.text, hash: receipt.hash } }
+              ? {
+                  ...previous,
+                  [name]: {
+                    ...existing,
+                    saved: buffer.text,
+                    hash: receipt.hash,
+                    changes: undefined,
+                  },
+                }
               : previous;
           });
         } catch (error) {

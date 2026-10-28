@@ -1,4 +1,5 @@
 'use client';
+import type { FileReference } from '@/lib/pbl/v3/file-reference';
 import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
 import { usePblActivityGeneration } from './activity-provider';
 import {
@@ -66,6 +67,9 @@ function PBLV3WorkspaceContent({
   const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
+  const [fileTarget, setFileTarget] = useState<
+    (FileReference & { studyId: string; requestId: number }) | null
+  >(null);
   const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
   const storageError = useCallback(() => setError(t('pblV3.draftStorageUnavailable')), [t]);
@@ -528,6 +532,7 @@ function PBLV3WorkspaceContent({
               <LearningWorkbenchPanel
                 key={view.id}
                 view={view}
+                fileTarget={fileTarget?.studyId === view.id ? fileTarget : null}
                 workbench={workbench}
                 pending={pending || stream.status !== 'connected'}
                 pendingAction={pendingAction}
@@ -617,6 +622,10 @@ function PBLV3WorkspaceContent({
                 <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                   <LearningConversation
                     view={view}
+                    onOpenFile={(reference) => {
+                      setShowWorkspace(true);
+                      setFileTarget({ ...reference, studyId: view.id, requestId: Date.now() });
+                    }}
                     sent={sent}
                     pendingMessage={pendingMessage}
                     requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}

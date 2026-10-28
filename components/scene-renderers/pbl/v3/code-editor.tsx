@@ -1,5 +1,7 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import type { editor as MonacoEditor } from 'monaco-editor';
+import type { FileReference, FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import Editor, { loader } from '@monaco-editor/react';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -10,6 +12,8 @@ export function CodeEditor({
   studyId,
   path,
   value,
+  target,
+  changes,
   readOnly,
   readOnlyReason,
   onChange,
@@ -18,11 +22,65 @@ export function CodeEditor({
   studyId: string;
   path: string;
   value: string;
+  target?: (FileReference & { requestId: number }) | null;
+  changes?: FileChangeRange[];
   readOnly: boolean;
   readOnlyReason: string;
   onChange: (text: string) => void;
   onSave: () => void;
 }) {
+  const instance = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const decorations = useRef<MonacoEditor.IEditorDecorationsCollection | null>(null);
+  const lastTarget = useRef<number | null>(null);
+  const latest = useRef({ target, changes });
+  useLayoutEffect(() => {
+    latest.current = { target, changes };
+  }, [target, changes]);
+  const present = useCallback(() => {
+    const editor = instance.current,
+      model = editor?.getModel();
+    if (!editor || !model) return;
+    const { target, changes } = latest.current;
+    decorations.current?.set(
+      (changes ?? []).map((change) => {
+        const startLineNumber = Math.min(change.start, model.getLineCount());
+        return {
+          range: {
+            startLineNumber,
+            startColumn: 1,
+            endLineNumber: Math.min(change.end, model.getLineCount()),
+            endColumn: 1,
+          },
+          options: {
+            isWholeLine: true,
+            className: change.kind === 'deleted' ? undefined : `pbl-change-${change.kind}`,
+            linesDecorationsClassName: `pbl-change-gutter-${change.kind}`,
+            overviewRuler: {
+              color: change.kind === 'deleted' ? '#ef4444' : '#22c55e',
+              position: 1,
+            },
+          },
+        };
+      }),
+    );
+    if (target && lastTarget.current !== target.requestId) {
+      lastTarget.current = target.requestId;
+      const startLineNumber = Math.min(target.line ?? 1, model.getLineCount());
+      const endLineNumber = Math.min(target.end ?? startLineNumber, model.getLineCount());
+      const range = {
+        startLineNumber,
+        startColumn: 1,
+        endLineNumber,
+        endColumn: model.getLineMaxColumn(endLineNumber),
+      };
+      editor.setSelection(range);
+      editor.revealRangeInCenter(range);
+      editor.focus();
+    }
+  }, []);
+  useEffect(() => {
+    present();
+  }, [target, changes, present]);
   const change = useRef({ readOnly, onChange });
   // Update before Monaco synchronizes controlled values in passive effects.
   useLayoutEffect(() => {
@@ -71,6 +129,9 @@ export function CodeEditor({
       loading={<p className="p-4 text-sm text-muted-foreground">{t('pblV3.loading')}</p>}
       onChange={handleChange}
       onMount={(editor, monaco) => {
+        instance.current = editor;
+        decorations.current = editor.createDecorationsCollection();
+        present();
         // The native readonly textarea suppresses character/paste input events.
         // Route those attempts through Monaco so its cursor-side message still appears.
         const attempt = editor.onKeyDown(({ browserEvent: event }) => {

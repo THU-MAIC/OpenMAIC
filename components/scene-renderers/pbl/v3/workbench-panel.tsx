@@ -1,4 +1,5 @@
 'use client';
+import type { FileReference, FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
@@ -49,6 +50,7 @@ export async function workbenchRequest<T>(url: string, body?: unknown): Promise<
 export function LearningWorkbenchPanel({
   view,
   workbench,
+  fileTarget,
   pending,
   pendingAction,
   onRefresh,
@@ -56,6 +58,7 @@ export function LearningWorkbenchPanel({
   onDirtyChange,
 }: {
   view: LearningView;
+  fileTarget?: (FileReference & { requestId: number }) | null;
   workbench: LearningWorkbench | null;
   pending: boolean;
   pendingAction: string | null;
@@ -94,7 +97,7 @@ export function LearningWorkbenchPanel({
   const editor = useProjectEditor(
     view,
     (path) =>
-      workbenchRequest<{ text: string; hash: string }>(
+      workbenchRequest<{ text: string; hash: string; changes?: FileChangeRange[] }>(
         `/api/pbl/v3?id=${encodeURIComponent(view.id)}&file=${encodeURIComponent(path)}`,
       ),
     onSave,
@@ -102,6 +105,19 @@ export function LearningWorkbenchPanel({
     { enabled: !disabled && !!work?.canEdit, canEdit },
   );
   const { path, buffer, stale } = editor;
+  const selectedTarget = useRef<number | null>(null);
+  const selectFile = useRef(editor.select);
+  selectFile.current = editor.select;
+  useEffect(() => {
+    if (
+      fileTarget &&
+      selectedTarget.current !== fileTarget.requestId &&
+      view.files.includes(fileTarget.path)
+    ) {
+      selectedTarget.current = fileTarget.requestId;
+      selectFile.current(fileTarget.path);
+    }
+  }, [fileTarget, view.files]);
   const dirty = editor.anyDirty;
   useEffect(() => {
     onDirtyChange(dirty);
@@ -455,6 +471,10 @@ export function LearningWorkbenchPanel({
                   studyId={view.id}
                   path={path}
                   value={buffer.text}
+                  target={
+                    !editor.loading && !stale && fileTarget?.path === path ? fileTarget : null
+                  }
+                  changes={!stale && buffer.text === buffer.saved ? buffer.changes : undefined}
                   readOnly={!canSave}
                   readOnlyReason={editMessage}
                   onChange={editor.edit}

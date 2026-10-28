@@ -353,7 +353,10 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         actor: item.actor,
         ...Object.fromEntries(
           Object.entries(item.detail).filter(
-            ([key]) => !['fingerprint', 'previousHash', 'expectedHash', 'requestId'].includes(key),
+            ([key]) =>
+              !['fingerprint', 'previousHash', 'expectedHash', 'requestId', 'changes'].includes(
+                key,
+              ),
           ),
         ),
       },
