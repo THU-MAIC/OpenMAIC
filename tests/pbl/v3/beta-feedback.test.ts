@@ -36,6 +36,7 @@ describe('beta feedback boundaries', () => {
   });
   it('uses real UI labels independently of conversational language', () => {
     expect(visibleProductLabels('en-US').task).toBe('Current task details');
+    expect(visibleProductLabels('en-US').submitQuiz).toBe('Submit answers');
     expect(visibleProductLabels('zh-CN').task).toBe('当前任务详情');
     expect(visibleProductLabels('unknown')).toEqual(visibleProductLabels('en-US'));
     expect(isTeachingLocale('en-US')).toBe(true);

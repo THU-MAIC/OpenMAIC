@@ -33,6 +33,7 @@ export function visibleProductLabels(locale = 'en-US') {
     projectFiles: p.files,
     task: p.journey.taskDetails,
     runTests: p.runTests,
+    submitQuiz: p.submitQuiz,
     build: p.build,
     continue: p.next,
     report: p.report,
