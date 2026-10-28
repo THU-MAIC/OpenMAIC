@@ -49,7 +49,13 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   readonly browser: {
     /** The open courses, in tab order. */
     readonly tabs: readonly WorkspaceCourseTabItem[];
+    /** The course this pane shows: always a real course id. */
     readonly activeCourseId: string;
+    /**
+     * The tab the strip marks selected, when it is not the course (the request
+     * preview's tab). Selection only: nothing loads, stores or navigates by it.
+     */
+    readonly selectedTabId?: string;
     readonly onActivateCourse: (courseId: string) => void;
     /**
      * The real close: closing the last tab drops `?course=`, shuts the pane and
@@ -154,7 +160,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               and folding covers "not now". */}
           <WorkspaceCourseTabs
             tabs={browser.tabs}
-            activeCourseId={browser.activeCourseId}
+            activeCourseId={browser.selectedTabId ?? browser.activeCourseId}
             onActivate={browser.onActivateCourse}
             onClose={browser.onCloseCourse}
           />

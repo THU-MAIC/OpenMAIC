@@ -1539,7 +1539,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       tabs: previewTabOpen
         ? [...courseTabItems, { id: PREVIEW_TAB_ID, name: previewTab.label }]
         : courseTabItems,
-      activeCourseId: previewShowing ? PREVIEW_TAB_ID : (panes.courseId as string),
+      // The mounted classroom always gets the real course: the preview tab
+      // only selects in the strip, so the keep-alive classroom behind it is
+      // never asked to load the sentinel.
+      activeCourseId: panes.courseId as string,
+      selectedTabId: previewShowing ? PREVIEW_TAB_ID : (panes.courseId as string),
       onActivateCourse: activateCourseFromStrip,
       onCloseCourse: closeCourseFromStrip,
     }),

@@ -2297,6 +2297,7 @@ describe('the knowledge base page', () => {
         mocks.classroomProps?.browser as {
           tabs: { id: string }[];
           activeCourseId: string;
+          selectedTabId?: string;
           onActivateCourse: (id: string) => void;
           onCloseCourse: (id: string) => void;
         };
@@ -2304,7 +2305,9 @@ describe('the knowledge base page', () => {
       it('joins the strip after the course tabs and takes focus when its request starts', async () => {
         await runWithTool();
         expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'request-preview']);
-        expect(browser().activeCourseId).toBe('request-preview');
+        expect(browser().selectedTabId).toBe('request-preview');
+        // Selection only: the classroom behind it keeps its real course.
+        expect(browser().activeCourseId).toBe('stage-other');
         expect(mocks.classroomProps?.hidden).toBe(true);
         expect(pane()?.getAttribute('aria-hidden')).toBeNull();
       });
@@ -2327,7 +2330,9 @@ describe('the knowledge base page', () => {
         await render();
         await render();
         const hostedKey = sessionScopedKey(mocks.store.sessionId, 'q');
-        expect(browser().activeCourseId).toBe('request-preview');
+        expect(browser().selectedTabId).toBe('request-preview');
+        // Selection only: the classroom behind it keeps its real course.
+        expect(browser().activeCourseId).toBe('stage-other');
         expect(useQuestionHost.getState().previewKey).toBe(hostedKey);
 
         // A course tab in front: the preview's form is not on screen, so the chat answers.
@@ -2355,6 +2360,23 @@ describe('the knowledge base page', () => {
         useQuestionHost.getState().setAnswer(null);
       });
 
+      it('keeps the real course mounted behind the preview tab, untouched, and back again', async () => {
+        await render();
+        const mounts = mocks.classroomMounts;
+        await runWithTool();
+        expect(browser().selectedTabId).toBe('request-preview');
+        expect(browser().activeCourseId).toBe('stage-other');
+        expect(mocks.classroomMounts).toBe(mounts);
+        // Nothing navigates by the sentinel.
+        expect(window.location.search).toBe('?session=session-1&course=stage-other');
+        await act(async () => browser().onActivateCourse('stage-other'));
+        await render();
+        expect(browser().selectedTabId).toBe('stage-other');
+        expect(browser().activeCourseId).toBe('stage-other');
+        expect(mocks.classroomMounts).toBe(mounts);
+        expect(mocks.classroomProps?.hidden).toBe(false);
+      });
+
       it('does not steal focus back on later events once a course tab was chosen', async () => {
         await runWithTool();
         await act(async () => browser().onActivateCourse('stage-other'));
@@ -2370,7 +2392,9 @@ describe('the knowledge base page', () => {
         // Choosing it again shows it.
         await act(async () => browser().onActivateCourse('request-preview'));
         await render();
-        expect(browser().activeCourseId).toBe('request-preview');
+        expect(browser().selectedTabId).toBe('request-preview');
+        // Selection only: the classroom behind it keeps its real course.
+        expect(browser().activeCourseId).toBe('stage-other');
       });
 
       it('is replaced at its position by the conversation course at the first scene', async () => {
@@ -2446,7 +2470,9 @@ describe('the knowledge base page', () => {
         await render();
         expect(pane()?.getAttribute('data-scene')).toBe('researching');
         expect(browser().tabs.map((tab) => tab.id)).toEqual(['stage-other', 'request-preview']);
-        expect(browser().activeCourseId).toBe('request-preview');
+        expect(browser().selectedTabId).toBe('request-preview');
+        // Selection only: the classroom behind it keeps its real course.
+        expect(browser().activeCourseId).toBe('stage-other');
         // Through to create_stage and its link: still the placeholder, no early tab.
         const linked = foldUntil((type) => type === 'stage_link');
         Object.assign(mocks.store, linked, {
