@@ -285,7 +285,7 @@ export function Stage({
       setMode('playback');
       return;
     }
-    // Load the editor chunk (fonts + slide surface) BEFORE flipping mode,
+    // Load the editor chunk (slide + quiz surfaces) BEFORE flipping mode,
     // so the edit chrome animates in with its content already present and
     // the slide surface registered — no mid-animation pop-in / NOOP flash.
     // Runs concurrently with teardown; the import is promise-cached so it's
