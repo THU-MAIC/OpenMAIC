@@ -69,10 +69,12 @@ interface KeptImage {
 /**
  * The bytes of the images the provider answered as URLs, as data URLs by
  * index into `candidates`, downloaded within the extraction's time budget;
- * an image missing from the answer could not be downloaded.
+ * an image missing from the answer could not be downloaded. An abort of
+ * `signal` (the extraction is cancelled) stops the downloads and fails this.
  */
 async function downloadedImages(
   candidates: ReadonlyArray<{ data?: string }>,
+  signal?: AbortSignal,
 ): Promise<Map<number, string>> {
   const remote = candidates.flatMap((asset, index) => {
     const url = remoteImageUrl(asset.data);
@@ -80,7 +82,7 @@ async function downloadedImages(
   });
   if (remote.length === 0) return new Map();
   const deadline = AbortSignal.timeout(STEP_DEADLINES_MS.materialAnalysis);
-  const { images } = await inlineRemoteImages(remote, { deadline });
+  const { images } = await inlineRemoteImages(remote, { deadline, ...(signal ? { signal } : {}) });
   return new Map(images.map((image) => [Number(image.id), image.src]));
 }
 
@@ -90,13 +92,16 @@ async function downloadedImages(
  * decoded or prepared is skipped; `notDownloaded` counts the downloads that
  * failed, which may succeed another time.
  */
-async function keptImages(artifact: DocumentArtifact): Promise<{
+async function keptImages(
+  artifact: DocumentArtifact,
+  signal?: AbortSignal,
+): Promise<{
   kept: Array<KeptImage & { path?: string }>;
   skipped: number;
   notDownloaded: number;
 }> {
   const candidates = artifact.assets.filter((asset) => asset.type === 'image' && asset.data);
-  const downloaded = await downloadedImages(candidates);
+  const downloaded = await downloadedImages(candidates, signal);
   const kept: Array<KeptImage & { path?: string }> = [];
   let skipped = 0;
   let notDownloaded = 0;
@@ -227,8 +232,9 @@ function cacheImagePlan(plan: ImagePlan, cacheKey?: string): void {
 export async function ownerDocumentOutcome(
   artifact: DocumentArtifact,
   provider: DocumentExtractorProvider,
+  options: { signal?: AbortSignal } = {},
 ): Promise<SourceExtractionOutcome> {
-  const { kept, skipped, notDownloaded } = await keptImages(artifact);
+  const { kept, skipped, notDownloaded } = await keptImages(artifact, options.signal);
   const index = imagePathIndex(kept);
   // Uploads decoded by plain-text have no provider-owned image paths. MinerU
   // output still needs rewriting when all of its images are missing.

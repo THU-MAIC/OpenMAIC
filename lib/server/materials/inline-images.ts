@@ -32,7 +32,7 @@ import {
   readResponseBodyWithLimit,
 } from '@/lib/server/bounded-download';
 import { fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
-import { isBase64Payload } from '@/lib/utils/base64';
+import { isBase64Image } from '@/lib/utils/base64';
 
 const log = createLogger('InlineImages');
 
@@ -88,13 +88,13 @@ export function remoteImageUrl(src: string | undefined): string | undefined {
 
 /**
  * Whether an image source carries its bytes: a `data:` URL whose payload, if
- * it says base64, is base64 (a wrapped URL or path is not).
+ * it says base64, is base64 of an image (a wrapped URL or path is not).
  */
 function isInlineImageSource(src: string | undefined): boolean {
   if (typeof src !== 'string' || !src.startsWith('data:')) return false;
   const comma = src.indexOf(',');
   if (comma === -1) return false;
-  return !/;base64$/i.test(src.slice(5, comma)) || isBase64Payload(src.slice(comma + 1));
+  return !/;base64$/i.test(src.slice(5, comma)) || isBase64Image(src.slice(comma + 1));
 }
 
 /** Whether every image already carries its bytes inline. */

@@ -171,7 +171,7 @@ describe('inlineRemoteImages', () => {
   });
 
   it('drops a base64 data URL whose payload is not base64, without a request', async () => {
-    const good = image('img_2', 'data:image/png;base64,AAAA');
+    const good = image('img_2', 'data:image/png;base64,iVBORw0KGgo=');
     const result = await inlineRemoteImages([
       image('img_1', 'data:image/png;base64,/files/p1.jpg'),
       good,
@@ -243,7 +243,7 @@ describe('inlineRemoteImages', () => {
       const deadline = new AbortController();
       setTimeout(() => deadline.abort(new Error('out of time')), 60_000);
       const links = Array.from({ length: 6 }, (_, index) => image(`img_${index + 1}`, JPEG_URL));
-      const inline = image('img_7', 'data:image/png;base64,AA');
+      const inline = image('img_7', 'data:image/png;base64,iVBORw0KGgo=');
 
       const result = inlineRemoteImages([...links, inline], {
         deadline: deadline.signal,
@@ -379,7 +379,10 @@ describe('inlineRemoteImages', () => {
     expect(remoteImageUrl('')).toBeUndefined();
     expect(imagesAreInline([{ src: 'data:x' }, { src: '' }])).toBe(false);
     expect(imagesAreInline([{ src: 'data:image/png;base64,https://a/b' }])).toBe(false);
-    expect(imagesAreInline([{ src: 'data:image/png;base64,AA' }])).toBe(true);
+    expect(imagesAreInline([{ src: 'data:image/png;base64,iVBORw0KGgo=' }])).toBe(true);
+    // Base64 characters, but of a path, not an image.
+    expect(imagesAreInline([{ src: 'data:image/png;base64,images/foo' }])).toBe(false);
+    expect(imagesAreInline([{ src: 'data:image/png;base64,AAAA' }])).toBe(false);
     expect(imagesAreInline([{ src: 'data:image/png;base64,/files/p1.jpg' }])).toBe(false);
     expect(imagesAreInline([{ src: 'data:image/svg+xml,%3Csvg%3E' }])).toBe(true);
     expect(imagesAreInline([])).toBe(true);

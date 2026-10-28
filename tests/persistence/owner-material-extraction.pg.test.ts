@@ -28,6 +28,7 @@ import {
   bootExtractionHarness,
   failureReasonScenario,
   failedImageDownloadScenario,
+  cancelledImageDownloadScenario,
   documentFallbackScenario,
   documentServiceUnavailableScenario,
   cacheCollectorOrderScenario,
@@ -237,6 +238,10 @@ describe.skipIf(!contractUrl)('owner-level material extraction on PostgreSQL', (
 
   it('never reuses a result whose image downloads failed', async () => {
     await failedImageDownloadScenario(await boot());
+  });
+
+  it('stops a run cancelled while an image download stalls, settling nothing', async () => {
+    await cancelledImageDownloadScenario(await boot());
   });
 
   it('does not reuse a done donor that no longer roots its result', async () => {

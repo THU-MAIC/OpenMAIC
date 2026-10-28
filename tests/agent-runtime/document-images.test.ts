@@ -265,26 +265,44 @@ describe('resolveDerivativeRefs', () => {
 });
 
 describe('MinerU parser', () => {
+  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]).toString(
+    'base64',
+  );
+  const JPEG_BASE64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]).toString('base64');
+
   it('keeps an image a gateway answers as a URL, and wraps only bare base64', () => {
     const url = 'https://files.example.com/media/abc';
     const parsed = extractMinerUResult({
       md_content: '',
-      images: { 'abc.jpg': url, 'def.jpg': 'AAAA', 'ghi.jpg': 'data:image/jpeg;base64,BBBB' },
+      images: { 'abc.jpg': url, 'def.jpg': JPEG_BASE64, 'ghi.jpg': 'data:image/jpeg;base64,BBBB' },
     });
     expect(parsed.images).toEqual([
       url,
-      'data:image/png;base64,AAAA',
+      `data:image/png;base64,${JPEG_BASE64}`,
       'data:image/jpeg;base64,BBBB',
     ]);
     expect(parsed.metadata?.pdfImages?.[0]).toMatchObject({ src: url, path: 'abc.jpg' });
   });
 
-  it('wraps no value that is not base64 (a path is kept as is, to be dropped)', () => {
+  it('wraps base64 of an image only (a path is kept as is, to be dropped)', () => {
+    // Paths made only of base64 characters, a dot-free name among them.
+    const paths = ['/files/p1.jpg', '//cdn.example.com/p2.jpg', '/file_parse/abc', 'images/foo'];
     const parsed = extractMinerUResult({
       md_content: '',
-      images: { 'p1.jpg': '/files/p1.jpg', 'p2.jpg': '//cdn.example.com/p2.jpg' },
+      images: Object.fromEntries(paths.map((path, index) => [`p${index}.jpg`, path])),
     });
-    expect(parsed.images).toEqual(['/files/p1.jpg', '//cdn.example.com/p2.jpg']);
+    expect(parsed.images).toEqual(paths);
+  });
+
+  it.each([
+    ['PNG', PNG_BASE64],
+    ['JPEG', JPEG_BASE64],
+    ['GIF', Buffer.from('GIF89a\x01\x00\x01\x00', 'latin1').toString('base64')],
+    ['WebP', Buffer.from('RIFF\x24\x00\x00\x00WEBPVP8 ', 'latin1').toString('base64')],
+  ])('wraps bare base64 of a %s image', (_, base64) => {
+    expect(extractMinerUResult({ md_content: '', images: { 'a.jpg': base64 } }).images).toEqual([
+      `data:image/png;base64,${base64}`,
+    ]);
   });
 
   it('finds the metadata of an image content_list names by its URL', () => {
