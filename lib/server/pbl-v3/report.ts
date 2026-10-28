@@ -17,6 +17,7 @@ const HISTORY_LIMIT = 1000;
 const RECORD_BYTES = 32768;
 const TEXT_LIMIT = 240000;
 const DETAIL_LIMIT = 12000;
+const DECISION_FIELD_LIMIT = 4000;
 
 /** Bounded presentation of durable evidence; the underlying append-only history is retained. */
 async function buildLearningEvidence(db: PoolClient, row: Study): Promise<LearningReport> {
@@ -35,11 +36,19 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     sequence: number;
     at: number;
     event: OrchestrationEvent | null;
+    clipped: boolean;
   }>(
     `SELECT sequence,(extract(epoch FROM recorded_at)*1000)::float8 AS at,
-       CASE WHEN octet_length(event::text)<=$4 THEN event END AS event
+       CASE WHEN event->>'type'='decision.recorded' THEN jsonb_build_object(
+         'type','decision.recorded','milestoneId',event->>'milestoneId',
+         'decisionId',event->>'decisionId',
+         'chosen',left(event->>'chosen',$5),
+         'rationale',left(event->>'rationale',$5))
+       WHEN octet_length(event::text)<=$4 THEN event END AS event,
+       (event->>'type'='decision.recorded' AND
+         (length(event->>'chosen')>$5 OR length(event->>'rationale')>$5)) AS clipped
      FROM pbl_v3_events WHERE study_id=$1 AND sequence<=$2 ORDER BY sequence DESC LIMIT $3`,
-    [id, row.state.lastSequence, HISTORY_LIMIT + 1, RECORD_BYTES],
+    [id, row.state.lastSequence, HISTORY_LIMIT + 1, RECORD_BYTES, DECISION_FIELD_LIMIT],
   );
   if (records.rows.length > HISTORY_LIMIT) truncated = true;
   const versions = new Map<string, string>();
@@ -53,18 +62,40 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     if (hash && !versions.has(hash)) versions.set(hash, `v${versions.size + 1}`);
   }
   const versionLabel = (hash: string) => versions.get(hash);
-  for (const { sequence, at, event } of records.rows.slice(0, HISTORY_LIMIT)) {
+  // Allocate presentation space to formal learner decisions before generated artifacts.
+  const prioritized = records.rows
+    .slice(0, HISTORY_LIMIT)
+    .sort(
+      (a, b) =>
+        Number(b.event?.type === 'decision.recorded') -
+        Number(a.event?.type === 'decision.recorded'),
+    );
+  for (const { sequence, at, event, clipped } of prioritized) {
     if (!event) {
       truncated = true;
       continue;
     }
     let detail: string | undefined, version: string | undefined;
+    let learnerText: LearningReport['evidence'][number]['learnerText'];
+    let recordClipped = clipped;
     let milestoneId = 'milestoneId' in event ? event.milestoneId : undefined;
     switch (event.type) {
       case 'decision.recorded': {
         const d = project.definition.decisions.find((d) => d.id === event.decisionId);
-        detail = `${d?.decisionPrompt ?? event.decisionId}: ${decisionResponseLabel(d, event.chosen ?? '')}`;
-        if (event.rationale) detail += `\nRationale: ${event.rationale}`;
+        // Reserve separate space for the answer and reason so neither hides the other.
+        const allowance = Math.min(
+          DECISION_FIELD_LIMIT,
+          Math.max(0, Math.floor((remaining - 40) / 3)),
+        );
+        const answer = (event.chosen ?? '').slice(0, allowance);
+        const rationale = event.rationale?.slice(0, allowance);
+        learnerText = { answer, ...(rationale ? { rationale } : {}) };
+        detail = `${(d?.decisionPrompt ?? event.decisionId).slice(0, allowance)}: ${decisionResponseLabel(d, answer).slice(0, allowance)}`;
+        if (rationale) detail += `\nRationale: ${rationale}`;
+        recordClipped ||=
+          answer.length < (event.chosen?.length ?? 0) ||
+          (rationale?.length ?? 0) < (event.rationale?.length ?? 0) ||
+          (d?.decisionPrompt ?? event.decisionId).length > allowance;
         break;
       }
       case 'artifact.recorded':
@@ -105,7 +136,9 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         milestoneId,
         kind: event.type,
         detail: text,
-        ...(text.length < detail.length ||
+        ...(learnerText ? { learnerText } : {}),
+        ...(recordClipped ||
+        text.length < detail.length ||
         (detail.length >= 12000 &&
           event.type === 'artifact.recorded' &&
           event.content?.endsWith('…（后略）'))
@@ -148,16 +181,20 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     }
     const entries = await db.query<{ id: number; at: number; type: string; data: unknown }>(
       `SELECT e.seq AS id,e.ts::float8 AS at,e.type,
-         CASE WHEN octet_length(e.data::text)<=$4 THEN e.data || jsonb_build_object(
+         (CASE WHEN e.type='user_message' THEN jsonb_build_object(
+           'text',CASE WHEN jsonb_typeof(e.data->'text')='string' THEN left(e.data->>'text',$5) END,
+           'pblOpening',e.data->'pblOpening',
+           'pblTextClipped',length(e.data->>'text')>$5)
+         WHEN octet_length(e.data::text)<=$4 THEN e.data END) || jsonb_build_object(
            'pblInputId',(SELECT input.seq FROM agent_session_events input
              WHERE input.session_id=e.session_id AND input.seq<=e.seq AND input.type='user_message'
-             ORDER BY input.seq DESC LIMIT 1)) END AS data
+             ORDER BY input.seq DESC LIMIT 1)) AS data
        FROM agent_session_events e WHERE e.session_id=$1 AND e.seq<=$2
          AND (type IN ('user_message','message_end','pbl_learner_handoff')
            OR (type='tool_execution_end' AND data->>'toolName' IN
              ('request_skill_review','request_learner_help','respond_to_learner')))
        ORDER BY e.seq DESC LIMIT $3`,
-      [binding.session_id, binding.last, eventsRemaining + 1, RECORD_BYTES],
+      [binding.session_id, binding.last, eventsRemaining + 1, RECORD_BYTES, DETAIL_LIMIT],
     );
     let conversationTruncated = entries.rows.length > eventsRemaining;
     const selected = entries.rows.slice(0, eventsRemaining);
@@ -201,8 +238,10 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         text?: string;
         pblOpening?: boolean;
         pblInputId?: number;
+        pblTextClipped?: boolean;
         message?: { role?: string; content?: { type: string; text?: string }[] };
       };
+      if (data.pblTextClipped) conversationTruncated = true;
       const inputId =
         typeof data.pblInputId === 'number' && Number.isSafeInteger(data.pblInputId)
           ? data.pblInputId
@@ -317,7 +356,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
     });
   }
   evidence.push(...savedEvidence.reverse());
-  evidence.sort((a, b) => a.at - b.at);
+  evidence.sort((a, b) => a.at - b.at || a.sequence - b.sequence);
   conversations.sort((a, b) => (a.messages[0]?.at ?? Infinity) - (b.messages[0]?.at ?? Infinity));
   const decisions = (
     await db.query<{ decisions: number; changes: number }>(

@@ -110,7 +110,10 @@ study activity, command receipt or decision event is written; direct domain
 transitions enforce the same limit. Forms use the shared rule and HTML `maxlength`,
 and retain oversized restored drafts for editing instead of silently truncating
 them. Existing stored responses remain readable without rewriting history. The
-HTTP route's separate total request-byte limit still applies.
+combined JSON-encoded strings must also fit 192,000 UTF-8 bytes, leaving room for
+command metadata beneath the HTTP route's separate 256,000-byte cap. This includes
+JSON escaping and Unicode encoding; the form displays an error and preserves the
+draft when either limit is exceeded.
 
 Responses and rationales remain together in study state, versioned decision events,
 role artifact projections, production summaries and report evidence. Report
@@ -120,13 +123,24 @@ study-scoped browser draft store and never replay a
 command automatically. A successful submission or explicit retry clears only its
 matching draft, preserving later edits. Dialogue Agents receive the current
 milestone's submitted responses and rationales in both their initial prompt and
-live context; other stages retain their declared artifact access. Text responses
+live context as quoted, untrusted learner data; other stages retain their declared
+artifact access. Text responses
 remain literal in summaries and reports even if an authored option has a matching
 ID. Existing course packages and saved decisions remain valid;
 no database migration or new model/provider is required. Archives using either
 new response format declare `pbl-v3-decision-responses@1` alongside
 `pbl-v3-projects@1`, so older readers reject them before importing an unusable
 form. Export adds this requirement automatically.
+
+Reports retain separate bounded excerpts of a decision's literal answer and
+rationale instead of dropping valid events above the generic 32 KiB JSON guard.
+Long learner chat receives bounded text excerpts as well. Clipping is explicit and
+does not rewrite durable records. Formal decisions receive presentation space
+before generated artifacts, and analysis sampling prioritizes learner input over
+generated records while keeping chronological citations and existing budgets.
+Only retained literal learner text can support a learner quote; authored prompts,
+option labels and Agent prose cannot masquerade as learner-authored evidence.
+Raw tool output remains excluded from report analysis.
 
 ## Runtime profiles and private resources
 

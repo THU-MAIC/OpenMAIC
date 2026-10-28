@@ -7,7 +7,10 @@ import type {
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { CollectedMilestoneState } from '@/lib/pbl/v3/domain/orchestration/types';
 import { projectArtifacts } from '@/lib/pbl/v3/domain/orchestration/artifacts';
-import { buildSystemPrompt } from '@/lib/pbl/v3/domain/orchestration/prompts';
+import {
+  buildSystemPrompt,
+  quotedDecisionContext,
+} from '@/lib/pbl/v3/domain/orchestration/prompts';
 import { isFinalProjectRecap } from './stage-progress';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import {
@@ -338,9 +341,12 @@ export function teachingLiveContext(input: TeachingPromptInput): string {
 }
 
 export function teachingLiveSuffix(live: string): string {
-  return live
-    ? `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${live}`
-    : '';
+  if (!live) return '';
+  const { decisionsChosen, ...hostContext } = JSON.parse(live);
+  return (
+    `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${JSON.stringify(hostContext)}` +
+    (decisionsChosen === undefined ? '' : quotedDecisionContext(decisionsChosen))
+  );
 }
 
 /** Include the complete system prompt and every guided section's course-authored payload.

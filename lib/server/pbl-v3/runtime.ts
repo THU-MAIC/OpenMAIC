@@ -372,7 +372,7 @@ function validateCommand(command: LearningCommand) {
     throw sandboxInvalid('Text is limited to 64000 characters.');
   if (command.type === 'decide' && !isDecisionResponseWithinLimits(command))
     throw sandboxInvalid(
-      `Decision responses and rationales are limited to ${DECISION_RESPONSE_MAX_LENGTH} characters each.`,
+      `Decision responses and rationales are limited to ${DECISION_RESPONSE_MAX_LENGTH} characters each and must fit the combined encoded response budget.`,
     );
   if (
     command.evaluationId !== undefined &&

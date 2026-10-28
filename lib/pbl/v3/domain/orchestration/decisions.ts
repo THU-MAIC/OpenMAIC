@@ -11,13 +11,19 @@ export interface DecisionProgress<TChosen = string> {
 
 /** Match chat input and HTML maxlength: UTF-16 code units, not serialized bytes. */
 export const DECISION_RESPONSE_MAX_LENGTH = 64_000;
+/** Reserve room for command metadata beneath the route's 256,000-byte body cap. */
+export const DECISION_RESPONSE_MAX_BYTES = 192_000;
 
 export function isDecisionResponseWithinLimits(response: {
   chosen?: unknown;
   rationale?: unknown;
 }): boolean {
-  return [response.chosen, response.rationale].every(
-    (value) => typeof value !== 'string' || value.length <= DECISION_RESPONSE_MAX_LENGTH,
+  const fields = [response.chosen, response.rationale].filter(
+    (value): value is string => typeof value === 'string',
+  );
+  return (
+    fields.every((value) => value.length <= DECISION_RESPONSE_MAX_LENGTH) &&
+    new TextEncoder().encode(JSON.stringify(fields)).length <= DECISION_RESPONSE_MAX_BYTES
   );
 }
 

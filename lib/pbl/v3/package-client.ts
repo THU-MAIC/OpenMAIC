@@ -8,16 +8,31 @@ import {
 } from '@openmaic/dsl';
 import type { ClassroomManifest } from '@/lib/export/classroom-zip-types';
 import { PROJECT_LIMITS, projectResourcesWithinLimits, safeProjectPath } from './package-policy';
+import { projectSchema } from './domain/project/project-schema';
 
 export const DECISION_RESPONSE_CAPABILITY = 'pbl-v3-decision-responses@1';
 function needsDecisionResponses(projects: readonly PBLProjectPackage[]) {
-  return projects.some((project) => {
-    const descriptor = JSON.parse(project.files['project.json']);
-    return descriptor.definition.decisions.some(
-      (decision: { responseType?: string; requiresRationale?: boolean }) =>
-        decision.responseType === 'text' || decision.requiresRationale === true,
+  return projects
+    .map((project) => {
+      let descriptor: unknown;
+      try {
+        descriptor = JSON.parse(project.files['project.json']);
+      } catch {
+        throw new Error('Invalid JSON in project.json.');
+      }
+      const definition = projectSchema.safeParse(
+        descriptor && typeof descriptor === 'object' && 'definition' in descriptor
+          ? descriptor.definition
+          : undefined,
+      );
+      if (!definition.success) throw new Error('Invalid project definition in project.json.');
+      return definition.data;
+    })
+    .some((definition) =>
+      definition.decisions.some(
+        (decision) => decision.responseType === 'text' || decision.requiresRationale === true,
+      ),
     );
-  });
 }
 
 async function call(body: unknown) {

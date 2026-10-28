@@ -464,6 +464,27 @@ describe('self-contained PBL project packages', () => {
       fetcher.mockRestore();
     }
   });
+  it.each(['{', 'null', '{}', '{"definition":{"decisions":[]}}'])(
+    'rejects malformed descriptors through a validation error before installing: %s',
+    async (descriptor) => {
+      const bundle = revised((files) => {
+        files['project.json'] = descriptor;
+      });
+      const m = manifest();
+      m.formatVersion = 2;
+      m.requiredCapabilities = ['pbl-v3-projects@1'];
+      m.pblProjects = [bundle.entry];
+      const fetcher = vi.spyOn(globalThis, 'fetch');
+      try {
+        await expect(installClassroomProjects(await archive(bundle), m)).rejects.toThrow(
+          /Invalid (JSON|project definition)/,
+        );
+        expect(fetcher).not.toHaveBeenCalled();
+      } finally {
+        fetcher.mockRestore();
+      }
+    },
+  );
   it('rejects unsupported formats/capabilities and unbound references; preserves ordinary v1 archives', () => {
     expect(() => validateClassroomPackageCompatibility(manifest())).not.toThrow();
     expect(() =>

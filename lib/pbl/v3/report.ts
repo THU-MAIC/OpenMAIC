@@ -18,6 +18,8 @@ export interface LearningReport {
     milestoneId?: string;
     kind: string;
     detail: string;
+    /** Retained literal learner input only; excludes course prompts and option labels. */
+    learnerText?: { answer: string; rationale?: string };
     version?: string;
     truncated?: boolean;
   }[];

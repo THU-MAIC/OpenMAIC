@@ -2909,6 +2909,6 @@
     "submitDecision": "提交决策",
     "decisionSaved": "回答已保存",
     "decisionUnsaved": "修改尚未提交",
-    "decisionTooLong": "回答和理由各最多 {max} 个字符，请缩短后再提交。"
+    "decisionTooLong": "回答和理由各最多 {max} 个字符，合计还需符合编码后的大小限制。请缩短后再提交。"
   }
 }

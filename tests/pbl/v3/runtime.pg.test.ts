@@ -794,8 +794,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       for (const response of [
         { chosen: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1), rationale: 'Reason' },
         { chosen: 'Rule', rationale: 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH + 1) },
+        { chosen: '学'.repeat(40_000), rationale: '学'.repeat(40_000) },
       ]) {
-        // Both payloads fit the route's 256 KB cap: enforce the field limits independently.
+        // Each payload fits the route cap: enforce field and combined response limits independently.
         expect(Buffer.byteLength(JSON.stringify(response))).toBeLessThan(256_000);
         await expect(
           send('decide', { decisionId: decision.id, ...response }),
@@ -851,14 +852,25 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         chosen,
         rationale: 'A revised explanation.',
       });
+      const longAnswer = 'ANSWER ' + '学'.repeat(12_000);
+      const longReason = 'REASON ' + '理'.repeat(12_000);
+      expect(
+        Buffer.byteLength(JSON.stringify({ chosen: longAnswer, rationale: longReason })),
+      ).toBeGreaterThan(32_768);
+      if (!collision)
+        await send('decide', {
+          decisionId: decision.id,
+          chosen: longAnswer,
+          rationale: longReason,
+        });
       current = await store.get(row.id, principal.ownerId);
       current.state.position.stageIndex = 2;
       await store.transaction((db) =>
         store.commit(db, current, { state: current.state, events: [] }),
       );
       expect((await learningView(principal, row.id)).decisionSummary![0]).toMatchObject({
-        choice: chosen,
-        rationale: 'A revised explanation.',
+        choice: collision ? chosen : longAnswer,
+        rationale: collision ? 'A revised explanation.' : longReason,
       });
       current = await store.get(row.id, principal.ownerId);
       current.state.status = 'completed';
@@ -876,10 +888,49 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             .filter((e) => e.kind === 'decision.recorded')
             .every((e) => !e.detail.includes(decision.options[0]!.label)),
         ).toBe(true);
-      expect(report.facts!.decisionChanges).toBe(1);
+      expect(report.facts!.decisionChanges).toBe(collision ? 1 : 2);
+      if (!collision) {
+        const retained = report.evidence.find((e) => e.learnerText?.answer.startsWith('ANSWER'))!;
+        expect(retained.learnerText?.rationale).toMatch(/^REASON/);
+        expect(retained.detail).toContain('REASON');
+        expect(retained.truncated).toBe(true);
+        expect(report.truncated).toBe(true);
+        expect(retained.learnerText!.answer.length).toBeLessThanOrEqual(4000);
+        expect(
+          (await store.get(row.id, principal.ownerId)).state.collected.greeting!.decisions[0],
+        ).toMatchObject({ chosen: longAnswer, rationale: longReason });
+      }
       await releasePreparationFixtures([row.id]);
     },
   );
+
+  it('retains a bounded excerpt of a valid long learner message instead of dropping its record', async () => {
+    const study = await freshStudy();
+    const started = (await study.send('begin')) as { sessionId: string };
+    const text = 'LEARNER ' + '学'.repeat(20_000);
+    await agents.appendControlEvent(started.sessionId, {
+      ts: Date.now(),
+      type: 'user_message',
+      data: { text, pblOpening: false },
+    });
+    await pool.query("UPDATE agent_sessions SET status='succeeded' WHERE id=$1", [
+      started.sessionId,
+    ]);
+    const { learningEvidence } = await import('@/lib/server/pbl-v3/report');
+    const report = await learningEvidence(principal, study.id);
+    const message = report.conversations
+      .flatMap((c) => c.messages)
+      .find((m) => m.text.startsWith('LEARNER'))!;
+    expect(message.text.length).toBeLessThanOrEqual(12_000);
+    expect(message.role).toBe('user');
+    expect(report.truncated).toBe(true);
+    expect(
+      (await agents.readEventsAfter(started.sessionId, 0, 100)).some(
+        (e) => e.type === 'user_message' && (e.data as { text?: string }).text === text,
+      ),
+    ).toBe(true);
+    await agents.softDeleteSession(started.sessionId, principal.ownerId);
+  });
 
   it('leaves study admission available for unrelated interaction during slow maintenance archives', async () => {
     const previousMax = pool.options.max;

@@ -137,4 +137,81 @@ describe('grounded report analysis', () => {
     expect(large.evidence[0]?.detail.length).toBeGreaterThan(1000);
     expect(input.records.reduce((n, r) => n + r.text.length, 0)).toBeLessThanOrEqual(60_000);
   });
+
+  it('accepts literal decision answers/reasons as learner evidence but rejects course prose and agent text', () => {
+    const decisions: LearningReport = {
+      ...report,
+      evidence: [
+        {
+          sequence: 9,
+          at: 9,
+          kind: 'decision.recorded',
+          detail: 'Course question and option label',
+          learnerText: {
+            answer: 'I check the requested position.',
+            rationale: 'Keep unrelated items unchanged.',
+          },
+        },
+      ],
+    };
+    for (const quote of ['check the requested position', 'Keep unrelated items unchanged'])
+      expect(
+        validateReportFindings(
+          JSON.stringify({ findings: [{ ...finding, evidence: ['event:9'], quote }] }),
+          decisions,
+        ),
+      ).toHaveLength(1);
+    for (const quote of ['Course question', 'option label', 'preserves the greeting'])
+      expect(() =>
+        validateReportFindings(
+          JSON.stringify({ findings: [{ ...finding, evidence: ['event:9'], quote }] }),
+          decisions,
+        ),
+      ).toThrow('No supported');
+    const legacy = {
+      ...decisions,
+      evidence: decisions.evidence.map(({ learnerText: _, ...e }) => e),
+    };
+    expect(() =>
+      validateReportFindings(
+        JSON.stringify({
+          findings: [{ ...finding, evidence: ['event:9'], quote: 'Course question' }],
+        }),
+        legacy,
+      ),
+    ).toThrow('No supported');
+  });
+
+  it('retains both long answer and rationale excerpts and prioritizes learner sources over generated records', () => {
+    const large: LearningReport = {
+      ...report,
+      evidence: [
+        {
+          sequence: 8,
+          at: 0,
+          kind: 'decision.recorded',
+          detail: 'question',
+          learnerText: {
+            answer: 'ANSWER ' + 'a'.repeat(4000),
+            rationale: 'REASON ' + 'b'.repeat(4000),
+          },
+        },
+        ...Array.from({ length: 1500 }, (_, i) => ({
+          sequence: i + 10,
+          at: i + 10,
+          kind: 'artifact',
+          detail: 'Agent action',
+        })),
+      ],
+    };
+    const input = reportAnalysisInput(large);
+    expect(input.records).toHaveLength(1000);
+    const decision = input.records.find((r) => r.id === 'event:8')!;
+    expect(decision.text).toContain('ANSWER');
+    expect(decision.text).toContain('REASON');
+    expect(input.records.some((r) => r.id === 'turn:0:2')).toBe(true);
+    expect(input.records.reduce((n, r) => n + r.text.length, 0)).toBeLessThanOrEqual(60_000);
+    expect(input.omitted).toBe(true);
+    expect(large.evidence[0]!.learnerText!.answer.length).toBeGreaterThan(4000);
+  });
 });

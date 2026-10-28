@@ -139,3 +139,19 @@ it.each(['chosen', 'rationale'] as const)(
     );
   },
 );
+
+it('keeps an over-budget Unicode draft editable and enables submission after correction', async () => {
+  await mount(
+    { id: 'rule', prompt: 'Explain', responseType: 'text', requiresRationale: true, options: [] },
+    {
+      chosen: '🧠'.repeat(32_000),
+      rationale: '🧠'.repeat(32_000),
+    },
+  );
+  expect(container.querySelector('button')!.disabled).toBe(true);
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(container.querySelector('textarea')!.value.length).toBe(64_000);
+  await type(1, 'A shorter reason');
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector('button')!.disabled).toBe(false);
+});

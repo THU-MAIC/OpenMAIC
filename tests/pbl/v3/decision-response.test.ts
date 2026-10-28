@@ -9,7 +9,9 @@ import {
 import { startOrchestration, submitDecision } from '@/lib/pbl/v3/domain/orchestration/transition';
 import {
   DECISION_RESPONSE_MAX_LENGTH,
+  DECISION_RESPONSE_MAX_BYTES,
   decisionResponseLabel,
+  isDecisionResponseWithinLimits,
   isDecisionResponseValid,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { projectArtifacts } from '@/lib/pbl/v3/domain/orchestration/artifacts';
@@ -41,8 +43,8 @@ describe('authored decision responses', () => {
   it('accepts boundary-length text without changing it and rejects overflow before a transition', () => {
     const { definition, state, decision, milestone } = fixture();
     const original = structuredClone(state);
-    const chosen = '学'.repeat(DECISION_RESPONSE_MAX_LENGTH);
-    const rationale = '🧠'.repeat(DECISION_RESPONSE_MAX_LENGTH / 2);
+    const chosen = 'x'.repeat(DECISION_RESPONSE_MAX_LENGTH);
+    const rationale = 'y'.repeat(DECISION_RESPONSE_MAX_LENGTH);
     const saved = submitDecision(definition, state, {
       decisionId: decision.id,
       chosen,
@@ -64,6 +66,18 @@ describe('authored decision responses', () => {
       ).toThrow();
       expect(state).toEqual(original);
     }
+  });
+
+  it('bounds combined JSON-encoded Unicode and escaped text while allowing the exact byte boundary', () => {
+    for (const value of ['学'.repeat(64_000), '🧠'.repeat(32_000), '\u0000'.repeat(32_000)]) {
+      expect(value.length).toBeLessThanOrEqual(DECISION_RESPONSE_MAX_LENGTH);
+      expect(isDecisionResponseWithinLimits({ chosen: value, rationale: value })).toBe(false);
+    }
+    const rationale = '学'.repeat(63_997) + 'x';
+    expect(Buffer.byteLength(JSON.stringify(['x', rationale]))).toBe(DECISION_RESPONSE_MAX_BYTES);
+    expect(isDecisionResponseWithinLimits({ chosen: 'x', rationale })).toBe(true);
+    expect(isDecisionResponseWithinLimits({ chosen: 'x', rationale: rationale + 'x' })).toBe(false);
+    expect(isDecisionResponseWithinLimits({ chosen: '学'.repeat(60_000) })).toBe(true);
   });
 
   it.each([
