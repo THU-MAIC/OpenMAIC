@@ -159,10 +159,18 @@ export function Stage({
   // learning surface always matches the selected mode.
   const [playbackEpoch, setPlaybackEpoch] = useState(0);
   const remountPlayback = useCallback(() => setPlaybackEpoch((epoch) => epoch + 1), []);
+  // What the latest run of the entry effect is for: a deferred remount only
+  // applies if the same course is still on learning by the time it lands.
+  const entryRef = useRef<{ classroomId: string | undefined; editing: boolean }>({
+    classroomId: undefined,
+    editing: false,
+  });
 
   useEffect(() => {
     const mountedPlayback = playbackRef.current;
-    if (!hosted || !workbenchShowingClassroom || !hostedSceneEditable) {
+    const editing = Boolean(hosted && workbenchShowingClassroom && hostedSceneEditable);
+    entryRef.current = { classroomId, editing };
+    if (!editing) {
       setEditorPreloadState(
         hosted && workbenchPanel.visible && currentStageMatchesHost && mountedPlayback
           ? 'playback'
@@ -177,6 +185,20 @@ export function Stage({
     let cancelled = false;
     let tornDown = false;
     let activated = false;
+    // The old root's teardown (engine, SSE, audio — including the global speech
+    // cancel) must finish before a fresh root mounts, or its cleanup would run
+    // against the new playback.
+    let teardownSettled: Promise<unknown> = Promise.resolve();
+    // Then only for this course, and only while learning is what it shows: this
+    // entry failed and is still current, or the latest run is on learning.
+    const remountAfterTeardown = () => {
+      tornDown = false;
+      void teardownSettled.then(() => {
+        const latest = entryRef.current;
+        if (latest.classroomId !== classroomId) return;
+        if (!cancelled || !latest.editing) remountPlayback();
+      });
+    };
     setEditorPreloadState((previous) =>
       mountedPlayback && previous === 'playback' ? 'playback' : 'loading',
     );
@@ -184,7 +206,9 @@ export function Stage({
       teardown: () => {
         if (!mountedPlayback) return undefined;
         tornDown = true;
-        return mountedPlayback.teardown();
+        const done = mountedPlayback.teardown();
+        teardownSettled = Promise.resolve(done).catch(() => undefined);
+        return done;
       },
       preload: preloadEditor,
       activate: () => {
@@ -195,15 +219,16 @@ export function Stage({
       onError: (error) => {
         console.error('[Stage] hosted editor entry failed', error);
         if (cancelled) return;
-        // Still on learning, but its root was already torn down.
-        if (tornDown) remountPlayback();
+        // Still on learning, but its root was already torn down: one fresh
+        // root, and the cleanup below must not mount another.
+        if (tornDown) remountAfterTeardown();
         setEditorPreloadState((previous) => (previous === 'playback' ? 'playback' : 'failed'));
       },
     });
     return () => {
       cancelled = true;
       // Abandoned before the editor took over: the learning root stays.
-      if (tornDown && !activated) remountPlayback();
+      if (tornDown && !activated) remountAfterTeardown();
     };
   }, [
     remountPlayback,

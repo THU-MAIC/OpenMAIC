@@ -26,6 +26,39 @@ describe('the courses a conversation works on', () => {
       ]),
     ).toEqual(['stage-a', 'stage-b']);
   });
+
+  it('does not count a read as working on a course: only writes and generation do', () => {
+    // "Make a grade-5 version of my refraction course": the original is read,
+    // a new course is created, and the original is not this conversation's.
+    expect(
+      conversationTargetStageIds([
+        { key: 'u', kind: 'user', text: 'make a grade-5 version of my refraction course' },
+        tool('r', 'read_stage', { stageId: 'stage-b' }),
+        tool('o', 'read_stage_outline', { stageId: 'stage-b' }),
+        tool('l', 'list_scenes', { stageId: 'stage-b' }),
+        tool('c', 'create_stage', { title: 'Grade 5' }),
+      ]),
+    ).toEqual([]);
+    // Editing it is working on it.
+    expect(
+      conversationTargetStageIds([
+        tool('r', 'read_stage', { stageId: 'stage-b' }),
+        tool('p', 'patch_stage', { stageId: 'stage-b' }),
+      ]),
+    ).toEqual(['stage-b']);
+  });
+
+  it('still keeps a conversation bound to a course it only reads off the preview', () => {
+    expect(
+      worksOnExistingCourses(
+        [
+          { key: 'u', kind: 'user', text: 'tighten page 2' },
+          tool('r', 'read_stage', { stageId: 'b' }),
+        ],
+        'b',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('a conversation working on existing courses', () => {

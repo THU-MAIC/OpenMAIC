@@ -212,14 +212,22 @@ function sceneChanges(track: RequestTrack, now: number): SceneChange[] {
   for (const question of track.questions) {
     signals.push({ ts: question.ts, scene: 'asking', urgent: true });
     if (question.answeredAt !== null) {
-      signals.push({ ts: question.answeredAt, scene: 'understanding', force: true });
+      // Answered: the question's scene has nothing left to show, so it goes at
+      // once rather than holding a form-less card for the rest of its hold.
+      signals.push({ ts: question.answeredAt, scene: 'understanding', force: true, urgent: true });
     }
   }
   signals.sort((a, b) => a.ts - b.ts);
+  // While the latest question waits on the user, the view waits with it: the
+  // runner lets the rest of ask_user's batch finish, and those tools must not
+  // pull the scene (and the answer form with it) away from the question.
+  const waitingSince =
+    track.question && track.question.answeredAt === null ? track.question.ts : null;
 
   const changes: SceneChange[] = [{ ts: track.startedAt, scene: 'understanding' }];
   for (const signal of signals) {
     if (signal.ts > now) break;
+    if (waitingSince !== null && signal.ts > waitingSince) continue;
     const target = changes[changes.length - 1].scene;
     if (signal.scene === target) {
       // A question for the scene already waiting to show brings it forward.

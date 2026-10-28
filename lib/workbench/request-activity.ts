@@ -42,6 +42,12 @@ export function requestEpisodeStart(chat: readonly ChatNode[]): number {
     if (before < 0 || chat[before].kind !== 'question') break;
     const asked = requestStartIndex(chat.slice(0, before));
     if (asked < 0) break;
+    // A question asked after a page was persisted is a follow-up about a
+    // course that exists, not part of making it: the answer starts its own
+    // request. (A course created before a question still stays with it.)
+    if (chat.slice(asked, before).some((node) => node.kind === 'tool' && Boolean(node.sceneId))) {
+      break;
+    }
     start = asked;
   }
   return start;
@@ -161,7 +167,10 @@ export function requestTrack(
     if (node.kind === 'user' && node !== opening) {
       if (node.at !== undefined) clock = Math.max(clock, node.at);
       const asked = question as RequestQuestion | null;
-      if (asked && asked.answeredAt === null) {
+      // The fold decides what answers a question (a textless attachment does
+      // not), so the preview and the chat cannot disagree; the answer's time
+      // is that of the first message with words after it.
+      if (asked && asked.answeredAt === null && asked.node.questionAnswered && node.text.trim()) {
         question = { ...asked, answeredAt: node.at ?? clock };
         questions[questions.length - 1] = question;
       }

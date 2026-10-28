@@ -256,4 +256,37 @@ describe('hosted Stage mode enforcement and playback lifecycle', () => {
     expect(probe.teardown).not.toHaveBeenCalled();
     expect(probe.learningMount).toHaveBeenCalledTimes(1);
   });
+
+  it('mounts the fresh learning root only after the old teardown has settled', async () => {
+    let finishTeardown!: () => void;
+    probe.teardown.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishTeardown = resolve;
+        }),
+    );
+    probe.preload.mockImplementation(() => new Promise<void>(() => {}));
+    await render(true);
+    await render(false);
+    expect(probe.teardown).toHaveBeenCalledOnce();
+    // Back to Learn while the old root is still tearing down: no new root yet.
+    await render(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(1);
+    await act(async () => finishTeardown());
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    expect(has('learning')).toBe(true);
+  });
+
+  it('mounts one fresh learning root after a failed preload, not another on the next change', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    probe.preload.mockRejectedValue(new Error('chunk failed'));
+    await render(true);
+    await render(false);
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    // Picking Learn afterwards keeps that fresh root.
+    await render(true);
+    expect(probe.learningMount).toHaveBeenCalledTimes(2);
+    expect(has('learning')).toBe(true);
+    vi.restoreAllMocks();
+  });
 });

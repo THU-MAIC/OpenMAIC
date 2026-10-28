@@ -11,7 +11,7 @@ import {
   type WorkbenchEvent,
   type WorkbenchFold,
 } from '@/lib/workbench/session-store';
-import { requestTrack } from '@/lib/workbench/request-activity';
+import { requestEpisodeStart, requestTrack } from '@/lib/workbench/request-activity';
 import {
   DEFAULT_REQUEST_SCHEDULE,
   rosterRevealMs,
@@ -349,5 +349,93 @@ describe('generating, fold and hand-over', () => {
 
   it('uses the intended defaults', () => {
     expect(DEFAULT_REQUEST_SCHEDULE).toEqual({ holdMs: 2000, maxLagMs: 3000 });
+  });
+});
+
+describe('review fixes: questions and episodes', () => {
+  it('keeps an open question on screen when a tool from the same batch follows it', () => {
+    for (const tool of ['create_stage', 'web_search']) {
+      const frames = [
+        start(0),
+        toolStart(1000, 'ask', 'ask_user', { question: 'Go ahead?' }),
+        ev(1001, 'user_question', { question: 'Go ahead?', options: [{ id: 'a', label: 'A' }] }),
+        toolEnd(1002, 'ask'),
+        toolStart(1100, 'next', tool, { query: 'x' }),
+        ...(tool === 'create_stage' ? [ev(1150, 'stage_link', { stageId: 'stage-1' })] : []),
+        toolEnd(1200, 'next'),
+        ...end(1300),
+      ];
+      const at30 = view(frames, 30_000);
+      expect(at30.scene).toBe('asking');
+      expect(at30.question?.node.text).toBe('Go ahead?');
+      expect(at30.mode).toBe('scene');
+    }
+  });
+
+  it('does not treat a textless attachment as the answer, as the chat does not', () => {
+    const frames = [
+      start(0),
+      ...ask(1000, 'Go ahead?'),
+      ev(3000, 'user_message', {
+        text: '',
+        delivery: 'queued',
+        materials: [{ path: 'materials/notes.pdf', originalName: 'notes.pdf' }],
+      }),
+    ];
+    const state = fold(frames);
+    expect(state.chat.find((node) => node.kind === 'question')?.questionAnswered).toBeFalsy();
+    const at = view(frames, 10_000);
+    expect(at.scene).toBe('asking');
+    expect(at.question).not.toBeNull();
+    expect(at.mode).toBe('scene');
+  });
+
+  it('leaves the asking scene the moment the question is answered', () => {
+    const frames = [start(0), ...ask(5000, 'Go ahead?'), ...answer(6200, 'Yes')];
+    // ask() puts the question card at 5001; the answer lands at 6200.
+    expect(view(frames, 6199).scene).toBe('asking');
+    const after = view(frames, 6200);
+    expect(after.scene).not.toBe('asking');
+    expect(after.question).toBeNull();
+  });
+
+  it('starts a new request at a follow-up question asked after a page exists', () => {
+    const frames = [
+      start(0),
+      toolStart(100, 'create', 'create_stage', { title: 'A' }),
+      ev(150, 'stage_link', { stageId: 'stage-A' }),
+      ev(200, 'tool_execution_end', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        result: { content: [], details: { stageId: 'stage-A' } },
+      }),
+      toolStart(300, 'page', 'generate_scene', { stageId: 'stage-A', order: 1 }),
+      ev(400, 'checkpoint', {
+        tool: 'generate_scene',
+        stageId: 'stage-A',
+        order: 1,
+        sceneId: 's1',
+      }),
+      toolEnd(500, 'page'),
+      ...ask(600, 'Want me to add a quiz?'),
+      ...answer(2000, 'Yes'),
+    ];
+    const state = fold(frames);
+    const start2 = requestEpisodeStart(state.chat);
+    expect(start2).toBeGreaterThan(0);
+    // The answer starts the follow-up's own request.
+    expect(state.chat[start2]?.text).toBe('Yes');
+  });
+
+  it('still keeps a course created before a question (no page yet) with its request', () => {
+    const frames = [
+      start(0),
+      toolStart(100, 'create', 'create_stage', { title: 'A' }),
+      ev(150, 'stage_link', { stageId: 'stage-A' }),
+      toolEnd(200, 'create'),
+      ...ask(600, 'Who is it for?'),
+      ...answer(2000, 'Students'),
+    ];
+    expect(requestEpisodeStart(fold(frames).chat)).toBe(0);
   });
 });

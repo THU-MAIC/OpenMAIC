@@ -1547,6 +1547,80 @@ describe('the knowledge base page', () => {
       expect(window.location.search).toBe('?session=session-1');
     });
 
+    it('shows no placeholder for a follow-up question answered after the course exists', async () => {
+      const { createInitialSessionState, foldEvent } = await vi.importActual<
+        typeof import('@/lib/workbench/session-store')
+      >('@/lib/workbench/session-store');
+      let id = 0;
+      let folded: import('@/lib/workbench/session-store').WorkbenchFold =
+        createInitialSessionState();
+      const event = (type: string, data: unknown = {}) => {
+        folded = foldEvent(folded, { id: ++id, ts: id, attempt: 1, type, data });
+      };
+      event('session_start', { prompt: 'Make a course' });
+      event('tool_execution_start', { toolCallId: 'create', toolName: 'create_stage', args: {} });
+      event('stage_link', { stageId: 'stage-1' });
+      event('tool_execution_end', {
+        toolCallId: 'create',
+        toolName: 'create_stage',
+        result: { content: [], details: { stageId: 'stage-1', title: 'Course' } },
+      });
+      event('tool_execution_start', {
+        toolCallId: 'page',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 1, type: 'slide' },
+      });
+      event('checkpoint', { tool: 'generate_scene', stageId: 'stage-1', order: 1, sceneId: 's1' });
+      event('tool_execution_end', { toolCallId: 'page', toolName: 'generate_scene', result: {} });
+      event('tool_execution_start', { toolCallId: 'ask', toolName: 'ask_user', args: {} });
+      event('user_question', {
+        question: 'Want me to add a quiz?',
+        options: [{ id: 'y', label: 'Yes' }],
+      });
+      event('tool_execution_end', { toolCallId: 'ask', toolName: 'ask_user', result: {} });
+      event('agent_end');
+      event('session_end', { status: 'succeeded' });
+      event('user_message', { text: 'Yes', delivery: 'queued' });
+      event('session_resumed', { reason: 'follow_up' });
+      event('tool_execution_start', {
+        toolCallId: 'quiz',
+        toolName: 'generate_scene',
+        args: { stageId: 'stage-1', order: 2, type: 'quiz' },
+      });
+      // Opened fresh (no course tab memory) while the follow-up runs.
+      Object.assign(mocks.store, folded, {
+        sessionId: 'session-1',
+        status: 'running',
+        replaying: false,
+        replayedStageLinkCount: 1,
+      });
+      await render();
+      await render();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).toBeNull();
+      expect(window.location.search).toBe('?session=session-1');
+    });
+
+    it('gives a new course its placeholder when the request only read an existing one', async () => {
+      // "Make a grade-5 version of my refraction course": stage-1 (with scenes)
+      // is read, and a new course is being created.
+      mocks.store.status = 'running';
+      mocks.store.chat = [
+        { key: 'u', kind: 'user', text: 'Make a grade-5 version of my refraction course' },
+        {
+          key: 'r',
+          kind: 'tool',
+          text: '',
+          toolName: 'read_stage',
+          toolState: 'done',
+          toolArgs: { stageId: 'stage-1' },
+        },
+        { key: 'c', kind: 'tool', text: '', toolName: 'create_stage', toolState: 'running' },
+      ];
+      await render();
+      await render();
+      expect(container?.querySelector('[data-testid="workspace-request-activity"]')).not.toBeNull();
+    });
+
     it('opens every course of a replayed series at its first scene, not only the first', async () => {
       const { createInitialSessionState, foldEvent } = await vi.importActual<
         typeof import('@/lib/workbench/session-store')
