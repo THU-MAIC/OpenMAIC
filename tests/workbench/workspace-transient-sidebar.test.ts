@@ -17,7 +17,12 @@ describe('the workspace rail is transient browser chrome', () => {
     expect(toggle).toContain('NAV_COLLAPSED_STORAGE_KEY');
     expect(toggle).not.toContain('setChat(');
     expect(toggle).not.toContain('setClassroom(');
-    expect(shell).toContain('onToggleCollapsed={collapse.toggleNav}');
+    // The rail's own toggle; while the request preview holds the center it
+    // also answers the preview's temporary fold (see `toggleRail`).
+    expect(shell).toContain('onToggleCollapsed={toggleRail}');
+    const from = shell.indexOf('const toggleRail');
+    const handler = shell.slice(from, shell.indexOf('return (', from));
+    expect(handler).toContain('collapse.toggleNav()');
   });
 
   it('leaves a direct expand affordance when dismissed', () => {

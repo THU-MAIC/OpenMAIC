@@ -35,6 +35,7 @@
     "submit": "Absenden",
     "dismiss": "Verwerfen",
     "inFormBelow": "Antworte im Formular unten",
+    "inPreview": "In der Vorschau beantworten",
     "multiAnswerSeparator": ", "
   },
   "material": {
@@ -98,6 +99,21 @@
       "vocational": "Berufliche Ausbildung",
       "workshop-style": "Interaktiver Workshop"
     }
+  },
+  "preview": {
+    "eyebrow": "In Arbeit",
+    "understanding": "Anfrage wird verstanden",
+    "understandingDesc": "Liest deine Anfrage und was sie braucht…",
+    "asking": "Eine kurze Frage",
+    "askingDesc": "Es geht weiter, sobald du antwortest.",
+    "assembling": "Klassenzimmer wird eingerichtet",
+    "assemblingDesc": "Legt den Kurs an und besetzt Lehrkraft und Mitlernende…",
+    "opening": "Klassenzimmer wird geöffnet",
+    "page": "Seite {{order}}",
+    "pageCaption": "Seite {{order}} · {{title}}",
+    "skills": "Ausgerüstete Skills",
+    "resting": "Hier erscheint dein Kurs",
+    "restingDesc": "Sprich im Gespräch weiter; sobald ein Kurs erstellt ist, öffnet er sich in diesem Tab."
   },
   "thinking": {
     "active": "Denkt nach …",

@@ -29,7 +29,7 @@ import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n
 import { wbStyles as styles } from './chat-styles';
 import { ActionCluster } from './action-cluster';
 import { SessionCourseLink } from './course-link';
-import { QuestionCard } from './question-card';
+import { QuestionCard, type QuestionPointer } from './question-card';
 import { SystemNode } from './system-node';
 import { isSameNotice, presentSystemNotice, repeatLabel, repeatTitle } from './system-notice';
 import { TextBlock } from './text-block';
@@ -216,14 +216,16 @@ function ChatNodeView({
   onAnswer,
   onRevive,
   collapsedQuestion = false,
+  questionPointer = 'below',
   repeat = 1,
   t,
 }: {
   node: ChatNode;
   plan: PlannedPage[];
   onAnswer?: ChatAnswerHandler;
-  onRevive?: () => void;
+  onRevive?: (freeText?: boolean) => void;
   collapsedQuestion?: boolean;
+  questionPointer?: QuestionPointer;
   repeat?: number;
   t: WorkbenchTranslator;
 }) {
@@ -248,6 +250,7 @@ function ChatNodeView({
           onAnswer={onAnswer}
           onRevive={onRevive}
           collapsed={collapsedQuestion}
+          pointer={questionPointer}
           t={t}
         />
       );
@@ -296,6 +299,7 @@ export function ChatTimeline({
   dismissedQuestionKey,
   onReviveQuestion,
   takenOverQuestionKey,
+  questionPointer = 'below',
   t = defaultWorkbenchTranslator,
 }: {
   chat: ChatNode[];
@@ -312,13 +316,16 @@ export function ChatTimeline({
    * unaware the form exists.
    */
   dismissedQuestionKey?: string | null;
-  onReviveQuestion?: () => void;
+  /** Bring a dismissed question's form back; `freeText` opens it on its text row. */
+  onReviveQuestion?: (freeText?: boolean) => void;
   /**
    * The question whose form currently owns the composer. That row collapses to a
    * one-line pointer at the form, so the question and its options are on the
    * screen exactly once (see `question-card.tsx`).
    */
   takenOverQuestionKey?: string | null;
+  /** Where the form that took the question over sits. */
+  questionPointer?: QuestionPointer;
   t?: WorkbenchTranslator;
 }) {
   const rows = rowsForRender(chat);
@@ -338,6 +345,7 @@ export function ChatTimeline({
             collapsedQuestion={
               Boolean(takenOverQuestionKey) && row.node!.key === takenOverQuestionKey
             }
+            questionPointer={questionPointer}
             onRevive={
               row.node!.key === dismissedQuestionKey && onReviveQuestion
                 ? onReviveQuestion
