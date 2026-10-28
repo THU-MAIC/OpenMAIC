@@ -80,7 +80,11 @@ export interface InlinedImages<T> {
   retryable: string[];
 }
 
-/** A download answered something other than an image: it would again. */
+/**
+ * A download answered something other than an image. MinerU's images are
+ * images, so such a body is most likely a transient login, firewall or
+ * rate-limit page: another attempt may get the image.
+ */
 class NotAnImageError extends Error {
   constructor() {
     super('the response is not an image');
@@ -251,12 +255,11 @@ export async function inlineRemoteImages<
         signal?.throwIfAborted();
         // It did not fit in what is left: the downloads still running stop too.
         if (error instanceof DownloadSizeLimitError && error.scope === 'aggregate') spend();
-        // Too large, not an image, or stopped once the budget was spent: the
-        // same answer drops it again. Anything else (an error status, a
-        // transport failure, a timeout, the deadline) may not recur.
+        // Too large, or stopped once the budget was spent: the same answer
+        // drops it again. Anything else (an error status, a body that is not an
+        // image, a transport failure, a timeout, the deadline) may not recur.
         const permanent =
           error instanceof DownloadSizeLimitError ||
-          error instanceof NotAnImageError ||
           (spent.signal.aborted && !options.deadline?.aborted && !timeout.signal.aborted);
         if (!permanent) retryable.add(index);
         log.warn(

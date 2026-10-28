@@ -156,14 +156,14 @@ describe('inlineRemoteImages', () => {
     expect(result.retryable).toEqual([]);
   });
 
-  it('drops a response that is not an image', async () => {
+  it('drops a response that is not an image, as one another attempt may download', async () => {
     transport.mockResolvedValue(
       new Response('<html>login</html>', { headers: { 'content-type': 'text/html' } }),
     );
 
     const result = await inlineRemoteImages([image('img_1', JPEG_URL)]);
 
-    expect(result).toEqual({ images: [], skipped: 1, retryable: [] });
+    expect(result).toEqual({ images: [], skipped: 1, retryable: ['img_1'] });
   });
 
   it('drops a source that is neither inline nor a URL, without a request', async () => {

@@ -268,9 +268,6 @@ describe('ownerDocumentOutcome', () => {
         .png()
         .toBuffer();
       vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) => {
-        if (url.endsWith('/login')) {
-          return new Response('<html>sign in</html>', { headers: { 'content-type': 'text/html' } });
-        }
         if (url.endsWith('/huge')) {
           return new Response(new Uint8Array(8), {
             headers: { 'content-type': 'image/png', 'content-length': String(1024 ** 3) },
@@ -282,19 +279,42 @@ describe('ownerDocumentOutcome', () => {
       const outcome = await ownerDocumentOutcome(
         linked({
           'a.jpg': 'https://files.example.com/media/a',
-          'b.jpg': 'https://files.example.com/media/login',
           'c.jpg': 'https://files.example.com/media/huge',
         }),
         provider,
       );
 
       expect(outcome.images).toHaveLength(1);
-      // Not an image, too large: the same answer drops them again, so the
-      // result stays cacheable.
+      // Too large: the same answer drops it again, so the result stays cacheable.
       expect(outcome.imagesNotDownloaded).toBeUndefined();
       expect(outcome.stats.diagnostics).toEqual([
-        '2 document image(s) not kept (limit 100, or unreadable)',
+        '1 document image(s) not kept (limit 100, or unreadable)',
       ]);
+    });
+
+    it('counts a response that is not an image as not downloaded', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(async (url) =>
+        url.endsWith('/login')
+          ? new Response('<html>sign in</html>', { headers: { 'content-type': 'text/html' } })
+          : new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+      );
+
+      const outcome = await ownerDocumentOutcome(
+        linked({
+          'a.jpg': 'https://files.example.com/media/a',
+          'b.jpg': 'https://files.example.com/media/login',
+        }),
+        provider,
+      );
+
+      expect(outcome.images).toHaveLength(1);
+      // A sign-in, firewall or rate-limit page may pass: the result is not cached.
+      expect(outcome.imagesNotDownloaded).toBe(1);
     });
 
     it('rewrites the references that name an image by its URL', async () => {
